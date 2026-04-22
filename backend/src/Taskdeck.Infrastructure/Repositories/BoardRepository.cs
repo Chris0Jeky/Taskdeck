@@ -127,8 +127,20 @@ public class BoardRepository : Repository<Board>, IBoardRepository
     public async Task<IEnumerable<Guid>> SearchIdsAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default)
     {
         var query = BuildSearchQuery(searchText, includeArchived);
-        var boardIds = await query.Select(board => board.Id).ToListAsync(cancellationToken);
-        return boardIds;
+
+        // Load Id + CreatedAt so we can apply a stable sort in memory
+        // (SQLite doesn't support DateTimeOffset in ORDER BY).
+        // Sort by CreatedAt descending with Id as a deterministic tiebreaker
+        // so offset pagination produces consistent pages.
+        var boards = await query
+            .Select(board => new { board.Id, board.CreatedAt })
+            .ToListAsync(cancellationToken);
+
+        return boards
+            .OrderByDescending(b => b.CreatedAt)
+            .ThenBy(b => b.Id)
+            .Select(b => b.Id)
+            .ToList();
     }
 
     public async Task<IEnumerable<Board>> GetByIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default)

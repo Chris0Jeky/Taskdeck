@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using Xunit;
@@ -10,7 +9,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyCreate_ReturnsJsonWithTdskPrefix()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         var result = await harness.RunAsync("api-key create --name \"Test Key\"");
 
@@ -24,7 +23,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyCreate_WithExpires_SetsExpiresAt()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         var result = await harness.RunAsync("api-key create --name \"Expiring\" --expires 90d");
 
@@ -37,7 +36,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyCreate_WithNumericExpires_AcceptsDaysWithoutSuffix()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         var result = await harness.RunAsync("api-key create --name \"NumExpiry\" --expires 30");
 
@@ -50,7 +49,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyCreate_MissingName_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         var result = await harness.RunAsync("api-key create");
 
@@ -61,7 +60,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyCreate_InvalidExpires_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         var result = await harness.RunAsync("api-key create --name \"Bad\" --expires abc");
 
@@ -72,7 +71,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyList_ReturnsCreatedKeys()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         await harness.RunAsync("api-key create --name \"List Key A\"");
         await harness.RunAsync("api-key create --name \"List Key B\"");
@@ -93,7 +92,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyList_ShowsKeyPrefixNotFullKey()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         await harness.RunAsync("api-key create --name \"Prefix Key\"");
 
@@ -109,7 +108,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyRevoke_ByName_SetsRevokedStatus()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         await harness.RunAsync("api-key create --name \"Revoke Me\"");
 
@@ -129,7 +128,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyRevoke_ById_SetsRevokedStatus()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         var createResult = await harness.RunAsync("api-key create --name \"Revoke By Id\"");
         using var createDoc = JsonDocument.Parse(createResult.StdOut);
@@ -142,7 +141,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyRevoke_NonexistentName_ReturnsFailure()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         var result = await harness.RunAsync("api-key revoke --name \"Does Not Exist\"");
 
@@ -153,7 +152,7 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKeyRevoke_MissingIdentifier_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         var result = await harness.RunAsync("api-key revoke");
 
@@ -164,108 +163,11 @@ public class ApiKeyCommandTests
     [Fact]
     public async Task ApiKey_UnknownSubcommand_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-apikey");
 
         var result = await harness.RunAsync("api-key unknown");
 
         result.ExitCode.Should().Be(2);
         result.StdErr.Should().Contain("Unknown api-key command");
     }
-
-    /// <summary>
-    /// Shared harness that runs the CLI as a subprocess against an ephemeral database.
-    /// </summary>
-    private sealed class CliHarness : IAsyncDisposable
-    {
-        private readonly string _repoRoot;
-        private readonly string _databasePath;
-        private readonly string _connectionString;
-
-        public CliHarness()
-        {
-            _repoRoot = FindRepoRoot();
-            _databasePath = Path.Combine(Path.GetTempPath(), $"taskdeck-cli-apikey-tests-{Guid.NewGuid():N}.db");
-            _connectionString = $"Data Source={_databasePath}";
-        }
-
-        public async Task<CliCommandResult> RunAsync(string arguments)
-        {
-            var cliDllPath = ResolveCliDllPath(_repoRoot);
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                Arguments = $"\"{cliDllPath}\" {arguments}",
-                WorkingDirectory = _repoRoot,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
-
-            startInfo.Environment["TASKDECK_CONNECTION_STRING"] = _connectionString;
-            startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-            // Test-only 256-bit encryption key for connector credentials.
-            startInfo.Environment["Connectors__EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-
-            using var process = new Process { StartInfo = startInfo };
-            process.Start();
-
-            var stdOut = await process.StandardOutput.ReadToEndAsync();
-            var stdErr = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            return new CliCommandResult(process.ExitCode, stdOut.Trim(), stdErr.Trim());
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            foreach (var path in new[] { _databasePath, $"{_databasePath}-wal", $"{_databasePath}-shm", $"{_databasePath}-journal" })
-            {
-                try
-                {
-                    if (File.Exists(path)) File.Delete(path);
-                }
-                catch (IOException) { }
-            }
-
-            return ValueTask.CompletedTask;
-        }
-
-        private static string FindRepoRoot()
-        {
-            var current = new DirectoryInfo(AppContext.BaseDirectory);
-
-            while (current != null)
-            {
-                var solutionPath = Path.Combine(current.FullName, "backend", "Taskdeck.sln");
-                if (File.Exists(solutionPath))
-                {
-                    return current.FullName;
-                }
-
-                current = current.Parent;
-            }
-
-            throw new InvalidOperationException("Could not locate repository root from test execution directory.");
-        }
-
-        private static string ResolveCliDllPath(string repoRoot)
-        {
-            var cliProjectBin = Path.Combine(repoRoot, "backend", "src", "Taskdeck.Cli", "bin");
-            var debugPath = Path.Combine(cliProjectBin, "Debug", "net8.0", "Taskdeck.Cli.dll");
-            if (File.Exists(debugPath))
-            {
-                return debugPath;
-            }
-
-            var releasePath = Path.Combine(cliProjectBin, "Release", "net8.0", "Taskdeck.Cli.dll");
-            if (File.Exists(releasePath))
-            {
-                return releasePath;
-            }
-
-            throw new FileNotFoundException("Taskdeck.Cli.dll was not found in Debug or Release output directories.");
-        }
-    }
-
-    private sealed record CliCommandResult(int ExitCode, string StdOut, string StdErr);
 }

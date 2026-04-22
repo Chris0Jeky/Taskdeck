@@ -130,10 +130,7 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AuthenticateAsync(otherClient, "list-other");
         var otherBoard = await ApiTestHarness.CreateBoardAsync(otherClient, "list-other-board");
 
-        var ownerListResponse = await ownerClient.GetAsync("/api/boards");
-        ownerListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var ownerBoards = await ownerListResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
-        ownerBoards.Should().NotBeNull();
+        var ownerBoards = await ApiTestHarness.ListBoardsAsync(ownerClient);
         ownerBoards.Should().ContainSingle(b => b.Id == ownerBoard.Id);
         ownerBoards.Should().NotContain(b => b.Id == otherBoard.Id);
     }
@@ -172,16 +169,10 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         var deleteResponse = await _client.DeleteAsync($"/api/boards/{createdBoard.Id}");
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var activeListResponse = await _client.GetAsync("/api/boards");
-        activeListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var activeBoards = await activeListResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
-        activeBoards.Should().NotBeNull();
+        var activeBoards = await ApiTestHarness.ListBoardsAsync(_client);
         activeBoards.Should().NotContain(b => b.Id == createdBoard.Id);
 
-        var fullListResponse = await _client.GetAsync("/api/boards?includeArchived=true");
-        fullListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var allBoards = await fullListResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
-        allBoards.Should().NotBeNull();
+        var allBoards = await ApiTestHarness.ListBoardsAsync(_client, includeArchived: true);
         allBoards.Should().ContainSingle(b => b.Id == createdBoard.Id && b.IsArchived);
     }
 
@@ -205,10 +196,7 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         restoredBoard!.Id.Should().Be(createdBoard.Id);
         restoredBoard.IsArchived.Should().BeFalse();
 
-        var activeListResponse = await _client.GetAsync("/api/boards");
-        activeListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var activeBoards = await activeListResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
-        activeBoards.Should().NotBeNull();
+        var activeBoards = await ApiTestHarness.ListBoardsAsync(_client);
         activeBoards.Should().ContainSingle(b => b.Id == createdBoard.Id && !b.IsArchived);
     }
 
@@ -225,16 +213,10 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
 
         archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var activeListAfterArchive = await _client.GetAsync("/api/boards");
-        activeListAfterArchive.StatusCode.Should().Be(HttpStatusCode.OK);
-        var activeBoards = await activeListAfterArchive.Content.ReadFromJsonAsync<List<BoardDto>>();
-        activeBoards.Should().NotBeNull();
+        var activeBoards = await ApiTestHarness.ListBoardsAsync(_client);
         activeBoards.Should().NotContain(board => board.Id == createdBoard.Id);
 
-        var archivedList = await _client.GetAsync("/api/boards?includeArchived=true");
-        archivedList.StatusCode.Should().Be(HttpStatusCode.OK);
-        var allBoardsAfterArchive = await archivedList.Content.ReadFromJsonAsync<List<BoardDto>>();
-        allBoardsAfterArchive.Should().NotBeNull();
+        var allBoardsAfterArchive = await ApiTestHarness.ListBoardsAsync(_client, includeArchived: true);
         allBoardsAfterArchive.Should().ContainSingle(board => board.Id == createdBoard.Id && board.IsArchived);
 
         var restoreResponse = await _client.PutAsJsonAsync(
@@ -243,10 +225,7 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
 
         restoreResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var activeListAfterRestore = await _client.GetAsync("/api/boards");
-        activeListAfterRestore.StatusCode.Should().Be(HttpStatusCode.OK);
-        var activeBoardsAfterRestore = await activeListAfterRestore.Content.ReadFromJsonAsync<List<BoardDto>>();
-        activeBoardsAfterRestore.Should().NotBeNull();
+        var activeBoardsAfterRestore = await ApiTestHarness.ListBoardsAsync(_client);
         activeBoardsAfterRestore.Should().ContainSingle(board => board.Id == createdBoard.Id && !board.IsArchived);
     }
 

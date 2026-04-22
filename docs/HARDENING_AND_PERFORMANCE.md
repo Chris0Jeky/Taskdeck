@@ -62,35 +62,17 @@ CREATE INDEX IX_Cards_BoardId_ColumnId ON Cards(BoardId, ColumnId);
 
 ### 1.3 Fix Synchronous I/O in WorkspaceService
 
-**Current**: `WorkspaceService.GetHomeAsync()` uses `.Result` on async tasks — blocks thread pool.
-**Impact**: Prevents thread pool starvation under concurrent load (10+ DAU).
-**Effort**: 30 minutes.
-
-```csharp
-// BEFORE (blocking):
-hasReviewedProposal: hasReviewedProposalTask.Result,
-hasBoard: boardCountTask.Result > 0,
-
-// AFTER (non-blocking):
-await Task.WhenAll(hasReviewedProposalTask, boardCountTask);
-// then use .Result safely (already completed)
-```
+**RESOLVED** (PERF-11 `#847`/PR `#904`): `.Result` in `GetOnboardingForPreferenceAsync` replaced with sequential `await`. Round 2 review reverted an unsafe `Task.WhenAll` parallelisation in `GetHomeAsync`/`GetTodayAsync` because all repositories share a scoped EF `DbContext` via `IUnitOfWork`, which is not thread-safe. Parallel execution of DbContext-backed queries requires architectural changes (per-request DbContext or dedicated repository instances) and is out of scope for this quick win.
 
 ### 1.4 Paginate Board List Endpoint
 
-**Current**: `GET /api/boards` returns ALL readable boards with no offset/limit.
-**Impact**: Blocks team-scale usage (100+ boards = 1000+ objects in single response).
-**Effort**: 2 hours.
+**RESOLVED** (PERF-12 `#859`/PR `#909`): `GET /api/boards` accepts `offset`/`limit` query parameters (default 50, server-clamped `[1, 200]`); response is now `PaginatedResult<BoardDto>` with `items`/`totalCount`/`hasMore`/`offset`/`limit`. Authorization filter is applied before pagination so `totalCount` reflects only boards the caller is authorised to see. `BoardRepository.SearchIdsAsync` uses stable ordering (`CreatedAt DESC`, `Id` tiebreaker) so offset-based pages do not overlap. Frontend `boardsApi.getBoards` delegates to `getBoardsPaginated` and returns `.items` for backward compatibility. 11 new `BoardPaginationApiTests` cover cross-user isolation, limit clamping, empty list, and full-page iteration.
 
-Add `offset` and `limit` query parameters with default limit=50.
+**Follow-up (still open)**: audit and activity endpoints also need pagination.
 
 ### 1.5 Move AuditLog Filtering to SQL
 
-**Current**: `AuditLogRepository.QueryAsync()` loads ALL logs for time window, then filters by userId/boardId in memory.
-**Impact**: Eliminates 50ms+ per activity load for large audit tables.
-**Effort**: 2 hours.
-
-Push `userId` and `boardId` filter predicates into the LINQ query instead of post-fetch filtering.
+**RESOLVED** (PERF-13 `#849`/PR `#903`): `AuditLogRepository.QueryAsync` SQLite branch now uses `BuildSqliteQueryAsync` that pushes `userId`, `boardId`, `source`, and `level` into a parameterised raw SQL query alongside `ORDER BY` and `LIMIT`. Board-scoped filtering uses `EXISTS` subqueries (matching `GetByBoardAsync`) rather than a materialised `EntityId IN (...)` list, avoiding the SQLite `SQLITE_MAX_VARIABLE_NUMBER` limit on boards with many cards/columns/labels and removing 3 extra round-trips from `ResolveBoardScopedEntityIdsAsync` for SQLite. Non-SQLite providers still use LINQ `Contains()` after ID materialisation.
 
 ---
 
@@ -98,28 +80,11 @@ Push `userId` and `boardId` filter predicates into the LINQ query instead of pos
 
 ### 2.1 Configuration Validation at Startup
 
-**Gap**: No `ValidateOnStart()` on any options patterns. Configuration errors surface at runtime, not deployment.
-
-**Fix**: Add data annotations to all settings classes and wire `ValidateOnStart()`:
-```csharp
-services.AddOptions<JwtSettings>()
-    .Bind(configuration.GetSection("Jwt"))
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
-```
-
-**Settings classes requiring validation**: JwtSettings, LlmProviderSettings, WorkerSettings, CorsSettings, RateLimitSettings, SignalRSettings, CacheSettings.
+**RESOLVED** (OPS-27 `#858`/PR `#908`): data annotations (`[Required]`, `[Range]`, `[MinLength]`, `[RegularExpression]`, `[Url]`) added to 15 settings classes — `JwtSettings`, `WorkerSettings`, `CacheSettings`, `RateLimitingSettings`, `LlmProviderSettings`, `OpenAiProviderSettings`, `GeminiProviderSettings`, `ObservabilitySettings`, `SentrySettings`, `SecurityHeadersSettings`, `TelemetrySettings`, `LlmQuotaSettings`, `LlmToolCallingSettings`, `AbuseDetectionSettings`, `MfaPolicySettings`. Four cross-property `IValidateOptions<T>` validators enforce: `WorkerSettings.RetryBackoffSeconds.Length >= MaxRetries`, `JwtSettings.SecretKey` non-empty + minimum length, `SentrySettings.Dsn` required when `Enabled`, and `RateLimitingSettings` nested policy ranges. All wired via a new `RegisterValidatedOptions<T>` helper that calls `ValidateDataAnnotations()` + `ValidateOnStart()`. `LlmProvider`/`CacheProvider` regex patterns use `(?i)` flag to match the runtime case-insensitive comparison. `JwtSettings.SecretKey` is intentionally not `[Required]` because `FirstRunBootstrapper` generates it before validation runs. 34 `OptionsValidationTests` cover data-annotation boundaries and cross-property rules.
 
 ### 2.2 Database Migration Infrastructure
 
-**Gap**: Only 1 EF migration in source control. Fresh environments cannot bootstrap from migrations alone.
-
-**Fix**: Generate initial migration capturing current schema:
-```bash
-dotnet ef migrations add InitialCreate -p Taskdeck.Infrastructure -s Taskdeck.Api
-```
-
-Then add migration validation to CI (verify migrations apply cleanly to empty database).
+**RESOLVED** (`#864`): 21 EF Core migrations are in source control and the full chain applies cleanly to a fresh SQLite database. `MigrationBootstrapTests` (5 tests) guard against regression. Developer workflow documented in `docs/platform/EF_MIGRATION_WORKFLOW.md`.
 
 ### 2.3 API Error Code Registry
 
@@ -223,18 +188,11 @@ axiosRetry(http, {
 
 ### 4.1 SSRF Protection
 
-**Gap**: Webhook and LLM provider URLs not validated for private IP ranges.
-
-**Fix**: Add URL validator that blocks:
-- `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
-- `::1`, `fc00::/7`, `fe80::/10`
-- `localhost`, `metadata.google.internal`
+**RESOLVED** (SEC-26 `#850`/PR `#905`): new `SsrfProtectionService` in Application layer provides `ValidateUrl`, `ValidateUrlWithDnsAsync`, and `ValidateLlmProviderUrl`, wrapping `OutboundWebhookEndpointGuard`. All previously listed blocked ranges are enforced (private IPv4 `127/8`, `10/8`, `172.16/12`, `192.168/16`; IPv6 `::1`, `fc00::/7`, `fe80::/10`; IPv4-mapped IPv6; `localhost`). Defense-in-depth additions: cloud metadata hostname blocking (`metadata.goog`, `metadata.google.internal`, Alibaba Cloud `100.100.100.200`, AWS IMDSv2 IPv6 `fd00:ec2::254`). `LlmProviderSelectionPolicy` now calls `ValidateLlmProviderUrl` on `OpenAi`/`Gemini` `BaseUrl` at provider selection time (invalid URLs fall back to Mock). LLM `HttpClient`s use `OutboundWebhookConnectCallback` for DNS-level protection against rebinding, and `AllowAutoRedirect = false` prevents redirect-based bypass. `allowLocalhostEndpoints` is toggled only for Development with `Llm:AllowLiveProvidersInDevelopment = true` so local Ollama/LM Studio workflows still function. 83 `SsrfProtectionServiceTests` cover decimal/hex/octal IP bypass, DNS rebinding, and HTTPS enforcement.
 
 ### 4.2 Secret Hygiene
 
-**Gap**: Dev JWT secret hardcoded in `appsettings.Development.json`.
-
-**Fix**: Remove and use `dotnet user-secrets` exclusively. Document in CONTRIBUTING.md.
+**RESOLVED** (SEC-27 `#851`/PR `#911`): hardcoded `Jwt:SecretKey` removed from `appsettings.Development.json`. `FirstRunBootstrapper.EnsureJwtSecret` now runs unconditionally in all environments (Development and CI/headless included — round 2 review confirmed the headless guard caused CI auth failures) and writes a random 32-byte base64 secret to `appsettings.local.json` (atomically moved via sibling temp file under a named cross-process mutex, `#913`). `TestWebApplicationFactory` supplies its own in-memory JWT secret so API tests are environment-independent. Developers can alternatively use `dotnet user-secrets` or the `Jwt__SecretKey` environment variable (documented in `CONTRIBUTING.md`).
 
 ### 4.3 CSP Hardening
 
@@ -244,9 +202,7 @@ axiosRetry(http, {
 
 ### 4.4 Import File Validation
 
-**Gap**: Note import and external import endpoints accept files without magic byte validation.
-
-**Fix**: Validate file type by content (magic bytes), not just extension/content-type header.
+**RESOLVED** (SEC-30 `#860`/PR `#910`): new `FileContentValidator` in Application layer with `ValidateTextContent` (binary/null-byte/C1-control detection; all C1 controls `0x80-0x9F` blocked because in UTF-16 they are genuine control chars — real Windows-1252 smart quotes decode to `U+2018-U+201D`) and `ValidateJsonContent` (BOM-aware parse + SQLite magic-byte rejection via `SQLite format 3\0` header check). Character-based limits (renamed from `MaxMarkdownContentBytes` → `MaxMarkdownContentChars`) preserve CJK/emoji safety — the earlier byte-based cap rejected UTF-8 multi-byte content at ~1/3 of the intended character limit. Wired into `NoteImportController` (markdown + web clip), `ExternalImportsController` (CSV), and `ExportController` (board JSON, with `maxBytes: 0` to preserve round-trip portability since export has no size cap). 52 `FileContentValidatorTests`.
 
 ### 4.5 Audit Trail Retention
 
@@ -407,24 +363,24 @@ services.AddHttpClient("llm-provider")
 ## 10. Priority Implementation Order
 
 ### This Week (8 hours)
-1. Response compression (1h)
-2. Missing database indexes (1h)
-3. Fix WorkspaceService sync I/O (30m)
-4. SSRF protection for webhooks (2h)
-5. Remove dev JWT secret (15m)
-6. Board list pagination (2h)
-7. AuditLog SQL-level filtering (2h)
+1. Response compression (1h) — Open
+2. Missing database indexes (1h) — Open
+3. ~~Fix WorkspaceService sync I/O (30m)~~ RESOLVED (PERF-11 PR `#904`)
+4. ~~SSRF protection for webhooks (2h)~~ RESOLVED, extended to LLM provider URLs (SEC-26 PR `#905`)
+5. ~~Remove dev JWT secret (15m)~~ RESOLVED (SEC-27 PR `#911`)
+6. ~~Board list pagination (2h)~~ RESOLVED (PERF-12 PR `#909`)
+7. ~~AuditLog SQL-level filtering (2h)~~ RESOLVED (PERF-13 PR `#903`)
 
 ### This Month (40 hours)
-8. Config validation at startup (4h)
-9. Vue error boundary (2h)
-10. HTTP retry interceptor (3h)
-11. View decomposition — ReviewView (8h)
-12. View decomposition — InboxView (8h)
-13. Database migration infrastructure (4h)
-14. Docker hardening (HEALTHCHECK, USER, limits) (4h)
-15. CSP inline style migration (4h)
-16. Import file magic byte validation (3h)
+8. ~~Config validation at startup (4h)~~ RESOLVED (OPS-27 PR `#908`)
+9. Vue error boundary (2h) — Open
+10. HTTP retry interceptor (3h) — Open
+11. View decomposition — ReviewView (8h) — Open
+12. View decomposition — InboxView (8h) — Open
+13. ~~Database migration infrastructure (4h)~~ RESOLVED: bootstrap regression tests + workflow guide (OPS-28 PR `#907`)
+14. Docker hardening (HEALTHCHECK, USER, limits) (4h) — Open
+15. CSP inline style migration (4h) — Open
+16. ~~Import file magic byte validation (3h)~~ RESOLVED (SEC-30 PR `#910`)
 
 ### This Quarter (100 hours)
 17. View decomposition — remaining oversized views (24h)

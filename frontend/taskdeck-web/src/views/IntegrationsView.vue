@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useIntegrationStore } from '../store/integrationStore'
 import type {
   IntegrationConnector,
-  IntegrationConnectorDetail,
   ConnectorType,
   ConnectorDirection,
   CreateIntegrationConnectorRequest,
@@ -25,26 +24,15 @@ const newConfig = ref('')
 const registering = ref(false)
 
 const selectedId = ref<string | null>(null)
-const detail = ref<IntegrationConnectorDetail | null>(null)
 const detailLoading = ref(false)
 
 const connectors = computed(() => store.connectors)
 const loading = computed(() => store.loading)
 const error = computed(() => store.error)
 
-// Guard: clear stale selection when the selected connector is no longer in the list
-// (e.g., after delete from another tab or a background refresh)
-watch(
-  () => connectors.value,
-  () => {
-    if (
-      selectedId.value != null &&
-      !connectors.value.some((c) => c.id === selectedId.value)
-    ) {
-      selectedId.value = null
-      detail.value = null
-    }
-  },
+// Reactive detail: reads directly from store so enable/disable changes are reflected immediately
+const detail = computed(() =>
+  store.selectedConnector?.id === selectedId.value ? store.selectedConnector : null,
 )
 
 const connectorTypes: ConnectorType[] = [
@@ -118,16 +106,19 @@ async function handleRegister() {
 async function handleSelectConnector(connector: IntegrationConnector) {
   if (selectedId.value === connector.id) {
     selectedId.value = null
-    detail.value = null
     return
   }
-  selectedId.value = connector.id
+  const targetId = connector.id
+  selectedId.value = targetId
   detailLoading.value = true
   try {
-    await store.fetchConnectorDetail(connector.id)
-    detail.value = store.selectedConnector
+    await store.fetchConnectorDetail(targetId)
   } finally {
-    detailLoading.value = false
+    // Only clear loading if this request is still the active one;
+    // a newer request for a different connector owns the loading state.
+    if (selectedId.value === targetId) {
+      detailLoading.value = false
+    }
   }
 }
 
@@ -148,7 +139,6 @@ async function handleDelete(connector: IntegrationConnector) {
     await store.deleteConnector(connector.id)
     if (selectedId.value === connector.id) {
       selectedId.value = null
-      detail.value = null
     }
   } catch {
     // Error handled by store
@@ -340,7 +330,7 @@ onMounted(() => {
           <div v-if="detailLoading" class="td-int__detail-loading" role="status">
             Loading details...
           </div>
-          <template v-else-if="detail && detail.id === connector.id">
+          <template v-else-if="detail">
             <div class="td-int__detail-section">
               <h4 class="td-int__detail-heading">Configuration</h4>
               <pre v-if="detail.configuration" class="td-int__config-pre">{{ detail.configuration }}</pre>

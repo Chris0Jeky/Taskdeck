@@ -74,6 +74,27 @@ Source files used to build this reference:
   for keys that explicitly support it (`Cors:AllowedOrigins`,
   `ForwardedHeaders:KnownProxies`, `ForwardedHeaders:KnownNetworks`).
 
+## Startup validation
+
+Most settings classes documented below are registered via the
+`RegisterValidatedOptions<T>` helper in
+`backend/src/Taskdeck.Api/Extensions/OptionsValidationRegistration.cs`, which
+wires `ValidateDataAnnotations()` + `ValidateOnStart()` (OPS-27 `#858`/PR
+`#908`). Invalid values fail startup immediately rather than surfacing at
+first use. Four cross-property validators enforce multi-field invariants:
+
+- `WorkerSettingsValidator` — `RetryBackoffSeconds.Length >= MaxRetries`
+- `JwtSettingsValidator` — secret non-empty and at least 32 characters
+- `SentrySettingsValidator` — `Dsn` required when `Enabled = true`
+- `RateLimitingSettingsValidator` — nested policy `PermitLimit` and
+  `WindowSeconds` stay inside the documented ranges
+
+`JwtSettings.SecretKey` is intentionally not marked `[Required]` because
+`FirstRunBootstrapper.EnsureJwtSecret` generates it before validation runs.
+The `Llm:Provider` and `Cache:Provider` regex patterns use the `(?i)` flag
+so they accept the same casing variants (`OpenAi`/`OpenAI`/`openai`,
+`Redis`/`redis`) that the runtime selectors compare case-insensitively.
+
 ---
 
 ## JWT and authentication
@@ -91,16 +112,17 @@ authentication services (`AuthenticationRegistration.cs`). Because
 `PipelineConfiguration.ConfigureTaskdeckPipeline` always calls
 `app.UseAuthentication()`, this results in a startup failure (the pipeline
 cannot resolve the missing authentication services) rather than authenticated
-endpoints simply returning 401. In packaged non-development runs,
-`FirstRunBootstrapper.EnsureJwtSecret` generates a random 32-byte base64
-secret into `appsettings.local.json` when the key is missing or equal to the
-development placeholder, so this startup failure is normally only reached
-when operators explicitly set an invalid value (for example, deleting the
-Development placeholder without providing a replacement).
+endpoints simply returning 401. `FirstRunBootstrapper.EnsureJwtSecret` runs
+unconditionally in all environments (including Development and CI/headless)
+and generates a random 32-byte base64 secret into `appsettings.local.json`
+when the key is missing or equal to the well-known placeholder. This startup
+failure is therefore only reached when operators explicitly set an invalid
+value. Developers can alternatively supply the secret via `dotnet user-secrets`
+or the `Jwt__SecretKey` environment variable.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Jwt:SecretKey` | `string` | `""` in production; `TaskdeckDevelopmentOnlySecretKeyChangeMe123!` in Development via `appsettings.Development.json` | HMAC signing key. Must be at least 32 characters (`AuthenticationService.ValidateAsync` + `AuthenticationRegistration`). Never commit a real value. | Yes (see note above) |
+| `Jwt:SecretKey` | `string` | `""` (auto-generated to `appsettings.local.json` on first run by `FirstRunBootstrapper`) | HMAC signing key. Must be at least 32 characters (`AuthenticationService.ValidateAsync` + `AuthenticationRegistration`). Never commit a real value. Alternatively, use `dotnet user-secrets` or the `Jwt__SecretKey` environment variable. | Yes (see note above) |
 | `Jwt:Issuer` | `string` | `Taskdeck` | `iss` claim and validation value. | Yes |
 | `Jwt:Audience` | `string` | `TaskdeckUsers` | `aud` claim and validation value. | Yes |
 | `Jwt:ExpirationMinutes` | `int` | `1440` (24h) | Access-token lifetime in minutes. | No |

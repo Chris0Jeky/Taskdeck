@@ -19,6 +19,9 @@ export const useIntegrationStore = defineStore('integration', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  /** Tracks the connector ID for the in-flight detail fetch so late responses are discarded. */
+  let _pendingDetailId: string | null = null
+
   function guardDemoMutation(): never | void {
     if (isDemoMode) {
       toast.info('This action is view-only in demo mode.')
@@ -51,17 +54,25 @@ export const useIntegrationStore = defineStore('integration', () => {
       error.value = 'Integrations are not available in demo mode.'
       return
     }
+    _pendingDetailId = id
     try {
       loading.value = true
       error.value = null
-      selectedConnector.value = await integrationsApi.getConnector(id)
+      const result = await integrationsApi.getConnector(id)
+      // Discard stale response if the user selected a different connector while we were loading
+      if (_pendingDetailId !== id) return
+      selectedConnector.value = result
     } catch (e: unknown) {
+      // Only update state if this is still the active request
+      if (_pendingDetailId !== id) return
       const msg = getErrorDisplay(e, 'Failed to fetch connector details').message
       error.value = msg
       selectedConnector.value = null
       toast.error(msg)
     } finally {
-      loading.value = false
+      if (_pendingDetailId === id) {
+        loading.value = false
+      }
     }
   }
 
@@ -159,6 +170,7 @@ export const useIntegrationStore = defineStore('integration', () => {
     selectedConnector.value = null
     loading.value = false
     error.value = null
+    _pendingDetailId = null
   }
 
   return {

@@ -76,9 +76,8 @@ public class CrossUserIsolationStressTests : IClassFixture<TestWebApplicationFac
             var allBoardIds = userBoards.Values.Select(v => v.BoardId).ToHashSet();
             foreach (var (username, (boardId, client)) in userBoards)
             {
-                var listResp = await client.GetAsync("/api/boards");
-                var boards = await listResp.Content.ReadFromJsonAsync<List<BoardDto>>();
-                var visibleOtherBoards = boards!.Where(b =>
+                var boards = await ApiTestHarness.ListBoardsAsync(client);
+                var visibleOtherBoards = boards.Where(b =>
                     allBoardIds.Contains(b.Id) && b.Id != boardId).ToList();
                 visibleOtherBoards.Should().BeEmpty(
                     $"user {username} should not see other users' boards");

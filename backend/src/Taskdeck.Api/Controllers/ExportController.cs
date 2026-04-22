@@ -65,7 +65,23 @@ public class ExportController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _exportImportService.ImportBoardFromJsonAsync(json.GetRawText(), userId);
+        var rawJson = json.GetRawText();
+
+        // Skip byte-size check (maxBytes: 0) — ASP.NET Core's MaxRequestBodySize
+        // is the outer bound. A fixed cap here would prevent round-trip import of
+        // large boards that were exported without a size limit.
+        var jsonValidation = FileContentValidator.ValidateJsonContent(
+            rawJson,
+            "Board import JSON",
+            maxBytes: 0);
+        if (!jsonValidation.IsSuccess)
+        {
+            return BadRequest(new ApiErrorResponse(
+                jsonValidation.ErrorCode,
+                jsonValidation.ErrorMessage));
+        }
+
+        var result = await _exportImportService.ImportBoardFromJsonAsync(rawJson, userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 

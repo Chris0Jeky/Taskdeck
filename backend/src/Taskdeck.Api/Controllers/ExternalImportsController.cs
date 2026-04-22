@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -56,6 +57,18 @@ public class ExternalImportsController : AuthenticatedControllerBase
             return Result
                 .Failure(ErrorCodes.ValidationError, "Request body is required.")
                 .ToErrorActionResult();
+        }
+
+        // Validate import payload content before processing
+        var contentValidation = FileContentValidator.ValidateTextContent(
+            dto.Payload,
+            "Import payload",
+            FileContentValidator.MaxCsvPayloadBytes);
+        if (!contentValidation.IsSuccess)
+        {
+            return BadRequest(new ApiErrorResponse(
+                contentValidation.ErrorCode,
+                contentValidation.ErrorMessage));
         }
 
         var result = await _externalImportService.ImportToBoardAsync(boardId, dto, cancellationToken);

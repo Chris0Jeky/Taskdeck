@@ -1,6 +1,6 @@
 # LLM Provider Runtime and Demo Setup Guide
 
-Last Updated: 2026-03-26
+Last Updated: 2026-04-22
 Scope: Provider runtime setup for chat/capture automation and safe local demo operation.
 
 ## Purpose
@@ -28,8 +28,25 @@ Selection is deterministic through `LlmProviderSelectionPolicy`:
 - provider mode may be explicitly set to `Mock`, `OpenAI`, or `Gemini`; this guide's config example intentionally uses `Mock` as the safe default
 - unknown provider values also fall back deterministically to `Mock`
 - selected provider config must pass validation (`ApiKey`, `BaseUrl`, `Model`, `TimeoutSeconds`)
+- `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected; the selection policy falls back to Mock when validation fails
+- `HttpClient`s for OpenAI and Gemini use `OutboundWebhookConnectCallback` for DNS-level SSRF protection (defense against DNS rebinding where a hostname resolves to a private IP at connect time) and set `AllowAutoRedirect = false` to prevent redirect-based bypass
 
 If any live-provider condition fails, runtime degrades safely to `Mock`.
+
+### Development-mode localhost bypass (Ollama / LM Studio)
+
+To support local LLM workflows (Ollama, LM Studio, LocalAI, etc.), the SSRF
+validator allows `localhost`/`127.0.0.1` `BaseUrl` values **only** when
+both of the following are true:
+
+- the environment is `Development` (or a development-like host name)
+- `Llm:AllowLiveProvidersInDevelopment = true` is set explicitly
+
+Under this bypass, HTTPS is also not required for `localhost` endpoints.
+This exception is intentionally narrow: Staging/Production deployments can
+never reach `localhost` LLM endpoints even if the configuration is cloned.
+All other private IP ranges and cloud metadata hostnames stay blocked even
+in Development.
 
 ## Config Shape
 

@@ -95,8 +95,9 @@ public class IntegrationRegistryService : IIntegrationRegistryService
             if (dto.Name != null)
                 connector.UpdateName(dto.Name);
 
-            // Only update configuration when explicitly provided in the DTO.
-            // A null Configuration means "no change", preserving the existing value.
+            // Only update configuration when explicitly provided.
+            // Limitation: callers cannot explicitly clear config to null via this DTO
+            // (null is indistinguishable from "not sent"). Acceptable for v1.
             if (dto.Configuration != null)
                 connector.UpdateConfiguration(dto.Configuration);
 
