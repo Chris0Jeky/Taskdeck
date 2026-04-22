@@ -94,10 +94,10 @@ This document defines monitoring thresholds, alert priorities, escalation paths,
 | Field | Value |
 | --- | --- |
 | **Metric** | `taskdeck.automation.queue.backlog` |
-| **Condition** | Queue depth > 100 pending items |
+| **Condition** | Queue depth > 100 pending items. Note: the `HealthController` uses a dynamic threshold of `Math.Max(Workers:MaxBatchSize * 20, 100)` (default: 100). If `MaxBatchSize` is configured above 5, align this alert threshold with the health check formula to avoid the alert firing while `/health/ready` still reports the queue as healthy. |
 | **Evaluation window** | 10 minutes (sustained) |
 | **Priority** | **P2** |
-| **Runbook** | Check if the `LlmQueueToProposalWorker` is healthy (see Alert 3). Check LLM provider response times and error rates. If the provider is degraded, the queue will grow. Verify the worker batch size setting (`WorkerSettings:MaxBatchSize`). If backlog is growing faster than drain rate, consider scaling the worker or throttling inbound capture. |
+| **Runbook** | Check if the `LlmQueueToProposalWorker` is healthy (see Alert 3). Check LLM provider response times and error rates. If the provider is degraded, the queue will grow. Verify the worker batch size setting (`Workers:MaxBatchSize` in appsettings). If backlog is growing faster than drain rate, consider scaling the worker or throttling inbound capture. |
 | **Escalation** | If queue depth > 500 for 10 minutes, escalate to P1 — significant user-facing delay in proposal generation. |
 
 ### 7. Database Connectivity
@@ -188,14 +188,25 @@ sum(rate(http_server_request_duration_seconds_count[5m]))
 ```
 
 **Example PromQL for worker heartbeat staleness:**
+
+> **Note:** `taskdeck.worker.heartbeat.staleness` is emitted as an OpenTelemetry Histogram. In Prometheus, histograms export as `_bucket`, `_sum`, and `_count` series. The query below uses `_sum / _count` to approximate the latest staleness value. If your OTLP exporter is configured with delta temporality or gauge-like export, adapt accordingly.
+
 ```promql
-max(taskdeck_worker_heartbeat_staleness_seconds) by (taskdeck_worker_name)
+max(
+  taskdeck_worker_heartbeat_staleness_seconds_sum
+  / taskdeck_worker_heartbeat_staleness_seconds_count
+) by (taskdeck_worker_name)
 > 300
 ```
 
 **Example PromQL for queue backlog (sustained):**
+
+> **Note:** `taskdeck.automation.queue.backlog` is emitted as an OpenTelemetry Histogram. The query below uses `_sum / _count` to derive the average queue depth. Adapt if your exporter configuration differs.
+
 ```promql
-avg_over_time(taskdeck_automation_queue_backlog[10m]) > 100
+avg_over_time(
+  (taskdeck_automation_queue_backlog_sum / taskdeck_automation_queue_backlog_count)[10m:]
+) > 100
 ```
 
 ### AWS CloudWatch
@@ -337,10 +348,24 @@ For the full list of emitted metrics and trace attributes, see `docs/ops/OBSERVA
 
 ---
 
+## Threshold Reconciliation with Cloud Reference Architecture
+
+`docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md` defines its own alarm stub thresholds for the cloud (ECS/ALB) topology. Several values differ intentionally from this document:
+
+| Metric | This document | Cloud Reference Architecture | Rationale |
+| --- | --- | --- | --- |
+| API p95 latency | > 2s (P2), > 5s (P1) | > 300ms (SLO breach), > 500ms (critical) | Cloud doc targets a tighter SLO suitable for managed infrastructure with autoscaling. This document provides wider thresholds as starting points for all deployment topologies (including single-node Docker). Operators on cloud should adopt the cloud doc's tighter values. |
+| Worker heartbeat staleness | > 300s (P1) | > 120s | Cloud doc uses a tighter threshold because ECS can auto-restart failed tasks quickly. For single-node deployments, 300s avoids false positives from transient slowdowns. |
+| API 5xx rate | > 1% of requests (rate-based) | > 10/min for 3 min (count-based) | Different measurement approaches. Rate-based is more robust across traffic levels. Cloud doc's count-based approach works well with ALB metrics. Both are valid; choose based on available metrics. |
+
+When deploying to the cloud topology, use `CLOUD_REFERENCE_ARCHITECTURE.md` thresholds as overrides for the corresponding alerts in this document.
+
+---
+
 ## Known Gaps
 
 1. **OutboundWebhookDeliveryWorker not monitored**: This worker reports heartbeats to `WorkerHeartbeatRegistry` but the `HealthController` does not check its staleness or emit the `taskdeck.worker.heartbeat.staleness` metric for it. A stale webhook delivery worker would not trigger Alert 3 or affect the `/health/ready` response. Follow-up: extend `HealthController` to monitor all heartbeat-reporting workers.
-2. **Health endpoint staleness thresholds differ from alert thresholds**: The health controller uses `QueuePollIntervalSeconds * 3` (default ~30s) for the queue worker and 3 minutes for the housekeeping worker. Alert 3 uses a 5-minute threshold. This is intentional — the health endpoint catches issues faster via readiness probe failures (Alert 8), while Alert 3 provides a separate OTLP-based detection path. Operators should be aware that the readiness probe will fail before Alert 3 fires.
+2. **Health endpoint staleness thresholds differ from alert thresholds**: The health controller uses `Math.Max(QueuePollIntervalSeconds * 3, 30)` (default: 30s with `QueuePollIntervalSeconds=5`) for the queue worker and 3 minutes for the housekeeping worker. Alert 3 uses a 5-minute threshold. This is intentional — the health endpoint catches issues faster via readiness probe failures (Alert 8), while Alert 3 provides a separate OTLP-based detection path. Operators should be aware that the readiness probe will fail before Alert 3 fires.
 3. **No LLM provider error rate alert**: The current metric set does not include a dedicated LLM provider error rate metric. LLM failures surface indirectly through queue backlog growth (Alert 6) and worker processing outcomes (`taskdeck.worker.items.processed` with `outcome=error`). A dedicated LLM provider latency/error alert would improve mean time to diagnosis.
 
 ---
