@@ -182,7 +182,7 @@ if (totalFindings > 0) {
     for (const f of displayFindings) {
       const file = f.path || "unknown";
       const line = f.start?.line || "?";
-      const msg = (f.extra?.message || "").replace(/\n/g, " ").replace(/\|/g, "\\|").slice(0, 200);
+      const msg = (f.extra?.message || "").replace(/\\/g, "\\\\").replace(/\n/g, " ").replace(/\|/g, "\\|").slice(0, 200);
       lines.push(`| \`${file}\` | ${line} | ${msg} |`);
     }
 
