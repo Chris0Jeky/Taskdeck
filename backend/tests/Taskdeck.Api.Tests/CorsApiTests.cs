@@ -1,6 +1,7 @@
 using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Taskdeck.Api.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -93,6 +94,7 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
+            builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
             builder.UseSetting("Cors:DevelopmentAllowedOrigins:0", alternateOrigin);
         });
         using var client = factory.CreateClient();
@@ -151,6 +153,7 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
+            builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
         });
         using var client = factory.CreateClient();
 

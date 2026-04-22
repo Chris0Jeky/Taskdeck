@@ -19,6 +19,15 @@ public sealed record TestUserContext(
 
 public static class ApiTestHarness
 {
+    /// <summary>
+    /// A non-placeholder JWT secret for tests that run under
+    /// <c>UseEnvironment("Production")</c>.  The value must NOT appear in
+    /// <see cref="FirstRun.FirstRunBootstrapper"/> PlaceholderSecrets so
+    /// that <c>ValidateProductionSecrets</c> passes.
+    /// </summary>
+    public const string ProductionTestJwtSecret =
+        "VGVzdE9ubHlKd3RTZWNyZXRGb3JQcm9kdWN0aW9uTW9kZVRlc3Rz";
+
     public static async Task<TestUserContext> AuthenticateAsync(HttpClient client, string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
