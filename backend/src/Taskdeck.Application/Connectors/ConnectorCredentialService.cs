@@ -62,6 +62,22 @@ public sealed class ConnectorCredentialService : IConnectorCredentialService
         {
             return Result.Failure<ConnectorCredentialDto>(ex.ErrorCode, ex.Message);
         }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return Result.Failure<ConnectorCredentialDto>(
+                ErrorCodes.UnexpectedError,
+                "Failed to encrypt credential. The encryption key may be invalid.");
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            throw; // Propagate cancellation
+        }
+        catch (Exception)
+        {
+            return Result.Failure<ConnectorCredentialDto>(
+                ErrorCodes.UnexpectedError,
+                "An unexpected error occurred while storing the credential.");
+        }
     }
 
     public async Task<Result<ConnectorCredentialDto>> GetCredentialAsync(
