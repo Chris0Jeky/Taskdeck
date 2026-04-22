@@ -23,6 +23,7 @@
 #     ├── reusable-e2e-cross-browser.yml (label: testing)
 #     ├── reusable-demo-director-smoke.yml (label: automation)
 #     ├── reusable-load-concurrency-harness.yml (label: testing)
+#     ├── reusable-performance-regression-gate.yml (label: performance) — k6 thresholds + bundle size (#872)
 #     ├── reusable-container-integration.yml (label: testing) — Testcontainers PostgreSQL
 #     └── reusable-gitleaks.yml (non-blocking secrets detection, #871)
 #
