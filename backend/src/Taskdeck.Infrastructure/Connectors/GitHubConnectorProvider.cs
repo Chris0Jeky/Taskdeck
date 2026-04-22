@@ -1,5 +1,3 @@
-using System.Net.Http.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Domain.Connectors;
 using Taskdeck.Domain.Enums;
@@ -38,7 +36,7 @@ public sealed class GitHubConnectorProvider : IConnectorProvider
             cts.CancelAfter(HealthCheckTimeout);
 
             // Use the public GitHub API status endpoint — no auth required.
-            var response = await _httpClient.GetAsync(
+            using var response = await _httpClient.GetAsync(
                 "https://api.github.com/",
                 cts.Token);
 
@@ -103,13 +101,4 @@ public sealed class GitHubConnectorProvider : IConnectorProvider
 
         return Task.FromResult(capabilities);
     }
-}
-
-/// <summary>
-/// DTO for GitHub API status response (minimal).
-/// </summary>
-internal sealed class GitHubApiRootResponse
-{
-    [JsonPropertyName("current_user_url")]
-    public string? CurrentUserUrl { get; set; }
 }
