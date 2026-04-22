@@ -97,6 +97,14 @@ public static class LlmProviderSelectionPolicy
             return false;
         }
 
+        // SSRF protection: block private IP ranges, cloud metadata endpoints, and internal hostnames
+        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(openAi.BaseUrl);
+        if (!ssrfResult.IsAllowed)
+        {
+            error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";
+            return false;
+        }
+
         if (openAi.TimeoutSeconds <= 0)
         {
             error = "TimeoutSeconds must be greater than zero.";
@@ -133,6 +141,14 @@ public static class LlmProviderSelectionPolicy
             (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
         {
             error = "BaseUrl must be an absolute HTTP(S) URI.";
+            return false;
+        }
+
+        // SSRF protection: block private IP ranges, cloud metadata endpoints, and internal hostnames
+        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(gemini.BaseUrl);
+        if (!ssrfResult.IsAllowed)
+        {
+            error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";
             return false;
         }
 
