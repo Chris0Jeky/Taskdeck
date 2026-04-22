@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Taskdeck.Cli.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Taskdeck.Application\Taskdeck.Application.csproj" />
     <ProjectReference Include="..\Taskdeck.Infrastructure\Taskdeck.Infrastructure.csproj" />
   </ItemGroup>
