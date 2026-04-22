@@ -1,6 +1,8 @@
 # Data Model Reference
 
-This document describes all persistent entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. All entities (except the `CardLabel` join table) inherit from a common `Entity` base class.
+This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. All entities (except the `CardLabel` join table) inherit from a common `Entity` base class.
+
+> **FK vs. logical references:** Fields marked **FK** have an enforced foreign key constraint in the database (with cascade/restrict behavior). Fields marked **references** store a related entity's ID but have no database-level FK constraint -- referential integrity is maintained by application code only.
 
 **Related docs:** [API Quickstart](../api/QUICKSTART.md) | [Boards API](../api/BOARDS.md) | [Capture API](../api/CAPTURE.md) | [Chat API](../api/CHAT.md) | [Webhooks API](../api/WEBHOOKS.md) | [Authentication](../api/AUTHENTICATION.md) | [Integrations Registry](INTEGRATIONS_REGISTRY.md)
 
@@ -8,61 +10,65 @@ This document describes all persistent entities in the Taskdeck data model, thei
 
 ## Entity Relationship Diagram
 
+> **Diagram legend:** Solid lines represent enforced FK constraints in the database. Lines marked "(logical)" represent application-level associations with no database FK constraint.
+
 ```mermaid
 erDiagram
-    User ||--o{ Board : "owns"
-    User ||--o{ BoardAccess : "has access"
-    User ||--o{ ApiKey : "authenticates with"
-    User ||--o{ ExternalLogin : "linked to"
-    User ||--o| MfaCredential : "has"
-    User ||--o| UserPreference : "has"
-    User ||--o| NotificationPreference : "has"
-    User ||--o{ Notification : "receives"
-    User ||--o{ ChatSession : "creates"
-    User ||--o{ LlmRequest : "submits"
-    User ||--o{ LlmUsageRecord : "tracked for"
-    User ||--o{ AuditLog : "triggers"
-    User ||--o{ IntegrationConnector : "owns"
-    User ||--o{ KnowledgeDocument : "owns"
-    User ||--o| AbuseActor : "tracked as"
-    User ||--o{ AgentProfile : "owns"
+    User ||--o{ Board : "owns (FK)"
+    User ||--o{ BoardAccess : "has access (FK)"
+    User ||--o{ ApiKey : "authenticates with (FK)"
+    User ||--o{ ExternalLogin : "linked to (FK)"
+    User ||--o| MfaCredential : "has (FK)"
+    User ||--o| UserPreference : "has (FK)"
+    User ||--o| NotificationPreference : "has (FK)"
+    User ||--o{ Notification : "receives (FK)"
+    User ||--o{ CardComment : "authors (FK)"
+    User ||--o{ LlmRequest : "submits (FK)"
+    User ||--o{ AuditLog : "triggers (FK)"
+    User ||--o{ IntegrationConnector : "owns (FK)"
+    User ||--o{ OutboundWebhookSubscription : "manages (FK)"
+    User ||--o{ ChatSession : "creates (logical)"
+    User ||--o{ LlmUsageRecord : "tracked for (logical)"
+    User ||--o{ KnowledgeDocument : "owns (logical)"
+    User ||--o{ AgentProfile : "owns (logical)"
 
-    Board ||--o{ Column : "contains"
-    Board ||--o{ Card : "contains"
-    Board ||--o{ Label : "has"
-    Board ||--o{ BoardAccess : "grants"
-    Board ||--o{ AutomationProposal : "targeted by"
-    Board ||--o{ ArchiveItem : "stores"
-    Board ||--o{ OutboundWebhookSubscription : "has"
-    Board ||--o{ KnowledgeDocument : "scoped to"
+    Board ||--o{ Column : "contains (FK)"
+    Board ||--o{ Card : "contains (FK)"
+    Board ||--o{ Label : "has (FK)"
+    Board ||--o{ BoardAccess : "grants (FK)"
+    Board ||--o{ OutboundWebhookSubscription : "has (FK)"
+    Board ||--o{ AutomationProposal : "targeted by (logical)"
+    Board ||--o{ ArchiveItem : "stores (logical)"
+    Board ||--o{ KnowledgeDocument : "scoped to (logical)"
+    Board ||--o{ LlmRequest : "scoped to (FK)"
 
-    Column ||--o{ Card : "holds"
+    Column ||--o{ Card : "holds (FK)"
 
-    Card ||--o{ CardLabel : "tagged with"
-    Card ||--o{ CardComment : "has"
+    Card ||--o{ CardLabel : "tagged with (FK)"
+    Card ||--o{ CardComment : "has (FK)"
 
-    Label ||--o{ CardLabel : "applied via"
+    Label ||--o{ CardLabel : "applied via (FK)"
 
-    CardComment ||--o{ CardCommentMention : "mentions"
-    CardComment ||--o{ CardComment : "replies"
+    CardComment ||--o{ CardCommentMention : "mentions (FK)"
+    CardComment ||--o{ CardComment : "replies (FK)"
 
-    ChatSession ||--o{ ChatMessage : "contains"
+    ChatSession ||--o{ ChatMessage : "contains (FK)"
 
-    AutomationProposal ||--o{ AutomationProposalOperation : "defines"
+    AutomationProposal ||--o{ AutomationProposalOperation : "defines (FK)"
 
-    IntegrationConnector ||--o{ ConnectorEvent : "logs"
+    IntegrationConnector ||--o{ ConnectorEvent : "logs (FK)"
 
-    KnowledgeDocument ||--o{ KnowledgeChunk : "split into"
+    KnowledgeDocument ||--o{ KnowledgeChunk : "split into (FK)"
 
-    CommandRun ||--o{ CommandRunLog : "logs"
+    CommandRun ||--o{ CommandRunLog : "logs (FK)"
 
-    AgentProfile ||--o{ AgentRun : "executes"
-    AgentRun ||--o{ AgentRunEvent : "emits"
+    AgentProfile ||--o{ AgentRun : "executes (FK)"
+    AgentRun ||--o{ AgentRunEvent : "emits (FK)"
 
-    OutboundWebhookSubscription ||--o{ OutboundWebhookDelivery : "delivers"
-
-    AbuseActor ||--o{ AbuseEvent : "records"
+    OutboundWebhookSubscription ||--o{ OutboundWebhookDelivery : "delivers (FK)"
 ```
+
+> **Domain-only entities:** `AbuseActor` and `AbuseEvent` exist in `Taskdeck.Domain.Entities` but are not yet mapped to the database (no `DbSet` or EF configuration). They are documented in the [Audit and Abuse](#audit-and-abuse) section for completeness but are not shown in the ERD above.
 
 ---
 
@@ -105,7 +111,7 @@ A kanban-style task board.
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
 | Name | `string` | Yes | 1-100 chars | Board display name |
-| Description | `string?` | No | Max 1000 chars | Optional description |
+| Description | `string?` | No | Max 500 chars (DB); domain allows 1000 | Optional description |
 | IsArchived | `bool` | Yes | | Soft-archive flag |
 | OwnerId | `Guid?` | No | FK to User | Board owner |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -240,8 +246,8 @@ A review-first automation proposal containing one or more operations.
 | Id | `Guid` | Yes | PK | |
 | SourceType | `ProposalSourceType` | Yes | Enum: Queue, Chat, Manual | Origin of proposal |
 | SourceReferenceId | `string?` | No | | External reference |
-| BoardId | `Guid?` | No | FK to Board | Target board |
-| RequestedByUserId | `Guid` | Yes | Non-empty | Initiating user |
+| BoardId | `Guid?` | No | References Board (no FK) | Target board |
+| RequestedByUserId | `Guid` | Yes | References User (no FK) | Initiating user |
 | Status | `ProposalStatus` | Yes | Enum: PendingReview, Approved, Rejected, Applied, Failed, Expired, Dismissed | Lifecycle state |
 | RiskLevel | `RiskLevel` | Yes | Enum: Low, Medium, High, Critical | Risk classification |
 | Summary | `string` | Yes | 1-500 chars | Human-readable description |
@@ -483,7 +489,7 @@ Per-request token usage tracking for quota and cost visibility.
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
-| UserId | `Guid` | Yes | FK to User | Requesting user |
+| UserId | `Guid` | Yes | References User (no FK) | Requesting user |
 | Surface | `LlmSurface` | Yes | Enum: Chat, CaptureTriage, Worker | Product surface |
 | Provider | `string` | Yes | Non-empty | LLM provider name |
 | Model | `string` | Yes | | Model identifier |
@@ -622,8 +628,8 @@ A user-owned knowledge document, optionally scoped to a board.
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
-| UserId | `Guid` | Yes | FK to User | Owner |
-| BoardId | `Guid?` | No | FK to Board | Optional board scope |
+| UserId | `Guid` | Yes | References User (no FK) | Owner |
+| BoardId | `Guid?` | No | References Board (no FK) | Optional board scope |
 | Title | `string` | Yes | 1-200 chars | Document title |
 | Content | `string` | Yes | 1-50000 chars | Document body |
 | SourceType | `KnowledgeSourceType` | Yes | Enum: Manual, Import, Clip, MeetingNote, ProjectBrief | Origin |
@@ -660,7 +666,7 @@ A configured agent template owned by a user.
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
-| UserId | `Guid` | Yes | FK to User | Owner |
+| UserId | `Guid` | Yes | References User (no FK) | Owner |
 | Name | `string` | Yes | 1-200 chars | Agent name |
 | Description | `string` | Yes | Max 2000 chars | Defaults to empty |
 | TemplateKey | `string` | Yes | 1-100 chars | Template identifier |
@@ -763,14 +769,16 @@ Tracks changes to entities for accountability.
 
 **Navigation:** User (optional)
 
-### AbuseActor
+### AbuseActor (domain-only -- not yet persisted)
+
+> **Note:** This entity exists in `Taskdeck.Domain.Entities` but has no `DbSet`, no EF configuration, and no database table. The fields below reflect the domain class definition.
 
 Tracks the abuse state for a managed-key user. One record per user.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
-| UserId | `Guid` | Yes | FK to User, unique | Tracked user |
+| UserId | `Guid` | Yes | Unique per user | Tracked user |
 | CurrentState | `AbuseState` | Yes | Enum: Observe, Suspicious, Restricted, Blocked | Current state |
 | ActiveContainment | `AbuseContainmentAction` | Yes | Enum: None, StricterThrottles, TemporaryLock, ProviderCallsDisabled, MandatoryManualReview | Active containment |
 | SignalCount | `int` | Yes | | Signals in current window |
@@ -782,7 +790,9 @@ Tracks the abuse state for a managed-key user. One record per user.
 
 **Computed:** `IsBlocked` = state >= Restricted; `RequiresStricterThrottles` = state >= Suspicious.
 
-### AbuseEvent
+### AbuseEvent (domain-only -- not yet persisted)
+
+> **Note:** This entity exists in `Taskdeck.Domain.Entities` but has no `DbSet`, no EF configuration, and no database table. The fields below reflect the domain class definition.
 
 Immutable audit record for abuse detection events and state transitions.
 
@@ -803,45 +813,49 @@ Immutable audit record for abuse detection events and state transitions.
 
 ## Relationship Summary
 
-| Relationship | Type | Description |
-|---|---|---|
-| User -> Board | One-to-many | A user can own many boards (via `OwnerId`) |
-| User -> BoardAccess | One-to-many | A user can have access to many boards |
-| Board -> BoardAccess | One-to-many | A board can grant access to many users |
-| Board -> Column | One-to-many | A board contains many columns |
-| Board -> Card | One-to-many | A board contains many cards |
-| Board -> Label | One-to-many | A board defines many labels |
-| Column -> Card | One-to-many | A column holds many cards |
-| Card <-> Label | Many-to-many | Via `CardLabel` join table |
-| Card -> CardComment | One-to-many | A card has many comments |
-| CardComment -> CardComment | Self-referencing | Threaded replies via `ParentCommentId` |
-| CardComment -> CardCommentMention | One-to-many | A comment can mention many users |
-| User -> ChatSession | One-to-many | A user owns many chat sessions |
-| ChatSession -> ChatMessage | One-to-many | A session contains many messages |
-| Board -> AutomationProposal | One-to-many | Proposals target boards |
-| AutomationProposal -> AutomationProposalOperation | One-to-many | A proposal has many operations |
-| User -> ApiKey | One-to-many | A user can have many API keys |
-| User -> ExternalLogin | One-to-many | A user can link many OAuth providers |
-| User -> MfaCredential | One-to-zero-or-one | A user has at most one TOTP credential |
-| User -> UserPreference | One-to-zero-or-one | One preference record per user |
-| User -> NotificationPreference | One-to-zero-or-one | One preference record per user |
-| User -> Notification | One-to-many | A user receives many notifications |
-| User -> IntegrationConnector | One-to-many | A user owns many connectors |
-| IntegrationConnector -> ConnectorEvent | One-to-many | A connector logs many events |
-| User -> LlmRequest | One-to-many | A user submits many LLM requests |
-| User -> LlmUsageRecord | One-to-many | Token usage tracked per user |
-| User -> KnowledgeDocument | One-to-many | A user owns many documents |
-| KnowledgeDocument -> KnowledgeChunk | One-to-many | A document is split into chunks |
-| Board -> OutboundWebhookSubscription | One-to-many | A board has many webhook subscriptions |
-| OutboundWebhookSubscription -> OutboundWebhookDelivery | One-to-many | A subscription has many deliveries |
-| User -> AgentProfile | One-to-many | A user owns many agent profiles |
-| AgentProfile -> AgentRun | One-to-many | A profile executes many runs |
-| AgentRun -> AgentRunEvent | One-to-many | A run emits many events |
-| User -> AbuseActor | One-to-zero-or-one | One abuse tracking record per user |
-| AbuseActor -> AbuseEvent | One-to-many (implicit via ActorUserId) | Abuse events log state transitions |
-| Board -> ArchiveItem | One-to-many | Archived snapshots scoped to a board |
-| CommandRun -> CommandRunLog | One-to-many | Execution logs per command run |
-| Board -> KnowledgeDocument | One-to-many (optional) | Documents optionally scoped to a board |
+> **FK** = enforced foreign key constraint in the database. **Logical** = application-level association, no FK constraint.
+
+| Relationship | Type | FK/Logical | Description |
+|---|---|---|---|
+| User -> Board | One-to-many | FK (SetNull) | A user can own many boards (via `OwnerId`) |
+| User -> BoardAccess | One-to-many | FK (Cascade) | A user can have access to many boards |
+| User -> ApiKey | One-to-many | FK (Cascade) | A user can have many API keys |
+| User -> ExternalLogin | One-to-many | FK (Cascade) | A user can link many OAuth providers |
+| User -> MfaCredential | One-to-zero-or-one | FK (Cascade) | A user has at most one TOTP credential |
+| User -> UserPreference | One-to-zero-or-one | FK (Cascade) | One preference record per user |
+| User -> NotificationPreference | One-to-zero-or-one | FK (Cascade) | One preference record per user |
+| User -> Notification | One-to-many | FK (Cascade) | A user receives many notifications |
+| User -> CardComment | One-to-many | FK (Restrict) | A user authors many comments |
+| User -> LlmRequest | One-to-many | FK (Cascade) | A user submits many LLM requests |
+| User -> AuditLog | One-to-many | FK (SetNull) | A user triggers many audit log entries |
+| User -> IntegrationConnector | One-to-many | FK (Cascade) | A user owns many connectors |
+| User -> OutboundWebhookSubscription | One-to-many | FK (Restrict) | A user manages many webhook subscriptions |
+| User -> ChatSession | One-to-many | Logical | A user owns many chat sessions |
+| User -> LlmUsageRecord | One-to-many | Logical | Token usage tracked per user |
+| User -> KnowledgeDocument | One-to-many | Logical | A user owns many documents |
+| User -> AgentProfile | One-to-many | Logical | A user owns many agent profiles |
+| Board -> BoardAccess | One-to-many | FK (Cascade) | A board can grant access to many users |
+| Board -> Column | One-to-many | FK (Cascade) | A board contains many columns |
+| Board -> Card | One-to-many | FK (Cascade) | A board contains many cards |
+| Board -> Label | One-to-many | FK (Cascade) | A board defines many labels |
+| Board -> OutboundWebhookSubscription | One-to-many | FK (Cascade) | A board has many webhook subscriptions |
+| Board -> LlmRequest | One-to-many | FK (SetNull) | LLM requests optionally scoped to a board |
+| Board -> AutomationProposal | One-to-many | Logical | Proposals target boards |
+| Board -> ArchiveItem | One-to-many | Logical | Archived snapshots scoped to a board |
+| Board -> KnowledgeDocument | One-to-many (optional) | Logical | Documents optionally scoped to a board |
+| Column -> Card | One-to-many | FK (Cascade) | A column holds many cards |
+| Card <-> Label | Many-to-many | FK (Cascade) | Via `CardLabel` join table |
+| Card -> CardComment | One-to-many | FK (Cascade) | A card has many comments |
+| CardComment -> CardComment | Self-referencing | FK (Restrict) | Threaded replies via `ParentCommentId` |
+| CardComment -> CardCommentMention | One-to-many | FK (Cascade) | A comment can mention many users |
+| ChatSession -> ChatMessage | One-to-many | FK (Cascade) | A session contains many messages |
+| AutomationProposal -> AutomationProposalOperation | One-to-many | FK (Cascade) | A proposal has many operations |
+| IntegrationConnector -> ConnectorEvent | One-to-many | FK (Cascade) | A connector logs many events |
+| KnowledgeDocument -> KnowledgeChunk | One-to-many | FK (Cascade) | A document is split into chunks |
+| OutboundWebhookSubscription -> OutboundWebhookDelivery | One-to-many | FK (Cascade) | A subscription has many deliveries |
+| AgentProfile -> AgentRun | One-to-many | FK (Cascade) | A profile executes many runs |
+| AgentRun -> AgentRunEvent | One-to-many | FK (Cascade) | A run emits many events |
+| CommandRun -> CommandRunLog | One-to-many | FK (Cascade) | Execution logs per command run |
 
 ---
 
@@ -851,5 +865,7 @@ Immutable audit record for abuse detection events and state transitions.
 - **Concurrency:** `UpdatedAt` used as optimistic concurrency token on key entities.
 - **Soft deletes:** Cards use `ArchiveItem` snapshots; comments use `IsDeleted` flags. Boards use `IsArchived`.
 - **JSON columns:** Several entities store structured data as JSON strings (`Parameters`, `SnapshotJson`, `PolicyJson`, `Configuration`, `Payload`, `ToolCallMetadataJson`).
-- **Enum storage:** Enums are stored as integers by default.
+- **Enum storage:** Enums are stored as integers by default. Exceptions: `UserPreference.WorkspaceMode` and `UserPreference.OnboardingVisibility` are stored as strings.
 - **Key format:** All primary keys are `Guid` (UUID v4). API keys use `tdsk_` prefix with SHA-256 hash at rest.
+- **Foreign keys:** Not all `UserId`/`BoardId` columns have database FK constraints. Some entities (e.g., `ChatSession`, `LlmUsageRecord`, `AgentProfile`, `KnowledgeDocument`, `AutomationProposal`, `ArchiveItem`, `CommandRun`) use logical references only -- referential integrity is maintained by application code. See the [Relationship Summary](#relationship-summary) for the complete FK vs. logical breakdown.
+- **Domain-only entities:** `AbuseActor` and `AbuseEvent` exist as domain classes but have no EF Core mapping, no `DbSet`, and no database table. They are included in this reference for completeness.
