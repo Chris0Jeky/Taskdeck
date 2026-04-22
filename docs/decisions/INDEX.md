@@ -32,3 +32,5 @@
 | [0028](ADR-0028-staged-deployment-bluegreen-canary.md) | Staged Deployment - Blue/Green with Canary Verification | Accepted | 2026-04-09 |
 | [0029](ADR-0029-oidc-mfa-pluggable-identity.md) | OIDC/SSO Integration with Optional TOTP MFA | Accepted | 2026-04-09 |
 | [0030](ADR-0030-storybook-baseline-vite-8-compatibility.md) | Storybook Baseline with Vite 8 Compatibility | Accepted | 2026-04-09 |
+| [0031](ADR-0031-sast-scanning-semgrep.md) | SAST Scanning with Semgrep (Advisory Mode) | Accepted | 2026-04-22 |
+| [0032](ADR-0032-circuit-breaker-polly.md) | Circuit Breaker for External API Calls (Polly) | Accepted | 2026-04-22 |
