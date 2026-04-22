@@ -127,6 +127,17 @@ public class MigrationBootstrapTests : IDisposable
         // Assert — no duplicate migration IDs
         allMigrations.Should().OnlyHaveUniqueItems(
             "each migration must have a unique timestamp-based identifier");
+
+        // Assert — no duplicate timestamp prefixes (first 14 digits: YYYYMMDDHHmmss).
+        // Two migrations with the same timestamp but different names would pass the
+        // uniqueness check above but indicate a scaffolding collision.
+        var timestamps = allMigrations
+            .Select(m => m.Split('_')[0])
+            .ToList();
+
+        timestamps.Should().OnlyHaveUniqueItems(
+            "each migration must have a unique timestamp prefix; " +
+            "collisions indicate migrations were scaffolded in the same second");
     }
 
     private List<string> GetUserTables()

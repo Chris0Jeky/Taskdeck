@@ -167,7 +167,7 @@ Direction guardrails (explicit):
 ### Backend
 
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
-- Persistence: EF Core 8.0.14 + SQLite (aligned to net8.0 TFM as of `#760`/`#767`)
+- Persistence: EF Core 8.0.26 + SQLite (aligned to net8.0 TFM as of `#760`/`#767`)
 - Core controllers: boards, columns, cards, labels
 - Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs, search, metrics, data-portability, note-import, telemetry, api-keys, forecast, mfa, oidc, integrations
 - Worker runtime:

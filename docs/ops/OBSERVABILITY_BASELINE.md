@@ -61,12 +61,16 @@ Recommended panels:
 
 ## Alert Threshold Baseline
 
-Suggested initial alerts:
-1. API error rate > 5% for 5m.
-2. API p95 request latency > 1500ms for 10m.
-3. Queue backlog > 100 for 10m.
-4. Queue worker heartbeat staleness > 30s for 3 consecutive samples.
-5. Proposal housekeeping heartbeat staleness > 180s for 3 consecutive samples.
+> **Comprehensive alerting rules**: See `docs/ops/ALERTING_RULES.md` for full alert definitions
+> with priorities, escalation paths, runbook references, and Grafana/CloudWatch/PagerDuty
+> integration guidance.
+
+Suggested initial alerts (summary — see `ALERTING_RULES.md` for authoritative thresholds):
+1. API 5xx error rate > 1% for 5m (P1).
+2. API p95 request latency > 2s for 10m (P2).
+3. Queue backlog > 100 for 10m (P2).
+4. Worker heartbeat staleness > 300s for 3 consecutive samples (P1).
+5. Disk usage > 80% (P2). Memory usage > 85% (P2).
 
 ## Non-Prod Smoke Verification Path
 

@@ -1,4 +1,4 @@
-# ADR-0023: Cloud Target Topology and Autoscaling Reference Architecture
+# ADR-0027: Cloud Target Topology and Autoscaling Reference Architecture
 
 - **Status**: Proposed
 - **Date**: 2026-04-09

@@ -77,4 +77,15 @@ export const authApi = {
   async disableMfa(request: MfaVerifyRequest): Promise<void> {
     await http.post('/auth/mfa/disable', request)
   },
+
+  async refreshToken(): Promise<AuthResponse> {
+    // skipAuth401: prevent the 401 interceptor from redirecting to /login
+    // before the caller's catch block can handle the error gracefully.
+    // skipRetry: refresh is not idempotent and should fail fast.
+    const { data } = await http.post<AuthResponse>('/auth/refresh', null, {
+      skipAuth401: true,
+      skipRetry: true,
+    } as Record<string, unknown>)
+    return data
+  },
 }
