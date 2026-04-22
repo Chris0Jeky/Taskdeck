@@ -40,6 +40,7 @@ Source files used to build this reference:
   - [`ForwardedHeaders`](#forwardedheaders)
   - [`AllowedHosts`](#allowedhosts)
 - [Rate limiting](#rate-limiting)
+- [Circuit breaker](#circuit-breaker)
 - [Cache](#cache)
 - [SignalR](#signalr)
 - [Security headers](#security-headers)
@@ -309,6 +310,22 @@ defaults** come from `RateLimitingSettings` constructors; the
 | `RateLimiting:NoteImportPerUser:WindowSeconds` | `int` | `60` | same | Window length in seconds. | No |
 | `RateLimiting:McpPerApiKey:PermitLimit` | `int` | `60` (class default) | same | Per-API-key permits for the MCP HTTP transport. | No |
 | `RateLimiting:McpPerApiKey:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
+
+## Circuit breaker
+
+Bound to `CircuitBreakerSettings`. Consumed by
+`Taskdeck.Api.Extensions.LlmProviderRegistration.AddLlmProviders` and
+`Taskdeck.Api.Extensions.AuthenticationRegistration.AddTaskdeckAuthentication`.
+Polly circuit breaker policies are applied to LLM provider HTTP clients
+(OpenAI, Gemini) and OAuth/OIDC backchannel handlers.
+
+| Key | Type | Default | Env override | Description | Restart required? |
+|-----|------|---------|--------------|-------------|-------------------|
+| `CircuitBreaker:FailureThreshold` | `int` | `5` | `CircuitBreaker__FailureThreshold` | Consecutive transient failures before the circuit opens. | Yes |
+| `CircuitBreaker:BreakDurationSeconds` | `int` | `60` | `CircuitBreaker__BreakDurationSeconds` | Seconds the circuit stays open before half-open probe. | Yes |
+
+Circuit state is reported on `/health/ready` under `checks.circuitBreakers`.
+An open circuit degrades overall readiness to 503. See ADR-0031.
 
 ## Cache
 
