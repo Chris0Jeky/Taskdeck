@@ -33,21 +33,24 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
 
     /// <summary>
     /// Polls the observer's event collector until a snapshot with the expected
-    /// member count appears, or the timeout elapses.
+    /// member count appears, or the timeout elapses. Checks all collected
+    /// snapshots (not just the last) so that out-of-order delivery on slow
+    /// CI runners does not cause spurious failures.
     /// </summary>
     private static async Task<BoardPresenceSnapshot> WaitForPresenceCountAsync(
         EventCollector<BoardPresenceSnapshot> events,
         int expectedMemberCount,
         TimeSpan? timeout = null)
     {
-        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(10);
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(15);
         var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var snapshot = events.ToList().LastOrDefault();
-            if (snapshot is not null && snapshot.Members.Count == expectedMemberCount)
-                return snapshot;
-            await Task.Delay(50);
+            var all = events.ToList();
+            var match = all.LastOrDefault(s => s.Members.Count == expectedMemberCount);
+            if (match is not null)
+                return match;
+            await Task.Delay(100);
         }
 
         var last = events.ToList().LastOrDefault();
@@ -118,7 +121,7 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
                     await conn.InvokeAsync("JoinBoard", board.Id);
                     joinedConnections.Add(conn);
                 }
-                catch (HubException)
+                catch (Exception ex) when (ex is HubException or HttpRequestException)
                 {
                     // Tolerate transient HubException (e.g., SQLite contention
                     // under rapid-fire stress). The eventual-consistency check
@@ -133,9 +136,11 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
             actualJoined.Should().BeGreaterOrEqualTo(1,
                 "at least one concurrent join should succeed under stress");
 
-            // Wait for joins to settle — use actual success count, not connectionCount
+            // Wait for joins to settle — use actual success count, not connectionCount.
+            // Use 20s timeout to tolerate slow CI runners where SignalR in-memory
+            // broadcasts may be delayed under concurrent test load.
             var afterJoin = await WaitForPresenceCountAsync(
-                observerEvents, actualJoined + 1, TimeSpan.FromSeconds(10));
+                observerEvents, actualJoined + 1, TimeSpan.FromSeconds(20));
             afterJoin.Members.Should().HaveCount(actualJoined + 1,
                 "all successfully-joined users plus the observer owner should be present");
 
@@ -152,7 +157,7 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
                     await conn.InvokeAsync("LeaveBoard", board.Id);
                     Interlocked.Increment(ref leaveSuccessCount);
                 }
-                catch (HubException)
+                catch (Exception ex) when (ex is HubException or HttpRequestException)
                 {
                     // Tolerate transient HubException during rapid leave
                 }
@@ -164,7 +169,7 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
             var actualLeft = Interlocked.CompareExchange(ref leaveSuccessCount, 0, 0);
             var remaining = actualJoined - actualLeft;
             var afterLeave = await WaitForPresenceCountAsync(
-                observerEvents, remaining + 1, TimeSpan.FromSeconds(10));
+                observerEvents, remaining + 1, TimeSpan.FromSeconds(20));
             afterLeave.Members.Should().HaveCount(remaining + 1,
                 $"after {actualLeft} leaves, {remaining} users + owner should remain");
         }

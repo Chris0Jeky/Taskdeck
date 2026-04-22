@@ -2,17 +2,20 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace Taskdeck.Infrastructure.Migrations
+namespace Taskdeck.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260415231129_AddIntegrationConnectorsAndEvents")]
+    partial class AddIntegrationConnectorsAndEvents
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.25");
@@ -336,13 +339,7 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.HasIndex("EntityId", "Timestamp")
-                        .HasDatabaseName("IX_AuditLogs_EntityId_Timestamp");
-
                     b.HasIndex("EntityType", "EntityId");
-
-                    b.HasIndex("UserId", "Timestamp")
-                        .HasDatabaseName("IX_AuditLogs_UserId_Timestamp");
 
                     b.ToTable("AuditLogs", (string)null);
                 });
@@ -597,10 +594,9 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ColumnId");
+                    b.HasIndex("BoardId");
 
-                    b.HasIndex("BoardId", "ColumnId")
-                        .HasDatabaseName("IX_Cards_BoardId_ColumnId");
+                    b.HasIndex("ColumnId");
 
                     b.ToTable("Cards", (string)null);
                 });
@@ -1885,6 +1881,15 @@ namespace Taskdeck.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.IntegrationConnector", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ExternalLogin", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.User", null)
                         .WithMany()
