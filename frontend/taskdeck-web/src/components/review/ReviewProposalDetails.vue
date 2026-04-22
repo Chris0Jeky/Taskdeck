@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Proposal, ProposalAffectedEntity } from '../../types/automation'
 
 const props = defineProps<{
@@ -42,7 +42,7 @@ function closeLinkDropdown(event: FocusEvent) {
   linkDropdownOpen.value = false
 }
 
-const fullCorrelationId = props.proposal.correlationId.trim()
+const fullCorrelationId = computed(() => props.proposal.correlationId?.trim() ?? '')
 </script>
 
 <template>

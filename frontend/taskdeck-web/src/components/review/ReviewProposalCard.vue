@@ -69,8 +69,8 @@ function captureSourceReference(proposal: Proposal): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
-function shortCorrelationId(correlationId: string): string {
-  const trimmed = correlationId.trim()
+function shortCorrelationId(correlationId: string | null | undefined): string {
+  const trimmed = (correlationId || '').trim()
   return trimmed.length > 8 ? trimmed.slice(0, 8) + '...' : trimmed
 }
 

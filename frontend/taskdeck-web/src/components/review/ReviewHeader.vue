@@ -24,8 +24,8 @@ const emit = defineEmits<{
   (e: 'navigate', path: string): void
 }>()
 
-function onBoardFilterInput(value: string | number | boolean) {
-  emit('update:boardFilterInput', String(value))
+function onBoardFilterInput(value: string) {
+  emit('update:boardFilterInput', value)
 }
 </script>
 
