@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+using Taskdeck.Api.Workers;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 
@@ -42,12 +44,40 @@ public static class LlmProviderRegistration
             var settings = sp.GetRequiredService<LlmProviderSettings>();
             var timeoutSeconds = settings.OpenAi?.TimeoutSeconds > 0 ? settings.OpenAi.TimeoutSeconds : 30;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        })
+        .ConfigurePrimaryHttpMessageHandler(_ =>
+        {
+            // SSRF protection: DNS-level check prevents connections to private/internal IPs
+            // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
+            return new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectCallback = (context, cancellationToken) =>
+                    OutboundWebhookConnectCallback.ConnectAsync(
+                        context,
+                        allowLocalhostEndpoints: false,
+                        cancellationToken)
+            };
         });
         services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
             var timeoutSeconds = settings.Gemini?.TimeoutSeconds > 0 ? settings.Gemini.TimeoutSeconds : 30;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        })
+        .ConfigurePrimaryHttpMessageHandler(_ =>
+        {
+            // SSRF protection: DNS-level check prevents connections to private/internal IPs
+            // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
+            return new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectCallback = (context, cancellationToken) =>
+                    OutboundWebhookConnectCallback.ConnectAsync(
+                        context,
+                        allowLocalhostEndpoints: false,
+                        cancellationToken)
+            };
         });
 
         services.AddScoped<MockLlmProvider>();
