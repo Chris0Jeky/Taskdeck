@@ -1,0 +1,159 @@
+rules:
+  # ---------------------------------------------------------------------------
+  # TD-CS-001: Controller missing [Authorize] attribute
+  # Every controller (except HealthController and AuthController) should have
+  # [Authorize] on the class or inherit from AuthenticatedControllerBase.
+  # This rule catches controllers inheriting directly from ControllerBase
+  # without [Authorize].
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.csharp.missing-authorize-on-controller
+    patterns:
+      - pattern: |
+          [ApiController]
+          ...
+          public class $CONTROLLER : ControllerBase
+          {
+            ...
+          }
+      - pattern-not: |
+          [ApiController]
+          ...
+          [Authorize]
+          ...
+          public class $CONTROLLER : ControllerBase
+          {
+            ...
+          }
+      - pattern-not: |
+          [ApiController]
+          ...
+          [AllowAnonymous]
+          ...
+          public class $CONTROLLER : ControllerBase
+          {
+            ...
+          }
+      - metavariable-regex:
+          metavariable: $CONTROLLER
+          regex: ^(?!(Health|Auth)Controller$).*Controller$
+    message: >
+      Controller $CONTROLLER inherits from ControllerBase without [Authorize]
+      or [AllowAnonymous]. Most Taskdeck controllers should require
+      authentication. Use AuthenticatedControllerBase or add [Authorize]
+      explicitly. If this endpoint is intentionally public, add [AllowAnonymous].
+    languages: [csharp]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: ["CWE-862: Missing Authorization"]
+      confidence: MEDIUM
+      impact: HIGH
+      technology: [dotnet]
+      references:
+        - https://learn.microsoft.com/en-us/aspnet/core/security/authorization
+
+  # ---------------------------------------------------------------------------
+  # TD-CS-002: Raw SQL usage (SQL injection risk)
+  # Flag any direct SQL string construction or FromSqlRaw without parameters.
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.csharp.raw-sql-string-interpolation
+    patterns:
+      - pattern-either:
+          - pattern: FromSqlRaw($"...")
+          - pattern: ExecuteSqlRaw($"...")
+          - pattern: FromSqlRaw("..." + ...)
+          - pattern: ExecuteSqlRaw("..." + ...)
+    message: >
+      Avoid string interpolation or concatenation in raw SQL methods.
+      Use parameterized queries (FromSqlInterpolated / ExecuteSqlInterpolated)
+      or pass parameters explicitly to prevent SQL injection.
+    languages: [csharp]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: ["CWE-89: SQL Injection"]
+      confidence: HIGH
+      impact: HIGH
+      technology: [dotnet, ef-core]
+
+  # ---------------------------------------------------------------------------
+  # TD-CS-003: Logging secrets / tokens
+  # Detect logging calls that reference variables named like tokens or secrets.
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.csharp.logging-sensitive-data
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $LOGGER.Log...($MSG, ..., $SECRET, ...)
+          - pattern: |
+              $LOGGER.LogInformation($MSG, ..., $SECRET, ...)
+          - pattern: |
+              $LOGGER.LogWarning($MSG, ..., $SECRET, ...)
+          - pattern: |
+              $LOGGER.LogError($MSG, ..., $SECRET, ...)
+          - pattern: |
+              $LOGGER.LogDebug($MSG, ..., $SECRET, ...)
+      - metavariable-regex:
+          metavariable: $SECRET
+          regex: (?i).*(password|secret|token|apikey|api_key|connectionstring|credential).*
+    message: >
+      Potential sensitive data ($SECRET) passed to a logging call.
+      Ensure secrets, tokens, and credentials are never logged.
+      See ADR-0016 (Security Logging Redaction).
+    languages: [csharp]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: ["CWE-532: Information Exposure Through Log Files"]
+      confidence: MEDIUM
+      impact: MEDIUM
+      technology: [dotnet]
+      references:
+        - docs/decisions/ADR-0016-security-logging-redaction.md
+
+  # ---------------------------------------------------------------------------
+  # TD-CS-004: Domain layer referencing Infrastructure
+  # Enforce clean architecture: Domain must not depend on Infrastructure.
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.csharp.domain-references-infrastructure
+    pattern: |
+      using Taskdeck.Infrastructure...;
+    paths:
+      include:
+        - backend/src/Taskdeck.Domain/
+    message: >
+      Domain layer must not reference Infrastructure. This violates the
+      Clean Architecture dependency rule (ADR-0001).
+    languages: [csharp]
+    severity: ERROR
+    metadata:
+      category: correctness
+      confidence: HIGH
+      impact: HIGH
+      technology: [dotnet]
+      references:
+        - docs/decisions/ADR-0001-clean-architecture-layering.md
+
+  # ---------------------------------------------------------------------------
+  # TD-CS-005: Hardcoded connection strings or secrets
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.csharp.hardcoded-connection-string
+    patterns:
+      - pattern-either:
+          - pattern: |
+              "...Data Source=...;..."
+          - pattern: |
+              "...Server=...;Password=...;..."
+          - pattern: |
+              "...AccountKey=...;..."
+    message: >
+      Hardcoded connection string detected. Use configuration or environment
+      variables instead.
+    languages: [csharp]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: ["CWE-798: Use of Hard-coded Credentials"]
+      confidence: MEDIUM
+      impact: HIGH
+      technology: [dotnet]

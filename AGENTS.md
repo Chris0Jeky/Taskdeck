@@ -87,7 +87,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## Project Structure & Modules
 - Backend (.NET): `backend/Taskdeck.sln` with layered projects under `backend/src`
-  (`Taskdeck.Api`, `Taskdeck.Application`, `Taskdeck.Domain`, `Taskdeck.Infrastructure`).
+  (`Taskdeck.Api`, `Taskdeck.Application`, `Taskdeck.Domain`, `Taskdeck.Infrastructure`, `Taskdeck.Cli`).
 - Backend tests: `backend/tests` with project-per-layer test suites.
 - Frontend (Vue 3 + Vite): `frontend/taskdeck-web` with app source in `src`, static assets in `public`.
 - Docs and planning: Start with `docs/STATUS.md` (source of truth),

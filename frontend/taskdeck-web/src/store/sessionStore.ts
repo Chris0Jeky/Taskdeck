@@ -238,6 +238,16 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  /**
+   * Silently refresh the session by calling the backend token refresh endpoint.
+   * Updates all session state and persistence through the canonical `setSession` path.
+   * Throws on failure so callers can handle the error (e.g. show a warning toast).
+   */
+  async function refreshSession(): Promise<void> {
+    const response = await authApi.refreshToken()
+    setSession(response)
+  }
+
   function logout() {
     clearSession()
     toast.info('Logged out')
@@ -268,6 +278,7 @@ export const useSessionStore = defineStore('session', () => {
     changePassword,
     exchangeOAuthCode,
     exchangeOidcCode,
+    refreshSession,
     logout,
     restoreSession,
     clearSession,

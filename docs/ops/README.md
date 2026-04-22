@@ -13,6 +13,8 @@ This folder contains deployment, observability, and human-operator runbooks.
 ## Operations
 
 - `OBSERVABILITY_BASELINE.md`
+- `OBSERVABILITY_SETUP.md`
+- `ALERTING_RULES.md` — monitoring thresholds, alert priorities, escalation paths, and Grafana/CloudWatch/PagerDuty integration
 - `SESSION_START_CHECKLIST.md`
 - `TASKDECK_HUMAN_OPERATIONS.md`
 - `GITHUB_LABEL_TAXONOMY.md`

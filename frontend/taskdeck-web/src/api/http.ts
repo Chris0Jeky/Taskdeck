@@ -53,8 +53,11 @@ http.interceptors.response.use(
     if (error.response) {
       console.error('API Error:', error.response.data)
 
-      // Handle 401 - clear session and redirect to login (skip in demo mode)
-      if (error.response.status === 401 && !isDemoMode) {
+      // Handle 401 - clear session and redirect to login (skip in demo mode).
+      // Callers can set `skipAuth401` on the request config to suppress this
+      // behaviour (e.g. token refresh attempts that want to handle 401 locally).
+      const skipAuth401 = (error.config as Record<string, unknown> | undefined)?.skipAuth401 === true
+      if (error.response.status === 401 && !isDemoMode && !skipAuth401) {
         tokenStorage.clearAll()
         const pathname = window.location.pathname
         const currentPath = `${pathname}${window.location.search}`

@@ -62,11 +62,11 @@ internal sealed class CliTestHarness : IAsyncDisposable
 
         process.Start();
 
-        var stdOut = await process.StandardOutput.ReadToEndAsync(cts.Token);
-        var stdErr = await process.StandardError.ReadToEndAsync(cts.Token);
-
+        string stdOut, stdErr;
         try
         {
+            stdOut = await process.StandardOutput.ReadToEndAsync(cts.Token);
+            stdErr = await process.StandardError.ReadToEndAsync(cts.Token);
             await process.WaitForExitAsync(cts.Token);
         }
         catch (OperationCanceledException)
