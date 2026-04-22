@@ -3,7 +3,7 @@ import type { Board, BoardDetail, CreateBoardDto, UpdateBoardDto, PaginatedBoard
 
 export const boardsApi = {
   async getBoards(search?: string, includeArchived = false): Promise<Board[]> {
-    const result = await boardsApi.getBoardsPaginated(search, includeArchived)
+    const result = await boardsApi.getBoardsPaginated(search, includeArchived, 0, 200)
     return result.items
   },
 

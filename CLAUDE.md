@@ -71,7 +71,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 - **Taskdeck.Api**: ASP.NET Core HTTP endpoints, integration layer, auth, SignalR hubs. Wires everything up via DI.
 - **Taskdeck.Cli**: CLI entry point (separate from API).
 
-Tests mirror this layout in `backend/tests/` with an additional `Taskdeck.Architecture.Tests` project for structural enforcement.
+Tests mirror this layout in `backend/tests/` (`Domain.Tests`, `Application.Tests`, `Api.Tests`, `Cli.Tests`, `Integration.Tests`, `Architecture.Tests`).
 
 ### Frontend -- `frontend/taskdeck-web/src/`
 

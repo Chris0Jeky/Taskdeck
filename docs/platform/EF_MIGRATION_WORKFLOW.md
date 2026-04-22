@@ -100,7 +100,7 @@ dotnet ef database update <PreviousMigrationName> --startup-project ../Taskdeck.
 
 ## Migration Chain
 
-As of 2026-04-22, the migration chain contains 21 migrations from `20251118031819_InitialCreate` through `20260416161303_AddPerfIndexes`. All migrations apply cleanly from an empty SQLite database.
+As of 2026-04-22, the migration chain contains 21 migrations from `20251118031819_InitialCreate` through `20260422183834_AddExternalLoginsUserForeignKey`. All migrations apply cleanly from an empty SQLite database.
 
 ## Bootstrap Verification
 
@@ -116,6 +116,25 @@ Run the bootstrap tests:
 
 ```bash
 dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~MigrationBootstrapTests"
+```
+
+## CI Validation
+
+The `reusable-migration-validation.yml` workflow (wired into `ci-required.yml`) validates the migration chain on every PR:
+
+1. Installs the `dotnet-ef` CLI tool
+2. Runs `dotnet ef database update` against an empty SQLite database
+3. Queries `sqlite_master` to verify all user tables were created
+4. Checks `__EFMigrationsHistory` for recorded migrations
+5. Runs `dotnet ef migrations has-pending-model-changes` to detect model drift
+
+This complements the programmatic `MigrationBootstrapTests` by exercising the CLI tooling path that deployment pipelines use.
+
+Run the validation script locally:
+
+```bash
+dotnet build backend/Taskdeck.sln -c Release
+bash scripts/ci/validate-migrations.sh
 ```
 
 ## Best Practices
