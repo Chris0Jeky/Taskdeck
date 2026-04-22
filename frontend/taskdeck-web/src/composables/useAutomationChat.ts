@@ -61,7 +61,7 @@ export function useAutomationChat() {
       return []
     }
     return [...current.recentMessages].sort((a, b) => (
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      Date.parse(a.createdAt) - Date.parse(b.createdAt)
     ))
   })
 
@@ -235,19 +235,16 @@ export function useAutomationChat() {
     }
   }
 
-  async function handleSendMessage() {
+  async function sendMessageToSession(content: string) {
     if (!selectedSession.value) {
       toast.error('Select a session first')
-      return
-    }
-    if (!messageContent.value.trim()) {
       return
     }
 
     try {
       sendingMessage.value = true
       await chatApi.sendMessage(selectedSession.value.id, {
-        content: messageContent.value.trim(),
+        content,
         requestProposal: requestProposal.value,
       })
       messageContent.value = ''
@@ -260,22 +257,15 @@ export function useAutomationChat() {
     }
   }
 
-  async function handleSkipClarification() {
-    if (!selectedSession.value) return
-    try {
-      sendingMessage.value = true
-      await chatApi.sendMessage(selectedSession.value.id, {
-        content: 'Just do your best',
-        requestProposal: requestProposal.value,
-      })
-      messageContent.value = ''
-      requestProposal.value = false
-      await loadSession(selectedSession.value.id)
-    } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to send message').message)
-    } finally {
-      sendingMessage.value = false
+  async function handleSendMessage() {
+    if (!messageContent.value.trim()) {
+      return
     }
+    await sendMessageToSession(messageContent.value.trim())
+  }
+
+  async function handleSkipClarification() {
+    await sendMessageToSession('Just do your best')
   }
 
   async function loadBoardOptions(): Promise<boolean> {

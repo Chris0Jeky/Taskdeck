@@ -35,7 +35,7 @@ function renderMarkdown(content: string): string {
   return DOMPurify.sanitize(marked.parse(content, { async: false }))
 }
 
-function isTruncatedJson(content: string): boolean {
+function checkTruncatedJson(content: string): boolean {
   if (!content) return false
   const trimmed = content.trim()
   if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return false
@@ -46,6 +46,17 @@ function isTruncatedJson(content: string): boolean {
     return true
   }
 }
+
+const truncatedJsonIds = computed(() => {
+  const ids = new Set<string>()
+  for (const message of props.messages) {
+    const role = normalizeChatRole(message.role)
+    if ((role === 'Assistant' || role === 'System') && checkTruncatedJson(message.content)) {
+      ids.add(message.id)
+    }
+  }
+  return ids
+})
 
 const parseHintsByMessageId = computed(() => {
   const map = new Map<string, ParsedHintMessage>()
@@ -74,13 +85,22 @@ function toggleHintPatterns(messageId: string) {
   expandedHintIds.value = updated
 }
 
-function parseToolCallMetadata(message: ChatMessage): ToolCallMetadata | null {
-  if (!message.toolCallMetadataJson) return null
-  try {
-    return JSON.parse(message.toolCallMetadataJson) as ToolCallMetadata
-  } catch {
-    return null
+const toolMetaByMessageId = computed(() => {
+  const map = new Map<string, ToolCallMetadata>()
+  for (const message of props.messages) {
+    if (!message.toolCallMetadataJson) continue
+    try {
+      const parsed = JSON.parse(message.toolCallMetadataJson) as ToolCallMetadata
+      map.set(message.id, parsed)
+    } catch {
+      // skip unparseable metadata
+    }
   }
+  return map
+})
+
+function getToolMeta(message: ChatMessage): ToolCallMetadata | null {
+  return toolMetaByMessageId.value.get(message.id) ?? null
 }
 
 function toggleToolMeta(messageId: string) {
@@ -138,7 +158,7 @@ function toggleToolMeta(messageId: string) {
       </template>
       <template v-else>
         <div
-          v-if="isAssistantOrSystemMessage(message) && isTruncatedJson(message.content)"
+          v-if="truncatedJsonIds.has(message.id)"
           class="td-message-content td-message-content--truncated"
         >
           {{ truncationNotice }}
@@ -160,8 +180,8 @@ function toggleToolMeta(messageId: string) {
         </button>
       </div>
       <ChatToolCallDetails
-        v-if="parseToolCallMetadata(message)"
-        :metadata="parseToolCallMetadata(message)!"
+        v-if="getToolMeta(message)"
+        :metadata="getToolMeta(message)!"
         :message-id="message.id"
         :expanded="expandedToolMetaIds.has(message.id)"
         @toggle="toggleToolMeta"
