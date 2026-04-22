@@ -28,6 +28,19 @@ public static partial class LogSanitizer
     }
 
     /// <summary>
+    /// Strips control characters (CWE-117) without applying length truncation.
+    /// Use when the caller manages its own truncation (e.g. argument logging
+    /// that appends a "[truncated]" marker).
+    /// </summary>
+    public static string StripControlChars(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        return ControlCharPattern().Replace(value, string.Empty);
+    }
+
+    /// <summary>
     /// Returns a safe status description for OpenTelemetry Activity spans.
     /// Uses only the exception type name to avoid leaking user content
     /// from exception messages into tracing backends.

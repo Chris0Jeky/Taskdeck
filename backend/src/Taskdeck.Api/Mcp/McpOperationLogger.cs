@@ -69,15 +69,17 @@ public sealed class McpOperationLogger
 
         if (arguments is not null && _logger.IsEnabled(LogLevel.Debug))
         {
-            var truncated = arguments.Length > MaxArgumentLogLength
-                ? string.Concat(arguments.AsSpan(0, MaxArgumentLogLength), "...[truncated]")
-                : arguments;
-            // Sanitize to prevent log injection (CWE-117) — arguments are user-controlled.
+            // Strip control chars first (CWE-117), then truncate so the
+            // "...[truncated]" marker is never clipped by a second length limit.
+            var cleaned = LogSanitizer.StripControlChars(arguments);
+            var display = cleaned.Length > MaxArgumentLogLength
+                ? string.Concat(cleaned.AsSpan(0, MaxArgumentLogLength), "...[truncated]")
+                : cleaned;
             _logger.LogDebug(
                 "MCP {OperationType} arguments: Name={OperationName} Args={Arguments}",
                 safeOperationType,
                 safeOperationName,
-                LogSanitizer.SanitizeForLog(truncated));
+                display);
         }
 
         return new McpOperationScope(_logger, activity, safeOperationType, safeOperationName, userId, transport);
