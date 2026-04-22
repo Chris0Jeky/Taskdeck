@@ -112,14 +112,7 @@ services.AddOptions<JwtSettings>()
 
 ### 2.2 Database Migration Infrastructure
 
-**Gap**: Only 1 EF migration in source control. Fresh environments cannot bootstrap from migrations alone.
-
-**Fix**: Generate initial migration capturing current schema:
-```bash
-dotnet ef migrations add InitialCreate -p Taskdeck.Infrastructure -s Taskdeck.Api
-```
-
-Then add migration validation to CI (verify migrations apply cleanly to empty database).
+**RESOLVED** (`#864`): 21 EF Core migrations are in source control and the full chain applies cleanly to a fresh SQLite database. `MigrationBootstrapTests` (5 tests) guard against regression. Developer workflow documented in `docs/platform/EF_MIGRATION_WORKFLOW.md`.
 
 ### 2.3 API Error Code Registry
 

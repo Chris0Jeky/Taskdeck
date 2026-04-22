@@ -149,6 +149,7 @@ ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template 
 - `docs/ISSUE_EXECUTION_GUIDE.md` -- dependency-aware issue execution order
 - `docs/MCP_TOOLING_GUIDE.md` -- MCP tool selection rules
 - `docs/platform/CONFIGURATION_REFERENCE.md` -- appsettings/env var/Docker Compose reference for every backend setting
+- `docs/platform/EF_MIGRATION_WORKFLOW.md` -- EF Core migration operations and best practices
 - `AGENTS.md` -- full contributor protocol
 
 ## Worktree Isolation for Parallel Agents
