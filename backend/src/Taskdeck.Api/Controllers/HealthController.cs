@@ -18,17 +18,20 @@ public class HealthController : ControllerBase
     private readonly WorkerSettings _workerSettings;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly RedisBackplaneHealthCheck _redisHealthCheck;
+    private readonly CircuitBreakerStateTracker _circuitBreakerTracker;
 
     public HealthController(
         IServiceProvider serviceProvider,
         WorkerSettings workerSettings,
         WorkerHeartbeatRegistry workerHeartbeatRegistry,
-        RedisBackplaneHealthCheck redisHealthCheck)
+        RedisBackplaneHealthCheck redisHealthCheck,
+        CircuitBreakerStateTracker circuitBreakerTracker)
     {
         _serviceProvider = serviceProvider;
         _workerSettings = workerSettings;
         _workerHeartbeatRegistry = workerHeartbeatRegistry;
         _redisHealthCheck = redisHealthCheck;
+        _circuitBreakerTracker = circuitBreakerTracker;
     }
 
     [HttpGet("live")]
@@ -197,6 +200,33 @@ public class HealthController : ControllerBase
         }
 
         checks["workers"] = workerChecks;
+
+        // Circuit breaker state for external HTTP clients
+        var circuitBreakerStates = _circuitBreakerTracker.GetAll();
+        if (circuitBreakerStates.Count > 0)
+        {
+            var circuitChecks = new Dictionary<string, object>();
+            foreach (var (name, snapshot) in circuitBreakerStates)
+            {
+                circuitChecks[name] = new
+                {
+                    state = snapshot.State.ToString(),
+                    lastTransitionUtc = snapshot.LastTransitionUtc,
+                    lastFailureReason = snapshot.LastFailureReason
+                };
+
+                // An open circuit degrades overall readiness.
+                if (snapshot.State == CircuitState.Open)
+                {
+                    isReady = false;
+                }
+            }
+            checks["circuitBreakers"] = circuitChecks;
+        }
+        else
+        {
+            checks["circuitBreakers"] = new { status = "AllClosed" };
+        }
 
         var statusCode = isReady ? 200 : 503;
         return StatusCode(statusCode, new
