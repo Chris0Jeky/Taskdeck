@@ -113,11 +113,12 @@ async function handleSelectConnector(connector: IntegrationConnector) {
   detailLoading.value = true
   try {
     await store.fetchConnectorDetail(targetId)
-    // Guard against out-of-order async completion: if user clicked
-    // another connector while we were loading, discard this result.
-    if (selectedId.value !== targetId) return
   } finally {
-    detailLoading.value = false
+    // Only clear loading if this request is still the active one;
+    // a newer request for a different connector owns the loading state.
+    if (selectedId.value === targetId) {
+      detailLoading.value = false
+    }
   }
 }
 
