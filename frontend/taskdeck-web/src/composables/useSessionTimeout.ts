@@ -198,13 +198,20 @@ export function useSessionTimeout(deps?: {
     }
   }
 
+  // Forward-declared so teardown() can stop the watcher
+  let stopWatch: (() => void) | null = null
+
   function teardown() {
     resetState()
     warnedForToken = null
+    if (stopWatch) {
+      stopWatch()
+      stopWatch = null
+    }
   }
 
   // Watch token changes to schedule/reset warning
-  const stopWatch = watch(
+  stopWatch = watch(
     () => ({ token: session.token, isDemo: session.isDemo }),
     ({ token, isDemo }) => {
       if (isDemo || !token) {
@@ -223,7 +230,6 @@ export function useSessionTimeout(deps?: {
   // Cleanup on unmount (only register if inside a component)
   if (getCurrentInstance()) {
     onUnmounted(() => {
-      stopWatch()
       teardown()
     })
   }
