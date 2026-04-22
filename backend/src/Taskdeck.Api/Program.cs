@@ -104,6 +104,14 @@ if (args.Contains("--mcp"))
             mcpHttpBuilder.Services.AddTaskdeckRateLimiting(mcpRateLimitingSettings);
         }
 
+        // OpenTelemetry: export MCP activity source and meter so spans/metrics
+        // are not silently dropped in standalone HTTP mode.
+        var mcpObservabilitySettings = mcpHttpBuilder.Configuration
+            .GetSection("Observability")
+            .Get<Taskdeck.Application.Services.ObservabilitySettings>()
+            ?? new Taskdeck.Application.Services.ObservabilitySettings();
+        mcpHttpBuilder.Services.AddTaskdeckObservability(mcpObservabilitySettings);
+
         // MCP telemetry (operation logger, etc.).
         mcpHttpBuilder.Services.AddMcpTelemetry();
 

@@ -34,13 +34,17 @@ public sealed class McpTelemetryMiddleware
         }
 
         var stopwatch = Stopwatch.StartNew();
-        var correlationId = context.Items.TryGetValue(CorrelationIdMiddleware.ItemKey, out var corrId)
-            ? corrId?.ToString()
-            : context.TraceIdentifier;
-        var userId = context.Items.TryGetValue(HttpUserContextProvider.UserIdItemKey, out var uid)
-            ? uid?.ToString()
-            : null;
-        // Sanitize user-controlled method/path to prevent log injection (CWE-117).
+        // Sanitize all user-controlled values to prevent log injection (CWE-117).
+        // CorrelationId may originate from the client X-Request-Id header;
+        // userId is derived from API key lookup but could flow through user input.
+        var correlationId = LogSanitizer.SanitizeForLog(
+            context.Items.TryGetValue(CorrelationIdMiddleware.ItemKey, out var corrId)
+                ? corrId?.ToString()
+                : context.TraceIdentifier);
+        var userId = LogSanitizer.SanitizeForLog(
+            context.Items.TryGetValue(HttpUserContextProvider.UserIdItemKey, out var uid)
+                ? uid?.ToString()
+                : null);
         var method = LogSanitizer.SanitizeForLog(context.Request.Method);
         var sanitizedPath = LogSanitizer.SanitizeForLog(context.Request.Path.Value);
 

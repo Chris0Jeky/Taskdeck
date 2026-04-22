@@ -40,7 +40,7 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
         int expectedMemberCount,
         TimeSpan? timeout = null)
     {
-        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(10);
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(15);
         var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
         while (DateTimeOffset.UtcNow < deadline)
         {

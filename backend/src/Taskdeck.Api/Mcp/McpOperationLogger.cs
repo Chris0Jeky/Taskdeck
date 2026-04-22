@@ -44,12 +44,16 @@ public sealed class McpOperationLogger
         string transport = "http",
         string? arguments = null)
     {
+        // Sanitize user-controlled operation names to prevent log injection (CWE-117).
+        var safeOperationType = LogSanitizer.SanitizeForLog(operationType);
+        var safeOperationName = LogSanitizer.SanitizeForLog(operationName);
+
         var activity = TaskdeckTelemetry.McpActivitySource.StartActivity(
-            $"mcp.{operationType}.{operationName}",
+            $"mcp.{safeOperationType}.{safeOperationName}",
             ActivityKind.Internal);
 
-        activity?.SetTag(TaskdeckTelemetryTags.McpOperationType, operationType);
-        activity?.SetTag(TaskdeckTelemetryTags.McpOperationName, operationName);
+        activity?.SetTag(TaskdeckTelemetryTags.McpOperationType, safeOperationType);
+        activity?.SetTag(TaskdeckTelemetryTags.McpOperationName, safeOperationName);
         activity?.SetTag(TaskdeckTelemetryTags.McpTransport, transport);
         if (userId.HasValue)
         {
@@ -58,8 +62,8 @@ public sealed class McpOperationLogger
 
         _logger.LogInformation(
             "MCP {OperationType} started: Name={OperationName} UserId={UserId} Transport={Transport}",
-            operationType,
-            operationName,
+            safeOperationType,
+            safeOperationName,
             userId,
             transport);
 
@@ -68,14 +72,15 @@ public sealed class McpOperationLogger
             var truncated = arguments.Length > MaxArgumentLogLength
                 ? string.Concat(arguments.AsSpan(0, MaxArgumentLogLength), "...[truncated]")
                 : arguments;
+            // Sanitize to prevent log injection (CWE-117) — arguments are user-controlled.
             _logger.LogDebug(
                 "MCP {OperationType} arguments: Name={OperationName} Args={Arguments}",
-                operationType,
-                operationName,
-                truncated);
+                safeOperationType,
+                safeOperationName,
+                LogSanitizer.SanitizeForLog(truncated));
         }
 
-        return new McpOperationScope(_logger, activity, operationType, operationName, userId, transport);
+        return new McpOperationScope(_logger, activity, safeOperationType, safeOperationName, userId, transport);
     }
 }
 
@@ -233,7 +238,7 @@ public sealed class McpOperationScope : IDisposable
                 _operationType,
                 _operationName,
                 _stopwatch.Elapsed.TotalMilliseconds,
-                errorMessage,
+                LogSanitizer.SanitizeForLog(errorMessage),
                 _userId,
                 _transport);
         }
