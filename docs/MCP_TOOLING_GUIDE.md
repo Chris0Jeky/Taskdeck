@@ -211,6 +211,21 @@ UI verification:
 
 ---
 
+## Taskdeck MCP Server Production Hardening (as of 2026-04-16)
+
+The Taskdeck MCP server (`#648`) has production-hardening work tracked under `#655` (MCP-04). Current delivery status:
+
+**In progress** (PRs open, not yet merged):
+- Structured logging and observability (`#655`/`#879`)
+- API key management UI (`#655`/`#877`)
+
+**Pending** (not yet started from `#655` scope):
+- Rate limiting dashboard/visibility
+- Key rotation workflow
+- Usage analytics per key
+
+---
+
 ## Shell Command Chaining (Windows)
 
 The shell environment depends on the agent runtime:

@@ -30,6 +30,8 @@ public interface IUnitOfWork
     IOAuthAuthCodeRepository OAuthAuthCodes { get; }
     IApiKeyRepository ApiKeys { get; }
     IMfaCredentialRepository MfaCredentials { get; }
+    IIntegrationConnectorRepository IntegrationConnectors { get; }
+    IConnectorEventRepository ConnectorEvents { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);

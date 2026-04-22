@@ -19,6 +19,14 @@ public sealed record TestUserContext(
 
 public static class ApiTestHarness
 {
+    /// <summary>
+    /// A non-placeholder JWT secret for tests that override the environment
+    /// to Production. Production mode validates the secret is not a known
+    /// placeholder (see FirstRunBootstrapper.ValidateProductionSecrets).
+    /// </summary>
+    public const string ProductionTestJwtSecret =
+        "VGVzdE9ubHlKd3RTZWNyZXRGb3JQcm9kdWN0aW9uTW9kZVRlc3Rz";
+
     public static async Task<TestUserContext> AuthenticateAsync(HttpClient client, string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
