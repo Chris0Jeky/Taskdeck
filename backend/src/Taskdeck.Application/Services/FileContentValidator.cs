@@ -23,11 +23,11 @@ public static class FileContentValidator
     /// </summary>
     public const int DefaultMaxJsonContentBytes = 2_097_152;
 
-    /// <summary>Maximum markdown content size in bytes (100 KB), matching NoteImportService.</summary>
-    public const int MaxMarkdownContentBytes = 102_400;
+    /// <summary>Maximum markdown content length in characters (100 KB), matching NoteImportService.MaxMarkdownContentLength.</summary>
+    public const int MaxMarkdownContentChars = 102_400;
 
-    /// <summary>Maximum web clip content size in bytes (20 KB), matching NoteImportService.</summary>
-    public const int MaxWebClipContentBytes = 20_000;
+    /// <summary>Maximum web clip content length in characters (20 KB), matching NoteImportService.MaxWebClipContentLength.</summary>
+    public const int MaxWebClipContentChars = 20_000;
 
     /// <summary>Maximum CSV payload size in bytes (1 MB), matching CsvExternalImportAdapter.</summary>
     public const int MaxCsvPayloadBytes = 1_048_576;
@@ -40,12 +40,21 @@ public static class FileContentValidator
     /// <param name="content">The string content to validate.</param>
     /// <param name="contentLabel">Human-readable label for error messages (e.g. "Markdown content").</param>
     /// <param name="maxBytes">Maximum allowed size in UTF-8 bytes. Use 0 to skip size check.</param>
+    /// <param name="maxChars">Maximum allowed length in characters. Use 0 to skip character check.
+    /// Prefer this over maxBytes when the downstream service enforces character limits (e.g. NoteImportService).</param>
     /// <returns>Success or failure with a descriptive error message.</returns>
-    public static Result ValidateTextContent(string? content, string contentLabel, int maxBytes = DefaultMaxTextContentBytes)
+    public static Result ValidateTextContent(string? content, string contentLabel, int maxBytes = DefaultMaxTextContentBytes, int maxChars = 0)
     {
         if (string.IsNullOrEmpty(content))
         {
             return Result.Failure(ErrorCodes.ValidationError, $"{contentLabel} is required.");
+        }
+
+        if (maxChars > 0 && content.Length > maxChars)
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"{contentLabel} exceeds maximum allowed length of {maxChars} characters.");
         }
 
         if (maxBytes > 0)
@@ -199,16 +208,15 @@ public static class FileContentValidator
             if (ch == 0x7F)
                 return true;
 
-            // C1 control characters (0x80-0x9F) — these are control codes in ISO-8859-1.
-            // In valid UTF-8, these code points appear only in multibyte sequences.
-            // When they appear as literal chars in a C# string (which is UTF-16),
-            // they indicate content that is not standard text.
+            // C1 control characters (0x80-0x9F) are control codes in Unicode/ISO-8859-1.
+            // In C# strings (UTF-16), these are genuine control characters — NOT
+            // Windows-1252 smart quotes/dashes, which map to U+2000+ range when
+            // properly decoded. Presence of C1 controls indicates binary content.
             if (ch >= 0x80 && ch <= 0x9F)
             {
-                // Exception: some of these are used in Windows-1252 text.
-                // Allow commonly seen Windows-1252 characters that map to C1 range:
-                // 0x85 (NEL/ellipsis), 0x91-0x94 (smart quotes), 0x96-0x97 (dashes)
-                if (ch == 0x85 || (ch >= 0x91 && ch <= 0x94) || ch == 0x96 || ch == 0x97)
+                // Allow NEL (U+0085, Next Line) which is a legitimate text control
+                // character used in some document formats.
+                if (ch == 0x85)
                     continue;
 
                 return true;
