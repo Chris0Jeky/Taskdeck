@@ -105,6 +105,7 @@ function openRevokeDialog(key: ApiKeyListItem) {
 }
 
 function closeRevokeDialog() {
+  if (revoking.value) return
   showRevokeDialog.value = false
   keyToRevoke.value = null
 }
@@ -115,6 +116,7 @@ async function handleRevokeKey() {
   revokeError.value = null
   try {
     await apiKeysApi.revokeKey(keyToRevoke.value.id)
+    revoking.value = false
     closeRevokeDialog()
     await loadKeys()
   } catch (e: unknown) {
