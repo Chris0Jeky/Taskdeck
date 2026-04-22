@@ -83,14 +83,15 @@ public static class PipelineConfiguration
             }
         });
 
+        // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
+        // Runs before ApiKeyMiddleware so it captures all requests including those
+        // rejected with 401 (missing/invalid/revoked API keys).
+        app.UseMiddleware<Taskdeck.Api.Mcp.McpTelemetryMiddleware>();
+
         // API key authentication for MCP HTTP transport (/mcp path).
         // Must run before UseAuthentication so MCP requests are handled by API key auth,
         // not JWT auth. Non-MCP requests pass through unaffected.
         app.UseMiddleware<ApiKeyMiddleware>();
-
-        // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
-        // Runs after ApiKeyMiddleware so the authenticated user ID is available.
-        app.UseMiddleware<Taskdeck.Api.Mcp.McpTelemetryMiddleware>();
 
         app.UseAuthentication();
         // Reject tokens for deleted/deactivated users or tokens issued before invalidation.

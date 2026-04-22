@@ -137,11 +137,13 @@ if (args.Contains("--mcp"))
         // Correlation ID propagation: honours client X-Request-Id header.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.CorrelationIdMiddleware>();
 
+        // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
+        // Runs before ApiKeyMiddleware so it captures all requests including those
+        // rejected with 401 (missing/invalid/revoked API keys).
+        mcpHttpApp.UseMiddleware<McpTelemetryMiddleware>();
+
         // API key authentication for MCP requests.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.ApiKeyMiddleware>();
-
-        // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
-        mcpHttpApp.UseMiddleware<McpTelemetryMiddleware>();
 
         // Apply rate limiting before endpoint routing.
         if (mcpRateLimitingSettings.Enabled)
