@@ -1,14 +1,17 @@
 # =============================================================================
 # Railway deployment configuration for Taskdeck
 # =============================================================================
-# Railway reads this file from the repo root (or deploy/ if configured).
+# This config is stored at deploy/railway.toml. Railway does not auto-detect
+# config files outside the repo root, so you must set the Config Path to
+# "deploy/railway.toml" in the Railway service settings.
 #
 # Deployment steps:
 #   1. Create a Railway project at https://railway.app
 #   2. Link this repo
-#   3. Set environment variables (see deploy/.env.production.template)
-#   4. Attach a persistent volume at /app/data
-#   5. Deploy
+#   3. Set Config Path to "deploy/railway.toml" in service settings
+#   4. Set environment variables (see deploy/.env.production.template)
+#   5. Attach a persistent volume at /app/data
+#   6. Deploy
 #
 # See docs/platform/CLOUD_DEPLOYMENT_GUIDE.md for full instructions.
 # =============================================================================
