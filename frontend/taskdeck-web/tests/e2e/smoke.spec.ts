@@ -37,7 +37,9 @@ test('home landing and workspace mode preference should persist across navigatio
 async function createBoard(page: Page, boardName: string) {
   await gotoBoardsWorkspace(page)
   await page.getByRole('button', { name: '+ New Board' }).click()
-  await page.getByPlaceholder('Board name').fill(boardName)
+  const boardNameInput = page.getByPlaceholder('Board name')
+  await expect(boardNameInput).toBeVisible()
+  await boardNameInput.fill(boardName)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   await expect(page).toHaveURL(/\/workspace\/boards\/[a-f0-9-]+$/)
   await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
@@ -75,7 +77,9 @@ function cardDragHandleByTitle(page: Page, cardTitle: string) {
 
 async function addColumn(page: Page, columnName: string) {
   await page.getByRole('button', { name: '+ Add Column' }).click()
-  await page.getByPlaceholder('Column name').fill(columnName)
+  const columnNameInput = page.getByPlaceholder('Column name')
+  await expect(columnNameInput).toBeVisible()
+  await columnNameInput.fill(columnName)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
 }
@@ -171,7 +175,9 @@ test('filter panel shortcut should toggle panel', async ({ page }) => {
   await gotoBoardsWorkspace(page)
 
   await page.getByRole('button', { name: '+ New Board' }).click()
-  await page.getByPlaceholder('Board name').fill(boardName)
+  const boardNameInput = page.getByPlaceholder('Board name')
+  await expect(boardNameInput).toBeVisible()
+  await boardNameInput.fill(boardName)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   await expect(page).toHaveURL(/\/workspace\/boards\/[a-f0-9-]+$/)
 
