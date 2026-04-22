@@ -75,11 +75,11 @@ Tests mirror this layout in `backend/tests/` with an additional `Taskdeck.Archit
 
 ### Frontend -- `frontend/taskdeck-web/src/`
 
-- **views/**: Route-level pages (BoardView, InboxView, ReviewView, TodayView, HomeView, etc.)
+- **views/**: Route-level pages (BoardView, InboxView, ReviewView, AutomationChatView, TodayView, HomeView, etc.). Large views are decomposed into thin shells (<300 lines) that delegate to extracted components and composables.
 - **store/**: Pinia stores -- boardStore, captureStore, queueStore, sessionStore, workspaceStore, notificationStore, etc.
 - **api/**: HTTP client modules for backend communication
-- **composables/**: Shared Vue composition functions
-- **components/**: Reusable UI components
+- **composables/**: Shared Vue composition functions (including view-specific orchestrators like useReviewProposals, useInboxOrchestrator, useAutomationChat, useBoardDragDrop, useSessionTimeout, etc.)
+- **components/**: Reusable UI components (shared Td* primitives in `components/ui/`, plus view-specific components extracted from decomposed views)
 - **router/**: Vue Router configuration
 
 Uses Tailwind CSS, TypeScript, and Vue 3 composition API (`<script setup>`).
