@@ -16,7 +16,7 @@
 //   BUNDLE_WARN_TOTAL_JS_KB   - warning threshold (KB) for total JS size (default: 1000)
 
 import { readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, dirname } from "node:path";
 
 const args = process.argv.slice(2);
 
@@ -180,8 +180,8 @@ if (outputJson) {
     })),
   };
 
-  const dir = outputJson.substring(0, outputJson.lastIndexOf("/"));
-  if (dir) {
+  const dir = dirname(outputJson);
+  if (dir && dir !== ".") {
     mkdirSync(dir, { recursive: true });
   }
   writeFileSync(outputJson, JSON.stringify(report, null, 2));

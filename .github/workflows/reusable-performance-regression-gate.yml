@@ -106,6 +106,7 @@ jobs:
           mkdir -p frontend/taskdeck-web/test-results/perf
           node scripts/ci/check-bundle-size.mjs \
             --dist frontend/taskdeck-web/dist \
+            --fail-on-error \
             --output-json frontend/taskdeck-web/test-results/perf/bundle-size-report.json
 
       # --- k6 API Performance Gate ---

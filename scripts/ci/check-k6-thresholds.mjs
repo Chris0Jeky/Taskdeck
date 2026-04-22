@@ -13,6 +13,7 @@
 //   3. Optional JSON report for historical tracking
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 const args = process.argv.slice(2);
 const summaryPath = args.find((a) => !a.startsWith("--"));
@@ -83,8 +84,9 @@ for (const km of keyMetrics) {
   }
 }
 
-// Check for near-threshold conditions (within 20% of p95 limit)
-const p95Limit = 2000; // ms -- issue requirement
+// Check for near-threshold conditions and aspirational targets
+const p95Limit = 2000; // ms -- hard gate (issue #872)
+const p95Aspirational = 1200; // ms -- aspirational target (warning only)
 const errorRateLimit = 0.01; // 1%
 const nearThresholdRatio = 0.80; // warn at 80% of limit
 
@@ -96,6 +98,11 @@ if (httpDuration?.values?.["p(95)"]) {
     console.log(`\n::error::${msg}`);
     findings.push({ level: "error", metric: "http_req_duration_p95", value: p95, limit: p95Limit, message: msg });
     hasBreaches = true;
+  } else if (p95 > p95Aspirational) {
+    const msg = `HTTP p95 latency is ${p95.toFixed(2)}ms, exceeds aspirational target of ${p95Aspirational}ms (hard limit: ${p95Limit}ms)`;
+    console.log(`\n::warning::${msg}`);
+    findings.push({ level: "warning", metric: "http_req_duration_p95_aspirational", value: p95, limit: p95Aspirational, message: msg });
+    hasWarnings = true;
   } else if (p95 > p95Limit * nearThresholdRatio) {
     const msg = `HTTP p95 latency is ${p95.toFixed(2)}ms, approaching ${p95Limit}ms limit (${((p95 / p95Limit) * 100).toFixed(0)}%)`;
     console.log(`\n::warning::${msg}`);
@@ -145,8 +152,8 @@ if (outputJson) {
     hasWarnings,
   };
 
-  const dir = outputJson.substring(0, outputJson.lastIndexOf("/"));
-  if (dir) {
+  const dir = dirname(outputJson);
+  if (dir && dir !== ".") {
     mkdirSync(dir, { recursive: true });
   }
   writeFileSync(outputJson, JSON.stringify(report, null, 2));
