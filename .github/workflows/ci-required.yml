@@ -23,7 +23,8 @@
 #     ├── reusable-e2e-cross-browser.yml (label: testing)
 #     ├── reusable-demo-director-smoke.yml (label: automation)
 #     ├── reusable-load-concurrency-harness.yml (label: testing)
-#     └── reusable-container-integration.yml (label: testing) — Testcontainers PostgreSQL
+#     ├── reusable-container-integration.yml (label: testing) — Testcontainers PostgreSQL
+#     └── reusable-gitleaks.yml (non-blocking secrets detection, #871)
 #
 #   ci-nightly.yml           scheduled regression (03:25 UTC daily)
 #     ├── reusable-openapi-guardrail.yml
@@ -41,6 +42,7 @@
 #   ci-release.yml           release lane (tag/release/manual)
 #     ├── release build verification (backend + frontend)
 #     ├── reusable-sbom-provenance.yml  (CycloneDX SBOM + SLSA provenance, #103)
+#     ├── reusable-gitleaks.yml (blocking secrets detection, #871)
 #     └── reusable-container-images.yml
 #
 #   release-security.yml     release security deep scan (tag/release/manual)

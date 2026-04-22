@@ -33,6 +33,9 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             var overrideSettings = new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                // Provide a stable test JWT secret so tests do not depend on
+                // appsettings.Development.json or FirstRunBootstrapper side-effects.
+                ["Jwt:SecretKey"] = "TaskdeckTestsOnlySecretKeyMustBeLongEnough123!",
                 ["RateLimiting:Enabled"] = "false",
                 ["Workers:QueuePollIntervalSeconds"] = "1",
                 ["Workers:MaxBatchSize"] = "10",
@@ -41,10 +44,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 // Keep API integration tests deterministic regardless of local machine env secrets.
                 ["Llm:EnableLiveProviders"] = "false",
                 ["Llm:AllowLiveProvidersInDevelopment"] = "false",
-                ["Llm:Provider"] = "Mock",
-                // Provide a non-placeholder JWT secret so tests that override the
-                // environment to Production pass ValidateProductionSecrets.
-                ["Jwt:SecretKey"] = "IntegrationTestSecretKeyThatIsLongEnoughToPassValidation_DoNotUseInProd_ABCDEFGHabcdefgh12345678"
+                ["Llm:Provider"] = "Mock"
             };
 
             configBuilder.AddInMemoryCollection(overrideSettings);

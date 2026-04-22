@@ -332,20 +332,18 @@ public class WorkspaceService : IWorkspaceService
             return MapDeferredOnboarding(preference);
         }
 
-        var captureSummaryTask = _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
-        var hasReviewedProposalTask = _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
-        var boardCountTask = _unitOfWork.Boards.CountReadableByUserIdAsync(
+        var captureSummary = await _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
+        var hasReviewedProposal = await _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
+        var boardCount = await _unitOfWork.Boards.CountReadableByUserIdAsync(
             userId,
             includeArchived: false,
             cancellationToken);
 
-        await Task.WhenAll(captureSummaryTask, hasReviewedProposalTask, boardCountTask);
-
         return await BuildOnboardingAsync(
             preference,
-            hasCapture: captureSummaryTask.Result.TotalCaptures > 0,
-            hasReviewedProposal: hasReviewedProposalTask.Result,
-            hasBoard: boardCountTask.Result > 0,
+            hasCapture: captureSummary.TotalCaptures > 0,
+            hasReviewedProposal: hasReviewedProposal,
+            hasBoard: boardCount > 0,
             cancellationToken);
     }
 

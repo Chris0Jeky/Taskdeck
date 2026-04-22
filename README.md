@@ -149,7 +149,9 @@ Taskdeck is in active development (pre-v1.0). The core capture → triage → re
 
 ## Contributing
 
-Open or pick a GitHub issue before larger changes. Keep PRs scoped and include verification evidence. See [AGENTS.md](AGENTS.md) for the full contributor protocol, definition of done, and output expectations.
+New contributors: start with [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, prerequisites, testing commands, commit conventions, and PR process. See [AGENTS.md](AGENTS.md) for the full contributor protocol, definition of done, and output expectations.
+
+Open or pick a GitHub issue before larger changes. Keep PRs scoped and include verification evidence.
 
 ---
 
@@ -160,9 +162,10 @@ We are looking for developers and small-team leads who manage their own boards a
 ---
 
 *[docs/START_HERE.md](docs/START_HERE.md) — first 15 minutes guided path | [docs/INDEX.md](docs/INDEX.md) — full documentation map*
-- Open or pick a GitHub issue before larger changes.
-- Keep PRs scoped and include verification evidence.
-- For contribution guidance and repo rules, see `AGENTS.md`.
+
+## Security
+
+Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md) for our responsible-disclosure policy, supported-version scope, and response timeline. Do not open a public issue or discussion for suspected security issues.
 
 ## License
 

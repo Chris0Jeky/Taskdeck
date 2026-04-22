@@ -20,10 +20,9 @@ public sealed record TestUserContext(
 public static class ApiTestHarness
 {
     /// <summary>
-    /// A non-placeholder JWT secret for tests that run under
-    /// <c>UseEnvironment("Production")</c>.  The value must NOT appear in
-    /// <see cref="FirstRun.FirstRunBootstrapper"/> PlaceholderSecrets so
-    /// that <c>ValidateProductionSecrets</c> passes.
+    /// A non-placeholder JWT secret for tests that override the environment
+    /// to Production. Production mode validates the secret is not a known
+    /// placeholder (see FirstRunBootstrapper.ValidateProductionSecrets).
     /// </summary>
     public const string ProductionTestJwtSecret =
         "VGVzdE9ubHlKd3RTZWNyZXRGb3JQcm9kdWN0aW9uTW9kZVRlc3Rz";
@@ -187,6 +186,47 @@ public static class ApiTestHarness
         throw new XunitException(
             $"{description} did not complete after {maxAttempts} attempts (~{stopwatch.ElapsedMilliseconds}ms). Last observed value: {diagnosticsText}");
     }
+
+    /// <summary>
+    /// Fetches the board list from the paginated endpoint and returns the items.
+    /// </summary>
+    public static async Task<List<BoardDto>> ListBoardsAsync(
+        HttpClient client,
+        bool includeArchived = false)
+    {
+        var url = includeArchived ? "/api/boards?includeArchived=true" : "/api/boards";
+        var response = await client.GetAsync(url);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var paginated = await response.Content.ReadFromJsonAsync<PaginatedResult<BoardDto>>();
+        paginated.Should().NotBeNull();
+        return paginated!.Items;
+    }
+
+    public static async Task<PaginatedResult<BoardDto>> ListBoardsPaginatedAsync(
+        HttpClient client,
+        bool includeArchived = false,
+        int? offset = null,
+        int? limit = null,
+        string? search = null)
+    {
+        var qs = new List<string>();
+        if (includeArchived) qs.Add("includeArchived=true");
+        if (offset.HasValue) qs.Add($"offset={offset.Value}");
+        if (limit.HasValue) qs.Add($"limit={limit.Value}");
+        if (!string.IsNullOrEmpty(search)) qs.Add($"search={Uri.EscapeDataString(search)}");
+        var url = qs.Count > 0 ? $"/api/boards?{string.Join("&", qs)}" : "/api/boards";
+        var response = await client.GetAsync(url);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var paginated = await response.Content.ReadFromJsonAsync<PaginatedResult<BoardDto>>();
+        paginated.Should().NotBeNull();
+        return paginated!;
+    }
+
+    /// <summary>
+    /// Generic paginated result DTO for test deserialization.
+    /// Mirrors <see cref="Taskdeck.Application.DTOs.PaginatedResult{T}"/>.
+    /// </summary>
+    public record PaginatedResult<T>(List<T> Items, int TotalCount, bool HasMore, int Offset, int Limit);
 
     public static async Task<Guid> CreateBoardWithColumnAsync(
         HttpClient client,

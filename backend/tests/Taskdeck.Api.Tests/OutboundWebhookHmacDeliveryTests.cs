@@ -538,6 +538,8 @@ public class OutboundWebhookHmacDeliveryTests
         public IOAuthAuthCodeRepository OAuthAuthCodes => null!;
         public IApiKeyRepository ApiKeys => null!;
         public IMfaCredentialRepository MfaCredentials => null!;
+        public IIntegrationConnectorRepository IntegrationConnectors => null!;
+        public IConnectorEventRepository ConnectorEvents => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(0);

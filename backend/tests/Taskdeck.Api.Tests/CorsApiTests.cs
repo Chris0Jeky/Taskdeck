@@ -11,6 +11,7 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
     private const string AccessControlAllowOriginHeader = "Access-Control-Allow-Origin";
     private const string AccessControlAllowCredentialsHeader = "Access-Control-Allow-Credentials";
     private const string DefaultFrontendOrigin = "http://localhost:5173";
+
     private readonly TestWebApplicationFactory _baseFactory;
 
     public CorsApiTests(TestWebApplicationFactory baseFactory)

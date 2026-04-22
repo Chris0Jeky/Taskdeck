@@ -3,12 +3,22 @@ import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
 import './style.css'
+import {
+  installVueErrorHandler,
+  installWindowErrorListeners,
+} from './utils/errorReporting'
 
 const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
+
+// Install global crash-prevention hooks before mount so early errors are
+// captured. The Vue handler is the top-level backstop for render/lifecycle
+// errors; the window listeners catch async rejections and non-Vue errors.
+installVueErrorHandler(app)
+installWindowErrorListeners()
 
 app.mount('#app')
 

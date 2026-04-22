@@ -91,7 +91,9 @@ async function listBoards(
   })
 
   expect(response.ok()).toBeTruthy()
-  return (await response.json()) as BoardDto[]
+  const body = await response.json()
+  // API returns PaginatedResult<BoardDto> with { items, totalCount, hasMore, offset, limit }
+  return (body.items ?? body) as BoardDto[]
 }
 
 async function getArchiveItems(
@@ -314,7 +316,9 @@ test.describe('TST11-SC-016: Cross-user archive isolation', () => {
       headers: { Authorization: `Bearer ${userB.token}` },
     })
     expect(userBBoards.ok()).toBeTruthy()
-    const userBBoardList = (await userBBoards.json()) as BoardDto[]
+    const userBBody = await userBBoards.json()
+    // API returns PaginatedResult<BoardDto> with { items, totalCount, hasMore, offset, limit }
+    const userBBoardList = (userBBody.items ?? userBBody) as BoardDto[]
 
     // UserA's archived board should not be visible to UserB
     expect(userBBoardList.some((b) => b.id === boardId)).toBeFalsy()

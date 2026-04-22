@@ -304,6 +304,10 @@ builder.Services.AddTaskdeckSettings(
     out _,  // telemetrySettings — registered in DI by AddTaskdeckSettings
     out _); // analyticsSettings — registered in DI by AddTaskdeckSettings
 
+// Wire ValidateDataAnnotations() + ValidateOnStart() for all settings classes.
+// The app will fail fast on startup if any configuration value is invalid.
+builder.Services.AddOptionsValidation(builder.Configuration);
+
 // Add Infrastructure (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -346,6 +350,10 @@ builder.Services.AddTaskdeckCors(builder.Configuration, builder.Environment.IsDe
 
 // Add rate limiting
 builder.Services.AddTaskdeckRateLimiting(rateLimitingSettings);
+
+// Add response compression (Brotli + Gzip, Optimal level, enabled over HTTPS).
+// See ResponseCompressionRegistration for BREACH/SignalR considerations.
+builder.Services.AddTaskdeckResponseCompression();
 
 // Register first-run settings and service
 var firstRunSettings = builder.Configuration

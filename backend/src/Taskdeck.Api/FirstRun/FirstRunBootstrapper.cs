@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
@@ -83,27 +84,33 @@ public static class FirstRunBootstrapper
     /// loaded (i.e. after the builder is constructed).
     /// </summary>
     /// <remarks>
-    /// Checks are skipped in Development and in CI/headless environments.
-    /// They are intended for the packaged self-hosted production scenario.
+    /// <para>
+    /// JWT secret generation runs in <em>all</em> environments (including
+    /// Development and CI/headless) so that no hardcoded secret is required
+    /// in checked-in config files.  When the secret is missing or is the
+    /// well-known placeholder, a cryptographically random value is generated
+    /// into <c>appsettings.local.json</c>.
+    /// </para>
+    /// <para>
+    /// DB-path resolution and other packaged-distribution checks are still
+    /// skipped in Development and in CI/headless environments.
+    /// </para>
     /// </remarks>
     public static WebApplicationBuilder RunFirstRunChecks(
         this WebApplicationBuilder builder,
         ILogger logger)
     {
-        // First-run checks are for the self-hosted packaged distribution.
-        // In Development the developer supplies their own config values.
-        if (builder.Environment.IsDevelopment())
-        {
-            return builder;
-        }
-
-        // Also skip in CI / automated environments.
-        if (IsHeadlessEnvironment())
-        {
-            return builder;
-        }
-
+        // JWT secret generation runs unconditionally (including headless/CI)
+        // so that no hardcoded secret is required in appsettings.Development.json.
         EnsureJwtSecret(builder.Configuration, logger);
+
+        // Remaining first-run checks are for the self-hosted packaged
+        // distribution only -- skip in Development and CI/headless.
+        if (builder.Environment.IsDevelopment() || IsHeadlessEnvironment())
+        {
+            return builder;
+        }
+
         EnsureDbPath(builder.Configuration, logger);
         return builder;
     }
@@ -173,16 +180,31 @@ public static class FirstRunBootstrapper
         }
 
         var generated = GenerateSecret();
-        PersistValue("Jwt", "SecretKey", generated);
-        // Reload so subsequent configuration reads get the new value.
-        if (configuration is IConfigurationRoot root)
+        try
         {
-            root.Reload();
-        }
+            PersistValue("Jwt", "SecretKey", generated);
+            // Reload so subsequent configuration reads get the new value.
+            if (configuration is IConfigurationRoot root)
+            {
+                root.Reload();
+            }
 
-        logger.LogInformation(
-            "First-run: JWT secret was not configured. A random secret has been " +
-            "generated and saved to {ConfigFile}.", LocalConfigPath);
+            logger.LogInformation(
+                "First-run: JWT secret was not configured. A random secret has been " +
+                "generated and saved to {ConfigFile}.", LocalConfigPath);
+        }
+        catch (IOException ex)
+        {
+            // File may be locked by another process (e.g. parallel test
+            // factories sharing the same output directory).  Fall back to
+            // setting the value in-memory so the current startup still
+            // succeeds.
+            configuration["Jwt:SecretKey"] = generated;
+            logger.LogWarning(
+                "First-run: Could not persist JWT secret to {ConfigFile} ({Error}). " +
+                "A transient in-memory secret has been generated instead.",
+                LocalConfigPath, ex.Message);
+        }
     }
 
     private static void EnsureDbPath(IConfiguration configuration, ILogger logger)
@@ -262,38 +284,99 @@ public static class FirstRunBootstrapper
     {
         var path = LocalConfigPath;
 
-        JsonObject root;
-        if (File.Exists(path))
+        // Cross-process mutex: multiple xUnit test processes (and any
+        // accidentally concurrent startup in the same output directory) must
+        // not race on the read-modify-write of appsettings.local.json.  Two
+        // concurrent File.WriteAllText calls can interleave and leave the
+        // file with trailing bytes from the longer write after the shorter
+        // one finishes, producing the `'}' is invalid after a single JSON
+        // value` parse error seen in CI.
+        var mutexName = BuildMutexName(path);
+        using var mutex = new System.Threading.Mutex(initiallyOwned: false, name: mutexName);
+        var acquired = false;
+        try
         {
             try
             {
-                var existing = File.ReadAllText(path);
-                root = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
+                acquired = mutex.WaitOne(TimeSpan.FromSeconds(10));
             }
-            catch (Exception ex)
+            catch (AbandonedMutexException)
             {
-                // Logger is not available at this pre-DI stage; warn to stderr and start fresh
-                // rather than silently discarding the corrupt file.
-                Console.Error.WriteLine(
-                    $"[FirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
-                    $"Details: {ex.Message}");
+                // A previous holder crashed without releasing; we still own it now.
+                acquired = true;
+            }
+
+            JsonObject root;
+            if (File.Exists(path))
+            {
+                try
+                {
+                    var existing = File.ReadAllText(path);
+                    root = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
+                }
+                catch (Exception ex)
+                {
+                    // Logger is not available at this pre-DI stage; warn to stderr and start fresh
+                    // rather than silently discarding the corrupt file.
+                    Console.Error.WriteLine(
+                        $"[FirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
+                        $"Details: {ex.Message}");
+                    root = new JsonObject();
+                }
+            }
+            else
+            {
                 root = new JsonObject();
             }
+
+            if (root[section] is not JsonObject sectionNode)
+            {
+                sectionNode = new JsonObject();
+                root[section] = sectionNode;
+            }
+
+            sectionNode[key] = value;
+
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            var payload = root.ToJsonString(options);
+
+            // Atomic write: stage into a sibling temp file then move into place.
+            // File.WriteAllText is not atomic — a concurrent reader or writer
+            // can observe a partially written file.  A rename onto an existing
+            // path is atomic on both Windows and Linux file systems we target.
+            var dir = Path.GetDirectoryName(path)!;
+            Directory.CreateDirectory(dir);
+            var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(tempPath, payload);
+            try
+            {
+                File.Move(tempPath, path, overwrite: true);
+            }
+            catch
+            {
+                // Best-effort cleanup; the main write path's exception will propagate.
+                try { File.Delete(tempPath); } catch { /* ignore */ }
+                throw;
+            }
         }
-        else
+        finally
         {
-            root = new JsonObject();
+            if (acquired)
+            {
+                mutex.ReleaseMutex();
+            }
         }
+    }
 
-        if (root[section] is not JsonObject sectionNode)
-        {
-            sectionNode = new JsonObject();
-            root[section] = sectionNode;
-        }
-
-        sectionNode[key] = value;
-
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        File.WriteAllText(path, root.ToJsonString(options));
+    private static string BuildMutexName(string path)
+    {
+        // Named mutex must be stable per-path and fit OS name rules.
+        // Use SHA256 of the absolute path; prefix with "Global\" on Windows
+        // so different user sessions on the same machine still coordinate.
+        var normalized = Path.GetFullPath(path).ToLowerInvariant();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        var hex = Convert.ToHexString(hash).AsSpan(0, 32);
+        var prefix = OperatingSystem.IsWindows() ? "Global\\" : string.Empty;
+        return $"{prefix}Taskdeck.FirstRun.{hex}";
     }
 }
