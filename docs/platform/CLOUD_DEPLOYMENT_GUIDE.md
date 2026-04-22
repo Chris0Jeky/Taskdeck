@@ -78,7 +78,7 @@ Open `http://localhost:5000` to verify the SPA loads and the API responds.
 1. Go to [railway.app](https://railway.app) and sign in
 2. Click **New Project** and select **Deploy from GitHub repo**
 3. Connect the Taskdeck repository
-4. Railway detects the `deploy/railway.toml` configuration automatically
+4. In the Railway service settings, set the **Config Path** to `deploy/railway.toml` (Railway does not auto-detect config files outside the repo root)
 
 ### Step 2: Attach a persistent volume
 
@@ -238,11 +238,18 @@ SQLite supports one writer at a time (WAL mode improves this but does not elimin
 
 Cloud platform volumes are not automatically backed up. Implement a backup strategy:
 
-1. **Railway**: Use the Railway CLI to download the volume contents periodically
-2. **Render**: Use the Render Shell to `cp /app/data/taskdeck.db` to a backup location
-3. **Automated**: Set up a cron job or scheduled task to copy the database file to object storage (S3, R2, etc.)
+> **Warning**: Do not copy the SQLite database file while the application is running.
+> A raw `cp` of `taskdeck.db` during active writes can produce a corrupt or
+> incomplete backup. Use the `sqlite3 .backup` command instead, which is safe
+> for online backups regardless of journal mode.
 
-The database file can be safely copied while the application is running (SQLite WAL mode ensures read consistency for the backup).
+1. **Railway**: Use the Railway CLI to open a shell, then run:
+   ```bash
+   sqlite3 /app/data/taskdeck.db ".backup /tmp/taskdeck-backup.db"
+   ```
+   Download the backup file from `/tmp/taskdeck-backup.db`.
+2. **Render**: Use the Render Shell to run the same `sqlite3 .backup` command.
+3. **Automated**: Schedule a task that runs `sqlite3 .backup` and uploads the result to object storage (S3, R2, etc.). Alternatively, stop the application briefly before copying the file.
 
 ### Migration to PostgreSQL
 
