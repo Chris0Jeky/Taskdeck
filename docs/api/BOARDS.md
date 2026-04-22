@@ -1,5 +1,7 @@
 # Boards, Columns, Cards, and Labels
 
+> **Data model:** See [Data Model Reference](../architecture/DATA_MODEL.md) for entity fields, constraints, and relationships.
+
 All board-related endpoints require authentication via JWT Bearer token.
 
 ## Boards

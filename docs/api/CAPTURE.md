@@ -1,5 +1,7 @@
 # Capture Pipeline
 
+> **Data model:** See [Data Model Reference](../architecture/DATA_MODEL.md) for entity fields, constraints, and relationships.
+
 The capture pipeline is Taskdeck's quick-capture system. Raw text is captured, then triaged by the LLM to generate automation proposals. Proposals must be explicitly approved by the user before any board mutations occur (review-first principle).
 
 ## Capture flow

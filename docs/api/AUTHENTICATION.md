@@ -1,5 +1,7 @@
 # Authentication
 
+> **Data model:** See [Data Model Reference](../architecture/DATA_MODEL.md) for entity fields, constraints, and relationships.
+
 Taskdeck uses JWT Bearer tokens for API authentication. All endpoints except `/api/auth/*` and `/api/health` require a valid token.
 
 ## Obtaining a token
