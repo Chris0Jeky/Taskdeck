@@ -124,10 +124,45 @@ public class BoardRepository : Repository<Board>, IBoardRepository
         return boards.OrderByDescending(b => b.CreatedAt);
     }
 
+    public async Task<int> SearchCountAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default)
+    {
+        var query = BuildSearchQuery(searchText, includeArchived);
+        return await query.CountAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<Guid>> SearchIdsAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default)
     {
         var query = BuildSearchQuery(searchText, includeArchived);
         var boardIds = await query.Select(board => board.Id).ToListAsync(cancellationToken);
+        return boardIds;
+    }
+
+    public async Task<IEnumerable<Guid>> SearchIdsAsync(string? searchText, bool includeArchived, int offset, int limit, CancellationToken cancellationToken = default)
+    {
+        var query = BuildSearchQuery(searchText, includeArchived);
+
+        // SQLite doesn't support DateTimeOffset in ORDER BY, so we use a raw query
+        // for stable ordering before applying Skip/Take.
+        if (_context.Database.IsSqlite())
+        {
+            var allIds = await query
+                .Select(board => new { board.Id, board.CreatedAt })
+                .ToListAsync(cancellationToken);
+
+            return allIds
+                .OrderByDescending(b => b.CreatedAt)
+                .Skip(offset)
+                .Take(limit)
+                .Select(b => b.Id)
+                .ToList();
+        }
+
+        var boardIds = await query
+            .OrderByDescending(board => board.CreatedAt)
+            .Skip(offset)
+            .Take(limit)
+            .Select(board => board.Id)
+            .ToListAsync(cancellationToken);
         return boardIds;
     }
 
