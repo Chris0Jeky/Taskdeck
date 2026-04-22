@@ -36,7 +36,7 @@ const formattedTime = computed(() => {
         <div class="flex-1">
           <p class="text-sm font-medium text-yellow-800">
             Session expires in
-            <span class="font-mono font-bold" aria-live="polite">{{ formattedTime }}</span>
+            <span class="font-mono font-bold">{{ formattedTime }}</span>
           </p>
           <p class="mt-1 text-xs text-yellow-700">
             Save your work or extend your session to continue.
