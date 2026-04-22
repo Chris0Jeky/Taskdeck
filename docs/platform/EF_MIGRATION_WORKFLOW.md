@@ -107,9 +107,9 @@ As of 2026-04-22, the migration chain contains 21 migrations from `2025111803181
 The test `MigrationBootstrapTests` in `backend/tests/Taskdeck.Api.Tests/` verifies that:
 
 1. All migrations apply cleanly to a fresh SQLite database
-2. Every table corresponding to a `DbSet` in `TaskdeckDbContext` is created
+2. Every table corresponding to an entity type in the EF model is created (derived via reflection, not a hardcoded list)
 3. Re-running `Migrate()` is idempotent (no-op on already-migrated database)
-4. No pending migrations remain after a full apply
+4. No pending migrations remain after a full apply, and the compiled model has no drift from the last migration snapshot (`HasPendingModelChanges()`)
 5. All migration IDs are unique
 
 Run the bootstrap tests:
