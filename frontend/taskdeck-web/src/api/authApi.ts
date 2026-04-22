@@ -79,7 +79,13 @@ export const authApi = {
   },
 
   async refreshToken(): Promise<AuthResponse> {
-    const { data } = await http.post<AuthResponse>('/auth/refresh')
+    // skipAuth401: prevent the 401 interceptor from redirecting to /login
+    // before the caller's catch block can handle the error gracefully.
+    // skipRetry: refresh is not idempotent and should fail fast.
+    const { data } = await http.post<AuthResponse>('/auth/refresh', null, {
+      skipAuth401: true,
+      skipRetry: true,
+    } as Record<string, unknown>)
     return data
   },
 }
