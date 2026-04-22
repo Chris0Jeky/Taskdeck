@@ -51,14 +51,19 @@ if (!inputFile) {
 // ---------------------------------------------------------------------------
 let semgrepResults;
 let scanExitCode = 0;
+let parseError = null;
 
 try {
   const raw = readFileSync(resolve(inputFile), "utf8");
   semgrepResults = JSON.parse(raw);
 } catch (err) {
   console.error(`Failed to read/parse Semgrep output: ${err.message}`);
-  // If the file doesn't exist or is invalid, create an empty result
-  semgrepResults = { results: [], errors: [] };
+  parseError = err.message;
+  // Mark the result as failed so the summary does not claim a clean scan
+  semgrepResults = {
+    results: [],
+    errors: [{ message: `Semgrep output could not be read/parsed: ${err.message}` }],
+  };
 }
 
 if (exitCodeFile && existsSync(resolve(exitCodeFile))) {
@@ -68,6 +73,9 @@ if (exitCodeFile && existsSync(resolve(exitCodeFile))) {
   );
   if (isNaN(scanExitCode)) scanExitCode = 0;
 }
+
+const scanFailed = scanExitCode !== 0 && scanExitCode !== 1; // 1 = findings found, >1 = error
+const scanIncomplete = parseError !== null || scanFailed;
 
 // ---------------------------------------------------------------------------
 // Categorize findings
@@ -95,7 +103,7 @@ for (const f of findings) {
 
 const totalFindings = findings.length;
 const hasHighCritical = severityCounts.ERROR > 0;
-const hasEnforcementFailures = enforce && hasHighCritical;
+const hasEnforcementFailures = enforce && (hasHighCritical || scanIncomplete);
 
 // ---------------------------------------------------------------------------
 // Generate Markdown summary
@@ -110,7 +118,17 @@ lines.push(
 lines.push("");
 
 // Overall status
-if (totalFindings === 0 && errors.length === 0) {
+if (scanIncomplete) {
+  if (hasEnforcementFailures) {
+    lines.push(
+      ":x: **Enforcement failure** -- scan did not complete successfully (exit code: " + scanExitCode + "). Cannot verify security posture.",
+    );
+  } else {
+    lines.push(
+      ":warning: **Scan incomplete** -- Semgrep did not complete successfully (exit code: " + scanExitCode + "). Results may be partial or missing.",
+    );
+  }
+} else if (totalFindings === 0 && errors.length === 0) {
   lines.push(
     ":white_check_mark: **No SAST findings.** The codebase passed all configured rules.",
   );
@@ -164,7 +182,7 @@ if (totalFindings > 0) {
     for (const f of displayFindings) {
       const file = f.path || "unknown";
       const line = f.start?.line || "?";
-      const msg = (f.extra?.message || "").replace(/\n/g, " ").slice(0, 200);
+      const msg = (f.extra?.message || "").replace(/\n/g, " ").replace(/\|/g, "\\|").slice(0, 200);
       lines.push(`| \`${file}\` | ${line} | ${msg} |`);
     }
 
@@ -224,6 +242,7 @@ const jsonSummary = {
     bySeverity: severityCounts,
     hasHighCritical,
     hasEnforcementFailures,
+    scanIncomplete,
   },
   ruleBreakdown: Object.fromEntries(
     Object.entries(findingsByRule).map(([ruleId, ruleFindings]) => [
@@ -241,21 +260,27 @@ const jsonSummary = {
 // ---------------------------------------------------------------------------
 if (outputMarkdown) {
   writeFileSync(resolve(outputMarkdown), markdown, "utf8");
-  console.log(`Markdown summary written to ${outputMarkdown}`);
+  console.error(`Markdown summary written to ${outputMarkdown}`);
 }
 
 if (outputJson) {
   writeFileSync(resolve(outputJson), JSON.stringify(jsonSummary, null, 2), "utf8");
-  console.log(`JSON summary written to ${outputJson}`);
+  console.error(`JSON summary written to ${outputJson}`);
 }
 
 // Print markdown to stdout for piping into GITHUB_STEP_SUMMARY
 console.log(markdown);
 
-// Exit with failure if enforcement is active and high-severity findings exist
+// Exit with failure if enforcement is active and high-severity findings or scan failures exist
 if (hasEnforcementFailures) {
-  console.error(
-    `Enforcement active: ${severityCounts.ERROR} ERROR-level finding(s) detected. Failing the step.`,
-  );
+  if (scanIncomplete) {
+    console.error(
+      `Enforcement active: scan did not complete successfully (exit code: ${scanExitCode}). Failing the step.`,
+    );
+  } else {
+    console.error(
+      `Enforcement active: ${severityCounts.ERROR} ERROR-level finding(s) detected. Failing the step.`,
+    );
+  }
   process.exit(1);
 }

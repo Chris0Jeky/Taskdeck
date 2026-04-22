@@ -52,7 +52,7 @@ Semgrep was chosen for: polyglot support (C# + TypeScript in one tool), fast sca
 ## Consequences
 
 - **Positive**: Automated detection of common vulnerability patterns before merge. Custom rules enforce Taskdeck-specific architectural invariants that would otherwise require manual review. Clear path to enforcement gating.
-- **Negative**: False positives are possible, especially for pattern-matching rules. The team must triage initial findings and tune rules. Semgrep container image adds ~1 min to job startup.
+- **Negative**: False positives are possible, especially for pattern-matching rules. The team must triage initial findings and tune rules. Semgrep pip install adds ~1 min to job startup.
 - **Operational**: `.semgrep/` directory becomes the home for custom rules. `.semgrepignore` controls scan scope. New rules should be added as security patterns are identified.
 
 ## References

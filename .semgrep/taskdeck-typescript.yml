@@ -54,10 +54,9 @@ rules:
   # Flag fetch calls that don't have a catch or error handler.
   # ---------------------------------------------------------------------------
   - id: taskdeck.typescript.unhandled-fetch
-    pattern: |
-      fetch(...).then(...)
-    fix: |
-      fetch(...).then(...).catch(...)
+    patterns:
+      - pattern: fetch(...).then(...)
+      - pattern-not: fetch(...).then(...).catch(...)
     message: >
       Fetch call without explicit error handling. Add .catch() or use
       try/catch with async/await. Taskdeck requires explicit error handling

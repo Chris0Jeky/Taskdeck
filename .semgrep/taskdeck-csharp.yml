@@ -35,7 +35,7 @@ rules:
           }
       - metavariable-regex:
           metavariable: $CONTROLLER
-          regex: ^(?!Health|Auth$).*Controller$
+          regex: ^(?!(Health|Auth)Controller$).*Controller$
     message: >
       Controller $CONTROLLER inherits from ControllerBase without [Authorize]
       or [AllowAnonymous]. Most Taskdeck controllers should require
