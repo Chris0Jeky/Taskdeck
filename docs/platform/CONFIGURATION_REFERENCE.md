@@ -74,6 +74,27 @@ Source files used to build this reference:
   for keys that explicitly support it (`Cors:AllowedOrigins`,
   `ForwardedHeaders:KnownProxies`, `ForwardedHeaders:KnownNetworks`).
 
+## Startup validation
+
+Most settings classes documented below are registered via the
+`RegisterValidatedOptions<T>` helper in
+`backend/src/Taskdeck.Api/Extensions/OptionsValidationRegistration.cs`, which
+wires `ValidateDataAnnotations()` + `ValidateOnStart()` (OPS-27 `#858`/PR
+`#908`). Invalid values fail startup immediately rather than surfacing at
+first use. Four cross-property validators enforce multi-field invariants:
+
+- `WorkerSettingsValidator` — `RetryBackoffSeconds.Length >= MaxRetries`
+- `JwtSettingsValidator` — secret non-empty and at least 32 characters
+- `SentrySettingsValidator` — `Dsn` required when `Enabled = true`
+- `RateLimitingSettingsValidator` — nested policy `PermitLimit` and
+  `WindowSeconds` stay inside the documented ranges
+
+`JwtSettings.SecretKey` is intentionally not marked `[Required]` because
+`FirstRunBootstrapper.EnsureJwtSecret` generates it before validation runs.
+The `Llm:Provider` and `Cache:Provider` regex patterns use the `(?i)` flag
+so they accept the same casing variants (`OpenAi`/`OpenAI`/`openai`,
+`Redis`/`redis`) that the runtime selectors compare case-insensitively.
+
 ---
 
 ## JWT and authentication
