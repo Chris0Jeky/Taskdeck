@@ -41,10 +41,6 @@ public sealed partial class McpTelemetryMiddleware
             context.Items.TryGetValue(CorrelationIdMiddleware.ItemKey, out var corrId)
                 ? corrId?.ToString()
                 : context.TraceIdentifier);
-        var userId = LogSanitizer.SanitizeForLog(
-            context.Items.TryGetValue(HttpUserContextProvider.UserIdItemKey, out var uid)
-                ? uid?.ToString()
-                : null);
         var method = LogSanitizer.SanitizeForLog(context.Request.Method);
         var sanitizedPath = LogSanitizer.SanitizeForLog(context.Request.Path.Value);
 
@@ -57,19 +53,26 @@ public sealed partial class McpTelemetryMiddleware
             activity?.SetTag(TaskdeckTelemetryTags.McpOperationType, "http_request");
             activity?.SetTag(TaskdeckTelemetryTags.McpTransport, "http");
             activity?.SetTag(TaskdeckTelemetryTags.CorrelationId, correlationId);
-            if (userId is not null)
-            {
-                activity?.SetTag(TaskdeckTelemetryTags.UserId, userId);
-            }
 
-            LogMcpRequestStarted(_logger, method, sanitizedPath, correlationId, userId);
+            LogMcpRequestStarted(_logger, method, sanitizedPath, correlationId, null);
 
             await _next(context);
+
+            // Capture userId AFTER _next returns so API key auth has already run
+            // and populated HttpContext.Items with the authenticated user ID.
+            var userId = LogSanitizer.SanitizeForLog(
+                context.Items.TryGetValue(HttpUserContextProvider.UserIdItemKey, out var uid)
+                    ? uid?.ToString()
+                    : null);
 
             stopwatch.Stop();
             var statusCode = context.Response.StatusCode;
             var success = statusCode < 400;
 
+            if (userId is not null)
+            {
+                activity?.SetTag(TaskdeckTelemetryTags.UserId, userId);
+            }
             activity?.SetTag(TaskdeckTelemetryTags.McpSuccess, success);
             activity?.SetTag("http.status_code", statusCode);
 
@@ -88,6 +91,8 @@ public sealed partial class McpTelemetryMiddleware
         {
             // Client disconnected — record as a cancellation, not an error.
             stopwatch.Stop();
+
+            var userId = CaptureUserId(context);
 
             activity?.SetStatus(ActivityStatusCode.Ok, "Cancelled");
             activity?.SetTag(TaskdeckTelemetryTags.McpSuccess, false);
@@ -108,6 +113,8 @@ public sealed partial class McpTelemetryMiddleware
         catch (Exception ex)
         {
             stopwatch.Stop();
+
+            var userId = CaptureUserId(context);
 
             // Use exception type name only to avoid leaking user content in trace exports.
             activity?.SetStatus(ActivityStatusCode.Error, LogSanitizer.SafeExceptionDescription(ex));
@@ -137,6 +144,16 @@ public sealed partial class McpTelemetryMiddleware
             throw;
         }
     }
+
+    /// <summary>
+    /// Reads the authenticated user ID from HttpContext.Items after downstream
+    /// middleware (API key auth) has had a chance to populate it.
+    /// </summary>
+    private static string? CaptureUserId(HttpContext context) =>
+        LogSanitizer.SanitizeForLog(
+            context.Items.TryGetValue(HttpUserContextProvider.UserIdItemKey, out var uid)
+                ? uid?.ToString()
+                : null);
 
     // ── Source-generated log methods (CWE-117 safe) ─────────────────────────
     // LoggerMessage source generators produce compile-time structured log calls
