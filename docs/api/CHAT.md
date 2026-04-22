@@ -1,5 +1,7 @@
 # Chat API
 
+> **Data model:** See [Data Model Reference](../architecture/DATA_MODEL.md) for entity fields, constraints, and relationships.
+
 The chat API provides LLM-powered conversational sessions that can generate automation proposals for board mutations. Chat sessions can optionally be scoped to a specific board.
 
 ## Create a chat session

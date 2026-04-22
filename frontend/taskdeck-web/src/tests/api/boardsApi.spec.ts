@@ -25,7 +25,7 @@ describe('boardsApi', () => {
 
       const result = await boardsApi.getBoards()
 
-      expect(http.get).toHaveBeenCalledWith('/boards?')
+      expect(http.get).toHaveBeenCalledWith('/boards?limit=200')
       expect(result).toEqual(mockBoards)
     })
 
@@ -37,7 +37,7 @@ describe('boardsApi', () => {
 
       const result = await boardsApi.getBoards('test')
 
-      expect(http.get).toHaveBeenCalledWith('/boards?search=test')
+      expect(http.get).toHaveBeenCalledWith('/boards?search=test&limit=200')
       expect(result).toEqual(mockBoards)
     })
 
@@ -48,7 +48,7 @@ describe('boardsApi', () => {
 
       await boardsApi.getBoards(undefined, true)
 
-      expect(http.get).toHaveBeenCalledWith('/boards?includeArchived=true')
+      expect(http.get).toHaveBeenCalledWith('/boards?includeArchived=true&limit=200')
     })
 
     it('should fetch boards with search and includeArchived params', async () => {
@@ -58,7 +58,7 @@ describe('boardsApi', () => {
 
       await boardsApi.getBoards('query', true)
 
-      expect(http.get).toHaveBeenCalledWith('/boards?search=query&includeArchived=true')
+      expect(http.get).toHaveBeenCalledWith('/boards?search=query&includeArchived=true&limit=200')
     })
   })
 

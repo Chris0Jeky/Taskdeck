@@ -2,6 +2,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ToastContainer from './components/common/ToastContainer.vue'
+import SessionTimeoutWarning from './components/common/SessionTimeoutWarning.vue'
 import AppShell from './components/shell/AppShell.vue'
 import ErrorBoundary from './components/ErrorBoundary.vue'
 import { useSessionStore } from './store/sessionStore'
@@ -48,6 +49,7 @@ watch(
       <router-view />
     </ErrorBoundary>
     <ToastContainer />
+    <SessionTimeoutWarning />
   </div>
 </template>
 
