@@ -62,8 +62,8 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 | Severity | Issue | Location |
 |----------|-------|----------|
-| ~~CRITICAL~~ RESOLVED | ~~Only 1 EF migration in source control — fresh environments cannot bootstrap~~ 21 migrations in source control; full chain applies cleanly to fresh SQLite; `MigrationBootstrapTests` guard regression; workflow documented in `docs/platform/EF_MIGRATION_WORKFLOW.md` (`#864`) | `backend/src/Taskdeck.Infrastructure/Migrations/` |
-| CRITICAL | No configuration validation at startup (`ValidateOnStart()`) | `Program.cs`, all settings classes |
+| ~~CRITICAL~~ RESOLVED | ~~Only 1 EF migration in source control — fresh environments cannot bootstrap~~ 21 migrations in source control; full chain applies cleanly to fresh SQLite; `MigrationBootstrapTests` guard regression; workflow documented in `docs/platform/EF_MIGRATION_WORKFLOW.md` (`#864`/PR `#907`) | `backend/src/Taskdeck.Infrastructure/Migrations/` |
+| ~~CRITICAL~~ RESOLVED | ~~No configuration validation at startup (`ValidateOnStart()`)~~ data annotations on 15 settings classes + 4 `IValidateOptions<T>` cross-property validators + `ValidateOnStart()` via `RegisterValidatedOptions<T>` helper; 34 `OptionsValidationTests` (OPS-27 `#858`/PR `#908`) | `Program.cs`, all settings classes |
 | HIGH | No API versioning strategy — breaking changes have no compatibility path | All controllers |
 | MEDIUM | MCP mode duplicates DI registration from web mode | `Program.cs` lines 72-91 |
 | MEDIUM | No value objects for Email/Username — validation scattered | Domain entities |
@@ -119,8 +119,8 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 | Severity | Issue | Impact |
 |----------|-------|--------|
-| HIGH | Dev JWT secret in `appsettings.Development.json` | Violates zero-secrets-in-code principle |
-| HIGH | SSRF not protected for webhook/LLM provider URLs | Could access internal services |
+| ~~HIGH~~ RESOLVED | ~~Dev JWT secret in `appsettings.Development.json`~~ Removed; `FirstRunBootstrapper.EnsureJwtSecret` auto-generates unconditionally in all environments (SEC-27 `#851`/PR `#911`) | Violates zero-secrets-in-code principle |
+| ~~HIGH~~ RESOLVED | ~~SSRF not protected for webhook/LLM provider URLs~~ `SsrfProtectionService` validates `OpenAi`/`Gemini` `BaseUrl`; explicit cloud metadata hostname blocking; DNS-rebinding defense via `OutboundWebhookConnectCallback` on LLM `HttpClient`s; `AllowAutoRedirect = false`; dev-mode `localhost` bypass gated on `IsDevelopmentLike && AllowLiveProvidersInDevelopment` for Ollama/LM Studio (SEC-26 `#850`/PR `#905`) | Could access internal services |
 | HIGH | No encryption at rest for SQLite database | Sensitive data accessible with file access |
 | MEDIUM | No role-based authorization (RBAC) | All authenticated users have equal access |
 | MEDIUM | No vulnerability disclosure policy (`SECURITY.md`) | No responsible disclosure path |
@@ -130,7 +130,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | LOW | No OAuth scope validation | Scope claims not checked |
 | LOW | Console.error exposes API error details | DevTools visible |
 
-### Overall Risk Level: MEDIUM (0 Critical, 3 HIGH, 8 MEDIUM, 5 LOW)
+### Overall Risk Level: LOW-MEDIUM (0 Critical, 1 HIGH, 8 MEDIUM, 5 LOW after 2026-04-22 hardening wave)
 
 ---
 
@@ -140,13 +140,13 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 ### Quick Wins (1-5 hours each)
 
-| Issue | Impact | Effort |
-|-------|--------|--------|
-| **No response compression** — 5-10MB responses uncompressed | 90% bandwidth reduction | 1 hour |
-| **Missing database indexes** — AuditLog, LlmRequest, Card | 10-100x query speedup on large tables | 1 hour |
-| **Sync I/O in WorkspaceService** — `.Result` blocking async | Prevents thread pool starvation | 30 min |
-| **No pagination on board list** — returns ALL boards | Blocks team-scale (100+ boards) | 2 hours |
-| **AuditLog in-memory filtering** — should be SQL-level | 50ms+ per activity load eliminated | 2 hours |
+| Issue | Impact | Effort | Status |
+|-------|--------|--------|--------|
+| **No response compression** — 5-10MB responses uncompressed | 90% bandwidth reduction | 1 hour | Open |
+| **Missing database indexes** — AuditLog, LlmRequest, Card | 10-100x query speedup on large tables | 1 hour | Open |
+| **Sync I/O in WorkspaceService** — `.Result` blocking async | Prevents thread pool starvation | 30 min | RESOLVED (PERF-11 `#847`/PR `#904`) |
+| **No pagination on board list** — returns ALL boards | Blocks team-scale (100+ boards) | 2 hours | RESOLVED (PERF-12 `#859`/PR `#909`) |
+| **AuditLog in-memory filtering** — should be SQL-level | 50ms+ per activity load eliminated | 2 hours | RESOLVED (PERF-13 `#849`/PR `#903`) |
 
 ### Architectural Bottlenecks
 
@@ -234,9 +234,9 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 ### Critical Gaps for Production
 1. No SAST (static analysis security testing) in CI
-2. No database migration validation in CI
+2. ~~No database migration validation in CI~~ RESOLVED: `MigrationBootstrapTests` verify fresh-bootstrap + model drift on every run (OPS-28 `#864`/PR `#907`)
 3. No Terraform `plan` validation in CI
-4. No secrets detection (Gitleaks or equivalent)
+4. ~~No secrets detection (Gitleaks or equivalent)~~ RESOLVED: advisory PR scan in `ci-extended.yml`, blocking full-history scan in `ci-release.yml` (CI-02 `#871`/PR `#902`)
 5. No monitoring/alerting rules defined
 6. No on-call runbook or escalation policy
 7. Docker containers run as root (no USER instruction)
@@ -289,19 +289,26 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 ### Tier 1: Before Any External User (This Week)
 
-1. **Enable response compression** — 90% bandwidth savings, 1 hour effort
-2. **Add missing database indexes** — AuditLog, LlmRequest, Card — 1 hour
-3. **Fix sync I/O in WorkspaceService** — replace `.Result` with `await` — 30 min
-4. **Add SSRF protection for webhook URLs** — block private IP ranges — 2 hours
-5. **Remove dev JWT secret from `appsettings.Development.json`** — 15 min
+1. **Enable response compression** — 90% bandwidth savings, 1 hour effort — Open
+2. **Add missing database indexes** — AuditLog, LlmRequest, Card — 1 hour — Open
+3. ~~**Fix sync I/O in WorkspaceService**~~ RESOLVED (PERF-11 `#847`/PR `#904`)
+4. ~~**Add SSRF protection for webhook URLs**~~ RESOLVED: extended beyond webhooks to LLM provider URLs with cloud metadata hostname blocking (SEC-26 `#850`/PR `#905`)
+5. ~~**Remove dev JWT secret from `appsettings.Development.json`**~~ RESOLVED (SEC-27 `#851`/PR `#911`)
 
 ### Tier 2: Before Production Launch (This Month)
 
-6. **Decompose oversized views** — ReviewView, InboxView, AutomationChatView — 8 hours each
-7. **Implement error boundary** — catch render errors with fallback UI — 2 hours
-8. **Add configuration validation at startup** — `ValidateOnStart()` — 4 hours
-9. **Add API response pagination** — board list, audit, activity — 4 hours each
-10. **Create `SECURITY.md`** vulnerability disclosure policy — 1 hour
+6. **Decompose oversized views** — ReviewView, InboxView, AutomationChatView — 8 hours each — Open
+7. **Implement error boundary** — catch render errors with fallback UI — 2 hours — Open
+8. ~~**Add configuration validation at startup**~~ RESOLVED (OPS-27 `#858`/PR `#908`)
+9. **Add API response pagination** — board list RESOLVED (PERF-12 `#859`/PR `#909`); audit, activity still Open
+10. **Create `SECURITY.md`** vulnerability disclosure policy — 1 hour — Open
+
+### Additional Tier 2 work delivered in the 2026-04-22 wave
+
+- **Database migration infrastructure + bootstrap regression guard** (OPS-28 `#864`/PR `#907`): 5 `MigrationBootstrapTests`, `EF_MIGRATION_WORKFLOW.md`, `AddExternalLoginsUserForeignKey` migration to fix previously-unnoticed model drift
+- **Import file content validation** (SEC-30 `#860`/PR `#910`): `FileContentValidator` with text/JSON/binary/SQLite magic-byte checks, CJK-safe character-based limits, 52 tests
+- **Secrets detection in CI** (CI-02 `#871`/PR `#902`): Gitleaks advisory + blocking scans
+- **CLI test discovery fix** (TST-58 `#853`/PR `#906`): missing `[Fact]`/`[Theory]` attributes + shared `CliTestHarness`
 
 ### Tier 3: v0.1.0 Release Prerequisites
 
