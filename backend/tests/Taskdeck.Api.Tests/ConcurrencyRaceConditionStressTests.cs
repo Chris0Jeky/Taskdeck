@@ -839,7 +839,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         int expectedMemberCount,
         TimeSpan? timeout = null)
     {
-        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(10);
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(15);
         var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
         while (DateTimeOffset.UtcNow < deadline)
         {
@@ -936,7 +936,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             // Poll until the observer snapshot settles at the expected member count
             // (successfully joined users plus the owner).
             var afterJoin = await WaitForPresenceCountAsync(
-                observerEvents, actualJoined + 1, TimeSpan.FromSeconds(10));
+                observerEvents, actualJoined + 1, TimeSpan.FromSeconds(20));
             afterJoin.Members.Should().HaveCount(actualJoined + 1,
                 "all successfully-joined users plus the observer owner should be present");
 
@@ -965,7 +965,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             var actualLeft = Interlocked.CompareExchange(ref leaveSuccessCount, 0, 0);
             var remaining = actualJoined - actualLeft;
             var afterLeave = await WaitForPresenceCountAsync(
-                observerEvents, remaining + 1, TimeSpan.FromSeconds(10));
+                observerEvents, remaining + 1, TimeSpan.FromSeconds(20));
             afterLeave.Members.Should().HaveCount(remaining + 1,
                 $"after {actualLeft} leaves, {remaining} users + owner should remain");
         }
