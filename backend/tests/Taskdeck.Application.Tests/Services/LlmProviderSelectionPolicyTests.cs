@@ -242,6 +242,226 @@ public class LlmProviderSelectionPolicyTests
         result.Reason.Should().Be("Mock provider selected.");
     }
 
+    // -----------------------------------------------------------------------
+    // SSRF protection for LLM provider BaseUrl (SEC-26)
+    // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("https://10.0.0.1/v1")]
+    [InlineData("https://192.168.1.1/v1")]
+    [InlineData("https://172.16.0.1/v1")]
+    [InlineData("https://127.0.0.1/v1")]
+    [InlineData("https://[::1]/v1")]
+    [InlineData("https://metadata.google.internal/v1")]
+    [InlineData("https://metadata.goog/v1")]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiBaseUrlTargetsPrivateOrInternalHost(string baseUrl)
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = baseUrl;
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock,
+            $"OpenAI BaseUrl '{baseUrl}' targets a private/internal host and should be blocked by SSRF protection");
+        result.Reason.Should().Contain("SSRF");
+    }
+
+    [Theory]
+    [InlineData("https://10.0.0.1/v1beta")]
+    [InlineData("https://192.168.1.1/v1beta")]
+    [InlineData("https://172.16.0.1/v1beta")]
+    [InlineData("https://127.0.0.1/v1beta")]
+    [InlineData("https://[::1]/v1beta")]
+    [InlineData("https://metadata.google.internal/v1beta")]
+    [InlineData("https://metadata.goog/v1beta")]
+    public void Evaluate_ShouldSelectMock_WhenGeminiBaseUrlTargetsPrivateOrInternalHost(string baseUrl)
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "Gemini";
+        settings.Gemini.BaseUrl = baseUrl;
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock,
+            $"Gemini BaseUrl '{baseUrl}' targets a private/internal host and should be blocked by SSRF protection");
+        result.Reason.Should().Contain("SSRF");
+    }
+
+    [Theory]
+    [InlineData("http://api.openai.com/v1")]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiBaseUrlUsesHttp(string baseUrl)
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = baseUrl;
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock,
+            $"LLM provider BaseUrl '{baseUrl}' uses HTTP, which is not allowed");
+        result.Reason.Should().Contain("SSRF");
+    }
+
+    [Theory]
+    [InlineData("https://[::ffff:10.0.0.1]/v1")]
+    [InlineData("https://[::ffff:192.168.1.1]/v1")]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiBaseUrlUsesIpv4MappedIpv6(string baseUrl)
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = baseUrl;
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock,
+            $"OpenAI BaseUrl '{baseUrl}' uses IPv4-mapped IPv6 to target private addresses");
+        result.Reason.Should().Contain("SSRF");
+    }
+
+    [Fact]
+    public void TryValidateOpenAiSettings_ShouldRejectPrivateIpBaseUrl()
+    {
+        var settings = BuildValidSettings();
+        settings.OpenAi.BaseUrl = "https://10.0.0.5/v1";
+
+        var isValid = LlmProviderSelectionPolicy.TryValidateOpenAiSettings(settings, out var error);
+
+        isValid.Should().BeFalse();
+        error.Should().Contain("SSRF");
+    }
+
+    [Fact]
+    public void TryValidateGeminiSettings_ShouldRejectPrivateIpBaseUrl()
+    {
+        var settings = BuildValidSettings();
+        settings.Gemini.BaseUrl = "https://192.168.1.1/v1beta";
+
+        var isValid = LlmProviderSelectionPolicy.TryValidateGeminiSettings(settings, out var error);
+
+        isValid.Should().BeFalse();
+        error.Should().Contain("SSRF");
+    }
+
+    [Fact]
+    public void TryValidateOpenAiSettings_ShouldAcceptLegitimateBaseUrl()
+    {
+        var settings = BuildValidSettings();
+        settings.OpenAi.BaseUrl = "https://api.openai.com/v1";
+
+        var isValid = LlmProviderSelectionPolicy.TryValidateOpenAiSettings(settings, out _);
+
+        isValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TryValidateGeminiSettings_ShouldAcceptLegitimateBaseUrl()
+    {
+        var settings = BuildValidSettings();
+        settings.Gemini.BaseUrl = "https://generativelanguage.googleapis.com/v1beta";
+
+        var isValid = LlmProviderSelectionPolicy.TryValidateGeminiSettings(settings, out _);
+
+        isValid.Should().BeTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // Development localhost bypass — local LLM gateways (Ollama, LM Studio)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Evaluate_ShouldSelectOpenAi_WhenLocalhostInDevelopmentWithAllowLiveProviders()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = "http://localhost:11434/v1";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.OpenAi,
+            "localhost should be allowed in development with AllowLiveProvidersInDevelopment for local LLM gateways like Ollama");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectGemini_WhenLocalhostInDevelopmentWithAllowLiveProviders()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "Gemini";
+        settings.Gemini.BaseUrl = "http://localhost:8080/v1beta";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Gemini,
+            "localhost should be allowed in development with AllowLiveProvidersInDevelopment");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenLocalhostInProductionEvenWithAllowLiveProviders()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = "http://localhost:11434/v1";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock,
+            "localhost should still be blocked in production even if AllowLiveProvidersInDevelopment is set");
+        result.Reason.Should().Contain("SSRF");
+    }
+
+    [Fact]
+    public void TryValidateOpenAiSettings_ShouldAcceptLocalhostWhenAllowed()
+    {
+        var settings = BuildValidSettings();
+        settings.OpenAi.BaseUrl = "http://localhost:11434/v1";
+
+        var isValid = LlmProviderSelectionPolicy.TryValidateOpenAiSettings(
+            settings, out _, allowLocalhostEndpoints: true);
+
+        isValid.Should().BeTrue(
+            "localhost should be accepted when allowLocalhostEndpoints is true (development mode)");
+    }
+
+    [Fact]
+    public void TryValidateOpenAiSettings_ShouldRejectLocalhostWhenNotAllowed()
+    {
+        var settings = BuildValidSettings();
+        settings.OpenAi.BaseUrl = "http://localhost:11434/v1";
+
+        var isValid = LlmProviderSelectionPolicy.TryValidateOpenAiSettings(
+            settings, out var error, allowLocalhostEndpoints: false);
+
+        isValid.Should().BeFalse(
+            "localhost should be rejected when allowLocalhostEndpoints is false (production mode)");
+        error.Should().Contain("SSRF");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldStillBlockPrivateIps_InDevelopmentWithAllowLiveProviders()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = "https://10.0.0.1/v1";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock,
+            "private IPs (not localhost) should still be blocked even in development mode");
+        result.Reason.Should().Contain("SSRF");
+    }
+
     private static LlmProviderSettings BuildValidSettings()
     {
         return new LlmProviderSettings
