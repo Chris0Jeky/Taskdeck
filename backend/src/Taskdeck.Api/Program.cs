@@ -302,6 +302,10 @@ builder.Services.AddTaskdeckSettings(
     out _,  // telemetrySettings — registered in DI by AddTaskdeckSettings
     out _); // analyticsSettings — registered in DI by AddTaskdeckSettings
 
+// Wire ValidateDataAnnotations() + ValidateOnStart() for all settings classes.
+// The app will fail fast on startup if any configuration value is invalid.
+builder.Services.AddOptionsValidation(builder.Configuration);
+
 // Add Infrastructure (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
 
