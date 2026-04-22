@@ -305,6 +305,36 @@ public class SsrfProtectionServiceTests
     }
 
     // -----------------------------------------------------------------------
+    // ValidateUrl — decimal/hex/octal IP notation bypass attempts
+    // .NET's Uri normalizes these to dotted-decimal, so the IP check catches them
+    // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("https://2130706433")]         // decimal for 127.0.0.1
+    [InlineData("https://0x7f000001")]         // hex for 127.0.0.1
+    [InlineData("https://0177.0.0.1")]         // octal for 127.0.0.1
+    [InlineData("https://127.1")]              // short form for 127.0.0.1
+    [InlineData("https://127.0.1")]            // short form for 127.0.0.1
+    public void ValidateUrl_ShouldBlockDecimalHexOctalIpBypasses(string url)
+    {
+        var result = SsrfProtectionService.ValidateUrl(url);
+        result.IsAllowed.Should().BeFalse(
+            $"{url} uses decimal/hex/octal notation to disguise a private IP — " +
+            ".NET Uri normalizes it, and the IP check should catch it");
+    }
+
+    [Theory]
+    [InlineData("https://167772161")]          // decimal for 10.0.0.1
+    [InlineData("https://0xA000001")]          // hex for 10.0.0.1
+    [InlineData("https://0xC0A80101")]         // hex for 192.168.1.1
+    public void ValidateUrl_ShouldBlockDecimalHexPrivateIpBypasses(string url)
+    {
+        var result = SsrfProtectionService.ValidateUrl(url);
+        result.IsAllowed.Should().BeFalse(
+            $"{url} uses non-standard notation for a private IP");
+    }
+
+    // -----------------------------------------------------------------------
     // ValidateLlmProviderUrl — HTTPS enforcement
     // -----------------------------------------------------------------------
 
