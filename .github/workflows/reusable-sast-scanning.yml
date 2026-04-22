@@ -1,0 +1,125 @@
+# =============================================================================
+# Reusable SAST Scanning — Semgrep-based static application security testing.
+# Scans C#/TypeScript/Vue sources with Semgrep registry rules and custom
+# Taskdeck rules (.semgrep/).
+# Issue: #870 (CI-01)
+# =============================================================================
+
+name: Reusable SAST Scanning
+
+on:
+  workflow_call:
+    inputs:
+      summary-title:
+        required: false
+        type: string
+        default: SAST Scan Summary
+      workflow-context:
+        required: false
+        type: string
+        default: unspecified
+      artifact-name:
+        required: false
+        type: string
+        default: sast-scanning
+      retention-days:
+        required: false
+        type: number
+        default: 14
+      enforce-findings:
+        required: false
+        type: boolean
+        default: false
+      node-version:
+        required: false
+        type: string
+        default: "24.13.1"
+
+permissions:
+  contents: read
+
+jobs:
+  sast-scan:
+    name: SAST Scan (Semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Run Semgrep scan
+        shell: bash
+        env:
+          SEMGREP_SEND_METRICS: "off"
+        run: |
+          mkdir -p artifacts/sast
+
+          set +e
+          semgrep scan \
+            --config .semgrep/ \
+            --config p/csharp \
+            --config p/typescript \
+            --config p/jwt \
+            --json \
+            --json-output artifacts/sast/semgrep-results.json \
+            --max-target-bytes 1000000 \
+            --timeout 300 \
+            --timeout-threshold 3 \
+            --jobs 4 \
+            .
+          scan_exit=$?
+          printf '%s' "$scan_exit" > artifacts/sast/semgrep-exit-code
+          set -e
+
+          echo "Semgrep exited with code: $scan_exit"
+
+      - name: Summarize SAST findings
+        shell: bash
+        run: |
+          enforce_flag=""
+          if [ "${{ inputs.enforce-findings }}" = "true" ]; then
+            enforce_flag="--enforce"
+          fi
+
+          set +e
+          node scripts/ci/summarize-sast-findings.mjs \
+            --input artifacts/sast/semgrep-results.json \
+            --exit-code-file artifacts/sast/semgrep-exit-code \
+            --summary-title "${{ inputs.summary-title }}" \
+            --workflow-context "${{ inputs.workflow-context }}" \
+            --output-markdown artifacts/sast/summary.md \
+            --output-json artifacts/sast/summary.json \
+            $enforce_flag \
+            > artifacts/sast/summary-stdout.md 2>&1
+          summary_exit=$?
+          set -e
+
+          # Write to GitHub step summary
+          if [ -f artifacts/sast/summary.md ]; then
+            cat artifacts/sast/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          exit $summary_exit
+
+      - name: Upload SAST artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: artifacts/sast
+          if-no-files-found: ignore
+          retention-days: ${{ inputs.retention-days }}
