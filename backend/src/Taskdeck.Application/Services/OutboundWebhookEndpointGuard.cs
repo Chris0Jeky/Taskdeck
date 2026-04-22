@@ -15,6 +15,17 @@ public static partial class OutboundWebhookEndpointGuard
         ".localtest.me"
     ];
 
+    /// <summary>
+    /// Exact hostnames that are always blocked regardless of suffix matching.
+    /// Provides defense-in-depth for cloud metadata endpoints and well-known
+    /// internal service hostnames that an attacker could use for SSRF.
+    /// </summary>
+    private static readonly string[] BlockedExactHostnames =
+    [
+        "metadata.goog",           // GCP metadata (no suffix match covers this)
+        "100.100.100.200",         // Alibaba Cloud metadata endpoint
+    ];
+
     private static readonly string[] DynamicDnsRoots =
     [
         "nip.io",
@@ -109,6 +120,12 @@ public static partial class OutboundWebhookEndpointGuard
 
     private static bool IsBlockedByHostnamePolicy(string host)
     {
+        if (BlockedExactHostnames.Any(blocked =>
+                host.Equals(blocked, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
         if (BlockedHostnameSuffixes.Any(suffix =>
                 host.EndsWith(suffix, StringComparison.Ordinal)))
         {

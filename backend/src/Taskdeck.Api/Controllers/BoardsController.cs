@@ -25,23 +25,43 @@ public class BoardsController : AuthenticatedControllerBase
         _boardService = boardService;
     }
 
+    private const int DefaultLimit = 50;
+    private const int MaxLimit = 200;
+
     /// <summary>
-    /// List boards accessible to the current user.
+    /// List boards accessible to the current user with optional pagination.
     /// </summary>
     /// <param name="search">Optional text filter applied to board names.</param>
     /// <param name="includeArchived">When true, archived boards are included in the results.</param>
-    /// <returns>A list of boards matching the criteria.</returns>
-    /// <response code="200">Returns the list of boards.</response>
+    /// <param name="offset">Zero-based starting position. Defaults to 0.</param>
+    /// <param name="limit">Maximum number of boards to return. Defaults to 50, max 200. Omit for default.</param>
+    /// <returns>A paginated list of boards matching the criteria.</returns>
+    /// <response code="200">Returns the paginated list of boards.</response>
     /// <response code="401">Authentication required.</response>
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<BoardDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PaginatedResult<BoardDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> GetBoards([FromQuery] string? search, [FromQuery] bool includeArchived = false)
+    public async Task<IActionResult> GetBoards(
+        [FromQuery] string? search,
+        [FromQuery] bool includeArchived = false,
+        [FromQuery] int offset = 0,
+        [FromQuery] int? limit = null)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _boardService.ListBoardsAsync(userId, search, includeArchived);
+        // Clamp offset to non-negative
+        if (offset < 0) offset = 0;
+
+        // Apply default and max limit. When limit is explicitly provided, clamp to [1, MaxLimit].
+        // When omitted, use DefaultLimit for backward-compatible bounded responses.
+        var effectiveLimit = limit.HasValue
+            ? Math.Clamp(limit.Value, 1, MaxLimit)
+            : DefaultLimit;
+
+        var result = await _boardService.ListBoardsPaginatedAsync(
+            userId, search, includeArchived, offset, effectiveLimit);
+
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 

@@ -24,7 +24,7 @@ Related docs:
 
 | Secret | Purpose | Local/Dev | Staging/Prod | Rotation Trigger |
 | --- | --- | --- | --- | --- |
-| `Jwt:SecretKey` | JWT signing for auth tokens | `appsettings.Development.json` (dev-only placeholder) | AWS SSM SecureString via `jwt_secret_ssm_parameter_name` | Scheduled (90 days) or on compromise |
+| `Jwt:SecretKey` | JWT signing for auth tokens | Auto-generated to `appsettings.local.json` by `FirstRunBootstrapper`; or `dotnet user-secrets` / env var | AWS SSM SecureString via `jwt_secret_ssm_parameter_name` | Scheduled (90 days) or on compromise |
 | `Llm:OpenAi:ApiKey` | OpenAI API access | Environment variable or user secrets | SSM SecureString or CI-injected env var | On compromise or key expiry |
 | `Llm:Gemini:ApiKey` | Gemini API access | Environment variable or user secrets | SSM SecureString or CI-injected env var | On compromise or key expiry |
 | `TASKDECK_JWT_SECRET` | Compose-level JWT secret injection | `deploy/.env` (untracked) | SSM SecureString pulled at boot | Scheduled (90 days) or on compromise |
@@ -36,7 +36,7 @@ Related docs:
 
 ### Local Development
 
-- **JWT secret**: Hardcoded dev-only value in `appsettings.Development.json`. This value is intentionally weak and clearly marked; it must never be used outside local dev.
+- **JWT secret**: Auto-generated to `appsettings.local.json` on first run by `FirstRunBootstrapper`. No hardcoded secret in committed files. Alternatively, use `dotnet user-secrets set "Jwt:SecretKey" "<value>"` or the `Jwt__SecretKey` environment variable.
 - **LLM API keys**: Not required (Mock provider is default). When needed for live-provider demos, set via environment variables (`Llm__OpenAi__ApiKey`, `Llm__Gemini__ApiKey`) or .NET user secrets (`dotnet user-secrets set "Llm:OpenAi:ApiKey" "<key>"`).
 - **GitHub PAT**: Set in user environment or root `.env` (gitignored).
 - **No secrets required in committed files.** `appsettings.json` contains only empty placeholder values for optional provider keys.
@@ -67,7 +67,7 @@ The following committed files contain secret-shaped keys. All values are empty p
 | --- | --- | --- | --- |
 | `appsettings.json` | `Llm:OpenAi:ApiKey` | `""` (empty) | Safe -- placeholder only |
 | `appsettings.json` | `Llm:Gemini:ApiKey` | `""` (empty) | Safe -- placeholder only |
-| `appsettings.Development.json` | `Jwt:SecretKey` | Dev-only marker value | Safe -- clearly marked, dev-only |
+| `appsettings.Development.json` | `Jwt:SecretKey` | Removed (no longer present) | Safe -- secret auto-generated at runtime |
 | `deploy/.env.example` | `TASKDECK_JWT_SECRET` | `""` (empty) | Safe -- template only |
 | `.env.example` | `GITHUB_PAT` | `""` (empty) | Safe -- template only |
 | `terraform.tfvars.example` (all envs) | `jwt_secret_ssm_parameter_name` | Example path | Safe -- example only |

@@ -172,6 +172,16 @@ const navCatalog: NavItem[] = [
     keywords: 'metrics analytics throughput cycle time wip blocked dashboard',
   },
   {
+    id: 'integrations',
+    label: 'Integrations',
+    icon: 'X',
+    path: '/workspace/integrations',
+    flag: null,
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'integrations connectors inbound outbound webhook import',
+  },
+  {
     id: 'activity',
     label: 'Activity',
     icon: 'Y',

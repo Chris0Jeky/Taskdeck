@@ -40,6 +40,7 @@ const DevToolsView = () => import('../views/DevToolsView.vue')
 const SavedViewsView = () => import('../views/SavedViewsView.vue')
 const MetricsView = () => import('../views/MetricsView.vue')
 const CalendarView = () => import('../views/CalendarView.vue')
+const IntegrationsView = () => import('../views/IntegrationsView.vue')
 const AgentsView = () => import('../views/AgentsView.vue')
 const AgentRunsView = () => import('../views/AgentRunsView.vue')
 const AgentRunDetailView = () => import('../views/AgentRunDetailView.vue')
@@ -142,6 +143,14 @@ const router = createRouter({
       path: '/workspace/metrics',
       name: 'workspace-metrics',
       component: MetricsView,
+      meta: { requiresShell: true },
+    },
+
+    // Integrations route
+    {
+      path: '/workspace/integrations',
+      name: 'workspace-integrations',
+      component: IntegrationsView,
       meta: { requiresShell: true },
     },
 

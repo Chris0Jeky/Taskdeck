@@ -45,18 +45,12 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Verify board is excluded from active board list
-        var activeBoardsResponse = await client.GetAsync("/api/boards");
-        activeBoardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var activeBoards = await activeBoardsResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
-        activeBoards.Should().NotBeNull();
-        activeBoards!.Should().NotContain(b => b.Id == board.Id);
+        var activeBoards = await ApiTestHarness.ListBoardsAsync(client);
+        activeBoards.Should().NotContain(b => b.Id == board.Id);
 
         // Verify board appears when includeArchived=true
-        var allBoardsResponse = await client.GetAsync("/api/boards?includeArchived=true");
-        allBoardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var allBoards = await allBoardsResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
-        allBoards.Should().NotBeNull();
-        allBoards!.Should().Contain(b => b.Id == board.Id && b.IsArchived);
+        var allBoards = await ApiTestHarness.ListBoardsAsync(client, includeArchived: true);
+        allBoards.Should().Contain(b => b.Id == board.Id && b.IsArchived);
 
         // Verify archive item exists in archive list
         var archiveListResponse = await client.GetAsync("/api/archive/items?entityType=board");
@@ -102,11 +96,8 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
         restoreResult.RestoredEntityId.Should().NotBeNull();
 
         // Verify the board is actually visible again and no longer archived
-        var boardsResponse = await client.GetAsync("/api/boards?includeArchived=true");
-        boardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var allBoards = await boardsResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
-        allBoards.Should().NotBeNull();
-        var restoredBoard = allBoards!.FirstOrDefault(b => b.Id == board.Id);
+        var allBoards = await ApiTestHarness.ListBoardsAsync(client, includeArchived: true);
+        var restoredBoard = allBoards.FirstOrDefault(b => b.Id == board.Id);
         restoredBoard.Should().NotBeNull("restored board should still exist in board list");
         restoredBoard!.IsArchived.Should().BeFalse("board should no longer be archived after restore");
     }
