@@ -152,9 +152,9 @@ axiosRetry(http, {
 
 | View | Current Lines | Decomposition Strategy |
 |------|--------------|----------------------|
-| ReviewView | 1,659 | Extract ProposalList, ProposalDetail, ProposalDiff |
-| InboxView | 1,527 | Extract CaptureList, CaptureDetail, BatchActionBar |
-| AutomationChatView | 1,523 | Extract MessageList, ChatInput, ToolStatusPanel |
+| ~~ReviewView~~ | ~~1,659~~ 148 | DONE (PR #923) — 6 components + 2 composables |
+| ~~InboxView~~ | ~~1,527~~ 222 | DONE (PR #921) — 2 panels + 1 composable + utils |
+| ~~AutomationChatView~~ | ~~1,523~~ 235 | DONE (PR #920) — 7 components + 1 composable |
 | MetricsView | 920 | Extract MetricsCharts, MetricsTable, ForecastPanel |
 | HomeView | 804 | Extract WorkspaceSummary, QuickActions, RecentActivity |
 
@@ -383,10 +383,10 @@ services.AddHttpClient("llm-provider")
 16. ~~Import file magic byte validation (3h)~~ RESOLVED (SEC-30 PR `#910`)
 
 ### This Quarter (100 hours)
-17. View decomposition — remaining oversized views (24h)
+17. ~~View decomposition — remaining oversized views (24h)~~ RESOLVED (PRs #920, #921, #923)
 18. Responsive design for mobile (16h)
 19. PostgreSQL migration (40h)
-20. Monitoring/alerting setup (16h)
+20. ~~Monitoring/alerting setup (16h)~~ RESOLVED (OPS-30 PR `#914`)
 21. Distributed rate limiting (8h)
 
 ---

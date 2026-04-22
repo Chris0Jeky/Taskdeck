@@ -43,9 +43,9 @@ These items block shipping to real users.
 |------|--------|--------|---------|
 | Implement Vue error boundary | S | Prevents full-app crashes | Vue 3 error handler in main.ts |
 | Add HTTP request retry with exponential backoff | M | Handles transient network failures | Axios interceptor pattern |
-| Decompose ReviewView (1,659 lines) | M | Maintainability, testability | Split into 3-4 focused components |
-| Decompose InboxView (1,527 lines) | M | Maintainability, testability | Split into 3-4 focused components |
-| Decompose AutomationChatView (1,523 lines) | M | Maintainability, testability | Split into 3-4 focused components |
+| ~~Decompose ReviewView (1,659 lines)~~ | ~~M~~ | ~~Maintainability, testability~~ | DONE (PR #923) — 148-line shell + 6 components + 2 composables |
+| ~~Decompose InboxView (1,527 lines)~~ | ~~M~~ | ~~Maintainability, testability~~ | DONE (PR #921) — 222-line shell + 2 panels + 1 composable + utils |
+| ~~Decompose AutomationChatView (1,523 lines)~~ | ~~M~~ | ~~Maintainability, testability~~ | DONE (PR #920) — 235-line shell + 7 components + 1 composable |
 
 ### 1.4 Documentation
 | Item | Effort | Impact | Details |
