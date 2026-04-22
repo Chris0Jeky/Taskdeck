@@ -80,27 +80,41 @@ public static class FirstRunBootstrapper
     /// loaded (i.e. after the builder is constructed).
     /// </summary>
     /// <remarks>
-    /// Checks are skipped in Development and in CI/headless environments.
-    /// They are intended for the packaged self-hosted production scenario.
+    /// <para>
+    /// JWT secret generation runs in <em>all</em> environments (including
+    /// Development) so that no hardcoded secret is required in checked-in
+    /// config files.  When the secret is missing or is the well-known
+    /// placeholder, a cryptographically random value is generated into
+    /// <c>appsettings.local.json</c>.
+    /// </para>
+    /// <para>
+    /// DB-path resolution and other packaged-distribution checks are still
+    /// skipped in Development and in CI/headless environments.
+    /// </para>
     /// </remarks>
     public static WebApplicationBuilder RunFirstRunChecks(
         this WebApplicationBuilder builder,
         ILogger logger)
     {
-        // First-run checks are for the self-hosted packaged distribution.
-        // In Development the developer supplies their own config values.
+        // JWT secret generation runs unconditionally so developers do not
+        // need a hardcoded secret in appsettings.Development.json.
+        if (!IsHeadlessEnvironment())
+        {
+            EnsureJwtSecret(builder.Configuration, logger);
+        }
+
+        // Remaining first-run checks are for the self-hosted packaged
+        // distribution only.
         if (builder.Environment.IsDevelopment())
         {
             return builder;
         }
 
-        // Also skip in CI / automated environments.
         if (IsHeadlessEnvironment())
         {
             return builder;
         }
 
-        EnsureJwtSecret(builder.Configuration, logger);
         EnsureDbPath(builder.Configuration, logger);
         return builder;
     }
