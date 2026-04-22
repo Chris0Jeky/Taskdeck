@@ -90,7 +90,7 @@ Run:
 dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~MigrationBootstrap"
 ```
 
-### Options Validation Tests (OPS-27, `#858`/`#908`)
+### Options Validation Tests (OPS-27, `#863`/`#908`)
 
 `backend/tests/Taskdeck.Api.Tests/Validation/OptionsValidationTests.cs` — **34 `[Fact]`/`[Theory]` entries** covering data-annotation boundaries for 15 settings classes, 4 cross-property validators (`WorkerSettings`, `JwtSettings`, `SentrySettings`, `RateLimitingSettings`), case-insensitive regex for `Llm:Provider`/`Cache:Provider`, and an integration test proving the app starts with valid defaults.
 
@@ -99,7 +99,7 @@ Run:
 dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~OptionsValidation"
 ```
 
-### Board Pagination API Tests (PERF-12, `#859`/`#909`)
+### Board Pagination API Tests (PERF-12, `#848`/`#909`)
 
 `backend/tests/Taskdeck.Api.Tests/BoardPaginationApiTests.cs` — **11 integration tests** covering default pagination, empty list, limit enforcement, offset skipping, partial page, limit clamped to 200, negative offset, offset beyond total, zero limit clamped to 1, full page iteration, and cross-user isolation with pagination metadata. Existing tests that deserialised `List<BoardDto>` from `GET /api/boards` migrated to use the new `PaginatedResult<BoardDto>` shape via `ApiTestHarness.ListBoardsAsync`/`ListBoardsPaginatedAsync` helpers.
 
