@@ -28,6 +28,11 @@ public sealed class RateLimitingSettings
 
 public sealed class RateLimitPolicySettings
 {
+    public const int MinPermitLimit = 1;
+    public const int MaxPermitLimit = 10000;
+    public const int MinWindowSeconds = 1;
+    public const int MaxWindowSeconds = 86400;
+
     public RateLimitPolicySettings()
     {
     }
@@ -38,9 +43,9 @@ public sealed class RateLimitPolicySettings
         WindowSeconds = windowSeconds;
     }
 
-    [Range(1, 10000, ErrorMessage = "PermitLimit must be between 1 and 10000.")]
+    [Range(MinPermitLimit, MaxPermitLimit, ErrorMessage = "PermitLimit must be between 1 and 10000.")]
     public int PermitLimit { get; set; }
 
-    [Range(1, 86400, ErrorMessage = "WindowSeconds must be between 1 and 86400 (1 day).")]
+    [Range(MinWindowSeconds, MaxWindowSeconds, ErrorMessage = "WindowSeconds must be between 1 and 86400 (1 day).")]
     public int WindowSeconds { get; set; }
 }

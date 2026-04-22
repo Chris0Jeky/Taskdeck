@@ -39,14 +39,14 @@ public sealed class RateLimitingSettingsValidator : IValidateOptions<RateLimitin
             return;
         }
 
-        if (policy.PermitLimit < 1 || policy.PermitLimit > 10000)
+        if (policy.PermitLimit < RateLimitPolicySettings.MinPermitLimit || policy.PermitLimit > RateLimitPolicySettings.MaxPermitLimit)
         {
-            failures.Add($"RateLimiting:{policyName}:PermitLimit must be between 1 and 10000 (was {policy.PermitLimit}).");
+            failures.Add($"RateLimiting:{policyName}:PermitLimit must be between {RateLimitPolicySettings.MinPermitLimit} and {RateLimitPolicySettings.MaxPermitLimit} (was {policy.PermitLimit}).");
         }
 
-        if (policy.WindowSeconds < 1 || policy.WindowSeconds > 86400)
+        if (policy.WindowSeconds < RateLimitPolicySettings.MinWindowSeconds || policy.WindowSeconds > RateLimitPolicySettings.MaxWindowSeconds)
         {
-            failures.Add($"RateLimiting:{policyName}:WindowSeconds must be between 1 and 86400 (was {policy.WindowSeconds}).");
+            failures.Add($"RateLimiting:{policyName}:WindowSeconds must be between {RateLimitPolicySettings.MinWindowSeconds} and {RateLimitPolicySettings.MaxWindowSeconds} (was {policy.WindowSeconds}).");
         }
     }
 }
