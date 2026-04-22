@@ -49,6 +49,38 @@ dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
 
 The API starts on `http://localhost:5000` with Swagger at `http://localhost:5000/swagger`.
 
+#### JWT Secret
+
+The backend requires a JWT signing secret (at least 32 characters). On first
+run, `FirstRunBootstrapper` automatically generates a cryptographically random
+secret and saves it to `appsettings.local.json` (which is gitignored). No
+manual setup is needed for most developers.
+
+If you prefer to manage the secret yourself, you have two options:
+
+**Option A: `dotnet user-secrets`** (recommended for shared machines)
+
+```bash
+cd backend/src/Taskdeck.Api
+dotnet user-secrets init   # one-time setup
+dotnet user-secrets set "Jwt:SecretKey" "YourSecretKeyAtLeast32CharactersLong!"
+```
+
+**Option B: Environment variable**
+
+```bash
+export Jwt__SecretKey="YourSecretKeyAtLeast32CharactersLong!"
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:Jwt__SecretKey = "YourSecretKeyAtLeast32CharactersLong!"
+```
+
+Environment variables take precedence over `appsettings.local.json`, which
+takes precedence over all `appsettings.*.json` files.
+
 ### Frontend (Vue 3 + Vite)
 
 In a second terminal:
