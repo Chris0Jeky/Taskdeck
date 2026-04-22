@@ -9,6 +9,7 @@
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
 #     ├── reusable-api-integration.yml         API integration tests (Ubuntu + Windows)
+#     ├── reusable-migration-validation.yml    EF Core migration chain validation (TST-61)
 #     ├── reusable-frontend-unit.yml           lint + typecheck + build + unit tests (Ubuntu + Windows)
 #     ├── reusable-container-images.yml        compose validation + image build + artifact export
 #     └── reusable-e2e-smoke.yml               Playwright smoke (depends on all above)
@@ -104,6 +105,12 @@ jobs:
     with:
       dotnet-version: 8.0.x
 
+  migration-validation:
+    name: Migration Validation
+    uses: ./.github/workflows/reusable-migration-validation.yml
+    with:
+      dotnet-version: 8.0.x
+
   frontend-unit:
     name: Frontend Unit
     uses: ./.github/workflows/reusable-frontend-unit.yml
@@ -121,6 +128,7 @@ jobs:
       - backend-architecture
       - backend-unit
       - api-integration
+      - migration-validation
       - frontend-unit
     uses: ./.github/workflows/reusable-e2e-smoke.yml
     with:
