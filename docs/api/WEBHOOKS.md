@@ -1,5 +1,7 @@
 # Outbound Webhooks
 
+> **Data model:** See [Data Model Reference](../architecture/DATA_MODEL.md) for entity fields, constraints, and relationships.
+
 Taskdeck delivers signed event payloads to external endpoints when board mutations occur. Webhooks are board-scoped and support event type filtering.
 
 ## Overview
