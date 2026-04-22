@@ -29,7 +29,7 @@ Adopt **Semgrep** as the SAST engine for Taskdeck CI, with both registry rules a
 - Runs in the **ci-extended** lane (triggered by `security` label) and **ci-nightly** (unconditionally).
 - **Non-blocking initially** (advisory mode): findings are reported as CI step summaries and artifacts but do not fail the build.
 - **Path to enforcement**: The `enforce-findings` input can be set to `true` to gate on ERROR-level findings. Plan to enable after baseline triage.
-- Uses the `semgrep/semgrep:latest` container image for reproducible scanning.
+- Installs Semgrep via pip (version-pinned) alongside Node.js for the summary script.
 - Results summarized by `scripts/ci/summarize-sast-findings.mjs` which produces both Markdown (GitHub step summary) and JSON (machine-readable) output.
 
 ### Workflow Topology

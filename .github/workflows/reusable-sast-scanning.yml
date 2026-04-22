@@ -54,7 +54,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Semgrep
-        run: pip install semgrep
+        run: pip install semgrep==1.113.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -74,7 +74,6 @@ jobs:
             --config p/csharp \
             --config p/typescript \
             --config p/jwt \
-            --json \
             --json-output artifacts/sast/semgrep-results.json \
             --max-target-bytes 1000000 \
             --timeout 300 \
@@ -103,8 +102,7 @@ jobs:
             --workflow-context "${{ inputs.workflow-context }}" \
             --output-markdown artifacts/sast/summary.md \
             --output-json artifacts/sast/summary.json \
-            $enforce_flag \
-            > artifacts/sast/summary-stdout.md 2>&1
+            $enforce_flag
           summary_exit=$?
           set -e
 
