@@ -26,17 +26,19 @@ useDefault = true
 
   description = "Taskdeck global allowlist for test fixtures and documentation"
 
-  # Paths that are inherently safe (test code, docs, archived docs)
+  # Paths that are inherently safe (test code only).
+  # Note: docs/, scripts/deploy/, and .github/workflows/ are NOT blanket-excluded.
+  # Those directories can contain real secrets (pasted tokens in runbooks,
+  # hardcoded keys in deploy scripts, secrets in workflow env blocks). The
+  # regex allowlist below covers known false-positive values specifically.
   paths = [
     '''backend/tests/.*''',
     '''frontend/taskdeck-web/tests/.*''',
     '''frontend/taskdeck-web/src/.*\.spec\.ts$''',
-    '''docs/.*''',
-    '''scripts/deploy/.*''',
-    '''\.github/workflows/.*''',
   ]
 
-  # Regex patterns for known-safe values that appear in config/code
+  # Regex patterns for known-safe values that appear in config/code.
+  # Patterns are anchored where possible to avoid masking real secrets.
   regexes = [
     # Development-only JWT secret (clearly labeled as non-production)
     '''TaskdeckDevelopmentOnlySecretKeyChangeMe123!''',
@@ -47,24 +49,18 @@ useDefault = true
     # CI placeholder secret for Docker Compose validation
     '''ci-placeholder-secret''',
     '''local-test-secret''',
-    # Example API key prefix in documentation (not a real key)
+    # Example API key in documentation (not a real key, exact value)
     '''tdsk_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6''',
-    # Example GitHub PAT placeholder in ops docs
+    # Example GitHub PAT placeholder in ops docs (ellipsis format)
     '''ghp_\.\.\.''',
     # Docker Compose env var references (not actual secrets)
-    '''\$\{TASKDECK_.*\}''',
-    # Test fixture OAuth values
-    '''test-client''',
-    '''test-secret''',
-    # Placeholder password strings in test fixtures
-    '''password123''',
+    '''\$\{TASKDECK_[A-Z_]+\}''',
+    # Placeholder password strings (exact matches for test fixtures)
     '''NewPassword!456''',
     '''Hacked!456''',
-    '''wrong-password''',
-    # Documentation placeholder patterns
-    '''your-secret-key-here.*''',
-    '''your-secret''',
-    # Test fixture LLM API key values (clearly fake)
+    # Documentation placeholder patterns (anchored)
+    '''your-secret-key-here''',
+    # Test fixture LLM API key values (clearly fake, exact matches)
     '''gemini-key''',
     '''openai-key''',
     '''shell-gemini-key''',

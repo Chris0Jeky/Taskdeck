@@ -13,12 +13,6 @@
 # Review this file periodically to remove entries for deleted code.
 # =============================================================================
 
-# Development-only JWT secret in appsettings.Development.json
-# This is a well-known placeholder that only works in local dev mode.
-# Production requires TASKDECK_JWT_SECRET environment variable override.
-
-# Documentation example API keys in docs/spikes/SPIKE_619_COMPLETED.md
-# These are illustrative examples showing the tdsk_ key format, not real keys.
-
-# Test fixture secrets in backend/tests/ and frontend/tests/
-# All test secrets are deterministic values used only in isolated test contexts.
+# No fingerprints yet. Add entries here as the full-history scan surfaces
+# false positives that cannot be suppressed via .gitleaks.toml allowlists.
+# Format: one fingerprint per line, with a comment explaining why it is safe.
