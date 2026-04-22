@@ -58,7 +58,8 @@ function collectJsFiles(dir) {
 
 function isEntryChunk(name) {
   // Vite names the main entry chunk as index-<hash>.js
-  return /^index-[A-Za-z0-9]+\.js$/.test(name);
+  // Hash uses Base64url alphabet: A-Z, a-z, 0-9, underscore, hyphen
+  return /^index-[A-Za-z0-9_-]+\.js$/.test(name);
 }
 
 function formatKB(bytes) {
@@ -119,7 +120,7 @@ if (entryChunk) {
   } else if (entryKB > WARN_ENTRY_KB) {
     const msg = `Entry chunk ${entryChunk.name} is ${formatKB(entryChunk.sizeBytes)} KB, approaching limit of ${MAX_ENTRY_KB} KB (warn at ${WARN_ENTRY_KB} KB)`;
     console.log(`::warning::${msg}`);
-    violations.push({ level: "warning", metric: "entry_chunk_kb", value: entryKB, limit: MAX_ENTRY_KB, message: msg });
+    violations.push({ level: "warning", metric: "entry_chunk_kb", value: entryKB, limit: WARN_ENTRY_KB, message: msg });
     hasWarning = true;
   }
 }
@@ -133,7 +134,7 @@ if (largestKB > MAX_SINGLE_KB) {
 } else if (largestKB > WARN_SINGLE_KB) {
   const msg = `Chunk ${largestFile.name} is ${formatKB(largestFile.sizeBytes)} KB, approaching single-chunk limit of ${MAX_SINGLE_KB} KB (warn at ${WARN_SINGLE_KB} KB)`;
   console.log(`::warning::${msg}`);
-  violations.push({ level: "warning", metric: "single_chunk_kb", value: largestKB, limit: MAX_SINGLE_KB, message: msg });
+  violations.push({ level: "warning", metric: "single_chunk_kb", value: largestKB, limit: WARN_SINGLE_KB, message: msg });
   hasWarning = true;
 }
 
@@ -146,7 +147,7 @@ if (totalKB > MAX_TOTAL_JS_KB) {
 } else if (totalKB > WARN_TOTAL_JS_KB) {
   const msg = `Total JS size is ${formatKB(totalBytes)} KB, approaching limit of ${MAX_TOTAL_JS_KB} KB (warn at ${WARN_TOTAL_JS_KB} KB)`;
   console.log(`::warning::${msg}`);
-  violations.push({ level: "warning", metric: "total_js_kb", value: totalKB, limit: MAX_TOTAL_JS_KB, message: msg });
+  violations.push({ level: "warning", metric: "total_js_kb", value: totalKB, limit: WARN_TOTAL_JS_KB, message: msg });
   hasWarning = true;
 }
 

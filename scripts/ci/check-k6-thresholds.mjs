@@ -16,10 +16,21 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 const args = process.argv.slice(2);
-const summaryPath = args.find((a) => !a.startsWith("--"));
 const failOnBreach = args.includes("--fail-on-breach");
 const outputJsonIdx = args.indexOf("--output-json");
-const outputJson = outputJsonIdx !== -1 ? args[outputJsonIdx + 1] : null;
+const outputJson = (outputJsonIdx !== -1 && args[outputJsonIdx + 1]) ? args[outputJsonIdx + 1] : null;
+
+// Collect positional args by skipping flags and their values
+const flagsWithValues = new Set(["--output-json"]);
+const positionalArgs = [];
+for (let i = 0; i < args.length; i++) {
+  if (args[i].startsWith("--")) {
+    if (flagsWithValues.has(args[i])) i++; // skip the flag's value
+    continue;
+  }
+  positionalArgs.push(args[i]);
+}
+const summaryPath = positionalArgs[0] || null;
 
 if (!summaryPath) {
   console.error("Usage: check-k6-thresholds.mjs <k6-summary.json> [--fail-on-breach] [--output-json <path>]");

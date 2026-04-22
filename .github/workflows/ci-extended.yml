@@ -143,6 +143,8 @@ jobs:
   performance-regression-gate:
     name: Performance Regression Gate
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'performance'))
+    needs:
+      - backend-solution
     uses: ./.github/workflows/reusable-performance-regression-gate.yml
     with:
       dotnet-version: 8.0.x
