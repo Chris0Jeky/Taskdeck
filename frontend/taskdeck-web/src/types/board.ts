@@ -57,6 +57,14 @@ export interface Label {
 }
 
 // DTOs for creating/updating
+export interface PaginatedBoards {
+  items: Board[]
+  totalCount: number
+  hasMore: boolean
+  offset: number
+  limit: number
+}
+
 export interface CreateBoardDto {
   name: string
   description?: string | null

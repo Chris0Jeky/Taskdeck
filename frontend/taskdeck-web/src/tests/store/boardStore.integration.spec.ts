@@ -41,6 +41,17 @@ function makeBoardPayload(overrides: Partial<Record<string, unknown>> = {}) {
   }
 }
 
+/** Wraps a board array in the paginated response envelope the API now returns. */
+function wrapPaginated(boards: ReturnType<typeof makeBoardPayload>[]) {
+  return {
+    items: boards,
+    totalCount: boards.length,
+    hasMore: false,
+    offset: 0,
+    limit: 50,
+  }
+}
+
 function makeCardPayload(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'card-1',
@@ -74,7 +85,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
   describe('fetchBoards', () => {
     it('populates boards from the API response shape', async () => {
       const boards = [makeBoardPayload(), makeBoardPayload({ id: 'board-2', name: 'Board 2' })]
-      vi.mocked(http.get).mockResolvedValue({ data: boards })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated(boards) })
 
       const store = useBoardStore()
       await store.fetchBoards()
@@ -88,7 +99,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
     })
 
     it('calls GET /boards with the correct URL structure', async () => {
-      vi.mocked(http.get).mockResolvedValue({ data: [] })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated([]) })
 
       const store = useBoardStore()
       await store.fetchBoards()
@@ -109,7 +120,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
 
     it('preserves activeBoardId when the selected board is still present after a refresh', async () => {
       vi.useFakeTimers()
-      vi.mocked(http.get).mockResolvedValue({ data: [makeBoardPayload()] })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated([makeBoardPayload()]) })
 
       const store = useBoardStore()
       await store.fetchBoards()
@@ -118,14 +129,14 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
       // Advance past the throttle window so the next call is not suppressed
       vi.advanceTimersByTime(6_000)
 
-      vi.mocked(http.get).mockResolvedValue({ data: [makeBoardPayload()] })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated([makeBoardPayload()]) })
       await store.fetchBoards()
 
       expect(store.activeBoardId).toBe('board-1')
     })
 
     it('does not switch activeBoardId when a second board is created (regression #509)', async () => {
-      vi.mocked(http.get).mockResolvedValue({ data: [makeBoardPayload()] })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated([makeBoardPayload()]) })
 
       const store = useBoardStore()
       await store.fetchBoards()
@@ -143,7 +154,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
 
   describe('createBoard', () => {
     it('sends the DTO to POST /boards and appends the returned board', async () => {
-      vi.mocked(http.get).mockResolvedValue({ data: [] })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated([]) })
       const store = useBoardStore()
       await store.fetchBoards()
 
@@ -158,7 +169,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
     })
 
     it('does not add a phantom board when the API rejects with 400', async () => {
-      vi.mocked(http.get).mockResolvedValue({ data: [] })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated([]) })
       const store = useBoardStore()
       await store.fetchBoards()
 
@@ -174,7 +185,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
   describe('updateBoard', () => {
     it('sends PUT /boards/:id and replaces the local record with the API response', async () => {
       const original = makeBoardPayload()
-      vi.mocked(http.get).mockResolvedValue({ data: [original] })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated([original]) })
 
       const store = useBoardStore()
       await store.fetchBoards()
@@ -192,7 +203,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
 
     it('does not corrupt board name in the list when PUT /boards/:id fails', async () => {
       const original = makeBoardPayload()
-      vi.mocked(http.get).mockResolvedValue({ data: [original] })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated([original]) })
 
       const store = useBoardStore()
       await store.fetchBoards()
@@ -210,7 +221,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
   describe('deleteBoard', () => {
     it('removes the deleted board from the list and clears currentBoard', async () => {
       const boards = [makeBoardPayload(), makeBoardPayload({ id: 'board-2', name: 'B2' })]
-      vi.mocked(http.get).mockResolvedValue({ data: boards })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated(boards) })
 
       const store = useBoardStore()
       await store.fetchBoards()
@@ -225,7 +236,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
 
     it('falls back activeBoardId to remaining board after deletion', async () => {
       const boards = [makeBoardPayload(), makeBoardPayload({ id: 'board-2', name: 'B2' })]
-      vi.mocked(http.get).mockResolvedValue({ data: boards })
+      vi.mocked(http.get).mockResolvedValue({ data: wrapPaginated(boards) })
 
       const store = useBoardStore()
       await store.fetchBoards()
