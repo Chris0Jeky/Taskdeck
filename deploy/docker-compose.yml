@@ -38,6 +38,7 @@ services:
       Llm__Provider: ${TASKDECK_LLM_PROVIDER:-Mock}
       Llm__OpenAi__ApiKey: ${TASKDECK_LLM_OPENAI_API_KEY:-}
       Llm__Gemini__ApiKey: ${TASKDECK_LLM_GEMINI_API_KEY:-}
+      Connectors__EncryptionKey: ${TASKDECK_CONNECTORS_ENCRYPTION_KEY:?TASKDECK_CONNECTORS_ENCRYPTION_KEY must be set to a base64-encoded 256-bit key (openssl rand -base64 32)}
       DevelopmentSandbox__Enabled: "false"
     volumes:
       - taskdeck-db:/app/data
