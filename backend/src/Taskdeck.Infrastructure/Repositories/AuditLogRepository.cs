@@ -34,31 +34,21 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             return Array.Empty<AuditLog>();
         }
 
-        HashSet<Guid>? boardScopedEntityIdSet = null;
         List<Guid>? boardScopedEntityIdList = null;
         if (boardId.HasValue)
         {
             boardScopedEntityIdList = await ResolveBoardScopedEntityIdsAsync(boardId.Value, cancellationToken);
-            boardScopedEntityIdSet = new HashSet<Guid>(boardScopedEntityIdList);
         }
 
         if (_context.Database.IsSqlite())
         {
-            var auditLogs = await _context.AuditLogs
-                .FromSqlInterpolated($"SELECT * FROM AuditLogs WHERE Timestamp >= {from} AND Timestamp <= {to}")
-                .AsNoTracking()
-                .ToListAsync(cancellationToken);
-
-            return auditLogs
-                .Where(al => !userId.HasValue || al.UserId == userId.Value)
-                .Where(al => boardScopedEntityIdSet == null || boardScopedEntityIdSet.Contains(al.EntityId))
-                .Where(al =>
-                    string.IsNullOrWhiteSpace(source) ||
-                    al.EntityType.Equals(source.Trim(), StringComparison.OrdinalIgnoreCase))
-                .Where(al => levelActions == null || levelActions.Contains(al.Action))
-                .OrderByDescending(al => al.Timestamp)
-                .Take(limit)
-                .ToList();
+            // SQLite does not support DateTimeOffset in LINQ WHERE/ORDER BY,
+            // so we build a parameterised raw SQL query that pushes ALL filters
+            // (userId, boardId/entityIds, source, level) into the SQL WHERE
+            // clause.  This avoids loading the full time-window result set into
+            // memory and then filtering in C#.
+            return await BuildSqliteQueryAsync(
+                from, to, userId, boardScopedEntityIdList, source, levelActions, limit, cancellationToken);
         }
 
         var query = _context.AuditLogs
@@ -159,6 +149,76 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             .Where(al => boardScopedEntityIds.Contains(al.EntityId))
             .OrderByDescending(al => al.Timestamp)
             .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds a parameterised raw SQL query for SQLite that pushes all filters
+    /// (timestamp, userId, entityIds for boardId, source, level/actions) into
+    /// the SQL WHERE clause.  ORDER BY and LIMIT are also in the SQL so EF Core
+    /// never attempts to translate DateTimeOffset ORDER BY via LINQ.
+    /// </summary>
+    private async Task<List<AuditLog>> BuildSqliteQueryAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        Guid? userId,
+        List<Guid>? boardScopedEntityIdList,
+        string? source,
+        AuditAction[]? levelActions,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var conditions = new List<string> { "Timestamp >= {0} AND Timestamp <= {1}" };
+        var parameters = new List<object> { from, to };
+        var nextParam = 2;
+
+        if (userId.HasValue)
+        {
+            conditions.Add($"UserId = {{{nextParam}}}");
+            parameters.Add(userId.Value);
+            nextParam++;
+        }
+
+        if (boardScopedEntityIdList is { Count: > 0 })
+        {
+            // Build an IN clause for the resolved board-scoped entity IDs.
+            var placeholders = new List<string>(boardScopedEntityIdList.Count);
+            foreach (var id in boardScopedEntityIdList)
+            {
+                placeholders.Add($"{{{nextParam}}}");
+                parameters.Add(id);
+                nextParam++;
+            }
+            conditions.Add($"EntityId IN ({string.Join(", ", placeholders)})");
+        }
+
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            conditions.Add($"LOWER(EntityType) = {{{nextParam}}}");
+            parameters.Add(source.Trim().ToLowerInvariant());
+            nextParam++;
+        }
+
+        if (levelActions is { Length: > 0 })
+        {
+            // AuditAction is stored as int; build an IN clause for the action values.
+            var actionPlaceholders = new List<string>(levelActions.Length);
+            foreach (var action in levelActions)
+            {
+                actionPlaceholders.Add($"{{{nextParam}}}");
+                parameters.Add((int)action);
+                nextParam++;
+            }
+            conditions.Add($"Action IN ({string.Join(", ", actionPlaceholders)})");
+        }
+
+        var where = string.Join(" AND ", conditions);
+        var sql = $"SELECT * FROM AuditLogs WHERE {where} ORDER BY Timestamp DESC LIMIT {{{nextParam}}}";
+        parameters.Add(limit);
+
+        return await _context.AuditLogs
+            .FromSqlRaw(sql, parameters.ToArray())
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
     }
 
