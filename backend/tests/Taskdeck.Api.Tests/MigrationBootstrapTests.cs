@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -53,47 +54,20 @@ public class MigrationBootstrapTests : IDisposable
         // Act — query SQLite master for user tables
         var tables = GetUserTables();
 
-        // Assert — every DbSet in TaskdeckDbContext should have a corresponding table.
-        var expectedTables = new[]
-        {
-            "Boards",
-            "Columns",
-            "Cards",
-            "CardComments",
-            "CardCommentMentions",
-            "Labels",
-            "CardLabels",
-            "Users",
-            "BoardAccesses",
-            "AuditLogs",
-            "LlmRequests",
-            "AutomationProposals",
-            "AutomationProposalOperations",
-            "ArchiveItems",
-            "ChatSessions",
-            "ChatMessages",
-            "CommandRuns",
-            "CommandRunLogs",
-            "Notifications",
-            "NotificationPreferences",
-            "UserPreferences",
-            "OutboundWebhookSubscriptions",
-            "OutboundWebhookDeliveries",
-            "LlmUsageRecords",
-            "AgentProfiles",
-            "AgentRuns",
-            "AgentRunEvents",
-            "KnowledgeDocuments",
-            "KnowledgeChunks",
-            "ExternalLogins",
-            "OAuthAuthCodes",
-            "ApiKeys",
-            "MfaCredentials",
-        };
+        // Assert — every entity type in the EF model should have a corresponding table.
+        // Derived from the model so the test automatically adapts when DbSets change.
+        var expectedTables = _context.Model.GetEntityTypes()
+            .Select(t => t.GetTableName())
+            .Where(t => t != null)
+            .Distinct()
+            .ToList();
+
+        expectedTables.Should().NotBeEmpty(
+            "the EF model should define at least one entity type");
 
         foreach (var table in expectedTables)
         {
-            tables.Should().Contain(table,
+            tables.Should().Contain(table!,
                 $"migration chain must create the '{table}' table");
         }
     }
@@ -119,19 +93,27 @@ public class MigrationBootstrapTests : IDisposable
     }
 
     [Fact]
-    public void Migration_schema_matches_model_snapshot()
+    public void Model_has_no_pending_changes_after_migrations_apply()
     {
         // Arrange — apply all migrations
         _context.Database.Migrate();
 
-        // Act — check for pending model changes
+        // Act — verify no unapplied migration files remain
         var pendingMigrations = _context.Database
             .GetPendingMigrations()
             .ToList();
 
-        // Assert — no migrations should be pending after a full Migrate()
         pendingMigrations.Should().BeEmpty(
             "all migrations should be applied; pending migrations indicate the snapshot is out of sync");
+
+        // Act — verify the compiled C# model matches the last migration snapshot.
+        // HasPendingModelChanges() diffs the model against the snapshot and detects
+        // entity/property additions that lack a corresponding migration.
+        var hasDrift = _context.Database.HasPendingModelChanges();
+
+        hasDrift.Should().BeFalse(
+            "the EF model should match the last migration snapshot; " +
+            "if this fails, run 'dotnet ef migrations add <Name>' to capture the drift");
     }
 
     [Fact]
@@ -150,14 +132,21 @@ public class MigrationBootstrapTests : IDisposable
     private List<string> GetUserTables()
     {
         var tables = new List<string>();
-        using var connection = _context.Database.GetDbConnection();
-        connection.Open();
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '__EFMigrationsHistory' ORDER BY name";
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
+        var connection = _context.Database.GetDbConnection();
+        _context.Database.OpenConnection();
+        try
         {
-            tables.Add(reader.GetString(0));
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '__EFMigrationsHistory' ORDER BY name";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                tables.Add(reader.GetString(0));
+            }
+        }
+        finally
+        {
+            _context.Database.CloseConnection();
         }
 
         return tables;
