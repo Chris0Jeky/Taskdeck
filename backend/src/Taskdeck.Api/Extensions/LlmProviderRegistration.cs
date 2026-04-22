@@ -1,5 +1,4 @@
 using System.Net.Sockets;
-using Microsoft.Extensions.Http;
 using Polly;
 using Polly.Extensions.Http;
 using Taskdeck.Api.Workers;
@@ -50,6 +49,15 @@ public static class LlmProviderRegistration
         var circuitBreakerTracker = new CircuitBreakerStateTracker();
         services.AddSingleton(circuitBreakerTracker);
 
+        // Create circuit breaker policies once so the same policy instance is reused
+        // across all HTTP requests for each provider. This is critical — Polly tracks
+        // consecutive failures per policy instance, so creating a new policy per
+        // request would defeat circuit breaking entirely.
+        var openAiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
+            circuitBreakerTracker, "OpenAI", circuitBreakerSettings);
+        var geminiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
+            circuitBreakerTracker, "Gemini", circuitBreakerSettings);
+
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
         var allowLocalhostLlm = IsLocalhostLlmAllowed(services, configuration);
@@ -76,7 +84,7 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
-        .AddPolicyHandler((sp, _) => BuildCircuitBreakerPolicy(sp, "OpenAI", circuitBreakerSettings));
+        .AddPolicyHandler(openAiCircuitBreakerPolicy);
         services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
@@ -98,7 +106,7 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
-        .AddPolicyHandler((sp, _) => BuildCircuitBreakerPolicy(sp, "Gemini", circuitBreakerSettings));
+        .AddPolicyHandler(geminiCircuitBreakerPolicy);
 
         services.AddScoped<MockLlmProvider>();
         services.AddScoped<ILlmProvider>(sp =>
@@ -125,22 +133,23 @@ public static class LlmProviderRegistration
     }
 
     /// <summary>
-    /// Builds a Polly advanced circuit breaker policy for an external HTTP client.
+    /// Builds a Polly circuit breaker policy for an external HTTP client.
     /// The circuit opens after <see cref="CircuitBreakerSettings.FailureThreshold"/>
     /// consecutive failures and stays open for
     /// <see cref="CircuitBreakerSettings.BreakDurationSeconds"/> seconds before
     /// transitioning to half-open. State transitions are recorded in
     /// <see cref="CircuitBreakerStateTracker"/> for health endpoint visibility.
+    /// <para>
+    /// Important: The returned policy must be reused across all requests for the
+    /// same HTTP client. Polly tracks consecutive failures per policy instance,
+    /// so creating a new policy per request would defeat circuit breaking.
+    /// </para>
     /// </summary>
     internal static IAsyncPolicy<HttpResponseMessage> BuildCircuitBreakerPolicy(
-        IServiceProvider serviceProvider,
+        CircuitBreakerStateTracker tracker,
         string circuitName,
         CircuitBreakerSettings settings)
     {
-        var tracker = serviceProvider.GetRequiredService<CircuitBreakerStateTracker>();
-        var logger = serviceProvider.GetRequiredService<ILoggerFactory>()
-            .CreateLogger($"Taskdeck.CircuitBreaker.{circuitName}");
-
         return HttpPolicyExtensions
             .HandleTransientHttpError() // 5xx, 408, HttpRequestException
             .CircuitBreakerAsync(
@@ -150,26 +159,14 @@ public static class LlmProviderRegistration
                 {
                     var reason = outcome.Exception?.Message ?? $"HTTP {(int)(outcome.Result?.StatusCode ?? 0)}";
                     tracker.RecordState(circuitName, CircuitState.Open, reason);
-                    logger.LogWarning(
-                        "Circuit breaker '{CircuitName}' opened for {BreakDuration}s after {Threshold} consecutive failures. Last failure: {Reason}",
-                        circuitName,
-                        breakDuration.TotalSeconds,
-                        settings.FailureThreshold,
-                        reason);
                 },
                 onReset: () =>
                 {
                     tracker.RecordState(circuitName, CircuitState.Closed);
-                    logger.LogInformation(
-                        "Circuit breaker '{CircuitName}' closed (reset). Requests will flow normally.",
-                        circuitName);
                 },
                 onHalfOpen: () =>
                 {
                     tracker.RecordState(circuitName, CircuitState.HalfOpen);
-                    logger.LogInformation(
-                        "Circuit breaker '{CircuitName}' half-open. Next request is a probe.",
-                        circuitName);
                 });
     }
 

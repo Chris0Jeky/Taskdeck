@@ -279,15 +279,11 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public void BuildCircuitBreakerPolicy_CreatesWorkingPolicy()
     {
-        var services = new ServiceCollection();
         var tracker = new CircuitBreakerStateTracker();
-        services.AddSingleton(tracker);
-        services.AddLogging();
-        var sp = services.BuildServiceProvider();
         var settings = new CircuitBreakerSettings { FailureThreshold = 3, BreakDurationSeconds = 30 };
 
         var policy = Taskdeck.Api.Extensions.LlmProviderRegistration
-            .BuildCircuitBreakerPolicy(sp, "TestCircuit", settings);
+            .BuildCircuitBreakerPolicy(tracker, "TestCircuit", settings);
 
         policy.Should().NotBeNull();
     }
@@ -295,15 +291,11 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task BuildCircuitBreakerPolicy_OpensAfterConsecutiveFailures()
     {
-        var services = new ServiceCollection();
         var tracker = new CircuitBreakerStateTracker();
-        services.AddSingleton(tracker);
-        services.AddLogging();
-        var sp = services.BuildServiceProvider();
         var settings = new CircuitBreakerSettings { FailureThreshold = 3, BreakDurationSeconds = 30 };
 
         var policy = Taskdeck.Api.Extensions.LlmProviderRegistration
-            .BuildCircuitBreakerPolicy(sp, "TestCircuit", settings);
+            .BuildCircuitBreakerPolicy(tracker, "TestCircuit", settings);
 
         // Simulate 3 consecutive failures (500 responses).
         for (var i = 0; i < 3; i++)
@@ -329,15 +321,11 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task BuildCircuitBreakerPolicy_CircuitRejectsRequestsWhenOpen()
     {
-        var services = new ServiceCollection();
         var tracker = new CircuitBreakerStateTracker();
-        services.AddSingleton(tracker);
-        services.AddLogging();
-        var sp = services.BuildServiceProvider();
         var settings = new CircuitBreakerSettings { FailureThreshold = 2, BreakDurationSeconds = 60 };
 
         var policy = Taskdeck.Api.Extensions.LlmProviderRegistration
-            .BuildCircuitBreakerPolicy(sp, "RejectCircuit", settings);
+            .BuildCircuitBreakerPolicy(tracker, "RejectCircuit", settings);
 
         // Trip the circuit with 2 failures.
         for (var i = 0; i < 2; i++)
@@ -365,15 +353,11 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task BuildCircuitBreakerPolicy_SuccessfulRequestsDoNotTripCircuit()
     {
-        var services = new ServiceCollection();
         var tracker = new CircuitBreakerStateTracker();
-        services.AddSingleton(tracker);
-        services.AddLogging();
-        var sp = services.BuildServiceProvider();
         var settings = new CircuitBreakerSettings { FailureThreshold = 3, BreakDurationSeconds = 30 };
 
         var policy = Taskdeck.Api.Extensions.LlmProviderRegistration
-            .BuildCircuitBreakerPolicy(sp, "SuccessCircuit", settings);
+            .BuildCircuitBreakerPolicy(tracker, "SuccessCircuit", settings);
 
         // 10 successful requests should not trip the circuit.
         for (var i = 0; i < 10; i++)
@@ -391,15 +375,11 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task BuildCircuitBreakerPolicy_TransientErrorsCountAsFailures()
     {
-        var services = new ServiceCollection();
         var tracker = new CircuitBreakerStateTracker();
-        services.AddSingleton(tracker);
-        services.AddLogging();
-        var sp = services.BuildServiceProvider();
         var settings = new CircuitBreakerSettings { FailureThreshold = 2, BreakDurationSeconds = 30 };
 
         var policy = Taskdeck.Api.Extensions.LlmProviderRegistration
-            .BuildCircuitBreakerPolicy(sp, "TransientCircuit", settings);
+            .BuildCircuitBreakerPolicy(tracker, "TransientCircuit", settings);
 
         // 408 (Request Timeout) is treated as transient by HttpPolicyExtensions.
         for (var i = 0; i < 2; i++)
@@ -424,15 +404,11 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task BuildCircuitBreakerPolicy_400DoesNotTripCircuit()
     {
-        var services = new ServiceCollection();
         var tracker = new CircuitBreakerStateTracker();
-        services.AddSingleton(tracker);
-        services.AddLogging();
-        var sp = services.BuildServiceProvider();
         var settings = new CircuitBreakerSettings { FailureThreshold = 2, BreakDurationSeconds = 30 };
 
         var policy = Taskdeck.Api.Extensions.LlmProviderRegistration
-            .BuildCircuitBreakerPolicy(sp, "ClientErrorCircuit", settings);
+            .BuildCircuitBreakerPolicy(tracker, "ClientErrorCircuit", settings);
 
         // 400 (Bad Request) is NOT transient — should not trip the circuit.
         for (var i = 0; i < 5; i++)
