@@ -1,0 +1,117 @@
+rules:
+  # ---------------------------------------------------------------------------
+  # TD-TS-001: innerHTML / v-html usage (XSS risk)
+  # Flag direct innerHTML assignment in TypeScript files.
+  # Vue v-html is checked separately via the generic semgrep registry rules.
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.typescript.innerhtml-usage
+    patterns:
+      - pattern-either:
+          - pattern: $EL.innerHTML = ...
+          - pattern: document.write(...)
+    message: >
+      Direct innerHTML assignment or document.write detected. This creates XSS
+      risk. Use safe DOM APIs or Vue's template binding instead.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: ["CWE-79: Cross-site Scripting"]
+      confidence: HIGH
+      impact: HIGH
+      technology: [vue, typescript]
+
+  # ---------------------------------------------------------------------------
+  # TD-TS-002: localStorage token storage without awareness
+  # Flag direct localStorage access for tokens (session tokens should go
+  # through the sessionStore which has mitigations per ADR-0009).
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.typescript.raw-localstorage-token
+    patterns:
+      - pattern-either:
+          - pattern: localStorage.setItem("token", ...)
+          - pattern: localStorage.setItem("accessToken", ...)
+          - pattern: localStorage.setItem("jwt", ...)
+          - pattern: localStorage.setItem("session", ...)
+          - pattern: localStorage.setItem("refresh_token", ...)
+    message: >
+      Direct localStorage token storage detected outside sessionStore.
+      Token storage should go through the sessionStore which implements
+      mitigations (ADR-0009). Do not store tokens directly.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: ["CWE-922: Insecure Storage of Sensitive Information"]
+      confidence: HIGH
+      impact: MEDIUM
+      technology: [vue, typescript]
+      references:
+        - docs/decisions/ADR-0009-session-token-storage.md
+
+  # ---------------------------------------------------------------------------
+  # TD-TS-003: Fetch/axios without error handling
+  # Flag fetch calls that don't have a catch or error handler.
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.typescript.unhandled-fetch
+    pattern: |
+      fetch(...).then(...)
+    fix: |
+      fetch(...).then(...).catch(...)
+    message: >
+      Fetch call without explicit error handling. Add .catch() or use
+      try/catch with async/await. Taskdeck requires explicit error handling
+      per the Definition of Done.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: correctness
+      confidence: LOW
+      impact: MEDIUM
+      technology: [typescript]
+
+  # ---------------------------------------------------------------------------
+  # TD-TS-004: Console.log in production code
+  # Catch stray console.log statements outside test files.
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.typescript.console-log-in-production
+    pattern: console.log(...)
+    paths:
+      include:
+        - frontend/taskdeck-web/src/
+      exclude:
+        - "**/*.test.*"
+        - "**/*.spec.*"
+        - "**/tests/**"
+    message: >
+      console.log detected in production code. Use a proper logging mechanism
+      or remove before merging.
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      category: best-practice
+      confidence: HIGH
+      impact: LOW
+      technology: [typescript, vue]
+
+  # ---------------------------------------------------------------------------
+  # TD-TS-005: Disabled eslint rules (security-relevant)
+  # Flag eslint-disable comments for security-relevant rules.
+  # ---------------------------------------------------------------------------
+  - id: taskdeck.typescript.eslint-disable-security
+    pattern-regex: "eslint-disable.*(?:no-eval|no-implied-eval|no-new-Function)"
+    message: >
+      Disabling security-relevant ESLint rules (no-eval, no-implied-eval,
+      no-new-Function). These rules prevent code injection vulnerabilities.
+      Remove the disable comment or justify with a code review.
+    languages: [regex]
+    severity: WARNING
+    paths:
+      include:
+        - frontend/
+    metadata:
+      category: security
+      cwe: ["CWE-95: Eval Injection"]
+      confidence: HIGH
+      impact: HIGH
+      technology: [typescript]
