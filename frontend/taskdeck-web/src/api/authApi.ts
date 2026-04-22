@@ -77,4 +77,9 @@ export const authApi = {
   async disableMfa(request: MfaVerifyRequest): Promise<void> {
     await http.post('/auth/mfa/disable', request)
   },
+
+  async refreshToken(): Promise<AuthResponse> {
+    const { data } = await http.post<AuthResponse>('/auth/refresh')
+    return data
+  },
 }
