@@ -146,3 +146,10 @@ jobs:
     uses: ./.github/workflows/reusable-container-integration.yml
     with:
       dotnet-version: 8.0.x
+
+  gitleaks:
+    name: Secrets Detection (Gitleaks)
+    uses: ./.github/workflows/reusable-gitleaks.yml
+    with:
+      scan-mode: pr
+      fail-on-findings: false

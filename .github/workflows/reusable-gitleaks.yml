@@ -1,0 +1,123 @@
+# =============================================================================
+# Reusable Gitleaks — secrets detection scan
+# =============================================================================
+#
+# Scans commits for hardcoded secrets (API keys, tokens, passwords, etc.)
+# using Gitleaks with project-specific configuration.
+#
+# Callers:
+#   - ci-extended.yml (non-blocking, PR commit scan via action)
+#   - ci-release.yml (blocking, full-history scan via CLI)
+#
+# Modes:
+#   - "pr": Uses gitleaks-action which leverages the GitHub event context to
+#     scan only PR commits. Only valid on pull_request events.
+#   - "full": Installs gitleaks CLI and runs `gitleaks detect` against the
+#     entire repository. Event-agnostic — works on release, tag push, manual.
+#
+# Configuration:
+#   - .gitleaks.toml — rules and allowlists
+#   - .gitleaksignore — per-finding false positive suppression
+#
+# Issue: #871 (CI-02: Add secrets detection to CI)
+# =============================================================================
+
+name: Gitleaks Secrets Detection
+
+on:
+  workflow_call:
+    inputs:
+      scan-mode:
+        description: >
+          Scan scope: "pr" scans only PR commits (faster, for PRs),
+          "full" scans the entire repo history (for releases/nightly).
+        required: false
+        default: "pr"
+        type: string
+      fail-on-findings:
+        description: >
+          Whether to fail the workflow when secrets are detected.
+          Set to true for release gates, false for advisory scans.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Gitleaks Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Full history needed for both PR diff and full-history scanning
+          fetch-depth: 0
+
+      # -- PR mode: use the gitleaks-action which reads the PR event context --
+      - name: Run Gitleaks (PR commits)
+        if: inputs.scan-mode == 'pr'
+        id: gitleaks-pr
+        # Pinned to SHA for supply-chain safety (tag: v2.3.9)
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
+        continue-on-error: ${{ !inputs.fail-on-findings }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_COMMENTS: false
+
+      # -- Full mode: install gitleaks CLI and scan all history directly -------
+      # The gitleaks-action relies on event context (push/PR) to determine
+      # scan scope, which does not work on release/tag events. Using the CLI
+      # directly ensures deterministic full-history scanning regardless of
+      # the triggering event.
+      - name: Install Gitleaks CLI
+        if: inputs.scan-mode == 'full'
+        run: |
+          GITLEAKS_VERSION="8.30.1"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Run Gitleaks (full history)
+        if: inputs.scan-mode == 'full'
+        id: gitleaks-full
+        continue-on-error: ${{ !inputs.fail-on-findings }}
+        run: |
+          gitleaks detect \
+            --source . \
+            --config .gitleaks.toml \
+            --report-format sarif \
+            --report-path results.sarif \
+            --verbose \
+            --exit-code 1
+
+      - name: Upload Gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gitleaks-report
+          path: results.sarif
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Write scan summary
+        if: always()
+        run: |
+          cat <<'SUMMARY' >> "$GITHUB_STEP_SUMMARY"
+## Gitleaks Secrets Detection
+
+| Setting | Value |
+|---------|-------|
+| Scan mode | `${{ inputs.scan-mode }}` |
+| Fail on findings | `${{ inputs.fail-on-findings }}` |
+| Config | `.gitleaks.toml` |
+| Ignore file | `.gitleaksignore` |
+
+If findings were detected, review the uploaded `gitleaks-report` artifact
+for details. False positives can be suppressed by adding fingerprints to
+`.gitleaksignore` or by extending allowlists in `.gitleaks.toml`.
+SUMMARY
