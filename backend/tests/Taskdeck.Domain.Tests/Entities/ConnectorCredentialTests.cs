@@ -221,6 +221,20 @@ public class ConnectorCredentialTests
     }
 
     [Fact]
+    public void Constructor_ShouldRejectUndefinedAuthMethod()
+    {
+        var act = () => new ConnectorCredential(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            (ConnectorAuthMethod)999,
+            "Key",
+            "encrypted");
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("*Unsupported auth method*");
+    }
+
+    [Fact]
     public void Label_ShouldTrimWhitespace()
     {
         var credential = new ConnectorCredential(

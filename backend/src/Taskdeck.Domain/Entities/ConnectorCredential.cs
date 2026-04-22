@@ -83,6 +83,8 @@ public class ConnectorCredential : Entity
                 $"Encrypted value cannot exceed {MaxEncryptedValueLength} characters.");
         if (keyVersion < 1)
             throw new DomainException(ErrorCodes.ValidationError, "Key version must be at least 1.");
+        if (!Enum.IsDefined(authMethod))
+            throw new DomainException(ErrorCodes.ValidationError, $"Unsupported auth method value: {(int)authMethod}.");
 
         ConnectorId = connectorId;
         UserId = userId;
