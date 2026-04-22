@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Taskdeck.Application.Services;
 
 public sealed class SecurityHeadersSettings
@@ -9,11 +11,20 @@ public sealed class SecurityHeadersSettings
     public bool EnableReferrerPolicy { get; set; } = true;
     public bool EnableHsts { get; set; } = true;
     public bool ExcludeSwaggerFromContentSecurityPolicy { get; set; } = true;
+
+    [Range(0, 3650, ErrorMessage = "HstsMaxAgeDays must be between 0 and 3650 (10 years).")]
     public int HstsMaxAgeDays { get; set; } = 365;
+
     public bool HstsIncludeSubDomains { get; set; } = false;
     public bool HstsPreload { get; set; } = false;
+
+    [Required(AllowEmptyStrings = false)]
     public string ContentSecurityPolicy { get; set; } =
         "default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'";
+
+    [Required(AllowEmptyStrings = false)]
     public string XFrameOptions { get; set; } = "DENY";
+
+    [Required(AllowEmptyStrings = false)]
     public string ReferrerPolicy { get; set; } = "no-referrer";
 }

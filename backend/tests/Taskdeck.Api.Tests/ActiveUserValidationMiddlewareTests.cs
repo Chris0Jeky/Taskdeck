@@ -303,6 +303,8 @@ public class ActiveUserValidationMiddlewareTests
         public IOAuthAuthCodeRepository OAuthAuthCodes => throw new NotImplementedException();
         public IApiKeyRepository ApiKeys => throw new NotImplementedException();
         public IMfaCredentialRepository MfaCredentials => throw new NotImplementedException();
+        public IIntegrationConnectorRepository IntegrationConnectors => throw new NotImplementedException();
+        public IConnectorEventRepository ConnectorEvents => throw new NotImplementedException();
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

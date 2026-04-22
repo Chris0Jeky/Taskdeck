@@ -229,6 +229,34 @@ public class OutboundWebhookEndpointGuardTests
     }
 
     // -----------------------------------------------------------------------
+    // SSRF: cloud metadata exact hostnames (defense in depth)
+    // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("metadata.goog")]
+    public void IsHostBlockedByStaticPolicy_ShouldBlockCloudMetadataExactHostnames(string host)
+    {
+        OutboundWebhookEndpointGuard.IsHostBlockedByStaticPolicy(host, allowLocalhostEndpoints: false)
+            .Should().BeTrue($"{host} is a cloud metadata endpoint that must be blocked");
+    }
+
+    [Fact]
+    public void IsHostBlockedByStaticPolicy_ShouldBlockAlibabaCloudMetadataIp()
+    {
+        // 100.100.100.200 is in the CGNAT range (100.64.0.0/10) — already blocked
+        OutboundWebhookEndpointGuard.IsHostBlockedByStaticPolicy("100.100.100.200", allowLocalhostEndpoints: false)
+            .Should().BeTrue("100.100.100.200 is the Alibaba Cloud metadata endpoint (also in CGNAT range)");
+    }
+
+    [Fact]
+    public void IsHostBlockedByStaticPolicy_ShouldBlockMetadataGoogleInternal()
+    {
+        // metadata.google.internal is blocked by .internal suffix
+        OutboundWebhookEndpointGuard.IsHostBlockedByStaticPolicy("metadata.google.internal", allowLocalhostEndpoints: false)
+            .Should().BeTrue("metadata.google.internal is blocked by .internal suffix");
+    }
+
+    // -----------------------------------------------------------------------
     // SSRF: public IP addresses that MUST be allowed
     // -----------------------------------------------------------------------
 

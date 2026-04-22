@@ -40,11 +40,8 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
         await ApiTestHarness.AuthenticateAsync(clientB, "iso-boards-b");
         var boardB = await ApiTestHarness.CreateBoardAsync(clientB, "iso-board-b");
 
-        var response = await clientB.GetAsync("/api/boards");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var boards = await response.Content.ReadFromJsonAsync<List<BoardDto>>();
-        boards.Should().NotBeNull();
-        boards!.Should().NotContain(b => b.Id == boardA.Id,
+        var boards = await ApiTestHarness.ListBoardsAsync(clientB);
+        boards.Should().NotContain(b => b.Id == boardA.Id,
             "User B must not see User A's board in list results");
         boards.Should().Contain(b => b.Id == boardB.Id);
     }

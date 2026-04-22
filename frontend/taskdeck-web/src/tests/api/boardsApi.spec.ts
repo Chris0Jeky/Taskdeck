@@ -17,9 +17,11 @@ describe('boardsApi', () => {
   })
 
   describe('getBoards', () => {
-    it('should fetch boards with default params', async () => {
+    it('should fetch boards with default params and return items', async () => {
       const mockBoards = [{ id: '1', name: 'Board 1' }]
-      vi.mocked(http.get).mockResolvedValue({ data: mockBoards })
+      vi.mocked(http.get).mockResolvedValue({
+        data: { items: mockBoards, totalCount: 1, hasMore: false, offset: 0, limit: 50 },
+      })
 
       const result = await boardsApi.getBoards()
 
@@ -29,7 +31,9 @@ describe('boardsApi', () => {
 
     it('should fetch boards with search param', async () => {
       const mockBoards = [{ id: '1', name: 'Test Board' }]
-      vi.mocked(http.get).mockResolvedValue({ data: mockBoards })
+      vi.mocked(http.get).mockResolvedValue({
+        data: { items: mockBoards, totalCount: 1, hasMore: false, offset: 0, limit: 50 },
+      })
 
       const result = await boardsApi.getBoards('test')
 
@@ -38,7 +42,9 @@ describe('boardsApi', () => {
     })
 
     it('should fetch boards with includeArchived param', async () => {
-      vi.mocked(http.get).mockResolvedValue({ data: [] })
+      vi.mocked(http.get).mockResolvedValue({
+        data: { items: [], totalCount: 0, hasMore: false, offset: 0, limit: 50 },
+      })
 
       await boardsApi.getBoards(undefined, true)
 
@@ -46,11 +52,43 @@ describe('boardsApi', () => {
     })
 
     it('should fetch boards with search and includeArchived params', async () => {
-      vi.mocked(http.get).mockResolvedValue({ data: [] })
+      vi.mocked(http.get).mockResolvedValue({
+        data: { items: [], totalCount: 0, hasMore: false, offset: 0, limit: 50 },
+      })
 
       await boardsApi.getBoards('query', true)
 
       expect(http.get).toHaveBeenCalledWith('/boards?search=query&includeArchived=true')
+    })
+  })
+
+  describe('getBoardsPaginated', () => {
+    it('should fetch paginated boards with offset and limit', async () => {
+      const mockResponse = {
+        items: [{ id: '2', name: 'Board 2' }],
+        totalCount: 5,
+        hasMore: true,
+        offset: 1,
+        limit: 1,
+      }
+      vi.mocked(http.get).mockResolvedValue({ data: mockResponse })
+
+      const result = await boardsApi.getBoardsPaginated(undefined, false, 1, 1)
+
+      expect(http.get).toHaveBeenCalledWith('/boards?offset=1&limit=1')
+      expect(result).toEqual(mockResponse)
+    })
+
+    it('should include all query params when provided', async () => {
+      vi.mocked(http.get).mockResolvedValue({
+        data: { items: [], totalCount: 0, hasMore: false, offset: 2, limit: 10 },
+      })
+
+      await boardsApi.getBoardsPaginated('search', true, 2, 10)
+
+      expect(http.get).toHaveBeenCalledWith(
+        '/boards?search=search&includeArchived=true&offset=2&limit=10',
+      )
     })
   })
 

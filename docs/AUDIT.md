@@ -62,7 +62,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 | Severity | Issue | Location |
 |----------|-------|----------|
-| CRITICAL | Only 1 EF migration in source control — fresh environments cannot bootstrap | `backend/src/Taskdeck.Infrastructure/Migrations/` |
+| ~~CRITICAL~~ RESOLVED | ~~Only 1 EF migration in source control — fresh environments cannot bootstrap~~ 21 migrations in source control; full chain applies cleanly to fresh SQLite; `MigrationBootstrapTests` guard regression; workflow documented in `docs/platform/EF_MIGRATION_WORKFLOW.md` (`#864`) | `backend/src/Taskdeck.Infrastructure/Migrations/` |
 | CRITICAL | No configuration validation at startup (`ValidateOnStart()`) | `Program.cs`, all settings classes |
 | HIGH | No API versioning strategy — breaking changes have no compatibility path | All controllers |
 | MEDIUM | MCP mode duplicates DI registration from web mode | `Program.cs` lines 72-91 |

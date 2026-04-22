@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Net.Http.Headers;
+using Taskdeck.Api.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -67,6 +68,7 @@ public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
         using var factory = _factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
+            builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {

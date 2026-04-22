@@ -33,6 +33,9 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             var overrideSettings = new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                // Provide a stable test JWT secret so tests do not depend on
+                // appsettings.Development.json or FirstRunBootstrapper side-effects.
+                ["Jwt:SecretKey"] = "TaskdeckTestsOnlySecretKeyMustBeLongEnough123!",
                 ["RateLimiting:Enabled"] = "false",
                 ["Workers:QueuePollIntervalSeconds"] = "1",
                 ["Workers:MaxBatchSize"] = "10",

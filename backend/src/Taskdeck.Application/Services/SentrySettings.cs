@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Taskdeck.Application.Services;
 
 /// <summary>
@@ -13,17 +15,20 @@ public sealed class SentrySettings
 
     /// <summary>
     /// Sentry DSN (Data Source Name). Required when Enabled is true.
+    /// Validated by <see cref="SentrySettingsValidator"/> for conditional requirement.
     /// </summary>
     public string Dsn { get; set; } = string.Empty;
 
     /// <summary>
     /// Environment tag sent with events (e.g. "development", "production").
     /// </summary>
+    [Required(AllowEmptyStrings = false)]
     public string Environment { get; set; } = "production";
 
     /// <summary>
     /// Sample rate for performance tracing (0.0 to 1.0). Default: 0.1 (10%).
     /// </summary>
+    [Range(0.0, 1.0, ErrorMessage = "TracesSampleRate must be between 0.0 and 1.0.")]
     public double TracesSampleRate { get; set; } = 0.1;
 
     /// <summary>
