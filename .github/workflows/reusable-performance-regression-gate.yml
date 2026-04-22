@@ -1,0 +1,206 @@
+# =============================================================================
+# Reusable Performance Regression Gate
+# Enforces k6 API thresholds and frontend bundle size budgets.
+# Emits GitHub Actions annotations for violations and near-threshold warnings.
+#
+# Called from: ci-extended.yml, ci-nightly.yml
+# Related: issue #872 (CI-03), docs/PERFORMANCE_BUDGETS.md
+# =============================================================================
+
+name: Reusable Performance Regression Gate
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: .NET SDK version
+        required: false
+        default: "8.0.x"
+        type: string
+      node-version:
+        description: Node.js version
+        required: false
+        default: "24.13.1"
+        type: string
+      k6-vus:
+        description: Number of concurrent virtual users for k6
+        required: false
+        default: "20"
+        type: string
+      k6-duration:
+        description: k6 scenario duration
+        required: false
+        default: "90s"
+        type: string
+      k6-user-pool:
+        description: Seeded authenticated user pool size
+        required: false
+        default: "6"
+        type: string
+      bundle-max-entry-kb:
+        description: Max entry chunk size in KB (error threshold)
+        required: false
+        default: "150"
+        type: string
+      bundle-max-single-kb:
+        description: Max single chunk size in KB (error threshold)
+        required: false
+        default: "250"
+        type: string
+      bundle-max-total-js-kb:
+        description: Max total JS size in KB (error threshold)
+        required: false
+        default: "1200"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  performance-gate:
+    name: Performance Regression Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      # --- Frontend Bundle Size Gate ---
+
+      - name: Build frontend
+        working-directory: frontend/taskdeck-web
+        run: npx vite build
+
+      - name: Check bundle size thresholds
+        env:
+          BUNDLE_MAX_ENTRY_KB: ${{ inputs.bundle-max-entry-kb }}
+          BUNDLE_MAX_SINGLE_KB: ${{ inputs.bundle-max-single-kb }}
+          BUNDLE_MAX_TOTAL_JS_KB: ${{ inputs.bundle-max-total-js-kb }}
+        run: |
+          mkdir -p frontend/taskdeck-web/test-results/perf
+          node scripts/ci/check-bundle-size.mjs \
+            --dist frontend/taskdeck-web/dist \
+            --output-json frontend/taskdeck-web/test-results/perf/bundle-size-report.json
+
+      # --- k6 API Performance Gate ---
+
+      - name: Build backend
+        run: dotnet build backend/src/Taskdeck.Api/Taskdeck.Api.csproj --configuration Release --no-restore
+
+      - name: Reset harness result folders
+        run: |
+          rm -f frontend/taskdeck-web/taskdeck.perf.k6.ci.db
+          mkdir -p frontend/taskdeck-web/test-results/perf
+
+      - name: Run k6 board-heavy API profile
+        env:
+          K6_VUS: ${{ inputs.k6-vus }}
+          K6_DURATION: ${{ inputs.k6-duration }}
+          K6_USER_POOL: ${{ inputs.k6-user-pool }}
+          ASPNETCORE_ENVIRONMENT: Development
+          ASPNETCORE_URLS: http://127.0.0.1:5000
+          ConnectionStrings__DefaultConnection: Data Source=frontend/taskdeck-web/taskdeck.perf.k6.ci.db
+        run: |
+          set -euo pipefail
+
+          dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj --configuration Release --no-restore --no-build \
+            > frontend/taskdeck-web/test-results/perf/backend-perf-api.log 2>&1 &
+          api_pid=$!
+
+          cleanup() {
+            if kill -0 "$api_pid" 2>/dev/null; then
+              kill "$api_pid" || true
+              wait "$api_pid" || true
+            fi
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5000/health/live >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Backend API did not become healthy for performance gate."
+            exit 1
+          fi
+
+          # Run k6 — exits non-zero on threshold breach.
+          # Use || true to capture the exit code for the analysis step.
+          k6_exit=0
+          docker run --rm --network host \
+            -e K6_BASE_URL="http://127.0.0.1:5000/api" \
+            -e K6_VUS="$K6_VUS" \
+            -e K6_DURATION="$K6_DURATION" \
+            -e K6_USER_POOL="$K6_USER_POOL" \
+            -v "$PWD:/work" \
+            -w /work \
+            grafana/k6:0.49.0 \
+            run tests/load/k6/board-heavy-load.js \
+            --summary-export frontend/taskdeck-web/test-results/perf/k6-summary.json \
+            | tee frontend/taskdeck-web/test-results/perf/k6-output.log \
+            || k6_exit=$?
+
+          echo "k6_exit_code=$k6_exit" >> "$GITHUB_ENV"
+
+      - name: Analyze k6 thresholds
+        if: always()
+        run: |
+          if [ -f frontend/taskdeck-web/test-results/perf/k6-summary.json ]; then
+            node scripts/ci/check-k6-thresholds.mjs \
+              frontend/taskdeck-web/test-results/perf/k6-summary.json \
+              --fail-on-breach \
+              --output-json frontend/taskdeck-web/test-results/perf/k6-threshold-report.json
+          else
+            echo "::warning::k6 summary file not found — threshold analysis skipped."
+          fi
+
+      - name: Fail if k6 thresholds breached
+        if: always()
+        run: |
+          if [ "${k6_exit_code:-0}" -ne 0 ]; then
+            echo "::error::k6 exited with code $k6_exit_code — performance thresholds breached."
+            exit 1
+          fi
+
+      # --- Artifact Upload ---
+
+      - name: Upload performance gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: performance-regression-gate-results
+          path: |
+            frontend/taskdeck-web/test-results/perf/
+          retention-days: 30
+          if-no-files-found: ignore
