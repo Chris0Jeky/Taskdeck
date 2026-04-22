@@ -76,7 +76,8 @@ public class ConnectorProvidersController : AuthenticatedControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CheckProviderHealth(
-        [StringLength(100, MinimumLength = 1)] string providerId)
+        [StringLength(100, MinimumLength = 1)] string providerId,
+        CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out _, out var errorResult))
             return errorResult!;
@@ -88,7 +89,7 @@ public class ConnectorProvidersController : AuthenticatedControllerBase
                 "Provider ID must be between 1 and 100 characters."));
         }
 
-        var result = await _executionService.CheckProviderHealthAsync(providerId);
+        var result = await _executionService.CheckProviderHealthAsync(providerId, cancellationToken);
 
         if (!result.IsSuccess)
             return result.ToErrorActionResult();
