@@ -109,6 +109,27 @@ public class McpTelemetryMiddlewareTests
     }
 
     [Fact]
+    public async Task InvokeAsync_McpPath_WhenCancelled_LogsCancellationNotError()
+    {
+        var cts = new CancellationTokenSource();
+        var middleware = CreateMiddleware(_ =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+        var context = CreateHttpContext("/mcp");
+        context.RequestAborted = cts.Token;
+
+        var act = () => middleware.InvokeAsync(context);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _logger.Entries.Should().NotContain(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Error,
+            "client disconnects should not be logged as errors");
+        _logger.Entries.Should().Contain(e => e.Message.Contains("cancelled"),
+            "client disconnects should be logged as cancellations");
+    }
+
+    [Fact]
     public async Task InvokeAsync_McpPath_NeverLogsApiKeyValues()
     {
         var apiKey = "tdsk_secretkey12345678";
