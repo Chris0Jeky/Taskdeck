@@ -113,11 +113,34 @@ public class BoardService
 
     public async Task<Result<IEnumerable<BoardDto>>> ListBoardsAsync(Guid actingUserId, string? searchText = null, bool includeArchived = false, CancellationToken cancellationToken = default)
     {
-        if (actingUserId == Guid.Empty)
-            return Result.Failure<IEnumerable<BoardDto>>(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
+        // Delegate to paginated overload with no offset/limit to return all results.
+        var paginated = await ListBoardsPaginatedAsync(actingUserId, searchText, includeArchived, offset: 0, limit: null, cancellationToken);
+        if (!paginated.IsSuccess)
+            return Result.Failure<IEnumerable<BoardDto>>(paginated.ErrorCode, paginated.ErrorMessage);
 
-        // Only cache un-filtered, non-archived list (the most common request)
-        var canCache = _cacheService is not null && string.IsNullOrEmpty(searchText) && !includeArchived;
+        return Result.Success<IEnumerable<BoardDto>>(paginated.Value.Items);
+    }
+
+    /// <summary>
+    /// Lists boards with offset/limit pagination. When <paramref name="limit"/> is null,
+    /// all authorized boards are returned (backward compatible behavior).
+    /// </summary>
+    public async Task<Result<PaginatedResult<BoardDto>>> ListBoardsPaginatedAsync(
+        Guid actingUserId,
+        string? searchText = null,
+        bool includeArchived = false,
+        int offset = 0,
+        int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (actingUserId == Guid.Empty)
+            return Result.Failure<PaginatedResult<BoardDto>>(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
+
+        if (offset < 0)
+            offset = 0;
+
+        // Only cache un-filtered, non-archived, non-paginated list (the most common request)
+        var canCache = _cacheService is not null && string.IsNullOrEmpty(searchText) && !includeArchived && offset == 0 && limit is null;
 
         if (canCache)
         {
@@ -125,45 +148,57 @@ public class BoardService
             var cached = await _cacheService!.GetAsync<List<BoardDto>>(cacheKey, cancellationToken);
             if (cached is not null)
             {
-                return Result.Success<IEnumerable<BoardDto>>(cached);
+                return Result.Success(new PaginatedResult<BoardDto>(cached, cached.Count, false, 0, cached.Count));
             }
         }
 
         var candidateBoardIds = (await _unitOfWork.Boards.SearchIdsAsync(searchText, includeArchived, cancellationToken)).ToList();
 
+        List<Guid> visibleBoardIds;
         if (_authorizationService is null)
         {
-            var boards = await _unitOfWork.Boards.GetByIdsAsync(candidateBoardIds, cancellationToken);
-            var dtos = boards.Select(MapToDto).ToList();
+            visibleBoardIds = candidateBoardIds;
+        }
+        else
+        {
+            var visibleBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
+                actingUserId,
+                candidateBoardIds,
+                cancellationToken);
 
-            if (canCache)
-            {
-                var ttl = TimeSpan.FromSeconds(_cacheSettings!.BoardListTtlSeconds);
-                await _cacheService!.SetAsync(CacheKeys.BoardListForUser(actingUserId), dtos, ttl, cancellationToken);
-            }
+            if (!visibleBoardIdsResult.IsSuccess)
+                return Result.Failure<PaginatedResult<BoardDto>>(visibleBoardIdsResult.ErrorCode, visibleBoardIdsResult.ErrorMessage);
 
-            return Result.Success<IEnumerable<BoardDto>>(dtos);
+            visibleBoardIds = visibleBoardIdsResult.Value.ToList();
         }
 
-        var visibleBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
-            actingUserId,
-            candidateBoardIds,
-            cancellationToken);
+        var totalCount = visibleBoardIds.Count;
 
-        if (!visibleBoardIdsResult.IsSuccess)
-            return Result.Failure<IEnumerable<BoardDto>>(visibleBoardIdsResult.ErrorCode, visibleBoardIdsResult.ErrorMessage);
+        // Apply pagination to the authorized list of IDs
+        IEnumerable<Guid> pageIds;
+        if (limit.HasValue)
+        {
+            pageIds = visibleBoardIds.Skip(offset).Take(limit.Value);
+        }
+        else
+        {
+            pageIds = visibleBoardIds;
+        }
 
-        var visibleBoardIds = visibleBoardIdsResult.Value.ToList();
-        var visibleBoards = await _unitOfWork.Boards.GetByIdsAsync(visibleBoardIds, cancellationToken);
-        var result = visibleBoards.Select(MapToDto).ToList();
+        var pageIdList = pageIds.ToList();
+        var boards = await _unitOfWork.Boards.GetByIdsAsync(pageIdList, cancellationToken);
+        var dtos = boards.Select(MapToDto).ToList();
 
+        var hasMore = limit.HasValue && (offset + pageIdList.Count) < totalCount;
+
+        // Cache only the full un-paginated result
         if (canCache)
         {
             var ttl = TimeSpan.FromSeconds(_cacheSettings!.BoardListTtlSeconds);
-            await _cacheService!.SetAsync(CacheKeys.BoardListForUser(actingUserId), result, ttl, cancellationToken);
+            await _cacheService!.SetAsync(CacheKeys.BoardListForUser(actingUserId), dtos, ttl, cancellationToken);
         }
 
-        return Result.Success<IEnumerable<BoardDto>>(result);
+        return Result.Success(new PaginatedResult<BoardDto>(dtos, totalCount, hasMore, offset, limit ?? totalCount));
     }
 
     public async Task<Result> DeleteBoardAsync(Guid id, CancellationToken cancellationToken = default)
