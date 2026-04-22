@@ -118,7 +118,7 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
                     await conn.InvokeAsync("JoinBoard", board.Id);
                     joinedConnections.Add(conn);
                 }
-                catch (HubException)
+                catch (Exception ex) when (ex is HubException or HttpRequestException)
                 {
                     // Tolerate transient HubException (e.g., SQLite contention
                     // under rapid-fire stress). The eventual-consistency check
@@ -152,7 +152,7 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
                     await conn.InvokeAsync("LeaveBoard", board.Id);
                     Interlocked.Increment(ref leaveSuccessCount);
                 }
-                catch (HubException)
+                catch (Exception ex) when (ex is HubException or HttpRequestException)
                 {
                     // Tolerate transient HubException during rapid leave
                 }

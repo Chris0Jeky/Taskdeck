@@ -85,10 +85,14 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         db.AutomationProposals.AddRange(expired, notExpired);
         await db.SaveChangesAsync();
 
-        // Force the "expired" proposal's ExpiresAt to a past date
-        var pastDate = DateTime.UtcNow.AddDays(-1);
-        await db.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE AutomationProposals SET ExpiresAt = {pastDate} WHERE Id = {expired.Id}");
+        // Force the "expired" proposal's ExpiresAt to a past date.
+        // Use an explicit ISO 8601 string for the UPDATE so the value is stored in
+        // the same format EF Core SQLite uses for DateTime comparisons in LINQ queries.
+        // Parameterized DateTime values can format differently across platforms (Windows vs Linux).
+        var pastDateStr = DateTime.UtcNow.AddDays(-1).ToString("yyyy-MM-dd HH:mm:ss.fffffff");
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE AutomationProposals SET ExpiresAt = {0} WHERE Id = {1}",
+            pastDateStr, expired.Id);
 
         // Clear the change tracker so the subsequent query reads fresh data from the database
         // rather than serving the stale tracked entity with the old ExpiresAt value.

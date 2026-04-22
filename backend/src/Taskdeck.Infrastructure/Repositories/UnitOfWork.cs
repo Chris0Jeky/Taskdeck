@@ -41,7 +41,9 @@ public class UnitOfWork : IUnitOfWork
         IExternalLoginRepository externalLogins,
         IOAuthAuthCodeRepository oauthAuthCodes,
         IApiKeyRepository apiKeys,
-        IMfaCredentialRepository mfaCredentials)
+        IMfaCredentialRepository mfaCredentials,
+        IIntegrationConnectorRepository integrationConnectors,
+        IConnectorEventRepository connectorEvents)
     {
         _context = context;
         Boards = boards;
@@ -72,6 +74,8 @@ public class UnitOfWork : IUnitOfWork
         OAuthAuthCodes = oauthAuthCodes;
         ApiKeys = apiKeys;
         MfaCredentials = mfaCredentials;
+        IntegrationConnectors = integrationConnectors;
+        ConnectorEvents = connectorEvents;
     }
 
     public IBoardRepository Boards { get; }
@@ -102,6 +106,8 @@ public class UnitOfWork : IUnitOfWork
     public IOAuthAuthCodeRepository OAuthAuthCodes { get; }
     public IApiKeyRepository ApiKeys { get; }
     public IMfaCredentialRepository MfaCredentials { get; }
+    public IIntegrationConnectorRepository IntegrationConnectors { get; }
+    public IConnectorEventRepository ConnectorEvents { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
