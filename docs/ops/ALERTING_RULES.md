@@ -61,7 +61,7 @@ This document defines monitoring thresholds, alert priorities, escalation paths,
 | **Metric** | `taskdeck.worker.heartbeat.staleness` (per worker name) |
 | **Condition** | Heartbeat staleness > 5 minutes (300 seconds) for any registered worker |
 | **Evaluation window** | 3 consecutive samples |
-| **Applies to** | `LlmQueueToProposalWorker`, `ProposalHousekeepingWorker`, `OutboundWebhookDeliveryWorker` |
+| **Applies to** | `LlmQueueToProposalWorker`, `ProposalHousekeepingWorker` (OTLP metrics emitted by health controller). Note: `OutboundWebhookDeliveryWorker` reports heartbeats to the registry but is not yet monitored by the health endpoint or emitted as an OTLP metric — see Known Gaps below. |
 | **Priority** | **P1** |
 | **Runbook** | Check if the worker process/container is running. Inspect worker logs for crash loops or unhandled exceptions. Verify the health endpoint: `GET /health/ready` reports worker status. If the worker is running but not heartbeating, check for deadlocks or stuck I/O (e.g., LLM provider timeout). Restart the worker container/process if unrecoverable. |
 | **Startup grace** | Suppress for 30 seconds after process start (matches `WorkerHeartbeatRegistry.StartupTime` grace period in `HealthController`). |
@@ -334,6 +334,14 @@ The alerting rules in this document are designed to work with the health check i
 - **`TaskdeckTelemetry`** (OpenTelemetry meter): Emits the custom metrics (`taskdeck.automation.queue.backlog`, `taskdeck.worker.items.processed`, `taskdeck.worker.heartbeat.staleness`, etc.) that Alerts 3 and 6 consume.
 
 For the full list of emitted metrics and trace attributes, see `docs/ops/OBSERVABILITY_BASELINE.md`.
+
+---
+
+## Known Gaps
+
+1. **OutboundWebhookDeliveryWorker not monitored**: This worker reports heartbeats to `WorkerHeartbeatRegistry` but the `HealthController` does not check its staleness or emit the `taskdeck.worker.heartbeat.staleness` metric for it. A stale webhook delivery worker would not trigger Alert 3 or affect the `/health/ready` response. Follow-up: extend `HealthController` to monitor all heartbeat-reporting workers.
+2. **Health endpoint staleness thresholds differ from alert thresholds**: The health controller uses `QueuePollIntervalSeconds * 3` (default ~30s) for the queue worker and 3 minutes for the housekeeping worker. Alert 3 uses a 5-minute threshold. This is intentional — the health endpoint catches issues faster via readiness probe failures (Alert 8), while Alert 3 provides a separate OTLP-based detection path. Operators should be aware that the readiness probe will fail before Alert 3 fires.
+3. **No LLM provider error rate alert**: The current metric set does not include a dedicated LLM provider error rate metric. LLM failures surface indirectly through queue backlog growth (Alert 6) and worker processing outcomes (`taskdeck.worker.items.processed` with `outcome=error`). A dedicated LLM provider latency/error alert would improve mean time to diagnosis.
 
 ---
 
