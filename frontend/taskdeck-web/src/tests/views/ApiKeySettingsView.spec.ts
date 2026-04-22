@@ -253,6 +253,63 @@ describe('ApiKeySettingsView', () => {
 
       expect(bodyText()).toContain('Failed to create API key.')
     })
+
+    it('prevents closing create dialog while creation is in-flight', async () => {
+      let resolveCreate!: (value: unknown) => void
+      mocks.listKeys.mockResolvedValue([activeKey])
+      mocks.createKey.mockReturnValue(
+        new Promise((resolve) => {
+          resolveCreate = resolve
+        }),
+      )
+
+      wrapper = mount(ApiKeySettingsView, { attachTo: document.body })
+      await waitForUi()
+
+      // Open create dialog
+      const createBtn = findBodyButton('Create Key')
+      createBtn!.click()
+      await wrapper.vm.$nextTick()
+      await waitForUi()
+
+      // Fill name
+      const input = document.querySelector('#api-key-name') as HTMLInputElement
+      input.value = 'In-Flight Key'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await wrapper.vm.$nextTick()
+
+      // Click Create Key to start the in-flight request
+      const dialogButtons = Array.from(
+        document.body.querySelectorAll('button'),
+      ).filter((b) => b.textContent?.includes('Create Key'))
+      const submitBtn = dialogButtons[dialogButtons.length - 1]
+      submitBtn!.click()
+      await wrapper.vm.$nextTick()
+
+      // Try to close (Cancel button should be disabled, but also test closeCreateDialog guard)
+      const cancelBtn = findBodyButton('Cancel')
+      expect(cancelBtn).toBeDefined()
+      // Cancel button should be disabled during creation
+      expect(cancelBtn!.disabled).toBe(true)
+
+      // Dialog should still be open
+      expect(bodyText()).toContain('Key Name')
+
+      // Resolve the promise to finish the request
+      resolveCreate({
+        id: 'new-key',
+        key: 'tdsk_inflight_value',
+        keyPrefix: 'tdsk_inf',
+        name: 'In-Flight Key',
+        createdAt: '2025-06-10T00:00:00Z',
+        expiresAt: null,
+      })
+      await wrapper.vm.$nextTick()
+      await waitForUi()
+
+      // Now the created key should be displayed
+      expect(bodyText()).toContain('tdsk_inflight_value')
+    })
   })
 
   describe('revoke key flow', () => {
