@@ -41,7 +41,10 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 // Keep API integration tests deterministic regardless of local machine env secrets.
                 ["Llm:EnableLiveProviders"] = "false",
                 ["Llm:AllowLiveProvidersInDevelopment"] = "false",
-                ["Llm:Provider"] = "Mock"
+                ["Llm:Provider"] = "Mock",
+                // Provide a non-placeholder JWT secret so tests that override the
+                // environment to Production pass ValidateProductionSecrets.
+                ["Jwt:SecretKey"] = "IntegrationTestSecretKeyThatIsLongEnoughToPassValidation_DoNotUseInProd_ABCDEFGHabcdefgh12345678"
             };
 
             configBuilder.AddInMemoryCollection(overrideSettings);
