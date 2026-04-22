@@ -45,6 +45,17 @@ public static class LlmProviderRegistration
         // Circuit breaker settings and shared state tracker (explicit instances
         // so Program.cs can look them up from the service descriptors before build).
         var circuitBreakerSettings = configuration.GetSection("CircuitBreaker").Get<CircuitBreakerSettings>() ?? new CircuitBreakerSettings();
+        if (circuitBreakerSettings.FailureThreshold < 1)
+        {
+            throw new InvalidOperationException(
+                $"CircuitBreaker:FailureThreshold must be at least 1 (got {circuitBreakerSettings.FailureThreshold}). " +
+                "Polly requires a positive value for handledEventsAllowedBeforeBreaking.");
+        }
+        if (circuitBreakerSettings.BreakDurationSeconds < 1)
+        {
+            throw new InvalidOperationException(
+                $"CircuitBreaker:BreakDurationSeconds must be at least 1 (got {circuitBreakerSettings.BreakDurationSeconds}).");
+        }
         services.AddSingleton(circuitBreakerSettings);
         var circuitBreakerTracker = new CircuitBreakerStateTracker();
         services.AddSingleton(circuitBreakerTracker);

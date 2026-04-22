@@ -176,7 +176,7 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task HealthReady_OpenCircuitDegradeOverallReadiness()
+    public async Task HealthReady_OpenCircuitReportsDegradedButDoesNotFailReadiness()
     {
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
         {
@@ -193,10 +193,14 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
 
         var response = await client.GetAsync("/health/ready");
 
-        // An open circuit should degrade overall readiness to 503.
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        // An open circuit on an optional provider should NOT fail readiness.
+        // LLM and OAuth providers degrade gracefully (mock fallback, cached tokens).
+        // The circuit state is reported for operator visibility.
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        payload.GetProperty("status").GetString().Should().Be("NotReady");
+        var circuitBreakers = payload.GetProperty("checks").GetProperty("circuitBreakers");
+        circuitBreakers.TryGetProperty("Gemini", out var gemini).Should().BeTrue();
+        gemini.GetProperty("state").GetString().Should().Be("Open");
+        circuitBreakers.GetProperty("_summary").GetProperty("status").GetString().Should().Be("Degraded");
     }
 
     [Fact]
@@ -272,6 +276,34 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
 
         settings.FailureThreshold.Should().Be(10);
         settings.BreakDurationSeconds.Should().Be(120);
+    }
+
+    [Fact]
+    public void Settings_FailureThreshold_HasRangeValidation()
+    {
+        var settings = new CircuitBreakerSettings { FailureThreshold = 0 };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        isValid.Should().BeFalse();
+        results.Should().Contain(r => r.ErrorMessage!.Contains("FailureThreshold"));
+    }
+
+    [Fact]
+    public void Settings_BreakDurationSeconds_HasRangeValidation()
+    {
+        var settings = new CircuitBreakerSettings { BreakDurationSeconds = 0 };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        isValid.Should().BeFalse();
+        results.Should().Contain(r => r.ErrorMessage!.Contains("BreakDurationSeconds"));
     }
 
     // ── Polly policy integration via LlmProviderRegistration ──────────

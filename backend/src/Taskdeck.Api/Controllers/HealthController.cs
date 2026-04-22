@@ -201,11 +201,16 @@ public class HealthController : ControllerBase
 
         checks["workers"] = workerChecks;
 
-        // Circuit breaker state for external HTTP clients
+        // Circuit breaker state for external HTTP clients.
+        // Open circuits are reported but do NOT fail the readiness probe because
+        // LLM and OAuth providers are optional/degradeable -- the system falls back
+        // to mock responses or cached tokens when a provider is unavailable.
+        // Operators can monitor the circuitBreakers section for open circuits.
         var circuitBreakerStates = _circuitBreakerTracker.GetAll();
         if (circuitBreakerStates.Count > 0)
         {
             var circuitChecks = new Dictionary<string, object>();
+            var anyOpen = false;
             foreach (var (name, snapshot) in circuitBreakerStates)
             {
                 circuitChecks[name] = new
@@ -215,12 +220,12 @@ public class HealthController : ControllerBase
                     lastFailureReason = snapshot.LastFailureReason
                 };
 
-                // An open circuit degrades overall readiness.
                 if (snapshot.State == CircuitState.Open)
                 {
-                    isReady = false;
+                    anyOpen = true;
                 }
             }
+            circuitChecks["_summary"] = new { status = anyOpen ? "Degraded" : "Healthy" };
             checks["circuitBreakers"] = circuitChecks;
         }
         else
