@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-15
+Last Updated: 2026-04-16
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -134,6 +134,10 @@ Current constraints are mostly hardening and consistency:
   - **TST-12 integrated verification program** (`#135`/`#838`): 18-scenario cross-component verification strategy in `docs/testing/INTEGRATED_VERIFICATION_STRATEGY.md`; 4 Playwright E2E tests in `integrated-verification.spec.ts` covering full capture-to-board pipeline, board bootstrap, workspace navigation, and auth denial; manual rehearsal template at `docs/testing/MANUAL_REHEARSAL_TEMPLATE.md`; release gating criteria documented; `docs/TESTING_GUIDE.md` updated with cross-references
   - **INT-06 integrations registry foundation** (`#340`/`#841`): full-stack integrations registry with domain entities (`IntegrationConnector`, `ConnectorEvent` with `ConnectorType`/`ConnectorDirection`/`ConnectorStatus` enums), application service (`IntegrationRegistryService` with `IIntegrationConnectorRepository`/`IConnectorEventRepository`), EF Core infrastructure (repositories + `AddIntegrationConnectorsAndEvents` migration), API (`IntegrationsController` with 7 endpoints — CRUD + enable/disable, all `[Authorize]`), frontend (`IntegrationsView.vue` at `/workspace/integrations` with `integrationStore` and `integrationsApi` with enum normalization), connector taxonomy (inbound/context/outbound per GP-06 — inbound connectors route through capture), architecture documentation at `docs/architecture/INTEGRATIONS_REGISTRY.md`; 60 new tests (24 domain + 12 application + 15 API + 9 frontend)
   - Tracker closures: 6 completed trackers closed — `#721` (TST-54 rigorous test expansion wave), `#647` (LLM-05 tool-calling), `#648` (MCP-00 server), `#329` (MVP-03 secondary follow-through), `#242` (UI-00 premium UI wave), `#235` (SEC-15 managed-key threat model)
+
+- Post-validation documentation sweep (2026-04-16, PR `#844`):
+  - **Wave index and delivery annotations sweep** (`#844`): updated `#107` wave execution index with 126/129 completed items checked; added "(delivered)" annotations to ~100+ items across Stages 2--5 in `ISSUE_EXECUTION_GUIDE.md`
+  - Note: PRs `#822`, `#841`, `#877`--`#880`, `#882` remain open and are not yet merged; their contents will be documented here upon merge
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
