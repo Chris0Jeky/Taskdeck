@@ -169,12 +169,17 @@ public class BoardService
             if (!visibleBoardIdsResult.IsSuccess)
                 return Result.Failure<PaginatedResult<BoardDto>>(visibleBoardIdsResult.ErrorCode, visibleBoardIdsResult.ErrorMessage);
 
-            visibleBoardIds = visibleBoardIdsResult.Value.ToList();
+            // GetReadableBoardIdsAsync returns IReadOnlySet<Guid> (unordered).
+            // Preserve the stable order from candidateBoardIds (which is sorted by
+            // CreatedAt desc, Id asc from the repository) by filtering rather than
+            // converting the set to a list directly.
+            var authorizedSet = visibleBoardIdsResult.Value;
+            visibleBoardIds = candidateBoardIds.Where(id => authorizedSet.Contains(id)).ToList();
         }
 
         var totalCount = visibleBoardIds.Count;
 
-        // Apply pagination to the authorized list of IDs
+        // Apply pagination to the stably-ordered authorized list of IDs
         IEnumerable<Guid> pageIds;
         if (limit.HasValue)
         {
