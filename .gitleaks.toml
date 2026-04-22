@@ -1,0 +1,84 @@
+# =============================================================================
+# Gitleaks Configuration — secrets detection for Taskdeck CI
+# =============================================================================
+#
+# This config extends the default Gitleaks ruleset with project-specific
+# allowlists for test fixtures, documentation examples, and development
+# placeholder values.
+#
+# References:
+#   - https://github.com/gitleaks/gitleaks#configuration
+#   - Issue #871 (CI-02: Add secrets detection to CI)
+# =============================================================================
+
+title = "Taskdeck Gitleaks Configuration"
+
+# Use the default built-in rules (generic-api-key, AWS, GCP, GitHub, etc.)
+# and layer project-specific allowlist on top.
+
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Global allowlist — patterns that are safe across the entire repository
+# ---------------------------------------------------------------------------
+[allowlist]
+
+  description = "Taskdeck global allowlist for test fixtures and documentation"
+
+  # Paths that are inherently safe (test code, docs, archived docs)
+  paths = [
+    '''backend/tests/.*''',
+    '''frontend/taskdeck-web/tests/.*''',
+    '''frontend/taskdeck-web/src/.*\.spec\.ts$''',
+    '''docs/.*''',
+    '''scripts/deploy/.*''',
+    '''\.github/workflows/.*''',
+  ]
+
+  # Regex patterns for known-safe values that appear in config/code
+  regexes = [
+    # Development-only JWT secret (clearly labeled as non-production)
+    '''TaskdeckDevelopmentOnlySecretKeyChangeMe123!''',
+    # Test-only JWT secrets used in integration/unit tests
+    '''TaskdeckTestsOnlySecretKeyMustBeLongEnough123!''',
+    '''TestKeyMustBeAtLeast32CharactersLong!''',
+    '''ThisIsATestSecretKeyThatIsAtLeast32CharactersLong!''',
+    # CI placeholder secret for Docker Compose validation
+    '''ci-placeholder-secret''',
+    '''local-test-secret''',
+    # Example API key prefix in documentation (not a real key)
+    '''tdsk_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6''',
+    # Example GitHub PAT placeholder in ops docs
+    '''ghp_\.\.\.''',
+    # Docker Compose env var references (not actual secrets)
+    '''\$\{TASKDECK_.*\}''',
+    # Test fixture OAuth values
+    '''test-client''',
+    '''test-secret''',
+    # Placeholder password strings in test fixtures
+    '''password123''',
+    '''NewPassword!456''',
+    '''Hacked!456''',
+    '''wrong-password''',
+    # Documentation placeholder patterns
+    '''your-secret-key-here.*''',
+    '''your-secret''',
+    # Test fixture LLM API key values (clearly fake)
+    '''gemini-key''',
+    '''openai-key''',
+    '''shell-gemini-key''',
+  ]
+
+# ---------------------------------------------------------------------------
+# Rule-specific overrides
+# ---------------------------------------------------------------------------
+
+# The generic-api-key rule can be noisy for config files with empty values.
+# Suppress empty API key fields (value is literally empty string).
+[[rules]]
+  id = "empty-api-key-fields"
+  description = "Suppress empty API key config fields"
+  regex = '''(?:ApiKey|api_key|apikey)\s*[:=]\s*["']?["']?\s*[,\n\r}]'''
+  [rules.allowlist]
+    regexes = ['''.*''']
