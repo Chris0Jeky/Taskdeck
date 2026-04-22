@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-04-16
+Last Updated: 2026-04-22
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -385,6 +385,29 @@ Maintainability hotspot refactor wave (analysis-driven, all delivered):
 3. ~~`#340`~~ INT-06 integrations registry and supervised inbound connector foundation (**delivered** `#841`)
 4. ~~`#341`~~ TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through (**delivered** `#741`)
 5. Closed historical issues remain `Priority V` for archival consistency.
+
+### Stage 6: Audit follow-through wave (seeded from `docs/AUDIT.md` 2026-04-16, delivered 2026-04-22)
+
+Production hardening issues seeded from the 2026-04-16 audit. All 10 items delivered on 2026-04-22 across PRs `#902`–`#913`:
+
+1. ~~`#847`~~ PERF-11 WorkspaceService sync-over-async removal (**delivered** PR `#904`)
+2. ~~`#849`~~ PERF-13 push AuditLog userId/boardId/source filters into SQL (**delivered** PR `#903`)
+3. ~~`#850`~~ SEC-26 SSRF protection for webhook and LLM provider URLs (**delivered** PR `#905`)
+4. ~~`#851`~~ SEC-27 remove dev JWT secret; `FirstRunBootstrapper` generates unconditionally (**delivered** PR `#911`)
+5. ~~`#853`~~ TST-58 fix missing test attributes in CLI tests; shared `CliTestHarness` (**delivered** PR `#906`)
+6. ~~`#858`~~ OPS-27 startup configuration validation with `ValidateOnStart` (**delivered** PR `#908`)
+7. ~~`#859`~~ PERF-12 offset/limit pagination on board list endpoint (**delivered** PR `#909`)
+8. ~~`#860`~~ SEC-30 file import content validation (text/JSON/SQLite magic bytes + CJK-safe limits) (**delivered** PR `#910`)
+9. ~~`#864`~~ OPS-28 EF Core migration bootstrap tests + workflow guide (**delivered** PR `#907`)
+10. ~~`#871`~~ CI-02 Gitleaks secrets detection in CI pipeline (**delivered** PR `#902`)
+
+CI stabilisation fixes landed alongside the wave (no issue ID):
+- PR `#912` — ActivityView test flake on Windows (deterministic timestamps)
+- PR `#913` — serialise `FirstRunBootstrapper.PersistValue` across processes (named mutex + atomic rename)
+
+Execution note:
+- Two Tier 1 items from `docs/AUDIT.md` remain open after this wave: response compression and missing database indexes
+- Three Tier 2 items from `docs/AUDIT.md` remain open: view decomposition (ReviewView/InboxView/AutomationChatView), Vue error boundary, `SECURITY.md` vulnerability disclosure policy
 
 ## Per-Issue Delivery Checklist
 
