@@ -54,7 +54,7 @@ jobs:
       - name: Run Gitleaks (PR commits)
         if: inputs.scan-mode == 'pr'
         id: gitleaks-pr
-        uses: gitleaks/gitleaks-action@v2.3.7
+        uses: gitleaks/gitleaks-action@v2.3.9
         continue-on-error: ${{ !inputs.fail-on-findings }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,7 +64,7 @@ jobs:
       - name: Run Gitleaks (full repo)
         if: inputs.scan-mode == 'full'
         id: gitleaks-full
-        uses: gitleaks/gitleaks-action@v2.3.7
+        uses: gitleaks/gitleaks-action@v2.3.9
         continue-on-error: ${{ !inputs.fail-on-findings }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

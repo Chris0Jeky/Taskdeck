@@ -69,16 +69,3 @@ useDefault = true
     '''openai-key''',
     '''shell-gemini-key''',
   ]
-
-# ---------------------------------------------------------------------------
-# Rule-specific overrides
-# ---------------------------------------------------------------------------
-
-# The generic-api-key rule can be noisy for config files with empty values.
-# Suppress empty API key fields (value is literally empty string).
-[[rules]]
-  id = "empty-api-key-fields"
-  description = "Suppress empty API key config fields"
-  regex = '''(?:ApiKey|api_key|apikey)\s*[:=]\s*["']?["']?\s*[,\n\r}]'''
-  [rules.allowlist]
-    regexes = ['''.*''']
