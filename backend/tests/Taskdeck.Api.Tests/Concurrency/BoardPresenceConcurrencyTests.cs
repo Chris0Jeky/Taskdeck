@@ -47,8 +47,7 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
         while (DateTimeOffset.UtcNow < deadline)
         {
             var all = events.ToList();
-            var match = all.LastOrDefault(s => s.Members.Count == expectedMemberCount)
-                        ?? all.LastOrDefault(s => s.Members.Count >= expectedMemberCount);
+            var match = all.LastOrDefault(s => s.Members.Count == expectedMemberCount);
             if (match is not null)
                 return match;
             await Task.Delay(100);
