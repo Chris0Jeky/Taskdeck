@@ -18,6 +18,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 INFRA_PROJECT="$REPO_ROOT/backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj"
 STARTUP_PROJECT="$REPO_ROOT/backend/src/Taskdeck.Api/Taskdeck.Api.csproj"
 
+# The CI workflow builds with --configuration Release, so dotnet-ef must also
+# use Release to find the correct bin output (bin/Release/net8.0/).  Without
+# this flag dotnet-ef defaults to Debug and fails with "deps.json does not
+# exist" on a clean runner.
+CONFIGURATION="${DOTNET_CONFIGURATION:-Release}"
+
 # Create a temp directory for the test database
 TEMP_DIR="$(mktemp -d)"
 DB_PATH="$TEMP_DIR/migration-validation.db"
@@ -35,6 +41,7 @@ MIGRATION_LOG="$TEMP_DIR/migration-output.log"
 if ! dotnet ef database update \
   --project "$INFRA_PROJECT" \
   --startup-project "$STARTUP_PROJECT" \
+  --configuration "$CONFIGURATION" \
   --connection "Data Source=$DB_PATH" \
   --no-build \
   --verbose > "$MIGRATION_LOG" 2>&1; then
@@ -106,6 +113,7 @@ PENDING_EXIT=0
 PENDING_OUTPUT=$(dotnet ef migrations has-pending-model-changes \
   --project "$INFRA_PROJECT" \
   --startup-project "$STARTUP_PROJECT" \
+  --configuration "$CONFIGURATION" \
   --no-build 2>&1) || PENDING_EXIT=$?
 
 if [ "$PENDING_EXIT" -eq 0 ]; then
