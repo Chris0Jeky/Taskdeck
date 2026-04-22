@@ -7,8 +7,9 @@ namespace Taskdeck.Application.Connectors;
 
 /// <summary>
 /// Executes connector operations (e.g., health checks) with timeout, retry, and audit logging.
+/// Uses source-generated LoggerMessage methods to avoid log injection (CWE-117).
 /// </summary>
-public sealed class ConnectorExecutionService
+public sealed partial class ConnectorExecutionService
 {
     private readonly IConnectorProviderRegistry _registry;
     private readonly ILogger<ConnectorExecutionService> _logger;
@@ -66,7 +67,7 @@ public sealed class ConnectorExecutionService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get capabilities for provider {ProviderId}", providerId);
+            LogGetCapabilitiesFailed(_logger, ex, providerId);
             return Result.Failure<ConnectorCapabilities>(
                 ErrorCodes.UnexpectedError,
                 "Failed to retrieve provider capabilities.");
@@ -91,9 +92,7 @@ public sealed class ConnectorExecutionService
 
                 if (attempt > 0)
                 {
-                    _logger.LogInformation(
-                        "Operation {Operation} succeeded on retry attempt {Attempt}",
-                        operationName, attempt);
+                    LogOperationRetrySucceeded(_logger, operationName, attempt);
                 }
 
                 return Result.Success(result);
@@ -107,22 +106,18 @@ public sealed class ConnectorExecutionService
             {
                 // Timeout — may be transient.
                 lastException = ex;
-                _logger.LogWarning(
-                    "Operation {Operation} timed out (attempt {Attempt}/{TotalAttempts})",
-                    operationName, attempt + 1, MaxRetries + 1);
+                LogOperationTimedOut(_logger, operationName, attempt + 1, MaxRetries + 1);
             }
             catch (HttpRequestException ex)
             {
                 // Network error — transient, retry.
                 lastException = ex;
-                _logger.LogWarning(ex,
-                    "Operation {Operation} failed with HTTP error (attempt {Attempt}/{TotalAttempts})",
-                    operationName, attempt + 1, MaxRetries + 1);
+                LogOperationHttpError(_logger, ex, operationName, attempt + 1, MaxRetries + 1);
             }
             catch (Exception ex)
             {
                 // Non-transient error — do not retry.
-                _logger.LogError(ex, "Operation {Operation} failed with non-transient error", operationName);
+                LogOperationNonTransientError(_logger, ex, operationName);
                 return Result.Failure<T>(ErrorCodes.UnexpectedError, "Provider operation failed.");
             }
 
@@ -133,10 +128,40 @@ public sealed class ConnectorExecutionService
             }
         }
 
-        _logger.LogError(lastException,
-            "Operation {Operation} exhausted all {MaxRetries} retries ({TotalAttempts} total attempts)",
-            operationName, MaxRetries, MaxRetries + 1);
+        LogOperationRetriesExhausted(_logger, lastException, operationName, MaxRetries, MaxRetries + 1);
 
         return Result.Failure<T>(ErrorCodes.UnexpectedError, "Provider operation failed after retries.");
     }
+
+    // ── Source-generated log methods (CWE-117 safe) ─────────────────────────
+
+    [LoggerMessage(Level = LogLevel.Error, EventId = 1,
+        Message = "Failed to get capabilities for provider {ProviderId}")]
+    private static partial void LogGetCapabilitiesFailed(
+        ILogger logger, Exception ex, string providerId);
+
+    [LoggerMessage(Level = LogLevel.Information, EventId = 2,
+        Message = "Operation {Operation} succeeded on retry attempt {Attempt}")]
+    private static partial void LogOperationRetrySucceeded(
+        ILogger logger, string operation, int attempt);
+
+    [LoggerMessage(Level = LogLevel.Warning, EventId = 3,
+        Message = "Operation {Operation} timed out (attempt {Attempt}/{TotalAttempts})")]
+    private static partial void LogOperationTimedOut(
+        ILogger logger, string operation, int attempt, int totalAttempts);
+
+    [LoggerMessage(Level = LogLevel.Warning, EventId = 4,
+        Message = "Operation {Operation} failed with HTTP error (attempt {Attempt}/{TotalAttempts})")]
+    private static partial void LogOperationHttpError(
+        ILogger logger, Exception ex, string operation, int attempt, int totalAttempts);
+
+    [LoggerMessage(Level = LogLevel.Error, EventId = 5,
+        Message = "Operation {Operation} failed with non-transient error")]
+    private static partial void LogOperationNonTransientError(
+        ILogger logger, Exception ex, string operation);
+
+    [LoggerMessage(Level = LogLevel.Error, EventId = 6,
+        Message = "Operation {Operation} exhausted all {MaxRetries} retries ({TotalAttempts} total attempts)")]
+    private static partial void LogOperationRetriesExhausted(
+        ILogger logger, Exception? ex, string operation, int maxRetries, int totalAttempts);
 }
