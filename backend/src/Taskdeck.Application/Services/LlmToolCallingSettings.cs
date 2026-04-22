@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Taskdeck.Application.Services;
 
 /// <summary>
@@ -20,5 +22,6 @@ public class LlmToolCallingSettings
     /// 0 = no truncation limit (not recommended for production).
     /// Default is 8 000 bytes (roughly a few thousand tokens depending on content and tokenizer).
     /// </summary>
+    [Range(0, 1_000_000, ErrorMessage = "MaxToolResultBytes must be between 0 and 1000000.")]
     public int MaxToolResultBytes { get; set; } = 8_000;
 }

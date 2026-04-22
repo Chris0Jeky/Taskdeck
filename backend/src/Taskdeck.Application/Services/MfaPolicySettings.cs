@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Taskdeck.Application.Services;
 
 /// <summary>
@@ -20,16 +22,19 @@ public class MfaPolicySettings
     /// <summary>
     /// TOTP time step in seconds. Standard is 30.
     /// </summary>
+    [Range(10, 120, ErrorMessage = "TotpTimeStepSeconds must be between 10 and 120.")]
     public int TotpTimeStepSeconds { get; set; } = 30;
 
     /// <summary>
     /// Number of recovery codes to generate during MFA setup.
     /// </summary>
+    [Range(1, 50, ErrorMessage = "RecoveryCodeCount must be between 1 and 50.")]
     public int RecoveryCodeCount { get; set; } = 8;
 
     /// <summary>
     /// Number of adjacent time windows to accept for TOTP validation.
     /// A value of 1 means current + 1 before + 1 after = 3 windows.
     /// </summary>
+    [Range(0, 5, ErrorMessage = "TotpToleranceSteps must be between 0 and 5.")]
     public int TotpToleranceSteps { get; set; } = 1;
 }
