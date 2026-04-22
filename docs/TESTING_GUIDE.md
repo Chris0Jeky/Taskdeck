@@ -12,7 +12,7 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-04-16)
 
-- Backend: **~4,530+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave; 4,477 recertified via PR `#882` full-suite pass)
+- Backend: **~4,530+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave)
   - Domain: ~833+ (77 prior FsCheck + 93 new property tests for ChatSession/ChatMessage/Notification/KnowledgeDocument/WebhookSubscription + 11 ApiKey + 15 OAuthAuthCode + 8 MfaCredential + NoteImport domain)
   - Application: ~1799+ (29 prior JSON fuzz + 19 new chat/notification DTO fuzz + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
   - API integration: ~1135+ (8 metrics export + 80 prior adversarial + 50 new adversarial input + 20 API key + 13 prior concurrency + 22 new concurrency stress + 3 queue resilience + 13 LLM provider resilience + 9 telemetry + 4 telemetry API + 13 OIDC/auth + 9 OAuth token lifecycle)
@@ -22,15 +22,14 @@ Companion Active Docs:
   - New store integration: 88 tests (chat, board, queue, session, notification, workspace)
   - New view/component coverage: 107 tests (Archive, Metrics, Board, Review, Chat, CardItem, BoardCanvas, BoardActionRail)
   - New resilience: 14 tests (slow API, corrupted storage, loading states)
-- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`; E2E scenario expansion round 2 fixes in PR `#822`
-- Combined automated total: **~7,120+ passing** (backend ~4,530 + frontend unit ~2,482 + E2E + ~49 new tests from PRs `#877`–`#882`)
+- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
+- Combined automated total: **~7,070+ passing** (backend ~4,530 + frontend unit ~2,463 + E2E)
 
 Verification note:
 - backend total of 4,279 recertified 2026-04-12 via `dotnet test backend/Taskdeck.sln -c Release --list-tests 2>&1 | grep -c "^    "` on `main` after merging PRs `#800`–`#820`
 - frontend total of 2,245 recertified 2026-04-12 via `npx vitest --run --reporter=verbose 2>&1 | grep -c "✓"` on `main` after merging PRs `#800`–`#820`
 - supplementary wave (PRs `#821`–`#826`) adds ~429 new tests; totals estimated pending merge and full-suite recertification
 - validation/integrations wave (PRs `#837`–`#841`) adds ~121 new tests (60 integrations + 61 E2E validation/verification); totals estimated pending full-suite recertification
-- post-validation wave (PRs `#877`–`#882`) adds ~49 new tests: MCP API key management UI (19 frontend: 6 API client + 13 view component), MCP structured logging (4 backend test files), connector framework foundation (26 backend: domain + application + credential encryption); CI fix PR `#882` recertified full backend suite at 4,477 tests with 0 failures
 - significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 - significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
@@ -1331,56 +1330,3 @@ This wave delivered the final 2 issues from the rigorous test expansion wave (`#
 - `#717` — Property-based and adversarial input tests (211 tests)
 
 **All 25 of 25 issues in the test expansion wave are now delivered.** Total new tests from the wave: ~1,350+.
-
-## Post-Validation Hardening and Expansion Wave (PRs #877–#882, delivered 2026-04-16)
-
-~49 new tests across MCP hardening, connector framework, API key management UI, and CI reliability.
-
-### MCP API Key Management UI (`#655`/`#877`)
-
-19 frontend tests:
-- `apiKeysApi.spec.ts` (6 tests): list, create with/without expiry, revoke, URL encoding
-- `ApiKeySettings.spec.ts` (13 tests): empty state, loading skeleton, error + retry, active/revoked rendering, create dialog flow, revoke flow with confirm/cancel, error handling
-
-### MCP Structured Logging (`#655`/`#879`)
-
-4 backend test files covering:
-- `McpOperationLoggerTests`: structured log output for tool calls and resource access
-- `McpTelemetryMiddlewareTests`: OpenTelemetry span creation, request/error counters, duration histograms
-- `LogSanitizer` data protection: API keys and request bodies never appear in log output
-
-Running MCP logging tests:
-```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~McpOperationLogger"
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~McpTelemetry"
-```
-
-### INT-04 Connector Framework (`#98`/`#880`)
-
-26 backend tests across Domain, Application, and credential encryption:
-- Domain entity and value object tests: `IConnectorProvider`, `ConnectorCapabilities`, `ConnectorHealthResult`, `ConnectorCredential`
-- Application service tests: `ConnectorProviderRegistry` discovery, `ConnectorExecutionService` orchestration
-- Credential encryption round-trip tests: AES-256-GCM `AesCredentialEncryptionService` encrypt/decrypt verification, cross-user isolation
-
-Running connector framework tests:
-```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Connector"
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Credential"
-```
-
-### CI Test Failure Root Cause Fixes (`#882`)
-
-Production JWT secret pattern for environment-override tests: tests that override the environment to Production via `WithWebHostBuilder` must supply a non-placeholder JWT secret via `UseSetting("Jwt:SecretKey", ...)` because Production mode validates that the JWT secret is not a known placeholder. This pattern applies to CORS, HSTS, and any future tests that set the environment to Production.
-
-Board presence concurrency test hardening: `RapidJoinLeave_EventuallyConsistent` now uses 20s timeout (up from 10s) and scans all collected snapshots for the expected member count, tolerating out-of-order SignalR delivery on slow CI runners.
-
-Full backend suite recertified at 4,477 tests with 0 failures after this PR.
-
-### E2E Scenario Expansion Round 2 (`#712`/`#822`)
-
-20 Playwright scenarios across 5 spec files (refined from round 1 review):
-- `onboarding.spec.ts` (5): fresh user empty states, setup dialog, starter pack structure
-- `review-proposals.spec.ts` (3): board-scoped filtering, multiple proposals, show completed toggle
-- `capture-edge-cases.spec.ts` (4): empty/whitespace rejection, Escape dismiss, board-linked capture
-- `keyboard-navigation.spec.ts` (4): keyboard board creation, command palette arrows, `?` help toggle
-- `dark-mode.spec.ts` (4): persistence across views, toggle-off restore, system `prefers-color-scheme`
