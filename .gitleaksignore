@@ -1,0 +1,18 @@
+# =============================================================================
+# .gitleaksignore — false positive suppression for Gitleaks
+# =============================================================================
+#
+# Each line is a Gitleaks fingerprint (commit:file:rule:line hash) for a
+# specific finding that has been reviewed and confirmed as a false positive.
+#
+# To add a new entry:
+#   1. Run gitleaks locally: gitleaks detect --verbose
+#   2. Copy the Fingerprint value from the finding
+#   3. Add it here with a comment explaining why it is safe
+#
+# Review this file periodically to remove entries for deleted code.
+# =============================================================================
+
+# No fingerprints yet. Add entries here as the full-history scan surfaces
+# false positives that cannot be suppressed via .gitleaks.toml allowlists.
+# Format: one fingerprint per line, with a comment explaining why it is safe.

@@ -158,3 +158,10 @@ jobs:
       retention-days: 14
       enforce-findings: false
       node-version: 24.13.1
+
+  gitleaks:
+    name: Secrets Detection (Gitleaks)
+    uses: ./.github/workflows/reusable-gitleaks.yml
+    with:
+      scan-mode: pr
+      fail-on-findings: false
