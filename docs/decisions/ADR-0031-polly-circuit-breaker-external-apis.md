@@ -23,7 +23,7 @@ Configuration (from `appsettings.json` `CircuitBreaker` section):
 - `FailureThreshold`: 5 consecutive failures before the circuit opens (default)
 - `BreakDurationSeconds`: 60 seconds cooldown before half-open probe (default)
 
-A shared `CircuitBreakerStateTracker` singleton records circuit state transitions (open/half-open/closed) triggered by Polly's `onBreak`, `onHalfOpen`, and `onReset` callbacks. The health endpoint (`/health/ready`) includes a `circuitBreakers` section reporting the state of each tracked circuit. An open circuit degrades overall readiness (503).
+A shared `CircuitBreakerStateTracker` singleton records circuit state transitions (open/half-open/closed) triggered by Polly's `onBreak`, `onHalfOpen`, and `onReset` callbacks. The health endpoint (`/health/ready`) includes a `circuitBreakers` section reporting the state of each tracked circuit with a `_summary` field indicating overall circuit health. Open circuits are reported as "Degraded" but do **not** fail the readiness probe (503), because LLM and OAuth providers are optional/degradeable -- the system falls back to mock responses or cached authentication state when a provider is unavailable.
 
 ## Alternatives
 

@@ -325,7 +325,12 @@ Polly circuit breaker policies are applied to LLM provider HTTP clients
 | `CircuitBreaker:BreakDurationSeconds` | `int` | `60` | `CircuitBreaker__BreakDurationSeconds` | Seconds the circuit stays open before half-open probe. | Yes |
 
 Circuit state is reported on `/health/ready` under `checks.circuitBreakers`.
-An open circuit degrades overall readiness to 503. See ADR-0031.
+Open circuits are reported as "Degraded" for operator visibility but do **not**
+fail the readiness probe, because LLM and OAuth providers are optional and
+degrade gracefully. See ADR-0031.
+
+Both settings must be at least 1; the application will fail to start with an
+`InvalidOperationException` if misconfigured.
 
 ## Cache
 
