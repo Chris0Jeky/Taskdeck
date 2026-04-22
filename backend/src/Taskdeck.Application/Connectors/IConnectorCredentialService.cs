@@ -5,8 +5,8 @@ namespace Taskdeck.Application.Connectors;
 
 /// <summary>
 /// CRUD for connector credentials with encryption at rest.
-/// The service encrypts plaintext before storage and decrypts on retrieval.
-/// Plaintext secrets never touch the persistence layer.
+/// The service encrypts plaintext before storage and exposes credential metadata
+/// without returning plaintext secrets.
 /// </summary>
 public interface IConnectorCredentialService
 {
