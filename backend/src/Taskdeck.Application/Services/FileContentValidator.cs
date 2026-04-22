@@ -121,10 +121,12 @@ public static class FileContentValidator
                 $"{contentLabel} does not contain valid JSON. Expected content starting with '{{' or '['.");
         }
 
-        // Attempt a full parse to catch malformed JSON
+        // Attempt a full parse to catch malformed JSON.
+        // Use the BOM-stripped content since JsonDocument.Parse does not always
+        // handle the BOM marker gracefully.
         try
         {
-            using var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(trimmed);
         }
         catch (JsonException)
         {
