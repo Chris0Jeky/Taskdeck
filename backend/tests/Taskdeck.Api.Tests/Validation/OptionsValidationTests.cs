@@ -302,7 +302,8 @@ public class OptionsValidationTests
 
     [Theory]
     [InlineData("InvalidProvider")]
-    [InlineData("redis")]
+    [InlineData("Rediss")]
+    [InlineData("")]
     public void CacheSettings_Provider_RejectsInvalidValues(string provider)
     {
         var settings = new CacheSettings { Provider = provider };
@@ -319,6 +320,10 @@ public class OptionsValidationTests
     [InlineData("Redis")]
     [InlineData("InMemory")]
     [InlineData("None")]
+    [InlineData("redis")]
+    [InlineData("inmemory")]
+    [InlineData("none")]
+    [InlineData("REDIS")]
     public void CacheSettings_Provider_AcceptsValidValues(string provider)
     {
         var settings = new CacheSettings { Provider = provider };
@@ -348,6 +353,11 @@ public class OptionsValidationTests
     [InlineData("Mock")]
     [InlineData("OpenAi")]
     [InlineData("Gemini")]
+    [InlineData("OpenAI")]
+    [InlineData("openai")]
+    [InlineData("OPENAI")]
+    [InlineData("mock")]
+    [InlineData("gemini")]
     public void LlmProviderSettings_Provider_AcceptsValidValues(string provider)
     {
         var settings = new LlmProviderSettings { Provider = provider };
@@ -362,7 +372,7 @@ public class OptionsValidationTests
 
     [Theory]
     [InlineData("gpt4")]
-    [InlineData("openai")]
+    [InlineData("ChatGPT")]
     [InlineData("")]
     public void LlmProviderSettings_Provider_RejectsInvalidValues(string provider)
     {
