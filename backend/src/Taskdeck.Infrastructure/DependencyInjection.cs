@@ -70,15 +70,18 @@ public static class DependencyInjection
         services.AddSingleton<ICredentialEncryptionService>(
             new AesCredentialEncryptionService(credentialEncryptionKey));
 
-        // Connector provider framework (concrete providers registered in Infrastructure)
+        // Connector provider framework (concrete providers registered in Infrastructure).
+        // Providers and registry are scoped to align with HttpClient lifetime from
+        // AddHttpClient (which registers a transient typed client). Singleton registration
+        // would capture a transient HttpClient, causing socket exhaustion.
         services.AddHttpClient<GitHubConnectorProvider>(client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "Taskdeck-Connector/1.0");
             client.Timeout = TimeSpan.FromSeconds(10);
         });
-        services.AddSingleton<IConnectorProvider>(sp =>
+        services.AddScoped<IConnectorProvider>(sp =>
             sp.GetRequiredService<GitHubConnectorProvider>());
-        services.AddSingleton<IConnectorProviderRegistry>(sp =>
+        services.AddScoped<IConnectorProviderRegistry>(sp =>
             new ConnectorProviderRegistry(sp.GetServices<IConnectorProvider>()));
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
