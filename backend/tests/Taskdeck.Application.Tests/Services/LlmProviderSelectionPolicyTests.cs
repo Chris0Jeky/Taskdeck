@@ -369,6 +369,99 @@ public class LlmProviderSelectionPolicyTests
         isValid.Should().BeTrue();
     }
 
+    // -----------------------------------------------------------------------
+    // Development localhost bypass — local LLM gateways (Ollama, LM Studio)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Evaluate_ShouldSelectOpenAi_WhenLocalhostInDevelopmentWithAllowLiveProviders()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = "http://localhost:11434/v1";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.OpenAi,
+            "localhost should be allowed in development with AllowLiveProvidersInDevelopment for local LLM gateways like Ollama");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectGemini_WhenLocalhostInDevelopmentWithAllowLiveProviders()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "Gemini";
+        settings.Gemini.BaseUrl = "http://localhost:8080/v1beta";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Gemini,
+            "localhost should be allowed in development with AllowLiveProvidersInDevelopment");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenLocalhostInProductionEvenWithAllowLiveProviders()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = "http://localhost:11434/v1";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock,
+            "localhost should still be blocked in production even if AllowLiveProvidersInDevelopment is set");
+        result.Reason.Should().Contain("SSRF");
+    }
+
+    [Fact]
+    public void TryValidateOpenAiSettings_ShouldAcceptLocalhostWhenAllowed()
+    {
+        var settings = BuildValidSettings();
+        settings.OpenAi.BaseUrl = "http://localhost:11434/v1";
+
+        var isValid = LlmProviderSelectionPolicy.TryValidateOpenAiSettings(
+            settings, out _, allowLocalhostEndpoints: true);
+
+        isValid.Should().BeTrue(
+            "localhost should be accepted when allowLocalhostEndpoints is true (development mode)");
+    }
+
+    [Fact]
+    public void TryValidateOpenAiSettings_ShouldRejectLocalhostWhenNotAllowed()
+    {
+        var settings = BuildValidSettings();
+        settings.OpenAi.BaseUrl = "http://localhost:11434/v1";
+
+        var isValid = LlmProviderSelectionPolicy.TryValidateOpenAiSettings(
+            settings, out var error, allowLocalhostEndpoints: false);
+
+        isValid.Should().BeFalse(
+            "localhost should be rejected when allowLocalhostEndpoints is false (production mode)");
+        error.Should().Contain("SSRF");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldStillBlockPrivateIps_InDevelopmentWithAllowLiveProviders()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = "https://10.0.0.1/v1";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock,
+            "private IPs (not localhost) should still be blocked even in development mode");
+        result.Reason.Should().Contain("SSRF");
+    }
+
     private static LlmProviderSettings BuildValidSettings()
     {
         return new LlmProviderSettings

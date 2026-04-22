@@ -1,5 +1,3 @@
-using System.Net;
-
 namespace Taskdeck.Application.Services;
 
 /// <summary>
@@ -7,23 +5,13 @@ namespace Taskdeck.Application.Services;
 /// cloud metadata endpoints, and other dangerous targets. Used for webhook endpoints,
 /// LLM provider BaseUrl configuration, and any other user-provided URLs that the
 /// server will make outbound requests to.
+///
+/// Cloud metadata hostnames and blocked IP ranges are maintained in a single source
+/// of truth: <see cref="OutboundWebhookEndpointGuard"/>. This service delegates all
+/// host-level checks there to avoid duplication.
 /// </summary>
 public static class SsrfProtectionService
 {
-    /// <summary>
-    /// Exact hostnames that must always be blocked regardless of suffix matching.
-    /// These are well-known cloud metadata and internal service endpoints.
-    /// </summary>
-    private static readonly string[] BlockedExactHostnames =
-    [
-        "metadata.google.internal",
-        "metadata.goog",
-        "169.254.169.254",         // AWS/GCP/Azure metadata (also blocked as link-local IP)
-        "fd00:ec2::254",           // AWS IMDSv2 IPv6 endpoint
-        "100.100.100.200",         // Alibaba Cloud metadata
-        "[fd00:ec2::254]",         // Bracketed IPv6 form
-    ];
-
     /// <summary>
     /// Validates a URL for SSRF safety. Returns a result indicating whether the URL
     /// is safe to make outbound requests to.
@@ -58,13 +46,8 @@ public static class SsrfProtectionService
 
         var host = parsed.Host;
 
-        // Check explicit blocked hostnames (defense in depth for cloud metadata)
-        if (IsExactBlockedHostname(host))
-        {
-            return SsrfValidationResult.Blocked($"Host '{host}' is not allowed (cloud metadata or internal service endpoint).");
-        }
-
-        // Delegate to the existing endpoint guard for comprehensive IP/hostname checking
+        // Delegate to the endpoint guard for comprehensive IP/hostname/metadata checking.
+        // OutboundWebhookEndpointGuard is the single source of truth for blocked hosts.
         if (OutboundWebhookEndpointGuard.IsHostBlockedByStaticPolicy(host, allowLocalhostEndpoints))
         {
             return SsrfValidationResult.Blocked($"Host '{host}' is not allowed.");
@@ -132,20 +115,6 @@ public static class SsrfProtectionService
         }
 
         return result;
-    }
-
-    private static bool IsExactBlockedHostname(string host)
-    {
-        var normalized = host.Trim().ToLowerInvariant();
-        foreach (var blocked in BlockedExactHostnames)
-        {
-            if (string.Equals(normalized, blocked, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
 

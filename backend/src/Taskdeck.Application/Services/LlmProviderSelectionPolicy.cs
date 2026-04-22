@@ -42,9 +42,13 @@ public static class LlmProviderSelectionPolicy
                 "Live providers are disabled for development-like environments.");
         }
 
+        // In development with AllowLiveProvidersInDevelopment, permit localhost endpoints
+        // so developers can use local LLM gateways (Ollama, LM Studio, etc.).
+        var allowLocalhostEndpoints = IsDevelopmentLike(environmentName) && settings.AllowLiveProvidersInDevelopment;
+
         if (requestedProvider.Value == LlmProviderKind.OpenAi)
         {
-            if (!TryValidateOpenAiSettings(settings, out var validationError))
+            if (!TryValidateOpenAiSettings(settings, out var validationError, allowLocalhostEndpoints))
             {
                 return new LlmProviderDecision(
                     LlmProviderKind.Mock,
@@ -56,7 +60,7 @@ public static class LlmProviderSelectionPolicy
                 "OpenAI provider selected.");
         }
 
-        if (!TryValidateGeminiSettings(settings, out var geminiValidationError))
+        if (!TryValidateGeminiSettings(settings, out var geminiValidationError, allowLocalhostEndpoints))
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
@@ -68,7 +72,10 @@ public static class LlmProviderSelectionPolicy
             "Gemini provider selected.");
     }
 
-    public static bool TryValidateOpenAiSettings(LlmProviderSettings settings, out string error)
+    public static bool TryValidateOpenAiSettings(
+        LlmProviderSettings settings,
+        out string error,
+        bool allowLocalhostEndpoints = false)
     {
         if (settings.OpenAi is null)
         {
@@ -97,8 +104,10 @@ public static class LlmProviderSelectionPolicy
             return false;
         }
 
-        // SSRF protection: block private IP ranges, cloud metadata endpoints, and internal hostnames
-        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(openAi.BaseUrl);
+        // SSRF protection: block private IP ranges, cloud metadata endpoints, and internal hostnames.
+        // In development with AllowLiveProvidersInDevelopment, localhost is permitted for local
+        // LLM gateways (Ollama, LM Studio, etc.).
+        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(openAi.BaseUrl, allowLocalhostEndpoints);
         if (!ssrfResult.IsAllowed)
         {
             error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";
@@ -115,7 +124,10 @@ public static class LlmProviderSelectionPolicy
         return true;
     }
 
-    public static bool TryValidateGeminiSettings(LlmProviderSettings settings, out string error)
+    public static bool TryValidateGeminiSettings(
+        LlmProviderSettings settings,
+        out string error,
+        bool allowLocalhostEndpoints = false)
     {
         if (settings.Gemini is null)
         {
@@ -144,8 +156,10 @@ public static class LlmProviderSelectionPolicy
             return false;
         }
 
-        // SSRF protection: block private IP ranges, cloud metadata endpoints, and internal hostnames
-        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(gemini.BaseUrl);
+        // SSRF protection: block private IP ranges, cloud metadata endpoints, and internal hostnames.
+        // In development with AllowLiveProvidersInDevelopment, localhost is permitted for local
+        // LLM gateways (Ollama, LM Studio, etc.).
+        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(gemini.BaseUrl, allowLocalhostEndpoints);
         if (!ssrfResult.IsAllowed)
         {
             error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";

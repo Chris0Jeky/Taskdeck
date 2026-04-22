@@ -39,6 +39,10 @@ public static class LlmProviderRegistration
         var llmProviderSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
         services.AddSingleton(llmProviderSettings);
 
+        // Determine once at startup whether localhost LLM endpoints are permitted.
+        // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
+        var allowLocalhostLlm = IsLocalhostLlmAllowed(services, configuration);
+
         services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
@@ -49,13 +53,15 @@ public static class LlmProviderRegistration
         {
             // SSRF protection: DNS-level check prevents connections to private/internal IPs
             // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
+            // In development with AllowLiveProvidersInDevelopment, localhost is permitted
+            // so developers can use local LLM gateways (Ollama, LM Studio, etc.).
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
-                        allowLocalhostEndpoints: false,
+                        allowLocalhostEndpoints: allowLocalhostLlm,
                         cancellationToken)
             };
         });
@@ -69,13 +75,14 @@ public static class LlmProviderRegistration
         {
             // SSRF protection: DNS-level check prevents connections to private/internal IPs
             // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
+            // In development with AllowLiveProvidersInDevelopment, localhost is permitted.
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
-                        allowLocalhostEndpoints: false,
+                        allowLocalhostEndpoints: allowLocalhostLlm,
                         cancellationToken)
             };
         });
@@ -102,5 +109,36 @@ public static class LlmProviderRegistration
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Determines whether localhost LLM endpoints should be permitted based on the
+    /// hosting environment and LLM provider configuration. Returns true only in
+    /// development-like environments when AllowLiveProvidersInDevelopment is enabled,
+    /// enabling developers to use local LLM gateways (Ollama, LM Studio, etc.).
+    /// </summary>
+    private static bool IsLocalhostLlmAllowed(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var llmSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>();
+        if (llmSettings is null || !llmSettings.AllowLiveProvidersInDevelopment)
+        {
+            return false;
+        }
+
+        // Check for a registered IWebHostEnvironment to determine if we're in development.
+        // During startup the environment is already registered as a singleton.
+        var envDescriptor = services.FirstOrDefault(d =>
+            d.ServiceType == typeof(IWebHostEnvironment));
+        if (envDescriptor?.ImplementationInstance is IWebHostEnvironment env)
+        {
+            var name = env.EnvironmentName;
+            return name.Equals("Development", StringComparison.OrdinalIgnoreCase) ||
+                   name.Equals("Test", StringComparison.OrdinalIgnoreCase) ||
+                   name.Equals("Testing", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 }
