@@ -183,6 +183,7 @@ public sealed class McpOperationScope : IDisposable
             TaskdeckTelemetry.McpErrors.Add(1,
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationType, _operationType),
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationName, _operationName),
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpTransport, _transport),
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpErrorType, exception.GetType().Name));
 
             TaskdeckTelemetry.McpRequestDurationMs.Record(_stopwatch.Elapsed.TotalMilliseconds,
@@ -229,6 +230,7 @@ public sealed class McpOperationScope : IDisposable
             TaskdeckTelemetry.McpErrors.Add(1,
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationType, _operationType),
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationName, _operationName),
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpTransport, _transport),
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpErrorType, "ApplicationError"));
 
             TaskdeckTelemetry.McpRequestDurationMs.Record(_stopwatch.Elapsed.TotalMilliseconds,
