@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
@@ -242,38 +243,99 @@ public static class FirstRunBootstrapper
     {
         var path = LocalConfigPath;
 
-        JsonObject root;
-        if (File.Exists(path))
+        // Cross-process mutex: multiple xUnit test processes (and any
+        // accidentally concurrent startup in the same output directory) must
+        // not race on the read-modify-write of appsettings.local.json.  Two
+        // concurrent File.WriteAllText calls can interleave and leave the
+        // file with trailing bytes from the longer write after the shorter
+        // one finishes, producing the `'}' is invalid after a single JSON
+        // value` parse error seen in CI.
+        var mutexName = BuildMutexName(path);
+        using var mutex = new System.Threading.Mutex(initiallyOwned: false, name: mutexName);
+        var acquired = false;
+        try
         {
             try
             {
-                var existing = File.ReadAllText(path);
-                root = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
+                acquired = mutex.WaitOne(TimeSpan.FromSeconds(10));
             }
-            catch (Exception ex)
+            catch (AbandonedMutexException)
             {
-                // Logger is not available at this pre-DI stage; warn to stderr and start fresh
-                // rather than silently discarding the corrupt file.
-                Console.Error.WriteLine(
-                    $"[FirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
-                    $"Details: {ex.Message}");
+                // A previous holder crashed without releasing; we still own it now.
+                acquired = true;
+            }
+
+            JsonObject root;
+            if (File.Exists(path))
+            {
+                try
+                {
+                    var existing = File.ReadAllText(path);
+                    root = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
+                }
+                catch (Exception ex)
+                {
+                    // Logger is not available at this pre-DI stage; warn to stderr and start fresh
+                    // rather than silently discarding the corrupt file.
+                    Console.Error.WriteLine(
+                        $"[FirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
+                        $"Details: {ex.Message}");
+                    root = new JsonObject();
+                }
+            }
+            else
+            {
                 root = new JsonObject();
             }
+
+            if (root[section] is not JsonObject sectionNode)
+            {
+                sectionNode = new JsonObject();
+                root[section] = sectionNode;
+            }
+
+            sectionNode[key] = value;
+
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            var payload = root.ToJsonString(options);
+
+            // Atomic write: stage into a sibling temp file then move into place.
+            // File.WriteAllText is not atomic — a concurrent reader or writer
+            // can observe a partially written file.  A rename onto an existing
+            // path is atomic on both Windows and Linux file systems we target.
+            var dir = Path.GetDirectoryName(path)!;
+            Directory.CreateDirectory(dir);
+            var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(tempPath, payload);
+            try
+            {
+                File.Move(tempPath, path, overwrite: true);
+            }
+            catch
+            {
+                // Best-effort cleanup; the main write path's exception will propagate.
+                try { File.Delete(tempPath); } catch { /* ignore */ }
+                throw;
+            }
         }
-        else
+        finally
         {
-            root = new JsonObject();
+            if (acquired)
+            {
+                mutex.ReleaseMutex();
+            }
         }
+    }
 
-        if (root[section] is not JsonObject sectionNode)
-        {
-            sectionNode = new JsonObject();
-            root[section] = sectionNode;
-        }
-
-        sectionNode[key] = value;
-
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        File.WriteAllText(path, root.ToJsonString(options));
+    private static string BuildMutexName(string path)
+    {
+        // Named mutex must be stable per-path and fit OS name rules.
+        // Use SHA256 of the absolute path; prefix with "Global\" on Windows
+        // so different user sessions on the same machine still coordinate.
+        var normalized = Path.GetFullPath(path).ToLowerInvariant();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        var hex = Convert.ToHexString(hash).AsSpan(0, 32);
+        var prefix = OperatingSystem.IsWindows() ? "Global\\" : string.Empty;
+        return $"{prefix}Taskdeck.FirstRun.{hex}";
     }
 }
