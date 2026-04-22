@@ -124,8 +124,9 @@ public static class FirstRunBootstrapper
         this WebApplicationBuilder builder,
         ILogger logger)
     {
-        // Only enforce in Production; Development has its own defaults.
-        if (builder.Environment.IsDevelopment())
+        // Only enforce in Production; other environments (Development, Staging,
+        // Test, etc.) use their own defaults or placeholder secrets safely.
+        if (!builder.Environment.IsProduction())
         {
             return builder;
         }
