@@ -62,6 +62,17 @@ public class NoteImportController : AuthenticatedControllerBase
                 "Request body is required"));
         }
 
+        var contentValidation = FileContentValidator.ValidateTextContent(
+            dto.Content,
+            "Markdown content",
+            FileContentValidator.MaxMarkdownContentBytes);
+        if (!contentValidation.IsSuccess)
+        {
+            return BadRequest(new ApiErrorResponse(
+                contentValidation.ErrorCode,
+                contentValidation.ErrorMessage));
+        }
+
         var result = await _noteImportService.ImportMarkdownAsync(userId, dto, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
@@ -95,6 +106,17 @@ public class NoteImportController : AuthenticatedControllerBase
             return BadRequest(new ApiErrorResponse(
                 "VALIDATION_ERROR",
                 "Request body is required"));
+        }
+
+        var contentValidation = FileContentValidator.ValidateTextContent(
+            dto.Content,
+            "Web clip content",
+            FileContentValidator.MaxWebClipContentBytes);
+        if (!contentValidation.IsSuccess)
+        {
+            return BadRequest(new ApiErrorResponse(
+                contentValidation.ErrorCode,
+                contentValidation.ErrorMessage));
         }
 
         var result = await _noteImportService.ImportWebClipAsync(userId, dto, cancellationToken);

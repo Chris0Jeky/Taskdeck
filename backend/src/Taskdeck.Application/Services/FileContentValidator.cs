@@ -14,7 +14,7 @@ public static class FileContentValidator
 {
     /// <summary>
     /// Maximum allowed content size for text imports (1 MB).
-    /// Individual endpoints may enforce tighter limits.
+    /// Individual endpoints may enforce tighter limits via the maxBytes parameter.
     /// </summary>
     public const int DefaultMaxTextContentBytes = 1_048_576;
 
@@ -22,6 +22,15 @@ public static class FileContentValidator
     /// Maximum allowed content size for JSON imports (2 MB).
     /// </summary>
     public const int DefaultMaxJsonContentBytes = 2_097_152;
+
+    /// <summary>Maximum markdown content size in bytes (100 KB), matching NoteImportService.</summary>
+    public const int MaxMarkdownContentBytes = 102_400;
+
+    /// <summary>Maximum web clip content size in bytes (20 KB), matching NoteImportService.</summary>
+    public const int MaxWebClipContentBytes = 20_000;
+
+    /// <summary>Maximum CSV payload size in bytes (1 MB), matching CsvExternalImportAdapter.</summary>
+    public const int MaxCsvPayloadBytes = 1_048_576;
 
     /// <summary>
     /// Validates that string content is safe text (no binary content disguised as text).

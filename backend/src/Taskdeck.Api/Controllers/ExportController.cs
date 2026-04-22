@@ -65,7 +65,19 @@ public class ExportController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _exportImportService.ImportBoardFromJsonAsync(json.GetRawText(), userId);
+        var rawJson = json.GetRawText();
+
+        var jsonValidation = FileContentValidator.ValidateJsonContent(
+            rawJson,
+            "Board import JSON");
+        if (!jsonValidation.IsSuccess)
+        {
+            return BadRequest(new ApiErrorResponse(
+                jsonValidation.ErrorCode,
+                jsonValidation.ErrorMessage));
+        }
+
+        var result = await _exportImportService.ImportBoardFromJsonAsync(rawJson, userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
