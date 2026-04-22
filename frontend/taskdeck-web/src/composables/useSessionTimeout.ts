@@ -1,6 +1,7 @@
 import { ref, watch, onUnmounted, getCurrentInstance, readonly, type Ref } from 'vue'
 import { useSessionStore } from '../store/sessionStore'
 import { parseJwtPayload } from '../utils/jwt'
+import type { AuthResponse } from '../types/auth'
 
 /**
  * How long before token expiry to show the warning (milliseconds).
@@ -42,7 +43,7 @@ export interface SessionTimeoutState {
  * @param deps Injectable dependencies for testing
  */
 export function useSessionTimeout(deps?: {
-  refreshToken?: () => Promise<{ token: string; user: { id: string; username: string; email: string; defaultRole: number; isActive: boolean; createdAt: string; updatedAt: string } }>
+  refreshToken?: () => Promise<AuthResponse>
   nowFn?: () => number
 }): SessionTimeoutState {
   const session = useSessionStore()
@@ -150,42 +151,24 @@ export function useSessionTimeout(deps?: {
 
     extending.value = true
     try {
-      const refreshToken = deps?.refreshToken
-      if (!refreshToken) {
-        // No refresh capability — dynamic import to avoid circular dependency
-        const { authApi } = await import('../api/authApi')
-        const response = await authApi.refreshToken()
-        // The session store will pick up the new token via setSession,
-        // which triggers the watcher and reschedules the warning timer
-        const { useSessionStore: getStore } = await import('../store/sessionStore')
-        const store = getStore()
-        // Use internal setSession logic: update store state with new token
-        store.token = response.token
-        store.expiresAt = new Date(
+      if (deps?.refreshToken) {
+        // Injected refreshToken (used in tests)
+        const response = await deps.refreshToken()
+        session.token = response.token
+        session.expiresAt = new Date(
           (parseJwtPayload(response.token)?.exp ?? 0) * 1000,
         ).toISOString()
-
-        // Persist the new token
-        const tokenStorage = await import('../utils/tokenStorage')
-        tokenStorage.setToken(response.token)
-
-        // Reset warning state for the new token
-        warnedForToken = null
-        dismiss()
-        return
+      } else {
+        // Production path: delegate to the store's centralized refresh action
+        // which calls authApi.refreshToken() and passes the response through
+        // setSession(), updating all session state and persistence correctly.
+        await session.refreshSession()
       }
 
-      // Injected refreshToken (used in tests)
-      const response = await refreshToken()
-      session.token = response.token
-      session.expiresAt = new Date(
-        (parseJwtPayload(response.token)?.exp ?? 0) * 1000,
-      ).toISOString()
       warnedForToken = null
       dismiss()
     } catch {
       // Refresh failed — show a fallback message.
-      // The toast store will be used by the component layer.
       // We keep the warning visible so the user knows to save work.
       const { useToastStore } = await import('../store/toastStore')
       const toast = useToastStore()
