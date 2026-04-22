@@ -74,3 +74,14 @@ jobs:
     needs:
       - backend-solution
     uses: ./.github/workflows/reusable-container-images.yml
+
+  sast-scanning:
+    name: SAST Scanning (Semgrep)
+    uses: ./.github/workflows/reusable-sast-scanning.yml
+    with:
+      summary-title: Nightly SAST Summary
+      workflow-context: ci-nightly
+      artifact-name: ci-nightly-sast-scanning
+      retention-days: 30
+      enforce-findings: false
+      node-version: 24.13.1
