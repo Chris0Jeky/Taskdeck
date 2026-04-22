@@ -42,7 +42,7 @@ public class ConnectorProvidersController : AuthenticatedControllerBase
     [HttpGet("providers")]
     [ProducesResponseType(typeof(IReadOnlyList<ConnectorProviderSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> ListProviders()
+    public async Task<IActionResult> ListProviders(CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out _, out var errorResult))
             return errorResult!;
@@ -52,7 +52,7 @@ public class ConnectorProvidersController : AuthenticatedControllerBase
 
         foreach (var provider in providers)
         {
-            var capabilities = await provider.GetCapabilitiesAsync();
+            var capabilities = await provider.GetCapabilitiesAsync(cancellationToken);
             summaries.Add(new ConnectorProviderSummaryDto(
                 provider.ProviderId,
                 capabilities.DisplayName,
