@@ -62,6 +62,20 @@ public class NoteImportController : AuthenticatedControllerBase
                 "Request body is required"));
         }
 
+        // Use character-based limit to match NoteImportService.MaxMarkdownContentLength.
+        // Skip byte-based check (maxBytes: 0) — the service enforces character limits.
+        var contentValidation = FileContentValidator.ValidateTextContent(
+            dto.Content,
+            "Markdown content",
+            maxBytes: 0,
+            maxChars: FileContentValidator.MaxMarkdownContentChars);
+        if (!contentValidation.IsSuccess)
+        {
+            return BadRequest(new ApiErrorResponse(
+                contentValidation.ErrorCode,
+                contentValidation.ErrorMessage));
+        }
+
         var result = await _noteImportService.ImportMarkdownAsync(userId, dto, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
@@ -95,6 +109,20 @@ public class NoteImportController : AuthenticatedControllerBase
             return BadRequest(new ApiErrorResponse(
                 "VALIDATION_ERROR",
                 "Request body is required"));
+        }
+
+        // Use character-based limit to match NoteImportService.MaxWebClipContentLength.
+        // Skip byte-based check (maxBytes: 0) — the service enforces character limits.
+        var contentValidation = FileContentValidator.ValidateTextContent(
+            dto.Content,
+            "Web clip content",
+            maxBytes: 0,
+            maxChars: FileContentValidator.MaxWebClipContentChars);
+        if (!contentValidation.IsSuccess)
+        {
+            return BadRequest(new ApiErrorResponse(
+                contentValidation.ErrorCode,
+                contentValidation.ErrorMessage));
         }
 
         var result = await _noteImportService.ImportWebClipAsync(userId, dto, cancellationToken);
