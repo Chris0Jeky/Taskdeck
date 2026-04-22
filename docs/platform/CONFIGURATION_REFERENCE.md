@@ -92,12 +92,12 @@ authentication services (`AuthenticationRegistration.cs`). Because
 `app.UseAuthentication()`, this results in a startup failure (the pipeline
 cannot resolve the missing authentication services) rather than authenticated
 endpoints simply returning 401. `FirstRunBootstrapper.EnsureJwtSecret` runs
-in all environments (including Development) and generates a random 32-byte
-base64 secret into `appsettings.local.json` when the key is missing or equal
-to the well-known placeholder. This startup failure is therefore only reached
-when operators explicitly set an invalid value. Developers can alternatively
-supply the secret via `dotnet user-secrets` or the `Jwt__SecretKey`
-environment variable.
+unconditionally in all environments (including Development and CI/headless)
+and generates a random 32-byte base64 secret into `appsettings.local.json`
+when the key is missing or equal to the well-known placeholder. This startup
+failure is therefore only reached when operators explicitly set an invalid
+value. Developers can alternatively supply the secret via `dotnet user-secrets`
+or the `Jwt__SecretKey` environment variable.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |

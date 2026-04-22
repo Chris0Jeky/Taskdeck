@@ -82,10 +82,10 @@ public static class FirstRunBootstrapper
     /// <remarks>
     /// <para>
     /// JWT secret generation runs in <em>all</em> environments (including
-    /// Development) so that no hardcoded secret is required in checked-in
-    /// config files.  When the secret is missing or is the well-known
-    /// placeholder, a cryptographically random value is generated into
-    /// <c>appsettings.local.json</c>.
+    /// Development and CI/headless) so that no hardcoded secret is required
+    /// in checked-in config files.  When the secret is missing or is the
+    /// well-known placeholder, a cryptographically random value is generated
+    /// into <c>appsettings.local.json</c>.
     /// </para>
     /// <para>
     /// DB-path resolution and other packaged-distribution checks are still
@@ -96,21 +96,13 @@ public static class FirstRunBootstrapper
         this WebApplicationBuilder builder,
         ILogger logger)
     {
-        // JWT secret generation runs unconditionally so developers do not
-        // need a hardcoded secret in appsettings.Development.json.
-        if (!IsHeadlessEnvironment())
-        {
-            EnsureJwtSecret(builder.Configuration, logger);
-        }
+        // JWT secret generation runs unconditionally (including headless/CI)
+        // so that no hardcoded secret is required in appsettings.Development.json.
+        EnsureJwtSecret(builder.Configuration, logger);
 
         // Remaining first-run checks are for the self-hosted packaged
-        // distribution only.
-        if (builder.Environment.IsDevelopment())
-        {
-            return builder;
-        }
-
-        if (IsHeadlessEnvironment())
+        // distribution only -- skip in Development and CI/headless.
+        if (builder.Environment.IsDevelopment() || IsHeadlessEnvironment())
         {
             return builder;
         }
@@ -146,16 +138,31 @@ public static class FirstRunBootstrapper
         }
 
         var generated = GenerateSecret();
-        PersistValue("Jwt", "SecretKey", generated);
-        // Reload so subsequent configuration reads get the new value.
-        if (configuration is IConfigurationRoot root)
+        try
         {
-            root.Reload();
-        }
+            PersistValue("Jwt", "SecretKey", generated);
+            // Reload so subsequent configuration reads get the new value.
+            if (configuration is IConfigurationRoot root)
+            {
+                root.Reload();
+            }
 
-        logger.LogInformation(
-            "First-run: JWT secret was not configured. A random secret has been " +
-            "generated and saved to {ConfigFile}.", LocalConfigPath);
+            logger.LogInformation(
+                "First-run: JWT secret was not configured. A random secret has been " +
+                "generated and saved to {ConfigFile}.", LocalConfigPath);
+        }
+        catch (IOException ex)
+        {
+            // File may be locked by another process (e.g. parallel test
+            // factories sharing the same output directory).  Fall back to
+            // setting the value in-memory so the current startup still
+            // succeeds.
+            configuration["Jwt:SecretKey"] = generated;
+            logger.LogWarning(
+                "First-run: Could not persist JWT secret to {ConfigFile} ({Error}). " +
+                "A transient in-memory secret has been generated instead.",
+                LocalConfigPath, ex.Message);
+        }
     }
 
     private static void EnsureDbPath(IConfiguration configuration, ILogger logger)
