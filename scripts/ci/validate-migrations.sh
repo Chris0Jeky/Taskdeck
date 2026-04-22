@@ -30,12 +30,23 @@ echo ""
 # ---- Step 1: Apply all migrations to an empty database ----
 echo "--- Step 1: Applying migrations to empty database ---"
 
-dotnet ef database update \
+MIGRATION_LOG="$TEMP_DIR/migration-output.log"
+
+if ! dotnet ef database update \
   --project "$INFRA_PROJECT" \
   --startup-project "$STARTUP_PROJECT" \
   --connection "Data Source=$DB_PATH" \
   --no-build \
-  --verbose 2>&1 | tail -20
+  --verbose > "$MIGRATION_LOG" 2>&1; then
+  echo "FAIL: dotnet ef database update failed."
+  echo ""
+  echo "--- Full output ---"
+  cat "$MIGRATION_LOG"
+  exit 1
+fi
+
+# Show summary (last 10 lines of verbose output)
+tail -10 "$MIGRATION_LOG"
 
 if [ ! -f "$DB_PATH" ]; then
   echo "FAIL: Database file was not created at $DB_PATH"
@@ -88,23 +99,23 @@ echo ""
 # ---- Step 4: Check for pending model changes ----
 echo "--- Step 4: Checking for pending model changes ---"
 
+# has-pending-model-changes exits 0 when no changes are pending, non-zero when
+# the model has drifted from the last migration snapshot.
+PENDING_OUTPUT=""
+PENDING_EXIT=0
 PENDING_OUTPUT=$(dotnet ef migrations has-pending-model-changes \
   --project "$INFRA_PROJECT" \
   --startup-project "$STARTUP_PROJECT" \
-  --no-build 2>&1) || true
+  --no-build 2>&1) || PENDING_EXIT=$?
 
-if echo "$PENDING_OUTPUT" | grep -qi "no pending model changes"; then
+if [ "$PENDING_EXIT" -eq 0 ]; then
   echo "OK: No pending model changes detected."
-elif echo "$PENDING_OUTPUT" | grep -qi "changes have been made"; then
-  echo "FAIL: Pending model changes detected. Run 'dotnet ef migrations add <Name>' to capture them."
+else
+  echo "FAIL: Pending model changes detected (exit code $PENDING_EXIT)."
+  echo "Run 'dotnet ef migrations add <Name>' to capture the drift."
+  echo ""
   echo "$PENDING_OUTPUT"
   exit 1
-else
-  # The command output format may vary; log it for debugging but do not fail
-  # if we cannot parse the output deterministically.
-  echo "INFO: Could not determine pending model change status from output:"
-  echo "$PENDING_OUTPUT"
-  echo "Continuing (non-blocking)."
 fi
 
 echo ""
