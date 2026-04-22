@@ -7,6 +7,7 @@ using Taskdeck.Api.Extensions;
 using Taskdeck.Api.FirstRun;
 using Taskdeck.Api.Mcp;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Mcp;
 
@@ -331,8 +332,17 @@ builder.Services.AddMcpServer()
     .WithTools<WriteTools>()
     .WithTools<ProposalTools>();
 
-// Add JWT Authentication (with optional GitHub OAuth and OIDC providers)
-builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings, oidcSettings);
+// Add JWT Authentication (with optional GitHub OAuth and OIDC providers, circuit-breaker-protected backchannel)
+// CircuitBreakerStateTracker is already registered as a singleton by AddLlmProviders above.
+var circuitBreakerTracker = builder.Services
+    .Where(d => d.ServiceType == typeof(CircuitBreakerStateTracker))
+    .Select(d => d.ImplementationInstance as CircuitBreakerStateTracker)
+    .FirstOrDefault();
+var circuitBreakerSettings = builder.Services
+    .Where(d => d.ServiceType == typeof(CircuitBreakerSettings))
+    .Select(d => d.ImplementationInstance as CircuitBreakerSettings)
+    .FirstOrDefault();
+builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings, oidcSettings, circuitBreakerTracker, circuitBreakerSettings);
 
 // Add OpenTelemetry observability
 builder.Services.AddTaskdeckObservability(observabilitySettings);
