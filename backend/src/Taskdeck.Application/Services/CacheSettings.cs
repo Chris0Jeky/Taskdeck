@@ -13,7 +13,7 @@ public sealed class CacheSettings
     /// Defaults to "InMemory" for local-first usage.
     /// </summary>
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(Redis|InMemory|None)$", ErrorMessage = "Cache Provider must be 'Redis', 'InMemory', or 'None'.")]
+    [RegularExpression("^(?i)(Redis|InMemory|None)$", ErrorMessage = "Cache Provider must be 'Redis', 'InMemory', or 'None' (case-insensitive).")]
     public string Provider { get; set; } = "InMemory";
 
     /// <summary>

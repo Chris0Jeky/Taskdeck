@@ -8,7 +8,7 @@ public sealed class LlmProviderSettings
     public bool AllowLiveProvidersInDevelopment { get; set; }
 
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(Mock|OpenAi|Gemini)$", ErrorMessage = "Llm Provider must be 'Mock', 'OpenAi', or 'Gemini'.")]
+    [RegularExpression("^(?i)(Mock|OpenAi|Gemini)$", ErrorMessage = "Llm Provider must be 'Mock', 'OpenAi', or 'Gemini' (case-insensitive).")]
     public string Provider { get; set; } = "Mock";
 
     [Required]
