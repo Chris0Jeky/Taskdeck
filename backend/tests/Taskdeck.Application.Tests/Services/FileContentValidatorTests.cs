@@ -141,14 +141,29 @@ public class FileContentValidatorTests
     }
 
     [Fact]
-    public void ValidateTextContent_WindowsSmartQuotes_ReturnsSuccess()
+    public void ValidateTextContent_UnicodeSmartQuotes_ReturnsSuccess()
     {
-        // Windows-1252 smart quotes (U+0091-0094) are allowed
+        // Actual Unicode smart quotes (U+201C/U+201D/U+2018/U+2019) are well above
+        // the C1 control range and should always pass.
         var content = "He said “Hello” and she replied ‘Hi’";
 
         var result = FileContentValidator.ValidateTextContent(content, "Test content");
 
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ValidateTextContent_C1ControlCharacters_ReturnsFailure()
+    {
+        // C1 control characters (0x80-0x9F, except NEL 0x85) should be rejected.
+        // These are genuine control characters, NOT Windows-1252 smart quotes
+        // (which map to U+2000+ range when properly decoded).
+        var content = "text with C1 control \x91 character";
+
+        var result = FileContentValidator.ValidateTextContent(content, "Test content");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("binary data");
     }
 
     [Fact]
@@ -172,6 +187,44 @@ public class FileContentValidatorTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("maximum allowed size");
+    }
+
+    [Fact]
+    public void ValidateTextContent_CharLimitEnforced_RejectsLongContent()
+    {
+        var content = new string('A', 500);
+
+        var result = FileContentValidator.ValidateTextContent(content, "Test content", maxBytes: 0, maxChars: 200);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("maximum allowed length");
+        result.ErrorMessage.Should().Contain("200 characters");
+    }
+
+    [Fact]
+    public void ValidateTextContent_CharLimitWithMultibyteChars_CountsCharactersNotBytes()
+    {
+        // 100 CJK characters = 100 chars but 300 UTF-8 bytes.
+        // With character-based limit of 200, this should pass even though
+        // it would fail a 200-byte limit.
+        var content = new string('日', 100);
+
+        var result = FileContentValidator.ValidateTextContent(content, "Test content", maxBytes: 0, maxChars: 200);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ValidateTextContent_BothLimitsApplied_ByteLimitCheckedToo()
+    {
+        // When both maxBytes and maxChars are set, both are checked
+        var content = new string('日', 100); // 100 chars, 300 bytes
+
+        var result = FileContentValidator.ValidateTextContent(content, "Test content", maxBytes: 200, maxChars: 200);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("maximum allowed size");
+        result.ErrorMessage.Should().Contain("200 bytes");
     }
 
     // =====================================================================
@@ -256,6 +309,18 @@ public class FileContentValidatorTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("maximum allowed size");
+    }
+
+    [Fact]
+    public void ValidateJsonContent_ZeroMaxBytes_SkipsSizeCheck()
+    {
+        // When maxBytes is 0, size check is skipped (used for board JSON re-import
+        // where ASP.NET Core's MaxRequestBodySize is the outer bound).
+        var json = "{\"data\":\"" + new string('X', 5_000_000) + "\"}";
+
+        var result = FileContentValidator.ValidateJsonContent(json, "JSON data", maxBytes: 0);
+
+        result.IsSuccess.Should().BeTrue();
     }
 
     [Fact]
@@ -380,21 +445,35 @@ public class FileContentValidatorTests
     }
 
     [Fact]
-    public void ContainsBinaryContent_C1ControlRange_DetectsBinaryExceptCommonWindows1252()
+    public void ContainsBinaryContent_C1ControlRange_DetectsBinaryExceptNel()
     {
-        // Uncommon C1 control chars (0x80, 0x81) should be detected as binary
+        // All C1 control chars (0x80-0x9F) should be detected as binary
+        // except NEL (0x85, Next Line).
         FileContentValidator.ContainsBinaryContent("\x80").Should().BeTrue();
         FileContentValidator.ContainsBinaryContent("\x81").Should().BeTrue();
+        FileContentValidator.ContainsBinaryContent("\x91").Should().BeTrue();
+        FileContentValidator.ContainsBinaryContent("\x92").Should().BeTrue();
+        FileContentValidator.ContainsBinaryContent("\x93").Should().BeTrue();
+        FileContentValidator.ContainsBinaryContent("\x94").Should().BeTrue();
+        FileContentValidator.ContainsBinaryContent("\x96").Should().BeTrue();
+        FileContentValidator.ContainsBinaryContent("\x97").Should().BeTrue();
+        FileContentValidator.ContainsBinaryContent("\x9F").Should().BeTrue();
 
-        // Common Windows-1252 characters should be allowed:
-        // 0x85 (NEL/ellipsis), 0x91-0x94 (smart quotes), 0x96-0x97 (dashes)
+        // NEL (U+0085, Next Line) is a legitimate text control character
         FileContentValidator.ContainsBinaryContent("\x85").Should().BeFalse();
-        FileContentValidator.ContainsBinaryContent("\x91").Should().BeFalse();
-        FileContentValidator.ContainsBinaryContent("\x92").Should().BeFalse();
-        FileContentValidator.ContainsBinaryContent("\x93").Should().BeFalse();
-        FileContentValidator.ContainsBinaryContent("\x94").Should().BeFalse();
-        FileContentValidator.ContainsBinaryContent("\x96").Should().BeFalse();
-        FileContentValidator.ContainsBinaryContent("\x97").Should().BeFalse();
+    }
+
+    [Fact]
+    public void ContainsBinaryContent_UnicodeSmartQuotesAndDashes_ReturnsFalse()
+    {
+        // Real Unicode smart quotes/dashes (U+2018-U+201D, U+2013-U+2014)
+        // are well above the C1 range and should pass.
+        FileContentValidator.ContainsBinaryContent("‘").Should().BeFalse(); // left single quote
+        FileContentValidator.ContainsBinaryContent("’").Should().BeFalse(); // right single quote
+        FileContentValidator.ContainsBinaryContent("“").Should().BeFalse(); // left double quote
+        FileContentValidator.ContainsBinaryContent("”").Should().BeFalse(); // right double quote
+        FileContentValidator.ContainsBinaryContent("–").Should().BeFalse(); // en dash
+        FileContentValidator.ContainsBinaryContent("—").Should().BeFalse(); // em dash
     }
 
     // =====================================================================
@@ -489,15 +568,15 @@ public class FileContentValidatorTests
     // =====================================================================
 
     [Fact]
-    public void MaxMarkdownContentBytes_MatchesExpectedValue()
+    public void MaxMarkdownContentChars_MatchesExpectedValue()
     {
-        FileContentValidator.MaxMarkdownContentBytes.Should().Be(102_400);
+        FileContentValidator.MaxMarkdownContentChars.Should().Be(102_400);
     }
 
     [Fact]
-    public void MaxWebClipContentBytes_MatchesExpectedValue()
+    public void MaxWebClipContentChars_MatchesExpectedValue()
     {
-        FileContentValidator.MaxWebClipContentBytes.Should().Be(20_000);
+        FileContentValidator.MaxWebClipContentChars.Should().Be(20_000);
     }
 
     [Fact]
