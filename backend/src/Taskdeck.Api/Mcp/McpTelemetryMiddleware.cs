@@ -12,7 +12,7 @@ namespace Taskdeck.Api.Mcp;
 /// This middleware wraps the MCP SDK pipeline without modifying it. Failures
 /// in telemetry are caught and logged — they never break MCP operations.
 /// </summary>
-public sealed class McpTelemetryMiddleware
+public sealed partial class McpTelemetryMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<McpTelemetryMiddleware> _logger;
@@ -62,12 +62,7 @@ public sealed class McpTelemetryMiddleware
                 activity?.SetTag(TaskdeckTelemetryTags.UserId, userId);
             }
 
-            _logger.LogInformation(
-                "MCP HTTP request started: Method={Method} Path={Path} CorrelationId={CorrelationId} UserId={UserId}",
-                method,
-                sanitizedPath,
-                correlationId,
-                userId);
+            LogMcpRequestStarted(_logger, method, sanitizedPath, correlationId, userId);
 
             await _next(context);
 
@@ -87,13 +82,28 @@ public sealed class McpTelemetryMiddleware
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationType, "http_request"),
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpTransport, "http"));
 
-            _logger.LogInformation(
-                "MCP HTTP request completed: Method={Method} StatusCode={StatusCode} DurationMs={DurationMs} CorrelationId={CorrelationId} UserId={UserId}",
-                method,
-                statusCode,
-                stopwatch.Elapsed.TotalMilliseconds,
-                correlationId,
-                userId);
+            LogMcpRequestCompleted(_logger, method, statusCode, stopwatch.Elapsed.TotalMilliseconds, correlationId, userId);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Client disconnected — record as a cancellation, not an error.
+            stopwatch.Stop();
+
+            activity?.SetStatus(ActivityStatusCode.Ok, "Cancelled");
+            activity?.SetTag(TaskdeckTelemetryTags.McpSuccess, false);
+
+            TaskdeckTelemetry.McpRequests.Add(1,
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationType, "http_request"),
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpTransport, "http"),
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpSuccess, false));
+
+            TaskdeckTelemetry.McpRequestDurationMs.Record(stopwatch.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationType, "http_request"),
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpTransport, "http"));
+
+            LogMcpRequestCancelled(_logger, method, stopwatch.Elapsed.TotalMilliseconds, correlationId, userId);
+
+            throw;
         }
         catch (Exception ex)
         {
@@ -106,6 +116,7 @@ public sealed class McpTelemetryMiddleware
 
             TaskdeckTelemetry.McpErrors.Add(1,
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationType, "http_request"),
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpTransport, "http"),
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpErrorType, ex.GetType().Name));
 
             TaskdeckTelemetry.McpRequests.Add(1,
@@ -118,15 +129,37 @@ public sealed class McpTelemetryMiddleware
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationType, "http_request"),
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpTransport, "http"));
 
-            _logger.LogError(ex,
-                "MCP HTTP request failed: Method={Method} DurationMs={DurationMs} ErrorType={ErrorType} CorrelationId={CorrelationId} UserId={UserId}",
-                method,
-                stopwatch.Elapsed.TotalMilliseconds,
-                ex.GetType().Name,
-                correlationId,
-                userId);
+            // Log the exception for local diagnostics. The exception object is passed
+            // to ILogger (standard .NET practice) but never to tracing/OTel exports.
+            // Activity status description above uses SafeExceptionDescription (type name only).
+            LogMcpRequestFailed(_logger, ex, method, stopwatch.Elapsed.TotalMilliseconds, ex.GetType().Name, correlationId, userId);
 
             throw;
         }
     }
+
+    // ── Source-generated log methods (CWE-117 safe) ─────────────────────────
+    // LoggerMessage source generators produce compile-time structured log calls
+    // that avoid string interpolation of user-controlled values (CodeQL CWE-117).
+    // All parameters are sanitized via LogSanitizer before being passed in.
+
+    [LoggerMessage(Level = LogLevel.Information, EventId = 1,
+        Message = "MCP HTTP request started: Method={Method} Path={Path} CorrelationId={CorrelationId} UserId={UserId}")]
+    private static partial void LogMcpRequestStarted(
+        ILogger logger, string method, string path, string correlationId, string? userId);
+
+    [LoggerMessage(Level = LogLevel.Information, EventId = 2,
+        Message = "MCP HTTP request completed: Method={Method} StatusCode={StatusCode} DurationMs={DurationMs} CorrelationId={CorrelationId} UserId={UserId}")]
+    private static partial void LogMcpRequestCompleted(
+        ILogger logger, string method, int statusCode, double durationMs, string correlationId, string? userId);
+
+    [LoggerMessage(Level = LogLevel.Error, EventId = 3,
+        Message = "MCP HTTP request failed: Method={Method} DurationMs={DurationMs} ErrorType={ErrorType} CorrelationId={CorrelationId} UserId={UserId}")]
+    private static partial void LogMcpRequestFailed(
+        ILogger logger, Exception ex, string method, double durationMs, string errorType, string correlationId, string? userId);
+
+    [LoggerMessage(Level = LogLevel.Information, EventId = 4,
+        Message = "MCP HTTP request cancelled: Method={Method} DurationMs={DurationMs} CorrelationId={CorrelationId} UserId={UserId}")]
+    private static partial void LogMcpRequestCancelled(
+        ILogger logger, string method, double durationMs, string correlationId, string? userId);
 }
