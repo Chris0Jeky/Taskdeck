@@ -145,7 +145,7 @@ onMounted(loadKeys)
     <h1 class="td-page-title">API Keys</h1>
     <p class="td-page-desc">
       Manage API keys for MCP server HTTP transport authentication.
-      Keys use the <code class="td-code-inline">tdsk_</code> prefix and are rate-limited to 60 requests per minute.
+      Keys use the <code class="td-code-inline">tdsk_</code> prefix and are rate-limited.
     </p>
 
     <!-- Loading state -->
