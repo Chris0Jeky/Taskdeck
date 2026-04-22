@@ -2,11 +2,10 @@
  * E2E: Dark Mode Scenarios
  *
  * Extends dark mode coverage beyond the basic toggle test:
- * - Dark mode applies across multiple views (home, boards, inbox, today)
- * - Dark mode with board content (columns, cards) renders without
- *   white-on-white or invisible elements
- * - System prefers-color-scheme: dark (stub -- test.fixme until feature ships)
+ * - Dark mode persists when navigating between Home, Boards, Inbox, and Today views
+ * - Dark mode board view renders column headings visible with non-zero dimensions
  * - Toggling dark mode off restores light theme
+ * - System prefers-color-scheme: dark (stub -- test.fixme until feature ships)
  */
 
 import type { Page } from '@playwright/test'
@@ -109,15 +108,13 @@ test('dark mode board view should render columns and cards without invisible tex
 
   expect(await isDarkMode(page)).toBeTruthy()
 
-  // Column heading should still be visible (not white-on-white)
+  // Column heading should still be visible in dark mode
   const columnHeading = page.getByRole('heading', { name: `Dark Column ${seed}`, exact: true })
   await expect(columnHeading).toBeVisible()
 
-  // Verify the column heading occupies real space (not collapsed/invisible)
+  // Verify the column heading occupies real space (not collapsed or zero-size)
   const columnHeadingBox = await columnHeading.boundingBox()
   expect(columnHeadingBox).not.toBeNull()
-
-  // The heading text should have non-zero dimensions (not collapsed/invisible)
   expect(columnHeadingBox!.width).toBeGreaterThan(0)
   expect(columnHeadingBox!.height).toBeGreaterThan(0)
 })

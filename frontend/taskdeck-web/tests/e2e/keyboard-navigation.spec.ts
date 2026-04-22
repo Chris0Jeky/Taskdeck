@@ -2,11 +2,10 @@
  * E2E: Keyboard Navigation Scenarios
  *
  * Covers keyboard-driven workflows:
- * - Board creation and column management via keyboard shortcuts
- * - Card creation with keyboard-driven workflow
- * - Command palette navigation
+ * - Board creation via keyboard, column creation, and card creation using 'n' shortcut
+ * - Command palette arrow-key navigation and Enter selection
  * - Escape from command palette closes it and returns to the prior view
- * - Shortcuts help overlay toggle
+ * - Question-mark shortcut toggles keyboard shortcuts help overlay
  */
 
 import type { Page } from '@playwright/test'
@@ -59,12 +58,11 @@ test('user should create board via keyboard then add card using n shortcut', asy
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
 
   // Create card using 'n' shortcut (keyboard-only card creation)
-  // Press Escape and wait for the escape stack to settle before firing 'n'.
-  // The shortcut handler relies on focus state (isTextEntryTarget guard) and
-  // uses setTimeout(0) internally to show the input, so we need Playwright to
-  // wait for the input with a generous timeout to avoid CI race conditions.
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
+  // After column creation the column-name input is removed from the DOM, so
+  // no text field should be capturing keystrokes. We click the board heading
+  // to ensure focus is on a non-input element (pressing Escape here would
+  // trigger closeOpenUi() which navigates away from the board).
+  await page.getByRole('heading', { name: boardName }).click()
   await page.keyboard.press('n')
   const column = columnByName(page, columnName)
   const cardInput = column.getByPlaceholder('Enter card title...')
@@ -117,9 +115,10 @@ test('command palette should support arrow-key navigation and Enter selection', 
   // The palette should close after selection
   await expect(palette).toHaveCount(0)
 
-  // Verify navigation actually happened -- we should no longer be on the
-  // exact same boards page (the command should have navigated somewhere)
-  // or at minimum the palette closed, which we already asserted.
+  // Verify that selecting a command actually navigated somewhere.
+  // The "to" query matches the "Today" navigation command, so we should
+  // end up on /workspace/today (or at least no longer on /workspace/boards).
+  await expect(page).not.toHaveURL(/\/workspace\/boards$/, { timeout: 5_000 })
 })
 
 // --- Escape from command palette ---
