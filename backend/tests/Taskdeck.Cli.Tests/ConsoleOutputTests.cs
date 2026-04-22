@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Taskdeck.Cli.Tests;
 
+[Collection("Console Tests")]
 public class ConsoleOutputTests
 {
     [Fact]

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using Xunit;
@@ -10,7 +9,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task ColumnsList_WithJson_RequiresBoard()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var result = await harness.RunAsync("columns list --json");
 
@@ -21,7 +20,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task ColumnsList_WithInvalidBoardId_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var result = await harness.RunAsync("columns list --board not-a-guid --json");
 
@@ -32,7 +31,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task ColumnsCreate_WithJson_CreatesColumn()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var boardResult = await harness.RunAsync("boards create ColumnTestBoard --json");
         boardResult.ExitCode.Should().Be(0, boardResult.StdErr);
@@ -50,7 +49,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task ColumnsCreate_MissingName_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var boardResult = await harness.RunAsync("boards create ColNoNameBoard --json");
         boardResult.ExitCode.Should().Be(0, boardResult.StdErr);
@@ -66,7 +65,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task ColumnsCreate_MissingBoard_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var result = await harness.RunAsync("columns create --name Todo --json");
 
@@ -77,7 +76,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task ColumnsList_WithJson_ReturnsCreatedColumn()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var boardResult = await harness.RunAsync("boards create ColListBoard --json");
         boardResult.ExitCode.Should().Be(0, boardResult.StdErr);
@@ -102,7 +101,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task Columns_UnknownCommand_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var result = await harness.RunAsync("columns unknown");
 
@@ -113,7 +112,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task ColumnsCreate_WithPosition_SetsPosition()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var boardResult = await harness.RunAsync("boards create ColPosBoard --json");
         boardResult.ExitCode.Should().Be(0, boardResult.StdErr);
@@ -131,7 +130,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task ColumnsCreate_WithInvalidPosition_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var boardResult = await harness.RunAsync("boards create ColBadPosBoard --json");
         boardResult.ExitCode.Should().Be(0, boardResult.StdErr);
@@ -147,7 +146,7 @@ public class ColumnsCommandTests
     [Fact]
     public async Task ColumnsCreate_WithInvalidWip_ReturnsUsageError()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-columns");
 
         var boardResult = await harness.RunAsync("boards create ColBadWipBoard --json");
         boardResult.ExitCode.Should().Be(0, boardResult.StdErr);
@@ -159,96 +158,4 @@ public class ColumnsCommandTests
         result.ExitCode.Should().Be(2);
         result.StdErr.Should().Contain("--wip");
     }
-
-    private sealed class CliHarness : IAsyncDisposable
-    {
-        private readonly string _repoRoot;
-        private readonly string _databasePath;
-        private readonly string _connectionString;
-
-        public CliHarness()
-        {
-            _repoRoot = FindRepoRoot();
-            _databasePath = Path.Combine(Path.GetTempPath(), $"taskdeck-cli-columns-tests-{Guid.NewGuid():N}.db");
-            _connectionString = $"Data Source={_databasePath}";
-        }
-
-        public async Task<CliCommandResult> RunAsync(string arguments)
-        {
-            var cliDllPath = ResolveCliDllPath(_repoRoot);
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                Arguments = $"\"{cliDllPath}\" {arguments}",
-                WorkingDirectory = _repoRoot,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
-
-            startInfo.Environment["TASKDECK_CONNECTION_STRING"] = _connectionString;
-            startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-
-            using var process = new Process { StartInfo = startInfo };
-            process.Start();
-
-            var stdOut = await process.StandardOutput.ReadToEndAsync();
-            var stdErr = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            return new CliCommandResult(process.ExitCode, stdOut.Trim(), stdErr.Trim());
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            foreach (var path in new[] { _databasePath, $"{_databasePath}-wal", $"{_databasePath}-shm", $"{_databasePath}-journal" })
-            {
-                try
-                {
-                    if (File.Exists(path)) File.Delete(path);
-                }
-                catch (IOException) { }
-            }
-
-            return ValueTask.CompletedTask;
-        }
-
-        private static string FindRepoRoot()
-        {
-            var current = new DirectoryInfo(AppContext.BaseDirectory);
-
-            while (current != null)
-            {
-                var solutionPath = Path.Combine(current.FullName, "backend", "Taskdeck.sln");
-                if (File.Exists(solutionPath))
-                {
-                    return current.FullName;
-                }
-
-                current = current.Parent;
-            }
-
-            throw new InvalidOperationException("Could not locate repository root from test execution directory.");
-        }
-
-        private static string ResolveCliDllPath(string repoRoot)
-        {
-            var cliProjectBin = Path.Combine(repoRoot, "backend", "src", "Taskdeck.Cli", "bin");
-            var debugPath = Path.Combine(cliProjectBin, "Debug", "net8.0", "Taskdeck.Cli.dll");
-            if (File.Exists(debugPath))
-            {
-                return debugPath;
-            }
-
-            var releasePath = Path.Combine(cliProjectBin, "Release", "net8.0", "Taskdeck.Cli.dll");
-            if (File.Exists(releasePath))
-            {
-                return releasePath;
-            }
-
-            throw new FileNotFoundException("Taskdeck.Cli.dll was not found in Debug or Release output directories.");
-        }
-    }
-
-    private sealed record CliCommandResult(int ExitCode, string StdOut, string StdErr);
 }
