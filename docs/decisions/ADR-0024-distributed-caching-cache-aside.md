@@ -1,4 +1,4 @@
-# ADR-0023: Distributed Caching — Cache-Aside Pattern with Redis
+# ADR-0024: Distributed Caching — Cache-Aside Pattern with Redis
 
 - **Status**: Proposed
 - **Date**: 2026-04-09
