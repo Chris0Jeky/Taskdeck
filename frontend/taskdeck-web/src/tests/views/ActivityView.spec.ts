@@ -107,6 +107,18 @@ function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
   return button!
 }
 
+// Deterministic timestamps ensure `boardOptions` sort order is stable across
+// platforms. The component sorts by `updatedAt` DESC, so board-1 must have a
+// strictly later timestamp than board-2 to land first in selector defaults.
+// Previously this used `new Date().toISOString()` twice in succession, which
+// produced different ordering on Windows (where Node's high-resolution clock
+// advanced between calls) vs. other platforms (where both timestamps were
+// equal and stable-sort preserved declaration order). That manifested as a
+// Windows-only flake: `fetchBoard` was called with 'board-2' instead of
+// 'board-1' because the default selection flipped.
+const BOARD_1_TIMESTAMP = '2025-01-02T00:00:00.000Z'
+const BOARD_2_TIMESTAMP = '2025-01-01T00:00:00.000Z'
+
 function seedBoards() {
   mockBoardStore.boards = [
     {
@@ -114,16 +126,16 @@ function seedBoards() {
       name: 'Board One',
       isArchived: false,
       description: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: BOARD_1_TIMESTAMP,
+      updatedAt: BOARD_1_TIMESTAMP,
     },
     {
       id: 'board-2',
       name: 'Board Two',
       isArchived: false,
       description: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: BOARD_2_TIMESTAMP,
+      updatedAt: BOARD_2_TIMESTAMP,
     },
   ]
 }
