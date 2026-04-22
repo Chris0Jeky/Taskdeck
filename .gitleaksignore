@@ -1,0 +1,24 @@
+# =============================================================================
+# .gitleaksignore — false positive suppression for Gitleaks
+# =============================================================================
+#
+# Each line is a Gitleaks fingerprint (commit:file:rule:line hash) for a
+# specific finding that has been reviewed and confirmed as a false positive.
+#
+# To add a new entry:
+#   1. Run gitleaks locally: gitleaks detect --verbose
+#   2. Copy the Fingerprint value from the finding
+#   3. Add it here with a comment explaining why it is safe
+#
+# Review this file periodically to remove entries for deleted code.
+# =============================================================================
+
+# Development-only JWT secret in appsettings.Development.json
+# This is a well-known placeholder that only works in local dev mode.
+# Production requires TASKDECK_JWT_SECRET environment variable override.
+
+# Documentation example API keys in docs/spikes/SPIKE_619_COMPLETED.md
+# These are illustrative examples showing the tdsk_ key format, not real keys.
+
+# Test fixture secrets in backend/tests/ and frontend/tests/
+# All test secrets are deterministic values used only in isolated test contexts.
