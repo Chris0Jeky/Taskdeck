@@ -27,45 +27,26 @@ public class WorkspaceService : IWorkspaceService
         if (userId == Guid.Empty)
             return Result.Failure<WorkspaceHomeDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
 
+        var preference = await EnsurePreferenceAsync(userId, cancellationToken);
+        var captureSummary = await _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
         var recentCutoff = DateTimeOffset.UtcNow.Subtract(RecentBoardWindow);
-
-        // Launch all independent queries in parallel
-        var preferenceTask = EnsurePreferenceAsync(userId, cancellationToken);
-        var captureSummaryTask = _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
-        var proposalsPendingReviewTask = _unitOfWork.AutomationProposals.CountPendingReviewByUserIdAsync(userId, cancellationToken);
-        var hasReviewedProposalTask = _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
-        var totalBoardsTask = _unitOfWork.Boards.CountReadableByUserIdAsync(userId, includeArchived: false, cancellationToken);
-        var recentBoardsCountTask = _unitOfWork.Boards.CountReadableUpdatedSinceAsync(
+        var capturesNeedingTriage = captureSummary.NewCount + captureSummary.FailedCount;
+        var capturesInProgress = captureSummary.TriagingCount;
+        var capturesReadyForFollowUp = captureSummary.TriagedCount;
+        var proposalsPendingReview = await _unitOfWork.AutomationProposals.CountPendingReviewByUserIdAsync(userId, cancellationToken);
+        var hasReviewedProposal = await _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
+        var totalBoards = await _unitOfWork.Boards.CountReadableByUserIdAsync(userId, includeArchived: false, cancellationToken);
+        var recentBoardsCount = await _unitOfWork.Boards.CountReadableUpdatedSinceAsync(
             userId,
             recentCutoff,
             includeArchived: false,
             cancellationToken);
-        var recentBoardCandidatesTask = _unitOfWork.Boards.GetRecentReadableByUserIdAsync(
-            userId,
-            RecentBoardLimit,
-            includeArchived: false,
-            cancellationToken);
-
-        await Task.WhenAll(
-            preferenceTask,
-            captureSummaryTask,
-            proposalsPendingReviewTask,
-            hasReviewedProposalTask,
-            totalBoardsTask,
-            recentBoardsCountTask,
-            recentBoardCandidatesTask);
-
-        var preference = await preferenceTask;
-        var captureSummary = await captureSummaryTask;
-        var proposalsPendingReview = await proposalsPendingReviewTask;
-        var hasReviewedProposal = await hasReviewedProposalTask;
-        var totalBoards = await totalBoardsTask;
-        var recentBoardsCount = await recentBoardsCountTask;
-        var recentBoardCandidates = (await recentBoardCandidatesTask).ToList();
-
-        var capturesNeedingTriage = captureSummary.NewCount + captureSummary.FailedCount;
-        var capturesInProgress = captureSummary.TriagingCount;
-        var capturesReadyForFollowUp = captureSummary.TriagedCount;
+        var recentBoardCandidates = (await _unitOfWork.Boards.GetRecentReadableByUserIdAsync(
+                userId,
+                RecentBoardLimit,
+                includeArchived: false,
+                cancellationToken))
+            .ToList();
         var recentBoards = recentBoardCandidates
             .Where(board => board.UpdatedAt >= recentCutoff)
             .Select(board => new WorkspaceRecentBoardDto(
@@ -113,31 +94,17 @@ public class WorkspaceService : IWorkspaceService
         if (userId == Guid.Empty)
             return Result.Failure<WorkspaceTodayDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
 
-        // Launch all independent queries in parallel
-        var preferenceTask = EnsurePreferenceAsync(userId, cancellationToken);
-        var captureSummaryTask = _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
-        var proposalsPendingReviewTask = _unitOfWork.AutomationProposals.CountPendingReviewByUserIdAsync(userId, cancellationToken);
-        var hasReviewedProposalTask = _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
-        var accessibleBoardsTask = _unitOfWork.Boards.GetReadableByUserIdAsync(
-            userId,
-            includeArchived: false,
-            cancellationToken);
-
-        await Task.WhenAll(
-            preferenceTask,
-            captureSummaryTask,
-            proposalsPendingReviewTask,
-            hasReviewedProposalTask,
-            accessibleBoardsTask);
-
-        var preference = await preferenceTask;
-        var captureSummary = await captureSummaryTask;
-        var proposalsPendingReview = await proposalsPendingReviewTask;
-        var hasReviewedProposal = await hasReviewedProposalTask;
-        var accessibleBoards = (await accessibleBoardsTask).ToList();
-
+        var preference = await EnsurePreferenceAsync(userId, cancellationToken);
+        var captureSummary = await _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
         var capturesNeedingTriage = captureSummary.NewCount + captureSummary.FailedCount;
         var capturesReadyForFollowUp = captureSummary.TriagedCount;
+        var proposalsPendingReview = await _unitOfWork.AutomationProposals.CountPendingReviewByUserIdAsync(userId, cancellationToken);
+        var hasReviewedProposal = await _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
+        var accessibleBoards = (await _unitOfWork.Boards.GetReadableByUserIdAsync(
+                userId,
+                includeArchived: false,
+                cancellationToken))
+            .ToList();
         var agendaCards = accessibleBoards.Count == 0
             ? Array.Empty<Card>()
             : (await _unitOfWork.Cards.GetAgendaByBoardIdsAsync(
@@ -365,18 +332,12 @@ public class WorkspaceService : IWorkspaceService
             return MapDeferredOnboarding(preference);
         }
 
-        var captureSummaryTask = _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
-        var hasReviewedProposalTask = _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
-        var boardCountTask = _unitOfWork.Boards.CountReadableByUserIdAsync(
+        var captureSummary = await _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
+        var hasReviewedProposal = await _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
+        var boardCount = await _unitOfWork.Boards.CountReadableByUserIdAsync(
             userId,
             includeArchived: false,
             cancellationToken);
-
-        await Task.WhenAll(captureSummaryTask, hasReviewedProposalTask, boardCountTask);
-
-        var captureSummary = await captureSummaryTask;
-        var hasReviewedProposal = await hasReviewedProposalTask;
-        var boardCount = await boardCountTask;
 
         return await BuildOnboardingAsync(
             preference,
