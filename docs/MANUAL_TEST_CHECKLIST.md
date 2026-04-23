@@ -810,7 +810,7 @@ If behavior, commands, or known gaps changed, update:
 3. Frontend E2E:
    - `cd frontend/taskdeck-web && npx playwright test --reporter=line`
    - fallback when `5173` is unavailable:
-     `cd frontend/taskdeck-web && TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001 npx playwright test --reporter=line`
+     `cd frontend/taskdeck-web && TASKDECK_E2E_FRONTEND_PORT=5001 npx playwright test --reporter=line`
 
 ## V. Capture Realignment Manual Slice (Shipped CAP MVP)
 
