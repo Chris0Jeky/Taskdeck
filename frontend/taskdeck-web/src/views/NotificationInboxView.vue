@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNotificationStore } from '../store/notificationStore'
+import { TdSkeleton } from '../components/ui'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import {
   groupNotifications,
@@ -170,7 +171,23 @@ watch([unreadOnly, activeBoardId], () => {
       {{ inlineError }}
     </div>
 
-    <div v-if="notifications.loading" class="td-placeholder">Loading notifications...</div>
+    <div v-if="notifications.loading" class="td-notification-skeleton" role="status" aria-live="polite">
+      <span class="sr-only">Loading notifications...</span>
+      <div v-for="n in 4" :key="n" class="td-notification-skeleton__row">
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1">
+          <div style="display: flex; align-items: center; gap: 0.5rem">
+            <TdSkeleton width="60px" height="20px" />
+            <TdSkeleton width="200px" height="14px" />
+          </div>
+          <TdSkeleton width="80%" height="12px" />
+          <div style="display: flex; gap: 0.75rem">
+            <TdSkeleton width="70px" height="10px" />
+            <TdSkeleton width="100px" height="10px" />
+          </div>
+        </div>
+        <TdSkeleton width="80px" height="32px" />
+      </div>
+    </div>
     <div v-else-if="items.length === 0" class="td-placeholder">No notifications found.</div>
 
     <template v-else>
@@ -271,9 +288,22 @@ watch([unreadOnly, activeBoardId], () => {
 </template>
 
 <style scoped>
-.td-placeholder {
-  color: var(--td-text-secondary);
-  padding: var(--td-space-6) 0;
+.td-notification-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-3);
+  padding: var(--td-space-2) 0;
+}
+
+.td-notification-skeleton__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--td-space-4);
+  padding: var(--td-space-4);
+  border-radius: var(--td-radius-lg);
+  border: 1px solid var(--td-border-default);
+  background: var(--td-surface-primary);
 }
 
 .td-alert {
