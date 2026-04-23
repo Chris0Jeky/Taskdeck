@@ -279,9 +279,15 @@ const maxWipCount = computed(() => {
       <section class="td-metrics__section td-metrics__forecast" aria-label="Completion forecast">
         <h2 class="td-metrics__section-title">Completion Forecast</h2>
 
-        <div v-if="forecastLoading" class="td-metrics__forecast-loading">
-          <div class="td-metrics__spinner td-metrics__spinner--sm" />
-          <span>Computing forecast...</span>
+        <div v-if="forecastLoading" class="td-metrics__forecast-loading" role="status">
+          <span class="sr-only">Computing forecast...</span>
+          <div class="td-metrics__forecast-grid">
+            <div v-for="n in 4" :key="n" class="td-metrics__card">
+              <TdSkeleton width="80px" height="12px" />
+              <TdSkeleton width="50px" height="24px" />
+              <TdSkeleton width="70px" height="10px" />
+            </div>
+          </div>
         </div>
 
         <div v-else-if="forecastError" class="td-metrics__forecast-error" role="alert">
@@ -799,16 +805,8 @@ const maxWipCount = computed(() => {
 
 .td-metrics__forecast-loading {
   display: flex;
-  align-items: center;
-  gap: var(--td-space-3);
-  color: var(--td-text-secondary);
-  font-size: var(--td-font-sm);
-}
-
-.td-metrics__spinner--sm {
-  width: 20px;
-  height: 20px;
-  border-width: 2px;
+  flex-direction: column;
+  gap: var(--td-space-4);
 }
 
 .td-metrics__forecast-error {
