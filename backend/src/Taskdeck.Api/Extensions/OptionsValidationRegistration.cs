@@ -45,6 +45,10 @@ public static class OptionsValidationRegistration
 
         services.RegisterValidatedOptions<CacheSettings>(configuration, "Cache");
 
+        // ── Settings from Infrastructure (Database resilience) ─────────────
+
+        services.RegisterValidatedOptions<DatabaseSettings>(configuration, "Database");
+
         // ── Cross-property validators (IValidateOptions<T>) ─────────────────
 
         services.AddSingleton<IValidateOptions<WorkerSettings>, WorkerSettingsValidator>();
