@@ -65,7 +65,7 @@ public class McpTelemetryMiddlewareTests
 
         await middleware.InvokeAsync(context);
 
-        _logger.Entries[0].Message.Should().Contain(userId.ToString());
+        _logger.Entries[1].Message.Should().Contain(userId.ToString());
     }
 
     [Fact]
