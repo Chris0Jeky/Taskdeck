@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
-using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Repositories;
@@ -34,19 +33,25 @@ public class UserPreferenceRepository : Repository<UserPreference>, IUserPrefere
         // Use INSERT OR IGNORE to atomically skip the insert when a concurrent
         // request has already created the row, avoiding UNIQUE-constraint
         // exceptions and the retry loop they previously required.
+        object[] parameters =
+        [
+            defaultPreference.Id,
+            userId,
+            defaultPreference.WorkspaceMode.ToString(),
+            defaultPreference.OnboardingVisibility.ToString(),
+            (object?)defaultPreference.OnboardingDismissedAt ?? DBNull.Value,
+            (object?)defaultPreference.OnboardingCompletedAt ?? DBNull.Value,
+            now,
+            now
+        ];
+
         await _context.Database.ExecuteSqlRawAsync(
             @"INSERT OR IGNORE INTO UserPreferences
               (Id, UserId, WorkspaceMode, OnboardingVisibility,
                OnboardingDismissedAt, OnboardingCompletedAt, CreatedAt, UpdatedAt)
               VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7})",
-            defaultPreference.Id,
-            userId,
-            nameof(WorkspaceMode.Guided),
-            nameof(WorkspaceOnboardingVisibility.Active),
-            (object?)null!,
-            (object?)null!,
-            now,
-            now);
+            parameters,
+            cancellationToken);
 
         // The row now exists -- either we just inserted it or another request
         // did. Query it back so EF Core's change tracker is aware of it.
