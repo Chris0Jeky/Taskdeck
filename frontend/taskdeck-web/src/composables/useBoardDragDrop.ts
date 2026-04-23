@@ -1,6 +1,7 @@
 import { ref, type ComputedRef } from 'vue'
 import type { Column, Card } from '../types/board'
 import { useBoardStore } from '../store/boardStore'
+import { logError } from '../utils/errorReporting'
 
 /**
  * Composable encapsulating all drag-and-drop state and handlers for the board view.
@@ -75,7 +76,7 @@ export function useBoardDragDrop(boardId: () => string, sortedColumns: ComputedR
       const columnIds = reordered.map((col) => col.id)
       await boardStore.reorderColumns(boardId(), columnIds)
     } catch (error) {
-      console.error('Failed to reorder columns:', error)
+      logError('Failed to reorder columns:', error)
     }
   }
 
