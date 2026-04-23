@@ -18,10 +18,10 @@ public sealed class SecurityHeadersSettings
     public bool HstsIncludeSubDomains { get; set; } = false;
     public bool HstsPreload { get; set; } = false;
 
-    [Required(AllowEmptyStrings = false)]
     // SEC-29: removed 'unsafe-inline' from style-src. The API serves JSON (and
     // Swagger HTML, which is excluded from CSP via ExcludeSwaggerFromContentSecurityPolicy).
     // No API-served HTML needs inline styles, so tightening style-src is safe here.
+    [Required(AllowEmptyStrings = false)]
     public string ContentSecurityPolicy { get; set; } =
         "default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'";
 
