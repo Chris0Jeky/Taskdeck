@@ -19,6 +19,21 @@ The visual regression suite covers these critical UI areas:
 | Archive (empty) | `archive-view.visual.spec.ts` | `archive-empty.png` |
 | Inbox/capture (empty) | `inbox-capture.visual.spec.ts` | `inbox-empty.png` |
 | Home view | `home-view.visual.spec.ts` | `home-default.png` |
+| Login view | `auth-views.visual.spec.ts` | `login-default.png` |
+| Register view | `auth-views.visual.spec.ts` | `register-default.png` |
+| Today view | `today-view.visual.spec.ts` | `today-default.png` |
+| Calendar view | `calendar-view.visual.spec.ts` | `calendar-default.png` |
+| Metrics view (placeholder) | `metrics-view.visual.spec.ts` | `metrics-placeholder.png` |
+| Review view (empty) | `review-view.visual.spec.ts` | `review-empty.png` |
+| Notifications (empty) | `notification-view.visual.spec.ts` | `notifications-empty.png` |
+| Settings (profile) | `settings-view.visual.spec.ts` | `settings-profile.png` |
+| Card modal (edit) | `board-modals.visual.spec.ts` | `card-modal-edit.png` |
+| Column edit modal | `board-modals.visual.spec.ts` | `column-edit-modal.png` |
+| Starter pack catalog modal | `board-modals.visual.spec.ts` | `starter-pack-catalog-modal.png` |
+| Capture modal (typed) | `capture-modal.visual.spec.ts` | `capture-modal-typed.png` |
+| Board toolbar | `board-components.visual.spec.ts` | `board-toolbar.png` |
+| Board action rail | `board-components.visual.spec.ts` | `board-action-rail.png` |
+| Shell sidebar | `shell-sidebar.visual.spec.ts` | `shell-sidebar.png` |
 
 ## Threshold Settings
 
