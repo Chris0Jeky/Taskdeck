@@ -1,0 +1,81 @@
+# =============================================================================
+# Render Blueprint specification for Taskdeck
+# =============================================================================
+# NOTE: Render auto-detects render.yaml only at the repo root. Because this
+# file lives under deploy/, you must set the Blueprint Sync Path to "deploy"
+# in the Render dashboard (Account Settings > Blueprints). See the deployment
+# guide for details.
+#
+# Deployment steps:
+#   1. Create a Render account at https://render.com
+#   2. Click "New" → "Blueprint" and connect this repo
+#   3. Set the Blueprint path to "deploy" in the Render dashboard
+#   4. Render reads this file and provisions the service + disk
+#   5. Set environment variables in the Render dashboard
+#   6. Deploy
+#
+# See docs/platform/CLOUD_DEPLOYMENT_GUIDE.md for full instructions.
+# =============================================================================
+
+services:
+  - type: web
+    name: taskdeck
+    runtime: docker
+    dockerfilePath: deploy/Dockerfile.production
+    dockerContext: .
+
+    # Render injects PORT env var; the Dockerfile's ASPNETCORE_URLS reads it.
+    envVars:
+      # --- Required ---
+      - key: Jwt__SecretKey
+        sync: false  # Must be set manually in dashboard — never commit secrets
+      - key: Cors__AllowedOrigins
+        sync: false  # Set to your Render URL, e.g. https://taskdeck.onrender.com
+
+      # --- Database (persistent volume) ---
+      - key: ConnectionStrings__DefaultConnection
+        value: "Data Source=/app/data/taskdeck.db"
+
+      # --- Production defaults ---
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_FORWARDEDHEADERS_ENABLED
+        value: "true"
+      - key: FirstRun__AutoOpenBrowser
+        value: "false"
+      - key: FirstRun__ResolveAppDataDbPath
+        value: "false"
+      - key: DevelopmentSandbox__Enabled
+        value: "false"
+      # Headless mode prevents ephemeral JWT secret generation on restart
+      - key: TASKDECK_HEADLESS
+        value: "true"
+
+      # --- Optional: LLM providers (Mock is default) ---
+      - key: Llm__EnableLiveProviders
+        value: "false"
+      - key: Llm__Provider
+        value: Mock
+      # - key: Llm__OpenAi__ApiKey
+      #   sync: false
+      # - key: Llm__Gemini__ApiKey
+      #   sync: false
+
+    # Persistent disk for SQLite database
+    disk:
+      name: taskdeck-data
+      mountPath: /app/data
+      sizeGB: 1  # Start small; increase as needed
+
+    # Health check
+    healthCheckPath: /health/ready
+
+    # Scaling (single instance for SQLite single-writer constraint)
+    numInstances: 1
+
+    # Plan: starter is sufficient for early usage (512 MB RAM, 0.5 CPU)
+    plan: starter
+
+    # Auto-deploy on push to main
+    autoDeploy: true
+    branch: main

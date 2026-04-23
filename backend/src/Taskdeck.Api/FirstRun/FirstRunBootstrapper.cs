@@ -15,12 +15,15 @@ namespace Taskdeck.Api.FirstRun;
 /// </summary>
 public static class FirstRunBootstrapper
 {
-    // Placeholder values that indicate "not configured"
+    // Placeholder values that indicate "not configured".
+    // If ANY of these appear as the JWT secret in a non-Development,
+    // non-headless Production environment, startup will be blocked.
     private static readonly HashSet<string> PlaceholderSecrets =
         new(StringComparer.OrdinalIgnoreCase)
         {
             string.Empty,
-            "TaskdeckDevelopmentOnlySecretKeyChangeMe123!"
+            "TaskdeckDevelopmentOnlySecretKeyChangeMe123!",
+            "CHANGE_ME_GENERATE_WITH_openssl_rand_base64_48"
         };
 
     /// <summary>
@@ -109,6 +112,44 @@ public static class FirstRunBootstrapper
         }
 
         EnsureDbPath(builder.Configuration, logger);
+        return builder;
+    }
+
+    /// <summary>
+    /// Validates that no placeholder JWT secret is being used in Production.
+    /// Unlike <see cref="RunFirstRunChecks"/> (which auto-generates secrets for
+    /// self-hosted desktop installs), this check <b>throws</b> if the configured
+    /// secret is a known placeholder -- preventing cloud containers from
+    /// accidentally running with an insecure or ephemeral secret.
+    /// </summary>
+    /// <remarks>
+    /// Call this after configuration is fully built (env vars loaded).
+    /// This is a hard failure by design: deploying with a placeholder JWT secret
+    /// is a critical security vulnerability.
+    /// </remarks>
+    public static WebApplicationBuilder ValidateProductionSecrets(
+        this WebApplicationBuilder builder,
+        ILogger logger)
+    {
+        // Only enforce in Production; other environments (Development, Staging,
+        // Test, etc.) use their own defaults or placeholder secrets safely.
+        if (!builder.Environment.IsProduction())
+        {
+            return builder;
+        }
+
+        var jwtSecret = builder.Configuration["Jwt:SecretKey"] ?? string.Empty;
+
+        if (IsPlaceholder(jwtSecret))
+        {
+            throw new InvalidOperationException(
+                "SECURITY: The JWT secret is not configured or is a known placeholder value. " +
+                "Generate a strong secret with 'openssl rand -base64 48' and set it via the " +
+                "Jwt__SecretKey environment variable. The application cannot start without a " +
+                "real secret in Production.");
+        }
+
+        logger.LogInformation("Production secret validation passed.");
         return builder;
     }
 

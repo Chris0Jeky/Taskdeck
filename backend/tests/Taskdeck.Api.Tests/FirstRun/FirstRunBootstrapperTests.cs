@@ -13,6 +13,7 @@ public class FirstRunBootstrapperTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("TaskdeckDevelopmentOnlySecretKeyChangeMe123!")]
+    [InlineData("CHANGE_ME_GENERATE_WITH_openssl_rand_base64_48")]
     public void IsPlaceholder_ReturnsTrueForPlaceholderValues(string value)
     {
         Assert.True(FirstRunBootstrapper.IsPlaceholder(value));
