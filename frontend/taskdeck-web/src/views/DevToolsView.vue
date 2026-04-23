@@ -13,6 +13,7 @@ import {
   type ValidationError,
 } from '../utils/scenarioSchema'
 import type { Trace, ReplayState } from '../types/trace'
+import { logError } from '../utils/errorReporting'
 
 // --- Tab state ---
 const activeTab = ref<'trace' | 'scenario'>('trace')
@@ -65,7 +66,7 @@ function importTrace() {
         completedTraces.value.push(parsed)
       }
     } catch (err) {
-      console.error('Failed to import trace:', err)
+      logError('Failed to import trace:', err)
       traceError.value = 'Failed to import trace file.'
     }
   }
@@ -180,7 +181,7 @@ function importScenario() {
         scenarioErrors.value = result.errors
       }
     } catch (err) {
-      console.error('Failed to import scenario:', err)
+      logError('Failed to import scenario:', err)
       scenarioErrors.value = [{ path: '', message: 'Failed to read file.' }]
     }
   }
