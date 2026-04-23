@@ -1,19 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Repositories;
 
 public class UserPreferenceRepository : Repository<UserPreference>, IUserPreferenceRepository
 {
-    private static readonly TimeSpan[] DuplicatePreferenceRetryDelays =
-    [
-        TimeSpan.Zero,
-        TimeSpan.FromMilliseconds(15),
-        TimeSpan.FromMilliseconds(30),
-    ];
-
     public UserPreferenceRepository(TaskdeckDbContext context) : base(context)
     {
     }
@@ -35,71 +29,28 @@ public class UserPreferenceRepository : Repository<UserPreference>, IUserPrefere
         }
 
         var defaultPreference = UserPreference.CreateDefault(userId);
+        var now = defaultPreference.CreatedAt;
 
-        try
-        {
-            await AddAsync(defaultPreference, cancellationToken);
-            await _context.SaveChangesAsync(cancellationToken);
-            return defaultPreference;
-        }
-        catch (DbUpdateException ex)
-        {
-            if (!IsUniqueConstraintViolation(ex))
-            {
-                throw;
-            }
+        // Use INSERT OR IGNORE to atomically skip the insert when a concurrent
+        // request has already created the row, avoiding UNIQUE-constraint
+        // exceptions and the retry loop they previously required.
+        await _context.Database.ExecuteSqlRawAsync(
+            @"INSERT OR IGNORE INTO UserPreferences
+              (Id, UserId, WorkspaceMode, OnboardingVisibility,
+               OnboardingDismissedAt, OnboardingCompletedAt, CreatedAt, UpdatedAt)
+              VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7})",
+            defaultPreference.Id,
+            userId,
+            nameof(WorkspaceMode.Guided),
+            nameof(WorkspaceOnboardingVisibility.Active),
+            (object?)null!,
+            (object?)null!,
+            now,
+            now);
 
-            _context.Entry(defaultPreference).State = EntityState.Detached;
-            var persistedPreference = await WaitForPersistedPreferenceAsync(userId, cancellationToken);
-            if (persistedPreference is not null)
-            {
-                return persistedPreference;
-            }
-
-            throw;
-        }
-    }
-
-    private async Task<UserPreference?> WaitForPersistedPreferenceAsync(
-        Guid userId,
-        CancellationToken cancellationToken)
-    {
-        foreach (var delay in DuplicatePreferenceRetryDelays)
-        {
-            if (delay > TimeSpan.Zero)
-            {
-                await Task.Delay(delay, cancellationToken);
-            }
-
-            var existingPreference = await GetByUserIdAsync(userId, cancellationToken);
-            if (existingPreference is not null)
-            {
-                return existingPreference;
-            }
-        }
-
-        return null;
-    }
-
-    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
-    {
-        Exception? current = exception;
-
-        while (current is not null)
-        {
-            var message = current.Message;
-            if (!string.IsNullOrWhiteSpace(message) &&
-                (message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) ||
-                 message.Contains("UNIQUE KEY constraint", StringComparison.OrdinalIgnoreCase) ||
-                 message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) ||
-                 message.Contains("unique constraint", StringComparison.OrdinalIgnoreCase)))
-            {
-                return true;
-            }
-
-            current = current.InnerException;
-        }
-
-        return false;
+        // The row now exists -- either we just inserted it or another request
+        // did. Query it back so EF Core's change tracker is aware of it.
+        var preference = await GetByUserIdAsync(userId, cancellationToken);
+        return preference!;
     }
 }
