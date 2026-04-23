@@ -222,4 +222,48 @@ onUnmounted(() => {
 .td-dialog-leave-to .td-dialog {
   transform: scale(0.95) translateY(8px);
 }
+
+/* ── Mobile: full-screen dialog ── */
+@media (max-width: 640px) {
+  .td-dialog-backdrop {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .td-dialog {
+    width: 100%;
+    max-width: 100%;
+    /* vh fallback for iOS Safari <= 15.4 which doesn't support dvh; dvh
+     * handles browser chrome collapse so the close/footer stays reachable
+     * even when the URL bar is visible. */
+    max-height: 100vh;
+    height: 100vh;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    /* Respect iOS safe-area insets so footer actions don't sit under the
+     * home indicator and the header doesn't collide with the notch. */
+    padding: max(var(--td-space-4), env(safe-area-inset-top))
+      max(var(--td-space-4), env(safe-area-inset-right))
+      max(var(--td-space-4), env(safe-area-inset-bottom))
+      max(var(--td-space-4), env(safe-area-inset-left));
+  }
+
+  .td-dialog__footer {
+    /* Stack footer actions and keep tap targets at 44px.
+     *
+     * Use `column` (not `column-reverse`) so the visual order matches the
+     * DOM/tab order (WCAG 2.4.3 Focus Order). Slots emit secondary-then-
+     * primary actions (e.g. [Cancel, Delete]); `column-reverse` would show
+     * the primary on top but keyboard focus would still start on the
+     * secondary below it, confusing assistive tech users. */
+    flex-direction: column;
+    gap: var(--td-space-2);
+  }
+
+  .td-dialog__footer :deep(> *) {
+    width: 100%;
+    min-height: 44px;
+  }
+}
 </style>

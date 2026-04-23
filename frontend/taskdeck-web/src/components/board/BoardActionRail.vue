@@ -94,4 +94,20 @@ defineEmits<{
   font-size: var(--td-font-sm);
   color: var(--td-text-tertiary);
 }
+
+/* ── Mobile: 44px tap targets, full-width primary ── */
+@media (max-width: 640px) {
+  .td-action-rail {
+    padding: var(--td-space-3) var(--td-space-4);
+  }
+
+  .td-action-rail__btn {
+    min-height: 44px;
+    flex: 1 1 calc(50% - var(--td-space-2));
+  }
+
+  .td-action-rail__btn--primary {
+    flex: 1 1 100%;
+  }
+}
 </style>

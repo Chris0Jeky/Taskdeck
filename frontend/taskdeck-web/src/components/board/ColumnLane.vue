@@ -551,4 +551,40 @@ function handleCardDragOver(event: DragEvent) {
   font-size: var(--td-font-sm);
   color: var(--td-text-tertiary);
 }
+
+/* ── Mobile: full-width lanes, relaxed heights, larger tap targets ── */
+@media (max-width: 640px) {
+  .td-column-lane {
+    /* Drop the fixed 16rem width — on mobile lanes are full-width in a
+     * vertical stack (see BoardCanvas media query). */
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 auto;
+    width: 100%;
+    padding: var(--td-space-4);
+  }
+
+  .td-column-lane__cards {
+    /* The column canvas already scrolls the page; let the list size to
+     * content so users don't hit nested-scroll traps on touch. */
+    max-height: none;
+    min-height: 0;
+  }
+
+  .td-column-lane__icon-btn,
+  .td-column-lane__add-card-btn {
+    min-height: 44px;
+  }
+
+  .td-column-lane__form-btn {
+    min-height: 44px;
+    flex: 1;
+  }
+
+  .td-column-lane__card-input {
+    /* Prevent iOS zoom on focus: font-size >= 16px. --td-font-lg is 1rem
+     * (16px), so we reuse the design token instead of hardcoding. */
+    font-size: var(--td-font-lg);
+  }
+}
 </style>

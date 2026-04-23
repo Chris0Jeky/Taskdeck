@@ -99,6 +99,28 @@ defineEmits<{
   min-height: 100%;
 }
 
+/* ── Mobile: vertical stack, full-width lanes ── */
+@media (max-width: 640px) {
+  .td-board-canvas {
+    height: auto;
+    /* On mobile the board becomes a vertical list; allow the page to scroll
+     * vertically instead of trapping it inside a fixed-height horizontal
+     * scroller. */
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+
+  .td-board-canvas__lanes {
+    flex-direction: column;
+    gap: var(--td-space-4);
+    padding: var(--td-space-4);
+  }
+
+  .td-board-canvas__empty {
+    padding: var(--td-space-8) var(--td-space-4);
+  }
+}
+
 .td-board-canvas__empty {
   flex: 1;
   display: flex;

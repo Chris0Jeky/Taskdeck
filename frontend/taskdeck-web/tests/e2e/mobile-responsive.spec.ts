@@ -133,6 +133,47 @@ test('@mobile workspace views should render correctly on small screen', async ({
   expect(bodyBox!.width).toBeLessThanOrEqual(viewportSize!.width + 20)
 })
 
+test('@mobile board columns stack vertically without horizontal overflow', async ({ page }) => {
+  // FE-19: On mobile the board must switch from a horizontal kanban to a
+  // vertical card list so core navigation remains usable at ~375-412px.
+  const boardName = `Stack Board ${Date.now()}`
+  const firstColumn = `Backlog ${Date.now()}`
+  const secondColumn = `Doing ${Date.now()}`
+
+  await createBoard(page, boardName)
+  await addColumn(page, firstColumn)
+  await addColumn(page, secondColumn)
+
+  const firstLane = page
+    .locator('[data-column-id]')
+    .filter({ has: page.getByRole('heading', { name: firstColumn, exact: true }) })
+    .first()
+  const secondLane = page
+    .locator('[data-column-id]')
+    .filter({ has: page.getByRole('heading', { name: secondColumn, exact: true }) })
+    .first()
+
+  const firstBox = await firstLane.boundingBox()
+  const secondBox = await secondLane.boundingBox()
+  expect(firstBox).not.toBeNull()
+  expect(secondBox).not.toBeNull()
+
+  // Vertical stack: the second column sits below the first, not beside it.
+  expect(secondBox!.y).toBeGreaterThanOrEqual(firstBox!.y + firstBox!.height - 4)
+
+  // Each lane must fit entirely inside the viewport — no horizontal scroll.
+  const viewportSize = page.viewportSize()
+  expect(viewportSize).not.toBeNull()
+  expect(firstBox!.x + firstBox!.width).toBeLessThanOrEqual(viewportSize!.width + 2)
+  expect(secondBox!.x + secondBox!.width).toBeLessThanOrEqual(viewportSize!.width + 2)
+
+  // Document scroll width must not exceed viewport — confirms no horizontal overflow.
+  const scrollOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
+  expect(scrollOverflow).toBeLessThanOrEqual(2)
+})
+
 test('@mobile capture modal should be usable on small screen', async ({ page }) => {
   await page.goto('/workspace/home')
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
