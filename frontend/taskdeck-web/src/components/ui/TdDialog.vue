@@ -222,4 +222,35 @@ onUnmounted(() => {
 .td-dialog-leave-to .td-dialog {
   transform: scale(0.95) translateY(8px);
 }
+
+/* ── Mobile: full-screen dialog ── */
+@media (max-width: 640px) {
+  .td-dialog-backdrop {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .td-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100vh;
+    /* dvh handles iOS browser chrome collapse so the close/footer stays
+     * reachable even when the URL bar is visible. */
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    padding: var(--td-space-4);
+  }
+
+  .td-dialog__footer {
+    /* Stack footer actions and keep tap targets at 44px. */
+    flex-direction: column-reverse;
+    gap: var(--td-space-2);
+  }
+
+  .td-dialog__footer > * {
+    width: 100%;
+    min-height: 44px;
+  }
+}
 </style>
