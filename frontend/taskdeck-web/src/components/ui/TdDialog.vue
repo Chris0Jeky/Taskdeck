@@ -250,8 +250,14 @@ onUnmounted(() => {
   }
 
   .td-dialog__footer {
-    /* Stack footer actions and keep tap targets at 44px. */
-    flex-direction: column-reverse;
+    /* Stack footer actions and keep tap targets at 44px.
+     *
+     * Use `column` (not `column-reverse`) so the visual order matches the
+     * DOM/tab order (WCAG 2.4.3 Focus Order). Slots emit secondary-then-
+     * primary actions (e.g. [Cancel, Delete]); `column-reverse` would show
+     * the primary on top but keyboard focus would still start on the
+     * secondary below it, confusing assistive tech users. */
+    flex-direction: column;
     gap: var(--td-space-2);
   }
 
