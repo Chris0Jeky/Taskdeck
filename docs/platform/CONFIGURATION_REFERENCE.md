@@ -51,6 +51,7 @@ Source files used to build this reference:
   - [`Analytics`](#analytics)
 - [Persistence and first run](#persistence-and-first-run)
   - [`ConnectionStrings`](#connectionstrings)
+  - [`Database`](#database)
   - [`ExportImport`](#exportimport)
   - [`FirstRun`](#firstrun)
   - [`DevelopmentSandbox`](#developmentsandbox)
@@ -462,6 +463,16 @@ DbContext) and
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `ConnectionStrings:DefaultConnection` | `string` | `Data Source=taskdeck.db` | SQLite connection string. When `FirstRun:ResolveAppDataDbPath` is true and the path is relative, first-run resolves it into the OS LocalAppData directory (`%LOCALAPPDATA%/Taskdeck` on Windows, XDG equivalent on Linux). | Yes (but a default is always supplied) |
+
+### `Database`
+
+Consumed by `Taskdeck.Infrastructure.DependencyInjection.AddInfrastructure`.
+Backs `DatabaseSettings` (`Taskdeck.Application.Services.DatabaseSettings`).
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Database:CommandTimeoutSeconds` | `int` | `30` | Command timeout in seconds for database operations. Valid range: 1--300. | No |
+| `Database:MaxRetryCount` | `int` | `3` | Maximum automatic retries on transient failures. Valid range: 0--10. **Note**: SQLite does not support `EnableRetryOnFailure`; this setting is validated and bound but will only take effect after migrating to PostgreSQL or another provider with retry execution strategies. | No |
 
 ### `ExportImport`
 
