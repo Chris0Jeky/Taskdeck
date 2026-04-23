@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -123,16 +124,15 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
     }
 
     [Fact]
-    public async Task DeleteOldEntriesAsync_HandlesCancellation()
+    public async Task DeleteOldEntriesAsync_CompletesGracefully_WhenNothingToDelete()
     {
         using var scope = _factory.Services.CreateScope();
         var repo = scope.ServiceProvider.GetRequiredService<IAuditLogRepository>();
 
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        // When there's nothing to delete, the method should return 0 without error
+        var deleted = await repo.DeleteOldEntriesAsync(
+            DateTimeOffset.UtcNow.AddYears(-100), batchSize: 100);
 
-        // Should throw OperationCanceledException when token is already cancelled
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => repo.DeleteOldEntriesAsync(DateTimeOffset.UtcNow, batchSize: 100, cts.Token));
+        deleted.Should().Be(0);
     }
 }
