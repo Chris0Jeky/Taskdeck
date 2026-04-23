@@ -116,13 +116,13 @@ describe('MetricsView', () => {
     expect(wrapper.text()).toContain('Select a board above to view its metrics.')
   })
 
-  it('shows loading spinner when loading is true', async () => {
+  it('shows loading skeleton when loading is true', async () => {
     mockMetricsStore.loading = true
     const wrapper = mount(MetricsView)
     await waitForUi()
 
     expect(wrapper.text()).toContain('Loading metrics...')
-    expect(wrapper.find('.td-metrics__spinner').exists()).toBe(true)
+    expect(wrapper.find('.td-metrics__skeleton').exists()).toBe(true)
   })
 
   it('shows error state with retry button', async () => {
