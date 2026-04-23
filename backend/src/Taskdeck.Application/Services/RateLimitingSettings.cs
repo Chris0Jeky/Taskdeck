@@ -24,6 +24,13 @@ public sealed class RateLimitingSettings
 
     [Required]
     public RateLimitPolicySettings McpPerApiKey { get; set; } = new(60, 60);
+
+    /// <summary>
+    /// Rate limit for token refresh endpoint. Tight limit to prevent token farming:
+    /// max 5 refreshes per 60 seconds per user.
+    /// </summary>
+    [Required]
+    public RateLimitPolicySettings TokenRefreshPerUser { get; set; } = new(5, 60);
 }
 
 public sealed class RateLimitPolicySettings
