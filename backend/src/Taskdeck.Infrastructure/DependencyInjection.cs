@@ -20,8 +20,22 @@ public static class DependencyInjection
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? "Data Source=taskdeck.db";
 
+        var databaseSettings = configuration.GetSection("Database").Get<DatabaseSettings>()
+            ?? new DatabaseSettings();
+
         services.AddDbContext<TaskdeckDbContext>(options =>
-            options.UseSqlite(connectionString));
+            options.UseSqlite(connectionString, sqliteOptions =>
+            {
+                // Apply command timeout from configuration (default: 30s).
+                sqliteOptions.CommandTimeout(databaseSettings.CommandTimeoutSeconds);
+
+                // NOTE: SQLite does not support EnableRetryOnFailure via its execution
+                // strategy. The DatabaseSettings.MaxRetryCount setting is validated and
+                // bound but will only take effect when the project migrates to PostgreSQL
+                // or another provider that supports retry execution strategies. At that
+                // point, replace UseSqlite with UseNpgsql and add:
+                //   npgsqlOptions.EnableRetryOnFailure(maxRetryCount: databaseSettings.MaxRetryCount);
+            }));
 
         services.AddScoped<IBoardRepository, BoardRepository>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
