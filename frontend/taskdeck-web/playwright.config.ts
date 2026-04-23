@@ -69,20 +69,27 @@ for (const [index, origin] of backendCorsOrigins.entries()) {
 /*
  * Worker count resolution (TST-60, #867):
  *
- * Default to 2 workers in both CI and local runs when `TASKDECK_E2E_WORKERS`
- * is not set. Two concurrent workers give a meaningful speedup while keeping
- * contention on the single SQLite E2E database and single backend process
- * bounded. Raising the count further trades wall-clock time for increased
- * risk of SQLITE_BUSY under bursty writes, so we intentionally cap even local
- * runs rather than inheriting Playwright's default (~50% of logical cores),
- * which on a developer laptop fans out well beyond the contention budget this
- * config was tuned for.
+ * CI default is 1 worker — conservative, matches the pre-TST-60 status quo,
+ * and avoids exposing latent Vue-re-render / Playwright-actionability races
+ * that surfaced under 2-worker parallel CPU contention (see #867 PR comments
+ * for the WIP-limit smoke test case). Local default is 2 workers — a modest
+ * dev-box speedup inside the contention budget this config was tuned for.
+ * In both cases we intentionally cap below Playwright's own default
+ * (~50% of logical cores), which fans out well past what a single SQLite
+ * E2E database can absorb without SQLITE_BUSY bursts.
  *
- * Override via TASKDECK_E2E_WORKERS if needed (integer >= 1); developers who
- * want full-parallel exploration can set e.g. TASKDECK_E2E_WORKERS=8.
+ * Override via TASKDECK_E2E_WORKERS if needed (integer >= 1). CI consumers
+ * that want to adopt parallel runs should flip their workflow env var, so
+ * any fallout is scoped to the workflow opting in. Shipping parallel-safe
+ * infrastructure (this config, SQLite connection tuning, per-test user
+ * isolation, hardened WIP-limit spec) is the TST-60 deliverable; meeting
+ * the "40% runtime reduction" acceptance criterion requires follow-up work
+ * on the remaining Vue/actionability races and is tracked for a later PR.
  */
-const defaultWorkerCount = 2
-const e2eWorkers = resolveWorkers(process.env.TASKDECK_E2E_WORKERS, defaultWorkerCount)
+const ciDefaultWorkerCount = 1
+const localDefaultWorkerCount = 2
+const effectiveDefaultWorkerCount = process.env.CI ? ciDefaultWorkerCount : localDefaultWorkerCount
+const e2eWorkers = resolveWorkers(process.env.TASKDECK_E2E_WORKERS, effectiveDefaultWorkerCount)
 
 export default defineConfig({
   testDir: './tests/e2e',
