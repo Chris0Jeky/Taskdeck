@@ -2,6 +2,7 @@
 import { computed, onActivated, onMounted } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import { TdSkeleton } from '../components/ui'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
@@ -154,8 +155,50 @@ onActivated(refreshHomeSummary)
       </template>
     </WorkspaceHelpCallout>
 
-    <div v-if="workspace.homeLoading" class="td-panel td-home__placeholder" aria-live="polite">
-      Loading your workspace summary...
+    <div v-if="workspace.homeLoading" class="td-home__skeleton" aria-live="polite" role="status">
+      <span class="sr-only">Loading your workspace summary...</span>
+      <div class="td-home__grid">
+        <!-- Needs attention skeleton -->
+        <div class="td-panel td-home-card">
+          <div class="td-home-card__header">
+            <TdSkeleton width="140px" height="16px" />
+            <TdSkeleton width="100px" height="20px" :rounded="false" />
+          </div>
+          <div class="td-home-card__stats">
+            <div v-for="n in 4" :key="n" class="td-home-card__stat">
+              <TdSkeleton width="40px" height="28px" />
+              <TdSkeleton width="80px" height="12px" />
+              <TdSkeleton width="100%" height="10px" />
+            </div>
+          </div>
+        </div>
+        <!-- Next step skeleton -->
+        <div class="td-panel td-home-card">
+          <div class="td-home-card__header">
+            <TdSkeleton width="100px" height="16px" />
+            <TdSkeleton width="90px" height="20px" :rounded="false" />
+          </div>
+          <div class="td-home-card__actions">
+            <div v-for="n in 2" :key="n" class="td-home__skeleton-action">
+              <TdSkeleton width="70%" height="14px" />
+              <TdSkeleton width="90%" height="10px" />
+            </div>
+          </div>
+        </div>
+        <!-- Boards skeleton -->
+        <div class="td-panel td-home-card">
+          <div class="td-home-card__header">
+            <TdSkeleton width="60px" height="16px" />
+            <TdSkeleton width="110px" height="20px" :rounded="false" />
+          </div>
+          <div class="td-home-card__board-list">
+            <div v-for="n in 3" :key="n" class="td-home__skeleton-board">
+              <TdSkeleton width="60%" height="14px" />
+              <TdSkeleton width="90%" height="10px" />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-else-if="workspace.homeError" class="td-alert td-alert--error" role="alert">
@@ -353,9 +396,16 @@ onActivated(refreshHomeSummary)
   justify-content: flex-end;
 }
 
-/* ─── Placeholder / Loading ─── */
-.td-home__placeholder {
-  color: var(--td-text-tertiary);
+/* ─── Skeleton / Loading ─── */
+.td-home__skeleton-action,
+.td-home__skeleton-board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: var(--td-space-3);
+  border-radius: var(--td-radius-md);
+  border: 0.5px solid var(--td-border-ghost);
+  background: var(--td-surface-container);
 }
 
 /* .td-panel, .td-section-title, .td-section-desc, .td-alert, .td-btn
