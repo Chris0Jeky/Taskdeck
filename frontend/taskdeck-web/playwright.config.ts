@@ -19,18 +19,23 @@ const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
  * data is already isolated. The remaining contention is at the SQLite engine level:
  * parallel writes on the same database file can briefly block each other.
  *
- *   - Cache=Shared        — connections in the backend share a page cache, reducing
- *                           read contention.
  *   - Pooling=True        — reuse connection objects (also Microsoft.Data.Sqlite default).
  *   - Default Timeout=30  — wait up to 30 seconds on a busy lock before surfacing
  *                           SQLITE_BUSY. Parallel E2E traffic is bursty but short,
  *                           so a generous wait masks transient contention without
  *                           hiding genuine deadlocks (real deadlocks still time out).
  *
+ * We intentionally do NOT set `Cache=Shared`: shared-cache mode adds internal
+ * table-level locking that can increase contention (and SQLITE_BUSY frequency)
+ * in multi-threaded scenarios rather than reduce it. Future work may enable WAL
+ * (`PRAGMA journal_mode=WAL;`) in the backend for genuine concurrent-read
+ * throughput; until then the default private-cache mode plus a generous busy
+ * timeout is the safer default.
+ *
  * These are additive: they do not alter the on-disk format or the test database path,
  * and they are scoped to the E2E backend process launched by this config.
  */
-const e2eSqliteConnectionOptions = 'Cache=Shared;Pooling=True;Default Timeout=30'
+const e2eSqliteConnectionOptions = 'Pooling=True;Default Timeout=30'
 const e2eConnectionString = `Data Source=${e2eDbPath};${e2eSqliteConnectionOptions}`
 const defaultApiBaseUrl = 'http://localhost:5000/api'
 const demoBackendLlmEnv = resolveDemoBackendLlmEnv(process.env)
