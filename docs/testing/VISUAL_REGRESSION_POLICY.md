@@ -29,7 +29,7 @@ The visual regression suite covers these critical UI areas:
 | Settings (profile) | `settings-view.visual.spec.ts` | `settings-profile.png` |
 | Card modal (edit) | `board-modals.visual.spec.ts` | `card-modal-edit.png` |
 | Column edit modal | `board-modals.visual.spec.ts` | `column-edit-modal.png` |
-| Starter pack catalog modal | `board-modals.visual.spec.ts` | `starter-pack-catalog-modal.png` |
+| Starter pack modal (import tab) | `board-modals.visual.spec.ts` | `starter-pack-modal-import.png` |
 | Capture modal (typed) | `capture-modal.visual.spec.ts` | `capture-modal-typed.png` |
 | Board toolbar | `board-components.visual.spec.ts` | `board-toolbar.png` |
 | Board action rail | `board-components.visual.spec.ts` | `board-action-rail.png` |

@@ -49,16 +49,21 @@ test('column edit modal', async ({ page }) => {
   await expect(page).toHaveScreenshot('column-edit-modal')
 })
 
-test('starter pack catalog modal', async ({ page }) => {
+test('starter pack modal json import tab', async ({ page }) => {
   await createBoard(page, 'Visual Board Modals')
 
   await page.getByRole('button', { name: 'Starter Packs' }).click()
-  // The modal contains its own search input with a known id.
-  await expect(page.locator('#starter-pack-search')).toBeVisible()
-  // Wait for catalog fetch to settle so we don't capture the loading state.
+  // We capture the JSON Import tab rather than the default Catalog tab:
+  // the catalog is server-provided and its contents (and count) can
+  // change as new packs are added, which would make the baseline
+  // unstable. The JSON Import tab is entirely client-rendered static
+  // markup so it provides a stable baseline for the modal chrome
+  // (header, tab bar, two-column layout, form primitives).
+  await page.getByTestId('tab-import').click()
+  await expect(page.getByTestId('import-json-textarea')).toBeVisible()
   await page.waitForLoadState('networkidle')
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('starter-pack-catalog-modal')
+  await expect(page).toHaveScreenshot('starter-pack-modal-import')
 })
