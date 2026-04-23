@@ -12,7 +12,7 @@
  */
 import { onErrorCaptured, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { reportToSentry } from '../utils/errorReporting'
+import { reportToSentry, logError } from '../utils/errorReporting'
 
 const props = withDefaults(
   defineProps<{
@@ -102,7 +102,7 @@ onErrorCaptured((err, _instance, info) => {
   crashInfo.value = info
 
   // Always log so errors are not silently swallowed.
-  console.error('[ErrorBoundary] caught error', err, info)
+  logError('[ErrorBoundary] caught error', err)
 
   // Forward to Sentry via the centralized utility so the lifecycle `info`
   // string is preserved and reporting behavior stays consistent across the
