@@ -40,6 +40,7 @@ public static class OptionsValidationRegistration
         // ── Settings from WorkerRegistration ────────────────────────────────
 
         services.RegisterValidatedOptions<WorkerSettings>(configuration, "Workers");
+        services.RegisterValidatedOptions<AuditRetentionSettings>(configuration, "AuditRetention");
 
         // ── Settings from CorsRegistration (Cache is used in infrastructure) ─
 
