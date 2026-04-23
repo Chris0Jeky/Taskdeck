@@ -7,6 +7,7 @@ import TdDialog from '../ui/TdDialog.vue'
 import type { Card, CardCaptureProvenance, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
 import { normalizeProposalStatus } from '../../utils/automation'
+import { logError } from '../../utils/errorReporting'
 
 const props = defineProps<{
   card: Card
@@ -160,7 +161,7 @@ async function handleSave() {
     emit('updated')
     emit('close')
   } catch (error) {
-    console.error('Failed to update card:', error)
+    logError('Failed to update card:', error)
   }
 }
 
@@ -181,7 +182,7 @@ async function handleDeleteConfirm() {
     emit('updated')
     emit('close')
   } catch (error) {
-    console.error('Failed to delete card:', error)
+    logError('Failed to delete card:', error)
   } finally {
     isDeleting.value = false
   }
@@ -224,7 +225,7 @@ async function handleAddComment(parentCommentId?: string) {
       newCommentContent.value = ''
     }
   } catch (error) {
-    console.error('Failed to add comment:', error)
+    logError('Failed to add comment:', error)
   }
 }
 
@@ -252,7 +253,7 @@ async function handleSaveEditComment(commentId: string) {
     await boardStore.updateCardComment(props.card.boardId, props.card.id, commentId, { content })
     handleCancelEditComment()
   } catch (error) {
-    console.error('Failed to update comment:', error)
+    logError('Failed to update comment:', error)
   }
 }
 
@@ -268,7 +269,7 @@ async function handleDeleteComment(comment: CardComment) {
   try {
     await boardStore.deleteCardComment(props.card.boardId, props.card.id, comment.id)
   } catch (error) {
-    console.error('Failed to delete comment:', error)
+    logError('Failed to delete comment:', error)
   }
 }
 
