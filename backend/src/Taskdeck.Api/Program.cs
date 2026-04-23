@@ -105,6 +105,17 @@ if (args.Contains("--mcp"))
             mcpHttpBuilder.Services.AddTaskdeckRateLimiting(mcpRateLimitingSettings);
         }
 
+        // OpenTelemetry: export MCP activity source and meter so spans/metrics
+        // are not silently dropped in standalone HTTP mode.
+        var mcpObservabilitySettings = mcpHttpBuilder.Configuration
+            .GetSection("Observability")
+            .Get<Taskdeck.Application.Services.ObservabilitySettings>()
+            ?? new Taskdeck.Application.Services.ObservabilitySettings();
+        mcpHttpBuilder.Services.AddTaskdeckObservability(mcpObservabilitySettings);
+
+        // MCP telemetry (operation logger, etc.).
+        mcpHttpBuilder.Services.AddMcpTelemetry();
+
         // MCP server: HTTP transport + all resources and tools.
         mcpHttpBuilder.Services.AddMcpServer()
             .WithHttpTransport()
@@ -123,6 +134,14 @@ if (args.Contains("--mcp"))
             var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
             dbContext.Database.Migrate();
         }
+
+        // Correlation ID propagation: honours client X-Request-Id header.
+        mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.CorrelationIdMiddleware>();
+
+        // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
+        // Runs before ApiKeyMiddleware so it captures all requests including those
+        // rejected with 401 (missing/invalid/revoked API keys).
+        mcpHttpApp.UseMiddleware<McpTelemetryMiddleware>();
 
         // API key authentication for MCP requests.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.ApiKeyMiddleware>();
@@ -195,6 +214,9 @@ if (args.Contains("--mcp"))
 
             // Stdio identity: maps the OS process owner to the local default user.
             services.AddScoped<IUserContextProvider, StdioUserContextProvider>();
+
+            // MCP telemetry (operation logger, etc.).
+            services.AddMcpTelemetry();
 
             // MCP server: stdio transport + all resources and tools.
             services.AddMcpServer()
@@ -325,6 +347,7 @@ builder.Services.AddScoped<Taskdeck.Application.Interfaces.IUserContext, Taskdec
 // Register MCP HTTP transport (Streamable HTTP alongside REST on the same Kestrel instance).
 // The HttpUserContextProvider resolves user identity from the API key set by ApiKeyMiddleware.
 builder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.HttpUserContextProvider>();
+builder.Services.AddMcpTelemetry();
 builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithResources<BoardResources>()

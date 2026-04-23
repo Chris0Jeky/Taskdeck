@@ -12,4 +12,11 @@ public static class TaskdeckTelemetryTags
     public const string LlmRequestId = "taskdeck.llm.request_id";
     public const string UserId = "taskdeck.user.id";
     public const string BoardId = "taskdeck.board.id";
+
+    // ── MCP-specific tags ───────────────────────────────────────────────────
+    public const string McpOperationType = "taskdeck.mcp.operation_type";
+    public const string McpOperationName = "taskdeck.mcp.operation_name";
+    public const string McpTransport = "taskdeck.mcp.transport";
+    public const string McpErrorType = "taskdeck.mcp.error_type";
+    public const string McpSuccess = "taskdeck.mcp.success";
 }
