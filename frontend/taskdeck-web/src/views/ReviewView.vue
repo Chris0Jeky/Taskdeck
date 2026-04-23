@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import ReviewHeader from '../components/review/ReviewHeader.vue'
 import ReviewSummaryCards from '../components/review/ReviewSummaryCards.vue'
@@ -68,6 +69,39 @@ const activeReviewIndex = computed(() => {
   if (reviewVirtualRows.value.length === 0) return -1
   return reviewVirtualRows.value[0]?.index ?? -1
 })
+
+const route = useRoute()
+
+/**
+ * Scroll the virtualizer to the proposal targeted by the URL hash.
+ * This ensures the targeted proposal is rendered in the virtual window
+ * before the composable's scrollToProposalFromHash tries getElementById.
+ */
+function scrollVirtualizerToHashProposal() {
+  const hash = route.hash
+  if (!hash.startsWith('#proposal-')) return
+  const rawId = hash.slice('#proposal-'.length).trim()
+  if (!rawId) return
+  let proposalId: string
+  try {
+    proposalId = decodeURIComponent(rawId)
+  } catch {
+    return
+  }
+  const index = visibleProposals.value.findIndex((p) => p.id === proposalId)
+  if (index >= 0) {
+    _vl.scrollToIndex(index)
+  }
+}
+
+watch(
+  () => [route.hash, visibleProposals.value.length] as const,
+  async () => {
+    scrollVirtualizerToHashProposal()
+    await nextTick()
+    scrollVirtualizerToHashProposal()
+  },
+)
 
 function handleReviewKeydown(event: KeyboardEvent) {
   if (event.key === 'ArrowDown') {
