@@ -680,6 +680,13 @@ Delivered in the latest cycle:
     - **CI-02 Gitleaks secrets detection** (`#871`/`#902`): `.gitleaks.toml` extends default rules with project-specific allowlists (test fixtures, dev placeholders, CI-only vars); `.gitleaksignore`; reusable workflow `reusable-gitleaks.yml` with `scan-mode` (`pr`/`full`) + `fail-on-findings` toggle; action pinned to commit SHA `ff98106e` (not a mutable tag); non-blocking advisory scan on every PR via `ci-extended.yml`; blocking full-history scan via CLI (event-agnostic; works on release events) in `ci-release.yml`; SARIF artefact uploaded; CI topology comment updated
     - total impact on audit posture: all 5 Tier 1 ("Before Any External User") items from `docs/AUDIT.md` are now resolved (response compression still outstanding outside this wave); 4 of 5 Tier 2 items resolved (view decomposition and error boundary remain); SSRF + dev-secret + content-validation gaps from the security audit closed
 
+136. Mobile, security, legal, and testing expansion wave (2026-04-23, PRs `#944`–`#949`, 5 PRs with adversarial review per PR):
+    - **FE-19 mobile-responsive board, toolbar, and dialog** (`#860`/`#944`): board columns stack vertically on ≤640px; `TdDialog` full-bleed with `100dvh` at mobile; 44×44px tap targets on toolbar and action rail; `--td-font-lg` token for iOS zoom prevention; `@mobile` Playwright test; WCAG 2.4.3 footer tab-order fix; scoped slot CSS penetration fix (`:deep(> *)`) and `overflow-x: clip` for spec-correct mobile overflow
+    - **SEC-29 CSP style-src tightening (partial)** (`#855`/`#945`): removed `'unsafe-inline'` from `style-src` in API CSP; `style-src-elem 'self'` in reverse-proxy blocks inline `<style>` injection; regression test added; 4 docs updated; follow-up: migrate 27 `:style` binding files to CSS custom properties
+    - **Legal document drafts** (`#548`/`#946`): 5 DRAFT documents in `docs/legal/` — Privacy Policy, Terms of Service, Sub-Processors (with conditional Sentry), Cookie Policy (concrete localStorage keys, OAuth cookie disclosure), and README with launch checklist; grounded in actual codebase behavior with `[LEGAL REVIEW REQUIRED]` markers
+    - **TST-59 visual regression expansion** (`#865`/`#948`): 15 new visual regression specs (total 20 components); clock pinning, timestamp masking, font-load determinism; redundant networkidle waits removed
+    - **TST-60 E2E parallelization** (`#867`/`#949`): `fullyParallel: true` with 2-worker default; `Cache=Shared` dropped; idempotent `.check()` for WIP toggle; `Default Timeout=30` comment corrected; WAL mode documented as follow-up
+
 ## Current Planning Pivot (2026-03-07)
 
 The 2026-03-06 MVP expansion review packages change the next-cycle emphasis without invalidating the current architecture.
@@ -873,7 +880,7 @@ Master tracker: `#531`.
 
 - `v0.3.0` **In Your Pocket** (target: Week 6-9):
   - ~~PWA manifest + service worker (`#540` Ã¢â€ â€™ `#541`, `#542`)~~ Ã¢â‚¬â€ baseline delivered in `#95`: Workbox generateSW with precaching, runtime caching, SPA navigateFallback, offline banner, SW update prompt, installability-ready manifest
-  - mobile-responsive CSS for core flows (`#543`)
+  - ~~mobile-responsive CSS for core flows (`#543`)~~ — baseline delivered in `#944` (FE-19): board vertical stacking, TdDialog full-bleed, 44px tap targets, iOS zoom prevention; secondary-view mobile sweep remains follow-up
   - bottom tab navigation for mobile
   - touch-optimized capture modal
   - mobile board view (card list)

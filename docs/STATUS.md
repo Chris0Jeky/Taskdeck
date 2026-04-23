@@ -2,7 +2,7 @@
 
 Last Updated: 2026-04-23
 
-Post-merge sweep for PRs #936--#942.
+Post-merge sweep for PRs #936--#949.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -174,6 +174,12 @@ Current constraints are mostly hardening and consistency:
   - **Test count recertification** (`#930`/`#940`): TESTING_GUIDE.md updated with verified counts — backend 4,979, frontend unit 2,607, combined 7,586+
   - **UserPreferences race fix** (`#931`/`#941`): replaced try-catch-retry (~105 lines) with atomic `INSERT OR IGNORE` SQLite upsert (~15 lines) in `UserPreferenceRepository`; 4 concurrency tests added
   - **Pre-existing CI fix** (`#942`): resolved 5 API Integration test failures — `Connectors:EncryptionKey` added to Production-mode test configuration; MCP telemetry test assertion index corrected
+- Mobile, security, legal, and testing expansion wave (2026-04-23, PRs `#944`–`#949`):
+  - **FE-19 mobile-responsive board, toolbar, and dialog** (`#860`/`#944`): board view stacks columns vertically on ≤640px viewports with page-level scroll; `TdDialog` becomes full-bleed at ≤640px with `100dvh` height and stacked footer actions (cascades to all consumers: CardModal, BoardSettingsModal, LabelManager, StarterPackCatalog, KeyboardHelp); board toolbar and action rail enforce 44×44px tap targets on mobile; `ColumnLane` uses `--td-font-lg` token for 16px font-size to prevent iOS zoom; new `@mobile` Playwright test; WCAG 2.4.3 dialog footer tab-order fix; adversarial review addressed scoped slot CSS penetration and overflow-x interaction
+  - **SEC-29 CSP style-src tightening (partial)** (`#855`/`#945`): removed `'unsafe-inline'` from `style-src` in API CSP entirely; added `style-src-elem 'self'` in reverse-proxy CSP to block inline `<style>` injection in modern browsers while preserving `style-src 'self' 'unsafe-inline'` fallback for Vue reactive `:style` bindings; new regression test `SecurityHeaders_CspStyleSrc_ShouldNotAllowUnsafeInline`; docs updated across `SECURITY_OWASP_BASELINE.md`, `CONFIGURATION_REFERENCE.md`, `AUDIT.md`, `HARDENING_AND_PERFORMANCE.md`; follow-up: migrate 27 files with `:style` bindings to CSS custom properties so `'unsafe-inline'` can be dropped entirely
+  - **Legal document drafts** (`#548`/`#946`): `docs/legal/` with 5 pre-launch DRAFT documents — Privacy Policy (GDPR/CCPA-aligned, grounded in actual `DataExportService` payload), Terms of Service, Sub-Processors list (including conditional Sentry entry), Cookie Policy (with concrete `localStorage` key names and OAuth `.Taskdeck.ExternalAuth` cookie disclosure), and README with launch checklist; all marked `DRAFT — NOT LEGALLY BINDING` with `[LEGAL REVIEW REQUIRED]` on unverified claims; adversarial review corrected export scope claims, added missing localStorage entries, and flagged proposal/MFA credential retention gaps
+  - **TST-59 visual regression expansion** (`#865`/`#948`): 15 additional Playwright visual regression specs bringing total from 5 to 20 components — auth views, TodayView, CalendarView, MetricsView, ReviewView, NotificationInboxView, SettingsView, CardModal, ColumnEditModal, board toolbar, capture/inbox views; clock pinning for calendar snapshots; timestamp masking for modal metadata; `document.fonts.ready` wait for font-load determinism; redundant `networkidle` waits removed; policy doc updated
+  - **TST-60 E2E parallelization** (`#867`/`#949`): switched Playwright E2E from serial to parallel with `fullyParallel: true`; default 2 workers for both local and CI (overridable via `TASKDECK_E2E_WORKERS`); SQLite connection string uses `Pooling=True;Default Timeout=30` (dropped `Cache=Shared` per review — shared-cache mode increases contention); WIP-limit test fixed with idempotent `.check()` to prevent toggle oscillation under CPU contention; WAL mode documented as future follow-up
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -277,7 +283,7 @@ Direction guardrails (explicit):
   - appshell premium reskin: shell sidebar, topbar, command palette, and keyboard help components now use `--td-*` design token system with focus-visible accessibility rings and glass morphism effects
   - board/card surface polish: board canvas, toolbar, action rail, column lanes, and card components now use design-token-based styling with standardized interactive states and accessibility focus rings
   - centralized JWT token storage abstraction (`utils/tokenStorage.ts`) with base64url + JSON payload validation, `isValidJwtStructure` guard, and `clearAll` helper; session-token storage ADR at `docs/analysis/session-token-storage-adr.md`
-  - CSP hardening: removed `unsafe-inline` from `script-src` in security headers middleware; OWASP baseline doc updated
+  - CSP hardening: removed `unsafe-inline` from `script-src` in security headers middleware; removed `unsafe-inline` from `style-src` in API CSP (SEC-29 partial); reverse-proxy CSP uses `style-src-elem 'self'` to block inline `<style>` injection in modern browsers; OWASP baseline doc updated
   - session timeout warning: `useSessionTimeout` composable with configurable warning-before-expiry, countdown timer, and extend/logout actions; `SessionTimeoutWarning.vue` wired into `App.vue`; backend `POST /api/auth/refresh` now implemented with rate limiting and token invalidation enforcement
   - performance instrumentation composable (`usePerformanceMark`) with `PERF_BUDGETS` constants; 7 latency thresholds documented in `docs/PERFORMANCE_BUDGETS.md`; 16 workspace route views converted to lazy `() => import()` for initial bundle reduction
   - WCAG 2.1 AA accessibility baseline: skip-to-content link, `sr-only` utility, `eslint-plugin-vuejs-accessibility` rules, ARIA landmarks and roles across HomeView/TodayView/ReviewView/InboxView/CaptureModal/ToastContainer/BoardView, and Playwright axe-core E2E regression for 6 core views
