@@ -233,13 +233,20 @@ onUnmounted(() => {
   .td-dialog {
     width: 100%;
     max-width: 100%;
+    /* vh fallback for iOS Safari <= 15.4 which doesn't support dvh; dvh
+     * handles browser chrome collapse so the close/footer stays reachable
+     * even when the URL bar is visible. */
     max-height: 100vh;
-    /* dvh handles iOS browser chrome collapse so the close/footer stays
-     * reachable even when the URL bar is visible. */
+    height: 100vh;
     max-height: 100dvh;
     height: 100dvh;
     border-radius: 0;
-    padding: var(--td-space-4);
+    /* Respect iOS safe-area insets so footer actions don't sit under the
+     * home indicator and the header doesn't collide with the notch. */
+    padding: max(var(--td-space-4), env(safe-area-inset-top))
+      max(var(--td-space-4), env(safe-area-inset-right))
+      max(var(--td-space-4), env(safe-area-inset-bottom))
+      max(var(--td-space-4), env(safe-area-inset-left));
   }
 
   .td-dialog__footer {
