@@ -14,20 +14,42 @@
 
 ## 1. Summary
 
-Taskdeck's shipped frontend **does not set cookies** for authentication,
-analytics, or advertising. Instead, it uses the browser's `localStorage` for
-a small number of strictly functional items. As a result, a cookie-consent
-banner is not strictly required for the product's default surface, because
-there is no non-essential cookie to consent to.
+Taskdeck's shipped frontend **does not set cookies** for day-to-day
+authentication, analytics, or advertising. It uses the browser's `localStorage`
+for a small number of strictly functional items (Section 3). However, the
+backend **does** set one strictly necessary, short-lived HTTP cookie during
+OAuth / OIDC sign-in handshakes (Section 2). No non-essential cookies are set,
+so a cookie-consent banner is not strictly required for the product's default
+surface.
 
 `[LEGAL REVIEW REQUIRED]` — some EU DPAs apply ePrivacy / PECR-style consent
 requirements to any non-essential *client-side storage*, not only to cookies.
 Operators publishing this document should confirm with counsel whether their
-jurisdiction requires consent for the non-essential items in Section 3. The
+jurisdiction requires consent for the non-essential items in Section 4. The
 default configuration only uses *essential* items, so the question is only
 live if the operator enables analytics.
 
-## 2. Essential browser storage (default, active)
+## 2. Strictly necessary cookies
+
+The Taskdeck backend sets a single HTTP cookie during OAuth / OIDC sign-in
+flows. This cookie is strictly necessary for the external-authentication
+handshake to complete and is exempt from consent under ePrivacy rules.
+
+| Field | Value |
+|---|---|
+| Name | `.Taskdeck.ExternalAuth` |
+| Purpose | Holds temporary authentication state while the browser is redirected to an external identity provider (e.g., GitHub, a configured OIDC provider) and back. Without it, the OAuth handshake cannot correlate the redirect response with the original sign-in request. |
+| Set by | ASP.NET Core cookie authentication middleware (`AuthenticationRegistration.cs`). |
+| Type | HTTP cookie (server-set via `Set-Cookie` header). |
+| Attributes | `HttpOnly`, `Secure` (when served over HTTPS), `SameSite=Lax`. |
+| Lifetime | 5 minutes (absolute expiry, no sliding renewal). The cookie is consumed and cleared once the handshake completes. |
+| Sent to third parties | No. The cookie is scoped to the Taskdeck host and is never shared with external services. |
+| Default state | **Only set when an OAuth / OIDC provider is configured and a user initiates external sign-in.** Not set during local username/password authentication. |
+
+If the operator does not configure any OAuth or OIDC provider, this cookie is
+never issued.
+
+## 3. Essential browser storage (default, active)
 
 These items are necessary for Taskdeck to function as the user requested.
 They are set in `localStorage` under predictable keys.
@@ -46,7 +68,7 @@ They are set in `localStorage` under predictable keys.
 None of the items above are sent to third parties. They are all read and
 written by the Taskdeck frontend, and they do not act as tracking identifiers.
 
-## 3. Non-essential browser storage (off by default, opt-in)
+## 4. Non-essential browser storage (off by default, opt-in)
 
 The following items exist in the codebase but are **off unless explicitly
 enabled**. If an operator enables analytics, the relevant items become active,
@@ -60,13 +82,13 @@ and consent handling must be followed.
 If the operator enables analytics:
 
 1. Update `SUB_PROCESSORS.md` with the analytics vendor.
-2. Update Section 3 of this file to describe the analytics surface in concrete
+2. Update Section 4 of this file to describe the analytics surface in concrete
    terms (vendor, categories of data collected, retention).
 3. Add a consent banner/UI that matches the operator's jurisdiction's rules.
 4. Confirm that the analytics vendor is cookie-free if this document continues
    to claim so, and remove the "cookie-free" claim otherwise.
 
-## 4. Third-party cookies set by sub-processors
+## 5. Third-party cookies set by sub-processors
 
 If the operator enables OAuth sign-in (e.g., GitHub), the third party may set
 cookies on its own domains during the OAuth redirect flow. Those cookies are
@@ -78,7 +100,7 @@ infrastructure layer may set essential infrastructure cookies (e.g., for
 load-balancer stickiness or bot protection). `[LEGAL REVIEW REQUIRED]` —
 operators should enumerate any such cookies here before publishing.
 
-## 5. Your choices
+## 6. Your choices
 
 - You can clear Taskdeck's essential storage by signing out or by clearing
   site data in your browser. Doing so will sign you out; your server-side
@@ -89,7 +111,7 @@ operators should enumerate any such cookies here before publishing.
 - You can request data export and account deletion via the endpoints
   described in the Privacy Policy (Section 7).
 
-## 6. Changes to this policy
+## 7. Changes to this policy
 
 Material changes (e.g., introduction of new analytics, a new category of
 client-side storage, a change from `localStorage` to cookies) will be

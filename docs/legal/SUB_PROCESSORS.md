@@ -119,10 +119,24 @@ generic OIDC integration.
 
 ## 6. Error and log aggregation
 
+### 6a. Sentry (optional, off by default)
+
+| Field | Value |
+|---|---|
+| Name | Functional Software, Inc. (Sentry) |
+| Purpose | Error tracking and exception monitoring for backend and frontend. Captures unhandled exceptions, error diagnostics, and stack traces to help the operator identify and resolve production issues. |
+| Data categories | Error/exception messages (PII-scrubbed before transmission — emails and JWTs are redacted by a `BeforeSend` hook), stack traces, error context (breadcrumbs with sensitive headers stripped), request metadata (HTTP method, URL path, status code). `SendDefaultPii` is hard-coded to `false`, so usernames, emails, IP addresses, and request bodies are never sent. Hostnames are suppressed (`ServerName` set to empty). On the frontend, Sentry is detected at runtime via `window.Sentry` — no Sentry SDK is bundled; the integration is opt-in and runtime-detected. |
+| Region | Subject to Sentry's processing regions under its DPA. Sentry offers US and EU data residency; operator must select at provisioning time. |
+| Gated by | **Backend:** `Sentry:Enabled = true` and a valid `Sentry:Dsn` in configuration (see `SentryRegistration.cs`, `docs/platform/CONFIGURATION_REFERENCE.md`). **Frontend:** operator must load the Sentry browser SDK on the host page; the Vue app detects `window.Sentry` at runtime and forwards exceptions if present (see `utils/errorReporting.ts`). |
+| Default state | **Off.** Out-of-the-box deployments do not enable Sentry on either backend or frontend. No data is sent to Sentry unless the operator explicitly enables it. |
+| DPA | `[REQUIRED BEFORE LAUNCH if Sentry is enabled]` |
+
+### 6b. Other log aggregation (operator-chosen)
+
 | Field | Value |
 |---|---|
 | Name | `[NONE BY DEFAULT]` |
-| Purpose | Centralized error/log collection for operations. |
+| Purpose | Centralized log collection for operations (beyond error tracking). |
 | Data categories | Operational logs (request IDs, timings, error diagnostics, redacted user identifiers). |
 | Region | N/A until a provider is chosen. |
 | Gated by | Operator deployment choice (external to the application code). |

@@ -194,6 +194,24 @@ primitives that support these rights today (delivery `#83` / `#666` in
   (username/email replaced with deleted-`<random>` placeholders), and
   invalidates previously-issued JWTs so stale tokens cannot be replayed.
 
+  `[LEGAL REVIEW REQUIRED]` — **Known deletion-scope gaps.** The current
+  `AccountDeletionService` implementation does **not** delete or anonymize the
+  following categories of user-linked data during account deletion:
+    - **Automation proposals.** Proposals generated for the user (stored in the
+      Proposals table with the user's ID) are retained after deletion. These
+      may contain board-context summaries and LLM-generated content attributable
+      to the user.
+    - **MFA credentials.** TOTP secrets and recovery codes associated with the
+      user's multi-factor authentication setup are not explicitly removed by the
+      deletion flow. While the account is deactivated and PII is scrubbed, the
+      cryptographic MFA material may persist in the database.
+
+  Both gaps must be resolved in the codebase before the erasure claim in this
+  policy can be considered complete. Operators should not publish this policy
+  without either (a) patching the deletion service to cover these records, or
+  (b) disclosing the retention to users and documenting the lawful basis for
+  keeping the data post-deletion.
+
 Other rights (access, rectification, restriction, objection) are exercisable
 by writing to the contact in Section 9. `[LEGAL REVIEW REQUIRED]` — operators
 must define concrete SLAs (e.g., respond within 30 days) and a verification
