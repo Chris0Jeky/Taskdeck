@@ -21,7 +21,7 @@ Companion Active Docs:
   - Integration (Testcontainers): 20 passed
 - Frontend unit: **2,607 passing** across 214 test files -- verified 2026-04-23 via `npx vitest --run --reporter=verbose` on `main`
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
-- Combined automated total: **7,586 passing** (backend 4,979 + frontend unit 2,607 + E2E)
+- Combined automated total: **7,586+ passing** (backend 4,979 + frontend unit 2,607 + E2E)
 
 Verification note:
 - backend total of 4,979 passing (5 failing, 2 skipped; 4,986 total) recertified 2026-04-23 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` at commit `97d4856c`
@@ -98,7 +98,7 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Options
 
 ### CLI Tests Restored (TST-58, `#853`/`#906`)
 
-CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite now totals approximately **78 tests across 10 files**:
+CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite totalled approximately **78 tests across 10 files** at time of this wave (see [Current Verified Totals](#current-verified-totals-2026-04-23) for latest count of 82):
 
 | File | Tests |
 |------|-------|
