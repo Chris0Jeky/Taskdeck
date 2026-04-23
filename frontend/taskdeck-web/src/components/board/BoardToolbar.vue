@@ -340,4 +340,41 @@ defineEmits<{
   outline: none;
   box-shadow: var(--td-focus-ring);
 }
+
+/* ── Mobile: wrap controls, drop title scale, enforce 44px tap targets ── */
+@media (max-width: 640px) {
+  .td-board-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--td-space-3);
+  }
+
+  .td-board-toolbar__left {
+    gap: var(--td-space-3);
+  }
+
+  .td-board-toolbar__title {
+    font-size: var(--td-font-xl);
+  }
+
+  .td-board-toolbar__actions {
+    flex-wrap: wrap;
+    gap: var(--td-space-2);
+  }
+
+  .td-board-toolbar__icon-btn,
+  .td-board-toolbar__text-btn,
+  .td-board-toolbar__primary-btn,
+  .td-board-toolbar__back-btn {
+    min-height: 44px;
+  }
+
+  .td-board-toolbar__icon-btn {
+    min-width: 44px;
+  }
+
+  .td-board-toolbar__primary-btn {
+    flex: 1 1 100%;
+  }
+}
 </style>
