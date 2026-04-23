@@ -55,7 +55,7 @@ configuration (see `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`).
 | Purpose | Generates chat responses, automation proposals, and tool-call arguments when the operator configures the OpenAI provider. |
 | Data categories | User chat messages, capture content, and bounded board context (column names, card titles, card ID prefixes) constructed by `BoardContextBuilder`. Sent only for requests that route through the LLM flow. |
 | Region | Subject to OpenAI's processing regions under its DPA. |
-| Gated by | `LlmOrchestrator:Provider = OpenAI` and a configured API key (see `docs/platform/CONFIGURATION_REFERENCE.md`). |
+| Gated by | `Llm:Provider = OpenAI` and a configured API key (see `docs/platform/CONFIGURATION_REFERENCE.md`). |
 | Default state | **Off.** Out-of-the-box deployments use the `Mock` provider and do not call OpenAI. |
 | DPA | `[REQUIRED BEFORE LAUNCH if OpenAI is enabled]` |
 
@@ -67,7 +67,7 @@ configuration (see `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`).
 | Purpose | Same as OpenAI above, when the operator configures the Gemini provider. |
 | Data categories | Same as OpenAI above. |
 | Region | Subject to Google's processing regions under its DPA. |
-| Gated by | `LlmOrchestrator:Provider = Gemini` and a configured API key. |
+| Gated by | `Llm:Provider = Gemini` and a configured API key. |
 | Default state | **Off.** |
 | DPA | `[REQUIRED BEFORE LAUNCH if Gemini is enabled]` |
 
