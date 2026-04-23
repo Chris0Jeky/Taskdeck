@@ -39,8 +39,6 @@ public class UserPreferenceRepository : Repository<UserPreference>, IUserPrefere
             userId,
             defaultPreference.WorkspaceMode.ToString(),
             defaultPreference.OnboardingVisibility.ToString(),
-            (object?)defaultPreference.OnboardingDismissedAt ?? DBNull.Value,
-            (object?)defaultPreference.OnboardingCompletedAt ?? DBNull.Value,
             now,
             now
         ];
@@ -49,7 +47,7 @@ public class UserPreferenceRepository : Repository<UserPreference>, IUserPrefere
             @"INSERT OR IGNORE INTO UserPreferences
               (Id, UserId, WorkspaceMode, OnboardingVisibility,
                OnboardingDismissedAt, OnboardingCompletedAt, CreatedAt, UpdatedAt)
-              VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7})",
+              VALUES ({0}, {1}, {2}, {3}, NULL, NULL, {4}, {5})",
             parameters,
             cancellationToken);
 
