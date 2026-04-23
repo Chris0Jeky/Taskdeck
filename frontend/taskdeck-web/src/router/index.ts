@@ -44,6 +44,7 @@ const IntegrationsView = () => import('../views/IntegrationsView.vue')
 const AgentsView = () => import('../views/AgentsView.vue')
 const AgentRunsView = () => import('../views/AgentRunsView.vue')
 const AgentRunDetailView = () => import('../views/AgentRunDetailView.vue')
+const ApiKeySettingsView = () => import('../views/ApiKeySettingsView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -243,6 +244,12 @@ const router = createRouter({
       path: '/workspace/settings/preferences',
       name: 'workspace-settings-preferences',
       component: NotificationPreferencesView,
+      meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/settings/api-keys',
+      name: 'workspace-settings-api-keys',
+      component: ApiKeySettingsView,
       meta: { requiresShell: true },
     },
 
