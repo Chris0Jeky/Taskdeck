@@ -37,6 +37,25 @@ public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
         cspValues.Should().ContainSingle();
     }
 
+    // SEC-29: assert the API CSP no longer allows inline styles. The API serves
+    // JSON (Swagger HTML is excluded from CSP), so no relaxation is needed for
+    // style-src here. Keep this test strict so future edits can't silently
+    // reintroduce 'unsafe-inline'.
+    [Fact]
+    public async Task SecurityHeaders_CspStyleSrc_ShouldNotAllowUnsafeInline()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/health/live");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Security-Policy", out var cspValues).Should().BeTrue();
+        var csp = cspValues.Should().ContainSingle().Subject;
+        csp.Should().Contain("style-src 'self'");
+        csp.Should().NotContain("style-src 'self' 'unsafe-inline'");
+        csp.Should().NotContain("style-src 'unsafe-inline'");
+    }
+
     [Fact]
     public async Task SecurityHeaders_ShouldBePresent_OnUnauthorizedResponses()
     {
