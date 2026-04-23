@@ -61,7 +61,6 @@ test('starter pack modal json import tab', async ({ page }) => {
   // (header, tab bar, two-column layout, form primitives).
   await page.getByTestId('tab-import').click()
   await expect(page.getByTestId('import-json-textarea')).toBeVisible()
-  await page.waitForLoadState('networkidle')
 
   await prepareForScreenshot(page)
 

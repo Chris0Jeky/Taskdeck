@@ -15,7 +15,6 @@ test.beforeEach(async ({ page, request }) => {
 
 test('inbox view empty state', async ({ page }) => {
   await page.goto('/workspace/inbox')
-  await page.waitForLoadState('networkidle')
 
   await prepareForScreenshot(page)
 

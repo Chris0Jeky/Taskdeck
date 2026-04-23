@@ -16,7 +16,6 @@ test.beforeEach(async ({ page, request }) => {
 
 test('archive view empty state', async ({ page }) => {
   await page.goto('/workspace/archive')
-  await page.waitForLoadState('networkidle')
 
   await prepareForScreenshot(page)
 

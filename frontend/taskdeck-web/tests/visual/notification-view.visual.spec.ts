@@ -17,7 +17,6 @@ test.beforeEach(async ({ page, request }) => {
 test('notification inbox empty state', async ({ page }) => {
   await page.goto('/workspace/notifications')
   await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible()
-  await page.waitForLoadState('networkidle')
 
   await prepareForScreenshot(page)
 
