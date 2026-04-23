@@ -8,6 +8,7 @@ import type { Board } from '../types/board'
 import { normalizeRestoreStatus } from '../utils/archive'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import { HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY } from '../utils/storageKeys'
+import { logWarn } from '../utils/errorReporting'
 
 const toast = useToastStore()
 const loadingItems = ref(false)
@@ -66,7 +67,7 @@ function persistHiddenArchivedBoardIds() {
     )
   } catch (error) {
     // Hidden-board preference persistence is best-effort; archive/restore flow should still complete.
-    console.warn('Failed to persist hidden archived board preferences', error)
+    logWarn('Failed to persist hidden archived board preferences', error)
   }
 }
 
