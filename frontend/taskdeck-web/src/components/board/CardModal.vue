@@ -580,8 +580,8 @@ onBeforeUnmount(() => {
           <!-- Metadata -->
           <div class="pt-4 border-t border-outline-variant/30">
             <div class="text-xs text-on-surface-variant space-y-1">
-              <p>Created: {{ new Date(card.createdAt).toLocaleString() }}</p>
-              <p>Last updated: {{ new Date(card.updatedAt).toLocaleString() }}</p>
+              <p data-testid="timestamp">Created: {{ new Date(card.createdAt).toLocaleString() }}</p>
+              <p data-testid="timestamp">Last updated: {{ new Date(card.updatedAt).toLocaleString() }}</p>
             </div>
             <div class="mt-3 space-y-2">
               <div v-if="loadingCaptureProvenance" class="text-xs text-on-surface-variant">

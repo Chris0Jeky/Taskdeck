@@ -19,6 +19,21 @@ The visual regression suite covers these critical UI areas:
 | Archive (empty) | `archive-view.visual.spec.ts` | `archive-empty.png` |
 | Inbox/capture (empty) | `inbox-capture.visual.spec.ts` | `inbox-empty.png` |
 | Home view | `home-view.visual.spec.ts` | `home-default.png` |
+| Login view | `auth-views.visual.spec.ts` | `login-default.png` |
+| Register view | `auth-views.visual.spec.ts` | `register-default.png` |
+| Today view | `today-view.visual.spec.ts` | `today-default.png` |
+| Calendar view | `calendar-view.visual.spec.ts` | `calendar-default.png` |
+| Metrics view (placeholder) | `metrics-view.visual.spec.ts` | `metrics-placeholder.png` |
+| Review view (empty) | `review-view.visual.spec.ts` | `review-empty.png` |
+| Notifications (empty) | `notification-view.visual.spec.ts` | `notifications-empty.png` |
+| Settings (profile) | `settings-view.visual.spec.ts` | `settings-profile.png` |
+| Card modal (edit) | `board-modals.visual.spec.ts` | `card-modal-edit.png` |
+| Column edit modal | `board-modals.visual.spec.ts` | `column-edit-modal.png` |
+| Starter pack modal (import tab) | `board-modals.visual.spec.ts` | `starter-pack-modal-import.png` |
+| Capture modal (typed) | `capture-modal.visual.spec.ts` | `capture-modal-typed.png` |
+| Board toolbar | `board-components.visual.spec.ts` | `board-toolbar.png` |
+| Board action rail | `board-components.visual.spec.ts` | `board-action-rail.png` |
+| Shell sidebar | `shell-sidebar.visual.spec.ts` | `shell-sidebar.png` |
 
 ## Threshold Settings
 
@@ -55,7 +70,7 @@ All animations are disabled through multiple layers:
 
 The `hideDynamicContent()` helper applies the following rules:
 
-- **Timestamp selectors** (forward-looking): `[data-testid="timestamp"]`, `[data-testid="relative-time"]`, `time` tags are hidden via `visibility: hidden`. Note: the current codebase renders timestamps as inline text in plain `<span>`/`<p>` tags without these attributes, so these selectors are not yet effective. When adding visual tests for populated views, add `data-testid="timestamp"` to the relevant Vue components.
+- **Timestamp selectors**: `[data-testid="timestamp"]`, `[data-testid="relative-time"]`, `time` tags are hidden via `visibility: hidden`. The CardModal and ColumnEditModal metadata blocks are tagged with `data-testid="timestamp"` as of TST-59 so the runtime `Created: ...`/`Last updated: ...` text does not drift the baseline. When adding new visual coverage for populated views, add `data-testid="timestamp"` to any element that renders relative or absolute times.
 - **Blinking cursors**: transparent caret color on all elements
 - **Platform-specific scrollbars**: hidden via `::-webkit-scrollbar` and `scrollbar-width: none`
 

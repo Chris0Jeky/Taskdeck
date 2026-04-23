@@ -162,7 +162,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
             <div class="text-sm text-on-surface space-y-1">
               <p><span class="font-medium">Position:</span> {{ column.position + 1 }}</p>
               <p><span class="font-medium">Cards:</span> {{ column.cardCount }}</p>
-              <p class="text-xs text-on-surface-variant mt-2">Created: {{ new Date(column.createdAt).toLocaleString() }}</p>
+              <p class="text-xs text-on-surface-variant mt-2" data-testid="timestamp">Created: {{ new Date(column.createdAt).toLocaleString() }}</p>
             </div>
           </div>
         </div>
