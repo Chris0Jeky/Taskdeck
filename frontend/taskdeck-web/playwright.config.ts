@@ -64,16 +64,20 @@ for (const [index, origin] of backendCorsOrigins.entries()) {
 /*
  * Worker count resolution (TST-60, #867):
  *
- * Default to 2 workers in CI and unset (Playwright's default, typically cores/2)
- * locally. Two concurrent workers give a meaningful speedup while keeping contention
- * on the single SQLite E2E database and single backend process bounded. Raising
- * the count further trades wall-clock time for increased risk of SQLITE_BUSY under
- * bursty writes.
+ * Default to 2 workers in both CI and local runs when `TASKDECK_E2E_WORKERS`
+ * is not set. Two concurrent workers give a meaningful speedup while keeping
+ * contention on the single SQLite E2E database and single backend process
+ * bounded. Raising the count further trades wall-clock time for increased
+ * risk of SQLITE_BUSY under bursty writes, so we intentionally cap even local
+ * runs rather than inheriting Playwright's default (~50% of logical cores),
+ * which on a developer laptop fans out well beyond the contention budget this
+ * config was tuned for.
  *
- * Override via TASKDECK_E2E_WORKERS if needed (integer, 1+).
+ * Override via TASKDECK_E2E_WORKERS if needed (integer >= 1); developers who
+ * want full-parallel exploration can set e.g. TASKDECK_E2E_WORKERS=8.
  */
-const ciWorkerDefault = 2
-const e2eWorkers = resolveWorkers(process.env.TASKDECK_E2E_WORKERS, ciWorkerDefault)
+const defaultWorkerCount = 2
+const e2eWorkers = resolveWorkers(process.env.TASKDECK_E2E_WORKERS, defaultWorkerCount)
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -379,10 +383,10 @@ function dedupeOrigins(origins: string[]): string[] {
  *
  * Priority:
  *   1. `TASKDECK_E2E_WORKERS` env var (integer >= 1) when set.
- *   2. `ciWorkerDefault` when running in CI (process.env.CI is truthy).
- *   3. `undefined` locally, which lets Playwright pick its own default.
+ *   2. `fallbackDefault` for every other run (both CI and local), so the
+ *      fully-parallel contention budget is respected in all environments.
  */
-function resolveWorkers(rawOverride: string | undefined, ciDefault: number): number | undefined {
+function resolveWorkers(rawOverride: string | undefined, fallbackDefault: number): number {
   if (rawOverride !== undefined) {
     const trimmed = rawOverride.trim()
     if (!/^\d+$/.test(trimmed)) {
@@ -400,9 +404,5 @@ function resolveWorkers(rawOverride: string | undefined, ciDefault: number): num
     return parsed
   }
 
-  if (process.env.CI) {
-    return ciDefault
-  }
-
-  return undefined
+  return fallbackDefault
 }
