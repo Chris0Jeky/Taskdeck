@@ -369,8 +369,12 @@ defineEmits<{
     min-height: 44px;
   }
 
-  .td-board-toolbar__icon-btn {
+  .td-board-toolbar__icon-btn,
+  .td-board-toolbar__back-btn {
     min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .td-board-toolbar__primary-btn {
