@@ -310,9 +310,10 @@ public class AuthenticationService : IAuthenticationService
         {
             return Result.Failure<AuthResultDto>(ex.ErrorCode, ex.Message);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, $"Token refresh failed: {ex.Message}");
+            // Do not expose internal details in error messages
+            return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, "Token refresh failed due to an unexpected error");
         }
     }
 
