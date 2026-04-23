@@ -69,6 +69,7 @@ public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
+            builder.UseSetting("Connectors:EncryptionKey", ApiTestHarness.TestEncryptionKey);
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {

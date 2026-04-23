@@ -96,6 +96,7 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
+            builder.UseSetting("Connectors:EncryptionKey", ApiTestHarness.TestEncryptionKey);
             builder.UseSetting("Cors:DevelopmentAllowedOrigins:0", alternateOrigin);
         });
         using var client = factory.CreateClient();
@@ -155,6 +156,7 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
+            builder.UseSetting("Connectors:EncryptionKey", ApiTestHarness.TestEncryptionKey);
         });
         using var client = factory.CreateClient();
 
