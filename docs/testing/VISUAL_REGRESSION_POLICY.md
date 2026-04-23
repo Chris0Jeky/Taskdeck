@@ -70,7 +70,7 @@ All animations are disabled through multiple layers:
 
 The `hideDynamicContent()` helper applies the following rules:
 
-- **Timestamp selectors** (forward-looking): `[data-testid="timestamp"]`, `[data-testid="relative-time"]`, `time` tags are hidden via `visibility: hidden`. Note: the current codebase renders timestamps as inline text in plain `<span>`/`<p>` tags without these attributes, so these selectors are not yet effective. When adding visual tests for populated views, add `data-testid="timestamp"` to the relevant Vue components.
+- **Timestamp selectors**: `[data-testid="timestamp"]`, `[data-testid="relative-time"]`, `time` tags are hidden via `visibility: hidden`. The CardModal and ColumnEditModal metadata blocks are tagged with `data-testid="timestamp"` as of TST-59 so the runtime `Created: ...`/`Last updated: ...` text does not drift the baseline. When adding new visual coverage for populated views, add `data-testid="timestamp"` to any element that renders relative or absolute times.
 - **Blinking cursors**: transparent caret color on all elements
 - **Platform-specific scrollbars**: hidden via `::-webkit-scrollbar` and `scrollbar-width: none`
 
