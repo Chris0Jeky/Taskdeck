@@ -36,6 +36,15 @@ export async function waitForVisualStability(page: Page): Promise<void> {
     )
   })
 
+  // Wait for web fonts to finish loading. Without this the first render after
+  // a cold cache can paint with the fallback typeface before the webfont
+  // swaps in, producing baseline/actual drift on otherwise-identical UI.
+  await page.evaluate(async () => {
+    if (typeof document !== 'undefined' && 'fonts' in document && document.fonts) {
+      await document.fonts.ready
+    }
+  })
+
   // Brief pause for paint stabilization after all resources loaded.
   // This addresses sub-frame rendering differences that can cause
   // spurious diffs when a screenshot captures mid-paint.
@@ -48,11 +57,11 @@ export async function waitForVisualStability(page: Page): Promise<void> {
  * and hides platform-specific scrollbars.
  *
  * Note: The timestamp selectors below ([data-testid="timestamp"], time, etc.)
- * are forward-looking — the current codebase renders timestamps as inline text
- * in plain <span>/<p> tags without data-testid attributes or <time> elements.
- * If timestamp-bearing elements are added to tested views in the future, add
- * appropriate data-testid attributes to the Vue components so this helper
- * can hide them.
+ * catch elements already annotated in the Vue components (CardModal and
+ * ColumnEditModal metadata blocks as of TST-59). When adding new visual
+ * coverage for populated views, add data-testid="timestamp" to any element
+ * that renders relative or absolute times so this helper can neutralise the
+ * drift automatically.
  */
 export async function hideDynamicContent(page: Page): Promise<void> {
   await page.evaluate(() => {
