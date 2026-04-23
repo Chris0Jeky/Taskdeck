@@ -331,6 +331,8 @@ defaults** come from `RateLimitingSettings` constructors; the
 | `RateLimiting:NoteImportPerUser:WindowSeconds` | `int` | `60` | same | Window length in seconds. | No |
 | `RateLimiting:McpPerApiKey:PermitLimit` | `int` | `60` (class default) | same | Per-API-key permits for the MCP HTTP transport. | No |
 | `RateLimiting:McpPerApiKey:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
+| `RateLimiting:TokenRefreshPerUser:PermitLimit` | `int` | `5` (class default) | same | Per-user permits for the token refresh endpoint. Tight limit to prevent token farming. | No |
+| `RateLimiting:TokenRefreshPerUser:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
 
 ## Circuit breaker
 

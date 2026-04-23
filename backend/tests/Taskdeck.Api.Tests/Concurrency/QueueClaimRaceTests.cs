@@ -213,20 +213,18 @@ public class QueueClaimRaceTests : IClassFixture<TestWebApplicationFactory>
             "each distinct capture item should triage without conflict");
 
         // Poll for proposals to settle, then verify no duplicates.
-        // Use PollUntilAsync-style polling instead of Task.Delay to avoid flakiness.
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(15);
-        List<ProposalDto>? proposals = null;
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            var proposalsResp = await client.GetAsync($"/api/automation/proposals?boardId={board.Id}");
-            proposalsResp.StatusCode.Should().Be(HttpStatusCode.OK);
-            proposals = await proposalsResp.Content.ReadFromJsonAsync<List<ProposalDto>>();
-            if (proposals != null && proposals.Count >= captureIds.Count)
-                break;
-            await Task.Delay(200);
-        }
-
-        proposals.Should().NotBeNull();
+        var proposals = await ApiTestHarness.PollUntilAsync(
+            async () =>
+            {
+                var proposalsResp = await client.GetAsync($"/api/automation/proposals?boardId={board.Id}");
+                proposalsResp.StatusCode.Should().Be(HttpStatusCode.OK);
+                return await proposalsResp.Content.ReadFromJsonAsync<List<ProposalDto>>()
+                       ?? new List<ProposalDto>();
+            },
+            p => p.Count >= captureIds.Count,
+            "batch triage proposals to settle",
+            maxAttempts: 60,
+            interval: TimeSpan.FromMilliseconds(500));
 
         // Each capture item should have exactly one proposal (no duplicates, no data loss)
         foreach (var captureId in captureIds)

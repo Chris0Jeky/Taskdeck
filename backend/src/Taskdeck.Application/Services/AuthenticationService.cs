@@ -286,6 +286,37 @@ public class AuthenticationService : IAuthenticationService
         }
     }
 
+    public async Task<Result<AuthResultDto>> RefreshTokenAsync(Guid userId)
+    {
+        try
+        {
+            if (!TryValidateJwtSettings(out var jwtValidationError))
+                return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, jwtValidationError);
+
+            if (userId == Guid.Empty)
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "User ID is required");
+
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
+            if (user == null)
+                return Result.Failure<AuthResultDto>(ErrorCodes.Unauthorized, "User not found");
+
+            if (!user.IsActive)
+                return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+
+            var token = GenerateJwtToken(user);
+            return Result.Success(new AuthResultDto(token, MapToDto(user)));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<AuthResultDto>(ex.ErrorCode, ex.Message);
+        }
+        catch (Exception)
+        {
+            // Do not expose internal details in error messages
+            return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, "Token refresh failed due to an unexpected error");
+        }
+    }
+
     public async Task<Result> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
     {
         try
