@@ -251,6 +251,36 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
         return ids;
     }
 
+    public async Task<int> DeleteOldEntriesAsync(DateTimeOffset olderThan, int batchSize, CancellationToken cancellationToken = default)
+    {
+        var totalDeleted = 0;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            // Use parameterized SQL to delete in bounded batches.
+            // SQLite and SQL Server both support this pattern.
+            // The LIMIT/TOP clause prevents unbounded lock duration.
+            var sql = _context.Database.IsSqlite()
+                ? "DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM AuditLogs WHERE Timestamp < {0} LIMIT {1})"
+                : "DELETE TOP({1}) FROM AuditLogs WHERE Timestamp < {0}";
+
+            var deleted = await _context.Database.ExecuteSqlRawAsync(
+                sql,
+                new object[] { olderThan, batchSize },
+                cancellationToken);
+
+            totalDeleted += deleted;
+
+            // If fewer rows were deleted than the batch size, we are done.
+            if (deleted < batchSize)
+            {
+                break;
+            }
+        }
+
+        return totalDeleted;
+    }
+
     private static AuditAction[] GetActionsForLevel(string level)
     {
         return level.Trim().ToLowerInvariant() switch
