@@ -44,7 +44,9 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 // Keep API integration tests deterministic regardless of local machine env secrets.
                 ["Llm:EnableLiveProviders"] = "false",
                 ["Llm:AllowLiveProvidersInDevelopment"] = "false",
-                ["Llm:Provider"] = "Mock"
+                ["Llm:Provider"] = "Mock",
+                // Test-only 256-bit encryption key for connector credentials.
+                ["Connectors:EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
             };
 
             configBuilder.AddInMemoryCollection(overrideSettings);

@@ -54,6 +54,8 @@ internal sealed class CliTestHarness : IAsyncDisposable
 
         startInfo.Environment["TASKDECK_CONNECTION_STRING"] = _connectionString;
         startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+        // Test-only 256-bit encryption key for connector credentials.
+        startInfo.Environment["Connectors__EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
         using var process = new Process { StartInfo = startInfo };
         using var cts = new CancellationTokenSource(ProcessTimeout);

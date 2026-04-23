@@ -1,6 +1,7 @@
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Services;
+using Taskdeck.Application.Connectors;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Tools;
@@ -85,6 +86,10 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
         services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
         services.AddSingleton<RedisBackplaneHealthCheck>();
+
+        // Connector services (provider registration is in Infrastructure DI)
+        services.AddScoped<ConnectorExecutionService>();
+        services.AddScoped<IConnectorCredentialService, ConnectorCredentialService>();
 
         // Agent tool registry (singleton — populated once at startup, read concurrently)
         var toolRegistry = new TaskdeckToolRegistry();

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -10,12 +11,14 @@ using Taskdeck.Infrastructure.Persistence;
 namespace Taskdeck.Infrastructure.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260416125538_AddConnectorCredentials")]
+    partial class AddConnectorCredentials
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.26");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.25");
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.AgentProfile", b =>
                 {
@@ -336,13 +339,7 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.HasIndex("EntityId", "Timestamp")
-                        .HasDatabaseName("IX_AuditLogs_EntityId_Timestamp");
-
                     b.HasIndex("EntityType", "EntityId");
-
-                    b.HasIndex("UserId", "Timestamp")
-                        .HasDatabaseName("IX_AuditLogs_UserId_Timestamp");
 
                     b.ToTable("AuditLogs", (string)null);
                 });
@@ -597,10 +594,9 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ColumnId");
+                    b.HasIndex("BoardId");
 
-                    b.HasIndex("BoardId", "ColumnId")
-                        .HasDatabaseName("IX_Cards_BoardId_ColumnId");
+                    b.HasIndex("ColumnId");
 
                     b.ToTable("Cards", (string)null);
                 });
@@ -983,8 +979,6 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("UserId");
 
                     b.HasIndex("ConnectorId", "UserId")
                         .IsUnique();
@@ -1934,12 +1928,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasOne("Taskdeck.Domain.Entities.IntegrationConnector", null)
                         .WithMany()
                         .HasForeignKey("ConnectorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Taskdeck.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
