@@ -142,6 +142,33 @@ public class AuthController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Refreshes the current JWT token, issuing a new token with a fresh expiry.
+    /// Requires a valid (non-expired) JWT. The caller's identity is derived from
+    /// the current token claims — no request body is needed.
+    /// Rate-limited per user to prevent token farming.
+    /// </summary>
+    /// <returns>Fresh JWT token and user profile.</returns>
+    /// <response code="200">Token refreshed — new JWT returned.</response>
+    /// <response code="401">Not authenticated or token is invalid.</response>
+    /// <response code="403">User account is inactive.</response>
+    /// <response code="429">Rate limit exceeded.</response>
+    [HttpPost("refresh")]
+    [Authorize]
+    [EnableRateLimiting(RateLimitingPolicyNames.TokenRefreshPerUser)]
+    [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> RefreshToken()
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var result = await _authService.RefreshTokenAsync(callerUserId);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Initiates GitHub OAuth login or account-linking flow. Only available when GitHub OAuth is configured.
     /// The flow is determined entirely from server-side state: if the caller is already authenticated
     /// (carries a valid JWT), this starts an account-linking flow bound to their identity; otherwise

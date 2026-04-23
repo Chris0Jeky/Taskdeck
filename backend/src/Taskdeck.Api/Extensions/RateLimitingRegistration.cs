@@ -86,6 +86,12 @@ public static class RateLimitingRegistration
             var partitionKey = $"mcp-apikey:{ResolveUserOrClientIdentifier(httpContext)}";
             return BuildFixedWindowPartition(partitionKey, settings.McpPerApiKey);
         });
+
+        options.AddPolicy(RateLimitingPolicyNames.TokenRefreshPerUser, httpContext =>
+        {
+            var partitionKey = $"token-refresh-user:{ResolveUserOrClientIdentifier(httpContext)}";
+            return BuildFixedWindowPartition(partitionKey, settings.TokenRefreshPerUser);
+        });
     }
 
     private static RateLimitPartition<string> BuildFixedWindowPartition(string partitionKey, RateLimitPolicySettings policy)

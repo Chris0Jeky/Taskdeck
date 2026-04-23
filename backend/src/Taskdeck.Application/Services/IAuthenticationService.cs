@@ -16,4 +16,5 @@ public interface IAuthenticationService
     Task<Result<AuthResultDto>> ExternalLoginAsync(ExternalLoginDto dto);
     Task<Result<LinkedAccountDto>> CompleteAccountLinkAsync(Guid userId, string provider, string providerUserId, string? displayName, string? avatarUrl);
     Task<Result> UnlinkExternalLoginAsync(Guid userId, string provider);
+    Task<Result<AuthResultDto>> RefreshTokenAsync(Guid userId);
 }
