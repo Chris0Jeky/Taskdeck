@@ -303,7 +303,7 @@ test('column WIP limit should reject additional cards', async ({ page }) => {
     .poll(
       async () => {
         if (await wipLimit.count() === 0) {
-          await wipCheckbox.click()
+          await wipCheckbox.check()
         }
         return await wipLimit.count()
       },

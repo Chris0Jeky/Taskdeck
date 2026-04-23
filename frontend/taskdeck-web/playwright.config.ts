@@ -20,10 +20,11 @@ const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
  * parallel writes on the same database file can briefly block each other.
  *
  *   - Pooling=True        — reuse connection objects (also Microsoft.Data.Sqlite default).
- *   - Default Timeout=30  — wait up to 30 seconds on a busy lock before surfacing
- *                           SQLITE_BUSY. Parallel E2E traffic is bursty but short,
- *                           so a generous wait masks transient contention without
- *                           hiding genuine deadlocks (real deadlocks still time out).
+ *   - Default Timeout=30  — sets ADO.NET SqliteCommand.CommandTimeout to 30 seconds
+ *                           (command cancellation, not PRAGMA busy_timeout). Under
+ *                           parallel E2E traffic this prevents premature command
+ *                           timeouts; SQLite's actual busy-wait behavior depends on
+ *                           busy_timeout PRAGMA (default 0ms in Microsoft.Data.Sqlite).
  *
  * We intentionally do NOT set `Cache=Shared`: shared-cache mode adds internal
  * table-level locking that can increase contention (and SQLITE_BUSY frequency)
