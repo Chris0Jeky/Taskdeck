@@ -19,7 +19,7 @@ defineProps<{
 </script>
 
 <template>
-  <div class="sp-result-box rounded-md p-4" :data-testid="result.dryRun ? undefined : undefined">
+  <div class="sp-result-box rounded-md p-4">
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
       <p class="sp-text-primary text-sm font-semibold">
         {{ result.dryRun ? 'Dry-run Result' : 'Apply Result' }}
