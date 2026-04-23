@@ -63,7 +63,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | Severity | Issue | Location |
 |----------|-------|----------|
 | ~~CRITICAL~~ RESOLVED | ~~Only 1 EF migration in source control — fresh environments cannot bootstrap~~ 21 migrations in source control; full chain applies cleanly to fresh SQLite; `MigrationBootstrapTests` guard regression; workflow documented in `docs/platform/EF_MIGRATION_WORKFLOW.md` (`#864`/PR `#907`) | `backend/src/Taskdeck.Infrastructure/Migrations/` |
-| ~~CRITICAL~~ RESOLVED | ~~No configuration validation at startup (`ValidateOnStart()`)~~ data annotations on 15 settings classes + 4 `IValidateOptions<T>` cross-property validators + `ValidateOnStart()` via `RegisterValidatedOptions<T>` helper; 34 `OptionsValidationTests` (OPS-27 `#858`/PR `#908`) | `Program.cs`, all settings classes |
+| ~~CRITICAL~~ RESOLVED | ~~No configuration validation at startup (`ValidateOnStart()`)~~ data annotations on 15 settings classes + 4 `IValidateOptions<T>` cross-property validators + `ValidateOnStart()` via `RegisterValidatedOptions<T>` helper; 34 `OptionsValidationTests` (OPS-27 `#863`/PR `#908`) | `Program.cs`, all settings classes |
 | HIGH | No API versioning strategy — breaking changes have no compatibility path | All controllers |
 | MEDIUM | MCP mode duplicates DI registration from web mode | `Program.cs` lines 72-91 |
 | MEDIUM | No value objects for Email/Username — validation scattered | Domain entities |
@@ -88,7 +88,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 | Severity | Issue | Details |
 |----------|-------|---------|
-| CRITICAL | Views over 1,500 lines | ReviewView (1,659), InboxView (1,527), AutomationChatView (1,523) |
+| ~~CRITICAL~~ | ~~Views over 1,500 lines~~ | ~~ReviewView (1,659), InboxView (1,527), AutomationChatView (1,523)~~ RESOLVED: all 3 decomposed in PRs #920, #921, #923 |
 | CRITICAL | No error boundary | Component render errors crash entire app |
 | HIGH | No request retry/backoff | Network failures not recovered gracefully |
 | HIGH | Modals oversized | StarterPackCatalogModal (1,253), CardModal (681) |
@@ -97,7 +97,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | MEDIUM | No loading skeleton consistency | TdSkeleton exists but not used in all views |
 | MEDIUM | No offline mutation queue | Changes made while offline are lost |
 | MEDIUM | Virtual scrolling in only 2 of 16 list views | ReviewView, ActivityView need it |
-| LOW | No session timeout warning | Token expires silently |
+| ~~LOW~~ | ~~No session timeout warning~~ | ~~Token expires silently~~ RESOLVED: `useSessionTimeout` composable + `SessionTimeoutWarning.vue` (PR #919); backend refresh endpoint not yet implemented |
 
 ### Production Readiness: 65%
 
@@ -145,7 +145,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | **No response compression** — 5-10MB responses uncompressed | 90% bandwidth reduction | 1 hour | Open |
 | **Missing database indexes** — AuditLog, LlmRequest, Card | 10-100x query speedup on large tables | 1 hour | Open |
 | **Sync I/O in WorkspaceService** — `.Result` blocking async | Prevents thread pool starvation | 30 min | RESOLVED (PERF-11 `#847`/PR `#904`) |
-| **No pagination on board list** — returns ALL boards | Blocks team-scale (100+ boards) | 2 hours | RESOLVED (PERF-12 `#859`/PR `#909`) |
+| **No pagination on board list** — returns ALL boards | Blocks team-scale (100+ boards) | 2 hours | RESOLVED (PERF-12 `#848`/PR `#909`) |
 | **AuditLog in-memory filtering** — should be SQL-level | 50ms+ per activity load eliminated | 2 hours | RESOLVED (PERF-13 `#849`/PR `#903`) |
 
 ### Architectural Bottlenecks
@@ -200,7 +200,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 ### Test Gaps
 - Frontend views >1,000 lines are harder to test thoroughly
 - Virtual scrolling not tested under load
-- No performance regression tests in CI gate
+- ~~No performance regression tests in CI gate~~ RESOLVED: k6 thresholds + bundle size checks in `ci-extended`/`ci-nightly` (CI-03 `#872`/PR `#918`)
 - E2E cross-browser is advisory, not required
 
 ---
@@ -233,11 +233,11 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | Production readiness | Basic | Missing migration safety, secrets rotation, alerting |
 
 ### Critical Gaps for Production
-1. No SAST (static analysis security testing) in CI
+1. ~~No SAST (static analysis security testing) in CI~~ RESOLVED: Semgrep with custom C#/TypeScript rules, advisory mode in `ci-extended`/`ci-nightly` (CI-01 `#870`/PR `#915`)
 2. ~~No database migration validation in CI~~ RESOLVED: `MigrationBootstrapTests` verify fresh-bootstrap + model drift on every run (OPS-28 `#864`/PR `#907`)
 3. No Terraform `plan` validation in CI
 4. ~~No secrets detection (Gitleaks or equivalent)~~ RESOLVED: advisory PR scan in `ci-extended.yml`, blocking full-history scan in `ci-release.yml` (CI-02 `#871`/PR `#902`)
-5. No monitoring/alerting rules defined
+5. ~~No monitoring/alerting rules defined~~ RESOLVED: 10 alert rules with severity tiers (P1/P2), Grafana/CloudWatch/PagerDuty integration paths documented (OPS-30 `#868`/PR `#914`)
 6. No on-call runbook or escalation policy
 7. Docker containers run as root (no USER instruction)
 
@@ -256,7 +256,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | Testing guide | 9/10 | Comprehensive totals, category breakdown, commands |
 | Security docs | 8/10 | OWASP, secrets, rate limiting, redaction, incidents |
 | Configuration reference | 4/10 | No appsettings.json schema, no env var docs |
-| Data model reference | 3/10 | No entity docs, no ERD |
+| ~~Data model reference~~ | ~~3/10~~ 9/10 | ~~No entity docs, no ERD~~ RESOLVED: `docs/architecture/DATA_MODEL.md` (855 lines, 37 entities, Mermaid ERD) (DOC-08 `#875`/PR `#917`) |
 | Contributor guide | 7.5/10 | Split across AGENTS.md, CLAUDE.md; no CONTRIBUTING.md |
 | **Overall** | **8.5/10** | Strong governance, targeted gaps |
 
@@ -297,10 +297,10 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 ### Tier 2: Before Production Launch (This Month)
 
-6. **Decompose oversized views** — ReviewView, InboxView, AutomationChatView — 8 hours each — Open
+6. ~~**Decompose oversized views**~~ RESOLVED: ReviewView (PR #923), InboxView (PR #921), AutomationChatView (PR #920) — all decomposed to <250-line shells + extracted components/composables
 7. **Implement error boundary** — catch render errors with fallback UI — 2 hours — Open
-8. ~~**Add configuration validation at startup**~~ RESOLVED (OPS-27 `#858`/PR `#908`)
-9. **Add API response pagination** — board list RESOLVED (PERF-12 `#859`/PR `#909`); audit, activity still Open
+8. ~~**Add configuration validation at startup**~~ RESOLVED (OPS-27 `#863`/PR `#908`)
+9. **Add API response pagination** — board list RESOLVED (PERF-12 `#848`/PR `#909`); audit, activity still Open
 10. **Create `SECURITY.md`** vulnerability disclosure policy — 1 hour — Open
 
 ### Additional Tier 2 work delivered in the 2026-04-22 wave

@@ -80,7 +80,7 @@ Source files used to build this reference:
 Most settings classes documented below are registered via the
 `RegisterValidatedOptions<T>` helper in
 `backend/src/Taskdeck.Api/Extensions/OptionsValidationRegistration.cs`, which
-wires `ValidateDataAnnotations()` + `ValidateOnStart()` (OPS-27 `#858`/PR
+wires `ValidateDataAnnotations()` + `ValidateOnStart()` (OPS-27 `#863`/PR
 `#908`). Invalid values fail startup immediately rather than surfacing at
 first use. Four cross-property validators enforce multi-field invariants:
 

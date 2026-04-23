@@ -395,8 +395,8 @@ Production hardening issues seeded from the 2026-04-16 audit. All 10 items deliv
 3. ~~`#850`~~ SEC-26 SSRF protection for webhook and LLM provider URLs (**delivered** PR `#905`)
 4. ~~`#851`~~ SEC-27 remove dev JWT secret; `FirstRunBootstrapper` generates unconditionally (**delivered** PR `#911`)
 5. ~~`#853`~~ TST-58 fix missing test attributes in CLI tests; shared `CliTestHarness` (**delivered** PR `#906`)
-6. ~~`#858`~~ OPS-27 startup configuration validation with `ValidateOnStart` (**delivered** PR `#908`)
-7. ~~`#859`~~ PERF-12 offset/limit pagination on board list endpoint (**delivered** PR `#909`)
+6. ~~`#863`~~ OPS-27 startup configuration validation with `ValidateOnStart` (**delivered** PR `#908`)
+7. ~~`#848`~~ PERF-12 offset/limit pagination on board list endpoint (**delivered** PR `#909`)
 8. ~~`#860`~~ SEC-30 file import content validation (text/JSON/SQLite magic bytes + CJK-safe limits) (**delivered** PR `#910`)
 9. ~~`#864`~~ OPS-28 EF Core migration bootstrap tests + workflow guide (**delivered** PR `#907`)
 10. ~~`#871`~~ CI-02 Gitleaks secrets detection in CI pipeline (**delivered** PR `#902`)
@@ -407,7 +407,26 @@ CI stabilisation fixes landed alongside the wave (no issue ID):
 
 Execution note:
 - Two Tier 1 items from `docs/AUDIT.md` remain open after this wave: response compression and missing database indexes
-- Three Tier 2 items from `docs/AUDIT.md` remain open: view decomposition (ReviewView/InboxView/AutomationChatView), Vue error boundary, `SECURITY.md` vulnerability disclosure policy
+- ~~Three~~ Two Tier 2 items from `docs/AUDIT.md` remain open: ~~view decomposition (ReviewView/InboxView/AutomationChatView),~~ Vue error boundary, `SECURITY.md` vulnerability disclosure policy
+- View decomposition now resolved in Stage 7 below
+
+### Stage 7: CI/hardening, frontend decomposition, ops, and documentation wave (2026-04-22, PRs `#914`--`#924`)
+
+CI and hardening:
+1. ~~`#870`~~ CI-01 SAST scanning with Semgrep (**delivered** PR `#915`, ADR-0031)
+2. ~~`#869`~~ TST-61 database migration validation in CI (**delivered** PR `#916`)
+3. ~~`#872`~~ CI-03 performance regression gate (**delivered** PR `#918`)
+4. ~~`#876`~~ HARD-01 circuit breaker for external API calls (Polly) (**delivered** PR `#924`, ADR-0032)
+
+Frontend:
+5. ~~`#861`~~ FE-20 session timeout warning (**delivered** PR `#919`)
+6. ~~`#859`~~ FE-18 decompose AutomationChatView (**delivered** PR `#920`)
+7. ~~`#858`~~ FE-17 decompose InboxView (**delivered** PR `#921`)
+8. ~~`#856`~~ FE-16 decompose ReviewView (**delivered** PR `#923`)
+
+Ops and documentation:
+9. ~~`#868`~~ OPS-30 monitoring and alerting rules (**delivered** PR `#914`)
+10. ~~`#875`~~ DOC-08 data model reference with ERD (**delivered** PR `#917`)
 
 ## Per-Issue Delivery Checklist
 

@@ -12,18 +12,18 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-04-22)
 
-- Backend: **~4,740+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave + PRs `#902`–`#913` production hardening wave adds ~210 new tests across SSRF, content validation, migration bootstrap, options validation, board pagination, and CLI discovery)
+- Backend: **~4,760+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave + PRs `#902`–`#913` production hardening wave + PRs `#914`–`#924` CI/hardening wave adds ~23 circuit breaker tests)
   - Domain: ~833+ (77 prior FsCheck + 93 new property tests for ChatSession/ChatMessage/Notification/KnowledgeDocument/WebhookSubscription + 11 ApiKey + 15 OAuthAuthCode + 8 MfaCredential + NoteImport domain)
   - Application: ~1799+ (29 prior JSON fuzz + 19 new chat/notification DTO fuzz + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
   - API integration: ~1135+ (8 metrics export + 80 prior adversarial + 50 new adversarial input + 20 API key + 13 prior concurrency + 22 new concurrency stress + 3 queue resilience + 13 LLM provider resilience + 9 telemetry + 4 telemetry API + 13 OIDC/auth + 9 OAuth token lifecycle)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: **~2,463+ passing** (estimated after PRs `#821`–`#826` + `#841`; ~200+ test files)
+- Frontend unit: **~2,482+ passing** (estimated after PRs `#821`–`#826` + `#841` + PRs `#919`–`#923` session timeout + view decomposition; ~200+ test files)
   - New store integration: 88 tests (chat, board, queue, session, notification, workspace)
   - New view/component coverage: 107 tests (Archive, Metrics, Board, Review, Chat, CardItem, BoardCanvas, BoardActionRail)
   - New resilience: 14 tests (slow API, corrupted storage, loading states)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
-- Combined automated total: **~7,070+ passing** (backend ~4,530 + frontend unit ~2,463 + E2E)
+- Combined automated total: **~7,110+ passing** (backend ~4,550 + frontend unit ~2,482 + E2E)
 
 Verification note:
 - backend total of 4,279 recertified 2026-04-12 via `dotnet test backend/Taskdeck.sln -c Release --list-tests 2>&1 | grep -c "^    "` on `main` after merging PRs `#800`–`#820`
@@ -35,6 +35,7 @@ Verification note:
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
 - significant test growth in 2026-04-04 wave 4 (PRs `#765`–`#770`, `#776`, 7 issues): OAuth token lifecycle integration (19 backend tests, `#723`/`#769`), tool argument replay (6 backend tests, `#673`/`#770`), streaming chat token usage (4 backend tests, `#763`/`#768`), DataExport exception logging (3 backend tests, `#759`/`#766`), Agent API 500 fix (2 un-skipped tests, `#758`/`#776`), frontend HTTP interceptor + router auth guard tests (33 new tests, `#725`/`#765`); all 7 PRs received two rounds of adversarial review with review-fix commits addressing CI failures, performance bugs, resource leaks, misleading test names, and weak assertions
 - significant test growth in 2026-04-04 wave 5 (PRs `#771`–`#779`, 8 issues, ~258 new tests): tool-calling Phase 3 refinements (17 backend tests, `#651`/`#773`), export streaming (15 backend tests, `#670`/`#774`), resilience/degraded-mode (34 tests: 18 backend + 16 frontend, `#720`/`#778`), frontend view vitest coverage (83 tests across 6 views, `#716`/`#775`), Pinia store integration (91 tests across 6 stores, `#711`/`#777`), E2E error state expansion (25 Playwright scenarios, `#712`/`#772`), accessibility lint (105 warnings → 0, `#762`/`#779`), vendored dependency cleanup (`#761`/`#771`); all 8 PRs received two rounds of adversarial review
+- CI/hardening wave (PRs `#914`–`#924`, 2026-04-22): HARD-01 circuit breaker (23 backend tests, `#876`/`#924`), FE-20 session timeout warning (19 frontend tests, `#861`/`#919`); view decomposition PRs (`#920`, `#921`, `#923`) preserve all existing tests without modification
 
 ## Production Hardening Wave Testing (2026-04-22, PRs `#902`–`#913`)
 
@@ -89,7 +90,7 @@ Run:
 dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~MigrationBootstrap"
 ```
 
-### Options Validation Tests (OPS-27, `#858`/`#908`)
+### Options Validation Tests (OPS-27, `#863`/`#908`)
 
 `backend/tests/Taskdeck.Api.Tests/Validation/OptionsValidationTests.cs` — **34 `[Fact]`/`[Theory]` entries** covering data-annotation boundaries for 15 settings classes, 4 cross-property validators (`WorkerSettings`, `JwtSettings`, `SentrySettings`, `RateLimitingSettings`), case-insensitive regex for `Llm:Provider`/`Cache:Provider`, and an integration test proving the app starts with valid defaults.
 
@@ -98,7 +99,7 @@ Run:
 dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~OptionsValidation"
 ```
 
-### Board Pagination API Tests (PERF-12, `#859`/`#909`)
+### Board Pagination API Tests (PERF-12, `#848`/`#909`)
 
 `backend/tests/Taskdeck.Api.Tests/BoardPaginationApiTests.cs` — **11 integration tests** covering default pagination, empty list, limit enforcement, offset skipping, partial page, limit clamped to 200, negative offset, offset beyond total, zero limit clamped to 1, full page iteration, and cross-user isolation with pagination metadata. Existing tests that deserialised `List<BoardDto>` from `GET /api/boards` migrated to use the new `PaginatedResult<BoardDto>` shape via `ApiTestHarness.ListBoardsAsync`/`ListBoardsPaginatedAsync` helpers.
 
@@ -1087,6 +1088,9 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Playwright smoke + automation/ops + fixture bootstrap flow
   - Ubuntu only
   - Depends on all prior gates
+- `migration-validation`
+  - EF Core migration chain validation via `scripts/ci/validate-migrations.sh` (TST-61, `#869`/`#916`)
+  - Runs in parallel with other required jobs
 
 Extended workflow: `.github/workflows/ci-extended.yml`
 
@@ -1100,6 +1104,15 @@ Extended workflow: `.github/workflows/ci-extended.yml`
 - `demo-director-smoke`
   - opt-in on PRs labeled `automation` or manual `workflow_dispatch`; PR-triggered runs still require watched-path changes because `ci-extended.yml` does not include `docs/**`
   - runs the deterministic `demo:director:smoke` path via `reusable-demo-director-smoke.yml`
+- `sast-scanning`
+  - Semgrep SAST with custom C# and TypeScript rules via `reusable-sast-scanning.yml` (CI-01, `#870`/`#915`)
+  - opt-in on PRs labeled `security` or manual `workflow_dispatch`
+  - advisory mode by default; enforceable via workflow input
+  - `scripts/ci/summarize-sast-findings.mjs` produces human-readable summary
+- `performance-regression-gate`
+  - k6 thresholds (p95 <2s, error rate <1%) + bundle size checks via `reusable-performance-regression-gate.yml` (CI-03, `#872`/`#918`)
+  - opt-in on PRs labeled `performance` or manual `workflow_dispatch`
+  - `scripts/ci/check-bundle-size.mjs` and `scripts/ci/check-k6-thresholds.mjs` for deterministic threshold enforcement
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
 
@@ -1107,6 +1120,8 @@ Nightly workflow: `.github/workflows/ci-nightly.yml`
 - scheduled/manual E2E smoke suite (`reusable-e2e-smoke.yml`)
 - scheduled/manual load-concurrency harness (`reusable-load-concurrency-harness.yml`)
 - scheduled/manual container image regression
+- scheduled/manual SAST scanning (Semgrep) via `reusable-sast-scanning.yml`
+- scheduled/manual performance regression gate via `reusable-performance-regression-gate.yml`
 - `developer-portal`: builds API, fetches `/swagger/v1/swagger.json`, runs `@redocly/cli build-docs`, uploads `artifacts/developer-portal/` including docs from `docs/api/` (PR #658)
 
 Nightly quality workflow: `.github/workflows/nightly-quality.yml`

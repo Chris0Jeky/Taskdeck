@@ -66,7 +66,7 @@ CREATE INDEX IX_Cards_BoardId_ColumnId ON Cards(BoardId, ColumnId);
 
 ### 1.4 Paginate Board List Endpoint
 
-**RESOLVED** (PERF-12 `#859`/PR `#909`): `GET /api/boards` accepts `offset`/`limit` query parameters (default 50, server-clamped `[1, 200]`); response is now `PaginatedResult<BoardDto>` with `items`/`totalCount`/`hasMore`/`offset`/`limit`. Authorization filter is applied before pagination so `totalCount` reflects only boards the caller is authorised to see. `BoardRepository.SearchIdsAsync` uses stable ordering (`CreatedAt DESC`, `Id` tiebreaker) so offset-based pages do not overlap. Frontend `boardsApi.getBoards` delegates to `getBoardsPaginated` and returns `.items` for backward compatibility. 11 new `BoardPaginationApiTests` cover cross-user isolation, limit clamping, empty list, and full-page iteration.
+**RESOLVED** (PERF-12 `#848`/PR `#909`): `GET /api/boards` accepts `offset`/`limit` query parameters (default 50, server-clamped `[1, 200]`); response is now `PaginatedResult<BoardDto>` with `items`/`totalCount`/`hasMore`/`offset`/`limit`. Authorization filter is applied before pagination so `totalCount` reflects only boards the caller is authorised to see. `BoardRepository.SearchIdsAsync` uses stable ordering (`CreatedAt DESC`, `Id` tiebreaker) so offset-based pages do not overlap. Frontend `boardsApi.getBoards` delegates to `getBoardsPaginated` and returns `.items` for backward compatibility. 11 new `BoardPaginationApiTests` cover cross-user isolation, limit clamping, empty list, and full-page iteration.
 
 **Follow-up (still open)**: audit and activity endpoints also need pagination.
 
@@ -80,7 +80,7 @@ CREATE INDEX IX_Cards_BoardId_ColumnId ON Cards(BoardId, ColumnId);
 
 ### 2.1 Configuration Validation at Startup
 
-**RESOLVED** (OPS-27 `#858`/PR `#908`): data annotations (`[Required]`, `[Range]`, `[MinLength]`, `[RegularExpression]`, `[Url]`) added to 15 settings classes — `JwtSettings`, `WorkerSettings`, `CacheSettings`, `RateLimitingSettings`, `LlmProviderSettings`, `OpenAiProviderSettings`, `GeminiProviderSettings`, `ObservabilitySettings`, `SentrySettings`, `SecurityHeadersSettings`, `TelemetrySettings`, `LlmQuotaSettings`, `LlmToolCallingSettings`, `AbuseDetectionSettings`, `MfaPolicySettings`. Four cross-property `IValidateOptions<T>` validators enforce: `WorkerSettings.RetryBackoffSeconds.Length >= MaxRetries`, `JwtSettings.SecretKey` non-empty + minimum length, `SentrySettings.Dsn` required when `Enabled`, and `RateLimitingSettings` nested policy ranges. All wired via a new `RegisterValidatedOptions<T>` helper that calls `ValidateDataAnnotations()` + `ValidateOnStart()`. `LlmProvider`/`CacheProvider` regex patterns use `(?i)` flag to match the runtime case-insensitive comparison. `JwtSettings.SecretKey` is intentionally not `[Required]` because `FirstRunBootstrapper` generates it before validation runs. 34 `OptionsValidationTests` cover data-annotation boundaries and cross-property rules.
+**RESOLVED** (OPS-27 `#863`/PR `#908`): data annotations (`[Required]`, `[Range]`, `[MinLength]`, `[RegularExpression]`, `[Url]`) added to 15 settings classes — `JwtSettings`, `WorkerSettings`, `CacheSettings`, `RateLimitingSettings`, `LlmProviderSettings`, `OpenAiProviderSettings`, `GeminiProviderSettings`, `ObservabilitySettings`, `SentrySettings`, `SecurityHeadersSettings`, `TelemetrySettings`, `LlmQuotaSettings`, `LlmToolCallingSettings`, `AbuseDetectionSettings`, `MfaPolicySettings`. Four cross-property `IValidateOptions<T>` validators enforce: `WorkerSettings.RetryBackoffSeconds.Length >= MaxRetries`, `JwtSettings.SecretKey` non-empty + minimum length, `SentrySettings.Dsn` required when `Enabled`, and `RateLimitingSettings` nested policy ranges. All wired via a new `RegisterValidatedOptions<T>` helper that calls `ValidateDataAnnotations()` + `ValidateOnStart()`. `LlmProvider`/`CacheProvider` regex patterns use `(?i)` flag to match the runtime case-insensitive comparison. `JwtSettings.SecretKey` is intentionally not `[Required]` because `FirstRunBootstrapper` generates it before validation runs. 34 `OptionsValidationTests` cover data-annotation boundaries and cross-property rules.
 
 ### 2.2 Database Migration Infrastructure
 
@@ -152,9 +152,9 @@ axiosRetry(http, {
 
 | View | Current Lines | Decomposition Strategy |
 |------|--------------|----------------------|
-| ReviewView | 1,659 | Extract ProposalList, ProposalDetail, ProposalDiff |
-| InboxView | 1,527 | Extract CaptureList, CaptureDetail, BatchActionBar |
-| AutomationChatView | 1,523 | Extract MessageList, ChatInput, ToolStatusPanel |
+| ~~ReviewView~~ | ~~1,659~~ 148 | DONE (PR #923) — 6 components + 2 composables |
+| ~~InboxView~~ | ~~1,527~~ 222 | DONE (PR #921) — 2 panels + 1 composable + utils |
+| ~~AutomationChatView~~ | ~~1,523~~ 235 | DONE (PR #920) — 7 components + 1 composable |
 | MetricsView | 920 | Extract MetricsCharts, MetricsTable, ForecastPanel |
 | HomeView | 804 | Extract WorkspaceSummary, QuickActions, RecentActivity |
 
@@ -383,10 +383,10 @@ services.AddHttpClient("llm-provider")
 16. ~~Import file magic byte validation (3h)~~ RESOLVED (SEC-30 PR `#910`)
 
 ### This Quarter (100 hours)
-17. View decomposition — remaining oversized views (24h)
+17. ~~View decomposition — remaining oversized views (24h)~~ RESOLVED (PRs #920, #921, #923)
 18. Responsive design for mobile (16h)
 19. PostgreSQL migration (40h)
-20. Monitoring/alerting setup (16h)
+20. ~~Monitoring/alerting setup (16h)~~ RESOLVED (OPS-30 PR `#914`)
 21. Distributed rate limiting (8h)
 
 ---
