@@ -1,8 +1,8 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-22
+Last Updated: 2026-04-23
 
-Post-merge sweep for PRs #914--#924.
+Post-merge sweep for PRs #936--#942.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -161,11 +161,19 @@ Current constraints are mostly hardening and consistency:
   - **TST-61 database migration validation in CI** (`#869`/`#916`): `scripts/ci/validate-migrations.sh` for CI migration chain validation; `.github/workflows/reusable-migration-validation.yml` wired into `ci-required` as a parallel job; `docs/platform/EF_MIGRATION_WORKFLOW.md` updated with CI validation section
   - **DOC-08 data model reference with ERD** (`#875`/`#917`): `docs/architecture/DATA_MODEL.md` (855 lines, 37 entities, Mermaid ERD) covering all domain entities with relationships, field types, and constraints; cross-linked from 5 API docs (BOARDS, CAPTURE, CHAT, WEBHOOKS, AUTHENTICATION)
   - **CI-03 performance regression gate** (`#872`/`#918`): k6 thresholds (p95 <2s, error rate <1%); `scripts/ci/check-bundle-size.mjs` and `scripts/ci/check-k6-thresholds.mjs` for deterministic threshold enforcement; `.github/workflows/reusable-performance-regression-gate.yml` wired into `ci-extended` (label: `performance`) and `ci-nightly`; `docs/PERFORMANCE_BUDGETS.md` updated with CI gate thresholds
-  - **FE-20 session timeout warning** (`#861`/`#919`): `useSessionTimeout.ts` composable (245 lines) with configurable warning-before-expiry, countdown timer, and extend/logout actions; `SessionTimeoutWarning.vue` component wired into `App.vue`; `authApi.ts` extended with `refreshToken()` stub; 19 tests; backend `POST /auth/refresh` endpoint does not yet exist — "Extend Session" gracefully fails with a toast
+  - **FE-20 session timeout warning** (`#861`/`#919`, backend `#933`/`#939`): `useSessionTimeout.ts` composable (245 lines) with configurable warning-before-expiry, countdown timer, and extend/logout actions; `SessionTimeoutWarning.vue` wired into `App.vue`; backend `POST /api/auth/refresh` endpoint now implemented with `[Authorize]` gate, JWT-claims-only user ID, `TokenRefreshPerUser` rate limiting (5/60s), and `TokenInvalidatedAt` enforcement; 19 frontend tests + 10 backend integration tests
   - **FE-18 decompose AutomationChatView** (`#859`/`#920`): 1,523 lines reduced to 235-line shell + 7 components (`ChatHeroHeader`, `LlmHealthStatusBar`, `ChatSessionSidebar`, `ChatMessageList`, `ChatParseHintCard`, `ChatToolCallDetails`, `ChatComposeBar`) + `useAutomationChat` composable (394 lines); all components under 400 lines
   - **FE-17 decompose InboxView** (`#858`/`#921`): 1,527 lines reduced to 222-line shell + `InboxListPanel`, `InboxDetailPanel`, `useInboxOrchestrator` composable, and `inboxUtils`; all existing tests pass without modification
   - **FE-16 decompose ReviewView** (`#856`/`#923`): 1,659 lines reduced to 148-line shell + 6 components (`ReviewHeader`, `ReviewSummaryCards`, `ReviewEmptyState`, `ReviewProposalCard`, `ReviewProposalActions`, `ReviewProposalDetails`) + 2 composables (`useReviewProposals`, `useReviewActions`); all 45 existing ReviewView tests pass without modification
   - **HARD-01 circuit breaker for external API calls** (`#876`/`#924`): Polly circuit breakers on OpenAI, Gemini HTTP clients, and OAuth backchannel; `CircuitBreakerStateTracker` singleton and `CircuitBreakerSettings` config class; health endpoint reports circuit breaker state as degraded (not 503); 23 tests; ADR-0032 documents the circuit breaker decision
+- Docs, CI hardening, and bug-fix wave (2026-04-23, PRs `#936`–`#942`): 7 PRs across docs cleanup, bug fixes, and CI hardening:
+  - **Docs cleanup** (`#934`/`#936`): removed legacy `TASKDECK_E2E_DB` env var prefix from Playwright commands across 5 docs; annotated duplicate `#326` follow-up relationship; removed redundant `TASKDECK_E2E_API_CORS_ORIGINS` env var from fallback commands
+  - **UTF-8 mojibake fix** (`#929`/`#937`): 109 encoding fixes in `STATUS.md` — 46 em dashes, 17 en dashes, 46 right arrows replaced from CP1252→UTF-8 double-encoding artifacts
+  - **Redundant migration no-op** (`#932`/`#938`): `AddExternalLoginsUserForeignKey` migration made no-op — FK was already added by earlier `AddTokenInvalidatedAt` migration
+  - **Auth refresh endpoint** (`#933`/`#939`): `POST /api/auth/refresh` with `[Authorize]`, JWT-claims user ID, `TokenRefreshPerUser` rate limiting (5/60s), `TokenInvalidatedAt` enforcement; 10 integration tests; completes FE-20 session timeout backend
+  - **Test count recertification** (`#930`/`#940`): TESTING_GUIDE.md updated with verified counts — backend 4,979, frontend unit 2,607, combined 7,586+
+  - **UserPreferences race fix** (`#931`/`#941`): replaced try-catch-retry (~105 lines) with atomic `INSERT OR IGNORE` SQLite upsert (~15 lines) in `UserPreferenceRepository`; 4 concurrency tests added
+  - **Pre-existing CI fix** (`#942`): resolved 5 API Integration test failures — `Connectors:EncryptionKey` added to Production-mode test configuration; MCP telemetry test assertion index corrected
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -270,7 +278,7 @@ Direction guardrails (explicit):
   - board/card surface polish: board canvas, toolbar, action rail, column lanes, and card components now use design-token-based styling with standardized interactive states and accessibility focus rings
   - centralized JWT token storage abstraction (`utils/tokenStorage.ts`) with base64url + JSON payload validation, `isValidJwtStructure` guard, and `clearAll` helper; session-token storage ADR at `docs/analysis/session-token-storage-adr.md`
   - CSP hardening: removed `unsafe-inline` from `script-src` in security headers middleware; OWASP baseline doc updated
-  - session timeout warning: `useSessionTimeout` composable with configurable warning-before-expiry, countdown timer, and extend/logout actions; `SessionTimeoutWarning.vue` wired into `App.vue`; backend `POST /auth/refresh` is not yet implemented — "Extend Session" gracefully fails
+  - session timeout warning: `useSessionTimeout` composable with configurable warning-before-expiry, countdown timer, and extend/logout actions; `SessionTimeoutWarning.vue` wired into `App.vue`; backend `POST /api/auth/refresh` now implemented with rate limiting and token invalidation enforcement
   - performance instrumentation composable (`usePerformanceMark`) with `PERF_BUDGETS` constants; 7 latency thresholds documented in `docs/PERFORMANCE_BUDGETS.md`; 16 workspace route views converted to lazy `() => import()` for initial bundle reduction
   - WCAG 2.1 AA accessibility baseline: skip-to-content link, `sr-only` utility, `eslint-plugin-vuejs-accessibility` rules, ARIA landmarks and roles across HomeView/TodayView/ReviewView/InboxView/CaptureModal/ToastContainer/BoardView, and Playwright axe-core E2E regression for 6 core views
   - PWA/offline client readiness (`#95`): `vite-plugin-pwa` configured with Workbox `generateSW` (84 precached app shell entries), runtime caching (NetworkFirst for API, CacheFirst for static assets, StaleWhileRevalidate for fonts), SPA navigateFallback for offline deep links; `useOnlineStatus` composable with reactive connectivity tracking; `OfflineBanner` component with ARIA live region; `SwUpdatePrompt` component for user-controlled SW updates; manifest with correct installability criteria (separate `any`/`maskable` icon purposes); offline behavior documented in `docs/platform/PWA_OFFLINE_BEHAVIOR.md`
