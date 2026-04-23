@@ -106,7 +106,7 @@ defineEmits<{
     /* On mobile the board becomes a vertical list; allow the page to scroll
      * vertically instead of trapping it inside a fixed-height horizontal
      * scroller. */
-    overflow-x: hidden;
+    overflow-x: clip;
     overflow-y: visible;
   }
 

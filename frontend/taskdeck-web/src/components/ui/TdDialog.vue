@@ -261,7 +261,7 @@ onUnmounted(() => {
     gap: var(--td-space-2);
   }
 
-  .td-dialog__footer > * {
+  .td-dialog__footer :deep(> *) {
     width: 100%;
     min-height: 44px;
   }
