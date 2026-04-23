@@ -10,6 +10,28 @@ import { resolveDemoBackendLlmEnv, resolvePlaywrightBackendLlmEnv } from './play
 import { resolveReuseExistingServer } from './playwright.server-reuse'
 
 const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
+/*
+ * SQLite connection options tuned for E2E parallelization (TST-60, #867).
+ *
+ * With `fullyParallel: true`, multiple Playwright workers drive the same backend
+ * process concurrently. Each test uses a distinct user/board (see
+ * `registerUserSession` in tests/e2e/support/authSession.ts), so the logical test
+ * data is already isolated. The remaining contention is at the SQLite engine level:
+ * parallel writes on the same database file can briefly block each other.
+ *
+ *   - Cache=Shared        — connections in the backend share a page cache, reducing
+ *                           read contention.
+ *   - Pooling=True        — reuse connection objects (also Microsoft.Data.Sqlite default).
+ *   - Default Timeout=30  — wait up to 30 seconds on a busy lock before surfacing
+ *                           SQLITE_BUSY. Parallel E2E traffic is bursty but short,
+ *                           so a generous wait masks transient contention without
+ *                           hiding genuine deadlocks (real deadlocks still time out).
+ *
+ * These are additive: they do not alter the on-disk format or the test database path,
+ * and they are scoped to the E2E backend process launched by this config.
+ */
+const e2eSqliteConnectionOptions = 'Cache=Shared;Pooling=True;Default Timeout=30'
+const e2eConnectionString = `Data Source=${e2eDbPath};${e2eSqliteConnectionOptions}`
 const defaultApiBaseUrl = 'http://localhost:5000/api'
 const demoBackendLlmEnv = resolveDemoBackendLlmEnv(process.env)
 const backendLlmEnv = resolvePlaywrightBackendLlmEnv(process.env)
@@ -30,7 +52,7 @@ const backendCorsOrigins = resolveBackendCorsOrigins(
 )
 const backendServerEnv: Record<string, string> = {
   ASPNETCORE_ENVIRONMENT: 'Development',
-  ConnectionStrings__DefaultConnection: `Data Source=${e2eDbPath}`,
+  ConnectionStrings__DefaultConnection: e2eConnectionString,
   ASPNETCORE_URLS: apiConfig.origin,
   ...backendLlmEnv,
 }
@@ -39,11 +61,33 @@ for (const [index, origin] of backendCorsOrigins.entries()) {
   backendServerEnv[`Cors__DevelopmentAllowedOrigins__${index}`] = origin
 }
 
+/*
+ * Worker count resolution (TST-60, #867):
+ *
+ * Default to 2 workers in CI and unset (Playwright's default, typically cores/2)
+ * locally. Two concurrent workers give a meaningful speedup while keeping contention
+ * on the single SQLite E2E database and single backend process bounded. Raising
+ * the count further trades wall-clock time for increased risk of SQLITE_BUSY under
+ * bursty writes.
+ *
+ * Override via TASKDECK_E2E_WORKERS if needed (integer, 1+).
+ */
+const ciWorkerDefault = 2
+const e2eWorkers = resolveWorkers(process.env.TASKDECK_E2E_WORKERS, ciWorkerDefault)
+
 export default defineConfig({
   testDir: './tests/e2e',
   forbidOnly: !!process.env.CI,
-  fullyParallel: false,
-  workers: process.env.CI ? 1 : undefined,
+  /*
+   * Parallel execution is safe because tests provision unique users, boards,
+   * columns, and cards per test case (see tests/e2e/support/authSession.ts and
+   * boardHelpers.ts — names include Date.now() + random suffixes, and data is
+   * scoped server-side by the authenticated user). The opt-in stakeholder demo
+   * (stakeholder-demo.spec.ts) is still skipped by default and should remain
+   * opt-in serial work.
+   */
+  fullyParallel: true,
+  workers: e2eWorkers,
   maxFailures: process.env.CI ? 3 : undefined,
   globalTimeout: process.env.CI ? 12 * 60_000 : undefined,
   timeout: 45_000,
@@ -328,4 +372,37 @@ function parseOriginList(rawOrigins: string | undefined): string[] {
 
 function dedupeOrigins(origins: string[]): string[] {
   return [...new Set(origins)]
+}
+
+/**
+ * Resolve the worker count for the E2E runner.
+ *
+ * Priority:
+ *   1. `TASKDECK_E2E_WORKERS` env var (integer >= 1) when set.
+ *   2. `ciWorkerDefault` when running in CI (process.env.CI is truthy).
+ *   3. `undefined` locally, which lets Playwright pick its own default.
+ */
+function resolveWorkers(rawOverride: string | undefined, ciDefault: number): number | undefined {
+  if (rawOverride !== undefined) {
+    const trimmed = rawOverride.trim()
+    if (!/^\d+$/.test(trimmed)) {
+      throw new Error(
+        `[e2e config] TASKDECK_E2E_WORKERS must be a positive integer. Received "${rawOverride}".`,
+      )
+    }
+
+    const parsed = Number.parseInt(trimmed, 10)
+    if (parsed < 1) {
+      throw new Error(
+        `[e2e config] TASKDECK_E2E_WORKERS must be >= 1. Received "${rawOverride}".`,
+      )
+    }
+    return parsed
+  }
+
+  if (process.env.CI) {
+    return ciDefault
+  }
+
+  return undefined
 }
