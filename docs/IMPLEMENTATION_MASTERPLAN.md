@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-04-22
+Last Updated: 2026-04-23
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -680,6 +680,13 @@ Delivered in the latest cycle:
     - **CI-02 Gitleaks secrets detection** (`#871`/`#902`): `.gitleaks.toml` extends default rules with project-specific allowlists (test fixtures, dev placeholders, CI-only vars); `.gitleaksignore`; reusable workflow `reusable-gitleaks.yml` with `scan-mode` (`pr`/`full`) + `fail-on-findings` toggle; action pinned to commit SHA `ff98106e` (not a mutable tag); non-blocking advisory scan on every PR via `ci-extended.yml`; blocking full-history scan via CLI (event-agnostic; works on release events) in `ci-release.yml`; SARIF artefact uploaded; CI topology comment updated
     - total impact on audit posture: all 5 Tier 1 ("Before Any External User") items from `docs/AUDIT.md` are now resolved (response compression still outstanding outside this wave); 4 of 5 Tier 2 items resolved (view decomposition and error boundary remain); SSRF + dev-secret + content-validation gaps from the security audit closed
 
+136. Mobile, security, legal, and testing expansion wave (2026-04-23, PRs `#944`–`#949`, 5 PRs with adversarial review per PR):
+    - **FE-19 mobile-responsive board, toolbar, and dialog** (`#860`/`#944`): board columns stack vertically on ≤640px; `TdDialog` full-bleed with `100dvh` at mobile; 44×44px tap targets on toolbar and action rail; `--td-font-lg` token for iOS zoom prevention; `@mobile` Playwright test; WCAG 2.4.3 footer tab-order fix; scoped slot CSS penetration fix (`:deep(> *)`) and `overflow-x: clip` for spec-correct mobile overflow
+    - **SEC-29 CSP style-src tightening (partial)** (`#855`/`#945`): removed `'unsafe-inline'` from `style-src` in API CSP; `style-src-elem 'self'` in reverse-proxy blocks inline `<style>` injection; regression test added; 4 docs updated; follow-up: migrate 27 `:style` binding files to CSS custom properties
+    - **Legal document drafts** (`#548`/`#946`): 5 DRAFT documents in `docs/legal/` — Privacy Policy, Terms of Service, Sub-Processors (with conditional Sentry), Cookie Policy (concrete localStorage keys, OAuth cookie disclosure), and README with launch checklist; grounded in actual codebase behavior with `[LEGAL REVIEW REQUIRED]` markers
+    - **TST-59 visual regression expansion** (`#865`/`#948`): 15 new visual regression specs (total 20 components); clock pinning, timestamp masking, font-load determinism; redundant networkidle waits removed
+    - **TST-60 E2E parallelization** (`#867`/`#949`): `fullyParallel: true` with 2-worker default; `Cache=Shared` dropped; idempotent `.check()` for WIP toggle; `Default Timeout=30` comment corrected; WAL mode documented as follow-up
+
 ## Current Planning Pivot (2026-03-07)
 
 The 2026-03-06 MVP expansion review packages change the next-cycle emphasis without invalidating the current architecture.
@@ -873,7 +880,7 @@ Master tracker: `#531`.
 
 - `v0.3.0` **In Your Pocket** (target: Week 6-9):
   - ~~PWA manifest + service worker (`#540` Ã¢â€ â€™ `#541`, `#542`)~~ Ã¢â‚¬â€ baseline delivered in `#95`: Workbox generateSW with precaching, runtime caching, SPA navigateFallback, offline banner, SW update prompt, installability-ready manifest
-  - mobile-responsive CSS for core flows (`#543`)
+  - ~~mobile-responsive CSS for core flows (`#543`)~~ — baseline delivered in `#944` (FE-19): board vertical stacking, TdDialog full-bleed, 44px tap targets, iOS zoom prevention; secondary-view mobile sweep remains follow-up
   - bottom tab navigation for mobile
   - touch-optimized capture modal
   - mobile board view (card list)
@@ -1284,6 +1291,7 @@ Additional P1 issues from the same session (tracked in `#510`Ã¢â‚¬â€œ`
 25. **Post-validation documentation sweep (2026-04-16)**: Wave index and delivery annotations sweep (`#844`, merged) updated `#107` wave execution index with 126/129 completed items checked and added "(delivered)" annotations to ~100+ items across Stages 2--5 in `ISSUE_EXECUTION_GUIDE.md`. Remaining PRs in the post-validation wave (`#822`, `#841`, `#877`--`#880`, `#882`) remain open and pending merge; their delivery notes will be added upon merge.
 26. **Production hardening wave from AUDIT.md findings (2026-04-22, PRs `#902`–`#913`)**: 12 PRs closing 10 tracked audit issues plus 2 CI stabilisation fixes. Delivered: SEC-26 SSRF protection (`#850`/`#905`), SEC-27 dev JWT secret removal + unconditional bootstrap (`#851`/`#911`), SEC-30 file import content validation (`#860`/`#910`), PERF-11 WorkspaceService sync-over-async removal (`#847`/`#904`), PERF-12 board list pagination (`#848`/`#909`), PERF-13 SQL-level AuditLog filtering (`#849`/`#903`), OPS-27 startup configuration validation (`#863`/`#908`), OPS-28 EF migration bootstrap verification (`#864`/`#907`), CI-02 Gitleaks secrets detection (`#871`/`#902`), TST-58 CLI test discovery + shared harness (`#853`/`#906`). CI stabilisation: ActivityView Windows timestamp flake (`#912`), FirstRunBootstrapper cross-process write serialisation (`#913`). All 5 Tier 1 and 4 of 5 Tier 2 audit priorities from `docs/AUDIT.md` are now resolved; response compression (Tier 1) and ~~view decomposition~~ + error boundary (Tier 2) remain open. View decomposition now resolved in wave 27 below.
 27. **CI/hardening, frontend decomposition, ops, and documentation wave (2026-04-22, PRs `#914`–`#924`)**: 10 issues across 10 PRs. **CI/Hardening**: CI-01 SAST scanning with Semgrep (`#870`/`#915`, ADR-0031), TST-61 database migration validation in CI (`#869`/`#916`), CI-03 performance regression gate (`#872`/`#918`), HARD-01 circuit breaker for external API calls with Polly (`#876`/`#924`, ADR-0032). **Frontend**: FE-20 session timeout warning (`#861`/`#919`, 19 tests), FE-18 decompose AutomationChatView (`#859`/`#920`, 1523 lines to 235-line shell + 7 components + 1 composable), FE-17 decompose InboxView (`#858`/`#921`, 1527 lines to 222-line shell + 2 panels + 1 composable + utils), FE-16 decompose ReviewView (`#856`/`#923`, 1659 lines to 148-line shell + 6 components + 2 composables, all 45 existing tests pass). **Ops/Docs**: OPS-30 monitoring and alerting rules (`#868`/`#914`, 10 alert rules with P1/P2 severity tiers), DOC-08 data model reference with ERD (`#875`/`#917`, 855 lines, 37 entities, Mermaid ERD). All 3 oversized views from `docs/AUDIT.md` Tier 2 are now decomposed. 2 new ADRs (ADR-0031, ADR-0032).
+28. **Docs, CI hardening, and bug-fix wave (2026-04-23, PRs `#936`–`#942`)**: 7 PRs across docs cleanup, bug fixes, and CI hardening. **Docs**: legacy `TASKDECK_E2E_DB` env var removed from Playwright commands across 5 docs (`#934`/`#936`), UTF-8 mojibake fixed in STATUS.md — 109 encoding corrections (`#929`/`#937`), test counts recertified in TESTING_GUIDE.md (`#930`/`#940`). **Bug fixes**: redundant `AddExternalLoginsUserForeignKey` migration made no-op (`#932`/`#938`), UserPreferences UNIQUE constraint race condition replaced with atomic `INSERT OR IGNORE` upsert (`#931`/`#941`, 4 concurrency tests). **Features**: `POST /api/auth/refresh` endpoint completing FE-20 session timeout backend (`#933`/`#939`, 10 integration tests). **CI**: 5 pre-existing API Integration test failures resolved — Production-mode test configuration and MCP telemetry assertion fix (`#942`).
 
 ## Documentation Operating Model
 Active docs:

@@ -232,6 +232,18 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Oidc"
 
 31 tests (11 domain + 20 integration) covering API key entity (`tdsk_` prefix, SHA-256 hashing), `ApiKeyMiddleware` Bearer validation, HTTP user context mapping, REST key management, and rate limiting per API key.
 
+## E2E Parallelization (TST-60, `#867`/`#949`)
+
+Playwright E2E suite runs in parallel (`fullyParallel: true`) with 2-worker default for both local and CI runs. Worker count is overridable via `TASKDECK_E2E_WORKERS` environment variable.
+
+Per-test isolation is built into the data layer: `registerUserSession` provisions a unique user per test with `Date.now() + random` suffixes; board/column/card names follow the same pattern; data is scoped server-side by authenticated user.
+
+SQLite connection string uses `Pooling=True;Default Timeout=30` for E2E runs. `Cache=Shared` was intentionally removed (increases contention vs default private-cache mode). WAL mode (`PRAGMA journal_mode=WAL`) is documented as future work for genuine concurrent-read throughput.
+
+Key test patterns for parallel safety:
+- Use idempotent Playwright actions (`.check()` instead of `.click()`) when the dependent DOM element is `v-if`-gated on the control's reactive state
+- UI tests touching controls whose sibling DOM is conditionally gated should wait for the dependent element, not the control itself
+
 ## Platform Expansion Testing Capabilities (2026-04-09)
 
 The platform expansion wave (PRs `#796`–`#805`) delivered four new testing capabilities:
@@ -264,9 +276,9 @@ npx playwright test --config playwright.visual.config.ts              # Run visu
 npx playwright test --config playwright.visual.config.ts --update-snapshots  # Update baselines
 ```
 
-7 visual tests: board (empty + populated), command palette (open + search), archive, inbox, home. Policy at `docs/testing/VISUAL_REGRESSION_POLICY.md`.
+20 visual tests (expanded from 7 in TST-59, `#865`/`#948`): board (empty + populated), command palette (open + search), archive, inbox, home, login, register, today, calendar (clock-pinned), metrics, review, notifications, settings, card modal (timestamp-masked), column edit modal (timestamp-masked), board toolbar, capture/inbox views. Clock pinning via `page.clock.install()` for date-dependent views; `document.fonts.ready` wait for font-load determinism; dynamic content hidden via `data-testid="timestamp"` + `hideDynamicContent` helper. Policy at `docs/testing/VISUAL_REGRESSION_POLICY.md`.
 
-CI: `reusable-visual-regression.yml` in extended CI (testing/visual label). Uploads diff artifacts on failure.
+CI: `reusable-visual-regression.yml` in extended CI (testing/visual label). Uploads diff artifacts on failure. Baseline bootstrap: CI detects missing `__screenshots__/` directory, runs `--update-snapshots`, and uploads the `visual-regression-baselines` artifact for committing in a follow-up PR.
 
 ### Mutation Testing (TST-05, `#90`/`#796`)
 

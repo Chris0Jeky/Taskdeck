@@ -124,7 +124,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | HIGH | No encryption at rest for SQLite database | Sensitive data accessible with file access |
 | MEDIUM | No role-based authorization (RBAC) | All authenticated users have equal access |
 | MEDIUM | No vulnerability disclosure policy (`SECURITY.md`) | No responsible disclosure path |
-| MEDIUM | `style-src 'unsafe-inline'` in CSP | Allows inline style injection |
+| MEDIUM | ~~`style-src 'unsafe-inline'` in CSP~~ | **Partially mitigated** (SEC-29/`#945`): API CSP no longer has `'unsafe-inline'` in `style-src`; reverse-proxy uses `style-src-elem 'self'` to block `<style>` injection in modern browsers; `'unsafe-inline'` remains in `style-src` fallback for Vue `:style` bindings (27 files); follow-up: migrate to CSS custom properties |
 | MEDIUM | No distributed rate limiting | Multi-instance bypasses in-process limits |
 | MEDIUM | Audit trail retention unbounded | Grows indefinitely |
 | LOW | No OAuth scope validation | Scope claims not checked |
