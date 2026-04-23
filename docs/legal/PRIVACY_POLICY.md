@@ -167,10 +167,25 @@ primitives that support these rights today (delivery `#83` / `#666` in
 `docs/STATUS.md`):
 
 - **Data export (portability).** `GET /api/account/export` and
-  `GET /api/account/export/stream` produce a versioned JSON archive of your
-  account data: boards, columns, cards, labels, captures, proposals, chat
-  sessions and messages, audit-trail rows that reference you, preferences, and
-  notifications.
+  `GET /api/account/export/stream` produce a versioned JSON archive
+  (`version` `1.0` at the time of this draft) of your account-scoped records.
+  The export covers: your profile (username, email, active flag, default role,
+  account-creation timestamp); the board-access records that link you to
+  shared boards (board ID, name, description, role, owner flag, timestamp) —
+  *not* the full column/card/label/comment tree, which is board-owner-scoped
+  and exported separately via the board-owner backup flow; your notifications
+  (id, type, title, message, read state, timestamp); your capture/inbox items
+  as metadata (id, status, request type, timestamp) — the original capture
+  text is not included in this archive today; your automation proposals (id,
+  status, summary, associated board ID, timestamp); your chat sessions (id,
+  status, **count of messages**, timestamp) — individual chat message bodies
+  are not currently included; your audit-trail rows (id, entity type, entity
+  id, action, timestamp); your workspace preferences and notification
+  preferences. The export format is versioned so future additions can be
+  introduced without breaking integrations. `[LEGAL REVIEW REQUIRED]` —
+  operators must decide whether the current scope satisfies the portability
+  right in their jurisdiction, or whether additional fields (e.g., capture
+  text, chat message bodies) must be added before publication.
 - **Account deletion (erasure).** The account-deletion flow requires password
   re-authentication and a confirmation phrase, deletes personal content
   (notifications, captures, chat sessions/messages, external logins,
