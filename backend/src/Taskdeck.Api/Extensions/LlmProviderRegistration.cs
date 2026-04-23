@@ -1,7 +1,10 @@
 using System.Net.Sockets;
+using Polly;
+using Polly.Extensions.Http;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using CircuitState = Taskdeck.Application.Services.CircuitState;
 
 namespace Taskdeck.Api.Extensions;
 
@@ -39,6 +42,33 @@ public static class LlmProviderRegistration
         var llmProviderSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
         services.AddSingleton(llmProviderSettings);
 
+        // Circuit breaker settings and shared state tracker (explicit instances
+        // so Program.cs can look them up from the service descriptors before build).
+        var circuitBreakerSettings = configuration.GetSection("CircuitBreaker").Get<CircuitBreakerSettings>() ?? new CircuitBreakerSettings();
+        if (circuitBreakerSettings.FailureThreshold < 1)
+        {
+            throw new InvalidOperationException(
+                $"CircuitBreaker:FailureThreshold must be at least 1 (got {circuitBreakerSettings.FailureThreshold}). " +
+                "Polly requires a positive value for handledEventsAllowedBeforeBreaking.");
+        }
+        if (circuitBreakerSettings.BreakDurationSeconds < 1)
+        {
+            throw new InvalidOperationException(
+                $"CircuitBreaker:BreakDurationSeconds must be at least 1 (got {circuitBreakerSettings.BreakDurationSeconds}).");
+        }
+        services.AddSingleton(circuitBreakerSettings);
+        var circuitBreakerTracker = new CircuitBreakerStateTracker();
+        services.AddSingleton(circuitBreakerTracker);
+
+        // Create circuit breaker policies once so the same policy instance is reused
+        // across all HTTP requests for each provider. This is critical — Polly tracks
+        // consecutive failures per policy instance, so creating a new policy per
+        // request would defeat circuit breaking entirely.
+        var openAiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
+            circuitBreakerTracker, "OpenAI", circuitBreakerSettings);
+        var geminiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
+            circuitBreakerTracker, "Gemini", circuitBreakerSettings);
+
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
         var allowLocalhostLlm = IsLocalhostLlmAllowed(services, configuration);
@@ -64,7 +94,8 @@ public static class LlmProviderRegistration
                         allowLocalhostEndpoints: allowLocalhostLlm,
                         cancellationToken)
             };
-        });
+        })
+        .AddPolicyHandler(openAiCircuitBreakerPolicy);
         services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
@@ -85,7 +116,8 @@ public static class LlmProviderRegistration
                         allowLocalhostEndpoints: allowLocalhostLlm,
                         cancellationToken)
             };
-        });
+        })
+        .AddPolicyHandler(geminiCircuitBreakerPolicy);
 
         services.AddScoped<MockLlmProvider>();
         services.AddScoped<ILlmProvider>(sp =>
@@ -109,6 +141,44 @@ public static class LlmProviderRegistration
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Builds a Polly circuit breaker policy for an external HTTP client.
+    /// The circuit opens after <see cref="CircuitBreakerSettings.FailureThreshold"/>
+    /// consecutive failures and stays open for
+    /// <see cref="CircuitBreakerSettings.BreakDurationSeconds"/> seconds before
+    /// transitioning to half-open. State transitions are recorded in
+    /// <see cref="CircuitBreakerStateTracker"/> for health endpoint visibility.
+    /// <para>
+    /// Important: The returned policy must be reused across all requests for the
+    /// same HTTP client. Polly tracks consecutive failures per policy instance,
+    /// so creating a new policy per request would defeat circuit breaking.
+    /// </para>
+    /// </summary>
+    internal static IAsyncPolicy<HttpResponseMessage> BuildCircuitBreakerPolicy(
+        CircuitBreakerStateTracker tracker,
+        string circuitName,
+        CircuitBreakerSettings settings)
+    {
+        return HttpPolicyExtensions
+            .HandleTransientHttpError() // 5xx, 408, HttpRequestException
+            .CircuitBreakerAsync(
+                handledEventsAllowedBeforeBreaking: settings.FailureThreshold,
+                durationOfBreak: TimeSpan.FromSeconds(settings.BreakDurationSeconds),
+                onBreak: (outcome, breakDuration) =>
+                {
+                    var reason = outcome.Exception?.Message ?? $"HTTP {(int)(outcome.Result?.StatusCode ?? 0)}";
+                    tracker.RecordState(circuitName, CircuitState.Open, reason);
+                },
+                onReset: () =>
+                {
+                    tracker.RecordState(circuitName, CircuitState.Closed);
+                },
+                onHalfOpen: () =>
+                {
+                    tracker.RecordState(circuitName, CircuitState.HalfOpen);
+                });
     }
 
     /// <summary>

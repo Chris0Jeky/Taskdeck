@@ -18,17 +18,20 @@ public class HealthController : ControllerBase
     private readonly WorkerSettings _workerSettings;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly RedisBackplaneHealthCheck _redisHealthCheck;
+    private readonly CircuitBreakerStateTracker _circuitBreakerTracker;
 
     public HealthController(
         IServiceProvider serviceProvider,
         WorkerSettings workerSettings,
         WorkerHeartbeatRegistry workerHeartbeatRegistry,
-        RedisBackplaneHealthCheck redisHealthCheck)
+        RedisBackplaneHealthCheck redisHealthCheck,
+        CircuitBreakerStateTracker circuitBreakerTracker)
     {
         _serviceProvider = serviceProvider;
         _workerSettings = workerSettings;
         _workerHeartbeatRegistry = workerHeartbeatRegistry;
         _redisHealthCheck = redisHealthCheck;
+        _circuitBreakerTracker = circuitBreakerTracker;
     }
 
     [HttpGet("live")]
@@ -197,6 +200,38 @@ public class HealthController : ControllerBase
         }
 
         checks["workers"] = workerChecks;
+
+        // Circuit breaker state for external HTTP clients.
+        // Open circuits are reported but do NOT fail the readiness probe because
+        // LLM and OAuth providers are optional/degradeable -- the system falls back
+        // to mock responses or cached tokens when a provider is unavailable.
+        // Operators can monitor the circuitBreakers section for open circuits.
+        var circuitBreakerStates = _circuitBreakerTracker.GetAll();
+        if (circuitBreakerStates.Count > 0)
+        {
+            var circuitChecks = new Dictionary<string, object>();
+            var anyOpen = false;
+            foreach (var (name, snapshot) in circuitBreakerStates)
+            {
+                circuitChecks[name] = new
+                {
+                    state = snapshot.State.ToString(),
+                    lastTransitionUtc = snapshot.LastTransitionUtc,
+                    lastFailureReason = snapshot.LastFailureReason
+                };
+
+                if (snapshot.State == CircuitState.Open)
+                {
+                    anyOpen = true;
+                }
+            }
+            circuitChecks["_summary"] = new { status = anyOpen ? "Degraded" : "Healthy" };
+            checks["circuitBreakers"] = circuitChecks;
+        }
+        else
+        {
+            checks["circuitBreakers"] = new { status = "AllClosed" };
+        }
 
         var statusCode = isReady ? 200 : 503;
         return StatusCode(statusCode, new

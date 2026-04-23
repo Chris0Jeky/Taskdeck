@@ -33,3 +33,4 @@
 | [0029](ADR-0029-oidc-mfa-pluggable-identity.md) | OIDC/SSO Integration with Optional TOTP MFA | Accepted | 2026-04-09 |
 | [0030](ADR-0030-storybook-baseline-vite-8-compatibility.md) | Storybook Baseline with Vite 8 Compatibility | Accepted | 2026-04-09 |
 | [0031](ADR-0031-sast-scanning-semgrep.md) | SAST Scanning with Semgrep | Accepted | 2026-04-22 |
+| [0032](ADR-0032-polly-circuit-breaker-external-apis.md) | Polly Circuit Breaker for External API Calls | Accepted | 2026-04-22 |

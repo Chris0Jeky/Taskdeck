@@ -6,7 +6,10 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OAuth.Claims;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Http;
 using Microsoft.IdentityModel.Tokens;
+using Polly;
+using Polly.Extensions.Http;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
@@ -25,7 +28,9 @@ public static class AuthenticationRegistration
         this IServiceCollection services,
         JwtSettings jwtSettings,
         GitHubOAuthSettings? gitHubOAuthSettings = null,
-        OidcSettings? oidcSettings = null)
+        OidcSettings? oidcSettings = null,
+        CircuitBreakerStateTracker? circuitBreakerTracker = null,
+        CircuitBreakerSettings? circuitBreakerSettings = null)
     {
         if (string.IsNullOrWhiteSpace(jwtSettings.SecretKey) ||
             jwtSettings.SecretKey.Length < 32 ||
@@ -139,6 +144,13 @@ public static class AuthenticationRegistration
 
                 // OAuthHandler fetches UserInformationEndpoint automatically
                 // and applies ClaimActions — no custom OnCreatingTicket needed.
+
+                // Circuit breaker for the OAuth backchannel (token exchange + user info).
+                if (circuitBreakerTracker is not null && circuitBreakerSettings is not null)
+                {
+                    options.BackchannelHttpHandler = BuildOAuthBackchannelHandler(
+                        circuitBreakerTracker, circuitBreakerSettings, "GitHubOAuth");
+                }
             });
         }
 
@@ -174,11 +186,56 @@ public static class AuthenticationRegistration
                     options.ClaimActions.MapJsonKey(ClaimTypes.Name, "preferred_username");
                     options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
                     options.ClaimActions.MapJsonKey("name", "name");
+
+                    // Circuit breaker for the OIDC backchannel.
+                    if (circuitBreakerTracker is not null && circuitBreakerSettings is not null)
+                    {
+                        options.BackchannelHttpHandler = BuildOAuthBackchannelHandler(
+                            circuitBreakerTracker, circuitBreakerSettings, $"OIDC_{provider.Name}");
+                    }
                 });
             }
         }
 
         return services;
+    }
+
+    /// <summary>
+    /// Creates a delegating handler chain that wraps a default
+    /// <see cref="SocketsHttpHandler"/> with a Polly circuit breaker policy.
+    /// Used for the OAuth/OIDC backchannel (token exchange and user-info requests).
+    /// </summary>
+    internal static HttpMessageHandler BuildOAuthBackchannelHandler(
+        CircuitBreakerStateTracker tracker,
+        CircuitBreakerSettings settings,
+        string circuitName)
+    {
+        var policy = HttpPolicyExtensions
+            .HandleTransientHttpError()
+            .CircuitBreakerAsync(
+                handledEventsAllowedBeforeBreaking: settings.FailureThreshold,
+                durationOfBreak: TimeSpan.FromSeconds(settings.BreakDurationSeconds),
+                onBreak: (outcome, breakDuration) =>
+                {
+                    var reason = outcome.Exception?.Message ?? $"HTTP {(int)(outcome.Result?.StatusCode ?? 0)}";
+                    tracker.RecordState(circuitName, CircuitState.Open, reason);
+                },
+                onReset: () =>
+                {
+                    tracker.RecordState(circuitName, CircuitState.Closed);
+                },
+                onHalfOpen: () =>
+                {
+                    tracker.RecordState(circuitName, CircuitState.HalfOpen);
+                });
+
+        return new PolicyHttpMessageHandler(policy)
+        {
+            InnerHandler = new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false
+            }
+        };
     }
 
     private static string BuildWwwAuthenticateHeaderValue(string? error, string? errorDescription)
