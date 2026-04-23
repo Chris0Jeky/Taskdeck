@@ -169,7 +169,12 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
-    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:;" always;
+    # SEC-29: style-src-elem blocks inline <style> and injected external
+    # stylesheets (main XSS sink). style-src retains 'unsafe-inline' as legacy
+    # fallback and to allow Vue reactive :style bindings to set DOM styles at
+    # runtime. Follow-up: migrate dynamic :style bindings to CSS variables so
+    # 'unsafe-inline' can be removed entirely.
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; style-src-elem 'self'; script-src 'self'; connect-src 'self' ws: wss:;" always;
 
     location /api/ {
         proxy_pass http://api:8080/api/;
