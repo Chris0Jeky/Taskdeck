@@ -808,9 +808,9 @@ If behavior, commands, or known gaps changed, update:
    - `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose`
    - `cd frontend/taskdeck-web && npm run typecheck && npm run build`
 3. Frontend E2E:
-   - `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line`
+   - `cd frontend/taskdeck-web && npx playwright test --reporter=line`
    - fallback when `5173` is unavailable:
-     `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001 npx playwright test --reporter=line`
+     `cd frontend/taskdeck-web && TASKDECK_E2E_FRONTEND_PORT=5001 npx playwright test --reporter=line`
 
 ## V. Capture Realignment Manual Slice (Shipped CAP MVP)
 
@@ -1128,7 +1128,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 
 1. [ ] Verify Playwright recognizes all new specs: `npx playwright test --list` shows error-recovery, multi-board, and edge-journey specs.
 2. [ ] Run the expanded E2E suite against a live backend:
-   - `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test tests/e2e/error-recovery.spec.ts tests/e2e/multi-board.spec.ts tests/e2e/edge-journeys.spec.ts --reporter=line`
+   - `cd frontend/taskdeck-web && npx playwright test tests/e2e/error-recovery.spec.ts tests/e2e/multi-board.spec.ts tests/e2e/edge-journeys.spec.ts --reporter=line`
    - Expected: all scenarios pass.
 
 ### Z16. Dependency Hygiene Verification (PR #771 — closed)
