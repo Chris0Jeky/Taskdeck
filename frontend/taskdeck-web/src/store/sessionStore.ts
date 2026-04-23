@@ -8,6 +8,7 @@ import type { LoginRequest, RegisterRequest, ChangePasswordRequest, SessionState
 import { getTokenExpiryIso, isTokenExpired } from '../utils/jwt'
 import { isDemoMode, isDemoSessionActive, activateDemoSession, clearDemoSession, DEMO_USER } from '../utils/demoMode'
 import * as tokenStorage from '../utils/tokenStorage'
+import { logWarn } from '../utils/errorReporting'
 
 export const useSessionStore = defineStore('session', () => {
   const toast = useToastStore()
@@ -50,7 +51,7 @@ export const useSessionStore = defineStore('session', () => {
 
   function setSession(data: AuthResponse) {
     if (!tokenStorage.isValidJwtStructure(data.token)) {
-      console.warn('Received token with invalid JWT structure — session not persisted.')
+      logWarn('Received token with invalid JWT structure — session not persisted.')
       return
     }
 
@@ -90,7 +91,7 @@ export const useSessionStore = defineStore('session', () => {
       }
 
       if (typeof user.defaultRole !== 'number') {
-        console.warn('Session restore role hydration skipped: profile response did not include a numeric defaultRole.')
+        logWarn('Session restore role hydration skipped: profile response did not include a numeric defaultRole.')
         return
       }
 
@@ -102,7 +103,7 @@ export const useSessionStore = defineStore('session', () => {
         defaultRole: user.defaultRole,
       })
     } catch (e) {
-      console.warn('Session restore role hydration failed.', e)
+      logWarn('Session restore role hydration failed.', e)
     }
   }
 
