@@ -28,7 +28,7 @@ API middleware now emits these headers for API responses:
   - `form-action 'self'`
   - `connect-src 'self'`
   - `img-src 'self'`
-  - `style-src 'self' 'unsafe-inline'`
+  - `style-src 'self'` (hardened in `#855` / SEC-29 — `'unsafe-inline'` removed for API. API serves JSON; Swagger is excluded from CSP.)
   - `script-src 'self'` (hardened in `#156` — `'unsafe-inline'` removed)
 
 Environment-aware behavior:

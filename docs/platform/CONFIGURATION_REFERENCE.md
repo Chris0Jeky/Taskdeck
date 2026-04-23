@@ -395,7 +395,7 @@ Development when the key is unset (`SettingsRegistration.cs`). Consumed by
 | `SecurityHeaders:HstsMaxAgeDays` | `int` | `365` | `max-age` value for HSTS in days. | No |
 | `SecurityHeaders:HstsIncludeSubDomains` | `bool` | `false` | Include `includeSubDomains` in HSTS. | No |
 | `SecurityHeaders:HstsPreload` | `bool` | `false` | Include `preload` in HSTS. | No |
-| `SecurityHeaders:ContentSecurityPolicy` | `string` | `default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'` | Raw CSP string. | No |
+| `SecurityHeaders:ContentSecurityPolicy` | `string` | `default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'` | Raw CSP string. SEC-29: `'unsafe-inline'` removed from `style-src` — API serves JSON (Swagger excluded from CSP), no inline styles needed. | No |
 | `SecurityHeaders:XFrameOptions` | `string` | `DENY` | Value for `X-Frame-Options`. | No |
 | `SecurityHeaders:ReferrerPolicy` | `string` | `no-referrer` | Value for `Referrer-Policy`. | No |
 

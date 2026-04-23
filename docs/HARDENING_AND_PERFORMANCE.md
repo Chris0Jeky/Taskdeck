@@ -196,9 +196,9 @@ axiosRetry(http, {
 
 ### 4.3 CSP Hardening
 
-**Gap**: `style-src 'unsafe-inline'` allows inline style injection.
+**PARTIALLY RESOLVED** (SEC-29 `#855`): `'unsafe-inline'` removed from `style-src` on the API (serves JSON only; Swagger already excluded from CSP). Reverse-proxy CSP adds `style-src-elem 'self'` so inline `<style>` blocks and injected external stylesheets are blocked in modern browsers, while `style-src 'self' 'unsafe-inline'` remains as a fallback required for Vue's reactive `:style` bindings (label color swatches, dynamic progress widths, virtualization offsets).
 
-**Fix**: Migrate inline styles to external CSS classes or use nonce-based CSP.
+**Follow-up**: migrate remaining `:style` bindings to CSS custom properties applied via static classes so `'unsafe-inline'` can be dropped from `style-src` on the frontend CSP as well.
 
 ### 4.4 Import File Validation
 
