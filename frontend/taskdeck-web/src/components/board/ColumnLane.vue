@@ -582,8 +582,9 @@ function handleCardDragOver(event: DragEvent) {
   }
 
   .td-column-lane__card-input {
-    /* Prevent iOS zoom on focus: font-size >= 16px. */
-    font-size: 16px;
+    /* Prevent iOS zoom on focus: font-size >= 16px. --td-font-lg is 1rem
+     * (16px), so we reuse the design token instead of hardcoding. */
+    font-size: var(--td-font-lg);
   }
 }
 </style>
