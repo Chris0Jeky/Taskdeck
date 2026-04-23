@@ -291,8 +291,27 @@ test('column WIP limit should reject additional cards', async ({ page }) => {
 
   await page.locator('[data-column-id] button[title="Edit Column"]').first().click()
   await expect(page.getByRole('heading', { name: 'Edit Column' })).toBeVisible()
-  await page.locator('#column-has-wip-limit').check()
-  await page.locator('#wip-limit').fill('1')
+  const wipCheckbox = page.locator('#column-has-wip-limit')
+  const wipLimit = page.locator('#wip-limit')
+  // Under parallel worker CPU contention, the Vue v-model propagation that
+  // reveals the conditional `#wip-limit` input can lag the checkbox click and
+  // leave the field un-rendered, causing a downstream `.fill` to exhaust the
+  // test timeout. Wait for the input to actually appear (retrying the toggle
+  // if Vue's reactive state didn't catch the click), then fill it. This
+  // asserts the *effect* we care about rather than assuming it is synchronous.
+  await expect
+    .poll(
+      async () => {
+        if (await wipLimit.count() === 0) {
+          await wipCheckbox.click()
+        }
+        return await wipLimit.count()
+      },
+      { timeout: 8_000, message: 'Expected WIP limit input to render after toggling the checkbox' },
+    )
+    .toBeGreaterThan(0)
+  await expect(wipCheckbox).toBeChecked()
+  await wipLimit.fill('1')
   await page.getByRole('button', { name: 'Save Changes' }).click()
 
   await addCard(page, columnName, firstCard)
