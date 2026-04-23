@@ -27,6 +27,14 @@ public static class ApiTestHarness
     public const string ProductionTestJwtSecret =
         "VGVzdE9ubHlKd3RTZWNyZXRGb3JQcm9kdWN0aW9uTW9kZVRlc3Rz";
 
+    /// <summary>
+    /// Test-only 256-bit encryption key for tests that switch to Production mode.
+    /// Production mode validates <c>Connectors:EncryptionKey</c> is present
+    /// (the Development.json fallback is not loaded in Production).
+    /// </summary>
+    public const string TestEncryptionKey =
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
     public static async Task<TestUserContext> AuthenticateAsync(HttpClient client, string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
