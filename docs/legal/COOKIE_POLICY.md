@@ -36,10 +36,12 @@ They are set in `localStorage` under predictable keys.
 |---|---|---|---|
 | Auth token | `taskdeck_token` | Holds the JWT used to authenticate API requests. Without this the app cannot stay signed in across reloads. | Persists until sign-out, explicit account deletion, or manual browser clear. Rejected and removed if structurally invalid. |
 | Session metadata | `taskdeck_session` | Holds the signed-in user's ID, username, and email, displayed in the UI shell. | Same lifetime as the auth token. |
-| Workspace mode | workspace-mode key | Remembers whether the user opted into a particular workspace mode (novice / advanced). | Persists until the user changes mode or clears browser storage. |
-| Feature flag overrides | feature-flags key | Stores local feature-flag overrides set via DevTools / QA flows. | Persists until cleared. |
-| Saved-view preferences | saved-views key | Stores user-authored saved views (filters, groupings) for boards. | Persists until the user deletes the view or clears browser storage. |
-| Archive-view UI hint | archived-boards visibility key | Remembers whether archived boards are hidden/shown in the sidebar. | Persists until the user toggles it or clears storage. |
+| Workspace mode | `taskdeck_workspace_mode` | Remembers whether the user opted into a particular workspace mode (guided / advanced). | Persists until the user changes mode or clears browser storage. |
+| Workspace help dismissals | `taskdeck_workspace_help_dismissals` | Remembers which in-product help/tips the user has dismissed, so they don't reappear. | Persists until the user clears the dismissals or browser storage. |
+| Feature flag overrides | `taskdeck_feature_flags` | Stores local feature-flag overrides set via DevTools / QA flows. Not expected in normal user sessions. | Persists until cleared. |
+| Saved-view preferences | `taskdeck_saved_views` | Stores user-authored saved views (filters, groupings) for boards. | Persists until the user deletes the view or clears browser storage. |
+| Archive-view UI hint | `taskdeck_archive_hidden_boards` | Remembers whether archived boards are hidden/shown in the sidebar. | Persists until the user toggles it or clears storage. |
+| Demo-mode marker | `taskdeck_demo` | Set only when the operator enables demo mode and the user starts a demo session. Flags the current browser session as running against the demo dataset. | Persists until the demo session ends or the user clears storage. Not set in normal (non-demo) deployments. |
 
 None of the items above are sent to third parties. They are all read and
 written by the Taskdeck frontend, and they do not act as tracking identifiers.
@@ -52,7 +54,7 @@ and consent handling must be followed.
 
 | Item | Key | Purpose | Default state |
 |---|---|---|---|
-| Analytics-consent flag | consent key in `telemetryStore` | Records whether the user has opted in to product analytics. | **Not written unless the user interacts with the consent UI.** The code explicitly refuses to auto-restore consent when the browser sends Do-Not-Track or Global Privacy Control signals. |
+| Analytics-consent flag | `taskdeck_telemetry_consent` | Records whether the user has opted in to product analytics. | **Not written unless the user interacts with the consent UI.** The code explicitly refuses to auto-restore consent when the browser sends Do-Not-Track or Global Privacy Control signals. |
 | Analytics script state | managed by `useAnalyticsScript` | Loads a third-party analytics script only after opt-in and only if the operator has configured one. The composable is cookie-free by design. | **Off by default.** No third-party analytics script is shipped or configured. |
 
 If the operator enables analytics:
