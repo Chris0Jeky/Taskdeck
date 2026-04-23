@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-22
+Last Updated: 2026-04-23
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,32 +10,25 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-22)
+## Current Verified Totals (2026-04-23)
 
-- Backend: **~4,760+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave + PRs `#902`–`#913` production hardening wave + PRs `#914`–`#924` CI/hardening wave adds ~23 circuit breaker tests)
-  - Domain: ~833+ (77 prior FsCheck + 93 new property tests for ChatSession/ChatMessage/Notification/KnowledgeDocument/WebhookSubscription + 11 ApiKey + 15 OAuthAuthCode + 8 MfaCredential + NoteImport domain)
-  - Application: ~1799+ (29 prior JSON fuzz + 19 new chat/notification DTO fuzz + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
-  - API integration: ~1135+ (8 metrics export + 80 prior adversarial + 50 new adversarial input + 20 API key + 13 prior concurrency + 22 new concurrency stress + 3 queue resilience + 13 LLM provider resilience + 9 telemetry + 4 telemetry API + 13 OIDC/auth + 9 OAuth token lifecycle)
-  - CLI contract: 4
-  - Architecture boundaries: 8
-- Frontend unit: **~2,482+ passing** (estimated after PRs `#821`–`#826` + `#841` + PRs `#919`–`#923` session timeout + view decomposition; ~200+ test files)
-  - New store integration: 88 tests (chat, board, queue, session, notification, workspace)
-  - New view/component coverage: 107 tests (Archive, Metrics, Board, Review, Chat, CardItem, BoardCanvas, BoardActionRail)
-  - New resilience: 14 tests (slow API, corrupted storage, loading states)
+- Backend: **4,979 passing** (5 failing, 2 skipped; 4,986 total) -- verified 2026-04-23 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main`
+  - Domain: 962 passed
+  - Application: 2,367 passed
+  - API integration: 1,540 passed (5 failed, 2 skipped; 1,547 total)
+  - CLI contract: 82 passed
+  - Architecture boundaries: 8 passed
+  - Integration (Testcontainers): 20 passed
+- Frontend unit: **2,607 passing** across 214 test files -- verified 2026-04-23 via `npx vitest --run --reporter=verbose` on `main`
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
-- Combined automated total: **~7,110+ passing** (backend ~4,550 + frontend unit ~2,482 + E2E)
+- Combined automated total: **7,586+ passing** (backend 4,979 + frontend unit 2,607 + E2E)
 
 Verification note:
-- backend total of 4,279 recertified 2026-04-12 via `dotnet test backend/Taskdeck.sln -c Release --list-tests 2>&1 | grep -c "^    "` on `main` after merging PRs `#800`–`#820`
-- frontend total of 2,245 recertified 2026-04-12 via `npx vitest --run --reporter=verbose 2>&1 | grep -c "✓"` on `main` after merging PRs `#800`–`#820`
-- supplementary wave (PRs `#821`–`#826`) adds ~429 new tests; totals estimated pending merge and full-suite recertification
-- validation/integrations wave (PRs `#837`–`#841`) adds ~121 new tests (60 integrations + 61 E2E validation/verification); totals estimated pending full-suite recertification
-- significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
-- significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
-- significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
-- significant test growth in 2026-04-04 wave 4 (PRs `#765`–`#770`, `#776`, 7 issues): OAuth token lifecycle integration (19 backend tests, `#723`/`#769`), tool argument replay (6 backend tests, `#673`/`#770`), streaming chat token usage (4 backend tests, `#763`/`#768`), DataExport exception logging (3 backend tests, `#759`/`#766`), Agent API 500 fix (2 un-skipped tests, `#758`/`#776`), frontend HTTP interceptor + router auth guard tests (33 new tests, `#725`/`#765`); all 7 PRs received two rounds of adversarial review with review-fix commits addressing CI failures, performance bugs, resource leaks, misleading test names, and weak assertions
-- significant test growth in 2026-04-04 wave 5 (PRs `#771`–`#779`, 8 issues, ~258 new tests): tool-calling Phase 3 refinements (17 backend tests, `#651`/`#773`), export streaming (15 backend tests, `#670`/`#774`), resilience/degraded-mode (34 tests: 18 backend + 16 frontend, `#720`/`#778`), frontend view vitest coverage (83 tests across 6 views, `#716`/`#775`), Pinia store integration (91 tests across 6 stores, `#711`/`#777`), E2E error state expansion (25 Playwright scenarios, `#712`/`#772`), accessibility lint (105 warnings → 0, `#762`/`#779`), vendored dependency cleanup (`#761`/`#771`); all 8 PRs received two rounds of adversarial review
-- CI/hardening wave (PRs `#914`–`#924`, 2026-04-22): HARD-01 circuit breaker (23 backend tests, `#876`/`#924`), FE-20 session timeout warning (19 frontend tests, `#861`/`#919`); view decomposition PRs (`#920`, `#921`, `#923`) preserve all existing tests without modification
+- backend total of 4,979 passing (5 failing, 2 skipped; 4,986 total) recertified 2026-04-23 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` at commit `97d4856c`
+- frontend total of 2,607 passing across 214 test files recertified 2026-04-23 via `npx vitest --run --reporter=verbose` on `main` at commit `97d4856c`
+- 5 pre-existing backend failures (all in Api.Tests): 3 CorsApiTests environment-specific failures, 1 McpTelemetryMiddlewareTests, 1 SecurityHeadersApiTests; these are environment-dependent integration tests that fail outside CI/production config
+- prior recertification: backend 4,279 (2026-04-12), frontend 2,245 (2026-04-12) after PRs `#800`–`#820`
+- growth since last recertification: backend +700 tests, frontend +362 tests
 
 ## Production Hardening Wave Testing (2026-04-22, PRs `#902`–`#913`)
 
@@ -105,7 +98,7 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Options
 
 ### CLI Tests Restored (TST-58, `#853`/`#906`)
 
-CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite now totals approximately **78 tests across 10 files**:
+CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite totalled approximately **78 tests across 10 files** at time of this wave (see [Current Verified Totals](#current-verified-totals-2026-04-23) for latest count of 82):
 
 | File | Tests |
 |------|-------|
@@ -1430,7 +1423,7 @@ New test coverage (~390+ new tests total):
 - **MEDIUM**: Key-existence oracle + modulo bias in API key generation (`#792`), capture DTO round-trip test (`#789`), history window denominator (`#790`), CancellationToken forwarding (`#787`)
 - Fixed test quality issues: misleading doc comments, weak assertions, non-thread-safe variables, redundant ARIA roles, missing screen reader announcements
 
-Backend suite total after this wave: **~3,460+ passing**. Frontend suite total: **~1,891 passing**. Combined: **~5,370+**.
+Backend suite total after this wave: **~3,460+ passing** (estimated at time of wave). Frontend suite total: **~1,891 passing** (estimated at time of wave). Combined: **~5,370+** (estimated at time of wave). See [Current Verified Totals](#current-verified-totals-2026-04-23) for latest recertified counts.
 
 ### Test expansion wave (`#721`) completion
 
