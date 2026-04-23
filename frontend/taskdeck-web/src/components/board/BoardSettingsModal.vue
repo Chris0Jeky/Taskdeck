@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Board } from '../../types/board'
+import { logError } from '../../utils/errorReporting'
 
 const props = defineProps<{
   board: Board
@@ -67,7 +68,7 @@ async function handleSave() {
     emit('updated')
     emit('close')
   } catch (error) {
-    console.error('Failed to update board:', error)
+    logError('Failed to update board:', error)
   }
 }
 
@@ -107,7 +108,7 @@ async function handleLifecycleTransition() {
       emit('close')
     }
   } catch (error) {
-    console.error('Failed to update board lifecycle state:', error)
+    logError('Failed to update board lifecycle state:', error)
   } finally {
     lifecycleActionInProgress.value = false
   }
