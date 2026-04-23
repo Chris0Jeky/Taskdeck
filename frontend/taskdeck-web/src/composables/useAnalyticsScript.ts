@@ -1,5 +1,6 @@
 import { watch, onUnmounted } from 'vue'
 import { useTelemetryStore } from '../store/telemetryStore'
+import { logWarn } from '../utils/errorReporting'
 
 const SCRIPT_ID = 'taskdeck-analytics-script'
 
@@ -54,19 +55,19 @@ export function useAnalyticsScript() {
 
     // Only allow HTTPS URLs to prevent javascript:, data:, or blob: injection
     if (!isValidScriptUrl(config.scriptUrl)) {
-      console.warn('[Taskdeck] Analytics script URL rejected: must be HTTPS', config.scriptUrl)
+      logWarn('[Taskdeck] Analytics script URL rejected: must be HTTPS', config.scriptUrl)
       return
     }
 
     // Validate provider to prevent arbitrary attribute injection
     if (!isValidProvider(config.provider)) {
-      console.warn('[Taskdeck] Analytics provider rejected: unsupported provider', config.provider)
+      logWarn('[Taskdeck] Analytics provider rejected: unsupported provider', config.provider)
       return
     }
 
     // Validate siteId to prevent injection via data attributes
     if (!isValidSiteId(config.siteId)) {
-      console.warn('[Taskdeck] Analytics siteId rejected: invalid format', config.siteId)
+      logWarn('[Taskdeck] Analytics siteId rejected: invalid format', config.siteId)
       return
     }
 
@@ -129,17 +130,17 @@ export function initAnalyticsScriptWatcher() {
     if (!config) return
 
     if (!isValidScriptUrl(config.scriptUrl)) {
-      console.warn('[Taskdeck] Analytics script URL rejected: must be HTTPS', config.scriptUrl)
+      logWarn('[Taskdeck] Analytics script URL rejected: must be HTTPS', config.scriptUrl)
       return
     }
 
     if (!isValidProvider(config.provider)) {
-      console.warn('[Taskdeck] Analytics provider rejected: unsupported provider', config.provider)
+      logWarn('[Taskdeck] Analytics provider rejected: unsupported provider', config.provider)
       return
     }
 
     if (!isValidSiteId(config.siteId)) {
-      console.warn('[Taskdeck] Analytics siteId rejected: invalid format', config.siteId)
+      logWarn('[Taskdeck] Analytics siteId rejected: invalid format', config.siteId)
       return
     }
 
