@@ -28,7 +28,7 @@ API middleware now emits these headers for API responses:
   - `form-action 'self'`
   - `connect-src 'self'`
   - `img-src 'self'`
-  - `style-src 'self'` (hardened in `#855` / SEC-29 — `'unsafe-inline'` removed for API. API serves JSON; Swagger is excluded from CSP.)
+  - `style-src 'self'` (hardened in `#855` / SEC-29 — `'unsafe-inline'` removed for API. This header also applies to the Vue SPA's `index.html` and SPA-fallback responses in the single-container production topology where the API serves `wwwroot/`; Swagger is excluded from CSP.)
   - `script-src 'self'` (hardened in `#156` — `'unsafe-inline'` removed)
 
 Environment-aware behavior:

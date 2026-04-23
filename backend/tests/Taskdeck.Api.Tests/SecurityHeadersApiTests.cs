@@ -37,10 +37,11 @@ public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
         cspValues.Should().ContainSingle();
     }
 
-    // SEC-29: assert the API CSP no longer allows inline styles. The API serves
-    // JSON (Swagger HTML is excluded from CSP), so no relaxation is needed for
-    // style-src here. Keep this test strict so future edits can't silently
-    // reintroduce 'unsafe-inline'.
+    // SEC-29: assert the API CSP no longer allows inline styles. The API emits
+    // this CSP on JSON responses and on the Vue SPA's index.html in the
+    // single-container production topology (wwwroot/ via UseStaticFiles +
+    // MapFallbackToFile). Swagger HTML is excluded from CSP. Keep this test
+    // strict so future edits can't silently reintroduce 'unsafe-inline'.
     [Fact]
     public async Task SecurityHeaders_CspStyleSrc_ShouldNotAllowUnsafeInline()
     {
