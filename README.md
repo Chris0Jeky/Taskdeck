@@ -123,7 +123,7 @@ npm run typecheck
 npm run build
 
 # Frontend E2E
-TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line
+npx playwright test --reporter=line
 ```
 
 For CI parity and verified test totals, see [docs/STATUS.md](docs/STATUS.md) and [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md).

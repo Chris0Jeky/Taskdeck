@@ -213,14 +213,8 @@ On Windows PowerShell, chain with `;` and a success check instead of `&&`
 From `frontend/taskdeck-web`:
 
 ```bash
-TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line
+npx playwright test --reporter=line
 npx playwright test tests/e2e/some-spec.spec.ts   # run a single E2E file
-```
-
-On Windows PowerShell, set the env var before the command:
-
-```powershell
-$env:TASKDECK_E2E_DB = "taskdeck.e2e.local.db"; npx playwright test --reporter=line
 ```
 
 For full test operations, fixtures, and troubleshooting, see

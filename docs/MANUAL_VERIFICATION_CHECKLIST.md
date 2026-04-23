@@ -527,5 +527,5 @@ cd frontend/taskdeck-web && npx vitest --run --reporter=verbose
 cd frontend/taskdeck-web && npm run typecheck && npm run build
 
 # Frontend E2E
-cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line
+cd frontend/taskdeck-web && npx playwright test --reporter=line
 ```

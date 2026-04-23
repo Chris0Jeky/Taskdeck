@@ -47,7 +47,7 @@ npm run lint         # eslint
 E2E (Playwright):
 ```bash
 cd frontend/taskdeck-web
-TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line
+npx playwright test --reporter=line
 npx playwright test tests/e2e/some-spec.spec.ts   # single E2E file
 ```
 
