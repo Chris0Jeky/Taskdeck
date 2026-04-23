@@ -244,6 +244,13 @@ if (args.Contains("--mcp"))
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Taskdeck is a local-first app — the Windows EventLog provider added by
+// CreateBuilder() causes ObjectDisposedException crashes in background
+// workers when it is disposed before EF Core finishes logging.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
 // ---- First-run bootstrap (must run before services are registered) ----------
 // Registers appsettings.local.json so previously generated secrets are loaded,
 // then generates a JWT secret if none is configured.
