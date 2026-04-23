@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Api.Telemetry;
