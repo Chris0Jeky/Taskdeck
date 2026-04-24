@@ -52,7 +52,16 @@ http.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
-      logError('API Error:', error)
+      // Log only safe, non-sensitive details -- never the full error object,
+      // which includes error.config.headers (Authorization: Bearer ...).
+      const safeDetails = {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method,
+      }
+      logError('API Error:', safeDetails)
 
       // Handle 401 - clear session and redirect to login (skip in demo mode).
       // Callers can set `skipAuth401` on the request config to suppress this
@@ -67,9 +76,9 @@ http.interceptors.response.use(
         }
       }
     } else if (error.request) {
-      logError('Network Error:', error)
+      logError('Network Error:', { message: error.message })
     } else {
-      logError('Error:', error)
+      logError('Error:', { message: error.message })
     }
     return Promise.reject(error)
   }

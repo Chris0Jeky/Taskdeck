@@ -58,8 +58,12 @@ function safeErrorDetail(error: unknown): unknown {
 
   if (error instanceof Error) return error.message
   if (typeof error === 'string') return error
-  if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message: unknown }).message)
+  try {
+    if (error && typeof error === 'object' && 'message' in error) {
+      return String((error as { message: unknown }).message)
+    }
+  } catch {
+    // Defensive: some objects (e.g., Proxy) throw on property access
   }
   return 'An error occurred'
 }
