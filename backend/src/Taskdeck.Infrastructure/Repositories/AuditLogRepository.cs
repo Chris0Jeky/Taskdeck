@@ -265,7 +265,11 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
                 // SQLite stores DateTimeOffset as a string in "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm" format.
                 // We must format the cutoff identically so the < comparison (string ordering) works correctly.
                 // See OAuthAuthCodeRepository.DeleteExpiredAsync for the same pattern.
-                var olderThanStr = olderThan.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
+                // Normalize to UTC first so that a non-UTC DateTimeOffset (e.g. -05:00) is converted to
+                // its UTC-equivalent time before the "+00:00" suffix is appended; without this the time
+                // component would be wrong and entries in the wrong window could be kept or deleted.
+                var utcCutoff = olderThan.UtcDateTime;
+                var olderThanStr = utcCutoff.ToString("yyyy-MM-dd HH:mm:ss.fffffff") + "+00:00";
                 deleted = await _context.Database.ExecuteSqlRawAsync(
                     "DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM AuditLogs WHERE Timestamp < {0} ORDER BY Timestamp ASC LIMIT {1})",
                     new object[] { olderThanStr, batchSize },

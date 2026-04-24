@@ -140,4 +140,42 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
 
         deleted.Should().Be(0);
     }
+
+    [Fact]
+    public async Task DeleteOldEntriesAsync_WithNonUtcCutoff_DeletesCorrectEntries()
+    {
+        // Regression test for: DateTimeOffset with non-zero UTC offset must be normalized
+        // to UTC before formatting as a SQLite timestamp string. Without normalization,
+        // a cutoff of e.g. 2026-01-01T00:00:00-05:00 would be formatted as
+        // "2026-01-01 00:00:00+00:00" instead of "2026-01-01 05:00:00+00:00",
+        // causing entries in the wrong five-hour window to be kept or deleted.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAuditLogRepository>();
+
+        var oldEntry = new AuditLog("Board", Guid.NewGuid(), AuditAction.Created);
+        var recentEntry = new AuditLog("Board", Guid.NewGuid(), AuditAction.Created);
+        db.AuditLogs.AddRange(oldEntry, recentEntry);
+        await db.SaveChangesAsync();
+
+        // Backdate the old entry to well before the cutoff
+        var oldTimestampStr = DateTimeOffset.UtcNow.AddDays(-100).ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE AuditLogs SET Timestamp = {0} WHERE Id = {1}",
+            oldTimestampStr, oldEntry.Id);
+
+        // Build a non-UTC cutoff that represents the same instant as "30 days ago UTC"
+        // expressed in Eastern Standard Time (-05:00). The repository must convert to
+        // UTC before building the SQLite comparison string.
+        var utcBase = DateTimeOffset.UtcNow.AddDays(-30);
+        var nonUtcCutoff = new DateTimeOffset(utcBase.UtcDateTime.AddHours(-5), TimeSpan.FromHours(-5));
+        var deleted = await repo.DeleteOldEntriesAsync(nonUtcCutoff, batchSize: 1000);
+
+        deleted.Should().BeGreaterOrEqualTo(1,
+            "entries older than the UTC-equivalent cutoff should be deleted regardless of the cutoff offset");
+
+        // The recent entry (created just now) must survive
+        var preserved = await repo.GetByIdAsync(recentEntry.Id);
+        preserved.Should().NotBeNull("the recent entry must not be deleted when a non-UTC cutoff is used");
+    }
 }
