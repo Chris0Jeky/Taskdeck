@@ -84,33 +84,40 @@ const notifVirtualRows = _vl.virtualRows
 const notifTotalSize = _vl.totalSize
 const notifTranslateY = _vl.translateY
 
+const activeNotifIndex = ref(0)
+
 function handleNotifKeydown(event: KeyboardEvent) {
+  if (flatRows.value.length === 0) return
   if (event.key === 'ArrowDown') {
     event.preventDefault()
-    const first = notifVirtualRows.value[0]
-    const current = first?.index ?? 0
-    const next = Math.min(current + 1, flatRows.value.length - 1)
+    const next = Math.min(activeNotifIndex.value + 1, flatRows.value.length - 1)
+    activeNotifIndex.value = next
     _vl.scrollToIndex(next)
   } else if (event.key === 'ArrowUp') {
     event.preventDefault()
-    const first = notifVirtualRows.value[0]
-    const current = first?.index ?? 0
-    const prev = Math.max(current - 1, 0)
+    const prev = Math.max(activeNotifIndex.value - 1, 0)
+    activeNotifIndex.value = prev
     _vl.scrollToIndex(prev)
   }
 }
 
 /** Accessor helpers to simplify template type narrowing for flat rows. */
 function rowHeader(index: number): TimeGroup {
-  return (flatRows.value[index] as { kind: 'time-header'; header: TimeGroup }).header
+  const row = flatRows.value[index]
+  if (row && row.kind === 'time-header') return row.header
+  return '' as TimeGroup
 }
 
 function rowGroup(index: number): NotificationGroup {
-  return (flatRows.value[index] as { kind: 'collapsed-summary' | 'collapse-button'; group: NotificationGroup }).group
+  const row = flatRows.value[index]
+  if (row && (row.kind === 'collapsed-summary' || row.kind === 'collapse-button')) return row.group
+  return { key: '', timeHeader: '' as TimeGroup, isCollapsed: false, summaryLabel: '', items: [] } as unknown as NotificationGroup
 }
 
 function rowItem(index: number): NotificationItem {
-  return (flatRows.value[index] as { kind: 'notification'; item: NotificationItem }).item
+  const row = flatRows.value[index]
+  if (row && row.kind === 'notification') return row.item
+  return {} as NotificationItem
 }
 
 function formatCadence(value: number | string): string {

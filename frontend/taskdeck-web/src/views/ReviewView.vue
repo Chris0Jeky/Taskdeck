@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import ReviewHeader from '../components/review/ReviewHeader.vue'
@@ -64,11 +64,8 @@ const reviewVirtualRows = _vl.virtualRows
 const reviewTotalSize = _vl.totalSize
 const reviewTranslateY = _vl.translateY
 
-/** Active keyboard index for ArrowUp/ArrowDown navigation. */
-const activeReviewIndex = computed(() => {
-  if (reviewVirtualRows.value.length === 0) return -1
-  return reviewVirtualRows.value[0]?.index ?? -1
-})
+/** Tracked keyboard cursor for ArrowUp/ArrowDown navigation. */
+const activeReviewIndex = ref(0)
 
 const route = useRoute()
 
@@ -104,15 +101,16 @@ watch(
 )
 
 function handleReviewKeydown(event: KeyboardEvent) {
+  if (visibleProposals.value.length === 0) return
   if (event.key === 'ArrowDown') {
     event.preventDefault()
-    const current = activeReviewIndex.value
-    const next = Math.min(current + 1, visibleProposals.value.length - 1)
+    const next = Math.min(activeReviewIndex.value + 1, visibleProposals.value.length - 1)
+    activeReviewIndex.value = next
     _vl.scrollToIndex(next)
   } else if (event.key === 'ArrowUp') {
     event.preventDefault()
-    const current = activeReviewIndex.value
-    const prev = Math.max(current - 1, 0)
+    const prev = Math.max(activeReviewIndex.value - 1, 0)
+    activeReviewIndex.value = prev
     _vl.scrollToIndex(prev)
   }
 }
