@@ -35,10 +35,13 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         db.AuditLogs.AddRange(oldEntry, recentEntry);
         await db.SaveChangesAsync();
 
-        // Manually set the timestamp of the old entry via raw SQL
+        // Manually set the timestamp of the old entry via raw SQL.
+        // Format as string matching EF Core's SQLite DateTimeOffset storage format
+        // so that string-based < comparisons in DeleteOldEntriesAsync work correctly.
+        var oldTimestampStr = DateTimeOffset.UtcNow.AddDays(-100).ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
         await db.Database.ExecuteSqlRawAsync(
             "UPDATE AuditLogs SET Timestamp = {0} WHERE Id = {1}",
-            DateTimeOffset.UtcNow.AddDays(-100), oldEntry.Id);
+            oldTimestampStr, oldEntry.Id);
 
         var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
         var deleted = await repo.DeleteOldEntriesAsync(cutoff, batchSize: 1000);
@@ -88,12 +91,14 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         db.AuditLogs.AddRange(entries);
         await db.SaveChangesAsync();
 
-        // Set all entries to be old
+        // Set all entries to be old.
+        // Format as string matching EF Core's SQLite DateTimeOffset storage format.
+        var oldTimestampStr = DateTimeOffset.UtcNow.AddDays(-200).ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
         foreach (var entry in entries)
         {
             await db.Database.ExecuteSqlRawAsync(
                 "UPDATE AuditLogs SET Timestamp = {0} WHERE Id = {1}",
-                DateTimeOffset.UtcNow.AddDays(-200), entry.Id);
+                oldTimestampStr, entry.Id);
         }
 
         var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
