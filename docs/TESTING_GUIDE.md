@@ -29,6 +29,29 @@ Verification note:
 - 5 pre-existing backend failures (all in Api.Tests): 3 CorsApiTests environment-specific failures, 1 McpTelemetryMiddlewareTests, 1 SecurityHeadersApiTests; these are environment-dependent integration tests that fail outside CI/production config
 - prior recertification: backend 4,279 (2026-04-12), frontend 2,245 (2026-04-12) after PRs `#800`–`#820`
 - growth since last recertification: backend +700 tests, frontend +362 tests
+- pending (post-merge of PRs `#960`–`#969`): ~186 new tests estimated — 61 composable tests (`useCardModal`), 125 composable tests (`useStarterPackCatalog`/`useStarterPackImport`/`useStarterPackResult`), plus additional backend OAuth scope validator and audit retention tests
+
+## Audit-Finding Remediation Wave Testing (2026-04-24, PRs `#960`–`#969`)
+
+The 2026-04-24 audit-finding remediation wave (PRs `#960`–`#969`) added ~186 new tests across 10 issues. Each PR received two rounds of adversarial review (original self-review + independent cold review); the second round found and fixed 15+ issues including 3 critical bugs (SQLite DateTimeOffset comparison, SQL Server DELETE syntax, keyboard navigation).
+
+### Composable Tests (FE-22, FE-21)
+
+- `frontend/taskdeck-web/src/tests/composables/useCardModal.spec.ts` — **61 tests** covering card/isOpen watchers, `formattedDueDate`/`isOverdue`/`isFormValid` computed branches, capture provenance loading, save with field deltas, delete flow, comment CRUD, reply drafts, `canEditComment`, cleanup
+- `frontend/taskdeck-web/src/tests/composables/useStarterPackCatalog.spec.ts` — **40 tests** covering `loadCatalog`, `filteredPacks`, `selectedPack`, `runPreview`, `applyPack`, `extractConflictResult`, guard-clause early returns
+- `frontend/taskdeck-web/src/tests/composables/useStarterPackImport.spec.ts` — **48 tests** covering `validateImportJson`, `handleFileUpload`, `runImportPreview`, `applyImportPack`, guard/error paths
+- `frontend/taskdeck-web/src/tests/composables/useStarterPackResult.spec.ts` — **37 tests** covering `normalizeConflictSeverity`, `actionSummary`, `outcomeSummaryLabel`, `outcomeSummaryToneClass`
+
+Coverage impact: `src/composables/**` branch coverage rose from 79.22% to 83.27% (threshold: 80%).
+
+### Backend Tests (OPS-31, SEC-31)
+
+- `backend/tests/Taskdeck.Api.Tests/Workers/AuditRetentionWorkerIntegrationTests.cs` — audit retention batch deletion with SQLite DateTimeOffset formatting
+- `backend/tests/Taskdeck.Application.Tests/Services/OAuthScopeValidatorTests.cs` — scope parsing (comma/space/tab), required/expected validation, case-sensitive comparison, null safety
+
+### Error Reporting Tests (FE-24)
+
+- `frontend/taskdeck-web/src/tests/utils/errorReporting.logError.spec.ts` — 3 new tests for `.message`-bearing objects, variadic DEV/PROD modes
 
 ## Production Hardening Wave Testing (2026-04-22, PRs `#902`–`#913`)
 
