@@ -88,6 +88,7 @@ function scrollVirtualizerToHashProposal() {
   const index = visibleProposals.value.findIndex((p) => p.id === proposalId)
   if (index >= 0) {
     _vl.scrollToIndex(index)
+    activeReviewIndex.value = index
   }
 }
 
@@ -195,7 +196,7 @@ onUnmounted(() => {
         >
           <div
             v-for="virtualRow in reviewVirtualRows"
-            :key="String(virtualRow.key)"
+            :key="visibleProposals[virtualRow.index]?.id ?? String(virtualRow.key)"
             :data-index="virtualRow.index"
             ref="reviewVirtualItemEls"
             role="presentation"
