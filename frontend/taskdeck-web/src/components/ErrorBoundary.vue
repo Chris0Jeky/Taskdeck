@@ -102,7 +102,7 @@ onErrorCaptured((err, _instance, info) => {
   crashInfo.value = info
 
   // Always log so errors are not silently swallowed.
-  logError('[ErrorBoundary] caught error', err)
+  logError('[ErrorBoundary] caught error', err, info)
 
   // Forward to Sentry via the centralized utility so the lifecycle `info`
   // string is preserved and reporting behavior stays consistent across the

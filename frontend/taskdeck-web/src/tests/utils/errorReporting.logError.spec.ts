@@ -84,6 +84,35 @@ describe('logError / logWarn sanitisation', () => {
 
       expect(consoleErrorSpy).toHaveBeenCalledWith('Debug:', obj)
     })
+
+    it('in PROD mode, extracts .message from non-Error objects', async () => {
+      vi.stubEnv('DEV', false)
+      const { logError } = await import('../../utils/errorReporting')
+
+      logError('Axios-like:', { message: 'Request failed', config: { headers: { Authorization: 'Bearer secret' } } })
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Axios-like:', 'Request failed')
+    })
+
+    it('in DEV mode, passes through multiple args', async () => {
+      vi.stubEnv('DEV', true)
+      const { logError } = await import('../../utils/errorReporting')
+
+      const err = new Error('crash')
+      logError('[vue:errorHandler]', err, 'setup function')
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith('[vue:errorHandler]', err, 'setup function')
+    })
+
+    it('in PROD mode, sanitizes each arg individually', async () => {
+      vi.stubEnv('DEV', false)
+      const { logError } = await import('../../utils/errorReporting')
+
+      const err = new Error('crash')
+      logError('[vue:errorHandler]', err, 'setup function')
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith('[vue:errorHandler]', 'crash', 'setup function')
+    })
   })
 
   // -----------------------------------------------------------------------
@@ -100,14 +129,14 @@ describe('logError / logWarn sanitisation', () => {
       expect(consoleWarnSpy).toHaveBeenCalledWith('Token issue', 'detail1', { key: 'val' })
     })
 
-    it('in PROD mode, logs only the context string (no extra args)', async () => {
+    it('in PROD mode, sanitizes extra args (does not drop them)', async () => {
       vi.stubEnv('DEV', false)
       const { logWarn } = await import('../../utils/errorReporting')
 
-      logWarn('Token issue', 'should-not-appear', { secret: 'data' })
+      logWarn('Token issue', 'safe string', { secret: 'data' })
 
       expect(consoleWarnSpy).toHaveBeenCalledOnce()
-      expect(consoleWarnSpy).toHaveBeenCalledWith('Token issue')
+      expect(consoleWarnSpy).toHaveBeenCalledWith('Token issue', 'safe string', 'An error occurred')
     })
 
     it('in PROD mode, works with no extra arguments', async () => {

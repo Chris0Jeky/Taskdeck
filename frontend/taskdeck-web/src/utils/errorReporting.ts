@@ -58,6 +58,9 @@ function safeErrorDetail(error: unknown): unknown {
 
   if (error instanceof Error) return error.message
   if (typeof error === 'string') return error
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message)
+  }
   return 'An error occurred'
 }
 
@@ -68,8 +71,12 @@ function safeErrorDetail(error: unknown): unknown {
  * - **Production**: logs only the context string and a sanitised message
  *   (no response body, no URL, no headers).
  */
-export function logError(context: string, error: unknown): void {
-  console.error(context, safeErrorDetail(error))
+export function logError(context: string, ...args: unknown[]): void {
+  if (import.meta.env.DEV) {
+    console.error(context, ...args)
+  } else {
+    console.error(context, ...args.map(safeErrorDetail))
+  }
 }
 
 /**
@@ -81,14 +88,14 @@ export function logWarn(context: string, ...args: unknown[]): void {
   if (import.meta.env.DEV) {
     console.warn(context, ...args)
   } else {
-    console.warn(context)
+    console.warn(context, ...args.map(safeErrorDetail))
   }
 }
 
 /** Install `app.config.errorHandler` as a last-resort logger/reporter. */
 export function installVueErrorHandler(app: App): void {
   app.config.errorHandler = (err, _instance, info) => {
-    logError('[vue:errorHandler]', err)
+    logError('[vue:errorHandler]', err, info)
     reportToSentry(err, { info })
   }
 }
