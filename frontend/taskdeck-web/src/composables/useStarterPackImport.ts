@@ -8,51 +8,8 @@ import type {
   StarterPackManifest,
 } from '../types/starter-packs'
 import { getErrorMessage } from '../utils/errorMessage'
-import { useStarterPackResult } from './useStarterPackResult'
+import { extractConflictResult, useStarterPackResult } from './useStarterPackResult'
 
-function extractConflictResult(error: unknown): StarterPackApplyResult | null {
-  if (typeof error !== 'object' || error === null) {
-    return null
-  }
-
-  const typed = error as {
-    response?: {
-      status?: number
-      data?: unknown
-    }
-  }
-
-  if (typed.response?.status !== 409) {
-    return null
-  }
-
-  const payload = typed.response.data
-  if (typeof payload !== 'object' || payload === null) {
-    return null
-  }
-
-  const typedPayload = payload as {
-    boardId?: unknown
-    packId?: unknown
-    dryRun?: unknown
-    applied?: unknown
-    actions?: unknown
-    conflicts?: unknown
-  }
-
-  if (
-    typeof typedPayload.boardId !== 'string' ||
-    typeof typedPayload.packId !== 'string' ||
-    typeof typedPayload.dryRun !== 'boolean' ||
-    typeof typedPayload.applied !== 'boolean' ||
-    !Array.isArray(typedPayload.actions) ||
-    !Array.isArray(typedPayload.conflicts)
-  ) {
-    return null
-  }
-
-  return payload as StarterPackApplyResult
-}
 
 export function useStarterPackImport(
   boardId: () => string,
