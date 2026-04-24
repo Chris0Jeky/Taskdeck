@@ -23,6 +23,14 @@ public static class DependencyInjection
         var databaseSettings = configuration.GetSection("Database").Get<DatabaseSettings>()
             ?? new DatabaseSettings();
 
+        // Enforce validation for all host modes (API, CLI, MCP).
+        // ValidateOnStart causes an exception at startup if CommandTimeoutSeconds
+        // is out of the [1, 300] range, regardless of which host runs AddInfrastructure.
+        services.AddOptions<DatabaseSettings>()
+            .Bind(configuration.GetSection("Database"))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         services.AddDbContext<TaskdeckDbContext>(options =>
             options.UseSqlite(connectionString, sqliteOptions =>
             {
