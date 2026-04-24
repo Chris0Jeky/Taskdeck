@@ -188,7 +188,7 @@ watch([unreadOnly, activeBoardId], () => {
         <TdSkeleton width="80px" height="32px" />
       </div>
     </div>
-    <div v-else-if="items.length === 0" class="td-placeholder">No notifications found.</div>
+    <div v-else-if="items.length === 0" class="td-notification-empty">No notifications found.</div>
 
     <template v-else>
       <section v-for="header in timeHeaders" :key="header" class="mb-6">
@@ -293,6 +293,11 @@ watch([unreadOnly, activeBoardId], () => {
   flex-direction: column;
   gap: var(--td-space-3);
   padding: var(--td-space-2) 0;
+}
+
+.td-notification-empty {
+  color: var(--td-text-secondary);
+  padding: var(--td-space-6) 0;
 }
 
 .td-notification-skeleton__row {

@@ -67,13 +67,14 @@ describe('BoardsListView', () => {
     expect(wrapper.text()).toContain('My Boards')
   })
 
-  it('shows loading spinner while boards are loading', async () => {
+  it('shows loading skeleton while boards are loading', async () => {
     mockBoardStore.loading = true
 
     const wrapper = mount(BoardsListView)
     await waitForUi()
 
     expect(wrapper.text()).toContain('Loading boards...')
+    expect(wrapper.find('.td-boards-skeleton').exists()).toBe(true)
   })
 
   it('shows error state when boardStore.error is set', async () => {
