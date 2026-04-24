@@ -544,38 +544,6 @@ public class OptionsValidationTests
         Assert.True(isValid);
     }
 
-    [Theory]
-    [InlineData(-1)]
-    [InlineData(11)]
-    public void DatabaseSettings_MaxRetryCount_RejectsOutOfRange(int value)
-    {
-        var settings = new DatabaseSettings { MaxRetryCount = value };
-
-        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
-        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
-        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
-            settings, context, results, validateAllProperties: true);
-
-        Assert.False(isValid);
-        Assert.Contains(results, r => r.MemberNames.Contains(nameof(DatabaseSettings.MaxRetryCount)));
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(3)]
-    [InlineData(10)]
-    public void DatabaseSettings_MaxRetryCount_AcceptsValidValues(int value)
-    {
-        var settings = new DatabaseSettings { MaxRetryCount = value };
-
-        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
-        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
-        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
-            settings, context, results, validateAllProperties: true);
-
-        Assert.True(isValid);
-    }
-
     // ── Integration: app starts with valid default config ───────────────
 
     [Fact]

@@ -471,8 +471,7 @@ Backs `DatabaseSettings` (`Taskdeck.Application.Services.DatabaseSettings`).
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Database:CommandTimeoutSeconds` | `int` | `30` | Command timeout in seconds for database operations. Valid range: 1--300. | No |
-| `Database:MaxRetryCount` | `int` | `3` | Maximum automatic retries on transient failures. Valid range: 0--10. **Note**: SQLite does not support `EnableRetryOnFailure`; this setting is validated and bound but will only take effect after migrating to PostgreSQL or another provider with retry execution strategies. | No |
+| `Database:CommandTimeoutSeconds` | `int` | `30` | Command timeout in seconds for database operations. Valid range: 1--300. Applies to all EF Core commands including `Database.Migrate()` -- avoid very low values if schema migrations are expected. | No |
 
 ### `ExportImport`
 
