@@ -218,14 +218,28 @@ public class OAuthScopeValidatorTests
     }
 
     // ─────────────────────────────────────────────────────────
-    // Case insensitivity
+    // Case sensitivity — GitHub scopes are case-sensitive
     // ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_ShouldBeCaseInsensitive_ForScopeComparison()
+    public void Validate_ShouldBeCaseSensitive_ForScopeComparison()
     {
+        // GitHub scopes are lowercase by convention and case-sensitive.
+        // "User:Email" is NOT the same as "user:email".
         var result = _validator.Validate(
             "User:Email,Read:User",
+            requiredScopes: new[] { "user:email" },
+            expectedScopes: new[] { "read:user" });
+
+        result.IsValid.Should().BeFalse();
+        result.MissingRequiredScopes.Should().Contain("user:email");
+    }
+
+    [Fact]
+    public void Validate_ShouldMatchExactCase_WhenCasesAlign()
+    {
+        var result = _validator.Validate(
+            "user:email,read:user",
             requiredScopes: new[] { "user:email" },
             expectedScopes: new[] { "read:user" });
 
@@ -275,6 +289,51 @@ public class OAuthScopeValidatorTests
 
         result.IsValid.Should().BeTrue();
         result.GrantedScopes.Should().HaveCount(4);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Null parameter safety
+    // ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_ShouldHandleNullRequiredScopes()
+    {
+        var result = _validator.Validate(
+            "user:email",
+            requiredScopes: null!,
+            expectedScopes: new[] { "read:user" });
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_ShouldHandleNullExpectedScopes()
+    {
+        var result = _validator.Validate(
+            "user:email",
+            requiredScopes: new[] { "user:email" },
+            expectedScopes: null!);
+
+        result.IsValid.Should().BeTrue();
+        result.MissingExpectedScopes.Should().BeEmpty();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Tab and unusual whitespace in scope strings
+    // ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseScopes_ShouldHandleTabSeparatedScopes()
+    {
+        var result = OAuthScopeValidator.ParseScopes("read:user\tuser:email");
+        result.Should().BeEquivalentTo(new[] { "read:user", "user:email" });
+    }
+
+    [Fact]
+    public void ParseScopes_ShouldHandleNewlineSeparatedScopes()
+    {
+        var result = OAuthScopeValidator.ParseScopes("read:user\nuser:email");
+        result.Should().BeEquivalentTo(new[] { "read:user", "user:email" });
     }
 
     // ─────────────────────────────────────────────────────────

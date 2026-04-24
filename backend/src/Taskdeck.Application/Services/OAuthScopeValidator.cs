@@ -4,7 +4,7 @@ namespace Taskdeck.Application.Services;
 
 /// <summary>
 /// Validates OAuth scopes granted by external providers against required and expected scopes.
-/// GitHub returns granted scopes as a comma-separated list in the X-OAuth-Scopes header.
+/// GitHub returns granted scopes as a comma-separated list in the token response body.
 /// </summary>
 public class OAuthScopeValidator
 {
@@ -19,7 +19,7 @@ public class OAuthScopeValidator
     /// Validates the granted scopes against the configured required and expected scopes.
     /// </summary>
     /// <param name="grantedScopesHeader">
-    /// The raw scope string from the provider (e.g. from GitHub's X-OAuth-Scopes header).
+    /// The raw scope string from the provider (e.g. from GitHub's token response "scope" field).
     /// GitHub uses comma-separated scopes; this method handles both comma and space separators.
     /// </param>
     /// <param name="requiredScopes">Scopes that must be present — authentication fails if any are missing.</param>
@@ -27,26 +27,29 @@ public class OAuthScopeValidator
     /// <returns>A result indicating whether validation passed, with details about any issues.</returns>
     public OAuthScopeValidationResult Validate(
         string? grantedScopesHeader,
-        IReadOnlyList<string> requiredScopes,
-        IReadOnlyList<string> expectedScopes)
+        IReadOnlyList<string>? requiredScopes,
+        IReadOnlyList<string>? expectedScopes)
     {
         var grantedScopes = ParseScopes(grantedScopesHeader);
+        // GitHub scopes are case-sensitive (e.g. "read:user" != "Read:User").
+        // Use Ordinal comparison to match exactly what the provider returns.
+        var grantedSet = new HashSet<string>(grantedScopes, StringComparer.Ordinal);
+
+        var effectiveRequired = requiredScopes ?? Array.Empty<string>();
+        var effectiveExpected = expectedScopes ?? Array.Empty<string>();
 
         // Check required scopes
-        var missingRequired = new List<string>();
-        foreach (var scope in requiredScopes)
-        {
-            if (!grantedScopes.Contains(scope, StringComparer.OrdinalIgnoreCase))
-            {
-                missingRequired.Add(scope);
-            }
-        }
+        var missingRequired = effectiveRequired
+            .Where(scope => !grantedSet.Contains(scope))
+            .ToList();
 
         if (missingRequired.Count > 0)
         {
+            // Caller in AuthenticationRegistration logs a terminal LogError;
+            // this LogWarning provides structured detail for diagnostics.
             _logger.LogWarning(
                 "OAuth scope validation failed: required scopes missing. Required: [{RequiredScopes}], Granted: [{GrantedScopes}], Missing: [{MissingScopes}]",
-                string.Join(", ", requiredScopes),
+                string.Join(", ", effectiveRequired),
                 string.Join(", ", grantedScopes),
                 string.Join(", ", missingRequired));
 
@@ -54,20 +57,15 @@ public class OAuthScopeValidator
         }
 
         // Check expected (non-required) scopes
-        var missingExpected = new List<string>();
-        foreach (var scope in expectedScopes)
-        {
-            if (!grantedScopes.Contains(scope, StringComparer.OrdinalIgnoreCase))
-            {
-                missingExpected.Add(scope);
-            }
-        }
+        var missingExpected = effectiveExpected
+            .Where(scope => !grantedSet.Contains(scope))
+            .ToList();
 
         if (missingExpected.Count > 0)
         {
             _logger.LogWarning(
                 "OAuth scope validation warning: expected scopes missing. Expected: [{ExpectedScopes}], Granted: [{GrantedScopes}], Missing: [{MissingScopes}]. Authentication will proceed.",
-                string.Join(", ", expectedScopes),
+                string.Join(", ", effectiveExpected),
                 string.Join(", ", grantedScopes),
                 string.Join(", ", missingExpected));
         }
@@ -78,6 +76,7 @@ public class OAuthScopeValidator
     /// <summary>
     /// Parses a scope string into a list of individual scopes.
     /// Handles GitHub's comma-separated format and standard space-separated format.
+    /// Strips tabs and other whitespace to guard against malformed responses.
     /// </summary>
     internal static List<string> ParseScopes(string? scopeHeader)
     {
@@ -86,9 +85,9 @@ public class OAuthScopeValidator
 
         // GitHub uses comma-separated scopes (e.g. "read:user, user:email")
         // OAuth2 standard uses space-separated scopes
-        // Handle both by splitting on commas and spaces, then trimming
+        // Handle both by splitting on commas, spaces, and tabs, then trimming
         var scopes = scopeHeader
-            .Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .Split(new[] { ',', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.Trim())
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .ToList();

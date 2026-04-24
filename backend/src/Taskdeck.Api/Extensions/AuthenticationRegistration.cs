@@ -138,6 +138,20 @@ public static class AuthenticationRegistration
                 options.Scope.Add("read:user");
                 options.Scope.Add("user:email");
 
+                // Ensure any additional RequiredScopes from configuration are also
+                // requested from GitHub. Without this, configuring a required scope
+                // that isn't requested causes all logins to be rejected.
+                foreach (var scope in gitHubOAuthSettings.RequiredScopes ?? Enumerable.Empty<string>())
+                {
+                    if (!options.Scope.Contains(scope))
+                        options.Scope.Add(scope);
+                }
+                foreach (var scope in gitHubOAuthSettings.ExpectedScopes ?? Enumerable.Empty<string>())
+                {
+                    if (!options.Scope.Contains(scope))
+                        options.Scope.Add(scope);
+                }
+
                 options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
                 options.ClaimActions.MapJsonKey(ClaimTypes.Name, "login");
                 options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
