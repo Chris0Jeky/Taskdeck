@@ -388,7 +388,7 @@ describe('useStarterPackCatalog', () => {
       await catalog.loadCatalog()
 
       // Start first preview (it never resolves)
-      const firstPreview = catalog.runPreview()
+      const _firstPreview = catalog.runPreview()
       // Try to start second - should be blocked
       await catalog.runPreview()
 
