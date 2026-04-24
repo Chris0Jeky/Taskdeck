@@ -258,16 +258,28 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
         while (!cancellationToken.IsCancellationRequested)
         {
             // Use parameterized SQL to delete in bounded batches.
-            // SQLite and SQL Server both support this pattern.
-            // The LIMIT/TOP clause prevents unbounded lock duration.
-            var sql = _context.Database.IsSqlite()
-                ? "DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM AuditLogs WHERE Timestamp < {0} LIMIT {1})"
-                : "DELETE TOP({1}) FROM AuditLogs WHERE Timestamp < {0}";
-
-            var deleted = await _context.Database.ExecuteSqlRawAsync(
-                sql,
-                new object[] { olderThan, batchSize },
-                cancellationToken);
+            // The LIMIT / CTE clause prevents unbounded lock duration.
+            int deleted;
+            if (_context.Database.IsSqlite())
+            {
+                // SQLite stores DateTimeOffset as a string in "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm" format.
+                // We must format the cutoff identically so the < comparison (string ordering) works correctly.
+                // See OAuthAuthCodeRepository.DeleteExpiredAsync for the same pattern.
+                var olderThanStr = olderThan.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
+                deleted = await _context.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM AuditLogs WHERE Timestamp < {0} ORDER BY Timestamp ASC LIMIT {1})",
+                    new object[] { olderThanStr, batchSize },
+                    cancellationToken);
+            }
+            else
+            {
+                // SQL Server: use a CTE with TOP + ORDER BY for deterministic batch deletion.
+                // DELETE TOP(@p) is not valid with a parameterized value; the CTE approach works correctly.
+                deleted = await _context.Database.ExecuteSqlRawAsync(
+                    "WITH CTE AS (SELECT TOP({1}) Id FROM AuditLogs WHERE Timestamp < {0} ORDER BY Timestamp ASC) DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM CTE)",
+                    new object[] { olderThan, batchSize },
+                    cancellationToken);
+            }
 
             totalDeleted += deleted;
 
