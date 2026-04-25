@@ -165,7 +165,7 @@ describe('useInkBleed', () => {
 
   it('cancel() clears state without firing done', () => {
     const { exposed } = createHost()
-    const run = exposed.bleed.start()
+    const _run = exposed.bleed.start()
     vi.advanceTimersByTime(1000)
 
     exposed.bleed.cancel()
