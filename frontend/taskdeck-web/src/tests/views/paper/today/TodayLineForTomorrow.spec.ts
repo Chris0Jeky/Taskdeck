@@ -52,4 +52,20 @@ describe('TodayLineForTomorrow', () => {
     const text = (b.find<HTMLTextAreaElement>('[data-testid="line-for-tomorrow-input"]').element).value
     expect(text).toBe('persisted')
   })
+
+  it('reloads from storage when the scoped storage key changes', async () => {
+    localStorage.setItem(`${KEY}:user-a`, 'user a line')
+    localStorage.setItem(`${KEY}:user-b`, 'user b line')
+
+    const wrapper = mount(TodayLineForTomorrow, {
+      props: { storageKey: `${KEY}:user-a`, debounceMs: 50, initial: '' },
+    })
+    const input = wrapper.find<HTMLTextAreaElement>('[data-testid="line-for-tomorrow-input"]')
+    expect(input.element.value).toBe('user a line')
+
+    await wrapper.setProps({ storageKey: `${KEY}:user-b` })
+    await wrapper.vm.$nextTick()
+
+    expect(input.element.value).toBe('user b line')
+  })
 })

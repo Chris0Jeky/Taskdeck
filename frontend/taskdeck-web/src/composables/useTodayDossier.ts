@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type { TodaySummary } from '../types/workspace'
 
@@ -262,12 +262,6 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   const sealed = ref(false)
 
   const dossier = computed<DossierData>(() => buildStubDossier(now.value, workspace.todaySummary))
-
-  // Keep `dossier.serial` in lock-step with the current date even when
-  // tests advance the clock by re-assigning the now ref.
-  watch(now, () => {
-    /* recompute via getter */
-  })
 
   function sealDay(): { sealed: boolean; alreadySealed: boolean } {
     if (sealed.value) {

@@ -13,7 +13,7 @@ const props = defineProps<{
   cadence: DossierCadence
 }>()
 
-const HOUR_LABELS = ['00', '', '', '', '', '06', '', '', '', '', '12', '', '', '', '', '18', '', '', '', '', '23']
+const HOUR_LABELS = ['00', '', '', '', '', '', '06', '', '', '', '', '', '12', '', '', '', '', '', '18', '', '', '', '', '23']
 
 const reducedMotion = ref(false)
 let mq: MediaQueryList | null = null
@@ -140,7 +140,7 @@ function barHeightPercent(weight: number): number {
 
 .today-cadence__labels {
   display: grid;
-  grid-template-columns: repeat(21, 1fr);
+  grid-template-columns: repeat(24, 1fr);
   gap: 0;
   margin-top: 4px;
 }

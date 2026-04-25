@@ -41,6 +41,7 @@ const text = ref<string>(readStored())
 const status = ref<'idle' | 'saving' | 'saved'>('saved')
 
 let timer: ReturnType<typeof setTimeout> | null = null
+let suppressNextSave = false
 
 function flush() {
   if (typeof window === 'undefined') return
@@ -54,10 +55,28 @@ function flush() {
 }
 
 watch(text, () => {
+  if (suppressNextSave) {
+    suppressNextSave = false
+    return
+  }
   status.value = 'saving'
   if (timer) clearTimeout(timer)
   timer = setTimeout(flush, props.debounceMs)
 })
+
+watch(
+  () => [props.storageKey, props.initial] as const,
+  () => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    const nextText = readStored()
+    suppressNextSave = nextText !== text.value
+    text.value = nextText
+    status.value = 'saved'
+  },
+)
 
 onBeforeUnmount(() => {
   if (timer) {

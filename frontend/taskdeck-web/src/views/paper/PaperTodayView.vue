@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useTodayDossier } from '../../composables/useTodayDossier'
+import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
 
 import TodayCover from './today/TodayCover.vue'
@@ -24,9 +25,15 @@ import TodayLineForTomorrow from './today/TodayLineForTomorrow.vue'
  * .isOn`.
  */
 const { dossier, sealed, sealDay } = useTodayDossier()
+const session = useSessionStore()
 const toast = useToastStore()
 
 const ledgerEntryCount = computed(() => dossier.value.ledger.length)
+const lineForTomorrowStorageKey = computed(() => {
+  const userPart = encodeURIComponent(session.userId?.trim() || 'anonymous')
+  const dayPart = dossier.value.date.toISOString().slice(0, 10)
+  return `td.paper.line-for-tomorrow:${userPart}:${dayPart}`
+})
 
 function onSeal() {
   const result = sealDay()
@@ -126,14 +133,17 @@ function onPinCarryOver(serials: string[]) {
             <h3 class="tk-h3 paper-today__section-title">A line for tomorrow</h3>
             <span class="tk-meta paper-today__section-sub">A note your tomorrow-self will see at first open</span>
           </header>
-          <TodayLineForTomorrow :initial="dossier.lineForTomorrow" />
+          <TodayLineForTomorrow
+            :initial="dossier.lineForTomorrow"
+            :storage-key="lineForTomorrowStorageKey"
+          />
         </div>
       </div>
     </section>
 
     <footer class="paper-today__footer">
       <span class="tk-serial">DOSSIER · {{ dossier.serial }} · YEAR LEDGER</span>
-      <span class="tk-serial">PRESS S TO SEAL · ⌘L FOR LEDGER</span>
+      <span class="tk-serial">SEAL ABOVE · LEDGER IN § II</span>
     </footer>
   </div>
 </template>

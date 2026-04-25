@@ -57,6 +57,17 @@ describe('TodayCadence', () => {
     expect(bars).toHaveLength(24)
   })
 
+  it('renders 24 aligned hour labels for the 24-hour strip', () => {
+    const wrapper = mount(TodayCadence, { props: { cadence: CADENCE } })
+    const labels = wrapper.findAll('.today-cadence__label')
+    expect(labels).toHaveLength(24)
+    expect(labels[0]?.text()).toBe('00')
+    expect(labels[6]?.text()).toBe('06')
+    expect(labels[12]?.text()).toBe('12')
+    expect(labels[18]?.text()).toBe('18')
+    expect(labels[23]?.text()).toBe('23')
+  })
+
   it('marks the peak hour bar with data-peak', () => {
     const wrapper = mount(TodayCadence, { props: { cadence: CADENCE } })
     const peak = wrapper.findAll('rect.today-cadence__bar').find(b => b.attributes('data-peak') === 'true')
