@@ -11,8 +11,8 @@ using Taskdeck.Infrastructure.Persistence;
 namespace Taskdeck.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    [Migration("20260425105359_AddProposalOutcomes")]
-    partial class AddProposalOutcomes
+    [Migration("20260425105642_AddProposalRevisionsAndOutcomes")]
+    partial class AddProposalRevisionsAndOutcomes
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -1654,60 +1654,75 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
-                    b.Property<double?>("AverageFieldConfidence")
-                        .HasColumnType("REAL");
-
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("DecidedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("DecidedByUserId")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Decision")
+                    b.Property<int>("OutcomeType")
                         .HasColumnType("INTEGER");
 
-                    b.Property<double>("DecisionLatencySeconds")
-                        .HasColumnType("REAL");
+                    b.Property<Guid>("ProposalId")
+                        .HasColumnType("TEXT");
 
-                    b.Property<int>("EditedFieldCount")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
 
-                    b.Property<int>("FieldCount")
-                        .HasColumnType("INTEGER");
+                    b.HasKey("Id");
 
-                    b.Property<string>("ModelId")
-                        .HasMaxLength(100)
+                    b.HasIndex("DecidedByUserId");
+
+                    b.HasIndex("ProposalId");
+
+                    b.ToTable("ProposalOutcomes", (string)null);
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EditorUserId")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("ProposalId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("RiskLevel")
+                    b.Property<string>("Reason")
                         .IsRequired()
-                        .HasMaxLength(50)
+                        .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("SourceType")
-                        .IsRequired()
-                        .HasMaxLength(50)
+                    b.Property<DateTimeOffset>("RevisedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("RevisedPayload")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .IsConcurrencyToken()
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CreatedAt");
+                    b.HasIndex("EditorUserId");
 
-                    b.HasIndex("DecidedByUserId");
+                    b.HasIndex("ProposalId");
 
-                    b.HasIndex("Decision");
-
-                    b.HasIndex("ProposalId")
+                    b.HasIndex("ProposalId", "RevisionNumber")
                         .IsUnique();
 
-                    b.ToTable("ProposalOutcomes", (string)null);
+                    b.ToTable("ProposalRevisions", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.User", b =>
@@ -2134,6 +2149,28 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                     b.Navigation("CreatedByUser");
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalOutcome", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.AutomationProposal", "Proposal")
+                        .WithMany("Outcomes")
+                        .HasForeignKey("ProposalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Proposal");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalRevision", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.AutomationProposal", "Proposal")
+                        .WithMany("Revisions")
+                        .HasForeignKey("ProposalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Proposal");
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.UserPreference", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.User", "User")
@@ -2153,6 +2190,10 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Taskdeck.Domain.Entities.AutomationProposal", b =>
                 {
                     b.Navigation("Operations");
+
+                    b.Navigation("Outcomes");
+
+                    b.Navigation("Revisions");
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.Board", b =>

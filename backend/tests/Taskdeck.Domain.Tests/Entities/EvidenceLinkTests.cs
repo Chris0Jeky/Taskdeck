@@ -7,140 +7,131 @@ namespace Taskdeck.Domain.Tests.Entities;
 
 public class EvidenceLinkTests
 {
-    private readonly Guid _fieldId = Guid.NewGuid();
+    private readonly Guid _intentCandidateId = Guid.NewGuid();
+    private readonly Guid _sourceSpanId = Guid.NewGuid();
 
     [Fact]
-    public void Constructor_ShouldCreateLink_WithRequiredFields()
+    public void Constructor_ShouldCreateLink_WithValidData()
     {
-        var link = new EvidenceLink("InboxCapture", "cap-123", _fieldId);
+        var link = new EvidenceLink(_intentCandidateId, _sourceSpanId, 0.8, "Contains deadline mention");
 
-        link.SourceType.Should().Be("InboxCapture");
-        link.SourceId.Should().Be("cap-123");
-        link.ProvenanceFieldId.Should().Be(_fieldId);
-        link.Label.Should().BeNull();
-        link.SpanStart.Should().BeNull();
-        link.SpanEnd.Should().BeNull();
         link.Id.Should().NotBe(Guid.Empty);
+        link.IntentCandidateId.Should().Be(_intentCandidateId);
+        link.SourceSpanId.Should().Be(_sourceSpanId);
+        link.Relevance.Should().Be(0.8);
+        link.Rationale.Should().Be("Contains deadline mention");
     }
 
     [Fact]
-    public void Constructor_ShouldCreateLink_WithAllOptionalFields()
+    public void Constructor_ShouldDefaultRelevanceTo1()
     {
-        var link = new EvidenceLink(
-            "ChatMessage",
-            "msg-456",
-            _fieldId,
-            label: "User's original message",
-            spanStart: 10,
-            spanEnd: 50);
+        var link = new EvidenceLink(_intentCandidateId, _sourceSpanId);
 
-        link.Label.Should().Be("User's original message");
-        link.SpanStart.Should().Be(10);
-        link.SpanEnd.Should().Be(50);
+        link.Relevance.Should().Be(1.0);
     }
 
     [Fact]
-    public void Constructor_ShouldThrow_WhenSourceTypeIsEmpty()
+    public void Constructor_ShouldAcceptNullRationale()
     {
-        var act = () => new EvidenceLink("", "cap-123", _fieldId);
+        var link = new EvidenceLink(_intentCandidateId, _sourceSpanId, 0.5);
+
+        link.Rationale.Should().BeNull();
+    }
+
+    [Fact]
+    public void Constructor_ShouldRejectEmptyIntentCandidateId()
+    {
+        var act = () => new EvidenceLink(Guid.Empty, _sourceSpanId);
 
         act.Should().Throw<DomainException>()
-            .WithMessage("SourceType cannot be empty");
+            .Which.ErrorCode.Should().Be("ValidationError");
     }
 
     [Fact]
-    public void Constructor_ShouldThrow_WhenSourceTypeExceedsMaxLength()
+    public void Constructor_ShouldRejectEmptySourceSpanId()
     {
-        var longType = new string('x', 101);
-
-        var act = () => new EvidenceLink(longType, "cap-123", _fieldId);
+        var act = () => new EvidenceLink(_intentCandidateId, Guid.Empty);
 
         act.Should().Throw<DomainException>()
-            .WithMessage("SourceType cannot exceed 100 characters");
+            .Which.ErrorCode.Should().Be("ValidationError");
     }
 
-    [Fact]
-    public void Constructor_ShouldThrow_WhenSourceIdIsEmpty()
+    [Theory]
+    [InlineData(-0.01)]
+    [InlineData(1.01)]
+    [InlineData(-1.0)]
+    [InlineData(2.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Constructor_ShouldRejectRelevanceOutOfRange(double relevance)
     {
-        var act = () => new EvidenceLink("InboxCapture", "", _fieldId);
+        var act = () => new EvidenceLink(_intentCandidateId, _sourceSpanId, relevance);
 
         act.Should().Throw<DomainException>()
-            .WithMessage("SourceId cannot be empty");
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.5)]
+    [InlineData(1.0)]
+    public void Constructor_ShouldAcceptRelevanceBoundaryValues(double relevance)
+    {
+        var link = new EvidenceLink(_intentCandidateId, _sourceSpanId, relevance);
+
+        link.Relevance.Should().Be(relevance);
     }
 
     [Fact]
-    public void Constructor_ShouldThrow_WhenSourceIdExceedsMaxLength()
+    public void Constructor_ShouldRejectRationaleExceeding500Characters()
     {
-        var longId = new string('i', 501);
-
-        var act = () => new EvidenceLink("InboxCapture", longId, _fieldId);
+        var longRationale = new string('x', 501);
+        var act = () => new EvidenceLink(_intentCandidateId, _sourceSpanId, 0.5, longRationale);
 
         act.Should().Throw<DomainException>()
-            .WithMessage("SourceId cannot exceed 500 characters");
+            .Which.ErrorCode.Should().Be("ValidationError");
     }
 
     [Fact]
-    public void Constructor_ShouldThrow_WhenFieldIdIsEmpty()
+    public void Constructor_ShouldTrimRationale()
     {
-        var act = () => new EvidenceLink("InboxCapture", "cap-123", Guid.Empty);
+        var link = new EvidenceLink(_intentCandidateId, _sourceSpanId, 0.5, "  some rationale  ");
+
+        link.Rationale.Should().Be("some rationale");
+    }
+
+    [Fact]
+    public void Constructor_ShouldSetNullRationale_WhenWhitespace()
+    {
+        var link = new EvidenceLink(_intentCandidateId, _sourceSpanId, 0.5, "   ");
+
+        link.Rationale.Should().BeNull();
+    }
+
+    [Fact]
+    public void UpdateRelevance_ShouldUpdateValue()
+    {
+        var link = new EvidenceLink(_intentCandidateId, _sourceSpanId, 0.5);
+
+        link.UpdateRelevance(0.9);
+
+        link.Relevance.Should().Be(0.9);
+    }
+
+    [Theory]
+    [InlineData(-0.01)]
+    [InlineData(1.01)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void UpdateRelevance_ShouldRejectOutOfRange(double newRelevance)
+    {
+        var link = new EvidenceLink(_intentCandidateId, _sourceSpanId, 0.5);
+
+        var act = () => link.UpdateRelevance(newRelevance);
 
         act.Should().Throw<DomainException>()
-            .WithMessage("ProvenanceFieldId cannot be empty");
-    }
-
-    [Fact]
-    public void Constructor_ShouldThrow_WhenLabelExceedsMaxLength()
-    {
-        var longLabel = new string('l', 201);
-
-        var act = () => new EvidenceLink("InboxCapture", "cap-123", _fieldId, label: longLabel);
-
-        act.Should().Throw<DomainException>()
-            .WithMessage("Label cannot exceed 200 characters");
-    }
-
-    [Fact]
-    public void Constructor_ShouldThrow_WhenSpanStartIsNegative()
-    {
-        var act = () => new EvidenceLink("InboxCapture", "cap-123", _fieldId, spanStart: -1);
-
-        act.Should().Throw<DomainException>()
-            .WithMessage("SpanStart cannot be negative");
-    }
-
-    [Fact]
-    public void Constructor_ShouldThrow_WhenSpanEndIsNegative()
-    {
-        var act = () => new EvidenceLink("InboxCapture", "cap-123", _fieldId, spanEnd: -1);
-
-        act.Should().Throw<DomainException>()
-            .WithMessage("SpanEnd cannot be negative");
-    }
-
-    [Fact]
-    public void Constructor_ShouldThrow_WhenSpanEndIsLessThanSpanStart()
-    {
-        var act = () => new EvidenceLink("InboxCapture", "cap-123", _fieldId, spanStart: 20, spanEnd: 10);
-
-        act.Should().Throw<DomainException>()
-            .WithMessage("SpanEnd cannot be less than SpanStart");
-    }
-
-    [Fact]
-    public void Constructor_ShouldAccept_WhenSpanStartEqualsSpanEnd()
-    {
-        var link = new EvidenceLink("InboxCapture", "cap-123", _fieldId, spanStart: 5, spanEnd: 5);
-
-        link.SpanStart.Should().Be(5);
-        link.SpanEnd.Should().Be(5);
-    }
-
-    [Fact]
-    public void Constructor_ShouldAccept_WhenOnlySpanStartProvided()
-    {
-        var link = new EvidenceLink("InboxCapture", "cap-123", _fieldId, spanStart: 10);
-
-        link.SpanStart.Should().Be(10);
-        link.SpanEnd.Should().BeNull();
+            .Which.ErrorCode.Should().Be("ValidationError");
     }
 }

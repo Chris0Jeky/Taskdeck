@@ -55,7 +55,27 @@ public class ProposalOutcomeTests
             5.0, 4, 2, "Chat", "Medium", "mock", 0.85);
 
         outcome.EditedFieldCount.Should().Be(2);
+        outcome.OutcomeType.Should().Be(OutcomeType.EditedThenApproved);
         outcome.AverageFieldConfidence.Should().Be(0.85);
+    }
+
+    [Theory]
+    [InlineData(OutcomeType.Approved)]
+    [InlineData(OutcomeType.EditedThenApproved)]
+    [InlineData(OutcomeType.Rejected)]
+    [InlineData(OutcomeType.Ignored)]
+    public void Constructor_ShouldCreateOutcome_ForEachValidOutcomeType(OutcomeType outcomeType)
+    {
+        var before = DateTimeOffset.UtcNow;
+
+        var outcome = new ProposalOutcome(_proposalId, outcomeType, _userId);
+
+        outcome.Id.Should().NotBe(Guid.Empty);
+        outcome.ProposalId.Should().Be(_proposalId);
+        outcome.OutcomeType.Should().Be(outcomeType);
+        outcome.DecidedByUserId.Should().Be(_userId);
+        outcome.DecidedAt.Should().BeOnOrAfter(before);
+        outcome.DecidedAt.Should().BeOnOrBefore(DateTimeOffset.UtcNow);
     }
 
     [Fact]
@@ -89,6 +109,15 @@ public class ProposalOutcomeTests
 
         act.Should().Throw<DomainException>()
             .WithMessage("OutcomeDecision value is invalid");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenOutcomeTypeIsInvalid()
+    {
+        var act = () => new ProposalOutcome(_proposalId, (OutcomeType)999, _userId);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Invalid OutcomeType: 999");
     }
 
     [Fact]
@@ -307,5 +336,16 @@ public class ProposalOutcomeTests
 
         act.Should().Throw<DomainException>()
             .WithMessage("AverageFieldConfidence must be between 0.0 and 1.0");
+    }
+
+    [Fact]
+    public void OutcomeType_Enum_HasExpectedValues()
+    {
+        var values = Enum.GetValues<OutcomeType>();
+        values.Should().HaveCount(4);
+        values.Should().Contain(OutcomeType.Approved);
+        values.Should().Contain(OutcomeType.EditedThenApproved);
+        values.Should().Contain(OutcomeType.Rejected);
+        values.Should().Contain(OutcomeType.Ignored);
     }
 }

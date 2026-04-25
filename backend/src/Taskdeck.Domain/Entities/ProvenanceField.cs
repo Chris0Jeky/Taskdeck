@@ -38,8 +38,8 @@ public class ProvenanceField : Entity
     /// </summary>
     public Guid ProposalProvenanceId { get; private set; }
 
-    private readonly List<EvidenceLink> _evidenceLinks = new();
-    public IReadOnlyList<EvidenceLink> EvidenceLinks => _evidenceLinks.AsReadOnly();
+    private readonly List<ProvenanceEvidenceLink> _evidenceLinks = new();
+    public IReadOnlyList<ProvenanceEvidenceLink> EvidenceLinks => _evidenceLinks.AsReadOnly();
 
     private ProvenanceField() { } // EF Core
 
@@ -74,7 +74,7 @@ public class ProvenanceField : Entity
         ExtractiveQuote = extractiveQuote;
     }
 
-    public void AddEvidenceLink(EvidenceLink link)
+    public void AddEvidenceLink(ProvenanceEvidenceLink link)
     {
         if (link is null)
             throw new DomainException(ErrorCodes.ValidationError, "EvidenceLink cannot be null");

@@ -33,6 +33,7 @@ public interface IUnitOfWork
     IIntegrationConnectorRepository IntegrationConnectors { get; }
     IConnectorEventRepository ConnectorEvents { get; }
     IConnectorCredentialRepository ConnectorCredentials { get; }
+    IProposalRevisionRepository ProposalRevisions { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);

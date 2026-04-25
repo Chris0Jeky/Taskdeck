@@ -149,7 +149,7 @@ public class ProvenanceFieldTests
     public void AddEvidenceLink_ShouldAddLink()
     {
         var field = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.9, _provenanceId);
-        var link = new EvidenceLink("InboxCapture", "cap-123", field.Id);
+        var link = new ProvenanceEvidenceLink("InboxCapture", "cap-123", field.Id);
 
         field.AddEvidenceLink(link);
 
@@ -161,7 +161,7 @@ public class ProvenanceFieldTests
     {
         var field = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.9, _provenanceId);
         var otherFieldId = Guid.NewGuid();
-        var link = new EvidenceLink("InboxCapture", "cap-456", otherFieldId);
+        var link = new ProvenanceEvidenceLink("InboxCapture", "cap-456", otherFieldId);
 
         var act = () => field.AddEvidenceLink(link);
 

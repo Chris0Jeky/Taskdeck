@@ -10,56 +10,65 @@ public class ProposalOutcomeConfiguration : IEntityTypeConfiguration<ProposalOut
     {
         builder.ToTable("ProposalOutcomes");
 
-        builder.HasKey(o => o.Id);
+        builder.HasKey(po => po.Id);
 
-        builder.Property(o => o.Id)
+        builder.Property(po => po.Id)
             .ValueGeneratedNever();
 
-        builder.Property(o => o.ProposalId)
+        builder.Property(po => po.ProposalId)
             .IsRequired();
 
-        builder.Property(o => o.DecidedByUserId)
+        builder.Property(po => po.DecidedByUserId)
             .IsRequired();
 
-        builder.Property(o => o.Decision)
+        builder.Property(po => po.Decision)
             .IsRequired()
             .HasConversion<int>();
 
-        builder.Property(o => o.DecisionLatencySeconds)
+        builder.Property(po => po.OutcomeType)
+            .IsRequired()
+            .HasConversion<int>();
+
+        builder.Property(po => po.DecidedAt)
             .IsRequired();
 
-        builder.Property(o => o.FieldCount)
+        builder.Property(po => po.DecisionLatencySeconds)
             .IsRequired();
 
-        builder.Property(o => o.EditedFieldCount)
+        builder.Property(po => po.FieldCount)
             .IsRequired();
 
-        builder.Property(o => o.SourceType)
+        builder.Property(po => po.EditedFieldCount)
+            .IsRequired();
+
+        builder.Property(po => po.SourceType)
             .IsRequired()
             .HasMaxLength(50);
 
-        builder.Property(o => o.RiskLevel)
+        builder.Property(po => po.RiskLevel)
             .IsRequired()
             .HasMaxLength(50);
 
-        builder.Property(o => o.ModelId)
+        builder.Property(po => po.ModelId)
             .HasMaxLength(100);
 
-        builder.Property(o => o.AverageFieldConfidence);
+        builder.Property(po => po.AverageFieldConfidence);
 
-        builder.Property(o => o.CreatedAt)
+        builder.Property(po => po.CreatedAt)
             .IsRequired();
 
-        builder.Property(o => o.UpdatedAt)
+        builder.Property(po => po.UpdatedAt)
             .IsRequired()
             .IsConcurrencyToken();
 
-        // Indexes for common query patterns
-        builder.HasIndex(o => o.ProposalId)
-            .IsUnique(); // One outcome per proposal
+        builder.HasIndex(po => po.ProposalId);
+        builder.HasIndex(po => po.DecidedByUserId);
+        builder.HasIndex(po => po.Decision);
+        builder.HasIndex(po => po.CreatedAt);
 
-        builder.HasIndex(o => o.DecidedByUserId);
-        builder.HasIndex(o => o.Decision);
-        builder.HasIndex(o => o.CreatedAt);
+        builder.HasOne(po => po.Proposal)
+            .WithMany(p => p.Outcomes)
+            .HasForeignKey(po => po.ProposalId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

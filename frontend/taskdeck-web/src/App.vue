@@ -8,11 +8,15 @@ import ErrorBoundary from './components/ErrorBoundary.vue'
 import { useSessionStore } from './store/sessionStore'
 import { useFeatureFlagStore } from './store/featureFlagStore'
 import { useWorkspaceStore } from './store/workspaceStore'
+import { usePaperThemeStore } from './store/paperThemeStore'
 
 const route = useRoute()
 const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
+const paperTheme = usePaperThemeStore()
+
+paperTheme.apply()
 
 const showShell = computed(() => {
   return route.meta.requiresShell === true

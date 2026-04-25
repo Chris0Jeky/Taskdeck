@@ -5,68 +5,44 @@ using Taskdeck.Domain.Exceptions;
 namespace Taskdeck.Domain.Entities;
 
 /// <summary>
-/// Records the user's decision on a proposal with content-free dimensions.
-/// Designed for outcome tracking, feedback loops, and quality metrics.
-///
-/// IMPORTANT: This entity must never store user content, proposal text, or PII.
-/// Only structural/dimensional data (decision type, timing, field counts) is recorded.
+/// Records a content-free decision event for an automation proposal.
+/// The entity stores structural outcome dimensions only, never proposal text,
+/// user-entered rationale, or other business content.
 /// </summary>
 public class ProposalOutcome : Entity
 {
-    /// <summary>
-    /// The proposal this outcome records a decision for.
-    /// </summary>
     public Guid ProposalId { get; private set; }
-
-    /// <summary>
-    /// The user who made the decision.
-    /// </summary>
     public Guid DecidedByUserId { get; private set; }
-
-    /// <summary>
-    /// What decision was made.
-    /// </summary>
     public OutcomeDecision Decision { get; private set; }
-
-    /// <summary>
-    /// Time in seconds between proposal creation and the user's decision.
-    /// </summary>
+    public OutcomeType OutcomeType { get; private set; }
+    public DateTimeOffset DecidedAt { get; private set; }
     public double DecisionLatencySeconds { get; private set; }
-
-    /// <summary>
-    /// Number of fields in the proposal at time of decision.
-    /// </summary>
     public int FieldCount { get; private set; }
-
-    /// <summary>
-    /// Number of fields that were edited before approval (only meaningful for EditedThenApproved).
-    /// </summary>
     public int EditedFieldCount { get; private set; }
-
-    /// <summary>
-    /// The source type of the proposal (mirrors ProposalSourceType for denormalized querying).
-    /// Stored as string to avoid coupling this ledger to proposal lifecycle enums.
-    /// </summary>
     public string SourceType { get; private set; } = string.Empty;
-
-    /// <summary>
-    /// Risk level at the time of the decision (denormalized for analytics).
-    /// Stored as string to avoid coupling.
-    /// </summary>
     public string RiskLevel { get; private set; } = string.Empty;
-
-    /// <summary>
-    /// Model ID that generated the proposal (denormalized from provenance).
-    /// </summary>
     public string? ModelId { get; private set; }
-
-    /// <summary>
-    /// Average confidence of provenance fields at time of decision.
-    /// Null if no provenance was attached.
-    /// </summary>
     public double? AverageFieldConfidence { get; private set; }
 
+    public AutomationProposal Proposal { get; private set; } = null!;
+
     private ProposalOutcome() { } // EF Core
+
+    public ProposalOutcome(
+        Guid proposalId,
+        OutcomeType outcomeType,
+        Guid decidedByUserId)
+        : this(
+            proposalId,
+            decidedByUserId,
+            ToDecision(outcomeType),
+            decisionLatencySeconds: 0.0,
+            fieldCount: outcomeType == OutcomeType.EditedThenApproved ? 1 : 0,
+            editedFieldCount: outcomeType == OutcomeType.EditedThenApproved ? 1 : 0,
+            sourceType: "Unknown",
+            riskLevel: "Unknown")
+    {
+    }
 
     public ProposalOutcome(
         Guid proposalId,
@@ -104,8 +80,13 @@ public class ProposalOutcome : Entity
             throw new DomainException(ErrorCodes.ValidationError, "RiskLevel cannot exceed 50 characters");
         if (modelId != null && modelId.Length > 100)
             throw new DomainException(ErrorCodes.ValidationError, "ModelId cannot exceed 100 characters");
-        if (averageFieldConfidence.HasValue && (!double.IsFinite(averageFieldConfidence.Value) || averageFieldConfidence.Value < 0.0 || averageFieldConfidence.Value > 1.0))
+        if (averageFieldConfidence.HasValue &&
+            (!double.IsFinite(averageFieldConfidence.Value) ||
+             averageFieldConfidence.Value < 0.0 ||
+             averageFieldConfidence.Value > 1.0))
+        {
             throw new DomainException(ErrorCodes.ValidationError, "AverageFieldConfidence must be between 0.0 and 1.0");
+        }
         if (decision != OutcomeDecision.EditedThenApproved && editedFieldCount > 0)
             throw new DomainException(ErrorCodes.ValidationError, "EditedFieldCount must be 0 when decision is not EditedThenApproved");
         if (decision == OutcomeDecision.EditedThenApproved && editedFieldCount == 0)
@@ -114,6 +95,8 @@ public class ProposalOutcome : Entity
         ProposalId = proposalId;
         DecidedByUserId = decidedByUserId;
         Decision = decision;
+        OutcomeType = ToOutcomeType(decision);
+        DecidedAt = DateTimeOffset.UtcNow;
         DecisionLatencySeconds = decisionLatencySeconds;
         FieldCount = fieldCount;
         EditedFieldCount = editedFieldCount;
@@ -121,5 +104,32 @@ public class ProposalOutcome : Entity
         RiskLevel = riskLevel;
         ModelId = modelId;
         AverageFieldConfidence = averageFieldConfidence;
+    }
+
+    private static OutcomeType ToOutcomeType(OutcomeDecision decision)
+    {
+        return decision switch
+        {
+            OutcomeDecision.Approved => OutcomeType.Approved,
+            OutcomeDecision.EditedThenApproved => OutcomeType.EditedThenApproved,
+            OutcomeDecision.Rejected => OutcomeType.Rejected,
+            OutcomeDecision.Ignored => OutcomeType.Ignored,
+            _ => throw new DomainException(ErrorCodes.ValidationError, "OutcomeDecision value is invalid")
+        };
+    }
+
+    private static OutcomeDecision ToDecision(OutcomeType outcomeType)
+    {
+        if (!Enum.IsDefined(typeof(OutcomeType), outcomeType))
+            throw new DomainException(ErrorCodes.ValidationError, $"Invalid OutcomeType: {outcomeType}");
+
+        return outcomeType switch
+        {
+            OutcomeType.Approved => OutcomeDecision.Approved,
+            OutcomeType.EditedThenApproved => OutcomeDecision.EditedThenApproved,
+            OutcomeType.Rejected => OutcomeDecision.Rejected,
+            OutcomeType.Ignored => OutcomeDecision.Ignored,
+            _ => throw new DomainException(ErrorCodes.ValidationError, $"Invalid OutcomeType: {outcomeType}")
+        };
     }
 }

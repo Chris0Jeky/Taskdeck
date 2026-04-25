@@ -71,6 +71,7 @@ public static class DependencyInjection
         services.AddScoped<IConnectorEventRepository, ConnectorEventRepository>();
         services.AddScoped<IConnectorCredentialRepository, ConnectorCredentialRepository>();
         services.AddScoped<IProposalOutcomeRepository, ProposalOutcomeRepository>();
+        services.AddScoped<IProposalRevisionRepository, ProposalRevisionRepository>();
         services.AddScoped<IKnowledgeSearchService, Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
 
         // Provenance services
