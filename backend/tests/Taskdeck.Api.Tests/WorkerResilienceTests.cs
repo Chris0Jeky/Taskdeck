@@ -278,6 +278,29 @@ public class WorkerResilienceTests
             "warning logged for the proposal that could not be expired");
     }
 
+    [Fact]
+    public void EmbeddingBackfillWorker_BackoffUsesConfiguredConsecutiveErrorCap()
+    {
+        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var settings = new EmbeddingBackfillSettings
+        {
+            Enabled = true,
+            PollIntervalSeconds = 2,
+            MaxConsecutiveErrors = 3,
+            MaxBackoffSeconds = 1000
+        };
+        var worker = new EmbeddingBackfillWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            settings,
+            new WorkerHeartbeatRegistry(),
+            NullLogger<EmbeddingBackfillWorker>.Instance);
+
+        var backoffSeconds = worker.CalculateBackoffSeconds(consecutiveErrors: 10);
+
+        backoffSeconds.Should().Be(16,
+            "the configured MaxConsecutiveErrors cap should control exponential backoff");
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------

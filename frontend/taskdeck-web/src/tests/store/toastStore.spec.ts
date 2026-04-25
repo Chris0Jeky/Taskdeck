@@ -129,6 +129,25 @@ describe('toastStore', () => {
 
       expect(store.toasts).toHaveLength(1)
     })
+
+    it('should pause and resume auto-removal timers', () => {
+      vi.useFakeTimers()
+
+      const id = store.show('Pausable toast', 'info', 3000)
+      vi.advanceTimersByTime(1000)
+
+      store.pause(id)
+      vi.advanceTimersByTime(5000)
+
+      expect(store.toasts).toHaveLength(1)
+
+      store.resume(id)
+      vi.advanceTimersByTime(1999)
+      expect(store.toasts).toHaveLength(1)
+
+      vi.advanceTimersByTime(1)
+      expect(store.toasts).toHaveLength(0)
+    })
   })
 
   describe('multiple toasts', () => {

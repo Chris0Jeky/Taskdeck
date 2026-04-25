@@ -2,6 +2,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ToastContainer from './components/common/ToastContainer.vue'
+import PaperToastContainer from './components/paper/PaperToastContainer.vue'
 import SessionTimeoutWarning from './components/common/SessionTimeoutWarning.vue'
 import AppShell from './components/shell/AppShell.vue'
 import ErrorBoundary from './components/ErrorBoundary.vue'
@@ -52,7 +53,8 @@ watch(
     <ErrorBoundary v-else>
       <router-view />
     </ErrorBoundary>
-    <ToastContainer />
+    <PaperToastContainer v-if="paperTheme.isOn" />
+    <ToastContainer v-else />
     <SessionTimeoutWarning />
   </div>
 </template>
