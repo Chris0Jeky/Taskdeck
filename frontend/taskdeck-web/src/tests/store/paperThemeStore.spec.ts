@@ -144,6 +144,20 @@ describe('paperThemeStore', () => {
     expect(document.body.classList.contains('paper-night')).toBe(false)
   })
 
+  // PAPER-12 regression: localStorage must persist 'auto' across OS-scheme
+  // changes — we never want the persisted value to drift to the resolved
+  // 'paper-night' / 'paper' literal when the user picked 'auto'.
+  it('persists auto mode in localStorage even after OS scheme toggles', () => {
+    const mq = setMatchMediaDark(false)
+    const store = usePaperThemeStore()
+    store.setMode('auto')
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('auto')
+    mq.fire(true)
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('auto')
+    mq.fire(false)
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('auto')
+  })
+
   it('cleans up the auto listener when leaving auto mode', () => {
     const mq = setMatchMediaDark(false)
     const store = usePaperThemeStore()
