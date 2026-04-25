@@ -135,7 +135,10 @@ function handleClose() {
 
 function getItemLabel(item: PaletteItem): string {
   if (item.type === 'command') {
-    return item.data.kind === 'navigation' ? `Go to ${item.data.label}` : item.data.label
+    if (item.data.kind !== 'navigation' || item.data.label.startsWith('Go to ')) {
+      return item.data.label
+    }
+    return `Go to ${item.data.label}`
   }
   if (item.type === 'board') {
     return item.data.name

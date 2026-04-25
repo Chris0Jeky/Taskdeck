@@ -38,7 +38,7 @@ defineProps<{ data: SideEffects }>()
         <div class="tk-eyebrow paper-review-se__rev-eyebrow">Reversibility</div>
         <div class="paper-review-se__rev-summary">{{ data.reversibility.summary }}</div>
         <p class="paper-review-se__rev-desc">{{ data.reversibility.description }}</p>
-        <div class="paper-review-se__rev-timeline">
+        <div v-if="data.reversibility.appliedAt !== null" class="paper-review-se__rev-timeline">
           <div class="tk-eyebrow paper-review-se__rev-timeline-heading">Undo window</div>
           <PaperUndoTimeline
             :applied-at="data.reversibility.appliedAt"
@@ -47,6 +47,9 @@ defineProps<{ data: SideEffects }>()
             right-label="window closes"
           />
         </div>
+        <p v-else class="paper-review-se__rev-pending tk-meta">
+          Undo window starts after apply.
+        </p>
       </aside>
     </div>
   </section>

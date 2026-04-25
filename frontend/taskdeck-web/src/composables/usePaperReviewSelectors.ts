@@ -42,8 +42,8 @@ export interface SideEffects {
     description: string
     /** Window in milliseconds for the undo timeline. Defaults to 6 h. */
     windowMs: number
-    /** When the apply happened (ms epoch). For pending proposals we use now. */
-    appliedAt: number
+    /** When the apply happened (ms epoch). Pending proposals do not have a running undo window. */
+    appliedAt: number | null
   }
 }
 
@@ -99,7 +99,7 @@ const EMPTY_SIDE_EFFECTS: SideEffects = {
     summary: '6 hours · single keystroke',
     description: 'Undo restores the prior state. Nothing is lost.',
     windowMs: 6 * 60 * 60 * 1000,
-    appliedAt: Date.now(),
+    appliedAt: null,
   },
 }
 const EMPTY_CONFIDENCE: ConfidenceBreakdown = {
@@ -206,7 +206,7 @@ export function usePaperReviewSelectors(
   const sideEffects = computed<SideEffects>(() => {
     if (!useDemo.value) return EMPTY_SIDE_EFFECTS
     const proposal = activeProposal.value
-    const appliedAt = proposal?.appliedAt ? new Date(proposal.appliedAt).getTime() : Date.now()
+    const appliedAt = proposal?.appliedAt ? new Date(proposal.appliedAt).getTime() : null
     return {
       rows: DEMO_SIDE_EFFECT_ROWS,
       reversibility: {

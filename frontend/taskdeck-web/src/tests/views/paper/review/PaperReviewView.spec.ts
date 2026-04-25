@@ -166,6 +166,31 @@ describe('PaperReviewView', () => {
     expect(railText).not.toContain('Theirs proposal')
   })
 
+  it('renders a filter-empty state when another queue filter still has work', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'theirs-001',
+        requestedByUserId: 'u-2',
+        summary: 'Theirs proposal',
+      }),
+    ])
+
+    const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
+    await mineButton?.trigger('click')
+
+    const emptyText = wrapper.find('[data-testid="paper-review-empty"]').text()
+    expect(emptyText).toContain('No matches in Mine.')
+    expect(emptyText).toContain('Queue · 1 awaiting')
+    expect(emptyText).not.toContain('Nothing waiting')
+  })
+
+  it('does not start the undo timeline for pending proposals', async () => {
+    const wrapper = await mountView([makeProposal()])
+
+    expect(wrapper.text()).toContain('Undo window starts after apply.')
+    expect(wrapper.find('paper-undo-timeline-stub').exists()).toBe(false)
+  })
+
   it('retargets decision actions to the visible proposal after queue filtering', async () => {
     mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'mine-001' }))
     const wrapper = await mountView([

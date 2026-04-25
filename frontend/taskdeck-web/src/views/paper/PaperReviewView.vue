@@ -104,6 +104,16 @@ const filteredVisibleProposals = computed(() => {
   }
 })
 
+const activeFilterLabel = computed(() => {
+  if (queueFilter.value === 'mine') return 'Mine'
+  if (queueFilter.value === 'stale') return 'Stale'
+  return 'All'
+})
+
+const hasFilterEmptyState = computed(
+  () => visibleProposals.value.length > 0 && filteredVisibleProposals.value.length === 0,
+)
+
 const activeProposal = computed<ApiProposal | null>(() => {
   if (explicitActiveId.value) {
     const found = filteredVisibleProposals.value.find((p) => p.id === explicitActiveId.value)
@@ -499,12 +509,21 @@ function onQueueFilterChange(filter: QueueFilter) {
       @defer="onDefer"
     />
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
-      <div class="tk-eyebrow">Queue · 0 awaiting</div>
-      <h2 class="tk-h2">Nothing waiting. Good.</h2>
-      <p class="tk-lede">
-        When haiku has something to propose it will appear here for review.
-      </p>
-      <p v-if="proposalsLoading" class="tk-meta">Loading proposals…</p>
+      <template v-if="hasFilterEmptyState">
+        <div class="tk-eyebrow">Queue · {{ awaitingCount }} awaiting</div>
+        <h2 class="tk-h2">No matches in {{ activeFilterLabel }}.</h2>
+        <p class="tk-lede">
+          Switch filters to review proposals that are still waiting elsewhere in the queue.
+        </p>
+      </template>
+      <template v-else>
+        <div class="tk-eyebrow">Queue · 0 awaiting</div>
+        <h2 class="tk-h2">Nothing waiting. Good.</h2>
+        <p class="tk-lede">
+          When haiku has something to propose it will appear here for review.
+        </p>
+        <p v-if="proposalsLoading" class="tk-meta">Loading proposals…</p>
+      </template>
     </div>
 
     <ReviewRightRail
