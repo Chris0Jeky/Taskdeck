@@ -42,11 +42,15 @@ public static class WorkerRegistration
         var auditRetentionSettings = configuration.GetSection("AuditRetention").Get<AuditRetentionSettings>() ?? new AuditRetentionSettings();
         services.AddSingleton(auditRetentionSettings);
 
+        var embeddingBackfillSettings = configuration.GetSection("EmbeddingBackfill").Get<EmbeddingBackfillSettings>() ?? new EmbeddingBackfillSettings();
+        services.AddSingleton(embeddingBackfillSettings);
+
         services.AddSingleton<WorkerHeartbeatRegistry>();
         services.AddHostedService<LlmQueueToProposalWorker>();
         services.AddHostedService<ProposalHousekeepingWorker>();
         services.AddHostedService<OutboundWebhookDeliveryWorker>();
         services.AddHostedService<AuditRetentionWorker>();
+        services.AddHostedService<EmbeddingBackfillWorker>();
 
         return services;
     }

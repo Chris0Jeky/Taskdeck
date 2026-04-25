@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Taskdeck.Application\Taskdeck.Application.csproj" />
+    <ProjectReference Include="..\..\src\Taskdeck.Infrastructure\Taskdeck.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

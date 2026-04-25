@@ -41,6 +41,7 @@ public static class OptionsValidationRegistration
 
         services.RegisterValidatedOptions<WorkerSettings>(configuration, "Workers");
         services.RegisterValidatedOptions<AuditRetentionSettings>(configuration, "AuditRetention");
+        services.RegisterValidatedOptions<EmbeddingBackfillSettings>(configuration, "EmbeddingBackfill");
 
         // ── Settings from CorsRegistration (Cache is used in infrastructure) ─
 
