@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import CaptureModal from '../common/CaptureModal.vue'
 import OfflineBanner from './OfflineBanner.vue'
@@ -11,12 +12,15 @@ import ShellSidebar from './ShellSidebar.vue'
 import ShellTopbar from './ShellTopbar.vue'
 import ShellCommandPalette from './ShellCommandPalette.vue'
 import ShellKeyboardHelp from './ShellKeyboardHelp.vue'
+import PaperSidebar from '../paper/PaperSidebar.vue'
+import PaperTopBar from '../paper/PaperTopBar.vue'
 import ErrorBoundary from '../ErrorBoundary.vue'
 import type { CommandItem } from './ShellCommandPalette.vue'
 
 const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
+const paperTheme = usePaperThemeStore()
 
 const sidebarRef = ref<InstanceType<typeof ShellSidebar> | null>(null)
 
@@ -167,8 +171,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="td-shell">
+  <div class="td-shell" :class="{ 'td-shell--paper': paperTheme.isOn }">
+    <PaperSidebar
+      v-if="paperTheme.isOn"
+      @logout="handleLogout"
+      @open-shortcuts="showKeyboardHelp = true"
+    />
     <ShellSidebar
+      v-else
       ref="sidebarRef"
       :is-authenticated="session.isAuthenticated"
       @logout="handleLogout"
@@ -179,7 +189,7 @@ onUnmounted(() => {
     <div class="td-main-container">
       <OfflineBanner />
       <SwUpdatePrompt />
-      <div class="td-mobile-topbar">
+      <div v-if="!paperTheme.isOn" class="td-mobile-topbar">
         <button
           class="td-mobile-topbar__hamburger"
           aria-label="Open navigation menu"
@@ -190,7 +200,11 @@ onUnmounted(() => {
         <span class="td-mobile-topbar__title">Taskdeck</span>
       </div>
 
-      <ShellTopbar @open-command-palette="openCommandPalette" />
+      <PaperTopBar
+        v-if="paperTheme.isOn"
+        @palette:open="openCommandPalette"
+      />
+      <ShellTopbar v-else @open-command-palette="openCommandPalette" />
 
       <main id="td-main-content" class="td-content">
         <!--
