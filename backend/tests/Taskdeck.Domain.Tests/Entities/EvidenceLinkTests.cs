@@ -61,6 +61,9 @@ public class EvidenceLinkTests
     [InlineData(1.01)]
     [InlineData(-1.0)]
     [InlineData(2.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
     public void Constructor_ShouldRejectRelevanceOutOfRange(double relevance)
     {
         var act = () => new EvidenceLink(_intentCandidateId, _sourceSpanId, relevance);
@@ -119,6 +122,9 @@ public class EvidenceLinkTests
     [Theory]
     [InlineData(-0.01)]
     [InlineData(1.01)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
     public void UpdateRelevance_ShouldRejectOutOfRange(double newRelevance)
     {
         var link = new EvidenceLink(_intentCandidateId, _sourceSpanId, 0.5);

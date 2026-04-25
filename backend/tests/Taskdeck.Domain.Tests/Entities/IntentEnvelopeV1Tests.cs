@@ -402,7 +402,7 @@ public class IntentEnvelopeV1Tests
 
         // Link evidence
         var evidenceLink = new EvidenceLink(intent1.Id, span.Id, 0.95, "Direct mention");
-        intent1.AddEvidenceLink(evidenceLink);
+        intent1.AddEvidenceLink(evidenceLink, span);
 
         // Create batch
         var batch = envelope.CreateBatch(_userId, "Two cards from capture");

@@ -113,6 +113,7 @@ public class SourceBlockTests
 
         span.Should().NotBeNull();
         span.SourceBlockId.Should().Be(block.Id);
+        span.EnvelopeId.Should().Be(_envelopeId);
         span.StartOffset.Should().Be(0);
         span.EndOffset.Should().Be(5);
         span.SnippetText.Should().Be("Hello");

@@ -11,6 +11,7 @@ namespace Taskdeck.Domain.Entities;
 public class SourceSpan : Entity
 {
     public Guid SourceBlockId { get; private set; }
+    public Guid EnvelopeId { get; private set; }
     public int StartOffset { get; private set; }
     public int EndOffset { get; private set; }
 
@@ -28,12 +29,15 @@ public class SourceSpan : Entity
 
     public SourceSpan(
         Guid sourceBlockId,
+        Guid envelopeId,
         int startOffset,
         int endOffset,
         string snippetText)
     {
         if (sourceBlockId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "SourceBlockId cannot be empty");
+        if (envelopeId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "EnvelopeId cannot be empty");
         if (startOffset < 0)
             throw new DomainException(ErrorCodes.ValidationError, "StartOffset must be non-negative");
         if (endOffset < 0)
@@ -49,6 +53,7 @@ public class SourceSpan : Entity
                 $"SnippetText length ({snippetText.Length}) must match the span range ({endOffset - startOffset})");
 
         SourceBlockId = sourceBlockId;
+        EnvelopeId = envelopeId;
         StartOffset = startOffset;
         EndOffset = endOffset;
         SnippetText = snippetText;

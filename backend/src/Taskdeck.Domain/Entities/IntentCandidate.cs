@@ -56,7 +56,7 @@ public class IntentCandidate : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Label cannot be empty");
         if (label.Length > 500)
             throw new DomainException(ErrorCodes.ValidationError, "Label cannot exceed 500 characters");
-        if (confidence < 0.0 || confidence > 1.0)
+        if (!double.IsFinite(confidence) || confidence < 0.0 || confidence > 1.0)
             throw new DomainException(ErrorCodes.ValidationError, "Confidence must be between 0.0 and 1.0");
         if (rank < 0)
             throw new DomainException(ErrorCodes.ValidationError, "Rank must be non-negative");
@@ -70,11 +70,20 @@ public class IntentCandidate : Entity
         ActionType = string.IsNullOrWhiteSpace(actionType) ? null : actionType.Trim();
     }
 
-    public void AddEvidenceLink(EvidenceLink link)
+    public void AddEvidenceLink(EvidenceLink link, SourceSpan sourceSpan)
     {
+        if (sourceSpan is null)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "SourceSpan is required when adding an EvidenceLink");
         if (link.IntentCandidateId != Id)
             throw new DomainException(ErrorCodes.ValidationError,
                 "EvidenceLink does not belong to this IntentCandidate");
+        if (link.SourceSpanId != sourceSpan.Id)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "EvidenceLink does not point to the provided SourceSpan");
+        if (sourceSpan.EnvelopeId != EnvelopeId)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "EvidenceLink source span does not belong to this IntentCandidate envelope");
 
         _evidenceLinks.Add(link);
         Touch();
@@ -82,7 +91,7 @@ public class IntentCandidate : Entity
 
     public void UpdateConfidence(double newConfidence)
     {
-        if (newConfidence < 0.0 || newConfidence > 1.0)
+        if (!double.IsFinite(newConfidence) || newConfidence < 0.0 || newConfidence > 1.0)
             throw new DomainException(ErrorCodes.ValidationError, "Confidence must be between 0.0 and 1.0");
 
         Confidence = newConfidence;

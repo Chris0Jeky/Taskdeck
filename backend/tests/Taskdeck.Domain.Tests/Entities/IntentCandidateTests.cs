@@ -64,6 +64,9 @@ public class IntentCandidateTests
     [InlineData(1.01)]
     [InlineData(-1.0)]
     [InlineData(2.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
     public void Constructor_ShouldRejectConfidenceOutOfRange(double confidence)
     {
         var act = () => new IntentCandidate(_envelopeId, "Label", confidence, 0);
@@ -131,6 +134,9 @@ public class IntentCandidateTests
     [Theory]
     [InlineData(-0.01)]
     [InlineData(1.01)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
     public void UpdateConfidence_ShouldRejectOutOfRange(double newConfidence)
     {
         var candidate = new IntentCandidate(_envelopeId, "Label", 0.5, 0);
@@ -145,10 +151,11 @@ public class IntentCandidateTests
     public void AddEvidenceLink_ShouldAddLink()
     {
         var candidate = new IntentCandidate(_envelopeId, "Label", 0.5, 0);
-        var spanId = Guid.NewGuid();
-        var link = new EvidenceLink(candidate.Id, spanId, 0.8, "Key evidence");
+        var block = new SourceBlock(_envelopeId, 0, "Key evidence text", "capture");
+        var span = block.AddSpan(0, 12, "Key evidence");
+        var link = new EvidenceLink(candidate.Id, span.Id, 0.8, "Key evidence");
 
-        candidate.AddEvidenceLink(link);
+        candidate.AddEvidenceLink(link, span);
 
         candidate.EvidenceLinks.Should().HaveCount(1);
         candidate.EvidenceLinks[0].Should().Be(link);
@@ -160,8 +167,38 @@ public class IntentCandidateTests
         var candidate = new IntentCandidate(_envelopeId, "Label", 0.5, 0);
         var otherCandidateId = Guid.NewGuid();
         var link = new EvidenceLink(otherCandidateId, Guid.NewGuid(), 0.8);
+        var block = new SourceBlock(_envelopeId, 0, "Key evidence text", "capture");
+        var span = block.AddSpan(0, 12, "Key evidence");
 
-        var act = () => candidate.AddEvidenceLink(link);
+        var act = () => candidate.AddEvidenceLink(link, span);
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public void AddEvidenceLink_ShouldRejectLinkPointingToDifferentSpan()
+    {
+        var candidate = new IntentCandidate(_envelopeId, "Label", 0.5, 0);
+        var block = new SourceBlock(_envelopeId, 0, "Key evidence text", "capture");
+        var span = block.AddSpan(0, 12, "Key evidence");
+        var link = new EvidenceLink(candidate.Id, Guid.NewGuid(), 0.8);
+
+        var act = () => candidate.AddEvidenceLink(link, span);
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public void AddEvidenceLink_ShouldRejectSpanFromDifferentEnvelope()
+    {
+        var candidate = new IntentCandidate(_envelopeId, "Label", 0.5, 0);
+        var otherBlock = new SourceBlock(Guid.NewGuid(), 0, "Key evidence text", "capture");
+        var otherSpan = otherBlock.AddSpan(0, 12, "Key evidence");
+        var link = new EvidenceLink(candidate.Id, otherSpan.Id, 0.8);
+
+        var act = () => candidate.AddEvidenceLink(link, otherSpan);
 
         act.Should().Throw<DomainException>()
             .Which.ErrorCode.Should().Be("ValidationError");

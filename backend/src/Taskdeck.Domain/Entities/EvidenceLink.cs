@@ -41,7 +41,7 @@ public class EvidenceLink : Entity
             throw new DomainException(ErrorCodes.ValidationError, "IntentCandidateId cannot be empty");
         if (sourceSpanId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "SourceSpanId cannot be empty");
-        if (relevance < 0.0 || relevance > 1.0)
+        if (!double.IsFinite(relevance) || relevance < 0.0 || relevance > 1.0)
             throw new DomainException(ErrorCodes.ValidationError, "Relevance must be between 0.0 and 1.0");
         if (rationale is not null && rationale.Length > 500)
             throw new DomainException(ErrorCodes.ValidationError, "Rationale cannot exceed 500 characters");
@@ -54,7 +54,7 @@ public class EvidenceLink : Entity
 
     public void UpdateRelevance(double newRelevance)
     {
-        if (newRelevance < 0.0 || newRelevance > 1.0)
+        if (!double.IsFinite(newRelevance) || newRelevance < 0.0 || newRelevance > 1.0)
             throw new DomainException(ErrorCodes.ValidationError, "Relevance must be between 0.0 and 1.0");
 
         Relevance = newRelevance;
