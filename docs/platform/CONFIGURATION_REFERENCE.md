@@ -54,6 +54,7 @@ Source files used to build this reference:
   - [`AuditRetention`](#auditretention)
 - [Persistence and first run](#persistence-and-first-run)
   - [`ConnectionStrings`](#connectionstrings)
+  - [`Database`](#database)
   - [`ExportImport`](#exportimport)
   - [`FirstRun`](#firstrun)
   - [`DevelopmentSandbox`](#developmentsandbox)
@@ -491,6 +492,15 @@ DbContext) and
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `ConnectionStrings:DefaultConnection` | `string` | `Data Source=taskdeck.db` | SQLite connection string. When `FirstRun:ResolveAppDataDbPath` is true and the path is relative, first-run resolves it into the OS LocalAppData directory (`%LOCALAPPDATA%/Taskdeck` on Windows, XDG equivalent on Linux). | Yes (but a default is always supplied) |
+
+### `Database`
+
+Consumed by `Taskdeck.Infrastructure.DependencyInjection.AddInfrastructure`.
+Backs `DatabaseSettings` (`Taskdeck.Application.Services.DatabaseSettings`).
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Database:CommandTimeoutSeconds` | `int` | `30` | Command timeout in seconds for database operations. Valid range: 1--300. Applies to all EF Core commands including `Database.Migrate()` -- avoid very low values if schema migrations are expected. | No |
 
 ### `ExportImport`
 

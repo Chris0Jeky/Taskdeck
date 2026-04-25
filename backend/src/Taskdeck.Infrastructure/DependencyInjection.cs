@@ -20,8 +20,24 @@ public static class DependencyInjection
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? "Data Source=taskdeck.db";
 
+        var databaseSettings = configuration.GetSection("Database").Get<DatabaseSettings>()
+            ?? new DatabaseSettings();
+
+        // Enforce validation for all host modes (API, CLI, MCP).
+        // ValidateOnStart causes an exception at startup if CommandTimeoutSeconds
+        // is out of the [1, 300] range, regardless of which host runs AddInfrastructure.
+        services.AddOptions<DatabaseSettings>()
+            .Bind(configuration.GetSection("Database"))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         services.AddDbContext<TaskdeckDbContext>(options =>
-            options.UseSqlite(connectionString));
+            options.UseSqlite(connectionString, sqliteOptions =>
+            {
+                // Apply command timeout from configuration (default: 30s).
+                // This applies to all EF Core commands including Database.Migrate().
+                sqliteOptions.CommandTimeout(databaseSettings.CommandTimeoutSeconds);
+            }));
 
         services.AddScoped<IBoardRepository, BoardRepository>();
         services.AddScoped<IColumnRepository, ColumnRepository>();

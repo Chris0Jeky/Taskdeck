@@ -496,6 +496,54 @@ public class OptionsValidationTests
         Assert.True(isValid);
     }
 
+    // ── DatabaseSettings data annotation validation ───────────────────
+
+    [Fact]
+    public void DatabaseSettings_DefaultValues_PassValidation()
+    {
+        var settings = new DatabaseSettings();
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(301)]
+    public void DatabaseSettings_CommandTimeoutSeconds_RejectsOutOfRange(int value)
+    {
+        var settings = new DatabaseSettings { CommandTimeoutSeconds = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(DatabaseSettings.CommandTimeoutSeconds)));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(30)]
+    [InlineData(300)]
+    public void DatabaseSettings_CommandTimeoutSeconds_AcceptsValidValues(int value)
+    {
+        var settings = new DatabaseSettings { CommandTimeoutSeconds = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
     // ── AuditRetentionSettings ────────────────────────────────────────
 
     [Fact]
