@@ -56,7 +56,11 @@ public sealed class InMemoryVectorIndex : IVectorIndex
         }
 
         var querySpan = queryVector.Span;
-        var results = new List<(string Id, double Score, IReadOnlyDictionary<string, string>? Meta)>();
+
+        // Use a min-heap of size topK for O(N*logK) selection instead of
+        // O(N*logN) full sort. The PriorityQueue orders by lowest score,
+        // so we evict the smallest when the heap exceeds topK.
+        var heap = new PriorityQueue<(string Id, double Score, IReadOnlyDictionary<string, string>? Meta), double>();
 
         foreach (var kvp in _vectors)
         {
@@ -66,18 +70,28 @@ public sealed class InMemoryVectorIndex : IVectorIndex
                 continue;
 
             var score = CosineSimilarity(querySpan, kvp.Value.Values.AsSpan());
-            results.Add((kvp.Key, score, kvp.Value.Metadata));
+
+            if (heap.Count < topK)
+            {
+                heap.Enqueue((kvp.Key, score, kvp.Value.Metadata), score);
+            }
+            else if (heap.TryPeek(out _, out var minScore) && score > minScore)
+            {
+                heap.DequeueEnqueue((kvp.Key, score, kvp.Value.Metadata), score);
+            }
         }
 
-        // Sort descending by score (higher = more similar), take topK
-        results.Sort((a, b) => b.Score.CompareTo(a.Score));
+        // Drain the heap and sort descending by score
+        var topResults = new List<VectorSearchResult>(heap.Count);
+        while (heap.TryDequeue(out var item, out _))
+        {
+            topResults.Add(new VectorSearchResult(item.Id, item.Score, item.Meta));
+        }
 
-        IReadOnlyList<VectorSearchResult> topResults = results
-            .Take(topK)
-            .Select(r => new VectorSearchResult(r.Id, r.Score, r.Meta))
-            .ToList();
+        topResults.Sort((a, b) => b.Score.CompareTo(a.Score));
 
-        return Task.FromResult(topResults);
+        IReadOnlyList<VectorSearchResult> result = topResults;
+        return Task.FromResult(result);
     }
 
     public Task DeleteAsync(
