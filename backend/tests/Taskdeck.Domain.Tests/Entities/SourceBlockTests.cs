@@ -151,4 +151,15 @@ public class SourceBlockTests
 
         block.Spans.Should().HaveCount(2);
     }
+
+    [Fact]
+    public void AddSpan_ShouldRejectSnippetNotMatchingContent()
+    {
+        var block = new SourceBlock(_envelopeId, 0, "Hello, world!", "capture");
+
+        var act = () => block.AddSpan(0, 5, "Wrong");
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
 }

@@ -106,8 +106,17 @@ public class SourceSpanTests
     public void Constructor_ShouldAcceptBoundarySnippetLength()
     {
         var snippet = new string('a', 2000);
-        var span = new SourceSpan(_sourceBlockId, 0, 100, snippet);
+        var span = new SourceSpan(_sourceBlockId, 0, 2000, snippet);
 
         span.SnippetText.Length.Should().Be(2000);
+    }
+
+    [Fact]
+    public void Constructor_ShouldRejectSnippetLengthMismatchingSpanRange()
+    {
+        var act = () => new SourceSpan(_sourceBlockId, 0, 10, "short");
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
     }
 }

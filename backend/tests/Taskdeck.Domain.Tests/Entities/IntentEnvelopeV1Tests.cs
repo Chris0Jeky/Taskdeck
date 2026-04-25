@@ -154,6 +154,21 @@ public class IntentEnvelopeV1Tests
     }
 
     [Fact]
+    public void AddIntentCandidate_ShouldNotTransitionStatus_WhenCandidateValidationFails()
+    {
+        var envelope = new IntentEnvelopeV1("capture", "content", _userId);
+
+        // Attempt to add a candidate with an invalid label (empty)
+        var act = () => envelope.AddIntentCandidate("", 0.5, 0);
+
+        act.Should().Throw<DomainException>();
+        envelope.Status.Should().Be(EnvelopeStatus.Created,
+            "status must not change when candidate construction fails");
+        envelope.IntentCandidates.Should().BeEmpty(
+            "no candidate should be added when validation fails");
+    }
+
+    [Fact]
     public void AddIntentCandidate_ShouldRejectAfterProcessed()
     {
         var envelope = new IntentEnvelopeV1("capture", "content", _userId);
