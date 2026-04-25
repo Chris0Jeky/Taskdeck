@@ -168,6 +168,9 @@ async function submitCapture() {
   try {
     await capture.createItem({ boardId: null, text, source: 'Typed' })
     captureText.value = ''
+    await workspace.fetchHomeSummary().catch(() => {
+      // Home summary errors are reflected via workspace.homeError.
+    })
     await nextTick()
     captureInputRef.value?.focus()
   } catch {

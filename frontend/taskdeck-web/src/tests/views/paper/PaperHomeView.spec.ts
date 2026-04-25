@@ -259,7 +259,7 @@ describe('PaperHomeView', () => {
       expect(mockCaptureStore.createItem).not.toHaveBeenCalled()
     })
 
-    it('dispatches a typed capture on submit', async () => {
+    it('dispatches a typed capture and refreshes the home summary on submit', async () => {
       const wrapper = mount(PaperHomeView)
       const input = wrapper.get('[data-testid="paper-home-capture-input"]')
 
@@ -273,6 +273,7 @@ describe('PaperHomeView', () => {
         text: 'Refactor the queue store',
         source: 'Typed',
       })
+      expect(mockWorkspaceStore.fetchHomeSummary).toHaveBeenCalledTimes(1)
     })
   })
 })
