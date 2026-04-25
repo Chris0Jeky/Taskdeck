@@ -27,16 +27,19 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationExecutorService _executorService;
     private readonly BoardAuthorizationService _authorizationService;
+    private readonly IProposalConflictDetector _conflictDetector;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
         IAutomationExecutorService executorService,
         BoardAuthorizationService authorizationService,
+        IProposalConflictDetector conflictDetector,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
         _executorService = executorService;
         _authorizationService = authorizationService;
+        _conflictDetector = conflictDetector;
     }
 
     /// <summary>
@@ -259,6 +262,19 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         return result.IsSuccess
             ? Ok(new { dismissed = result.Value })
             : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Gets tone-classified conflict/warning/status rows for a proposal.
+    /// </summary>
+    [HttpGet("{id}/conflicts")]
+    public async Task<IActionResult> GetProposalConflicts(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var result = await _conflictDetector.DetectConflictsAsync(id, callerUserId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     /// <summary>
