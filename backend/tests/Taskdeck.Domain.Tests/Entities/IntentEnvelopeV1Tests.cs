@@ -285,6 +285,23 @@ public class IntentEnvelopeV1Tests
     }
 
     [Fact]
+    public void MarkProcessed_ShouldAllowTerminalProposalBatches()
+    {
+        var envelope = new IntentEnvelopeV1("capture", "content", _userId);
+        envelope.AddIntentCandidate("intent", 0.5, 0);
+        var completedBatch = CreateSealedBatch(envelope, _userId);
+        var discardedBatch = CreateSealedBatch(envelope, _userId);
+        completedBatch.Complete();
+        discardedBatch.Discard();
+
+        envelope.MarkProcessed();
+
+        envelope.Status.Should().Be(EnvelopeStatus.Processed);
+        completedBatch.Status.Should().Be(ProposalBatchStatus.Completed);
+        discardedBatch.Status.Should().Be(ProposalBatchStatus.Discarded);
+    }
+
+    [Fact]
     public void MarkProcessed_ShouldRejectWhenAlreadyProcessed()
     {
         var envelope = new IntentEnvelopeV1("capture", "content", _userId);
