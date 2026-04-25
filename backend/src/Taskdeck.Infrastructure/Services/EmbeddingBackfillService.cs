@@ -13,6 +13,8 @@ namespace Taskdeck.Infrastructure.Services;
 /// </summary>
 public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 {
+    private const int MaxStalePruneProbeCount = 500;
+
     private readonly IVectorIndex _vectorIndex;
     private readonly IEmbeddingGenerator _embeddingGenerator;
     private readonly IKnowledgeChunkRepository _chunkRepository;
@@ -24,8 +26,11 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     // process lifetime. Thread-safe via lock.
     // Bounded: pruned when stale chunks are detected.
     private static readonly HashSet<Guid> _indexedChunkIds = new();
+    private static readonly HashSet<Guid> _deferredRetryChunkIds = new();
     private static readonly object _indexedLock = new();
     private static KnowledgeChunkBackfillCursor? _processedThrough;
+    private static int _nextPruneProbeStartIndex;
+    private static int _nextDeferredRetryStartIndex;
 
     public EmbeddingBackfillService(
         IVectorIndex vectorIndex,
@@ -46,7 +51,10 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         lock (_indexedLock)
         {
             _indexedChunkIds.Clear();
+            _deferredRetryChunkIds.Clear();
             _processedThrough = null;
+            _nextPruneProbeStartIndex = 0;
+            _nextDeferredRetryStartIndex = 0;
         }
     }
 
@@ -71,7 +79,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         if (toProcess.Count == 0)
         {
-            return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: 0);
+            return await ProcessDeferredRetriesAsync(batchSize, cancellationToken);
         }
 
         // Pre-fetch parent documents for userId/boardId metadata.
@@ -103,7 +111,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         if (embeddable.Count == 0)
         {
-            AdvanceProcessedThroughCompletedPrefix(toProcess, completedChunkIds);
+            AdvanceProcessedThroughVisitedPrefix(toProcess, completedChunkIds);
             var emptyRemaining = await CountRemainingAsync(cancellationToken);
             return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: emptyRemaining);
         }
@@ -155,6 +163,8 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             catch (Exception ex)
             {
                 failed++;
+                completedChunkIds.Add(chunk.Id);
+                DeferRetry(chunk.Id);
                 _logger.LogWarning(
                     "Failed to prepare chunk {ChunkId} for upsert: {Error}",
                     chunk.Id,
@@ -209,6 +219,11 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                     catch (Exception upsertEx)
                     {
                         failed++;
+                        if (chunkIdsByDocId.TryGetValue(doc.DocumentId, out var failedChunkId))
+                        {
+                            completedChunkIds.Add(failedChunkId);
+                            DeferRetry(failedChunkId);
+                        }
                         _logger.LogWarning(
                             "Individual upsert failed for {DocId}: {Error}",
                             doc.DocumentId, upsertEx.Message);
@@ -217,7 +232,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        AdvanceProcessedThroughCompletedPrefix(toProcess, completedChunkIds);
+        AdvanceProcessedThroughVisitedPrefix(toProcess, completedChunkIds);
         var remaining = await CountRemainingAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -236,11 +251,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     /// </summary>
     private async Task PruneStaleVectorsAsync(CancellationToken cancellationToken)
     {
-        List<Guid> trackedIds;
-        lock (_indexedLock)
-        {
-            trackedIds = _indexedChunkIds.ToList();
-        }
+        var trackedIds = GetPruneProbeIds();
 
         if (trackedIds.Count == 0)
             return;
@@ -276,8 +287,9 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         }
 
         _logger.LogInformation(
-            "Pruned {Count} stale vectors from the index",
-            staleKeys.Count);
+            "Pruned {Count} stale vectors from the index after probing {ProbeCount} tracked chunks",
+            staleKeys.Count,
+            trackedIds.Count);
     }
 
     /// <summary>
@@ -319,6 +331,8 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             catch (Exception ex)
             {
                 failed++;
+                completedChunkIds.Add(chunk.Id);
+                DeferRetry(chunk.Id);
                 _logger.LogWarning(
                     "Failed to embed chunk {ChunkId}: {Error}",
                     chunk.Id,
@@ -326,7 +340,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        AdvanceProcessedThroughCompletedPrefix(batchChunks, completedChunkIds);
+        AdvanceProcessedThroughVisitedPrefix(batchChunks, completedChunkIds);
         var remaining = await CountRemainingAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -338,9 +352,10 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
     private async Task<int> CountRemainingAsync(CancellationToken cancellationToken)
     {
-        return await _chunkRepository.CountUnindexedAsync(
+        var remainingAfterCursor = await _chunkRepository.CountUnindexedAsync(
             GetProcessedThrough(),
             cancellationToken);
+        return remainingAfterCursor + GetDeferredRetryCount();
     }
 
     private static KnowledgeChunkBackfillCursor? GetProcessedThrough()
@@ -356,13 +371,200 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         lock (_indexedLock)
         {
             foreach (var chunkId in chunkIds)
+            {
                 _indexedChunkIds.Add(chunkId);
+                _deferredRetryChunkIds.Remove(chunkId);
+            }
         }
     }
 
-    private static void AdvanceProcessedThroughCompletedPrefix(
+    private static void DeferRetry(Guid chunkId)
+    {
+        lock (_indexedLock)
+        {
+            if (!_indexedChunkIds.Contains(chunkId))
+                _deferredRetryChunkIds.Add(chunkId);
+        }
+    }
+
+    private static void RemoveDeferredRetries(IEnumerable<Guid> chunkIds)
+    {
+        lock (_indexedLock)
+        {
+            foreach (var chunkId in chunkIds)
+                _deferredRetryChunkIds.Remove(chunkId);
+        }
+    }
+
+    private static int GetDeferredRetryCount()
+    {
+        lock (_indexedLock)
+        {
+            return _deferredRetryChunkIds.Count;
+        }
+    }
+
+    private static IReadOnlyList<Guid> GetDeferredRetryIds(int batchSize)
+    {
+        lock (_indexedLock)
+        {
+            if (_deferredRetryChunkIds.Count == 0 || batchSize <= 0)
+                return Array.Empty<Guid>();
+
+            var ids = _deferredRetryChunkIds.OrderBy(id => id).ToList();
+            var take = Math.Min(batchSize, ids.Count);
+            if (ids.Count <= take)
+            {
+                _nextDeferredRetryStartIndex = 0;
+                return ids;
+            }
+
+            var start = _nextDeferredRetryStartIndex % ids.Count;
+            var selected = new List<Guid>(take);
+            for (var i = 0; i < take; i++)
+            {
+                selected.Add(ids[(start + i) % ids.Count]);
+            }
+
+            _nextDeferredRetryStartIndex = (start + take) % ids.Count;
+            return selected;
+        }
+    }
+
+    private static IReadOnlyList<Guid> GetPruneProbeIds()
+    {
+        lock (_indexedLock)
+        {
+            if (_indexedChunkIds.Count == 0)
+                return Array.Empty<Guid>();
+
+            var ids = _indexedChunkIds.OrderBy(id => id).ToList();
+            if (ids.Count <= MaxStalePruneProbeCount)
+            {
+                _nextPruneProbeStartIndex = 0;
+                return ids;
+            }
+
+            var start = _nextPruneProbeStartIndex % ids.Count;
+            var selected = new List<Guid>(MaxStalePruneProbeCount);
+            for (var i = 0; i < MaxStalePruneProbeCount; i++)
+            {
+                selected.Add(ids[(start + i) % ids.Count]);
+            }
+
+            _nextPruneProbeStartIndex = (start + selected.Count) % ids.Count;
+            return selected;
+        }
+    }
+
+    private async Task<BackfillBatchResult> ProcessDeferredRetriesAsync(
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        var retryIds = GetDeferredRetryIds(batchSize);
+        if (retryIds.Count == 0)
+            return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: 0);
+
+        var retryChunks = new List<Domain.Entities.KnowledgeChunk>();
+        foreach (var retryId in retryIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var chunk = await _chunkRepository.GetByIdAsync(retryId, cancellationToken);
+            if (chunk is null)
+            {
+                RemoveDeferredRetries(new[] { retryId });
+                continue;
+            }
+
+            retryChunks.Add(chunk);
+        }
+
+        if (retryChunks.Count == 0)
+        {
+            return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: GetDeferredRetryCount());
+        }
+
+        _logger.LogInformation(
+            "Retrying {Count} deferred embedding chunks after forward backfill reached the current tail",
+            retryChunks.Count);
+
+        return await ProcessChunksWithoutAdvancingCursorAsync(retryChunks, cancellationToken);
+    }
+
+    private async Task<BackfillBatchResult> ProcessChunksWithoutAdvancingCursorAsync(
         IReadOnlyList<Domain.Entities.KnowledgeChunk> chunks,
-        IReadOnlySet<Guid> completedChunkIds)
+        CancellationToken cancellationToken)
+    {
+        var documentIds = chunks.Select(c => c.DocumentId).Distinct().ToList();
+        var documentMap = new Dictionary<Guid, Domain.Entities.KnowledgeDocument>();
+        foreach (var docId in documentIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var doc = await _documentRepository.GetByIdAsync(docId, cancellationToken);
+            if (doc is not null)
+                documentMap[docId] = doc;
+        }
+
+        var completedChunkIds = new HashSet<Guid>();
+        var embeddable = new List<(Domain.Entities.KnowledgeChunk Chunk, string Text)>();
+        foreach (var chunk in chunks)
+        {
+            if (string.IsNullOrWhiteSpace(chunk.Content))
+            {
+                completedChunkIds.Add(chunk.Id);
+                continue;
+            }
+
+            embeddable.Add((chunk, chunk.Content));
+        }
+
+        if (embeddable.Count == 0)
+        {
+            RemoveDeferredRetries(completedChunkIds);
+            return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: GetDeferredRetryCount());
+        }
+
+        int processed = 0;
+        int failed = 0;
+        foreach (var (chunk, text) in embeddable)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var embedding = await _embeddingGenerator.GenerateAsync(text, cancellationToken);
+                var metadata = BuildMetadata(chunk, documentMap);
+                await _vectorIndex.UpsertAsync(
+                    $"chunk:{chunk.Id}",
+                    embedding,
+                    metadata,
+                    cancellationToken);
+
+                processed++;
+                completedChunkIds.Add(chunk.Id);
+                TrackIndexedChunks(new[] { chunk.Id });
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                DeferRetry(chunk.Id);
+                _logger.LogWarning(
+                    "Deferred retry failed for chunk {ChunkId}: {Error}",
+                    chunk.Id,
+                    ex.Message);
+            }
+        }
+
+        RemoveDeferredRetries(completedChunkIds);
+        return new BackfillBatchResult(processed, failed, await CountRemainingAsync(cancellationToken));
+    }
+
+    private static void AdvanceProcessedThroughVisitedPrefix(
+        IReadOnlyList<Domain.Entities.KnowledgeChunk> chunks,
+        IReadOnlySet<Guid> visitedChunkIds)
     {
         if (chunks.Count == 0)
             return;
@@ -370,7 +572,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         KnowledgeChunkBackfillCursor? candidate = null;
         foreach (var chunk in chunks.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id))
         {
-            if (!completedChunkIds.Contains(chunk.Id))
+            if (!visitedChunkIds.Contains(chunk.Id))
                 break;
 
             candidate = new KnowledgeChunkBackfillCursor(chunk.CreatedAt, chunk.Id);

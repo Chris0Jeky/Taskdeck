@@ -369,7 +369,7 @@ public class EmbeddingBackfillServiceTests
     }
 
     [Fact]
-    public async Task ProcessBatchAsync_DoesNotAdvanceCursorPastFailedChunk()
+    public async Task ProcessBatchAsync_DefersFailedChunkAndContinuesForwardProgress()
     {
         var docId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -386,6 +386,9 @@ public class EmbeddingBackfillServiceTests
         var ordered = chunks.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToList();
         SetupChunkBatch(chunks);
         SetupDocumentLookup(docId, userId);
+        _chunkRepoMock
+            .Setup(r => r.GetByIdAsync(ordered[1].Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ordered[1]);
 
         var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
         _embeddingGeneratorMock
@@ -405,18 +408,30 @@ public class EmbeddingBackfillServiceTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         _vectorIndexMock
-            .Setup(v => v.UpsertAsync(
+            .SetupSequence(v => v.UpsertAsync(
                 $"chunk:{ordered[1].Id}",
                 It.IsAny<ReadOnlyMemory<float>>(),
                 It.IsAny<IReadOnlyDictionary<string, string>?>(),
                 It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("transient index failure"));
+            .ThrowsAsync(new InvalidOperationException("transient index failure"))
+            .Returns(Task.CompletedTask);
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fakeEmbedding);
 
         var result = await _sut.ProcessBatchAsync(batchSize: 2);
-        await _sut.ProcessBatchAsync(batchSize: 1);
+        var forwardResult = await _sut.ProcessBatchAsync(batchSize: 1);
+        var retryResult = await _sut.ProcessBatchAsync(batchSize: 1);
 
         result.Processed.Should().Be(1);
         result.Failed.Should().Be(1);
+        forwardResult.Processed.Should().Be(1, "later chunks should not starve behind a poison chunk");
+        retryResult.Processed.Should().Be(1, "deferred failed chunks should still be retried after forward progress reaches the tail");
+        _vectorIndexMock.Verify(
+            v => v.UpsertBatchAsync(
+                It.Is<IReadOnlyList<VectorDocument>>(docs => docs.Any(d => d.DocumentId == $"chunk:{ordered[2].Id}")),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
         _vectorIndexMock.Verify(
             v => v.UpsertAsync(
                 $"chunk:{ordered[1].Id}",
@@ -424,7 +439,41 @@ public class EmbeddingBackfillServiceTests
                 It.IsAny<IReadOnlyDictionary<string, string>?>(),
                 It.IsAny<CancellationToken>()),
             Times.Exactly(2),
-            "failed chunks must remain after the cursor so the next batch retries them");
+            "failed chunks should be deferred, then retried after forward pagination can continue");
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_PrunesTrackedStaleVectorsWithBoundedProbeBatch()
+    {
+        var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var chunks = Enumerable.Range(0, 510)
+            .Select(i => new KnowledgeChunk(docId, i, $"content {i}"))
+            .ToList();
+
+        SetupChunkBatch(chunks);
+        SetupDocumentLookup(docId, userId);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
+        _chunkRepoMock
+            .Setup(r => r.GetExistingIdsAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<Guid> ids, CancellationToken _) => ids.ToHashSet());
+
+        await _sut.ProcessBatchAsync(batchSize: 510);
+        await _sut.ProcessBatchAsync(batchSize: 1);
+
+        _chunkRepoMock.Verify(
+            r => r.GetExistingIdsAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count <= 500),
+                It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce,
+            "stale-vector pruning should never send the full tracked ID set when it exceeds the bounded probe size");
     }
 
     [Fact]
