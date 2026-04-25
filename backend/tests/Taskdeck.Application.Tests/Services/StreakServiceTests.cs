@@ -3,7 +3,6 @@ using Moq;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
-using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -23,16 +22,12 @@ public class StreakServiceTests
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
 
         _auditLogRepoMock
-            .Setup(a => a.QueryAsync(
+            .Setup(a => a.CountByDateAsync(
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset>(),
-                It.IsAny<Guid?>(),
-                It.IsAny<Guid?>(),
-                It.IsAny<string?>(),
-                It.IsAny<string?>(),
-                It.IsAny<int>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AuditLog>());
+            .ReturnsAsync(new List<DailyAuditCount>());
 
         _service = new StreakService(_unitOfWorkMock.Object);
     }
@@ -86,20 +81,19 @@ public class StreakServiceTests
     [Fact]
     public async Task GetStreakAsync_SingleDayActivity_ShouldHaveCurrentStreakOfOne()
     {
-        var today = DateTimeOffset.UtcNow;
-        var auditLog = CreateAuditLog(_userId, today);
+        var todayDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var counts = new List<DailyAuditCount>
+        {
+            new(todayDate, 1)
+        };
 
         _auditLogRepoMock
-            .Setup(a => a.QueryAsync(
+            .Setup(a => a.CountByDateAsync(
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset>(),
-                It.Is<Guid?>(id => id == _userId),
-                It.IsAny<Guid?>(),
-                It.IsAny<string?>(),
-                It.IsAny<string?>(),
-                It.IsAny<int>(),
+                It.Is<Guid>(id => id == _userId),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AuditLog> { auditLog });
+            .ReturnsAsync(counts);
 
         var result = await _service.GetStreakAsync(_userId, 7);
 
@@ -107,7 +101,6 @@ public class StreakServiceTests
         result.Value.CurrentStreakLength.Should().Be(1);
         result.Value.LongestStreakLength.Should().Be(1);
 
-        var todayDate = DateOnly.FromDateTime(DateTime.UtcNow);
         var todayDay = result.Value.Days.SingleOrDefault(d => d.Date == todayDate);
         todayDay.Should().NotBeNull();
         todayDay!.IntensityBucket.Should().BeGreaterThan(0);
@@ -120,26 +113,22 @@ public class StreakServiceTests
     [Fact]
     public async Task GetStreakAsync_ContinuousStreak_ShouldComputeCorrectly()
     {
-        var today = DateTimeOffset.UtcNow;
-        var audits = new List<AuditLog>();
+        var todayDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var counts = new List<DailyAuditCount>();
 
         // 5 consecutive days of activity (today and 4 days before)
         for (int i = 0; i < 5; i++)
         {
-            audits.Add(CreateAuditLog(_userId, today.AddDays(-i)));
+            counts.Add(new DailyAuditCount(todayDate.AddDays(-i), 1));
         }
 
         _auditLogRepoMock
-            .Setup(a => a.QueryAsync(
+            .Setup(a => a.CountByDateAsync(
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset>(),
-                It.Is<Guid?>(id => id == _userId),
-                It.IsAny<Guid?>(),
-                It.IsAny<string?>(),
-                It.IsAny<string?>(),
-                It.IsAny<int>(),
+                It.Is<Guid>(id => id == _userId),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(audits);
+            .ReturnsAsync(counts);
 
         var result = await _service.GetStreakAsync(_userId, 10);
 
@@ -155,30 +144,26 @@ public class StreakServiceTests
     [Fact]
     public async Task GetStreakAsync_GapInStreak_ShouldBreakCurrentStreak()
     {
-        var today = DateTimeOffset.UtcNow;
-        var audits = new List<AuditLog>
+        var todayDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var counts = new List<DailyAuditCount>
         {
             // Today and yesterday: current streak = 2
-            CreateAuditLog(_userId, today),
-            CreateAuditLog(_userId, today.AddDays(-1)),
+            new(todayDate, 1),
+            new(todayDate.AddDays(-1), 1),
             // Gap on day -2
             // 3 days of activity before the gap: day -3, -4, -5
-            CreateAuditLog(_userId, today.AddDays(-3)),
-            CreateAuditLog(_userId, today.AddDays(-4)),
-            CreateAuditLog(_userId, today.AddDays(-5)),
+            new(todayDate.AddDays(-3), 1),
+            new(todayDate.AddDays(-4), 1),
+            new(todayDate.AddDays(-5), 1),
         };
 
         _auditLogRepoMock
-            .Setup(a => a.QueryAsync(
+            .Setup(a => a.CountByDateAsync(
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset>(),
-                It.Is<Guid?>(id => id == _userId),
-                It.IsAny<Guid?>(),
-                It.IsAny<string?>(),
-                It.IsAny<string?>(),
-                It.IsAny<int>(),
+                It.Is<Guid>(id => id == _userId),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(audits);
+            .ReturnsAsync(counts);
 
         var result = await _service.GetStreakAsync(_userId, 10);
 
@@ -190,25 +175,21 @@ public class StreakServiceTests
     [Fact]
     public async Task GetStreakAsync_GapAtEnd_ShouldHaveZeroCurrentStreak()
     {
-        var today = DateTimeOffset.UtcNow;
-        var audits = new List<AuditLog>
+        var todayDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var counts = new List<DailyAuditCount>
         {
             // Activity only 3 days ago (no activity today, yesterday, or day before)
-            CreateAuditLog(_userId, today.AddDays(-3)),
-            CreateAuditLog(_userId, today.AddDays(-4)),
+            new(todayDate.AddDays(-3), 1),
+            new(todayDate.AddDays(-4), 1),
         };
 
         _auditLogRepoMock
-            .Setup(a => a.QueryAsync(
+            .Setup(a => a.CountByDateAsync(
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset>(),
-                It.Is<Guid?>(id => id == _userId),
-                It.IsAny<Guid?>(),
-                It.IsAny<string?>(),
-                It.IsAny<string?>(),
-                It.IsAny<int>(),
+                It.Is<Guid>(id => id == _userId),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(audits);
+            .ReturnsAsync(counts);
 
         var result = await _service.GetStreakAsync(_userId, 10);
 
@@ -254,37 +235,29 @@ public class StreakServiceTests
     [Fact]
     public async Task GetStreakAsync_VaryingActivity_ShouldProduceCorrectBuckets()
     {
-        var today = DateTimeOffset.UtcNow;
-        var audits = new List<AuditLog>();
-
-        // Day 0 (today): 4 entries
-        for (int i = 0; i < 4; i++)
-            audits.Add(CreateAuditLog(_userId, today));
-
-        // Day -1: 1 entry
-        audits.Add(CreateAuditLog(_userId, today.AddDays(-1)));
-
-        // Day -2: 2 entries
-        for (int i = 0; i < 2; i++)
-            audits.Add(CreateAuditLog(_userId, today.AddDays(-2)));
+        var todayDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var counts = new List<DailyAuditCount>
+        {
+            // Day 0 (today): 4 entries
+            new(todayDate, 4),
+            // Day -1: 1 entry
+            new(todayDate.AddDays(-1), 1),
+            // Day -2: 2 entries
+            new(todayDate.AddDays(-2), 2),
+        };
 
         _auditLogRepoMock
-            .Setup(a => a.QueryAsync(
+            .Setup(a => a.CountByDateAsync(
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset>(),
-                It.Is<Guid?>(id => id == _userId),
-                It.IsAny<Guid?>(),
-                It.IsAny<string?>(),
-                It.IsAny<string?>(),
-                It.IsAny<int>(),
+                It.Is<Guid>(id => id == _userId),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(audits);
+            .ReturnsAsync(counts);
 
         var result = await _service.GetStreakAsync(_userId, 5);
 
         result.IsSuccess.Should().BeTrue();
 
-        var todayDate = DateOnly.FromDateTime(DateTime.UtcNow);
         var todayDay = result.Value.Days.Single(d => d.Date == todayDate);
         todayDay.IntensityBucket.Should().Be(4); // max = 4, count = 4 => ratio 1.0 => bucket 4
 
@@ -474,26 +447,6 @@ public class StreakServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Days.Should().HaveCount(90);
-    }
-
-    #endregion
-
-    #region Helpers
-
-    private static AuditLog CreateAuditLog(Guid userId, DateTimeOffset timestamp)
-    {
-        var auditLog = new AuditLog(
-            entityType: "card",
-            entityId: Guid.NewGuid(),
-            action: AuditAction.Created,
-            userId: userId,
-            changes: "test audit entry");
-
-        // Use reflection to set the Timestamp since it's set in constructor to UtcNow
-        var timestampProperty = typeof(AuditLog).GetProperty("Timestamp")!;
-        timestampProperty.SetValue(auditLog, timestamp);
-
-        return auditLog;
     }
 
     #endregion
