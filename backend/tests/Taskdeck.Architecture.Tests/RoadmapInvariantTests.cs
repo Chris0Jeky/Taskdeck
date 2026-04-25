@@ -196,14 +196,14 @@ public class RoadmapInvariantTests
         // Also scan the Tools subdirectory
         orchestratorFiles.AddRange(GetSourceFiles("src/Taskdeck.Application/Services/Tools"));
 
-        var toolNamePattern = new Regex(@"(?:Name[:\s]*""([^""]+)""|""approve[^""]*"")", RegexOptions.Compiled);
+        var toolNamePattern = new Regex(@"(?:Name[:\s]*""([^""]+)""|""(approve_[^""]*)""\s*)", RegexOptions.Compiled);
         var allToolNames = new List<string>();
 
         foreach (var file in orchestratorFiles.Distinct())
         {
             var content = ReadFile(file);
             var names = toolNamePattern.Matches(content)
-                .Select(m => m.Groups[1].Value)
+                .Select(m => m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)
                 .Where(v => !string.IsNullOrEmpty(v))
                 .ToList();
             allToolNames.AddRange(names);
@@ -241,7 +241,7 @@ public class RoadmapInvariantTests
         };
 
         var toolNamePattern = new Regex(
-            @"(?:\[McpServerTool\s*\(\s*Name\s*=\s*""([^""]+)""\s*\)|""approve[^""]*"")",
+            @"(?:\[McpServerTool\s*\(\s*Name\s*=\s*""([^""]+)""\s*\)|""(approve_[^""]*)""\s*)",
             RegexOptions.Compiled);
 
         var allToolNames = new List<string>();
@@ -252,7 +252,7 @@ public class RoadmapInvariantTests
             {
                 var content = ReadFile(file);
                 var names = toolNamePattern.Matches(content)
-                    .Select(m => m.Groups[1].Value)
+                    .Select(m => m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)
                     .Where(v => !string.IsNullOrEmpty(v))
                     .ToList();
                 allToolNames.AddRange(names);
