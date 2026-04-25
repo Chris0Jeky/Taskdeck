@@ -62,6 +62,8 @@ public class ProvenanceField : Entity
             throw new DomainException(ErrorCodes.ValidationError, "ProposalProvenanceId cannot be empty");
         if (kind == ProvenanceKind.Extractive && string.IsNullOrWhiteSpace(extractiveQuote))
             throw new DomainException(ErrorCodes.ValidationError, "ExtractiveQuote is required for Extractive provenance kind");
+        if (kind != ProvenanceKind.Extractive && extractiveQuote is not null)
+            throw new DomainException(ErrorCodes.ValidationError, "ExtractiveQuote is only valid for Extractive provenance kind");
         if (extractiveQuote != null && extractiveQuote.Length > 2000)
             throw new DomainException(ErrorCodes.ValidationError, "ExtractiveQuote cannot exceed 2000 characters");
 

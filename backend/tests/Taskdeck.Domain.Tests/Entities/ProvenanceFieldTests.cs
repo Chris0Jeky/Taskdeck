@@ -121,6 +121,20 @@ public class ProvenanceFieldTests
     }
 
     [Fact]
+    public void Constructor_ShouldThrow_WhenExtractiveQuoteProvided_ForInferredKind()
+    {
+        var act = () => new ProvenanceField(
+            "Title",
+            ProvenanceKind.Inferred,
+            0.9,
+            _provenanceId,
+            "source quote");
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("ExtractiveQuote is only valid for Extractive provenance kind");
+    }
+
+    [Fact]
     public void Constructor_ShouldThrow_WhenExtractiveQuoteExceedsMaxLength()
     {
         var longQuote = new string('q', 2001);

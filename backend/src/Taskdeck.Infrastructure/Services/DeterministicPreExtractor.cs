@@ -16,7 +16,7 @@ namespace Taskdeck.Infrastructure.Services;
 public class DeterministicPreExtractor : IDeterministicPreExtractor
 {
     private static readonly Regex UrlRegex = new(
-        @"https?://[^\s<>""')\]]+(?<=[^\s<>""')\].,;:!?])",
+        @"https?://[^\s<>""']+",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex EmailRegex = new(
@@ -79,12 +79,16 @@ public class DeterministicPreExtractor : IDeterministicPreExtractor
             var urlMatches = UrlRegex.Matches(text);
             foreach (Match match in urlMatches)
             {
+                var url = TrimTrailingUrlPunctuation(match.Value);
+                if (url.Length == 0)
+                    continue;
+
                 results.Add(new ExtractedEntity(
                     "Url",
-                    match.Value,
-                    match.Value,
+                    url,
+                    url,
                     match.Index,
-                    match.Index + match.Length));
+                    match.Index + url.Length));
             }
         }
         catch
@@ -144,5 +148,47 @@ public class DeterministicPreExtractor : IDeterministicPreExtractor
             return strValue;
 
         return result.Text;
+    }
+
+    private static string TrimTrailingUrlPunctuation(string url)
+    {
+        var end = url.Length;
+        while (end > 0)
+        {
+            var c = url[end - 1];
+            if (c is '.' or ',' or ';' or ':' or '!' or '?')
+            {
+                end--;
+                continue;
+            }
+
+            if (c == ')' && Count(url, end, ')') > Count(url, end, '('))
+            {
+                end--;
+                continue;
+            }
+
+            if (c == ']' && Count(url, end, ']') > Count(url, end, '['))
+            {
+                end--;
+                continue;
+            }
+
+            break;
+        }
+
+        return end == url.Length ? url : url[..end];
+    }
+
+    private static int Count(string value, int length, char target)
+    {
+        var count = 0;
+        for (var i = 0; i < length; i++)
+        {
+            if (value[i] == target)
+                count++;
+        }
+
+        return count;
     }
 }
