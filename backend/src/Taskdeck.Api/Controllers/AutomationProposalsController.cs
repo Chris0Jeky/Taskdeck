@@ -5,6 +5,7 @@ using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Services.Confidence;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -27,16 +28,19 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationExecutorService _executorService;
     private readonly BoardAuthorizationService _authorizationService;
+    private readonly IConfidenceBreakdownService _confidenceBreakdownService;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
         IAutomationExecutorService executorService,
         BoardAuthorizationService authorizationService,
+        IConfidenceBreakdownService confidenceBreakdownService,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
         _executorService = executorService;
         _authorizationService = authorizationService;
+        _confidenceBreakdownService = confidenceBreakdownService;
     }
 
     /// <summary>
@@ -276,6 +280,23 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
         var result = await _proposalService.GetProposalDiffAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(new { diff = result.Value }) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Gets the multi-component confidence breakdown for a proposal.
+    /// </summary>
+    [HttpGet("{id}/confidence")]
+    public async Task<IActionResult> GetProposalConfidence(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _confidenceBreakdownService.GetBreakdownAsync(id, callerUserId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     private async Task<(ProposalDto? Proposal, IActionResult? ErrorResult)> AuthorizeProposalAsync(

@@ -4,6 +4,7 @@ using Taskdeck.Api.Services;
 using Taskdeck.Application.Connectors;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Services.Confidence;
 using Taskdeck.Application.Services.Tools;
 using Taskdeck.Domain.Agents;
 
@@ -47,6 +48,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<HistoryService>();
         services.AddScoped<IHistoryService>(sp => sp.GetRequiredService<HistoryService>());
         services.AddScoped<IAutomationProposalService, AutomationProposalService>();
+        services.AddScoped<IConfidenceBreakdownService, ConfidenceBreakdownService>();
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
