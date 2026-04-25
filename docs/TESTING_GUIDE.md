@@ -32,13 +32,13 @@ Verification note:
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
-Tracker `#972` seeds the next review-first AI verification program. These checks are planned work, not all current-main requirements until their implementation issues land:
+Tracker `#972` seeds the next review-first AI verification program. Delivered items are marked; remaining items are planned work until their implementation issues land:
 
-- `#973`: twelve roadmap invariants covering automation-only mutation safety, proposal execution idempotency/version checks, outbound egress envelope coverage, disclosure registry coverage, MCP tool-definition hash pinning, telemetry content rejection, and proposal source-span integrity.
-- `#974`: schema/provider smoke coverage for `IntentEnvelopeV1`, `TaskdeckProposalBatch`, `IChatClient` adapter viability, and the `JsonSchemaExporter` vs handwritten-schema decision.
-- `#975`--`#977`: golden proposal dataset checks for schema validity, extractive quote/span verification, inferred evidence-link resolution, field confidence scoring, and edit-before-approve paths.
-- `#978`--`#979`: vector-search fallback tests, embedding backfill safety, retrieval recall@10, and duplicate-detection calibration on labeled holdouts.
-- `#980`: `WireMock.Net` MITM egress test for capture -> proposal -> agent, prompt regression with `promptfoo --no-share`, telemetry guard fuzz rejection, and Where-your-data-goes registry completeness.
+- `#973`: (**delivered**, `#986`) twelve roadmap invariants covering automation-only mutation safety, proposal execution idempotency/version checks, outbound egress envelope coverage, disclosure registry coverage, MCP tool-definition hash pinning, telemetry content rejection, and proposal source-span integrity.
+- `#974`: (**delivered**, `#989`) schema/provider smoke coverage for `IntentEnvelopeV1`, `TaskdeckProposalBatch`, `IChatClient` adapter viability, and the `JsonSchemaExporter` vs handwritten-schema decision. 117 tests.
+- `#975`--`#977`: (**foundational slices delivered**, `#993`/`#994`/`#991`) golden proposal dataset checks for schema validity, extractive quote/span verification, inferred evidence-link resolution, field confidence scoring, and edit-before-approve paths. Provenance domain types + 139 tests, revision data model + 70 tests, confidence pipeline + 136 tests delivered. Full IProposalGenerator wiring and frontend Review evidence UI awaits follow-up.
+- `#978`--`#979`: (**`#978` delivered**, `#990`; `#979` pending) vector-search fallback tests, embedding backfill safety delivered (61 tests). Retrieval recall@10 and duplicate-detection calibration on labeled holdouts await `#979` (RFAI-07 hybrid retrieval).
+- `#980`: (**foundational slice delivered**, `#992`) TelemetryGuard fuzz rejection and egress registry completeness delivered (108 tests). `WireMock.Net` MITM egress test, `promptfoo` prompt regression, and frontend Where-your-data-goes page await follow-up.
 - `#981`: agent runtime property tests proving no approve/direct-mutation tools, egress handler violation tests, MCP definition re-approval tests, and scheduled Inbox Digest quota/coalescing checks.
 - `#982`--`#983`: ambient capture provenance checks for PWA share target, browser extension prototype, and the selected voice or IDE channel.
 - `#984`: beta-gate recertification requiring all roadmap invariants, provenance verification targets, edit-before-approve, egress disclosure, optional Ollama safety, and current test totals.
@@ -55,6 +55,92 @@ npx vitest --run
 $code = $LASTEXITCODE
 Pop-Location
 if ($code -ne 0) { exit $code }
+```
+
+## Roadmap v4 Second-Wave Testing (2026-04-25, PRs `#989`–`#994`)
+
+The RFAI-02 through RFAI-08 foundational slice wave (PRs `#989`–`#994`) added ~631 new backend tests across 6 PRs. Each PR received adversarial review with review-added tests fixing bot findings from Gemini and Codex connector reviews.
+
+### IntentEnvelopeV1 Tests (RFAI-02, `#974`/`#989`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/IntentEnvelopeV1Tests.cs`, `IntentCandidateTests.cs`, `SourceBlockTests.cs`, `SourceSpanTests.cs`, `EvidenceLinkTests.cs`, `TaskdeckProposalBatchTests.cs`, `ProposalBatchSchemaRoundTripTests.cs` — **117 tests** covering:
+- IntentEnvelopeV1 lifecycle (Created→Extracting→Processed), candidate addition, evidence linking
+- SourceBlock/SourceSpan validation: offset ranges, snippet length consistency, evidence fabrication prevention
+- IntentCandidate confidence bounds, evidence link construction
+- ProposalBatch schema round-trip smoke tests against handwritten JSON schema
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~IntentEnvelope or FullyQualifiedName~SourceSpan or FullyQualifiedName~SourceBlock or FullyQualifiedName~IntentCandidate or FullyQualifiedName~EvidenceLink or FullyQualifiedName~ProposalBatch"
+```
+
+### Semantic Memory Vector Index Tests (RFAI-06, `#978`/`#990`)
+
+`backend/tests/Taskdeck.Application.Tests/Services/InMemoryVectorIndexTests.cs`, `InMemoryEmbeddingGeneratorTests.cs`, `EmbeddingBackfillServiceTests.cs`, `FallbackSemanticSearchServiceTests.cs` — **61 tests** covering:
+- InMemoryVectorIndex: upsert, duplicate replacement, batch upsert, nearest-neighbor accuracy, topK limits, metadata filtering, delete, concurrent reads/writes, cosine similarity edge cases (zero/orthogonal/parallel vectors)
+- InMemoryEmbeddingGenerator: dimensionality, determinism, normalization, empty/null input, batch alignment, cross-instance consistency
+- EmbeddingBackfillService: generator-unavailable skip, batch processing, individual failure isolation, stale vector pruning, cancellation
+- FallbackSemanticSearchService: FTS fallback, empty queries, vector search happy path, exception-triggered fallback
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~VectorIndex or FullyQualifiedName~EmbeddingGenerator or FullyQualifiedName~EmbeddingBackfill or FullyQualifiedName~SemanticSearch"
+```
+
+### Confidence Pipeline Tests (RFAI-05, `#977`/`#991`)
+
+`backend/tests/Taskdeck.Domain.Tests/Confidence/ConfidenceScoreTests.cs`, `FieldConfidenceTests.cs`, `SelfConsistencyQuotaTests.cs`, `SelfConsistencyPolicyTests.cs`, `ConfidenceBucketTests.cs` and `backend/tests/Taskdeck.Application.Tests/Services/Confidence/BrierScoreCalculatorTests.cs`, `ConfidenceAggregatorTests.cs` — **136 tests** covering:
+- ConfidenceScore: boundary values, floating-point precision, epsilon equality, hash code consistency, CompareTo/Equals alignment, NaN/Infinity rejection
+- SelfConsistencyQuota: immutability (Consume returns new instances), overflow protection, non-finite cost rejection, budget exhaustion
+- ConfidenceBucket: contiguous boundaries with no gaps/overlaps, monotonic sweep verification
+- BrierScoreCalculator: calibration math, skill score, division-by-zero safety, non-finite input rejection
+- ConfidenceAggregator: weighted combination, missing-source handling, zero-weight safety
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Confidence or FullyQualifiedName~BrierScore"
+```
+
+### Eval Harness and Egress Tests (RFAI-08, `#980`/`#992`)
+
+`backend/tests/Taskdeck.Application.Tests/Services/TelemetryGuardTests.cs`, `EgressRegistryTests.cs`, `InsightMetricTests.cs`, `Eval/EvalHarnessTests.cs` — **108 tests** covering:
+- TelemetryGuard: allowlist enforcement, URL/email detection, non-finite doubles, null values, max-length strings, ReDoS adversarial input, unsupported value type rejection (dictionaries, DTOs, arrays, DateTime, Guid)
+- EgressRegistry: seed entry completeness, case-insensitive host matching, wildcard pattern matching, runtime registration, host validation, thread safety
+- InsightMetric: PII-freedom (reflection-based verification), structural constraints
+- EvalHarness: runner execution, category coverage, summarization, seed case determinism
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~TelemetryGuard or FullyQualifiedName~EgressRegistry or FullyQualifiedName~InsightMetric or FullyQualifiedName~EvalHarness"
+```
+
+### Proposal Provenance Tests (RFAI-03, `#975`/`#993`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalProvenanceTests.cs`, `ProvenanceFieldTests.cs`, `FieldVerificationResultTests.cs`, `ProposalOutcomeTests.cs`, `EvidenceLinkTests.cs` and `backend/tests/Taskdeck.Application.Tests/Services/FuzzyTextMatcherTests.cs`, `DeterministicPreExtractorTests.cs` — **139 tests** covering:
+- ProposalProvenance: field addition, parent-ID validation, field count tracking
+- ProvenanceField: extractive quote enforcement, confidence bounds, kind validation
+- FieldVerificationResult: verification-status/confidence consistency (Verified requires equality, Downgraded requires lower, Failed requires zero)
+- ProposalOutcome: content-free decision ledger, decision type coverage
+- FuzzyTextMatcher: Levenshtein sliding-window, case-insensitive normalization, whitespace collapsing
+- DeterministicPreExtractor: date/number/duration/URL/email recognition, malformed input resilience
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Provenance or FullyQualifiedName~FieldVerification or FullyQualifiedName~ProposalOutcome or FullyQualifiedName~FuzzyText or FullyQualifiedName~PreExtractor"
+```
+
+### Proposal Revision Tests (RFAI-04, `#976`/`#994`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalRevisionTests.cs`, `ProposalRevisionChainTests.cs`, `CompilerValidationResultTests.cs`, `OperationRiskTests.cs`, `ProposalOutcomeTests.cs`, `UnsupportedOperationFailureTests.cs` — **70 tests** covering:
+- ProposalRevision: creation, immutability (private setters), validation, DateTimeOffset precision
+- Revision chain: latest resolution, ordering, no-revisions case, many-revisions integrity, unique constraint
+- CompilerValidationResult: success/failure factory, risk aggregation
+- OperationRisk: value equality semantics, risk level + reason
+- OutcomeType: decision coverage (Approved/EditedThenApproved/Rejected/Ignored)
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ProposalRevision or FullyQualifiedName~CompilerValidation or FullyQualifiedName~OperationRisk or FullyQualifiedName~UnsupportedOperation"
 ```
 
 ## Audit-Finding Remediation Wave Testing (2026-04-24, PRs `#960`–`#969`)
