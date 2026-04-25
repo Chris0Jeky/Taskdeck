@@ -1,0 +1,36 @@
+import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
+import TodayStats from '../../../../views/paper/today/TodayStats.vue'
+import type { DossierStatCard } from '../../../../composables/useTodayDossier'
+
+const STATS: DossierStatCard[] = [
+  { id: 'cards-moved', value: 12345, numeric: true, label: 'cards moved', sub: '', tone: 'ink' },
+  { id: 'proposals-applied', value: 3, numeric: true, label: 'proposals applied', sub: '', tone: 'ember' },
+  { id: 'captures-triaged', value: 11, numeric: true, label: 'captures triaged', sub: '', tone: 'ink' },
+  { id: 'longest-focus', value: '2h 14m', numeric: false, label: 'focus', sub: '', tone: 'applied' },
+  { id: 'overdue', value: 2, numeric: true, label: 'overdue', sub: '', tone: 'overdue' },
+]
+
+describe('TodayStats', () => {
+  it('formats numeric values via Intl.NumberFormat', () => {
+    const wrapper = mount(TodayStats, { props: { stats: STATS, locale: 'en-US' } })
+    const values = wrapper.findAll('[data-testid="stat-value"]').map(n => n.text())
+    expect(values[0]).toBe('12,345')
+    expect(values[1]).toBe('3')
+    expect(values[2]).toBe('11')
+    // String pass-through
+    expect(values[3]).toBe('2h 14m')
+    expect(values[4]).toBe('2')
+  })
+
+  it('respects the provided locale separator', () => {
+    const wrapper = mount(TodayStats, {
+      props: {
+        stats: [{ id: 'cards-moved', value: 12345, numeric: true, label: 'x', sub: '', tone: 'ink' }],
+        locale: 'de-DE',
+      },
+    })
+    // de-DE uses '.' as thousands separator.
+    expect(wrapper.find('[data-testid="stat-value"]').text()).toBe('12.345')
+  })
+})

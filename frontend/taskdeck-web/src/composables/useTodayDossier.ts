@@ -1,0 +1,290 @@
+import { computed, ref, watch, type Ref } from 'vue'
+import { useWorkspaceStore } from '../store/workspaceStore'
+import type { TodaySummary } from '../types/workspace'
+
+/**
+ * useTodayDossier — composable that returns the data shape expected by
+ * `PaperTodayView` and its 9 sub-sections.  Wherever the live workspace
+ * `todaySummary` already provides a value (overdue cards, captures, etc.)
+ * we surface it; everything else is mocked behind clearly-marked stubs so
+ * the surface ships now and follow-up backend issues (#1015–#1018) can wire
+ * real data later.
+ *
+ * Stubs are deterministic given the same `now` so tests can exercise the
+ * shape without flake.  Components must continue to work with both stub
+ * and real data — never branch on whether a section is mocked.
+ */
+
+export type DossierLedgerWho = 'you' | 'haiku' | 'system'
+export type DossierLedgerTone = 'ember' | 'applied' | 'active' | 'passive' | 'mute'
+
+export interface DossierLedgerEntry {
+  serial: string
+  time: string
+  who: DossierLedgerWho
+  what: string
+  tone: DossierLedgerTone
+}
+
+export type DossierDecisionVerdict = 'applied' | 'rejected' | 'deferred'
+
+export interface DossierDecision {
+  serial: string
+  title: string
+  verdict: DossierDecisionVerdict
+  confidence: number
+  when: string
+  stale?: boolean
+}
+
+export interface DossierBoardLine {
+  name: string
+  moves: number
+  proposals: number
+}
+
+export interface DossierCarryOverCard {
+  serial: string
+  title: string
+  age: string
+  reason: string
+}
+
+export interface DossierStatCard {
+  id: 'cards-moved' | 'proposals-applied' | 'captures-triaged' | 'longest-focus' | 'overdue'
+  /** Numeric (or formatted) value used for the big italic-serif number. */
+  value: number | string
+  /** Whether `value` is a raw number that should run through Intl.NumberFormat. */
+  numeric: boolean
+  label: string
+  sub: string
+  tone: 'ink' | 'ember' | 'applied' | 'overdue'
+}
+
+export interface DossierCadence {
+  weights: number[]
+  peakHourIndex: number
+  firstAction: string
+  peakAction: string
+  lastAction: string
+}
+
+export interface DossierStreak {
+  cells: number[]
+  todayIndex: number
+  totalDays: number
+  longestThisYear: number
+}
+
+export interface DossierData {
+  serial: string
+  date: Date
+  headlineCardsMoved: number
+  lede: string
+  autoSealsIn: string
+  stats: DossierStatCard[]
+  cadence: DossierCadence
+  ledger: DossierLedgerEntry[]
+  decisions: DossierDecision[]
+  boards: DossierBoardLine[]
+  carryOver: DossierCarryOverCard[]
+  streak: DossierStreak
+  /** Initial value for the "line for tomorrow" text-area. */
+  lineForTomorrow: string
+}
+
+const DOSSIER_NUMBER_RE = /D-\d{4}-\d{2}-\d{2}-\d{3}/
+
+/**
+ * Format the dossier serial as `D-YYYY-MM-DD-NNN`.  `seq` defaults to 001;
+ * a real backend should hand in the per-day sequence number.
+ */
+export function formatDossierSerial(date: Date, seq = 1): string {
+  const yyyy = date.getFullYear().toString().padStart(4, '0')
+  const mm = (date.getMonth() + 1).toString().padStart(2, '0')
+  const dd = date.getDate().toString().padStart(2, '0')
+  const nnn = seq.toString().padStart(3, '0')
+  const serial = `D-${yyyy}-${mm}-${dd}-${nnn}`
+  // Light invariant — useful in dev, harmless in prod.
+  if (!DOSSIER_NUMBER_RE.test(serial)) {
+    throw new Error(`Invalid dossier serial: ${serial}`)
+  }
+  return serial
+}
+
+/** Stub data the surface falls back to when the backend is silent. */
+function buildStubDossier(now: Date, summary: TodaySummary | null): DossierData {
+  const overdueCount = summary?.summary.overdueCards ?? 2
+  const capturesTriaged = 11
+  const cardsMoved = 9
+  const proposalsApplied = 3
+
+  const stats: DossierStatCard[] = [
+    {
+      id: 'cards-moved',
+      value: cardsMoved,
+      numeric: true,
+      label: 'cards moved',
+      sub: '+2 vs your wk avg',
+      tone: 'ink',
+    },
+    {
+      id: 'proposals-applied',
+      value: proposalsApplied,
+      numeric: true,
+      label: 'proposals applied',
+      sub: 'of 4 reviewed · 75%',
+      tone: 'ember',
+    },
+    {
+      id: 'captures-triaged',
+      value: capturesTriaged,
+      numeric: true,
+      label: 'captures triaged',
+      sub: '0 left in inbox',
+      tone: 'ink',
+    },
+    {
+      id: 'longest-focus',
+      value: '2h 14m',
+      numeric: false,
+      label: 'focus time · longest',
+      sub: '13:02 — 15:16 · uninterrupted',
+      tone: 'applied',
+    },
+    {
+      id: 'overdue',
+      value: overdueCount,
+      numeric: true,
+      label: 'overdue',
+      sub: 'C-072, C-061',
+      tone: 'overdue',
+    },
+  ]
+
+  const cadenceWeights = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    1, 3, 2, 1, 3, 4, 2, 3, 4, 2,
+    0, 0, 0, 0, 0, 0,
+  ]
+
+  const cadence: DossierCadence = {
+    weights: cadenceWeights,
+    peakHourIndex: 13,
+    firstAction: '08:42 · capture',
+    peakAction: '13:00 — 14:00 · 7 events',
+    lastAction: '17:18 · seal',
+  }
+
+  const ledger: DossierLedgerEntry[] = [
+    { serial: 'L-018', time: '17:18', who: 'you', what: "Sealed proposal #011 · Set up CI → Done", tone: 'applied' },
+    { serial: 'L-017', time: '16:04', who: 'haiku', what: 'Proposed split · #014 · ready for review', tone: 'ember' },
+    { serial: 'L-016', time: '15:42', who: 'you', what: 'Triaged 7 captures into Product Backlog', tone: 'active' },
+    { serial: 'L-015', time: '15:16', who: 'you', what: 'End of focus block (2h 14m)', tone: 'passive' },
+    { serial: 'L-014', time: '13:55', who: 'haiku', what: 'Proposed merge of duplicates · #008 · rejected', tone: 'mute' },
+    { serial: 'L-013', time: '13:02', who: 'you', what: 'Started focus block · DnD off · 2h 14m', tone: 'active' },
+    { serial: 'L-012', time: '12:48', who: 'you', what: "Renamed board · 'Sprint 12 · QA'", tone: 'active' },
+    { serial: 'L-011', time: '11:42', who: 'you', what: 'Applied #014 · 3 cards land · undo 6h', tone: 'applied' },
+    { serial: 'L-010', time: '11:38', who: 'haiku', what: 'Proposed split · #014 · 0.84 confidence', tone: 'ember' },
+    { serial: 'L-009', time: '10:14', who: 'you', what: "Deferred #012 · 'Add Blocked column'", tone: 'passive' },
+    { serial: 'L-008', time: '09:18', who: 'you', what: "Applied #011 · 'Set up CI' → Done", tone: 'applied' },
+    { serial: 'L-007', time: '09:00', who: 'system', what: 'Day opened · 5 cards on Today board', tone: 'passive' },
+  ]
+
+  const decisions: DossierDecision[] = [
+    { serial: '#014', title: 'Split: Implement dark mode', verdict: 'applied', confidence: 0.84, when: '11:42' },
+    { serial: '#012', title: "Add 'Blocked' column", verdict: 'deferred', confidence: 0.71, when: '10:14' },
+    { serial: '#011', title: "Move 'Set up CI' → Done", verdict: 'applied', confidence: 0.91, when: '09:18' },
+    { serial: '#008', title: 'Merge duplicates', verdict: 'rejected', confidence: 0.62, when: 'yest', stale: true },
+  ]
+
+  const boards: DossierBoardLine[] = [
+    { name: 'Product Backlog', moves: 6, proposals: 2 },
+    { name: 'Sprint 12', moves: 3, proposals: 1 },
+    { name: 'Personal', moves: 1, proposals: 0 },
+    { name: 'Side projects', moves: 0, proposals: 0 },
+    { name: 'Notes & references', moves: 0, proposals: 0 },
+  ]
+
+  const carryOver: DossierCarryOverCard[] = [
+    { serial: 'C-072', title: 'Audit AA contrast on toasts', age: '3d overdue', reason: 'rolled over twice' },
+    { serial: 'C-061', title: 'Reply: design system intro', age: '1d overdue', reason: 'snoozed yesterday' },
+  ]
+
+  // 90 deterministic streak cells — last cell is "today".
+  const cells = Array.from({ length: 90 }, (_, i) => {
+    if (i === 89) return 4
+    if (i === 73) return 0
+    // Deterministic pseudo-random based on index
+    return ((i * 31) % 5)
+  })
+
+  const streak: DossierStreak = {
+    cells,
+    todayIndex: 89,
+    totalDays: 17,
+    longestThisYear: 23,
+  }
+
+  return {
+    serial: formatDossierSerial(now),
+    date: now,
+    headlineCardsMoved: cardsMoved,
+    lede:
+      "A quiet Saturday. You triaged the morning inbox, applied two of haiku's proposals, and closed the dark-mode hand-off. Two cards drifted past their due — bring them up tomorrow.",
+    autoSealsIn: '2h 18m',
+    stats,
+    cadence,
+    ledger,
+    decisions,
+    boards,
+    carryOver,
+    streak,
+    lineForTomorrow:
+      "Pick up the AA contrast audit first — it's been carried twice. Aim to seal Sprint 12 by Wednesday.",
+  }
+}
+
+export interface UseTodayDossierOptions {
+  /** Override "now" for tests so dossier serial is deterministic. */
+  now?: Ref<Date> | Date
+}
+
+export function useTodayDossier(options: UseTodayDossierOptions = {}) {
+  const workspace = useWorkspaceStore()
+  const fixedNow = options.now instanceof Date ? options.now : null
+  const now = computed<Date>(() => {
+    if (fixedNow) return fixedNow
+    if (options.now && 'value' in options.now) return options.now.value
+    return new Date()
+  })
+
+  const sealed = ref(false)
+
+  const dossier = computed<DossierData>(() => buildStubDossier(now.value, workspace.todaySummary))
+
+  // Keep `dossier.serial` in lock-step with the current date even when
+  // tests advance the clock by re-assigning the now ref.
+  watch(now, () => {
+    /* recompute via getter */
+  })
+
+  function sealDay(): { sealed: boolean; alreadySealed: boolean } {
+    if (sealed.value) {
+      return { sealed: true, alreadySealed: true }
+    }
+    sealed.value = true
+    return { sealed: true, alreadySealed: false }
+  }
+
+  function resetSealForTesting() {
+    sealed.value = false
+  }
+
+  return {
+    dossier,
+    sealed,
+    sealDay,
+    resetSealForTesting,
+  }
+}
