@@ -201,6 +201,29 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .FirstOrDefaultAsync(p => p.Id == proposalId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(
+        string targetType,
+        string targetId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetType) || string.IsNullOrWhiteSpace(targetId))
+            return Array.Empty<AutomationProposal>();
+
+        var proposalIds = await _context.AutomationProposalOperations
+            .Where(op => op.TargetType == targetType && op.TargetId == targetId)
+            .Select(op => op.ProposalId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        if (proposalIds.Count == 0)
+            return Array.Empty<AutomationProposal>();
+
+        return await _dbSet
+            .Include(p => p.Operations)
+            .Where(p => proposalIds.Contains(p.Id) && p.Status == ProposalStatus.PendingReview)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
