@@ -34,6 +34,10 @@ public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<C
             throw new DomainException(ErrorCodes.ValidationError,
                 $"Confidence score must be between 0.0 and 1.0, but was {score}.");
 
+        if (!Enum.IsDefined(source))
+            throw new DomainException(ErrorCodes.ValidationError,
+                $"Confidence source is not defined: {source}.");
+
         Score = score;
         Source = source;
         Explanation = explanation ?? string.Empty;

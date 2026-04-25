@@ -32,6 +32,10 @@ public sealed class SelfConsistencyPolicy
         double confidenceFloor,
         int generationCount = 3)
     {
+        if (!Enum.IsDefined(criticalityThreshold))
+            throw new DomainException(ErrorCodes.ValidationError,
+                $"Criticality threshold is not defined: {criticalityThreshold}.");
+
         if (double.IsNaN(confidenceFloor) || double.IsInfinity(confidenceFloor))
             throw new DomainException(ErrorCodes.ValidationError,
                 "Confidence floor must be a finite number.");
@@ -58,6 +62,10 @@ public sealed class SelfConsistencyPolicy
     /// <returns>True if self-consistency checks should run.</returns>
     public bool ShouldTrigger(ConfidenceBucket proposalCriticality, double minimumFieldConfidence)
     {
+        if (!Enum.IsDefined(proposalCriticality))
+            throw new DomainException(ErrorCodes.ValidationError,
+                $"Proposal criticality is not defined: {proposalCriticality}.");
+
         if (double.IsNaN(minimumFieldConfidence) || double.IsInfinity(minimumFieldConfidence))
             throw new DomainException(ErrorCodes.ValidationError,
                 "Minimum field confidence must be a finite number.");

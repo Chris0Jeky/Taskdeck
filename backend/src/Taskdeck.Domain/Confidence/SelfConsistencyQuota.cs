@@ -88,13 +88,19 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
     /// Records consumption of one call with the given cost, returning a new quota.
     /// Throws if the budget is exhausted.
     /// </summary>
-    public SelfConsistencyQuota Consume(double callCost = 0.0)
+    public SelfConsistencyQuota Consume(double? callCost = null)
     {
-        if (double.IsNaN(callCost) || double.IsInfinity(callCost))
+        if (CostCap.HasValue && !callCost.HasValue)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "Call cost must be provided when a cost cap is configured.");
+
+        var effectiveCallCost = callCost ?? 0.0;
+
+        if (double.IsNaN(effectiveCallCost) || double.IsInfinity(effectiveCallCost))
             throw new DomainException(ErrorCodes.ValidationError,
                 "Call cost must be a finite number.");
 
-        if (callCost < 0)
+        if (effectiveCallCost < 0)
             throw new DomainException(ErrorCodes.ValidationError,
                 "Call cost cannot be negative.");
 
@@ -102,7 +108,7 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
             throw new DomainException(ErrorCodes.LlmQuotaExceeded,
                 "Self-consistency call budget exhausted.");
 
-        var newCostUsed = CostUsed + callCost;
+        var newCostUsed = CostUsed + effectiveCallCost;
 
         if (CostCap.HasValue && newCostUsed > CostCap.Value + Epsilon)
             throw new DomainException(ErrorCodes.LlmQuotaExceeded,

@@ -54,6 +54,15 @@ public class SelfConsistencyPolicyTests
     }
 
     [Fact]
+    public void Constructor_ShouldThrow_WhenCriticalityThresholdUndefined()
+    {
+        var act = () => new SelfConsistencyPolicy((ConfidenceBucket)999, 0.3);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public void ShouldTrigger_ShouldReturnTrue_WhenCriticalityMeetsThreshold()
     {
         var policy = new SelfConsistencyPolicy(ConfidenceBucket.Medium, 0.3);
@@ -109,6 +118,17 @@ public class SelfConsistencyPolicyTests
         var policy = new SelfConsistencyPolicy(ConfidenceBucket.VeryHigh, 0.5);
 
         var act = () => policy.ShouldTrigger(ConfidenceBucket.VeryLow, confidence);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void ShouldTrigger_ShouldThrow_WhenProposalCriticalityUndefined()
+    {
+        var policy = new SelfConsistencyPolicy(ConfidenceBucket.VeryHigh, 0.5);
+
+        var act = () => policy.ShouldTrigger((ConfidenceBucket)999, 0.5);
 
         act.Should().Throw<DomainException>()
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);

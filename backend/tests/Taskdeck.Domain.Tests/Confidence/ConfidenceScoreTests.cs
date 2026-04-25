@@ -82,6 +82,15 @@ public class ConfidenceScoreTests
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
     }
 
+    [Fact]
+    public void Constructor_ShouldThrow_WhenSourceIsUndefined()
+    {
+        var act = () => new ConfidenceScore(0.5, (ConfidenceSource)999, "test");
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
     [Theory]
     [InlineData(0.0, ConfidenceBucket.VeryLow)]
     [InlineData(0.1, ConfidenceBucket.VeryLow)]

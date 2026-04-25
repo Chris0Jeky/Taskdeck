@@ -183,6 +183,17 @@ public class SelfConsistencyQuotaTests
     }
 
     [Fact]
+    public void Consume_ShouldThrow_WhenCostCapConfiguredAndCallCostOmitted()
+    {
+        var quota = new SelfConsistencyQuota(10, 0, costCap: 1.0);
+
+        var act = () => quota.Consume();
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public void Consume_ShouldThrow_WhenCallCostNegative()
     {
         var quota = new SelfConsistencyQuota(10);
