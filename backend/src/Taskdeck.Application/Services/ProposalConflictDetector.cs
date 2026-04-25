@@ -41,9 +41,13 @@ public class ProposalConflictDetector : IProposalConflictDetector
         var flaggedCardIds = new HashSet<Guid>();
         var flaggedColumnIds = new HashSet<Guid>();
 
+        // Entity caches to avoid redundant DB lookups across sub-methods
+        var cardCache = new Dictionary<Guid, Card?>();
+        var columnCache = new Dictionary<Guid, Column?>();
+
         // Check each condition and collect rows
-        await CheckStaleDataAsync(proposal, rows, flaggedCardIds, cancellationToken);
-        await CheckWipLimitAsync(proposal, rows, flaggedColumnIds, cancellationToken);
+        await CheckStaleDataAsync(proposal, rows, flaggedCardIds, cardCache, cancellationToken);
+        await CheckWipLimitAsync(proposal, rows, flaggedColumnIds, columnCache, cancellationToken);
         await CheckDuplicatePendingProposalsAsync(proposal, rows, cancellationToken);
         CheckHighRiskOperations(proposal, rows);
         await CheckOutboundWebhooksAsync(proposal, rows, cancellationToken);
@@ -58,7 +62,8 @@ public class ProposalConflictDetector : IProposalConflictDetector
         else
         {
             // Add positive signals when applicable
-            await AddPositiveSignalsAsync(proposal, rows, flaggedCardIds, flaggedColumnIds, cancellationToken);
+            await AddPositiveSignalsAsync(proposal, rows, flaggedCardIds, flaggedColumnIds,
+                cardCache, columnCache, cancellationToken);
         }
 
         // Sort: Warn first, then Info, then Ok
@@ -93,11 +98,13 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// <summary>
     /// Warn: target card was modified since the proposal was generated.
     /// Compares card's UpdatedAt against proposal's CreatedAt.
+    /// Skips create operations since those cards don't exist yet.
     /// </summary>
     private async Task CheckStaleDataAsync(
         AutomationProposal proposal,
         List<ConflictRow> rows,
         HashSet<Guid> flaggedCardIds,
+        Dictionary<Guid, Card?> cardCache,
         CancellationToken cancellationToken)
     {
         var cardTargetIds = GetDistinctCardTargetIds(proposal);
@@ -105,7 +112,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
         foreach (var cardId in cardTargetIds)
         {
-            var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+            var card = await GetOrFetchCardAsync(cardId, cardCache, cancellationToken);
             if (card is null)
             {
                 flaggedCardIds.Add(cardId);
@@ -135,6 +142,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         AutomationProposal proposal,
         List<ConflictRow> rows,
         HashSet<Guid> flaggedColumnIds,
+        Dictionary<Guid, Column?> columnCache,
         CancellationToken cancellationToken)
     {
         var targetColumnIds = GetTargetColumnIds(proposal);
@@ -142,7 +150,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
         foreach (var columnId in targetColumnIds)
         {
-            var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(columnId, cancellationToken);
+            var column = await GetOrFetchColumnAsync(columnId, columnCache, cancellationToken);
             if (column is null) continue;
 
             if (column.WipLimit.HasValue && column.Cards.Count >= column.WipLimit.Value)
@@ -158,6 +166,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
     /// <summary>
     /// Warn: another pending proposal targets the same card.
+    /// Queries for ANY pending proposals on the target card, not just the latest.
     /// </summary>
     private async Task CheckDuplicatePendingProposalsAsync(
         AutomationProposal proposal,
@@ -169,12 +178,11 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
         foreach (var cardId in cardTargetIds)
         {
-            var existing = await _unitOfWork.AutomationProposals
-                .GetLatestByOperationTargetAsync("card", cardId.ToString(), cancellationToken);
+            var pendingProposals = await _unitOfWork.AutomationProposals
+                .GetPendingByOperationTargetAsync("card", cardId.ToString(), cancellationToken);
 
-            if (existing is not null
-                && existing.Id != proposal.Id
-                && existing.Status == ProposalStatus.PendingReview)
+            var hasDuplicate = pendingProposals.Any(p => p.Id != proposal.Id);
+            if (hasDuplicate)
             {
                 rows.Add(new ConflictRow(
                     ConflictTone.Warn,
@@ -273,12 +281,15 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// <summary>
     /// Add positive Ok signals for target columns with capacity and fresh card data.
     /// Only added when there are already some warn/info rows (otherwise the "no conflicts" row covers it).
+    /// Reuses cached entities to avoid redundant DB lookups.
     /// </summary>
     private async Task AddPositiveSignalsAsync(
         AutomationProposal proposal,
         List<ConflictRow> rows,
         HashSet<Guid> flaggedCardIds,
         HashSet<Guid> flaggedColumnIds,
+        Dictionary<Guid, Card?> cardCache,
+        Dictionary<Guid, Column?> columnCache,
         CancellationToken cancellationToken)
     {
         // Ok: target column has capacity (only if we didn't already warn about WIP for this column)
@@ -287,7 +298,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         {
             if (flaggedColumnIds.Contains(columnId)) continue;
 
-            var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(columnId, cancellationToken);
+            var column = await GetOrFetchColumnAsync(columnId, columnCache, cancellationToken);
             if (column is null) continue;
 
             if (column.WipLimit.HasValue)
@@ -305,7 +316,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         {
             if (flaggedCardIds.Contains(cardId)) continue;
 
-            var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+            var card = await GetOrFetchCardAsync(cardId, cardCache, cancellationToken);
             if (card is not null)
             {
                 rows.Add(new ConflictRow(
@@ -318,11 +329,14 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
     /// <summary>
     /// Extracts distinct card GUIDs from proposal operations that target cards.
+    /// Excludes create operations since those cards don't exist yet and would
+    /// produce false stale/missing warnings.
     /// </summary>
     private static List<Guid> GetDistinctCardTargetIds(AutomationProposal proposal)
     {
         return proposal.Operations
             .Where(op => op.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)
+                         && !op.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase)
                          && !string.IsNullOrEmpty(op.TargetId)
                          && Guid.TryParse(op.TargetId, out _))
             .Select(op => Guid.Parse(op.TargetId!))
@@ -332,7 +346,9 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
     /// <summary>
     /// Extracts target column IDs from operations that move or create into a column.
-    /// Parses the JSON parameters for "columnId" or "targetColumnId" fields.
+    /// Checks TargetType before Parameters so column-targeted operations with no
+    /// parameters are still detected. Parses JSON parameters for "columnId" or
+    /// "targetColumnId" fields when present.
     /// </summary>
     private static List<Guid> GetTargetColumnIds(AutomationProposal proposal)
     {
@@ -340,9 +356,8 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
         foreach (var op in proposal.Operations)
         {
-            if (string.IsNullOrWhiteSpace(op.Parameters)) continue;
-
-            // Target columns for column-targeted operations
+            // Target columns for column-targeted operations (checked first so that
+            // parameterless column operations are not skipped)
             if (op.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrEmpty(op.TargetId)
                 && Guid.TryParse(op.TargetId, out var colTargetId))
@@ -351,16 +366,20 @@ public class ProposalConflictDetector : IProposalConflictDetector
                 continue;
             }
 
+            if (string.IsNullOrWhiteSpace(op.Parameters)) continue;
+
             // Parse parameters JSON for columnId / targetColumnId fields
             try
             {
                 using var doc = System.Text.Json.JsonDocument.Parse(op.Parameters);
                 if (doc.RootElement.TryGetProperty("columnId", out var colProp)
+                    && colProp.ValueKind == System.Text.Json.JsonValueKind.String
                     && Guid.TryParse(colProp.GetString(), out var columnId))
                 {
                     columnIds.Add(columnId);
                 }
                 else if (doc.RootElement.TryGetProperty("targetColumnId", out var targetColProp)
+                         && targetColProp.ValueKind == System.Text.Json.JsonValueKind.String
                          && Guid.TryParse(targetColProp.GetString(), out var targetColumnId))
                 {
                     columnIds.Add(targetColumnId);
@@ -373,5 +392,37 @@ public class ProposalConflictDetector : IProposalConflictDetector
         }
 
         return columnIds.ToList();
+    }
+
+    /// <summary>
+    /// Fetches a card by ID, using the cache to avoid redundant lookups.
+    /// </summary>
+    private async Task<Card?> GetOrFetchCardAsync(
+        Guid cardId,
+        Dictionary<Guid, Card?> cache,
+        CancellationToken cancellationToken)
+    {
+        if (cache.TryGetValue(cardId, out var cached))
+            return cached;
+
+        var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+        cache[cardId] = card;
+        return card;
+    }
+
+    /// <summary>
+    /// Fetches a column with cards by ID, using the cache to avoid redundant lookups.
+    /// </summary>
+    private async Task<Column?> GetOrFetchColumnAsync(
+        Guid columnId,
+        Dictionary<Guid, Column?> cache,
+        CancellationToken cancellationToken)
+    {
+        if (cache.TryGetValue(columnId, out var cached))
+            return cached;
+
+        var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(columnId, cancellationToken);
+        cache[columnId] = column;
+        return column;
     }
 }
