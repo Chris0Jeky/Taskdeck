@@ -8,6 +8,7 @@ const mockCaptureStore = reactive({
   loadingList: false,
   listError: null as string | null,
   actionBusyItemId: null as string | null,
+  triagePollingItemId: null as string | null,
   createItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
 })
 
@@ -43,6 +44,8 @@ describe('PaperInboxView', () => {
     orchestratorState.ignoreSelected.mockResolvedValue(undefined)
     mockCaptureStore.createItem.mockResolvedValue({ id: 'created-1' })
     mockCaptureStore.listError = null
+    mockCaptureStore.actionBusyItemId = null
+    mockCaptureStore.triagePollingItemId = null
     mockBoardStore.boards = []
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
   })

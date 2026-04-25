@@ -211,6 +211,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       :loading-list="captureStore.loadingList"
       :list-error="captureStore.listError"
       :action-busy-item-id="captureStore.actionBusyItemId"
+      :triage-polling-item-id="captureStore.triagePollingItemId"
       @accept="onTriageAccept"
       @reject="onTriageReject"
       @open="onTriageOpen"

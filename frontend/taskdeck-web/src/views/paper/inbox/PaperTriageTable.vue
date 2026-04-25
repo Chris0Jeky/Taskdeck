@@ -18,6 +18,7 @@ const props = defineProps<{
   loadingList?: boolean
   listError?: string | null
   actionBusyItemId?: string | null
+  triagePollingItemId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -28,7 +29,11 @@ const emit = defineEmits<{
 }>()
 
 const hasItems = computed(() => props.items.length > 0)
-const hasActionInFlight = computed(() => props.actionBusyItemId !== null && props.actionBusyItemId !== undefined)
+const hasActionInFlight = computed(
+  () =>
+    (props.actionBusyItemId !== null && props.actionBusyItemId !== undefined) ||
+    (props.triagePollingItemId !== null && props.triagePollingItemId !== undefined),
+)
 
 function canMutate(item: CaptureItemSummary): boolean {
   return canMutateSelection(item.status)
