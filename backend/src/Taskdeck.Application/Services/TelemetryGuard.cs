@@ -15,6 +15,8 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public static class TelemetryGuard
 {
+    private const int MaxDecodeIterations = 4;
+
     /// <summary>
     /// Matches URLs (http/https/ftp with ://). Anchored to avoid backtracking.
     /// Pattern: protocol :// followed by non-whitespace characters.
@@ -171,35 +173,61 @@ public static class TelemetryGuard
     }
 
     /// <summary>
-    /// Returns the raw string plus URL-decoded and HTML-decoded variants for
-    /// pattern matching. This prevents bypass via encoded characters such as
-    /// <c>user%40example.com</c> (URL-encoded @) or <c>https&#58;//evil.com</c>
-    /// (HTML-encoded colon). Deduplicates to avoid redundant regex passes.
+    /// Returns the raw string plus bounded URL-decoded and HTML-decoded variants
+    /// for pattern matching. This prevents bypass via repeatedly or mixed-encoded
+    /// characters such as <c>user%26%2364%3Bexample.com</c>.
     /// </summary>
     private static List<string> GetDecodedCandidates(string raw)
     {
-        var candidates = new List<string>(3) { raw };
+        var candidates = new List<string> { raw };
+        var seen = new HashSet<string>(StringComparer.Ordinal) { raw };
+        var pending = new Queue<(string Value, int Depth)>();
+        pending.Enqueue((raw, 0));
 
-        try
+        while (pending.Count > 0)
         {
-            var urlDecoded = Uri.UnescapeDataString(raw);
-            if (urlDecoded != raw)
+            var (value, depth) = pending.Dequeue();
+            if (depth >= MaxDecodeIterations)
             {
-                candidates.Add(urlDecoded);
+                continue;
             }
-        }
-        catch (UriFormatException)
-        {
-            // Malformed percent-encoding -- skip URL decoding
-        }
 
-        var htmlDecoded = WebUtility.HtmlDecode(raw);
-        if (htmlDecoded != raw && !candidates.Contains(htmlDecoded))
-        {
-            candidates.Add(htmlDecoded);
+            foreach (var decoded in DecodeOneLayer(value))
+            {
+                if (seen.Add(decoded))
+                {
+                    candidates.Add(decoded);
+                    pending.Enqueue((decoded, depth + 1));
+                }
+            }
         }
 
         return candidates;
+    }
+
+    private static IEnumerable<string> DecodeOneLayer(string value)
+    {
+        string? urlDecoded = null;
+
+        try
+        {
+            urlDecoded = Uri.UnescapeDataString(value);
+        }
+        catch (UriFormatException)
+        {
+            // Malformed percent-encoding -- skip URL decoding.
+        }
+
+        if (urlDecoded is not null && urlDecoded != value)
+        {
+            yield return urlDecoded;
+        }
+
+        var htmlDecoded = WebUtility.HtmlDecode(value);
+        if (htmlDecoded != value)
+        {
+            yield return htmlDecoded;
+        }
     }
 }
 

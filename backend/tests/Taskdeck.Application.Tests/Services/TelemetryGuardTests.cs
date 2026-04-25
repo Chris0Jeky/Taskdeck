@@ -388,6 +388,30 @@ public class TelemetryGuardTests : IDisposable
     }
 
     [Fact]
+    public void Validate_ShouldReject_DoubleUrlEncodedUrl()
+    {
+        var result = TelemetryGuard.Validate("workspace.mode", "https%253A%252F%252Fevil.com");
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("URL");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_MixedUrlThenHtmlEncodedEmail()
+    {
+        var result = TelemetryGuard.Validate("workspace.mode", "user%26%2364%3Bexample.com");
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("email");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_RepeatedHtmlEncodedEmail()
+    {
+        var result = TelemetryGuard.Validate("workspace.mode", "user&amp;#64;example.com");
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("email");
+    }
+
+    [Fact]
     public void Validate_ShouldAccept_PercentLiteralThatIsNotEncoding()
     {
         // A string with % that is NOT valid URL encoding should still pass if clean

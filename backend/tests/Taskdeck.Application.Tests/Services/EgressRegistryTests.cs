@@ -83,6 +83,20 @@ public class EgressRegistryTests
     }
 
     [Fact]
+    public void Register_ShouldAddNewEntry_WhenResolvedThroughInterface()
+    {
+        IEgressRegistry registry = new EgressRegistry();
+
+        registry.Register(new EgressEntry(
+            Host: "connector.example.com",
+            PayloadCategory: "Connector metadata",
+            ToolOrAgentName: "ConnectorRuntime",
+            Classification: EgressDataClassification.MetadataOnly));
+
+        registry.IsHostAllowed("connector.example.com").Should().BeTrue();
+    }
+
+    [Fact]
     public void Register_ShouldThrowOnNull()
     {
         var registry = new EgressRegistry();
