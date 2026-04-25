@@ -1,19 +1,37 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+export interface ToastAction {
+  /** Short label for the action (e.g. "undo", "open"). */
+  label: string
+  /** Optional kbd hint shown to the right of the label. */
+  hint?: string
+  /** Invoked when the user clicks the action.  Toast is removed after. */
+  handler: () => void
+}
+
 export interface Toast {
   id: string
   message: string
   type: 'success' | 'error' | 'info' | 'warning'
   duration: number
+  /** Optional title, used by paper-mode rendering for the strong line. */
+  title?: string
+  /** Optional inline action (e.g. "undo · 6h"). */
+  action?: ToastAction
 }
 
 export const useToastStore = defineStore('toast', () => {
   const toasts = ref<Toast[]>([])
 
-  function show(message: string, type: Toast['type'] = 'info', duration = 3000) {
+  function show(
+    message: string,
+    type: Toast['type'] = 'info',
+    duration = 3000,
+    options: { title?: string; action?: ToastAction } = {},
+  ) {
     const id = `toast-${Date.now()}-${Math.random()}`
-    const toast: Toast = { id, message, type, duration }
+    const toast: Toast = { id, message, type, duration, ...options }
 
     toasts.value.push(toast)
 
