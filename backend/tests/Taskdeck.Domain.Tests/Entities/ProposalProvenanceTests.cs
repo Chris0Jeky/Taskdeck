@@ -124,4 +124,27 @@ public class ProposalProvenanceTests
 
         provenance.UpdatedAt.Should().BeOnOrAfter(originalUpdatedAt);
     }
+
+    [Fact]
+    public void AddField_ShouldThrow_WhenFieldProvenanceIdDoesNotMatch()
+    {
+        var provenance = new ProposalProvenance(Guid.NewGuid(), "corr-1", "mock");
+        var wrongParentId = Guid.NewGuid();
+        var field = new ProvenanceField("Title", Enums.ProvenanceKind.Inferred, 0.9, wrongParentId);
+
+        var act = () => provenance.AddField(field);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Field's ProposalProvenanceId must match this provenance's Id");
+    }
+
+    [Fact]
+    public void AddField_ShouldThrow_WhenFieldIsNull()
+    {
+        var provenance = new ProposalProvenance(Guid.NewGuid(), "corr-1", "mock");
+
+        var act = () => provenance.AddField(null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
 }

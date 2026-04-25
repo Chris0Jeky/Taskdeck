@@ -61,6 +61,10 @@ public class ProposalProvenance : Entity
 
     public void AddField(ProvenanceField field)
     {
+        ArgumentNullException.ThrowIfNull(field);
+        if (field.ProposalProvenanceId != Id)
+            throw new DomainException(ErrorCodes.ValidationError, "Field's ProposalProvenanceId must match this provenance's Id");
+
         _fields.Add(field);
         Touch();
     }
