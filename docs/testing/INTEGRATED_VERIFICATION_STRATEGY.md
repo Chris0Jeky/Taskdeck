@@ -101,7 +101,7 @@ All of the following must pass:
 
 1. Backend unit + integration tests (`dotnet test backend/Taskdeck.sln -c Release -m:1`)
 2. Frontend unit tests with coverage thresholds (`npm run test:coverage`)
-3. Frontend typecheck and build (`npm run typecheck && npm run build`)
+3. Frontend typecheck and build (`npm run typecheck`, then `npm run build`; in PowerShell, check `$LASTEXITCODE` between commands)
 4. E2E smoke suite on Chromium (`npx playwright test --project=chromium`)
 5. Architecture boundary tests (`Taskdeck.Architecture.Tests`)
 6. Docs governance checks (`check-docs-governance.mjs`, `check-golden-principles.mjs`)

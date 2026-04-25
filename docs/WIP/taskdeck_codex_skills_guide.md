@@ -17,7 +17,7 @@ Use `AGENTS.md` for repo laws. Use these skills for heavier workflows that shoul
 
 ## Review outcome
 
-The six-skill shape is right for Taskdeck, but the implementation should be a little tighter than the first draft:
+The original six-skill shape is right for day-to-day Taskdeck work. High-autonomy issue/PR/CI batch work now adds four coordination skills on top of that base:
 
 - make `taskdeck-repo-onramp` read `docs/ISSUE_EXECUTION_GUIDE.md` and `docs/MCP_TOOLING_GUIDE.md` as first-class inputs
 - keep `taskdeck-frontend-workspace-slice` focused on shell, navigation, and workspace coherence
@@ -25,6 +25,7 @@ The six-skill shape is right for Taskdeck, but the implementation should be a li
 - add a short `do not use this skill when` rule to reduce double-loading
 - prefer the smallest evidence path first in demo/regression work
 - update `STATUS.md` and `IMPLEMENTATION_MASTERPLAN.md` only when shipped reality or sequencing actually changed
+- use `taskdeck-issue-batch-orchestrator`, `taskdeck-worktree-issue-worker`, `taskdeck-pr-review-loop`, and `taskdeck-ci-conflict-recovery` for batch execution and PR recovery workflows
 
 ---
 
@@ -45,6 +46,14 @@ The six-skill shape is right for Taskdeck, but the implementation should be a li
     taskdeck-demo-regression/
       SKILL.md
     taskdeck-verification-doc-sync/
+      SKILL.md
+    taskdeck-issue-batch-orchestrator/
+      SKILL.md
+    taskdeck-worktree-issue-worker/
+      SKILL.md
+    taskdeck-pr-review-loop/
+      SKILL.md
+    taskdeck-ci-conflict-recovery/
       SKILL.md
 ```
 

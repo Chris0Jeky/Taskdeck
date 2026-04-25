@@ -1,6 +1,6 @@
 # Codex-Friendly Task Catalog
 
-Last Updated: 2026-03-28
+Last Updated: 2026-04-25
 
 This folder contains well-scoped, self-contained tasks designed for token-efficient agents like Codex.
 Each task file is a standalone prompt with everything needed: source paths, pattern files, acceptance criteria, and verify commands.
@@ -69,3 +69,4 @@ Give the entire `.md` file as the Codex prompt. The agent should:
 - Backend tests: `backend/tests/Taskdeck.{Layer}.Tests/{subfolder}/{Name}Tests.cs`
 - All tests must pass before commit
 - One task = one branch = one PR = one issue
+- On Windows/PowerShell, translate legacy `cd frontend/taskdeck-web && <command>` snippets to `Push-Location frontend/taskdeck-web; <command>; $code = $LASTEXITCODE; Pop-Location; if ($code -ne 0) { exit $code }`.

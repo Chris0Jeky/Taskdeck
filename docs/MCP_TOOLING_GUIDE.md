@@ -5,6 +5,7 @@
 
 Operational companion:
 - `docs/tooling/MCP_OPERATIONS_RUNBOOK.md` (credential setup, verification, and recurring workflow)
+- `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` (Codex issue/PR/CI batch workflow)
 
 ---
 
@@ -14,6 +15,7 @@ Operational companion:
 - If an MCP tool and shell/CLI can both perform the task, use MCP by default.
 - Use shell/CLI only when MCP is unavailable, failing, or does not support the required operation.
 - When falling back, note the reason briefly in the work summary.
+- For high-autonomy batches, report actual MCP/GitHub/subagent availability at session start because runtime availability can differ from `.codex/config.toml`.
 
 ### 1) Prefer the right tool over guessing
 - OpenAI/Codex/OpenAI API questions -> `openaiDeveloperDocs` MCP
@@ -92,6 +94,8 @@ Treat `ripgrep` MCP as unavailable until fixed.
 Use GitHub MCP:
 - Read: list/search issues, PRs, branches, commits
 - Write: create/update issues and PR metadata when explicitly requested
+
+For Codex issue batches, use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` plus the helper scripts under `scripts/github/`. Those scripts are deterministic `gh` fallbacks when GitHub MCP is unavailable or lacks the needed project/PR inspection shape.
 
 ### E) "Need container/runtime deployment checks"
 1. Use `docker` MCP for container/image lifecycle inspection.

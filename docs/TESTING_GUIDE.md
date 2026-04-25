@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-23
+Last Updated: 2026-04-25
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -30,6 +30,20 @@ Verification note:
 - prior recertification: backend 4,279 (2026-04-12), frontend 2,245 (2026-04-12) after PRs `#800`–`#820`
 - growth since last recertification: backend +700 tests, frontend +362 tests
 - pending (post-merge of PRs `#960`–`#969`): ~186 new tests estimated — 61 composable tests (`useCardModal`), 125 composable tests (`useStarterPackCatalog`/`useStarterPackImport`/`useStarterPackResult`), plus additional backend OAuth scope validator and audit retention tests
+
+## Windows PowerShell Command Convention
+
+For agent-run commands on Windows, do not use `&&` directly in PowerShell. Prefer fail-fast sequences that check `$LASTEXITCODE`, for example:
+
+```powershell
+Push-Location frontend/taskdeck-web
+npm run typecheck; if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
+npm run build; if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
+npx vitest --run
+$code = $LASTEXITCODE
+Pop-Location
+if ($code -ne 0) { exit $code }
+```
 
 ## Audit-Finding Remediation Wave Testing (2026-04-24, PRs `#960`–`#969`)
 

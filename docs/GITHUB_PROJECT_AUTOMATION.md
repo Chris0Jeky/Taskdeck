@@ -2,7 +2,7 @@
 
 This document defines the canonical setup for the `Taskdeck Execution` GitHub Project.
 Use this to keep intake and status transitions consistent for every issue and PR.
-Last Updated: 2026-02-23
+Last Updated: 2026-04-25
 
 ## Canonical Status Model
 
@@ -145,6 +145,18 @@ After setup changes:
 - Open `Priority View` and confirm issue/PR items have non-empty `Priority` values.
 - Run issue search and confirm zero issues without a priority label:
   - `is:issue -label:"Priority I" -label:"Priority II" -label:"Priority III" -label:"Priority IV" -label:"Priority V"`
+
+## Codex Batch Helpers
+
+Codex high-autonomy batches should follow `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`.
+
+Local helper scripts:
+- `scripts/github/Select-TaskdeckIssues.ps1` — shortlist candidate open issues by priority label and obvious blocked/dependency signals.
+- `scripts/github/Inspect-TaskdeckPrs.ps1` — summarize open PRs, linked issues, comments, and check status counts.
+- `scripts/github/Seed-TaskdeckFollowupIssue.ps1` — create explicit follow-up issues for accepted deferrals.
+- `scripts/github/New-TaskdeckDocsRehydrationChecklist.ps1` — list recently merged PRs and docs that may need rehydration.
+
+These helpers are fallbacks for GitHub MCP gaps. They do not replace project-field verification; Project v2 priority/status field sync may still require GitHub MCP or `gh api graphql`.
 
 ## Weekly Backlog Seeding Cadence (OPS-06)
 

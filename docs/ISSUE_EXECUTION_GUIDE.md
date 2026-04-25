@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-04-22
+Last Updated: 2026-04-25
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -449,6 +449,7 @@ Ops and documentation:
   - 1 issue in `Now`
   - 1 issue in `Review`
 - If parallel work is needed, split by non-overlapping layers (example: docs-only issue plus one code issue).
+- If a maintainer explicitly requests high-autonomy batch execution, follow `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`; the WIP override must still use isolated worktrees, one coordinator, linked PRs, review loops, and final docs/project-status reconciliation.
 
 ## Escalation Rules
 

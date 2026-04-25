@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-04-24
+Last Updated: 2026-04-25
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -38,6 +38,12 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+Latest tooling addition (2026-04-25):
+- Codex high-autonomy workflow hardening delivered: `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` now defines issue batch orchestration, worktree workers, PR review loops, CI/comment/conflict recovery, no-silent-deferral rules, and docs rehydration.
+- Repo-local Codex skills added for issue batch orchestration, isolated issue workers, PR review loops, and CI/conflict recovery.
+- PowerShell git/worktree guard scripts and GitHub helper scripts added for Windows-safe batch execution.
+
 1. Backend advanced slices completed: automation proposals/executor, archive recovery, chat, ops/logs, workers/health.
 2. Frontend advanced views integrated: automations/chat/ops/archive and supporting APIs/types.
 3. Maintainability refactor delivered (PR #23):

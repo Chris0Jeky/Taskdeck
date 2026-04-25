@@ -509,7 +509,7 @@ These are previously reported bugs. Verify they remain fixed or track their curr
 ### Verifications — Test Suite Health (Post-Wave)
 
 - [ ] `dotnet test backend/Taskdeck.sln -c Release -m:1` — verify all tests pass with ~3020+ backend total.
-- [ ] `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose` — verify all frontend tests pass with ~1625+ total.
+- [ ] `Push-Location frontend/taskdeck-web; npx vitest --run --reporter=verbose; $code = $LASTEXITCODE; Pop-Location; if ($code -ne 0) { exit $code }` — verify all frontend tests pass with ~1625+ total.
 - [ ] Check CI status on PRs #765-#770, #776 — verify all required checks passed.
 
 ---
@@ -518,14 +518,19 @@ These are previously reported bugs. Verify they remain fixed or track their curr
 
 After manual verification, run the full automated suite to confirm no regressions:
 
-```bash
+```powershell
 # Backend
 dotnet test backend/Taskdeck.sln -c Release -m:1
 
 # Frontend unit + build
-cd frontend/taskdeck-web && npx vitest --run --reporter=verbose
-cd frontend/taskdeck-web && npm run typecheck && npm run build
+Push-Location frontend/taskdeck-web
+npx vitest --run --reporter=verbose; if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
+npm run typecheck; if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
+npm run build; if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
 
 # Frontend E2E
-cd frontend/taskdeck-web && npx playwright test --reporter=line
+npx playwright test --reporter=line
+$code = $LASTEXITCODE
+Pop-Location
+if ($code -ne 0) { exit $code }
 ```

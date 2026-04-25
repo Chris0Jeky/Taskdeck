@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-23
+Last Updated: 2026-04-25
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -38,7 +38,7 @@ Out of scope (known implementation boundaries on current `main`):
 1. Start backend API:
    - `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj`
 2. Start frontend:
-   - `cd frontend/taskdeck-web`
+   - `Push-Location frontend/taskdeck-web`
    - `npm run dev`
 3. Open the frontend URL printed by Vite (default `http://localhost:5173`; fallback `http://localhost:4173` or `http://localhost:5001` when `5173` is restricted).
 4. Register/login a test user in UI (or use API bootstrap).
@@ -49,9 +49,13 @@ Fallback when `localhost:5173` is blocked (`listen EACCES`):
 - strict-port startup avoids implicit Vite port auto-increment drift.
 - backend Development CORS defaults include `http://localhost:4173` and `http://localhost:5001`, so frontend auth/API requests remain allowed when fallback ports are used.
 - If you need an explicit port, run:
-  - `cd frontend/taskdeck-web`
+  - `Push-Location frontend/taskdeck-web`
   - `npm run dev -- --host localhost --port 5001`
 - Troubleshooting note: some Windows local environments reserve or restrict `localhost:5173` for user-space listeners, which surfaces as `listen EACCES`.
+
+PowerShell command convention:
+- Prefer `Push-Location frontend/taskdeck-web` / `Pop-Location` over `cd frontend/taskdeck-web && ...`.
+- When chaining required checks, inspect `$LASTEXITCODE` after each command so failures stop the sequence.
 
 Optional clean start:
 - Stop API process.
@@ -805,12 +809,12 @@ If behavior, commands, or known gaps changed, update:
 1. Backend:
    - `dotnet test backend/Taskdeck.sln -c Release -m:1`
 2. Frontend unit/build:
-   - `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose`
-   - `cd frontend/taskdeck-web && npm run typecheck && npm run build`
+   - `Push-Location frontend/taskdeck-web; npx vitest --run --reporter=verbose; $code = $LASTEXITCODE; Pop-Location; if ($code -ne 0) { exit $code }`
+   - `Push-Location frontend/taskdeck-web; npm run typecheck; if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }; npm run build; $code = $LASTEXITCODE; Pop-Location; if ($code -ne 0) { exit $code }`
 3. Frontend E2E:
-   - `cd frontend/taskdeck-web && npx playwright test --reporter=line`
+   - `Push-Location frontend/taskdeck-web; npx playwright test --reporter=line; $code = $LASTEXITCODE; Pop-Location; if ($code -ne 0) { exit $code }`
    - fallback when `5173` is unavailable:
-     `cd frontend/taskdeck-web && TASKDECK_E2E_FRONTEND_PORT=5001 npx playwright test --reporter=line`
+     `$env:TASKDECK_E2E_FRONTEND_PORT = "5001"; Push-Location frontend/taskdeck-web; npx playwright test --reporter=line; $code = $LASTEXITCODE; Pop-Location; if ($code -ne 0) { exit $code }`
 
 ## V. Capture Realignment Manual Slice (Shipped CAP MVP)
 
