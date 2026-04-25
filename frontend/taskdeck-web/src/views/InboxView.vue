@@ -4,7 +4,11 @@ import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.v
 import CaptureModal from '../components/common/CaptureModal.vue'
 import InboxListPanel from '../components/inbox/InboxListPanel.vue'
 import InboxDetailPanel from '../components/inbox/InboxDetailPanel.vue'
+import PaperInboxView from './paper/PaperInboxView.vue'
 import { useInboxOrchestrator } from '../composables/useInboxOrchestrator'
+import { usePaperThemeStore } from '../store/paperThemeStore'
+
+const paperTheme = usePaperThemeStore()
 
 const listPanelRef = ref<InstanceType<typeof InboxListPanel> | null>(null)
 
@@ -50,7 +54,8 @@ const {
 </script>
 
 <template>
-  <div class="td-inbox" role="region" aria-label="Capture inbox">
+  <PaperInboxView v-if="paperTheme.isOn" />
+  <div v-else class="td-inbox" role="region" aria-label="Capture inbox">
     <header class="td-inbox__header">
       <div>
         <h1 class="td-page-title">Inbox</h1>
@@ -134,7 +139,7 @@ const {
     </div>
   </div>
 
-  <Teleport to="body">
+  <Teleport v-if="!paperTheme.isOn" to="body">
     <CaptureModal
       v-if="showCaptureModal"
       @close="closeCaptureModal"
