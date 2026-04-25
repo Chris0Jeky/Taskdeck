@@ -68,9 +68,17 @@ public static class BrierScoreCalculator
             throw new DomainException(ErrorCodes.ValidationError,
                 "Brier score must be a finite number.");
 
+        if (brierScore < 0.0 || brierScore > 1.0)
+            throw new DomainException(ErrorCodes.ValidationError,
+                $"Brier score must be between 0.0 and 1.0, but was {brierScore}.");
+
         if (double.IsNaN(referenceBrierScore) || double.IsInfinity(referenceBrierScore))
             throw new DomainException(ErrorCodes.ValidationError,
                 "Reference Brier score must be a finite number.");
+
+        if (referenceBrierScore < 0.0 || referenceBrierScore > 1.0)
+            throw new DomainException(ErrorCodes.ValidationError,
+                $"Reference Brier score must be between 0.0 and 1.0, but was {referenceBrierScore}.");
 
         if (referenceBrierScore <= 0.0)
             throw new DomainException(ErrorCodes.ValidationError,

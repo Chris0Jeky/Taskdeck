@@ -105,6 +105,20 @@ public class ConfidenceScoreTests
         cs.ToBucket().Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(-0.001)]
+    [InlineData(1.001)]
+    public void ScoreToBucket_ShouldThrow_WhenScoreInvalid(double score)
+    {
+        var act = () => ConfidenceScore.ScoreToBucket(score);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
     [Fact]
     public void Equals_ShouldReturnTrue_ForIdenticalScores()
     {
@@ -165,6 +179,26 @@ public class ConfidenceScoreTests
     }
 
     [Fact]
+    public void CompareTo_ShouldReturnZero_WhenScoresAreEpsilonEqualAndMetadataMatches()
+    {
+        var a = new ConfidenceScore(0.5, ConfidenceSource.Verbalized, "same");
+        var b = new ConfidenceScore(0.5 + 4e-13, ConfidenceSource.Verbalized, "same");
+
+        a.CompareTo(b).Should().Be(0);
+    }
+
+    [Fact]
+    public void CompareTo_ShouldDistinguishSignals_WhenScoresMatchButMetadataDiffers()
+    {
+        var verbalized = new ConfidenceScore(0.75, ConfidenceSource.Verbalized, "same");
+        var provider = new ConfidenceScore(0.75, ConfidenceSource.ProviderLogprob, "same");
+        var explained = new ConfidenceScore(0.75, ConfidenceSource.Verbalized, "different");
+
+        verbalized.CompareTo(provider).Should().NotBe(0);
+        verbalized.CompareTo(explained).Should().NotBe(0);
+    }
+
+    [Fact]
     public void CompareTo_ShouldHandleNull()
     {
         var score = new ConfidenceScore(0.5, ConfidenceSource.Verbalized, "test");
@@ -178,6 +212,16 @@ public class ConfidenceScoreTests
         var a = new ConfidenceScore(0.75, ConfidenceSource.Verbalized, "test");
         var b = new ConfidenceScore(0.75, ConfidenceSource.Verbalized, "test");
 
+        a.GetHashCode().Should().Be(b.GetHashCode());
+    }
+
+    [Fact]
+    public void GetHashCode_ShouldMatch_WhenScoresAreEpsilonEqual()
+    {
+        var a = new ConfidenceScore(0.5 - 1e-13, ConfidenceSource.Verbalized, "test");
+        var b = new ConfidenceScore(0.5 + 1e-13, ConfidenceSource.Verbalized, "test");
+
+        a.Should().Be(b);
         a.GetHashCode().Should().Be(b.GetHashCode());
     }
 

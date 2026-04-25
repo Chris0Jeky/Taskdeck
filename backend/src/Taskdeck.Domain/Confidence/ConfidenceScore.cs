@@ -9,6 +9,8 @@ namespace Taskdeck.Domain.Confidence;
 /// </summary>
 public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<ConfidenceScore>
 {
+    private const double Epsilon = 1e-12;
+
     /// <summary>
     /// The confidence value in [0.0, 1.0].
     /// </summary>
@@ -51,6 +53,14 @@ public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<C
     /// </summary>
     public static ConfidenceBucket ScoreToBucket(double score)
     {
+        if (double.IsNaN(score) || double.IsInfinity(score))
+            throw new DomainException(ErrorCodes.ValidationError,
+                "Confidence score must be a finite number.");
+
+        if (score < 0.0 || score > 1.0)
+            throw new DomainException(ErrorCodes.ValidationError,
+                $"Confidence score must be between 0.0 and 1.0, but was {score}.");
+
         return score switch
         {
             < 0.2 => ConfidenceBucket.VeryLow,
@@ -68,7 +78,7 @@ public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<C
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
         // Use epsilon comparison for floating-point equality
-        return Math.Abs(Score - other.Score) < 1e-12
+        return Math.Abs(Score - other.Score) < Epsilon
                && Source == other.Source
                && Explanation == other.Explanation;
     }
@@ -77,17 +87,25 @@ public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<C
 
     public override int GetHashCode()
     {
-        // Round Score to a granularity coarser than the epsilon (1e-12) used in Equals
-        // so that two scores within epsilon produce the same hash code.
-        long roundedBits = (long)Math.Round(Score * 1e9);
-        return HashCode.Combine(roundedBits, Source, Explanation);
+        // Score participates in Equals with epsilon tolerance, so hashing its raw
+        // value or a rounded bucket can still split equal values at bucket edges.
+        return HashCode.Combine(Source, Explanation);
     }
 
     public int CompareTo(ConfidenceScore? other)
     {
         if (other is null) return 1;
         if (Equals(other)) return 0;
-        return Score.CompareTo(other.Score);
+
+        var scoreComparison = Score.CompareTo(other.Score);
+        if (scoreComparison != 0 && Math.Abs(Score - other.Score) >= Epsilon)
+            return scoreComparison;
+
+        var sourceComparison = Source.CompareTo(other.Source);
+        if (sourceComparison != 0)
+            return sourceComparison;
+
+        return string.CompareOrdinal(Explanation, other.Explanation);
     }
 
     public static bool operator ==(ConfidenceScore? left, ConfidenceScore? right)

@@ -281,6 +281,27 @@ public class BrierScoreCalculatorTests
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
     }
 
+    [Theory]
+    [InlineData(-0.001)]
+    [InlineData(1.001)]
+    public void CalculateSkillScore_ShouldThrow_WhenBrierScoreOutOfRange(double brierScore)
+    {
+        var act = () => BrierScoreCalculator.CalculateSkillScore(brierScore, 0.25);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Theory]
+    [InlineData(1.001)]
+    public void CalculateSkillScore_ShouldThrow_WhenReferenceOutOfRange(double referenceBrierScore)
+    {
+        var act = () => BrierScoreCalculator.CalculateSkillScore(0.25, referenceBrierScore);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
     [Fact]
     public void CalculateSkillScore_ShouldThrow_WhenBrierScoreIsNaN()
     {

@@ -98,6 +98,22 @@ public class SelfConsistencyPolicyTests
         policy.ShouldTrigger(ConfidenceBucket.VeryLow, 0.5).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(-0.001)]
+    [InlineData(1.001)]
+    public void ShouldTrigger_ShouldThrow_WhenMinimumFieldConfidenceInvalid(double confidence)
+    {
+        var policy = new SelfConsistencyPolicy(ConfidenceBucket.VeryHigh, 0.5);
+
+        var act = () => policy.ShouldTrigger(ConfidenceBucket.VeryLow, confidence);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
     [Fact]
     public void ShouldTrigger_ShouldReturnTrue_WhenConfidenceJustBelowFloor()
     {

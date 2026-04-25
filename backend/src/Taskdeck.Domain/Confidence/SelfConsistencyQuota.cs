@@ -127,10 +127,9 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
 
     public override int GetHashCode()
     {
-        // Round CostUsed to a granularity coarser than the epsilon (1e-12) used in Equals
-        // so that two values within epsilon produce the same hash code.
-        long roundedCostBits = (long)Math.Round(CostUsed * 1e9);
-        return HashCode.Combine(MaxCalls, UsedCalls, CostCap, roundedCostBits);
+        // CostUsed participates in Equals with epsilon tolerance, so hashing its
+        // raw value or a rounded bucket can still split equal values at bucket edges.
+        return HashCode.Combine(MaxCalls, UsedCalls, CostCap);
     }
 
     #endregion

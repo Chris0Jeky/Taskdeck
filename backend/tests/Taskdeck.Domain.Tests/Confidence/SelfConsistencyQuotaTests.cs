@@ -303,6 +303,16 @@ public class SelfConsistencyQuotaTests
     }
 
     [Fact]
+    public void GetHashCode_ShouldMatch_WhenCostUsedIsEpsilonEqual()
+    {
+        var a = new SelfConsistencyQuota(5, 2, costCap: 1.0, costUsed: 0.5 - 1e-13);
+        var b = new SelfConsistencyQuota(5, 2, costCap: 1.0, costUsed: 0.5 + 1e-13);
+
+        a.Should().Be(b);
+        a.GetHashCode().Should().Be(b.GetHashCode());
+    }
+
+    [Fact]
     public void Equals_ShouldReturnFalse_ForDifferentQuotas()
     {
         var a = new SelfConsistencyQuota(5, 2);

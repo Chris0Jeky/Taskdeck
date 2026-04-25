@@ -58,6 +58,14 @@ public sealed class SelfConsistencyPolicy
     /// <returns>True if self-consistency checks should run.</returns>
     public bool ShouldTrigger(ConfidenceBucket proposalCriticality, double minimumFieldConfidence)
     {
+        if (double.IsNaN(minimumFieldConfidence) || double.IsInfinity(minimumFieldConfidence))
+            throw new DomainException(ErrorCodes.ValidationError,
+                "Minimum field confidence must be a finite number.");
+
+        if (minimumFieldConfidence < 0.0 || minimumFieldConfidence > 1.0)
+            throw new DomainException(ErrorCodes.ValidationError,
+                $"Minimum field confidence must be between 0.0 and 1.0, but was {minimumFieldConfidence}.");
+
         // Trigger if criticality meets or exceeds the threshold
         if (proposalCriticality >= CriticalityThreshold)
             return true;
