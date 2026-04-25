@@ -53,4 +53,36 @@ public sealed class TelemetryGuardOptions
         "workspace.mode",
         "workspace.board_count",
     };
+
+    public HashSet<string> StringValueKeys { get; set; } = new(StringComparer.Ordinal)
+    {
+        "workspace.mode",
+    };
+
+    public HashSet<string> NumericValueKeys { get; set; } = new(StringComparer.Ordinal)
+    {
+        "capture.count",
+        "capture.duration_ms",
+        "capture.attachment_count",
+        "proposal.generated_count",
+        "proposal.accepted_count",
+        "proposal.rejected_count",
+        "proposal.edited_count",
+        "board.card_count",
+        "board.column_count",
+        "board.active_count",
+        "session.duration_ms",
+        "session.action_count",
+        "llm.request_count",
+        "llm.token_input_count",
+        "llm.token_output_count",
+        "llm.latency_ms",
+        "llm.error_count",
+        "automation.run_count",
+        "automation.success_count",
+        "automation.failure_count",
+        "workspace.board_count",
+    };
+
+    public HashSet<string> BooleanValueKeys { get; set; } = new(StringComparer.Ordinal);
 }

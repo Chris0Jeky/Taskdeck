@@ -15,7 +15,7 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public static class TelemetryGuard
 {
-    private const int MaxDecodeIterations = 4;
+    private const int MaxDecodeIterations = 16;
 
     /// <summary>
     /// Matches URLs (http/https/ftp with ://). Anchored to avoid backtracking.
@@ -57,6 +57,21 @@ public static class TelemetryGuard
         typeof(sbyte),
     };
 
+    private static readonly HashSet<Type> NumericValueTypes = new()
+    {
+        typeof(int),
+        typeof(long),
+        typeof(double),
+        typeof(float),
+        typeof(decimal),
+        typeof(byte),
+        typeof(short),
+        typeof(uint),
+        typeof(ulong),
+        typeof(ushort),
+        typeof(sbyte),
+    };
+
     private static volatile TelemetryGuardOptions _options = new();
 
     /// <summary>
@@ -69,6 +84,18 @@ public static class TelemetryGuard
         if (options.AllowedKeys is null)
         {
             throw new ArgumentException("AllowedKeys must not be null.", nameof(options));
+        }
+        if (options.StringValueKeys is null)
+        {
+            throw new ArgumentException("StringValueKeys must not be null.", nameof(options));
+        }
+        if (options.NumericValueKeys is null)
+        {
+            throw new ArgumentException("NumericValueKeys must not be null.", nameof(options));
+        }
+        if (options.BooleanValueKeys is null)
+        {
+            throw new ArgumentException("BooleanValueKeys must not be null.", nameof(options));
         }
 
         _options = CloneOptions(options);
@@ -116,6 +143,12 @@ public static class TelemetryGuard
                 $"Value type '{value.GetType().Name}' is not supported. Only primitive types (string, int, long, double, float, decimal, bool) are allowed.");
         }
 
+        if (!IsValueShapeAllowed(options, key, value))
+        {
+            return TelemetryValidationResult.Rejected(
+                $"Key '{key}' does not allow values of type '{value.GetType().Name}'.");
+        }
+
         // Validate numeric values
         if (value is double d)
         {
@@ -144,9 +177,14 @@ public static class TelemetryGuard
 
             // Decode URL-encoded and HTML-encoded forms before pattern matching
             // to prevent bypass via encoded characters (e.g., user%40example.com).
-            var candidates = GetDecodedCandidates(s);
+            var decoded = GetDecodedCandidates(s);
+            if (decoded.HitDecodeLimit)
+            {
+                return TelemetryValidationResult.Rejected(
+                    "String value is encoded too deeply to validate safely.");
+            }
 
-            foreach (var candidate in candidates)
+            foreach (var candidate in decoded.Candidates)
             {
                 try
                 {
@@ -182,18 +220,20 @@ public static class TelemetryGuard
     /// for pattern matching. This prevents bypass via repeatedly or mixed-encoded
     /// characters such as <c>user%26%2364%3Bexample.com</c>.
     /// </summary>
-    private static List<string> GetDecodedCandidates(string raw)
+    private static DecodedCandidateSet GetDecodedCandidates(string raw)
     {
         var candidates = new List<string> { raw };
         var seen = new HashSet<string>(StringComparer.Ordinal) { raw };
         var pending = new Queue<(string Value, int Depth)>();
         pending.Enqueue((raw, 0));
+        var hitDecodeLimit = false;
 
         while (pending.Count > 0)
         {
             var (value, depth) = pending.Dequeue();
             if (depth >= MaxDecodeIterations)
             {
+                hitDecodeLimit |= DecodeOneLayer(value).Any();
                 continue;
             }
 
@@ -207,7 +247,7 @@ public static class TelemetryGuard
             }
         }
 
-        return candidates;
+        return new DecodedCandidateSet(candidates, hitDecodeLimit);
     }
 
     private static IEnumerable<string> DecodeOneLayer(string value)
@@ -241,8 +281,31 @@ public static class TelemetryGuard
         {
             MaxStringLength = options.MaxStringLength,
             AllowedKeys = new HashSet<string>(options.AllowedKeys, options.AllowedKeys.Comparer),
+            StringValueKeys = new HashSet<string>(options.StringValueKeys, options.StringValueKeys.Comparer),
+            NumericValueKeys = new HashSet<string>(options.NumericValueKeys, options.NumericValueKeys.Comparer),
+            BooleanValueKeys = new HashSet<string>(options.BooleanValueKeys, options.BooleanValueKeys.Comparer),
         };
     }
+
+    private static bool IsValueShapeAllowed(TelemetryGuardOptions options, string key, object value)
+    {
+        var valueType = value.GetType();
+
+        if (options.StringValueKeys.Contains(key) && value is string)
+            return true;
+
+        if (options.NumericValueKeys.Contains(key) && NumericValueTypes.Contains(valueType))
+            return true;
+
+        if (options.BooleanValueKeys.Contains(key) && value is bool)
+            return true;
+
+        return false;
+    }
+
+    private sealed record DecodedCandidateSet(
+        IReadOnlyList<string> Candidates,
+        bool HitDecodeLimit);
 }
 
 /// <summary>

@@ -190,6 +190,7 @@ public class TelemetryGuardTests : IDisposable
         {
             MaxStringLength = 10,
             AllowedKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.key" },
+            StringValueKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.key" },
         };
         TelemetryGuard.Configure(customOptions);
 
@@ -205,6 +206,7 @@ public class TelemetryGuardTests : IDisposable
         {
             MaxStringLength = 10,
             AllowedKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.key" },
+            StringValueKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.key" },
         };
 
         TelemetryGuard.Configure(customOptions);
@@ -234,13 +236,39 @@ public class TelemetryGuardTests : IDisposable
     // --- Adversarial / fuzz inputs ---
 
     [Theory]
-    [InlineData("capture.count", "normal text")]  // wrong type but allowed key, accepted since string is clean
     [InlineData("llm.request_count", 0)]
     [InlineData("llm.token_input_count", int.MaxValue)]
     public void Validate_ShouldAccept_EdgeCaseValidInputs(string key, object value)
     {
         var result = TelemetryGuard.Validate(key, value);
         result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_StringValueForNumericDefaultKey()
+    {
+        var result = TelemetryGuard.Validate("capture.count", "normal text");
+
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("does not allow values");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_BoolValueForNumericDefaultKey()
+    {
+        var result = TelemetryGuard.Validate("capture.count", true);
+
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("does not allow values");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_NumericValueForStringDefaultKey()
+    {
+        var result = TelemetryGuard.Validate("workspace.mode", 1);
+
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("does not allow values");
     }
 
     [Fact]
@@ -293,10 +321,16 @@ public class TelemetryGuardTests : IDisposable
     [InlineData("session.duration_ms")]
     [InlineData("llm.request_count")]
     [InlineData("automation.run_count")]
-    [InlineData("workspace.mode")]
     public void Validate_ShouldAccept_AllDefaultAllowlistedKeys(string key)
     {
         var result = TelemetryGuard.Validate(key, 1);
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_ShouldAccept_DefaultStringAllowlistedKey()
+    {
+        var result = TelemetryGuard.Validate("workspace.mode", "guided");
         result.IsValid.Should().BeTrue();
     }
 
@@ -341,7 +375,14 @@ public class TelemetryGuardTests : IDisposable
     [Fact]
     public void Validate_ShouldAccept_BoolValue()
     {
-        var result = TelemetryGuard.Validate("capture.count", true);
+        var customOptions = new TelemetryGuardOptions
+        {
+            AllowedKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.flag" },
+            BooleanValueKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.flag" },
+        };
+        TelemetryGuard.Configure(customOptions);
+
+        var result = TelemetryGuard.Validate("custom.flag", true);
         result.IsValid.Should().BeTrue();
     }
 
@@ -419,6 +460,30 @@ public class TelemetryGuardTests : IDisposable
         var result = TelemetryGuard.Validate("workspace.mode", "https%253A%252F%252Fevil.com");
         result.IsValid.Should().BeFalse();
         result.Reason.Should().Contain("URL");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_DeeplyUrlEncodedEmail()
+    {
+        var result = TelemetryGuard.Validate("workspace.mode", "user%252525252540example.com");
+
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("email");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_ExcessivelyEncodedStrings()
+    {
+        var value = "user@evil.com";
+        for (var i = 0; i < 20; i++)
+        {
+            value = Uri.EscapeDataString(value);
+        }
+
+        var result = TelemetryGuard.Validate("workspace.mode", value);
+
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("encoded too deeply");
     }
 
     [Fact]
