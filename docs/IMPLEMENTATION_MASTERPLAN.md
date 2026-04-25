@@ -53,10 +53,10 @@ Latest roadmap adoption (2026-04-25):
 - Existing shipped foundations are reused rather than reseeded: PWA/offline readiness (`#95`), voice-capture privacy anchor (`#219`), MCP hardening anchor (`#655`, for broader deferred production hardening), and test-total recertification follow-up (`#970`).
 
 Roadmap v4 first-wave delivery (2026-04-25, PRs `#985`--`#988`):
-- TST-DEBT CI annotation cleanup (`#971`/`#985`): 9 compiler warnings fixed, build warnings 22 → 12.
-- RFAI-01 safety invariants, IA cut, eval seed (`#973`/`#986`): 12 roadmap invariant tests, sidebar IA cut to 5 primary items, 15 eval golden fixtures.
-- TST-DOC test totals recertification (`#970`/`#987`): backend 5,060 / frontend 2,805 / combined 7,865+.
-- SEC-29 CSP inline style migration complete (`#855`/`#988`): all 22 `:style` bindings migrated; `'unsafe-inline'` dropped from reverse-proxy `style-src`.
+- TST-DEBT CI annotation cleanup (`#971`/`#985`): 9 compiler warnings fixed, build warnings 22 → 12. Two rounds of adversarial review.
+- RFAI-01 safety invariants, IA cut, eval seed (`#973`/`#986`): 12 roadmap invariant tests, sidebar IA cut to 5 primary items, 15 eval golden fixtures. Three rounds of adversarial review; round 2 fixed regex capture bug in INV-04/INV-05, sidebar tests; round 3 expanded INV-01 scan scope and INV-08 injected-HttpClient detection.
+- TST-DOC test totals recertification (`#970`/`#987`): backend 5,060 / frontend 2,805 / combined 7,865+. Two rounds of adversarial review; round 2 fixed stale date and fraction notation.
+- SEC-29 CSP inline style migration complete (`#855`/`#988`): all 22 `:style` bindings migrated; `'unsafe-inline'` dropped from reverse-proxy `style-src`. Three rounds of adversarial review; round 2 fixed TdSkeleton/TdTag test assertions; round 3 migrated 7 remaining literal `style` attributes to Tailwind — zero literal style attributes remain.
 
 1. Backend advanced slices completed: automation proposals/executor, archive recovery, chat, ops/logs, workers/health.
 2. Frontend advanced views integrated: automations/chat/ops/archive and supporting APIs/types.
@@ -711,6 +711,7 @@ Roadmap v4 first-wave delivery (2026-04-25, PRs `#985`--`#988`):
     - Fixed 9 compiler warnings: nullable annotations in 4 test files, `[EnumeratorCancellation]` in LlmProviderAbstractionEdgeCaseTests, XML doc warnings in WorkspaceController/ConnectorProvidersController/FirstRunBootstrapper
     - `null!` replaced with `string.Empty`; cref fully qualified
     - Build warnings dropped from 22 to 12
+    - Two rounds of adversarial review; no changes required in round 2
 
 138. RFAI-01 safety invariants, IA cut, eval seed (`#973`/`#986`, 2026-04-25):
     - 12 roadmap invariant tests in `RoadmapInvariantTests.cs` (8 passing: INV-01 through INV-08 covering mutation safety and EgressEnvelope HTTP audit; 4 skipped with TODO for future features)
@@ -718,19 +719,20 @@ Roadmap v4 first-wave delivery (2026-04-25, PRs `#985`--`#988`):
     - `?` shortcut help updated with navigation section for new IA model
     - 15 eval golden fixtures in `evals/golden/` (5 happy-path, 4 multi-instruction, 3 ambiguous, 5 safety-boundary) with JSON schema and README
     - AuditRetentionWorker config doc ranges corrected (CleanupBatchSize, CleanupIntervalHours)
-    - Review round 2: regex capture bug fixed in INV-04/INV-05, unused field removed, Settings link gated behind feature flag, sidebar tests rewritten
+    - Three rounds of adversarial review; round 2 fixed regex capture bug in INV-04/INV-05, unused field removed, Settings link gated behind feature flag, sidebar tests rewritten; round 3 expanded INV-01 automation scan scope from `Services/Tools` + `Api/Mcp` to all of `Application/Services` with proper allowlist, INV-08 egress detector now catches injected HttpClient fields/constructor parameters with 3 dead allowlist entries cleaned
 
 139. TST-DOC test totals recertification (`#970`/`#987`, 2026-04-25):
     - Backend: 4,979 → 5,060 passing (+81), 0 failures (5 previously-failing Api.Tests now pass), 2 skipped
     - Frontend: 2,607 → 2,805 passing (+198)
     - Combined: 7,586+ → 7,865+
     - Updated TESTING_GUIDE.md, STATUS.md, RESEARCH_BRIEF.md
-    - Review round 2: verification date corrected, fraction notation fixed, en-dash consistency
+    - Two rounds of adversarial review; round 2 fixed stale verification date, fraction notation, and en-dash consistency
 
 140. SEC-29 CSP inline style migration complete (`#855`/`#988`, 2026-04-25):
     - Migrated all 22 `:style` bindings across 14 Vue files to CSS custom properties/v-bind()/utility classes
     - Dropped `'unsafe-inline'` from `style-src` in reverse-proxy CSP
     - TdSkeleton and TdTag test assertions updated for CSS custom property approach
+    - Three rounds of adversarial review; round 2 fixed TdSkeleton/TdTag test assertions; round 3 migrated 7 remaining literal `style=""` attributes in TodayView, NotificationInboxView, BoardsListView, BoardView to Tailwind utility classes — zero literal style attributes remain, CSP `'unsafe-inline'` removal now fully safe
     - Completes the SEC-29 follow-up from `#855`/`#945` (partial)
 
 ## Current Planning Pivot (2026-03-07)
