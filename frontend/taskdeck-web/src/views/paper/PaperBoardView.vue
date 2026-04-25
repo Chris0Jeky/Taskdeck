@@ -25,8 +25,9 @@ const props = withDefaults(
   defineProps<{
     /** Card visual variant — propagated to every column. */
     cardVariant?: PaperBoardCardVariant
+    selectedCardId?: string | null
   }>(),
-  { cardVariant: 'index' },
+  { cardVariant: 'index', selectedCardId: null },
 )
 
 const route = useRoute()
@@ -41,7 +42,24 @@ const sortedColumns = computed<Column[]>(() => {
   return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
 })
 
-const cardsByColumn = computed<Map<string, Card[]>>(() => boardStore.cardsByColumn)
+const cardsByColumn = computed<Map<string, Card[]>>(() => {
+  const map = new Map<string, Card[]>()
+
+  for (const card of boardStore.currentBoardCards) {
+    if (!map.has(card.columnId)) {
+      map.set(card.columnId, [])
+    }
+    map.get(card.columnId)!.push(card)
+  }
+
+  map.forEach((cards) => {
+    cards.sort((a, b) => a.position - b.position)
+  })
+
+  return map
+})
+
+const activeSelectedCardId = computed(() => props.selectedCardId ?? selectedCard.value?.id ?? null)
 
 const totalCards = computed(() =>
   sortedColumns.value.reduce((sum, c) => sum + (cardsByColumn.value.get(c.id)?.length ?? 0), 0),
@@ -232,7 +250,7 @@ function openCaptureBoard() {
             :cards="cardsByColumn.get(column.id) ?? []"
             :card-variant="props.cardVariant"
             :is-drag-over="dragOverColumnId === column.id"
-            :selected-card-id="selectedCard?.id ?? null"
+            :selected-card-id="activeSelectedCardId"
             @capture="openCapture"
             @card-click="openCard"
             @card-dragstart="(card) => handleCardDragStart(card)"

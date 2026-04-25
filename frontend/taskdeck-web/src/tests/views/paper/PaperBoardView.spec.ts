@@ -68,8 +68,11 @@ const cardsByColumn = new Map<string, Card[]>([
   ['col-done', []],
 ])
 
+const allCards = [...cardsByColumn.values()].flat()
+
 const mockBoardStore = reactive({
   currentBoard: board,
+  currentBoardCards: allCards,
   cardsByColumn,
   currentBoardLabels: [],
   loading: false,
@@ -88,9 +91,10 @@ vi.mock('../../../store/boardStore', () => ({
   useBoardStore: () => mockBoardStore,
 }))
 
-function mountView() {
+function mountView(props: Record<string, unknown> = {}) {
   return mount(PaperBoardView, {
     attachTo: document.body,
+    props,
     global: {
       stubs: {
         CardModal: {
@@ -116,6 +120,8 @@ describe('PaperBoardView', () => {
     routerMock.push.mockClear()
     mockBoardStore.fetchBoard.mockClear()
     mockBoardStore.moveCard.mockClear()
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
     mockBoardStore.error = null
     mockBoardStore.loading = false
   })
@@ -136,6 +142,29 @@ describe('PaperBoardView', () => {
     ])
     // Indices passed to columns are 1-based serials.
     expect(renderedColumns.map((c) => c.props('index'))).toEqual([1, 2, 3, 4])
+  })
+
+  it('renders unfiltered cards when the paper surface hides filter controls', () => {
+    mockBoardStore.cardsByColumn = new Map<string, Card[]>([
+      ['col-backlog', [cardsByColumn.get('col-backlog')![0]]],
+      ['col-today', []],
+      ['col-progress', []],
+      ['col-done', []],
+    ])
+
+    const wrapper = mountView()
+
+    expect(wrapper.find('[data-card-id="card-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-card-id="card-2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-card-id="card-3"]').exists()).toBe(true)
+    expect(wrapper.find('[data-card-id="card-4"]').exists()).toBe(true)
+    expect(wrapper.find('.paper-board-view__subline').text()).toContain('4 cards')
+  })
+
+  it('highlights the card selected by wrapping board keyboard navigation', () => {
+    const wrapper = mountView({ selectedCardId: 'card-2' })
+
+    expect(wrapper.get('[data-card-id="card-2"]').classes()).toContain('paper-board-card--selected')
   })
 
   it('shows the hairline empty placeholder for columns with no cards', () => {

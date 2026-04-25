@@ -320,7 +320,7 @@ useKeyboardShortcuts([
 </script>
 
 <template>
-  <PaperBoardView v-if="paperOn" />
+  <PaperBoardView v-if="paperOn" :selected-card-id="selectedCardId" />
   <div v-else class="min-h-screen bg-surface">
     <!-- Header -->
     <div class="bg-surface-container border-b border-outline-variant/15">
