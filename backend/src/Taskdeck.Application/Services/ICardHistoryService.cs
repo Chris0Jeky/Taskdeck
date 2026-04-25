@@ -15,6 +15,5 @@ public interface ICardHistoryService
     /// </summary>
     Task<Result<IReadOnlyList<CardHistoryRowDto>>> GetCardHistoryForProposalAsync(
         Guid proposalId,
-        Guid userId,
         CancellationToken cancellationToken = default);
 }

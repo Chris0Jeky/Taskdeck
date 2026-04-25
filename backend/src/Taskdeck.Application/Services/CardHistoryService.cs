@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -27,16 +28,11 @@ public class CardHistoryService : ICardHistoryService
 
     public async Task<Result<IReadOnlyList<CardHistoryRowDto>>> GetCardHistoryForProposalAsync(
         Guid proposalId,
-        Guid userId,
         CancellationToken cancellationToken = default)
     {
         if (proposalId == Guid.Empty)
             return Result.Failure<IReadOnlyList<CardHistoryRowDto>>(
                 ErrorCodes.ValidationError, "Proposal ID cannot be empty");
-
-        if (userId == Guid.Empty)
-            return Result.Failure<IReadOnlyList<CardHistoryRowDto>>(
-                ErrorCodes.ValidationError, "User ID cannot be empty");
 
         var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId, cancellationToken);
         if (proposal == null)
@@ -45,13 +41,19 @@ public class CardHistoryService : ICardHistoryService
 
         // Extract distinct card IDs from the proposal's operations.
         // Operations target cards when TargetType is "Card" and TargetId is a valid GUID.
-        var affectedCardIds = proposal.Operations
-            .Where(op => string.Equals(op.TargetType, "Card", StringComparison.OrdinalIgnoreCase)
-                         && !string.IsNullOrWhiteSpace(op.TargetId)
-                         && Guid.TryParse(op.TargetId, out _))
-            .Select(op => Guid.Parse(op.TargetId!))
-            .Distinct()
-            .ToList();
+        // Single-pass: TryParse both validates and produces the Guid, avoiding double parsing.
+        var affectedCardIds = new List<Guid>();
+        var seenCardIds = new HashSet<Guid>();
+        foreach (var op in proposal.Operations)
+        {
+            if (string.Equals(op.TargetType, "Card", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(op.TargetId)
+                && Guid.TryParse(op.TargetId, out var cardGuid)
+                && seenCardIds.Add(cardGuid))
+            {
+                affectedCardIds.Add(cardGuid);
+            }
+        }
 
         if (affectedCardIds.Count == 0)
         {
@@ -63,6 +65,9 @@ public class CardHistoryService : ICardHistoryService
         var now = DateTimeOffset.UtcNow;
 
         // Collect audit log entries for all affected cards (bounded per card).
+        // NOTE: This issues one query per card (N+1). Acceptable because proposals
+        // typically affect 1-5 cards. If this becomes a hot path with larger proposals,
+        // consider adding a batch GetByEntitiesAsync method to IAuditLogRepository.
         var allEntries = new List<HistoryEntry>();
 
         foreach (var cardId in affectedCardIds)
@@ -80,12 +85,14 @@ public class CardHistoryService : ICardHistoryService
         }
 
         // Find proposals that targeted the same cards (applied proposals get 'applied' status).
+        // Track seen proposal IDs to avoid duplicates when multiple cards share the same related proposal.
+        var seenProposalIds = new HashSet<Guid> { proposalId };
         foreach (var cardId in affectedCardIds)
         {
             var relatedProposal = await _unitOfWork.AutomationProposals
                 .GetLatestByOperationTargetAsync("Card", cardId.ToString(), cancellationToken);
 
-            if (relatedProposal != null && relatedProposal.Id != proposalId)
+            if (relatedProposal != null && seenProposalIds.Add(relatedProposal.Id))
             {
                 var status = relatedProposal.Status == ProposalStatus.Applied
                     ? CardHistoryStatus.Applied
@@ -214,19 +221,30 @@ public class CardHistoryService : ICardHistoryService
         if (string.IsNullOrWhiteSpace(changes))
             return $"{entityType} updated";
 
-        // Try to extract a more descriptive message from the changes JSON.
-        // Common patterns: {"title":"new title"}, {"columnId":"..."}, etc.
-        if (changes.Contains("title", StringComparison.OrdinalIgnoreCase))
-            return $"{entityType} title updated";
-        if (changes.Contains("columnId", StringComparison.OrdinalIgnoreCase)
-            || changes.Contains("column", StringComparison.OrdinalIgnoreCase))
-            return $"{entityType} moved to new column";
-        if (changes.Contains("description", StringComparison.OrdinalIgnoreCase))
-            return $"{entityType} description updated";
-        if (changes.Contains("position", StringComparison.OrdinalIgnoreCase))
-            return $"{entityType} position changed";
-        if (changes.Contains("label", StringComparison.OrdinalIgnoreCase))
-            return $"{entityType} labels updated";
+        // Parse the changes JSON to check for property names properly,
+        // avoiding false positives from string.Contains on raw JSON values.
+        try
+        {
+            using var doc = JsonDocument.Parse(changes);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return $"{entityType} updated";
+
+            if (root.TryGetProperty("title", out _))
+                return $"{entityType} title updated";
+            if (root.TryGetProperty("columnId", out _) || root.TryGetProperty("column", out _))
+                return $"{entityType} moved to new column";
+            if (root.TryGetProperty("description", out _))
+                return $"{entityType} description updated";
+            if (root.TryGetProperty("position", out _))
+                return $"{entityType} position changed";
+            if (root.TryGetProperty("label", out _) || root.TryGetProperty("labels", out _))
+                return $"{entityType} labels updated";
+        }
+        catch (JsonException)
+        {
+            // If changes is not valid JSON, fall through to generic message.
+        }
 
         return $"{entityType} updated";
     }

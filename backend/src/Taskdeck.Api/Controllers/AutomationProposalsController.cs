@@ -277,7 +277,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
-        var result = await _cardHistoryService.GetCardHistoryForProposalAsync(id, callerUserId, cancellationToken);
+        var result = await _cardHistoryService.GetCardHistoryForProposalAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 

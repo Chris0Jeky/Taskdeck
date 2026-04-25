@@ -34,21 +34,11 @@ public class CardHistoryServiceTests
     [Fact]
     public async Task GetCardHistoryForProposalAsync_ShouldReturnValidationError_WhenProposalIdIsEmpty()
     {
-        var result = await _service.GetCardHistoryForProposalAsync(Guid.Empty, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(Guid.Empty);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("Proposal ID");
-    }
-
-    [Fact]
-    public async Task GetCardHistoryForProposalAsync_ShouldReturnValidationError_WhenUserIdIsEmpty()
-    {
-        var result = await _service.GetCardHistoryForProposalAsync(Guid.NewGuid(), Guid.Empty);
-
-        result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("User ID");
     }
 
     [Fact]
@@ -58,7 +48,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync((AutomationProposal?)null);
 
-        var result = await _service.GetCardHistoryForProposalAsync(proposalId, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(proposalId);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
@@ -75,7 +65,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().BeEmpty();
@@ -105,7 +95,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId.ToString(), default))
             .ReturnsAsync((AutomationProposal?)null);
 
-        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         // 2 audit log entries + 1 pending operation = 3 rows
@@ -136,7 +126,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId.ToString(), default))
             .ReturnsAsync(appliedProposal);
 
-        var result = await _service.GetCardHistoryForProposalAsync(currentProposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(currentProposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Contain(r => r.Status == CardHistoryStatus.Applied);
@@ -177,11 +167,46 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId2.ToString(), default))
             .ReturnsAsync((AutomationProposal?)null);
 
-        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         // 1 + 2 audit logs + 2 pending operations = 5 rows
         result.Value.Should().HaveCount(5);
+    }
+
+    [Fact]
+    public async Task GetCardHistoryForProposalAsync_MultiCard_ShouldDeduplicateSharedRelatedProposal()
+    {
+        var cardId1 = Guid.NewGuid();
+        var cardId2 = Guid.NewGuid();
+
+        var proposal = CreateProposalWithMultipleCardOperations(cardId1, cardId2);
+
+        // A single related proposal that affected both cards
+        var sharedRelatedProposal = CreateProposal();
+        sharedRelatedProposal.Approve(Guid.NewGuid());
+        sharedRelatedProposal.MarkAsApplied();
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId1, 200, default))
+            .ReturnsAsync(Array.Empty<AuditLog>());
+        _auditLogRepoMock.Setup(r => r.GetByEntityAsync("Card", cardId2, 200, default))
+            .ReturnsAsync(Array.Empty<AuditLog>());
+
+        // Both cards return the same related proposal
+        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId1.ToString(), default))
+            .ReturnsAsync(sharedRelatedProposal);
+        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId2.ToString(), default))
+            .ReturnsAsync(sharedRelatedProposal);
+
+        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        // 2 pending operations + 1 related proposal (deduplicated, not 2) = 3 rows
+        result.Value.Should().HaveCount(3);
+        result.Value.Where(r => r.Status == CardHistoryStatus.Applied).Should().HaveCount(1);
     }
 
     #endregion
@@ -208,7 +233,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId.ToString(), default))
             .ReturnsAsync((AutomationProposal?)null);
 
-        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value[0].Serial.Should().Be("#001");
@@ -371,7 +396,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId.ToString(), default))
             .ReturnsAsync((AutomationProposal?)null);
 
-        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().OnlyContain(r => r.Status == CardHistoryStatus.Pending);
@@ -395,7 +420,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId.ToString(), default))
             .ReturnsAsync((AutomationProposal?)null);
 
-        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Where(r => r.Status == CardHistoryStatus.Past).Should().HaveCount(1);
@@ -417,7 +442,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId.ToString(), default))
             .ReturnsAsync(rejectedProposal);
 
-        var result = await _service.GetCardHistoryForProposalAsync(currentProposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(currentProposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Where(r => r.Status == CardHistoryStatus.Past).Should().HaveCount(1);
@@ -439,7 +464,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(1);
@@ -464,7 +489,7 @@ public class CardHistoryServiceTests
         _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("Card", cardId.ToString(), default))
             .ReturnsAsync(proposal);
 
-        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id, Guid.NewGuid());
+        var result = await _service.GetCardHistoryForProposalAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         // Should only have 1 row (the pending operation), not a duplicate entry
