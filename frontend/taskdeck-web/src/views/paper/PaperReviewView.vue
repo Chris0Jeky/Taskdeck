@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import ReviewQueueRail, {
+  type QueueFilter,
   type QueueRailItem,
 } from './review/ReviewQueueRail.vue'
 import type { RecentlyAppliedRow } from './review/ReviewRecentApplied.vue'
@@ -71,28 +72,52 @@ const {
 // --- Active proposal ---------------------------------------------------
 
 const explicitActiveId = ref<string | null>(null)
+const queueFilter = ref<QueueFilter>('all')
 
 const hashProposalId = computed(() => {
   const hash = route.hash ?? ''
   if (!hash.startsWith('#proposal-')) return null
   const id = hash.slice('#proposal-'.length)
-  return id ? decodeURIComponent(id) : null
+  try {
+    return id ? decodeURIComponent(id) : null
+  } catch {
+    return null
+  }
+})
+
+function isStaleProposal(proposal: ApiProposal): boolean {
+  if (normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
+  return nowMs.value - new Date(proposal.createdAt).getTime() >= 24 * 60 * 60 * 1000
+}
+
+const filteredVisibleProposals = computed(() => {
+  switch (queueFilter.value) {
+    case 'mine':
+      return visibleProposals.value.filter(
+        (proposal) => !!session.userId && proposal.requestedByUserId === session.userId,
+      )
+    case 'stale':
+      return visibleProposals.value.filter(isStaleProposal)
+    case 'all':
+    default:
+      return visibleProposals.value
+  }
 })
 
 const activeProposal = computed<ApiProposal | null>(() => {
   if (hashProposalId.value) {
-    const found = visibleProposals.value.find((p) => p.id === hashProposalId.value)
+    const found = filteredVisibleProposals.value.find((p) => p.id === hashProposalId.value)
     if (found) return found
   }
   if (explicitActiveId.value) {
-    const found = visibleProposals.value.find((p) => p.id === explicitActiveId.value)
+    const found = filteredVisibleProposals.value.find((p) => p.id === explicitActiveId.value)
     if (found) return found
   }
   // Default to the first pending-review item in the queue.
   return (
-    visibleProposals.value.find(
+    filteredVisibleProposals.value.find(
       (p) => normalizeProposalStatus(p.status) === 'PendingReview' && !isProposalExpired(p),
-    ) ?? visibleProposals.value[0] ?? null
+    ) ?? filteredVisibleProposals.value[0] ?? null
   )
 })
 
@@ -141,10 +166,8 @@ function summariseReach(proposal: ApiProposal): string {
 }
 
 const queueItems = computed<QueueRailItem[]>(() =>
-  visibleProposals.value.map((p) => {
-    const ageMs = nowMs.value - new Date(p.createdAt).getTime()
-    const stale =
-      normalizeProposalStatus(p.status) === 'PendingReview' && ageMs >= 24 * 60 * 60 * 1000
+  filteredVisibleProposals.value.map((p) => {
+    const stale = isStaleProposal(p)
     return {
       id: p.id,
       serial: `#${p.id.slice(0, 4).toUpperCase()}`,
@@ -422,6 +445,11 @@ onUnmounted(() => {
 function selectProposal(id: string) {
   explicitActiveId.value = id
 }
+
+function onQueueFilterChange(filter: QueueFilter) {
+  queueFilter.value = filter
+  explicitActiveId.value = filteredVisibleProposals.value[0]?.id ?? null
+}
 </script>
 
 <template>
@@ -432,6 +460,7 @@ function selectProposal(id: string) {
       :awaiting-count="awaitingCount"
       :stale-count="staleCount"
       :recently-applied="recentlyApplied"
+      @filter-change="onQueueFilterChange"
       @select="selectProposal"
     />
 

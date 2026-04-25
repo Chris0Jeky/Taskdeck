@@ -90,6 +90,7 @@ describe('ReviewQueueRail', () => {
     expect(visible).toHaveLength(1)
     expect(visible[0].text()).toContain('Mine 1')
     expect(minePill.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.emitted('filter-change')?.[0]).toEqual(['mine'])
   })
 
   it('filter pill "Stale" only shows stale items', async () => {

@@ -166,6 +166,32 @@ describe('PaperReviewView', () => {
     expect(railText).not.toContain('Theirs proposal')
   })
 
+  it('retargets decision actions to the visible proposal after queue filtering', async () => {
+    mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'mine-001' }))
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'theirs-001',
+        requestedByUserId: 'u-2',
+        summary: 'Theirs proposal',
+      }),
+      makeProposal({
+        id: 'mine-001',
+        requestedByUserId: 'u-1',
+        summary: 'Mine proposal',
+      }),
+    ])
+
+    const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
+    await mineButton?.trigger('click')
+
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Mine proposal')
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).toHaveBeenCalledWith('mine-001')
+  })
+
   it('uses the hash-targeted proposal as the active decision target', async () => {
     mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-target' }))
     const wrapper = await mountView(
@@ -182,6 +208,15 @@ describe('PaperReviewView', () => {
     await flushPromises()
 
     expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-target')
+  })
+
+  it('falls back to normal selection for malformed hash proposal ids', async () => {
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],
+      '/workspace/review#proposal-%E0%A4%A',
+    )
+
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('First proposal')
   })
 
   it('shows recently applied proposals even when completed items are hidden from the queue', async () => {

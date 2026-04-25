@@ -37,7 +37,10 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{ (event: 'select', id: string): void }>()
+const emit = defineEmits<{
+  (event: 'select', id: string): void
+  (event: 'filter-change', filter: QueueFilter): void
+}>()
 
 const filter = ref<QueueFilter>('all')
 
@@ -56,6 +59,11 @@ const visible = computed<QueueRailItem[]>(() => {
 function asPct(value: number): string {
   return `${Math.round(value * 100)}%`
 }
+
+function setFilter(next: QueueFilter) {
+  filter.value = next
+  emit('filter-change', next)
+}
 </script>
 
 <template>
@@ -72,7 +80,7 @@ function asPct(value: number): string {
           class="paper-review-rail__pill"
           :class="{ 'paper-review-rail__pill--active': filter === key }"
           :aria-pressed="filter === key"
-          @click="filter = key"
+          @click="setFilter(key)"
         >{{ key === 'all' ? 'All' : key === 'mine' ? 'Mine' : 'Stale' }}</button>
       </div>
     </div>
