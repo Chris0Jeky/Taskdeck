@@ -4,8 +4,8 @@ namespace Taskdeck.Application.Services;
 
 public interface IDailySealService
 {
-    Task<Result<DailySealResponse>> SealDayAsync(Guid userId, DateOnly date);
-    Task<Result<DailySealStatusResponse>> GetSealStatusAsync(Guid userId, DateOnly date);
+    Task<Result<DailySealResponse>> SealDayAsync(Guid userId, DateOnly date, CancellationToken cancellationToken = default);
+    Task<Result<DailySealStatusResponse>> GetSealStatusAsync(Guid userId, DateOnly date, CancellationToken cancellationToken = default);
 }
 
 public sealed record DailySealResponse(DateTimeOffset SealedAt, bool WasAlreadySealed);

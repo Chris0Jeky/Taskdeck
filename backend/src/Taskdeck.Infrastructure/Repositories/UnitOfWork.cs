@@ -173,8 +173,9 @@ public class UnitOfWork : IUnitOfWork
     {
         var resolvedNotificationConflict = TryResolveDuplicateNotificationDeduplicationConflicts(exception);
         var resolvedUserPreferenceConflict = TryResolveDuplicateUserPreferenceConflicts(exception);
+        var resolvedDailySnapshotConflict = TryResolveDuplicateDailySnapshotConflicts(exception);
 
-        return resolvedNotificationConflict || resolvedUserPreferenceConflict;
+        return resolvedNotificationConflict || resolvedUserPreferenceConflict || resolvedDailySnapshotConflict;
     }
 
     private bool TryResolveDuplicateNotificationDeduplicationConflicts(DbUpdateException exception)
@@ -270,6 +271,48 @@ public class UnitOfWork : IUnitOfWork
             StringComparison.OrdinalIgnoreCase)
             || exception.InnerException.Message.Contains(
                 "IX_ProposalRevisions_ProposalId_RevisionNumber",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool TryResolveDuplicateDailySnapshotConflicts(DbUpdateException exception)
+    {
+        if (!IsDailySnapshotUniqueViolation(exception))
+            return false;
+
+        var duplicateSnapshotFound = false;
+        var pendingSnapshots = _context.ChangeTracker
+            .Entries<DailySnapshot>()
+            .Where(entry => entry.State == EntityState.Added)
+            .ToList();
+
+        foreach (var pendingSnapshot in pendingSnapshots)
+        {
+            var duplicateExists = _context.DailySnapshots
+                .AsNoTracking()
+                .Any(ds =>
+                    ds.UserId == pendingSnapshot.Entity.UserId
+                    && ds.Date == pendingSnapshot.Entity.Date);
+
+            if (!duplicateExists)
+                continue;
+
+            pendingSnapshot.State = EntityState.Detached;
+            duplicateSnapshotFound = true;
+        }
+
+        return duplicateSnapshotFound;
+    }
+
+    private static bool IsDailySnapshotUniqueViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is null)
+            return false;
+
+        return exception.InnerException.Message.Contains(
+            "DailySnapshots.UserId, DailySnapshots.Date",
+            StringComparison.OrdinalIgnoreCase)
+            || exception.InnerException.Message.Contains(
+                "IX_DailySnapshots_UserId_Date",
                 StringComparison.OrdinalIgnoreCase);
     }
 }

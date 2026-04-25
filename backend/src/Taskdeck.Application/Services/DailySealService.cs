@@ -14,7 +14,7 @@ public class DailySealService : IDailySealService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<Result<DailySealResponse>> SealDayAsync(Guid userId, DateOnly date)
+    public async Task<Result<DailySealResponse>> SealDayAsync(Guid userId, DateOnly date, CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty)
             return Result.Failure<DailySealResponse>(ErrorCodes.ValidationError, "UserId cannot be empty");
@@ -24,7 +24,7 @@ public class DailySealService : IDailySealService
         if (date > DateOnly.FromDateTime(now.UtcDateTime))
             return Result.Failure<DailySealResponse>(ErrorCodes.ValidationError, "Cannot seal a future date");
 
-        var snapshot = await _unitOfWork.DailySnapshots.GetByUserAndDateAsync(userId, date);
+        var snapshot = await _unitOfWork.DailySnapshots.GetByUserAndDateAsync(userId, date, cancellationToken);
 
         var wasAlreadySealed = false;
 
@@ -32,7 +32,7 @@ public class DailySealService : IDailySealService
         {
             snapshot = new DailySnapshot(userId, date, now);
             snapshot.Seal(now);
-            await _unitOfWork.DailySnapshots.AddAsync(snapshot);
+            await _unitOfWork.DailySnapshots.AddAsync(snapshot, cancellationToken);
         }
         else
         {
@@ -40,17 +40,17 @@ public class DailySealService : IDailySealService
             snapshot.Seal(now);
         }
 
-        await _unitOfWork.SaveChangesAsync();
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success(new DailySealResponse(snapshot.SealedAt!.Value, wasAlreadySealed));
     }
 
-    public async Task<Result<DailySealStatusResponse>> GetSealStatusAsync(Guid userId, DateOnly date)
+    public async Task<Result<DailySealStatusResponse>> GetSealStatusAsync(Guid userId, DateOnly date, CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty)
             return Result.Failure<DailySealStatusResponse>(ErrorCodes.ValidationError, "UserId cannot be empty");
 
-        var snapshot = await _unitOfWork.DailySnapshots.GetByUserAndDateAsync(userId, date);
+        var snapshot = await _unitOfWork.DailySnapshots.GetByUserAndDateAsync(userId, date, cancellationToken);
 
         if (snapshot is null)
             return Result.Success(new DailySealStatusResponse(date, false, null));

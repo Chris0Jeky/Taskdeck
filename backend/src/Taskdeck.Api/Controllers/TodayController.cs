@@ -22,22 +22,22 @@ public class TodayController : AuthenticatedControllerBase
     }
 
     [HttpPost("seal")]
-    public async Task<IActionResult> SealDay([FromBody] SealDayRequest request)
+    public async Task<IActionResult> SealDay([FromBody] SealDayRequest request, CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _dailySealService.SealDayAsync(userId, request.Date);
+        var result = await _dailySealService.SealDayAsync(userId, request.Date, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpGet("seal")]
-    public async Task<IActionResult> GetSealStatus([FromQuery] DateOnly date)
+    public async Task<IActionResult> GetSealStatus([FromQuery] DateOnly date, CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _dailySealService.GetSealStatusAsync(userId, date);
+        var result = await _dailySealService.GetSealStatusAsync(userId, date, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 }

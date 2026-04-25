@@ -31,7 +31,7 @@ public class DailySealServiceTests
         var date = DateOnly.FromDateTime(DateTime.UtcNow);
 
         _snapshotRepoMock
-            .Setup(r => r.GetByUserAndDateAsync(userId, date, default))
+            .Setup(r => r.GetByUserAndDateAsync(userId, date, It.IsAny<CancellationToken>()))
             .ReturnsAsync((DailySnapshot?)null);
 
         var result = await _service.SealDayAsync(userId, date);
@@ -40,8 +40,8 @@ public class DailySealServiceTests
         result.Value.WasAlreadySealed.Should().BeFalse();
         result.Value.SealedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(5));
 
-        _snapshotRepoMock.Verify(r => r.AddAsync(It.IsAny<DailySnapshot>(), default), Times.Once);
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        _snapshotRepoMock.Verify(r => r.AddAsync(It.IsAny<DailySnapshot>(), It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class DailySealServiceTests
         var existingSnapshot = new DailySnapshot(userId, date, DateTimeOffset.UtcNow);
 
         _snapshotRepoMock
-            .Setup(r => r.GetByUserAndDateAsync(userId, date, default))
+            .Setup(r => r.GetByUserAndDateAsync(userId, date, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingSnapshot);
 
         var result = await _service.SealDayAsync(userId, date);
@@ -61,8 +61,8 @@ public class DailySealServiceTests
         result.Value.WasAlreadySealed.Should().BeFalse();
         result.Value.SealedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(5));
 
-        _snapshotRepoMock.Verify(r => r.AddAsync(It.IsAny<DailySnapshot>(), default), Times.Never);
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        _snapshotRepoMock.Verify(r => r.AddAsync(It.IsAny<DailySnapshot>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class DailySealServiceTests
         var originalSealedAt = existingSnapshot.SealedAt!.Value;
 
         _snapshotRepoMock
-            .Setup(r => r.GetByUserAndDateAsync(userId, date, default))
+            .Setup(r => r.GetByUserAndDateAsync(userId, date, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingSnapshot);
 
         var result = await _service.SealDayAsync(userId, date);
@@ -113,7 +113,7 @@ public class DailySealServiceTests
         var pastDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
 
         _snapshotRepoMock
-            .Setup(r => r.GetByUserAndDateAsync(userId, pastDate, default))
+            .Setup(r => r.GetByUserAndDateAsync(userId, pastDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync((DailySnapshot?)null);
 
         var result = await _service.SealDayAsync(userId, pastDate);
@@ -132,7 +132,7 @@ public class DailySealServiceTests
         var date = DateOnly.FromDateTime(DateTime.UtcNow);
 
         _snapshotRepoMock
-            .Setup(r => r.GetByUserAndDateAsync(userId, date, default))
+            .Setup(r => r.GetByUserAndDateAsync(userId, date, It.IsAny<CancellationToken>()))
             .ReturnsAsync((DailySnapshot?)null);
 
         var result = await _service.GetSealStatusAsync(userId, date);
@@ -153,7 +153,7 @@ public class DailySealServiceTests
         snapshot.Seal(sealTime);
 
         _snapshotRepoMock
-            .Setup(r => r.GetByUserAndDateAsync(userId, date, default))
+            .Setup(r => r.GetByUserAndDateAsync(userId, date, It.IsAny<CancellationToken>()))
             .ReturnsAsync(snapshot);
 
         var result = await _service.GetSealStatusAsync(userId, date);
@@ -171,7 +171,7 @@ public class DailySealServiceTests
         var snapshot = new DailySnapshot(userId, date, DateTimeOffset.UtcNow);
 
         _snapshotRepoMock
-            .Setup(r => r.GetByUserAndDateAsync(userId, date, default))
+            .Setup(r => r.GetByUserAndDateAsync(userId, date, It.IsAny<CancellationToken>()))
             .ReturnsAsync(snapshot);
 
         var result = await _service.GetSealStatusAsync(userId, date);
