@@ -1,10 +1,14 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Taskdeck.Infrastructure.Persistence;
 
 #nullable disable
 
 namespace Taskdeck.Infrastructure.Persistence.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(TaskdeckDbContext))]
+    [Migration("20260425173300_ExtendProposalOutcomesForMetrics")]
     public partial class ExtendProposalOutcomesForMetrics : Migration
     {
         /// <inheritdoc />
@@ -22,6 +26,17 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                 type: "INTEGER",
                 nullable: false,
                 defaultValue: 0);
+
+            migrationBuilder.Sql("""
+                UPDATE ProposalOutcomes
+                SET Decision = CASE OutcomeType
+                    WHEN 0 THEN 0
+                    WHEN 1 THEN 1
+                    WHEN 2 THEN 2
+                    WHEN 3 THEN 3
+                    ELSE 0
+                END
+                """);
 
             migrationBuilder.AddColumn<double>(
                 name: "DecisionLatencySeconds",
