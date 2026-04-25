@@ -85,14 +85,14 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   }
 }
 
-async function mountView(proposals: Proposal[]) {
+async function mountView(proposals: Proposal[], path = '/workspace/review') {
   mocks.getProposals.mockResolvedValueOnce(proposals)
   mocks.getBoards.mockResolvedValueOnce([])
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/workspace/review', name: 'workspace-review', component: PaperReviewView }],
   })
-  router.push('/workspace/review')
+  router.push(path)
   await router.isReady()
 
   const wrapper = mount(PaperReviewView, {
@@ -164,6 +164,24 @@ describe('PaperReviewView', () => {
     const railText = wrapper.find('[data-testid="paper-review-queue-rail"]').text()
     expect(railText).toContain('Mine proposal')
     expect(railText).not.toContain('Theirs proposal')
+  })
+
+  it('uses the hash-targeted proposal as the active decision target', async () => {
+    mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-target' }))
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'proposal-first', summary: 'First proposal' }),
+        makeProposal({ id: 'proposal-target', summary: 'Target proposal' }),
+      ],
+      '/workspace/review#proposal-proposal-target',
+    )
+
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Target proposal')
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-target')
   })
 
   it('shows recently applied proposals even when completed items are hidden from the queue', async () => {
@@ -245,5 +263,19 @@ describe('PaperReviewView', () => {
     expect(mocks.infoToast).toHaveBeenCalledWith(
       'Request edit is not wired yet; no proposal changes were sent.',
     )
+  })
+
+  it('surfaces feedback when preview diff is invoked before visible diff UI exists', async () => {
+    const wrapper = await mountView([makeProposal()])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      'Preview diff is not wired yet; no diff was loaded.',
+    )
+
+    wrapper.unmount()
   })
 })

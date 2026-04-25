@@ -14,6 +14,7 @@ import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
 import { normalizeProposalStatus } from '../../utils/automation'
 import type { Proposal as ApiProposal } from '../../types/automation'
+import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
   ChangeBeforeCard,
@@ -58,20 +59,31 @@ const {
 } = useReviewProposals()
 const session = useSessionStore()
 const toast = useToastStore()
+const route = useRoute()
 
 const {
   proposalActionBusyId,
   handleApproveProposal,
   handleRejectProposal,
   handleExecuteProposal,
-  handleToggleDiff,
 } = useReviewActions(proposals, dismissableProposalIds, loadProposals)
 
 // --- Active proposal ---------------------------------------------------
 
 const explicitActiveId = ref<string | null>(null)
 
+const hashProposalId = computed(() => {
+  const hash = route.hash ?? ''
+  if (!hash.startsWith('#proposal-')) return null
+  const id = hash.slice('#proposal-'.length)
+  return id ? decodeURIComponent(id) : null
+})
+
 const activeProposal = computed<ApiProposal | null>(() => {
+  if (hashProposalId.value) {
+    const found = visibleProposals.value.find((p) => p.id === hashProposalId.value)
+    if (found) return found
+  }
   if (explicitActiveId.value) {
     const found = visibleProposals.value.find((p) => p.id === explicitActiveId.value)
     if (found) return found
@@ -378,7 +390,7 @@ function onToggleProvenance() {
 function onPreviewDiff() {
   const p = activeProposal.value
   if (!p) return
-  void handleToggleDiff(p.id)
+  toast.info('Preview diff is not wired yet; no diff was loaded.')
 }
 
 useReviewKeymap(
