@@ -267,9 +267,9 @@ public class ProposalConflictDetectorTests
         // Another pending proposal for the same card -- must be set up AFTER other mocks
         // because SetupEmptySecondaryChecks would override with It.IsAny<string>()
         var otherProposal = CreateProposal(_userId, _boardId);
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync(
+        _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
                 "card", cardId.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(otherProposal);
+            .ReturnsAsync(new List<AutomationProposal> { otherProposal });
 
         var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
 
@@ -288,9 +288,9 @@ public class ProposalConflictDetectorTests
             .ReturnsAsync(proposal);
 
         // Same proposal returned by target query (not a duplicate)
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync(
+        _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
                 "card", cardId.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(proposal);
+            .ReturnsAsync(new List<AutomationProposal> { proposal });
 
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
@@ -740,6 +740,80 @@ public class ProposalConflictDetectorTests
         result.IsSuccess.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task DetectConflictsAsync_CreateCardWithPreAssignedId_NoStaleOrMissingWarning()
+    {
+        var cardId = Guid.NewGuid();
+        var proposal = CreateProposal(_userId, _boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", "{}", Guid.NewGuid().ToString(), cardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription>());
+
+        // Card does NOT exist yet (create operation) -- should NOT produce missing-target warning
+        _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Card?)null);
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotContain(r => r.Key == "missing-target");
+        result.Value.Should().NotContain(r => r.Key == "stale-data");
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_ColumnTargetWithNoParameters_StillDetected()
+    {
+        var columnId = Guid.NewGuid();
+        var proposal = CreateProposal(_userId, _boardId, riskLevel: RiskLevel.High);
+        // Column-targeted operation with minimal parameters (domain requires non-empty)
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "archive", "column", "{}", Guid.NewGuid().ToString(), columnId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var column = new Column(_boardId, "Done", 3, wipLimit: 10);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(columnId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription>());
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        // Column should be detected and produce a capacity Ok signal
+        result.Value.Should().Contain(r => r.Key == "capacity");
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_NonStringColumnIdInJson_DoesNotThrow()
+    {
+        var cardId = Guid.NewGuid();
+        var card = CreateCard(cardId);
+        var proposal = CreateProposal(_userId, _boardId);
+        // columnId is a number, not a string -- should not throw InvalidOperationException
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "move", "card", "{\"columnId\": 12345}", Guid.NewGuid().ToString(), cardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<CardComment>());
+        SetupNoDuplicateProposal(cardId);
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription>());
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
     #endregion
 
     #region Helpers
@@ -818,17 +892,17 @@ public class ProposalConflictDetectorTests
         else
         {
             // Setup for any card ID
-            _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync(
+            _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
                     "card", It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((AutomationProposal?)null);
+                .ReturnsAsync(new List<AutomationProposal>());
         }
     }
 
     private void SetupNoDuplicateProposal(Guid cardId)
     {
-        _proposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync(
+        _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
                 "card", cardId.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((AutomationProposal?)null);
+            .ReturnsAsync(new List<AutomationProposal>());
     }
 
     private void SetupCardForMove(AutomationProposal proposal, Guid? specificCardId = null)
