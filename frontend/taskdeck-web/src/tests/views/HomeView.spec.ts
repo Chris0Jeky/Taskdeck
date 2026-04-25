@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import HomeView from '../../views/HomeView.vue'
+import { usePaperThemeStore } from '../../store/paperThemeStore'
 import type { HomeSummary, WorkspaceOnboarding } from '../../types/workspace'
 
 const routerMocks = vi.hoisted(() => ({
@@ -71,6 +72,7 @@ describe('HomeView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    usePaperThemeStore().mode = 'off'
     mockWorkspaceStore.onboarding = buildOnboarding()
     mockWorkspaceStore.homeLoading = false
     mockWorkspaceStore.homeError = null
@@ -125,6 +127,15 @@ describe('HomeView', () => {
     await waitForUi()
 
     expect(mockWorkspaceStore.fetchHomeSummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets Paper Home own summary refreshes while the paper variant is active', async () => {
+    usePaperThemeStore().mode = 'paper'
+
+    mount(HomeView)
+    await waitForUi()
+
+    expect(mockWorkspaceStore.fetchHomeSummary).not.toHaveBeenCalled()
   })
 
   it('renders setup loop, workload, and recent boards', async () => {
