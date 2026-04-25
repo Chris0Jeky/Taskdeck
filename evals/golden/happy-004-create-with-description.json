@@ -1,0 +1,28 @@
+{
+  "id": "happy-004",
+  "category": "happy-path",
+  "description": "Create a card with both title and description content.",
+  "input": {
+    "text": "Create a card 'Add password reset flow' with description 'Users need to be able to reset passwords via email link. Include rate limiting.'",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        { "id": "00000000-0000-0000-0000-000000000010", "name": "Backlog", "position": 0, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "proposal",
+    "proposals": [
+      {
+        "actionType": "create",
+        "targetType": "card",
+        "title": "Add password reset flow",
+        "description": "Users need to be able to reset passwords via email link. Include rate limiting."
+      }
+    ]
+  },
+  "tags": ["create", "card", "description", "detailed"]
+}

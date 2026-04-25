@@ -1,0 +1,28 @@
+{
+  "id": "happy-005",
+  "category": "happy-path",
+  "description": "Create a card without specifying a column; should default to the first column.",
+  "input": {
+    "text": "Add a card: Set up CI pipeline",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        { "id": "00000000-0000-0000-0000-000000000010", "name": "Backlog", "position": 0, "cards": [] },
+        { "id": "00000000-0000-0000-0000-000000000011", "name": "In Progress", "position": 1, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "proposal",
+    "proposals": [
+      {
+        "actionType": "create",
+        "targetType": "card",
+        "title": "Set up CI pipeline"
+      }
+    ]
+  },
+  "tags": ["create", "card", "default-column"]
+}

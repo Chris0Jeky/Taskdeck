@@ -173,6 +173,7 @@ onUnmounted(() => {
       :is-authenticated="session.isAuthenticated"
       @logout="handleLogout"
       @show-keyboard-help="showKeyboardHelp = true"
+      @open-search="openCommandPalette"
     />
 
     <div class="td-main-container">

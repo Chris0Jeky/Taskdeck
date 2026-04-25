@@ -1,0 +1,34 @@
+{
+  "id": "multi-001",
+  "category": "multi-instruction",
+  "description": "Two separate card creation instructions in a single capture.",
+  "input": {
+    "text": "Create a card 'Fix navbar styling' in Backlog and create a card 'Update favicon' in Backlog",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        { "id": "00000000-0000-0000-0000-000000000010", "name": "Backlog", "position": 0, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "proposals",
+    "proposals": [
+      {
+        "actionType": "create",
+        "targetType": "card",
+        "title": "Fix navbar styling",
+        "targetColumn": "Backlog"
+      },
+      {
+        "actionType": "create",
+        "targetType": "card",
+        "title": "Update favicon",
+        "targetColumn": "Backlog"
+      }
+    ]
+  },
+  "tags": ["multi", "create", "batch"]
+}

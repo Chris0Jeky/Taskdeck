@@ -1,0 +1,44 @@
+{
+  "id": "ambiguous-002",
+  "category": "ambiguous",
+  "description": "Vague instruction that could mean multiple things -- needs clarification.",
+  "input": {
+    "text": "Clean up the board",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        {
+          "id": "00000000-0000-0000-0000-000000000010",
+          "name": "Backlog",
+          "position": 0,
+          "cards": [
+            { "id": "a1b2c3d4", "title": "Old task 1" },
+            { "id": "b2c3d4e5", "title": "Old task 2" }
+          ]
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000012",
+          "name": "Done",
+          "position": 1,
+          "cards": [
+            { "id": "c3d4e5f6", "title": "Completed work" }
+          ]
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "clarification",
+    "clarification": {
+      "reason": "The instruction 'clean up the board' is ambiguous. It could mean archiving completed cards, removing old cards from Backlog, or reorganizing columns.",
+      "suggestedActions": [
+        "Archive all cards in the Done column",
+        "Archive specific cards by ID",
+        "Move old backlog cards to an Archive column"
+      ]
+    }
+  },
+  "tags": ["ambiguous", "vague", "multi-interpretation"]
+}

@@ -18,6 +18,8 @@ export type NavItem = {
   primaryModes: WorkspaceMode[]
   secondaryModes?: WorkspaceMode[]
   keywords?: string
+  /** When true, this item appears in the reduced primary sidebar IA. */
+  sidebarPrimary?: boolean
 }
 
 defineProps<{
@@ -27,6 +29,7 @@ defineProps<{
 const emit = defineEmits<{
   logout: []
   'show-keyboard-help': []
+  'open-search': []
 }>()
 
 const route = useRoute()
@@ -64,6 +67,13 @@ onUnmounted(() => {
   }
 })
 
+/**
+ * Reduced IA model (v4 roadmap):
+ * Primary sidebar shows only: Today, Inbox, Review, Boards, Search.
+ * All other surfaces remain routable through the command palette (Ctrl+K)
+ * and from the Settings page. Items with sidebarPrimary: true appear in
+ * the sidebar; the rest are command-palette-only.
+ */
 const navCatalog: NavItem[] = [
   {
     id: 'home',
@@ -81,6 +91,7 @@ const navCatalog: NavItem[] = [
     path: '/workspace/today',
     flag: null,
     primaryModes: ['guided', 'workbench', 'agent'],
+    sidebarPrimary: true,
     keywords: 'today agenda daily focus overdue blocked',
   },
   {
@@ -91,6 +102,7 @@ const navCatalog: NavItem[] = [
     flag: 'newAutomation',
     workbenchBypassesFlag: true,
     primaryModes: ['guided', 'workbench', 'agent'],
+    sidebarPrimary: true,
     keywords: 'review proposals automations approve reject execute',
   },
   {
@@ -100,6 +112,7 @@ const navCatalog: NavItem[] = [
     path: '/workspace/boards',
     flag: null,
     primaryModes: ['guided', 'workbench', 'agent'],
+    sidebarPrimary: true,
     keywords: 'boards projects workspace',
   },
   {
@@ -109,6 +122,7 @@ const navCatalog: NavItem[] = [
     path: '/workspace/inbox',
     flag: null,
     primaryModes: ['guided', 'workbench', 'agent'],
+    sidebarPrimary: true,
     keywords: 'inbox captures triage',
   },
   {
@@ -269,9 +283,16 @@ const availableNavItems = computed(() => navCatalog.filter((item) => {
   return featureFlags.isEnabled(item.flag)
 }))
 
-const primaryNavItems = computed(() => availableNavItems.value.filter((item) => item.primaryModes.includes(activeWorkspaceMode.value)))
+/**
+ * Reduced IA: only sidebarPrimary items appear in the sidebar nav.
+ * All other surfaces remain accessible via the command palette (Ctrl+K).
+ */
+const sidebarNavItems = computed(() =>
+  availableNavItems.value.filter((item) => item.sidebarPrimary === true))
 
-const secondaryNavItems = computed(() => availableNavItems.value.filter((item) => item.secondaryModes?.includes(activeWorkspaceMode.value)))
+// Note: primaryNavItems and secondaryNavItems were removed as part of sidebar IA
+// reduction. All surfaces remain accessible via the command palette (Ctrl+K) through
+// availableNavItems which is exposed to the parent.
 
 const navBadgeCounts = computed<Record<string, number>>(() => ({
   '/workspace/inbox': workspace.inboxBadgeCount,
@@ -348,7 +369,7 @@ defineExpose({
 
     <nav class="td-sidebar__nav">
       <router-link
-        v-for="item in primaryNavItems"
+        v-for="item in sidebarNavItems"
         :key="item.id"
         :to="item.path"
         class="td-nav-item"
@@ -365,21 +386,32 @@ defineExpose({
         >{{ navBadgeCounts[item.path] }}</span>
       </router-link>
 
-      <div v-if="secondaryNavItems.length > 0" class="td-sidebar__section">
-        <div v-if="!sidebarCollapsed" class="td-sidebar__section-label">Workbench Tools</div>
-        <router-link
-          v-for="item in secondaryNavItems"
-          :key="item.id"
-          :to="item.path"
-          class="td-nav-item td-nav-item--secondary"
-          :class="{ 'td-nav-item--active': isActiveRoute(item.path) }"
-          :aria-current="isActiveRoute(item.path) ? 'page' : undefined"
-          @click="closeMobileMenu"
-        >
-          <span class="td-nav-item__icon">{{ item.icon }}</span>
-          <span v-if="!sidebarCollapsed" class="td-nav-item__label">{{ item.label }}</span>
-        </router-link>
-      </div>
+      <!-- Search opens the command palette (Ctrl+K) -->
+      <button
+        class="td-nav-item"
+        aria-label="Search (Ctrl+K)"
+        @click="emit('open-search'); closeMobileMenu()"
+      >
+        <span class="td-nav-item__icon">
+          <span class="material-symbols-outlined text-base">search</span>
+        </span>
+        <span v-if="!sidebarCollapsed" class="td-nav-item__label">Search</span>
+        <span v-if="!sidebarCollapsed" class="td-nav-item__kbd">Ctrl+K</span>
+      </button>
+
+      <!-- Settings link at bottom of nav (above footer) -->
+      <div class="td-sidebar__spacer" />
+      <router-link
+        v-if="featureFlags.isEnabled('newAuth')"
+        to="/workspace/settings/profile"
+        class="td-nav-item td-nav-item--secondary"
+        :class="{ 'td-nav-item--active': isActiveRoute('/workspace/settings') }"
+        :aria-current="isActiveRoute('/workspace/settings') ? 'page' : undefined"
+        @click="closeMobileMenu"
+      >
+        <span class="td-nav-item__icon">S</span>
+        <span v-if="!sidebarCollapsed" class="td-nav-item__label">Settings</span>
+      </router-link>
     </nav>
 
     <div class="td-sidebar__footer">
@@ -574,6 +606,22 @@ defineExpose({
 
 .td-nav-item__label {
   white-space: nowrap;
+}
+
+.td-nav-item__kbd {
+  margin-left: auto;
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.6rem;
+  color: var(--td-text-tertiary);
+  background: var(--td-surface-container-highest);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-sm);
+  padding: 1px 4px;
+  letter-spacing: 0.05em;
+}
+
+.td-sidebar__spacer {
+  flex: 1;
 }
 
 .td-nav-badge {

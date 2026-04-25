@@ -109,43 +109,49 @@ describe('AppShell workspace navigation and command palette', () => {
     mountedWrapper = null
   })
 
-  it('shows guided navigation with workbench tools separated', async () => {
+  it('shows reduced IA sidebar with primary items', async () => {
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
 
-    expect(wrapper.text()).toContain('Home')
+    // Reduced IA: sidebar shows only primary items
     expect(wrapper.text()).toContain('Today')
     expect(wrapper.text()).toContain('Review')
     expect(wrapper.text()).toContain('Boards')
-    expect(wrapper.text()).toContain('Workbench Tools')
-    expect(wrapper.text()).toContain('Activity')
+    expect(wrapper.text()).toContain('Inbox')
+    expect(wrapper.text()).toContain('Search')
+    expect(wrapper.text()).toContain('Settings')
+    // Demoted items no longer appear in sidebar
+    expect(wrapper.text()).not.toContain('Workbench Tools')
+    expect(wrapper.text()).not.toContain('Activity')
   })
 
-  it('shows expanded flat navigation in workbench mode', async () => {
+  it('shows same reduced IA sidebar in workbench mode', async () => {
     mockWorkspace.mode = 'workbench'
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
 
-    expect(wrapper.text()).toContain('Home')
+    // Reduced IA applies across all modes
     expect(wrapper.text()).toContain('Today')
-    expect(wrapper.text()).toContain('Activity')
+    expect(wrapper.text()).toContain('Boards')
+    expect(wrapper.text()).toContain('Search')
+    // Demoted items are not in the sidebar regardless of mode
     expect(wrapper.text()).not.toContain('Workbench Tools')
   })
 
-  it('shows all shipped advanced surfaces in workbench mode even when feature flags are off', async () => {
+  it('shows sidebarPrimary items with workbenchBypassesFlag in workbench mode even when flags are off', async () => {
     mockWorkspace.mode = 'workbench'
     mockFeatureFlags.isEnabled = vi.fn(() => false)
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
     const navHrefs = getRenderedNavHrefs(wrapper)
 
+    // Review has sidebarPrimary=true and workbenchBypassesFlag=true,
+    // so it appears even when its flag is off
     expect(navHrefs).toContain('/workspace/review')
-    expect(navHrefs).toContain('/workspace/automations/chat')
-    expect(navHrefs).toContain('/workspace/activity')
-    expect(navHrefs).toContain('/workspace/ops/cli')
-    expect(navHrefs).toContain('/workspace/settings/profile')
-    expect(navHrefs).toContain('/workspace/settings/access')
-    expect(navHrefs).toContain('/workspace/archive')
+    // Demoted surfaces are no longer in the sidebar nav, regardless of mode/flags
+    expect(navHrefs).not.toContain('/workspace/automations/chat')
+    expect(navHrefs).not.toContain('/workspace/activity')
+    expect(navHrefs).not.toContain('/workspace/ops/cli')
   })
 
   it('hides feature-flagged surfaces in guided mode when flags are off', async () => {
@@ -157,10 +163,11 @@ describe('AppShell workspace navigation and command palette', () => {
     const navHrefs = getRenderedNavHrefs(wrapper)
     const text = wrapper.text()
 
-    expect(text).toContain('Home')
+    // Reduced IA: only sidebarPrimary items are shown
     expect(text).toContain('Boards')
     expect(text).toContain('Inbox')
     expect(navHrefs).toContain('/workspace/review')
+    // Demoted surfaces never appear in the sidebar nav
     expect(navHrefs).not.toContain('/workspace/activity')
     expect(navHrefs).not.toContain('/workspace/ops/cli')
     expect(navHrefs).not.toContain('/workspace/settings/access')
