@@ -273,4 +273,79 @@ public class TelemetryGuardTests : IDisposable
         var result = TelemetryGuard.Validate(key, 1);
         result.IsValid.Should().BeTrue();
     }
+
+    // --- Unsupported value type rejection ---
+
+    [Fact]
+    public void Validate_ShouldReject_DictionaryValue()
+    {
+        var dict = new Dictionary<string, string> { { "user", "alice@example.com" } };
+        var result = TelemetryGuard.Validate("capture.count", dict);
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("not supported");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_ObjectValue()
+    {
+        var obj = new { Name = "secret", Email = "user@evil.com" };
+        var result = TelemetryGuard.Validate("capture.count", obj);
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("not supported");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_ArrayValue()
+    {
+        var arr = new[] { "one", "two", "three" };
+        var result = TelemetryGuard.Validate("capture.count", arr);
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("not supported");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_ListValue()
+    {
+        var list = new List<int> { 1, 2, 3 };
+        var result = TelemetryGuard.Validate("capture.count", list);
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("not supported");
+    }
+
+    [Fact]
+    public void Validate_ShouldAccept_BoolValue()
+    {
+        var result = TelemetryGuard.Validate("capture.count", true);
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_ShouldAccept_LongValue()
+    {
+        var result = TelemetryGuard.Validate("capture.count", 123L);
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_ShouldAccept_DecimalValue()
+    {
+        var result = TelemetryGuard.Validate("capture.count", 99.9m);
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_DateTimeValue()
+    {
+        var result = TelemetryGuard.Validate("capture.count", DateTime.UtcNow);
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("not supported");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_GuidValue()
+    {
+        var result = TelemetryGuard.Validate("capture.count", Guid.NewGuid());
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("not supported");
+    }
 }
