@@ -5,7 +5,7 @@
 ## Verification
 
 - [ ] `dotnet test backend/Taskdeck.sln -c Release`
-- [ ] `cd frontend/taskdeck-web && npm run typecheck && npm run build && npx vitest --run`
+- [ ] `Push-Location frontend/taskdeck-web; npm run typecheck; if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }; npm run build; if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }; npx vitest --run; $code = $LASTEXITCODE; Pop-Location; if ($code -ne 0) { exit $code }`
 - [ ] Playwright smoke/E2E executed (if UI or cross-surface behavior changed)
 
 ## Documentation
