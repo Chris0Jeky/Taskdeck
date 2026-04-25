@@ -66,7 +66,12 @@ public static class TelemetryGuard
     public static void Configure(TelemetryGuardOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        _options = options;
+        if (options.AllowedKeys is null)
+        {
+            throw new ArgumentException("AllowedKeys must not be null.", nameof(options));
+        }
+
+        _options = CloneOptions(options);
     }
 
     /// <summary>
@@ -228,6 +233,15 @@ public static class TelemetryGuard
         {
             yield return htmlDecoded;
         }
+    }
+
+    private static TelemetryGuardOptions CloneOptions(TelemetryGuardOptions options)
+    {
+        return new TelemetryGuardOptions
+        {
+            MaxStringLength = options.MaxStringLength,
+            AllowedKeys = new HashSet<string>(options.AllowedKeys, options.AllowedKeys.Comparer),
+        };
     }
 }
 

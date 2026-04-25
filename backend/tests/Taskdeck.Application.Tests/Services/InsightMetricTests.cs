@@ -24,6 +24,20 @@ public class InsightMetricTests
     }
 
     [Fact]
+    public void InsightMetric_ShouldBeInvalid_WithUnknownMetricName()
+    {
+        var metric = new InsightMetric("user.entered custom metric", 42, 7, "v2.1");
+        metric.IsValid().Should().BeFalse();
+    }
+
+    [Fact]
+    public void InsightMetric_ShouldBeInvalid_WithPiiLikeMetricName()
+    {
+        var metric = new InsightMetric("alice@example.com", 42, 7, "v2.1");
+        metric.IsValid().Should().BeFalse();
+    }
+
+    [Fact]
     public void InsightMetric_ShouldBeInvalid_WithNegativeBucketedCount()
     {
         var metric = new InsightMetric("capture.count", -1, 7, "v2.1");
@@ -41,6 +55,20 @@ public class InsightMetricTests
     public void InsightMetric_ShouldBeInvalid_WithEmptyPromptVersion()
     {
         var metric = new InsightMetric("capture.count", 10, 7, "");
+        metric.IsValid().Should().BeFalse();
+    }
+
+    [Fact]
+    public void InsightMetric_ShouldBeInvalid_WithUnknownPromptVersion()
+    {
+        var metric = new InsightMetric("capture.count", 10, 7, "customer prompt v1");
+        metric.IsValid().Should().BeFalse();
+    }
+
+    [Fact]
+    public void InsightMetric_ShouldBeInvalid_WithPiiLikePromptVersion()
+    {
+        var metric = new InsightMetric("capture.count", 10, 7, "https://example.com/prompt");
         metric.IsValid().Should().BeFalse();
     }
 
@@ -79,6 +107,16 @@ public class InsightMetricTests
     {
         var cohort = new InsightCohort(100, 0, 0);
         cohort.AcceptanceRate.Should().Be(1.0);
+    }
+
+    [Theory]
+    [InlineData(-1, 0, 0)]
+    [InlineData(0, -1, 0)]
+    [InlineData(0, 0, -1)]
+    public void InsightCohort_ShouldRejectNegativeCounts(int acceptedCount, int editedCount, int rejectedCount)
+    {
+        var act = () => new InsightCohort(acceptedCount, editedCount, rejectedCount);
+        act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     // --- PII-freedom verification ---

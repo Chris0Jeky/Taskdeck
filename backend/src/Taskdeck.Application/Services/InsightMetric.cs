@@ -20,15 +20,36 @@ public sealed record InsightMetric(
     int TimePeriodDays,
     string PromptVersion)
 {
+    private static readonly HashSet<string> AllowedMetricNames = new(StringComparer.Ordinal)
+    {
+        "capture.count",
+        "proposal.acceptance_rate",
+        "proposal.edit_rate",
+        "proposal.rejection_rate",
+        "proposal.generated_count",
+        "llm.request_count",
+        "llm.latency_ms",
+        "automation.run_count",
+    };
+
+    private static readonly HashSet<string> AllowedPromptVersions = new(StringComparer.Ordinal)
+    {
+        "v1.0",
+        "v2.0",
+        "v2.1",
+        "eval-harness.v1",
+    };
+
     /// <summary>
-    /// Validates that the metric name is not empty and bucketed count is non-negative.
+    /// Validates that string identifiers come from closed system-defined sets
+    /// and that numeric fields cannot represent impossible states.
     /// </summary>
     public bool IsValid()
     {
-        return !string.IsNullOrWhiteSpace(MetricName)
+        return AllowedMetricNames.Contains(MetricName)
             && BucketedCount >= 0
             && TimePeriodDays > 0
-            && !string.IsNullOrWhiteSpace(PromptVersion);
+            && AllowedPromptVersions.Contains(PromptVersion);
     }
 }
 
@@ -40,14 +61,31 @@ public sealed record InsightMetric(
 /// Design invariant: this record must NEVER include fields that carry
 /// user-generated content. Only aggregate numeric counts.
 /// </summary>
-/// <param name="AcceptedCount">Number of proposals accepted without edits.</param>
-/// <param name="EditedCount">Number of proposals accepted with edits.</param>
-/// <param name="RejectedCount">Number of proposals rejected.</param>
-public sealed record InsightCohort(
-    int AcceptedCount,
-    int EditedCount,
-    int RejectedCount)
+/// <param name="acceptedCount">Number of proposals accepted without edits.</param>
+/// <param name="editedCount">Number of proposals accepted with edits.</param>
+/// <param name="rejectedCount">Number of proposals rejected.</param>
+public sealed record InsightCohort
 {
+    public InsightCohort(int acceptedCount, int editedCount, int rejectedCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(acceptedCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(editedCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(rejectedCount);
+
+        AcceptedCount = acceptedCount;
+        EditedCount = editedCount;
+        RejectedCount = rejectedCount;
+    }
+
+    /// <summary>Number of proposals accepted without edits.</summary>
+    public int AcceptedCount { get; }
+
+    /// <summary>Number of proposals accepted with edits.</summary>
+    public int EditedCount { get; }
+
+    /// <summary>Number of proposals rejected.</summary>
+    public int RejectedCount { get; }
+
     /// <summary>Total proposals reviewed in this cohort.</summary>
     public int TotalCount => AcceptedCount + EditedCount + RejectedCount;
 

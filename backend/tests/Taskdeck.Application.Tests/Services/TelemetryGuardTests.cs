@@ -199,10 +199,36 @@ public class TelemetryGuardTests : IDisposable
     }
 
     [Fact]
+    public void Configure_ShouldCloneOptions()
+    {
+        var customOptions = new TelemetryGuardOptions
+        {
+            MaxStringLength = 10,
+            AllowedKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.key" },
+        };
+
+        TelemetryGuard.Configure(customOptions);
+
+        customOptions.MaxStringLength = 1;
+        customOptions.AllowedKeys.Remove("custom.key");
+        customOptions.AllowedKeys.Add("mutated.key");
+
+        TelemetryGuard.Validate("custom.key", "short").IsValid.Should().BeTrue();
+        TelemetryGuard.Validate("mutated.key", 1).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
     public void Configure_ShouldThrow_ForNullOptions()
     {
         var act = () => TelemetryGuard.Configure(null!);
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Configure_ShouldThrow_ForNullAllowedKeys()
+    {
+        var act = () => TelemetryGuard.Configure(new TelemetryGuardOptions { AllowedKeys = null! });
+        act.Should().Throw<ArgumentException>().WithMessage("*AllowedKeys*");
     }
 
     // --- Adversarial / fuzz inputs ---
