@@ -58,6 +58,21 @@ vi.mock('../../store/workspaceStore', () => ({
   useWorkspaceStore: () => mockWorkspace,
 }))
 
+const mockPaperTheme = reactive({
+  mode: 'off' as 'off' | 'paper' | 'paper-night' | 'auto',
+  isOn: false,
+  activeClass: null as 'paper' | 'paper-night' | null,
+  toggleNight: vi.fn(),
+  setMode: vi.fn(),
+  apply: vi.fn(),
+  enable: vi.fn(),
+  disable: vi.fn(),
+})
+
+vi.mock('../../store/paperThemeStore', () => ({
+  usePaperThemeStore: () => mockPaperTheme,
+}))
+
 function mountShell() {
   return mount(AppShell, {
     global: {
