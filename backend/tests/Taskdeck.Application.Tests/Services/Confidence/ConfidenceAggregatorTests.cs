@@ -46,6 +46,21 @@ public class ConfidenceAggregatorTests
     }
 
     [Fact]
+    public void Aggregate_ShouldThrow_WhenScoreEntryIsNull()
+    {
+        var scores = new List<ConfidenceScore>
+        {
+            new(0.7, ConfidenceSource.Verbalized, "test"),
+            null!
+        };
+
+        var act = () => _aggregator.Aggregate(scores);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public void Aggregate_ShouldReturnEqualWeightedAverage_WhenNoWeightsProvided()
     {
         var scores = new List<ConfidenceScore>

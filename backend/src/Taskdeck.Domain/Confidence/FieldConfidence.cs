@@ -46,7 +46,7 @@ public sealed class FieldConfidence
         FieldName = fieldName;
         AggregatedScore = aggregatedScore;
         Bucket = ConfidenceScore.ScoreToBucket(aggregatedScore);
-        SourceBreakdown = sourceBreakdown ?? Array.Empty<ConfidenceScore>();
+        SourceBreakdown = sourceBreakdown?.ToArray() ?? Array.Empty<ConfidenceScore>();
     }
 
     public override string ToString() =>

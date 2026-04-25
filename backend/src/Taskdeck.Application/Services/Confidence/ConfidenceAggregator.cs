@@ -27,6 +27,10 @@ public sealed class ConfidenceAggregator : IConfidenceAggregator
 
         foreach (var score in scores)
         {
+            if (score is null)
+                throw new DomainException(ErrorCodes.ValidationError,
+                    "Confidence score entries cannot be null.");
+
             double w;
             if (useWeights)
             {

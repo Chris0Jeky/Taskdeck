@@ -70,6 +70,22 @@ public class FieldConfidenceTests
     }
 
     [Fact]
+    public void Constructor_ShouldCopySourceBreakdown()
+    {
+        var original = new List<ConfidenceScore>
+        {
+            new(0.8, ConfidenceSource.Verbalized, "high confidence")
+        };
+
+        var fc = new FieldConfidence("title", 0.8, original);
+
+        original.Add(new ConfidenceScore(0.2, ConfidenceSource.ProviderLogprob, "later mutation"));
+
+        fc.SourceBreakdown.Should().ContainSingle();
+        fc.SourceBreakdown[0].Source.Should().Be(ConfidenceSource.Verbalized);
+    }
+
+    [Fact]
     public void Bucket_ShouldMatchAggregatedScore()
     {
         var fc = new FieldConfidence("description", 0.15, Array.Empty<ConfidenceScore>());
