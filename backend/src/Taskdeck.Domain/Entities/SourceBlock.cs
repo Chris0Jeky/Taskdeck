@@ -78,6 +78,11 @@ public class SourceBlock : Entity
             throw new DomainException(ErrorCodes.ValidationError,
                 $"EndOffset ({endOffset}) exceeds block content length ({Content.Length})");
 
+        var expectedSnippet = Content.Substring(startOffset, endOffset - startOffset);
+        if (snippetText != expectedSnippet)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "SnippetText must match the block content at the specified offsets");
+
         var span = new SourceSpan(Id, startOffset, endOffset, snippetText);
         _spans.Add(span);
         Touch();
