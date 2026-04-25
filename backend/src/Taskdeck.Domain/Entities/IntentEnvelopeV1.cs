@@ -53,6 +53,12 @@ public class IntentEnvelopeV1 : Entity
     /// </summary>
     public string? CorrelationId { get; private set; }
 
+    /// <summary>
+    /// Reason for failure when status is <see cref="EnvelopeStatus.Failed"/>.
+    /// Null when the envelope has not failed.
+    /// </summary>
+    public string? FailureReason { get; private set; }
+
     private readonly List<SourceBlock> _sourceBlocks = new();
     public IReadOnlyList<SourceBlock> SourceBlocks => _sourceBlocks.AsReadOnly();
 
@@ -160,6 +166,7 @@ public class IntentEnvelopeV1 : Entity
                 "Cannot mark an already-processed envelope as failed");
 
         Status = EnvelopeStatus.Failed;
+        FailureReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         Touch();
     }
 }
