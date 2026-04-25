@@ -1,15 +1,22 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted } from 'vue'
+import { computed, defineAsyncComponent, onActivated, onMounted } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { TdSkeleton } from '../components/ui'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { usePaperThemeStore } from '../store/paperThemeStore'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
 import type { HomeRecommendedAction, WorkspaceOnboarding } from '../types/workspace'
 import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 
+// Paper-skin variant is loaded lazily so the Obsidian path stays the
+// default code-split entry — only sessions that flip Paper on pay the
+// extra chunk.
+const PaperHomeView = defineAsyncComponent(() => import('./paper/PaperHomeView.vue'))
+
 const workspace = useWorkspaceStore()
+const paperTheme = usePaperThemeStore()
 const homeLoadPerf = usePerformanceMark('home-load')
 
 const summary = computed(() => workspace.homeSummary)
@@ -127,7 +134,8 @@ onActivated(refreshHomeSummary)
 </script>
 
 <template>
-  <div class="td-home" role="region" aria-label="Home workspace">
+  <PaperHomeView v-if="paperTheme.isOn" />
+  <div v-else class="td-home" role="region" aria-label="Home workspace">
     <header class="td-home__hero td-panel">
       <div class="td-home__hero-copy">
         <span class="td-home__eyebrow" aria-hidden="true">Workspace</span>
