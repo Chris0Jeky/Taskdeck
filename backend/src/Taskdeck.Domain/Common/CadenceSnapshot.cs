@@ -3,18 +3,21 @@ namespace Taskdeck.Domain.Common;
 /// <summary>
 /// A single hour bucket in a daily cadence: how many events occurred in that hour.
 /// </summary>
-public sealed record CadenceBucket(int Hour, int EventCount)
+public sealed record CadenceBucket
 {
-    /// <summary>
-    /// Validates that Hour is in 0-23 and EventCount is non-negative.
-    /// </summary>
-    public CadenceBucket
-    {
-        if (Hour < 0 || Hour > 23)
-            throw new ArgumentOutOfRangeException(nameof(Hour), Hour, "Hour must be between 0 and 23.");
+    public int Hour { get; }
+    public int EventCount { get; }
 
-        if (EventCount < 0)
-            throw new ArgumentOutOfRangeException(nameof(EventCount), EventCount, "EventCount must be non-negative.");
+    public CadenceBucket(int hour, int eventCount)
+    {
+        if (hour < 0 || hour > 23)
+            throw new ArgumentOutOfRangeException(nameof(hour), hour, "Hour must be between 0 and 23.");
+
+        if (eventCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(eventCount), eventCount, "EventCount must be non-negative.");
+
+        Hour = hour;
+        EventCount = eventCount;
     }
 }
 
