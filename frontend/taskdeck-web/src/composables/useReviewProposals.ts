@@ -326,6 +326,7 @@ export function useReviewProposals() {
     activeBoardName,
     showCompleted,
     boardOptions,
+    nowMs,
     visibleProposals,
     summaryCards,
     dismissableProposalIds,

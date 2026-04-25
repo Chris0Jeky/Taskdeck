@@ -1,0 +1,122 @@
+import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
+import ReviewMain from '../../../../views/paper/review/ReviewMain.vue'
+import type {
+  ChangeAfterCard,
+  ChangeBeforeCard,
+  FieldDiff,
+} from '../../../../views/paper/review/ReviewChangeSection.vue'
+import type {
+  ConfidenceBreakdown,
+  ConflictRow,
+  HistoryRow,
+  ProvenanceRow,
+  SideEffects,
+} from '../../../../composables/usePaperReviewSelectors'
+
+const before: ChangeBeforeCard = {
+  serial: 'C-1',
+  title: 'Before title',
+  body: 'Before body.',
+  meta: '· labels · 0/0 subtasks',
+}
+
+const after: ChangeAfterCard[] = [
+  { serial: 'C-1', title: 'A', body: 'a', status: 'kept' },
+  { serial: 'C-1a', title: 'B', body: 'b', status: 'new' },
+]
+
+const fields: FieldDiff[] = [
+  { key: 'title', before: 'Old', after: 'New' },
+  { key: 'assignee', before: 'X', after: 'X', same: true },
+]
+
+const provenance: ProvenanceRow[] = [
+  { icon: '📄', key: 'card body', value: 'desc', weight: 'primary' },
+]
+
+const sideEffects: SideEffects = {
+  rows: [{ key: 'Cards', value: '1 created', tone: 'active' }],
+  reversibility: {
+    summary: '6 hours',
+    description: 'Undo restores',
+    windowMs: 6 * 60 * 60 * 1000,
+    appliedAt: Date.now(),
+  },
+}
+
+const conflicts: ConflictRow[] = []
+const history: HistoryRow[] = []
+
+function mountMain(confidence: Partial<ConfidenceBreakdown> = {}) {
+  return mount(ReviewMain, {
+    props: {
+      serial: '#2026-04-25-014',
+      meta: '11:42 PT · awaiting decision',
+      titleParts: [
+        { text: 'Split ' },
+        { text: '“dark mode”', emphasis: true },
+        { text: ' into 3 cards' },
+      ],
+      lede: 'Lede text.',
+      decisionSummary: '3 ops · undo 6h · atomic',
+      busy: false,
+      confidence: {
+        overall: confidence.overall ?? 0.84,
+        components: confidence.components ?? [],
+        threshold: confidence.threshold ?? 0.7,
+        note: confidence.note,
+      },
+      before,
+      after,
+      fields,
+      changeSubTitle: '3 changes',
+      provenance,
+      sideEffects,
+      conflicts,
+      history,
+    },
+  })
+}
+
+describe('ReviewMain', () => {
+  it('passes confidence value to the dial (rounded to 2 decimals)', () => {
+    const wrapper = mountMain({ overall: 0.84 })
+    const dial = wrapper.find('[data-testid="paper-review-confidence-dial"]')
+    expect(dial.exists()).toBe(true)
+    // The dial text node renders 0.84 as ".84" (leading zero stripped).
+    expect(dial.text()).toContain('.84')
+  })
+
+  it('renders the title with emphasized fragments wrapped in <em>', () => {
+    const wrapper = mountMain()
+    const h1 = wrapper.find('h1.paper-review-main__title')
+    expect(h1.exists()).toBe(true)
+    const em = h1.find('em')
+    expect(em.exists()).toBe(true)
+    expect(em.text()).toBe('“dark mode”')
+  })
+
+  it('emits decision events when each rail button is clicked', async () => {
+    const wrapper = mountMain()
+    await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+    await wrapper.get('[data-testid="decision-reject"]').trigger('click')
+    await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+    await wrapper.get('[data-testid="decision-defer"]').trigger('click')
+
+    expect(wrapper.emitted('apply')).toHaveLength(1)
+    expect(wrapper.emitted('reject')).toHaveLength(1)
+    expect(wrapper.emitted('request-edit')).toHaveLength(1)
+    expect(wrapper.emitted('defer')).toHaveLength(1)
+  })
+
+  it('shows "Above your apply threshold" when confidence >= threshold', () => {
+    const wrapper = mountMain({ overall: 0.9, threshold: 0.7 })
+    expect(wrapper.text()).toContain('Above your apply threshold')
+  })
+
+  it('shows "Below your apply threshold" when confidence < threshold', () => {
+    const wrapper = mountMain({ overall: 0.4, threshold: 0.7 })
+    expect(wrapper.text()).toContain('Below your apply threshold')
+  })
+})
