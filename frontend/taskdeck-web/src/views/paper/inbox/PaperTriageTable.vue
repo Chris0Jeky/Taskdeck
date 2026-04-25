@@ -2,8 +2,8 @@
 import { computed } from 'vue'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
-import { canMutateSelection } from '../../../components/inbox/inboxUtils'
-import type { CaptureItemSummary } from '../../../types/capture'
+import { canMutateSelection, sourceLabel, statusLabel } from '../../../components/inbox/inboxUtils'
+import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capture'
 
 /**
  * PaperTriageTable — captured items list rendered in the paper-card ledger
@@ -48,11 +48,11 @@ function onReject(item: CaptureItemSummary) {
   emit('reject', item.id)
 }
 
-function statusTone(status: string | number): 'ember' | 'applied' | 'overdue' | 'mute' {
-  const value = typeof status === 'string' ? status.toLowerCase() : String(status).toLowerCase()
+function statusTone(status: CaptureStatusValue): 'ember' | 'applied' | 'overdue' | 'mute' {
+  const value = statusLabel(status).toLowerCase()
   if (value.includes('failed') || value.includes('error')) return 'overdue'
   if (value.includes('triag')) return 'ember'
-  if (value.includes('proposed')) return 'ember'
+  if (value.includes('proposed') || value.includes('ready')) return 'ember'
   if (value.includes('applied') || value.includes('accept')) return 'applied'
   return 'mute'
 }
@@ -110,8 +110,8 @@ function formatTime(iso: string): string {
         </button>
 
         <div class="paper-triage__tags">
-          <PaperTagstamp :tone="statusTone(item.status)">{{ item.status }}</PaperTagstamp>
-          <PaperTagstamp tone="mute">{{ item.source }}</PaperTagstamp>
+          <PaperTagstamp :tone="statusTone(item.status)">{{ statusLabel(item.status) }}</PaperTagstamp>
+          <PaperTagstamp tone="mute">{{ sourceLabel(item.source) }}</PaperTagstamp>
         </div>
 
         <div class="paper-triage__actions">

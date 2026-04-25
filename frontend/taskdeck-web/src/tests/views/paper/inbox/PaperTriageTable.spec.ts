@@ -65,6 +65,21 @@ describe('PaperTriageTable', () => {
     expect(wrapper.find('.tagstamp').attributes('data-tone')).toBe('overdue')
   })
 
+  it('renders readable labels and tones for numeric capture enum values', () => {
+    const items = makeItems()
+    items[0] = { ...items[0], status: 3, source: 2 }
+    items[1] = { ...items[1], status: 6, source: 5 }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const tags = wrapper.findAll('.tagstamp')
+
+    expect(tags[0].text()).toBe('Ready for review')
+    expect(tags[0].attributes('data-tone')).toBe('ember')
+    expect(tags[1].text()).toBe('Transcript')
+    expect(tags[2].text()).toBe('Failed')
+    expect(tags[2].attributes('data-tone')).toBe('overdue')
+    expect(tags[3].text()).toBe('Meeting')
+  })
+
   it('emits accept with the item id when the Accept button is clicked', async () => {
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     const acceptBtn = wrapper.findAll('button[data-action="accept"]')[0]

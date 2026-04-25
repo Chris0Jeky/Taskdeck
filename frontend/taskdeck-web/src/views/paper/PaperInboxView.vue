@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
 import PaperCaptureNib from './inbox/PaperCaptureNib.vue'
 import PaperCaptureComposer from './inbox/PaperCaptureComposer.vue'
@@ -43,11 +43,18 @@ const {
 })
 
 function toggleVariant() {
-  variant.value = variant.value === 'nib' ? 'composer' : 'nib'
+  setVariant(variant.value === 'nib' ? 'composer' : 'nib')
 }
 
 function setVariant(next: Variant) {
   variant.value = next
+  void nextTick(() => {
+    if (next === 'nib') {
+      nibRef.value?.focus()
+      return
+    }
+    composerRef.value?.focus()
+  })
 }
 
 function handleGlobalKeydown(event: KeyboardEvent) {

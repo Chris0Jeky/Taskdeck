@@ -127,7 +127,7 @@ onMounted(async () => {
   bodyRef.value?.focus()
 })
 
-defineExpose({ resetDraft })
+defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
 </script>
 
 <template>

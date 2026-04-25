@@ -119,6 +119,21 @@ describe('PaperInboxView', () => {
     expect(nib.element.value).toBe('Nib draft')
   })
 
+  it('moves focus to the newly active capture variant when toggled', async () => {
+    const wrapper = mount(PaperInboxView, { attachTo: document.body })
+    const setVariant = (wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant
+
+    setVariant('nib')
+    await wrapper.vm.$nextTick()
+    expect(document.activeElement).toBe(wrapper.find('textarea[aria-label="Quick capture input"]').element)
+
+    setVariant('composer')
+    await wrapper.vm.$nextTick()
+    expect(document.activeElement).toBe(wrapper.find('textarea[aria-label="Capture body"]').element)
+
+    wrapper.unmount()
+  })
+
   it('resets the composer draft after capture creation succeeds', async () => {
     const wrapper = mount(PaperInboxView)
     const textarea = wrapper.find('textarea[aria-label="Capture body"]')
