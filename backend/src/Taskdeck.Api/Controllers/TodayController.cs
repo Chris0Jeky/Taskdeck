@@ -31,6 +31,7 @@ public class TodayController : AuthenticatedControllerBase
     /// Returns 24 hourly buckets with event counts plus first/peak/last action timestamps.
     /// </summary>
     /// <param name="date">Date to aggregate (ISO 8601). Defaults to today (UTC).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Cadence snapshot for the day.</returns>
     /// <response code="200">Cadence snapshot returned successfully.</response>
     /// <response code="400">Invalid date parameter.</response>
