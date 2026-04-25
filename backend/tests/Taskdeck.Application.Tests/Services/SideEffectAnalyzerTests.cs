@@ -148,16 +148,18 @@ public class SideEffectAnalyzerTests
     }
 
     [Fact]
-    public async Task AnalyzeAsync_CardsMutation_ShouldBePassive_WhenCreateColumnOnly()
+    public async Task AnalyzeAsync_CardsMutation_ShouldBeActive_WhenCreateColumnOnly()
     {
-        var proposal = CreateProposal(RiskLevel.Low, null, ("create_column", "column"));
+        // Real column creation uses actionType "create" with targetType "column"
+        var proposal = CreateProposal(RiskLevel.Low, null, ("create", "column"));
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
         var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
-        cardsRow.Tone.Should().Be("passive");
+        cardsRow.Tone.Should().Be("active");
+        cardsRow.Value.Should().Contain("columns");
     }
 
     [Fact]
@@ -299,6 +301,56 @@ public class SideEffectAnalyzerTests
         calendarRow.Tone.Should().Be("passive");
     }
 
+    [Fact]
+    public async Task AnalyzeAsync_CardsMutation_ShouldNotTreatColumnCreateAsCardMutation()
+    {
+        // A "create" operation targeting "column" should NOT be classified as a card mutation
+        var proposal = CreateProposal(RiskLevel.Low, null, ("create", "column"));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+
+        var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
+        // Should be active (column mutation) but description should mention columns, not card mutations
+        cardsRow.Value.Should().NotContain("Creates, moves, or archives cards on the board");
+        cardsRow.Value.Should().Contain("column");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_Cards_ShouldShowBothCardAndColumnMutations()
+    {
+        var proposal = CreateProposal(RiskLevel.Low, null, ("create", "card"), ("create", "column"));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+
+        var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
+        cardsRow.Tone.Should().Be("active");
+        cardsRow.Value.Should().Contain("cards");
+        cardsRow.Value.Should().Contain("columns");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_Webhooks_ShouldBePassive_WhenActiveWebhooksButNoOperations()
+    {
+        var boardId = Guid.NewGuid();
+        var proposal = CreateProposal(RiskLevel.Low, boardId);
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        var subscription = new OutboundWebhookSubscription(boardId, Guid.NewGuid(), "https://example.com/webhook", "secret-key-123");
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(boardId, default))
+            .ReturnsAsync(new List<OutboundWebhookSubscription> { subscription });
+
+        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+
+        var webhookRow = result.Value.Rows.First(r => r.Key == "Webhooks");
+        webhookRow.Tone.Should().Be("passive");
+        webhookRow.Value.Should().Contain("no operations");
+    }
+
     #endregion
 
     #region Reversibility Tests
@@ -420,6 +472,41 @@ public class SideEffectAnalyzerTests
 
         var webhookRow = rows.First(r => r.Key == "Webhooks");
         webhookRow.Tone.Should().Be(SideEffectTone.Active);
+    }
+
+    [Fact]
+    public void BuildSideEffectRows_CreateColumnOperation_ShouldSetCardsActive()
+    {
+        var op = new AutomationProposalOperation(
+            Guid.NewGuid(), 0, "create", "column", "{}", Guid.NewGuid().ToString());
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(new List<AutomationProposalOperation> { op }, false);
+
+        var cardsRow = rows.First(r => r.Key == "Cards");
+        cardsRow.Tone.Should().Be(SideEffectTone.Active);
+        cardsRow.Value.Should().Contain("column");
+    }
+
+    [Fact]
+    public void BuildSideEffectRows_CreateTargetingNonCard_ShouldNotSetCardMutation()
+    {
+        // "create" targeting "column" should not say "Creates, moves, or archives cards"
+        var op = new AutomationProposalOperation(
+            Guid.NewGuid(), 0, "create", "column", "{}", Guid.NewGuid().ToString());
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(new List<AutomationProposalOperation> { op }, false);
+
+        var cardsRow = rows.First(r => r.Key == "Cards");
+        cardsRow.Value.Should().NotBe("Creates, moves, or archives cards on the board");
+    }
+
+    [Fact]
+    public void BuildSideEffectRows_WithWebhooksButNoOps_ShouldSetWebhooksPassive()
+    {
+        var operations = new List<AutomationProposalOperation>();
+        var rows = SideEffectAnalyzer.BuildSideEffectRows(operations, hasActiveWebhooks: true);
+
+        var webhookRow = rows.First(r => r.Key == "Webhooks");
+        webhookRow.Tone.Should().Be(SideEffectTone.Passive);
+        webhookRow.Value.Should().Contain("no operations");
     }
 
     #endregion

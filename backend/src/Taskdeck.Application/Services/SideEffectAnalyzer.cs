@@ -60,17 +60,26 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         IReadOnlyList<AutomationProposalOperation> operations,
         bool hasActiveWebhooks)
     {
-        bool hasCardMutation = operations.Any(op => CardMutatingActions.Contains(op.ActionType));
+        bool hasCardMutation = operations.Any(op =>
+            CardMutatingActions.Contains(op.ActionType) &&
+            string.Equals(op.TargetType, "card", StringComparison.OrdinalIgnoreCase));
+        bool hasColumnMutation = operations.Any(op =>
+            string.Equals(op.TargetType, "column", StringComparison.OrdinalIgnoreCase));
+        bool hasBoardMutation = hasCardMutation || hasColumnMutation;
         bool hasAnyOperation = operations.Count > 0;
 
         return new List<SideEffectRow>
         {
             new(
                 "Cards",
-                hasCardMutation
-                    ? "Creates, moves, or archives cards on the board"
-                    : "No card mutations",
-                hasCardMutation ? SideEffectTone.Active : SideEffectTone.Passive),
+                hasBoardMutation
+                    ? hasCardMutation && hasColumnMutation
+                        ? "Creates, moves, or archives cards and adds columns on the board"
+                        : hasCardMutation
+                            ? "Creates, moves, or archives cards on the board"
+                            : "Adds columns to the board (no direct card mutations)"
+                    : "No board mutations",
+                hasBoardMutation ? SideEffectTone.Active : SideEffectTone.Passive),
 
             new(
                 "Subtasks",
@@ -98,10 +107,12 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
 
             new(
                 "Webhooks",
-                hasActiveWebhooks
+                hasActiveWebhooks && hasAnyOperation
                     ? "Outbound webhooks configured for this board will fire"
-                    : "No outbound webhooks configured",
-                hasActiveWebhooks ? SideEffectTone.Active : SideEffectTone.Passive),
+                    : hasActiveWebhooks
+                        ? "Outbound webhooks configured but no operations to trigger them"
+                        : "No outbound webhooks configured",
+                hasActiveWebhooks && hasAnyOperation ? SideEffectTone.Active : SideEffectTone.Passive),
 
             new(
                 "Calendar",
