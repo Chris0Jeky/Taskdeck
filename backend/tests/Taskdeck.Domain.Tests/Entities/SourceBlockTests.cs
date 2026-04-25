@@ -162,4 +162,26 @@ public class SourceBlockTests
         act.Should().Throw<DomainException>()
             .Which.ErrorCode.Should().Be("ValidationError");
     }
+
+    [Fact]
+    public void AddSpan_ShouldRejectNegativeStartOffset()
+    {
+        var block = new SourceBlock(_envelopeId, 0, "Hello, world!", "capture");
+
+        var act = () => block.AddSpan(-1, 5, "Hello");
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public void AddSpan_ShouldRejectEndOffsetNotGreaterThanStartOffset()
+    {
+        var block = new SourceBlock(_envelopeId, 0, "Hello, world!", "capture");
+
+        var act = () => block.AddSpan(5, 5, "");
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
 }

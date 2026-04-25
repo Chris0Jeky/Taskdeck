@@ -71,6 +71,12 @@ public class SourceBlock : Entity
 
     public SourceSpan AddSpan(int startOffset, int endOffset, string snippetText)
     {
+        if (startOffset < 0)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "StartOffset must be non-negative");
+        if (endOffset <= startOffset)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "EndOffset must be greater than StartOffset");
         if (startOffset > Content.Length)
             throw new DomainException(ErrorCodes.ValidationError,
                 $"StartOffset ({startOffset}) exceeds block content length ({Content.Length})");
