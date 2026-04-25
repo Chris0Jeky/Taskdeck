@@ -32,19 +32,19 @@ describe('TdTag', () => {
     expect(wrapper.emitted('remove')).toHaveLength(1)
   })
 
-  it('applies custom color CSS variable when color prop is set', () => {
+  it('applies td-tag--custom class when color prop is set', () => {
+    // SEC-29: color is now applied via v-bind() in scoped CSS rather
+    // than an inline :style binding setting --td-tag-color directly.
     const wrapper = mount(TdTag, {
       props: { color: '#ff6600' },
       slots: { default: 'Orange' },
     })
     expect(wrapper.classes()).toContain('td-tag--custom')
-    expect(wrapper.attributes('style')).toContain('--td-tag-color: #ff6600')
   })
 
-  it('does not apply custom class or style when no color is set', () => {
+  it('does not apply custom class when no color is set', () => {
     const wrapper = mount(TdTag, { slots: { default: 'Plain' } })
     expect(wrapper.classes()).not.toContain('td-tag--custom')
-    expect(wrapper.attributes('style')).toBeUndefined()
   })
 
   it('renders as a span element', () => {

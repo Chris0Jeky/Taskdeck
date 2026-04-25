@@ -199,4 +199,29 @@
     color: var(--td-color-ember);
     border-color: rgba(255, 77, 77, 0.2);
   }
+
+  /* ── Virtual-scroll layout helpers (SEC-29: replaces inline :style bindings) ── */
+  .td-virtual-scroll-sizer {
+    width: 100%;
+    position: relative;
+    height: var(--td-virtual-size, 0px);
+  }
+
+  .td-virtual-scroll-offset {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    transform: translateY(var(--td-virtual-offset, 0px));
+  }
+
+  /* ── Dynamic-color label/swatch helpers (SEC-29) ── */
+  .td-dynamic-bg {
+    background-color: var(--td-dynamic-color);
+  }
+
+  .td-dynamic-label {
+    background: color-mix(in srgb, var(--td-dynamic-color) 20%, transparent);
+    color: var(--td-dynamic-color);
+  }
 }
