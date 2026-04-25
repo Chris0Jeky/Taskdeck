@@ -14,7 +14,7 @@ public class FallbackSemanticSearchServiceTests
 {
     private readonly Mock<IVectorIndex> _vectorIndexMock;
     private readonly Mock<IEmbeddingGenerator> _embeddingGeneratorMock;
-    private readonly Mock<IKnowledgeSearchService> _ftsSearchMock;
+    private readonly Mock<IFtsKnowledgeSearchService> _ftsSearchMock;
     private readonly Mock<IKnowledgeDocumentRepository> _docRepoMock;
     private readonly InMemoryLogger<FallbackSemanticSearchService> _logger;
     private readonly FallbackSemanticSearchService _sut;
@@ -26,7 +26,7 @@ public class FallbackSemanticSearchServiceTests
     {
         _vectorIndexMock = new Mock<IVectorIndex>();
         _embeddingGeneratorMock = new Mock<IEmbeddingGenerator>();
-        _ftsSearchMock = new Mock<IKnowledgeSearchService>();
+        _ftsSearchMock = new Mock<IFtsKnowledgeSearchService>();
         _docRepoMock = new Mock<IKnowledgeDocumentRepository>();
         _logger = new InMemoryLogger<FallbackSemanticSearchService>();
 
@@ -442,6 +442,29 @@ public class FallbackSemanticSearchServiceTests
         // Verify warning was logged
         _logger.Entries.Should().Contain(e =>
             e.Level == Microsoft.Extensions.Logging.LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task SearchAsync_OperationCanceled_PropagatesWithoutFtsFallback()
+    {
+        _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
+
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => _sut.SearchAsync("cancelled query", _userId));
+
+        _ftsSearchMock.Verify(
+            f => f.SearchAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never,
+            "cancellation should propagate instead of doing fallback work");
     }
 
     #endregion

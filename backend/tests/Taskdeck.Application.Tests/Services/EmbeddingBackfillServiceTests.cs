@@ -23,6 +23,8 @@ public class EmbeddingBackfillServiceTests
 
     public EmbeddingBackfillServiceTests()
     {
+        EmbeddingBackfillService.ResetProgressForTests();
+
         _vectorIndexMock = new Mock<IVectorIndex>();
         _embeddingGeneratorMock = new Mock<IEmbeddingGenerator>();
         _chunkRepoMock = new Mock<IKnowledgeChunkRepository>();
@@ -82,21 +84,23 @@ public class EmbeddingBackfillServiceTests
 
         _chunkRepoMock
             .Setup(r => r.GetUnindexedBatchAsync(
-                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<int>(),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyCollection<Guid> indexedIds, int batchSize, CancellationToken _) =>
+            .ReturnsAsync((int processedOffset, int batchSize, CancellationToken _) =>
                 chunks
-                    .Where(c => !indexedIds.Contains(c.Id))
+                    .OrderBy(c => c.CreatedAt)
+                    .ThenBy(c => c.Id)
+                    .Skip(Math.Max(0, processedOffset))
                     .Take(batchSize)
                     .ToList());
 
         _chunkRepoMock
             .Setup(r => r.CountUnindexedAsync(
-                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyCollection<Guid> indexedIds, CancellationToken _) =>
-                chunks.Count(c => !indexedIds.Contains(c.Id)));
+            .ReturnsAsync((int processedOffset, CancellationToken _) =>
+                Math.Max(0, chunks.Count - Math.Max(0, processedOffset)));
     }
 
     [Fact]
@@ -203,7 +207,7 @@ public class EmbeddingBackfillServiceTests
 
         _chunkRepoMock.Verify(
             r => r.GetUnindexedBatchAsync(
-                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.Is<int>(offset => offset == 0),
                 2,
                 It.IsAny<CancellationToken>()),
             Times.Once);

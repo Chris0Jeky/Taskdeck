@@ -12,17 +12,16 @@ public class KnowledgeChunkRepository : Repository<KnowledgeChunk>, IKnowledgeCh
     }
 
     public async Task<IEnumerable<KnowledgeChunk>> GetUnindexedBatchAsync(
-        IReadOnlyCollection<Guid> indexedChunkIds,
+        int processedOffset,
         int batchSize,
         CancellationToken cancellationToken = default)
     {
-        var query = _dbSet.AsQueryable();
+        var skip = Math.Max(0, processedOffset);
 
-        if (indexedChunkIds.Count > 0)
-            query = query.Where(c => !indexedChunkIds.Contains(c.Id));
-
-        return await query
-            .OrderBy(c => c.Id)
+        return await _dbSet
+            .OrderBy(c => c.CreatedAt)
+            .ThenBy(c => c.Id)
+            .Skip(skip)
             .Take(batchSize)
             .ToListAsync(cancellationToken);
     }
@@ -43,15 +42,11 @@ public class KnowledgeChunkRepository : Repository<KnowledgeChunk>, IKnowledgeCh
     }
 
     public async Task<int> CountUnindexedAsync(
-        IReadOnlyCollection<Guid> indexedChunkIds,
+        int processedOffset,
         CancellationToken cancellationToken = default)
     {
-        var query = _dbSet.AsQueryable();
-
-        if (indexedChunkIds.Count > 0)
-            query = query.Where(c => !indexedChunkIds.Contains(c.Id));
-
-        return await query.CountAsync(cancellationToken);
+        var total = await _dbSet.CountAsync(cancellationToken);
+        return Math.Max(0, total - Math.Max(0, processedOffset));
     }
 
     public async Task<IEnumerable<KnowledgeChunk>> GetByDocumentIdAsync(

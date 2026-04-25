@@ -13,18 +13,18 @@ namespace Taskdeck.Infrastructure.Services;
 /// This preserves the existing FTS behavior for deployments that do not
 /// have vector dependencies installed or configured.
 /// </summary>
-public sealed class FallbackSemanticSearchService : ISemanticSearchService
+public sealed class FallbackSemanticSearchService : ISemanticSearchService, IKnowledgeSearchService
 {
     private readonly IVectorIndex _vectorIndex;
     private readonly IEmbeddingGenerator _embeddingGenerator;
-    private readonly IKnowledgeSearchService _ftsSearchService;
+    private readonly IFtsKnowledgeSearchService _ftsSearchService;
     private readonly IKnowledgeDocumentRepository _documentRepository;
     private readonly ILogger<FallbackSemanticSearchService> _logger;
 
     public FallbackSemanticSearchService(
         IVectorIndex vectorIndex,
         IEmbeddingGenerator embeddingGenerator,
-        IKnowledgeSearchService ftsSearchService,
+        IFtsKnowledgeSearchService ftsSearchService,
         IKnowledgeDocumentRepository documentRepository,
         ILogger<FallbackSemanticSearchService> logger)
     {
@@ -57,6 +57,10 @@ public sealed class FallbackSemanticSearchService : ISemanticSearchService
         try
         {
             return await VectorSearchAsync(query, userId, boardId, limit, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -177,5 +181,25 @@ public sealed class FallbackSemanticSearchService : ISemanticSearchService
         }
 
         return results;
+    }
+
+    public Task UpdateFtsIndexAsync(
+        Guid documentId,
+        string title,
+        string content,
+        CancellationToken cancellationToken = default)
+    {
+        return _ftsSearchService.UpdateFtsIndexAsync(
+            documentId,
+            title,
+            content,
+            cancellationToken);
+    }
+
+    public Task DeleteFtsIndexAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        return _ftsSearchService.DeleteFtsIndexAsync(documentId, cancellationToken);
     }
 }
