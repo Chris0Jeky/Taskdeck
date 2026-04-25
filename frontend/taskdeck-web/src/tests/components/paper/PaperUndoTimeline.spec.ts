@@ -48,6 +48,7 @@ describe('PaperUndoTimeline', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     rafCalls = []
   })
@@ -87,6 +88,52 @@ describe('PaperUndoTimeline', () => {
     const spent = wrapper.findAll('.paper-undo__dash[data-spent="true"]').length
     expect(spent).toBeGreaterThan(0)
     expect(spent).toBeLessThan(24)
+  })
+
+  it('keeps the final dash visible until the undo window has fully closed', async () => {
+    const nowSpy = vi.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(new Date('2026-04-25T12:00:00Z').getTime())
+    stubMatchMedia(false)
+    const wrapper = mount(PaperUndoTimeline, {
+      props: { appliedAt: Date.now() - 979, windowMs: 1_000 },
+    })
+
+    rafCalls.shift()!(0)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('.paper-undo__dash[data-spent="true"]')).toHaveLength(23)
+
+    nowSpy.mockReturnValue(new Date('2026-04-25T12:00:01Z').getTime())
+    await wrapper.setProps({ appliedAt: Date.now() - 1_000 })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('.paper-undo__dash[data-spent="true"]')).toHaveLength(24)
+    nowSpy.mockRestore()
+  })
+
+  it('throttles rAF scheduling to one-second ticks while active', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('requestAnimationFrame', (cb: (t: number) => void) => {
+      rafCalls.push(cb)
+      return nextRafId++
+    })
+    vi.stubGlobal('cancelAnimationFrame', (_id: number) => {
+      cancelled++
+    })
+    stubMatchMedia(false)
+    const wrapper = mount(PaperUndoTimeline, {
+      props: { appliedAt: new Date(Date.now()), windowMs: 6_000 },
+    })
+
+    expect(rafCalls).toHaveLength(1)
+    rafCalls.shift()!(0)
+    await wrapper.vm.$nextTick()
+    expect(rafCalls).toHaveLength(0)
+
+    vi.advanceTimersByTime(999)
+    expect(rafCalls).toHaveLength(0)
+    vi.advanceTimersByTime(1)
+    expect(rafCalls).toHaveLength(1)
   })
 
   it('resumes the rAF loop when appliedAt advances after the window expired', async () => {

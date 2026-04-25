@@ -92,6 +92,15 @@ describe('PaperStamp', () => {
     expect(wrapper.attributes('data-fading')).toBeUndefined()
   })
 
+  it('clears the crossfade timer on unmount', async () => {
+    const wrapper = mount(PaperStamp, { props: { kind: 'applied' } })
+    await wrapper.setProps({ kind: 'proposed' })
+
+    expect(vi.getTimerCount()).toBe(1)
+    wrapper.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('skips the crossfade under prefers-reduced-motion', async () => {
     stubMatchMedia(true)
     const wrapper = mount(PaperStamp, { props: { kind: 'applied' } })
