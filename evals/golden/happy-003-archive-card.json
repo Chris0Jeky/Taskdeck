@@ -1,0 +1,34 @@
+{
+  "id": "happy-003",
+  "category": "happy-path",
+  "description": "Archive a card by ID prefix.",
+  "input": {
+    "text": "Archive card e5f6a7b8",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        {
+          "id": "00000000-0000-0000-0000-000000000010",
+          "name": "Done",
+          "position": 0,
+          "cards": [
+            { "id": "e5f6a7b8", "title": "Old feature cleanup" }
+          ]
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "proposal",
+    "proposals": [
+      {
+        "actionType": "archive",
+        "targetType": "card",
+        "cardIdPrefix": "e5f6a7b8"
+      }
+    ]
+  },
+  "tags": ["archive", "card", "id-prefix"]
+}

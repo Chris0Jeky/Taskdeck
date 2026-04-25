@@ -1,0 +1,25 @@
+{
+  "id": "multi-004",
+  "category": "multi-instruction",
+  "description": "Dash-separated list of tasks from a meeting note.",
+  "input": {
+    "text": "Tasks from standup: - Review PR #45 - Update deploy docs - Fix flaky test in CI",
+    "source": "Pasted",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        { "id": "00000000-0000-0000-0000-000000000010", "name": "To Do", "position": 0, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "proposals",
+    "proposals": [
+      { "actionType": "create", "targetType": "card", "title": "Review PR #45" },
+      { "actionType": "create", "targetType": "card", "title": "Update deploy docs" },
+      { "actionType": "create", "targetType": "card", "title": "Fix flaky test in CI" }
+    ]
+  },
+  "tags": ["multi", "create", "dash-separated", "meeting-notes"]
+}

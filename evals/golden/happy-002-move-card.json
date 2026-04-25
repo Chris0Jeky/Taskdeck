@@ -1,0 +1,36 @@
+{
+  "id": "happy-002",
+  "category": "happy-path",
+  "description": "Move an existing card to a different column by card ID prefix.",
+  "input": {
+    "text": "Move card a1b2c3d4 to Done",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        {
+          "id": "00000000-0000-0000-0000-000000000010",
+          "name": "In Progress",
+          "position": 0,
+          "cards": [
+            { "id": "a1b2c3d4", "title": "Implement auth flow" }
+          ]
+        },
+        { "id": "00000000-0000-0000-0000-000000000012", "name": "Done", "position": 1, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "proposal",
+    "proposals": [
+      {
+        "actionType": "move",
+        "targetType": "card",
+        "cardIdPrefix": "a1b2c3d4",
+        "targetColumn": "Done"
+      }
+    ]
+  },
+  "tags": ["move", "card", "id-prefix"]
+}

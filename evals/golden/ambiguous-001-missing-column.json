@@ -1,0 +1,37 @@
+{
+  "id": "ambiguous-001",
+  "category": "ambiguous",
+  "description": "Move instruction references a column name that does not exist on the board.",
+  "input": {
+    "text": "Move card a1b2c3d4 to Review",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        {
+          "id": "00000000-0000-0000-0000-000000000010",
+          "name": "Backlog",
+          "position": 0,
+          "cards": [
+            { "id": "a1b2c3d4", "title": "Fix login bug" }
+          ]
+        },
+        { "id": "00000000-0000-0000-0000-000000000011", "name": "In Progress", "position": 1, "cards": [] },
+        { "id": "00000000-0000-0000-0000-000000000012", "name": "Done", "position": 2, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "clarification",
+    "clarification": {
+      "reason": "Column 'Review' does not exist on this board. Available columns: Backlog, In Progress, Done.",
+      "suggestedActions": [
+        "Move card a1b2c3d4 to In Progress",
+        "Move card a1b2c3d4 to Done",
+        "Create a column called 'Review' and then move the card"
+      ]
+    }
+  },
+  "tags": ["ambiguous", "move", "missing-column"]
+}
