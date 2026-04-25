@@ -167,20 +167,29 @@ describe('PaperReviewView', () => {
   })
 
   it('shows recently applied proposals even when completed items are hidden from the queue', async () => {
-    const appliedAt = new Date(Date.now() - 30 * 60_000).toISOString()
+    const olderAppliedAt = new Date(Date.now() - 90 * 60_000).toISOString()
+    const newerAppliedAt = new Date(Date.now() - 30 * 60_000).toISOString()
     const wrapper = await mountView([
       makeProposal({ id: 'pending-001', summary: 'Pending work' }),
       makeProposal({
-        id: 'applied-001',
+        id: 'applied-old',
         status: 'Applied',
-        summary: 'Applied work',
-        appliedAt,
+        summary: 'Older applied work',
+        appliedAt: olderAppliedAt,
+      }),
+      makeProposal({
+        id: 'applied-new',
+        status: 'Applied',
+        summary: 'Newer applied work',
+        appliedAt: newerAppliedAt,
       }),
     ])
 
     const railText = wrapper.find('[data-testid="paper-review-queue-rail"]').text()
     expect(railText).toContain('Pending work')
-    expect(railText).toContain('Applied work')
+    expect(railText).toContain('Older applied work')
+    expect(railText).toContain('Newer applied work')
+    expect(railText.indexOf('Newer applied work')).toBeLessThan(railText.indexOf('Older applied work'))
   })
 
   it('does not send apply or reject transitions for expired proposals', async () => {
@@ -211,6 +220,30 @@ describe('PaperReviewView', () => {
 
     expect(mocks.infoToast).toHaveBeenCalledWith(
       'Defer is not wired yet; the proposal is still in your queue.',
+    )
+  })
+
+  it('does not send reject transitions for already approved proposals', async () => {
+    const wrapper = await mountView([makeProposal({ status: 'Approved' })])
+
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      'This proposal can no longer be rejected. Refresh review to see current status.',
+    )
+  })
+
+  it('surfaces feedback when request edit is invoked before backend support exists', async () => {
+    const wrapper = await mountView([makeProposal()])
+
+    await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      'Request edit is not wired yet; no proposal changes were sent.',
     )
   })
 })

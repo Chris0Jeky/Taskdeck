@@ -153,6 +153,7 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
   return proposals.value
     .filter((p) => matchesActiveBoardFilter(p.boardId))
     .filter((p) => normalizeProposalStatus(p.status) === 'Applied' && p.appliedAt)
+    .sort((a, b) => new Date(b.appliedAt as string).getTime() - new Date(a.appliedAt as string).getTime())
     .map((p) => {
       const appliedMs = new Date(p.appliedAt as string).getTime()
       const left = appliedMs + 6 * 60 * 60 * 1000 - nowMs.value
@@ -320,15 +321,19 @@ const whyNowBody =
 
 const busy = computed(() => proposalActionBusyId.value !== null)
 
-function isDecisionActionable(proposal: ApiProposal): boolean {
+function isApplyActionable(proposal: ApiProposal): boolean {
   const status = normalizeProposalStatus(proposal.status)
   return (status === 'PendingReview' || status === 'Approved') && !isProposalExpired(proposal)
+}
+
+function isRejectActionable(proposal: ApiProposal): boolean {
+  return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isProposalExpired(proposal)
 }
 
 function onApply() {
   const p = activeProposal.value
   if (!p) return
-  if (!isDecisionActionable(p)) {
+  if (!isApplyActionable(p)) {
     toast.info('This proposal is no longer actionable. Refresh review to see current status.')
     return
   }
@@ -343,8 +348,8 @@ function onApply() {
 function onReject() {
   const p = activeProposal.value
   if (!p) return
-  if (!isDecisionActionable(p)) {
-    toast.info('This proposal is no longer actionable. Refresh review to see current status.')
+  if (!isRejectActionable(p)) {
+    toast.info('This proposal can no longer be rejected. Refresh review to see current status.')
     return
   }
   void handleRejectProposal(p.id, p.riskLevel)
@@ -353,7 +358,7 @@ function onReject() {
 function onRequestEdit() {
   const p = activeProposal.value
   if (!p) return
-  void handleToggleDiff(p.id)
+  toast.info('Request edit is not wired yet; no proposal changes were sent.')
 }
 
 function onDefer() {
