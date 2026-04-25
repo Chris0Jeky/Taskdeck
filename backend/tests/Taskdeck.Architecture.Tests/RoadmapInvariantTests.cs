@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Xunit;
 
@@ -16,11 +15,6 @@ namespace Taskdeck.Architecture.Tests;
 public class RoadmapInvariantTests
 {
     // ─── Helpers ────────────────────────────────────────────────────────
-
-    private static readonly Regex UsingDirectiveRegex =
-        new(
-            @"^\s*(?:global\s+)?using\s+(?:static\s+)?(?:(?<alias>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*)?(?<namespace>[A-Za-z_][A-Za-z0-9_.:]*)\s*;",
-            RegexOptions.Compiled | RegexOptions.Multiline);
 
     private static IReadOnlyList<string> GetSourceFiles(string relativeDir)
     {
