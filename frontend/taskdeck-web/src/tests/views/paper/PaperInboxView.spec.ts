@@ -99,6 +99,26 @@ describe('PaperInboxView', () => {
     expect(wrapper.attributes('data-variant')).toBe('nib')
   })
 
+  it('preserves composer and nib drafts while switching capture variants', async () => {
+    const wrapper = mount(PaperInboxView)
+    const setVariant = (wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant
+    const composer = wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]')
+    await composer.setValue('Composer draft')
+
+    setVariant('nib')
+    await wrapper.vm.$nextTick()
+    const nib = wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Quick capture input"]')
+    await nib.setValue('Nib draft')
+
+    setVariant('composer')
+    await wrapper.vm.$nextTick()
+    expect(composer.element.value).toBe('Composer draft')
+
+    setVariant('nib')
+    await wrapper.vm.$nextTick()
+    expect(nib.element.value).toBe('Nib draft')
+  })
+
   it('resets the composer draft after capture creation succeeds', async () => {
     const wrapper = mount(PaperInboxView)
     const textarea = wrapper.find('textarea[aria-label="Capture body"]')

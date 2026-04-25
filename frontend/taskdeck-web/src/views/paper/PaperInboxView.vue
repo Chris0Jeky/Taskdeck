@@ -183,14 +183,14 @@ defineExpose({ variant, toggleVariant, setVariant })
 
     <section class="paper-inbox__capture" data-testid="paper-inbox-capture">
       <PaperCaptureNib
-        v-if="variant === 'nib'"
+        v-show="variant === 'nib'"
         ref="nibRef"
         :bleeding="nibBleeding"
         :submitting="captureSubmitting"
         @submit="onNibSubmit"
       />
       <PaperCaptureComposer
-        v-else
+        v-show="variant === 'composer'"
         ref="composerRef"
         :submitting="captureSubmitting"
         @submit="onComposerSubmit"

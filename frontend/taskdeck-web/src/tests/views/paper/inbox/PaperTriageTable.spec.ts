@@ -135,6 +135,25 @@ describe('PaperTriageTable', () => {
     expect(rejectBtn.attributes('disabled')).toBeDefined()
   })
 
+  it('disables every row action while any triage action is in flight', async () => {
+    const wrapper = mount(PaperTriageTable, {
+      props: {
+        items: makeItems(),
+        actionBusyItemId: 'capture-1',
+      },
+    })
+    const secondAcceptBtn = wrapper.findAll('button[data-action="accept"]')[1]
+    const secondRejectBtn = wrapper.findAll('button[data-action="reject"]')[1]
+
+    expect(secondAcceptBtn.attributes('disabled')).toBeDefined()
+    expect(secondRejectBtn.attributes('disabled')).toBeDefined()
+
+    await secondAcceptBtn.trigger('click')
+    await secondRejectBtn.trigger('click')
+    expect(wrapper.emitted('accept')).toBeUndefined()
+    expect(wrapper.emitted('reject')).toBeUndefined()
+  })
+
   it('emits open when an item row excerpt is clicked', async () => {
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     const opener = wrapper.findAll('.paper-triage__open')[1]

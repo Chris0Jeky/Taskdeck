@@ -28,17 +28,14 @@ const emit = defineEmits<{
 }>()
 
 const hasItems = computed(() => props.items.length > 0)
-
-function isBusy(itemId: string): boolean {
-  return props.actionBusyItemId === itemId
-}
+const hasActionInFlight = computed(() => props.actionBusyItemId !== null && props.actionBusyItemId !== undefined)
 
 function canMutate(item: CaptureItemSummary): boolean {
   return canMutateSelection(item.status)
 }
 
 function isActionDisabled(item: CaptureItemSummary): boolean {
-  return isBusy(item.id) || !canMutate(item)
+  return hasActionInFlight.value || !canMutate(item)
 }
 
 function onAccept(item: CaptureItemSummary) {
