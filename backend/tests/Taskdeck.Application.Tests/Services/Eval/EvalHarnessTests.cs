@@ -251,6 +251,20 @@ public class EvalHarnessTests
     }
 
     [Fact]
+    public void EvalRunner_RunAll_ShouldThrow_OnNullCaseElement()
+    {
+        var cases = new IEvalCase?[]
+        {
+            new SimpleEvalCase("passes", EvalCategory.HappyPath, "pass", "passes", ["ok"]),
+            null,
+        };
+
+        var act = () => EvalRunner.RunAll(cases!, _ => "ok");
+
+        act.Should().Throw<ArgumentException>().WithMessage("*null elements*");
+    }
+
+    [Fact]
     public void SimpleEvalCase_ShouldExposeAllProperties()
     {
         var evalCase = new SimpleEvalCase(

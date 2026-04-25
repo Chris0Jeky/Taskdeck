@@ -29,6 +29,11 @@ public static class EvalRunner
 
         foreach (var evalCase in cases)
         {
+            if (evalCase is null)
+            {
+                throw new ArgumentException("Eval cases must not contain null elements.", nameof(cases));
+            }
+
             try
             {
                 var output = systemFunction(evalCase.Input);

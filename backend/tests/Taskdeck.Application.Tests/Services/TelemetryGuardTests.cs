@@ -302,6 +302,18 @@ public class TelemetryGuardTests : IDisposable
     }
 
     [Fact]
+    public void Validate_ShouldRedactRejectedStringValueFromReason()
+    {
+        var sensitiveValue = "customer note about Alice";
+
+        var result = TelemetryGuard.Validate("workspace.mode", sensitiveValue);
+
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("workspace.mode");
+        result.Reason.Should().NotContain(sensitiveValue);
+    }
+
+    [Fact]
     public void Validate_ShouldReject_StringWithBothUrlAndEmail()
     {
         var result = TelemetryGuard.Validate("workspace.mode", "Visit https://evil.com or email user@bad.com");

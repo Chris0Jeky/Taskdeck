@@ -222,7 +222,7 @@ public static class TelemetryGuard
         if (!IsValueShapeAllowed(options, key, value))
         {
             return TelemetryValidationResult.Rejected(
-                $"Key '{key}' does not allow values like '{value}' of type '{value.GetType().Name}'.");
+                $"Key '{key}' does not allow values of type '{value.GetType().Name}'.");
         }
 
         return TelemetryValidationResult.Accepted();
