@@ -1646,6 +1646,67 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("OutboundWebhookSubscriptions", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalOutcome", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("AverageFieldConfidence")
+                        .HasColumnType("REAL");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("DecidedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Decision")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("DecisionLatencySeconds")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("EditedFieldCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("FieldCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModelId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ProposalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RiskLevel")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("DecidedByUserId");
+
+                    b.HasIndex("Decision");
+
+                    b.HasIndex("ProposalId")
+                        .IsUnique();
+
+                    b.ToTable("ProposalOutcomes", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
