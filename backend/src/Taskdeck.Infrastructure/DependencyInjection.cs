@@ -70,6 +70,7 @@ public static class DependencyInjection
         services.AddScoped<IIntegrationConnectorRepository, IntegrationConnectorRepository>();
         services.AddScoped<IConnectorEventRepository, ConnectorEventRepository>();
         services.AddScoped<IConnectorCredentialRepository, ConnectorCredentialRepository>();
+        services.AddScoped<IProposalRevisionRepository, ProposalRevisionRepository>();
         services.AddScoped<IKnowledgeSearchService, Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
 
         // Credential encryption — requires a configured AES-256 key.

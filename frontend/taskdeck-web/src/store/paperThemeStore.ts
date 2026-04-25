@@ -54,6 +54,7 @@ function applyBodyClass(klass: 'paper' | 'paper-night' | null) {
 // time; the store action below tears down the previous one before wiring a
 // new one.
 let mediaListener: ((ev: MediaQueryListEvent) => void) | null = null
+let mediaQueryList: MediaQueryList | null = null
 
 export const usePaperThemeStore = defineStore('paperTheme', {
   state: () => ({
@@ -73,7 +74,7 @@ export const usePaperThemeStore = defineStore('paperTheme', {
      * Also wires the prefers-color-scheme listener when in auto mode.
      */
     apply() {
-      applyBodyClass(this.activeClass)
+      applyBodyClass(resolveBodyClass(this.mode))
       this._wireAutoListener()
     },
     setMode(mode: PaperMode) {
@@ -103,13 +104,14 @@ export const usePaperThemeStore = defineStore('paperTheme', {
     },
     _wireAutoListener() {
       if (typeof window === 'undefined' || !window.matchMedia) return
-      const mq = window.matchMedia('(prefers-color-scheme: dark)')
       // Tear down the previously-registered listener if any
-      if (mediaListener) {
-        mq.removeEventListener?.('change', mediaListener)
+      if (mediaQueryList && mediaListener) {
+        mediaQueryList.removeEventListener?.('change', mediaListener)
         mediaListener = null
+        mediaQueryList = null
       }
       if (this.mode !== 'auto') return
+      const mq = window.matchMedia('(prefers-color-scheme: dark)')
       // Note: re-resolve from `this.mode` directly rather than the
       // `activeClass` getter — the getter is memoized via Pinia/Vue reactivity
       // and prefersDark() is not a reactive dependency, so it would return a
@@ -118,6 +120,7 @@ export const usePaperThemeStore = defineStore('paperTheme', {
       const listener = () => applyBodyClass(resolveBodyClass(this.mode))
       mq.addEventListener?.('change', listener)
       mediaListener = listener
+      mediaQueryList = mq
     },
   },
 })

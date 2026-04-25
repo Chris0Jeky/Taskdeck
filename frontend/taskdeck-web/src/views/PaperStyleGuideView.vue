@@ -113,17 +113,17 @@ const undoApplied = new Date(Date.now() - 90 * 60 * 1000) // 90 min ago
           <div class="card sg-pad-tight"><span class="tk-eyebrow">.card</span><p class="tk-body">Lifted paper card with hairline border.</p></div>
           <div class="card-lift sg-pad-tight"><span class="tk-eyebrow">.card-lift</span><p class="tk-body">Stronger lift — used for decision rails.</p></div>
           <div class="well sg-pad-tight"><span class="tk-eyebrow">.well</span><p class="tk-body">Recessed surface for column wells.</p></div>
-          <div class="card halo-ember sg-pad-tight"><span class="tk-eyebrow" style="color: var(--ember)">.halo-ember</span><p class="tk-body">Active proposal halo.</p></div>
+          <div class="card halo-ember sg-pad-tight"><span class="tk-eyebrow sg-token-ember">.halo-ember</span><p class="tk-body">Active proposal halo.</p></div>
         </div>
 
         <hr class="hr-line sg-rule" />
 
         <h3 class="tk-eyebrow">Tagstamps &amp; stamps</h3>
         <div class="sg-row">
-          <span class="tagstamp" style="color: var(--ember)">PROPOSED · DIFF</span>
-          <span class="tagstamp" style="color: var(--applied)">APPLIED</span>
-          <span class="tagstamp" style="color: var(--overdue)">OVERDUE</span>
-          <span class="tagstamp" style="color: var(--mute)">DRAFT</span>
+          <span class="tagstamp sg-token-ember">PROPOSED · DIFF</span>
+          <span class="tagstamp sg-token-applied">APPLIED</span>
+          <span class="tagstamp sg-token-overdue">OVERDUE</span>
+          <span class="tagstamp sg-token-mute">DRAFT</span>
         </div>
         <div class="sg-row sg-stamps">
           <span class="stamp ember">Proposed<b>Apr 25</b><span class="stamp-num">11:42 · #014</span></span>
@@ -484,5 +484,17 @@ const undoApplied = new Date(Date.now() - 90 * 60 * 1000) // 90 min ago
 }
 .sg-frame-mini {
   margin-top: 16px;
+}
+.sg-token-ember {
+  color: var(--ember);
+}
+.sg-token-applied {
+  color: var(--applied);
+}
+.sg-token-overdue {
+  color: var(--overdue);
+}
+.sg-token-mute {
+  color: var(--mute);
 }
 </style>

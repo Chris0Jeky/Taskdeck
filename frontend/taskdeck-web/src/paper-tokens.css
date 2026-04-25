@@ -7,10 +7,9 @@
    remain canonical until Paper is promoted by paperThemeStore.
    ========================================================= */
 
-/* Fonts: self-host in production. We import via Google Fonts during
-   the foundation slice; PAPER-01 follow-up replaces with @font-face
-   pointing at /public/fonts/*.woff2 with font-display: swap. */
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Paper references preferred local font names first and falls back to system
+   families. External font imports are intentionally avoided so production CSP
+   can keep style-src locked to self. */
 
 .paper {
   /* --- Substrate --- */
@@ -137,8 +136,10 @@
       transparent 0 47px,
       #1a181408 47px 48px,
       transparent 48px 113px),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .1   0 0 0 0 .09   0 0 0 0 .08   0 0 0 .035 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+    radial-gradient(circle at 24px 32px, #1a181406 0 1px, transparent 1px 100%),
+    radial-gradient(circle at 160px 96px, #1a181405 0 1px, transparent 1px 100%);
   background-blend-mode: multiply, normal;
+  background-size: auto, 240px 240px, 240px 240px;
 }
 .paper-night {
   background-color: var(--paper);
@@ -147,8 +148,10 @@
       transparent 0 47px,
       #ffffff05 47px 48px,
       transparent 48px 113px),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1   0 0 0 0 .96   0 0 0 0 .85   0 0 0 .03 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+    radial-gradient(circle at 24px 32px, #ffffff05 0 1px, transparent 1px 100%),
+    radial-gradient(circle at 160px 96px, #ffffff04 0 1px, transparent 1px 100%);
   background-blend-mode: screen, normal;
+  background-size: auto, 240px 240px, 240px 240px;
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -328,7 +331,7 @@
 .paper .pbtn-primary, .paper-night .pbtn-primary {
   background: var(--ink-deep); color: var(--paper-card); border-color: var(--ink-deep);
 }
-.paper .pbtn-primary:hover, .paper-night .pbtn-primary:hover { background: #000; border-color: #000; }
+.paper .pbtn-primary:hover, .paper-night .pbtn-primary:hover { background: var(--ink); border-color: var(--ink); }
 .paper .pbtn-ember, .paper-night .pbtn-ember {
   background: var(--ember); color: #fbf2e8; border-color: var(--ember-deep);
   box-shadow: inset 0 1px 0 #ffffff20, 0 1px 0 var(--ember-deep);
