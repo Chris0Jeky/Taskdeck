@@ -173,7 +173,7 @@ Current constraints are mostly hardening and consistency:
   - **UTF-8 mojibake fix** (`#929`/`#937`): 109 encoding fixes in `STATUS.md` — 46 em dashes, 17 en dashes, 46 right arrows replaced from CP1252→UTF-8 double-encoding artifacts
   - **Redundant migration no-op** (`#932`/`#938`): `AddExternalLoginsUserForeignKey` migration made no-op — FK was already added by earlier `AddTokenInvalidatedAt` migration
   - **Auth refresh endpoint** (`#933`/`#939`): `POST /api/auth/refresh` with `[Authorize]`, JWT-claims user ID, `TokenRefreshPerUser` rate limiting (5/60s), `TokenInvalidatedAt` enforcement; 10 integration tests; completes FE-20 session timeout backend
-  - **Test count recertification** (`#930`/`#940`): TESTING_GUIDE.md updated with verified counts — backend 4,979, frontend unit 2,607, combined 7,586+
+  - **Test count recertification** (`#930`/`#940`): TESTING_GUIDE.md updated with verified counts — backend 4,979, frontend unit 2,607, combined 7,586+; recertified again in `#970` with backend 5,060, frontend unit 2,805, combined 7,865+
   - **UserPreferences race fix** (`#931`/`#941`): replaced try-catch-retry (~105 lines) with atomic `INSERT OR IGNORE` SQLite upsert (~15 lines) in `UserPreferenceRepository`; 4 concurrency tests added
   - **Pre-existing CI fix** (`#942`): resolved 5 API Integration test failures — `Connectors:EncryptionKey` added to Production-mode test configuration; MCP telemetry test assertion index corrected
 - Mobile, security, legal, and testing expansion wave (2026-04-23, PRs `#944`–`#949`):
@@ -395,9 +395,9 @@ Batch merge of 7 PRs (`#800`, `#805`, `#811`, `#813`, `#815`, `#819`, `#820`) wi
 - SSO/OIDC integration with optional TOTP MFA (PR `#813`, MfaController, recovery codes, OIDC login)
 - Distributed caching with ICacheService (PR `#805`, InMemory/Redis/NoOp implementations, cache-aside pattern)
 
-Test suite recertified: backend 4,279 tests, frontend 2,245 tests, combined ~6,500+ passing.
+Test suite recertified: backend 4,279 tests, frontend 2,245 tests, combined ~6,500+ passing (2026-04-12). Latest recertification (2026-04-25): backend 5,060, frontend 2,805, combined 7,865+.
 
-Estimated totals after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave: backend ~4,530+, frontend ~2,463+, E2E 61+ new scenarios, combined ~7,070+ passing.
+Estimated totals after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave: backend ~4,530+, frontend ~2,463+, E2E 61+ new scenarios, combined ~7,070+ passing. Actuals after PRs `#960`–`#969` audit remediation wave: backend 5,060, frontend 2,805, combined 7,865+.
 
 ## Phase Progress (Reconciled)
 
@@ -949,12 +949,13 @@ Command:
 - `dotnet test backend/Taskdeck.sln -c Release -m:1`
 
 Result:
-- Domain: 357/357 passing
-- Application: 1193/1193 passing
-- API integration: 413/413 passing
-- CLI contract: 4/4 passing
+- Domain: 962/962 passing
+- Application: 2396/2396 passing
+- API integration: 1592/1592 passing (2 skipped)
+- CLI contract: 82/82 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 1975/1975 passing
+- Integration (Testcontainers): 20/20 passing
+- Backend Total: 5060/5060 passing (2 skipped; 5062 total)
 
 ### Frontend Unit + Build (Executed)
 
@@ -965,7 +966,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 1491/1491 passing (134 test files) — **stale**: post-wave count is 1592/1592 (~125 files); see `docs/TESTING_GUIDE.md` for latest estimates
+- Frontend unit: 2805/2805 passing (219 test files) — recertified 2026-04-25
 - Typecheck: passing
 - Production build: passing
 
@@ -997,8 +998,8 @@ Result:
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build + default frontend E2E): ~6500+ passing (backend ~4279 + frontend unit ~2245 + E2E)
-- Backend and frontend totals recertified 2026-04-12 via `dotnet test --list-tests` and `npx vitest --run`. See `docs/TESTING_GUIDE.md` for detailed breakdown.
+- Combined automated total (backend + frontend unit/build + default frontend E2E): **7,865+ passing** (backend 5,060 + frontend unit 2,805 + E2E)
+- Backend and frontend totals recertified 2026-04-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1` and `npx vitest --run --reporter=verbose` at commit `297fb39e`. See `docs/TESTING_GUIDE.md` for detailed breakdown.
 
 ## CI Status
 
