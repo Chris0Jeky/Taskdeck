@@ -1,6 +1,6 @@
 # Taskdeck Research Limitations
 
-Last Updated: 2026-04-24
+Last Updated: 2026-04-25
 Source: derived from `docs/research/PRODUCT_RESEARCH_SOURCE_OF_TRUTH.md`
 
 Severity:
@@ -69,4 +69,4 @@ Severity:
 | T-01 | L | Telemetry validates/logs events but does not persist a durable product analytics dataset. | Product-learning evidence is still thin. | `TelemetryEventService.cs` |
 | T-02 | L | `docs/product/TELEMETRY_TAXONOMY.md` says telemetry is not implemented, but code exists. | Docs can mislead researchers. | taxonomy + source |
 | T-03 | L | Data portability DTOs omit knowledge, agent, LLM usage, integrations, and API-key-related entities. | Newer data surfaces may be missing from export/deletion reasoning. | `DataPortabilityDtos.cs` |
-| T-04 | L | Active docs mention `AuditRetentionWorker`, but source search did not find it. | Roadmap/status evidence needs reconciliation. | docs/source search |
+| T-04 | L | Test totals and audit-retention evidence need recertification after the 2026-04-24 audit wave; the prior `AuditRetentionWorker` source-search mismatch is superseded by `#956`/`#967`. | Research notes should not imply the worker is missing; remaining work is measured test-count recertification. | `#970`, `docs/TESTING_GUIDE.md` |

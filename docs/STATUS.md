@@ -2,7 +2,7 @@
 
 Last Updated: 2026-04-25
 
-Codex high-autonomy workflow hardening and post-merge sweep for PRs #960--#969.
+Review-first AI roadmap v4 adoption and issue seeding, after Codex high-autonomy workflow hardening and the post-merge sweep for PRs #960--#969.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -24,6 +24,7 @@ Rebranding thesis (2026-02-23):
 - product value is reducing maintenance overhead, not maximizing opaque autonomy
 
 Current constraints are mostly hardening and consistency:
+- `taskdeck-12-week-roadmap-v4.md` has been promoted from research input into the active near-horizon planning spine via tracker `#972` and child issues `#973`--`#984`. The accepted framing is: automation-originated board writes must stay proposal-first, manual board UI writes stay direct and auditable as user-manual activity, and outbound data flow must be guarded separately through the EgressEnvelope/disclosure/MCP-hash/telemetry controls.
 - Codex high-autonomy issue execution now has first-class local guidance: `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`, generalized worktree protocol, PowerShell git/worktree guards, GitHub helper scripts, Project v2 priority audit/sync support, and dedicated Codex skills for batch orchestration, worktree issue workers, PR review loops, and CI/conflict recovery. A reusable Gitleaks workflow syntax issue in the summary heredoc has been corrected after the workflow began failing before job creation.
 - ~~**security bug discovered 2026-04-03**: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `ChangePassword` now derives userId exclusively from JWT claims; `[Authorize]` enforced; `UserId` removed from request body; `AuthController` inherits `AuthenticatedControllerBase`; 5 integration tests proving the fix
 - security and identity behavior is converging but still not uniform across all controller families

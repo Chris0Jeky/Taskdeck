@@ -380,7 +380,7 @@ Maintainability hotspot refactor wave (analysis-driven, all delivered):
 
 ### Stage 5: Priority V - Meta/Historical
 
-1. `#107` OPS-13 future expansion wave index (living tracker, remains open)
+1. ~~`#107`~~ OPS-13 future expansion wave index (**closed historical index**; active roadmap tracker is `#972`)
 2. ~~`#338`~~ AGT-03 agent mode surfaces and run-detail timeline (**delivered**)
 3. ~~`#340`~~ INT-06 integrations registry and supervised inbound connector foundation (**delivered** `#841`)
 4. ~~`#341`~~ TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through (**delivered** `#741`)
@@ -427,6 +427,31 @@ Frontend:
 Ops and documentation:
 9. ~~`#868`~~ OPS-30 monitoring and alerting rules (**delivered** PR `#914`)
 10. ~~`#875`~~ DOC-08 data model reference with ERD (**delivered** PR `#917`)
+
+### Stage 8: Roadmap v4 review-first AI wave (seeded 2026-04-25)
+
+Tracker:
+1. `#972` RFAI-00 12-week review-first AI roadmap tracker
+
+Dependency order:
+1. `#973` RFAI-01 safety invariants, IA cut, eval seed, and recertification (`Priority I`)
+2. `#974` RFAI-02 IntentEnvelopeV1, IChatClient adapter, and schema spike (`Priority I`; depends on `#973`)
+3. `#975` RFAI-03 proposal generator V1 with verified provenance and outcomes ledger (`Priority I`; depends on `#974`)
+4. `#976` RFAI-04 typed ProposalCompiler and revision-backed edit-before-approve flow (`Priority I`; depends on `#975`)
+5. `#977` RFAI-05 confidence pipeline and Review evidence section (`Priority II`; depends on `#976`)
+6. `#978` RFAI-06 semantic memory vector index behind IVectorIndex (`Priority II`; depends on `#975`)
+7. `#979` RFAI-07 hybrid retrieval, duplicate calibration, and memory-assisted generation (`Priority II`; depends on `#978`)
+8. `#980` RFAI-08 eval harness expansion, privacy analytics, and egress disclosure (`Priority II`; depends on `#976`, `#979`)
+9. `#981` RFAI-09 agent runtime hardening, MCP integrity, and scheduled Inbox Digest (`Priority II`; depends on `#976`, `#980`)
+10. `#982` RFAI-10 PWA share-target quick capture and browser extension prototype (`Priority III`; depends on `#974`, `#980`)
+11. `#983` RFAI-11 ambient channel hardening decision and prototype (`Priority IV`; depends on `#982`; reuses `#219` for voice if selected)
+12. `#984` RFAI-12 learning loop UI, provenance drawer, Ollama flag, and beta gate (`Priority II`; depends on `#977`, `#980`, `#981`, `#983`)
+
+Execution note:
+- The proposal gate applies to automation-originated writes, not manual board UI writes.
+- EgressEnvelope and Where-your-data-goes disclosure are required privacy controls; do not treat proposal-only writes as sufficient exfiltration protection.
+- Calendar is advanced/settings unless usage data justifies promotion; the v4 primary IA target is Today, Inbox, Review, Boards, Search.
+- Version pins and duplicate-detection thresholds are outputs of compatibility/calibration work, not pre-seeded acceptance promises.
 
 ## Per-Issue Delivery Checklist
 

@@ -20,6 +20,8 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 
 - `docs/STATUS.md` is authoritative for current shipped reality.
 - Product north star: make capture nearly free and keep automation safe through review-first proposals.
+- Roadmap v4 north star: every automation-originated board write routes through proposals and human approval; manual board UI edits remain direct and auditable, not proposal-queued.
+- Mutation safety and exfiltration safety are distinct. Proposal-only writes do not protect local-first privacy; outbound data must be governed by EgressEnvelope, disclosure registry, MCP tool hash-pinning, and telemetry guardrails.
 - Product legibility is now the immediate product focus: the app should explain its core loop from inside the UI, not mainly through docs and demo scripts.
 - For near-horizon demo work, prefer packaging the shipped capture/review/board substrate into stakeholder-legible business workflows instead of reopening broad architecture.
 - Prefer finishing cross-cutting consistency work before adding new surface area.
@@ -44,6 +46,11 @@ Latest tooling addition (2026-04-25):
 - Repo-local Codex skills added for issue batch orchestration, isolated issue workers, PR review loops, and CI/conflict recovery.
 - PowerShell git/worktree guard scripts and GitHub helper scripts added for Windows-safe batch execution.
 - Follow-up hardening added `scripts/github/Sync-TaskdeckProjectPriority.ps1` for Project v2 priority audit/sync and fixed `reusable-gitleaks.yml` summary indentation so the reusable workflow can create jobs instead of failing at YAML parse time.
+
+Latest roadmap adoption (2026-04-25):
+- `taskdeck-12-week-roadmap-v4.md` was reconciled into active planning as tracker `#972` with dependency-ordered child issues `#973`--`#984`.
+- The roadmap is accepted with three corrections: proposal gating is for automation-originated writes only, exfiltration safety is separate from mutation safety, and dependency versions/empirical thresholds are measured implementation results rather than planning promises.
+- Existing shipped foundations are reused rather than reseeded: PWA/offline readiness (`#95`), voice-capture privacy anchor (`#219`), MCP hardening anchor (`#655`, for broader deferred production hardening), and test-total recertification follow-up (`#970`).
 
 1. Backend advanced slices completed: automation proposals/executor, archive recovery, chat, ops/logs, workers/health.
 2. Frontend advanced views integrated: automations/chat/ops/archive and supporting APIs/types.
@@ -745,6 +752,32 @@ Implementation carry-forward from the full source audit:
 
 ## Roadmap by Horizon
 
+### Roadmap v4 Adoption: Review-First AI Without the Rewrite (Tracker `#972`)
+
+Active source:
+- `taskdeck-12-week-roadmap-v4.md`
+
+Execution sequence:
+1. `#973` RFAI-01: Safety invariants, IA cut, eval seed, and recertification (`Priority I`)
+2. `#974` RFAI-02: IntentEnvelopeV1, IChatClient adapter, and schema spike (`Priority I`)
+3. `#975` RFAI-03: Proposal generator V1 with verified provenance and outcomes ledger (`Priority I`)
+4. `#976` RFAI-04: Typed ProposalCompiler and revision-backed edit-before-approve flow (`Priority I`)
+5. `#977` RFAI-05: Confidence pipeline and Review evidence section (`Priority II`)
+6. `#978` RFAI-06: Semantic memory vector index behind IVectorIndex (`Priority II`)
+7. `#979` RFAI-07: Hybrid retrieval, duplicate calibration, and memory-assisted generation (`Priority II`)
+8. `#980` RFAI-08: Eval harness expansion, privacy analytics, and egress disclosure (`Priority II`)
+9. `#981` RFAI-09: Agent runtime hardening, MCP integrity, and scheduled Inbox Digest (`Priority II`)
+10. `#982` RFAI-10: PWA share-target quick capture and browser extension prototype (`Priority III`)
+11. `#983` RFAI-11: Ambient channel hardening decision and prototype (`Priority IV`)
+12. `#984` RFAI-12: Learning loop UI, provenance drawer, Ollama flag, and beta gate (`Priority II`)
+
+Execution rules:
+- Do not start ambient capture (`#982`, `#983`) before the proposal generator, provenance verifier, edit-before-approve flow, and egress disclosure controls are in place.
+- Treat `#95` as the delivered PWA baseline; `#982` is only share-target/ambient quick-capture work.
+- Reuse `#219` if Week 11 selects voice as the hardened ambient channel.
+- Reuse `#655` for broader MCP production-hardening context; `#981` covers only integrity, egress, runtime, and scheduled-agent scope required by this roadmap.
+- Store publishing for browser, IDE, or voice integrations is post-beta and out of scope for this 12-week wave.
+
 ### Horizon A (Week 1 to 2): Novice-First Shell and Entry Clarity
 
 Focus:
@@ -1269,6 +1302,15 @@ Additional P1 issues from the same session (tracked in `#510`Ã¢â‚¬â€œ`
 
 ## Next Best Steps (Immediate)
 
+Current active order (2026-04-25):
+1. Start the RFAI roadmap through `#973` first: safety invariants, IA cut, eval seed, and recertification.
+2. Continue in dependency order through `#974` -> `#975` -> `#976` before starting confidence, retrieval, agents, or ambient capture work.
+3. Treat `#980` (egress disclosure/eval/privacy) as a required dependency before `#981` agent runtime hardening and before any ambient source is promoted beyond prototype.
+4. Keep `#982` and `#983` behind the proposal/provenance/edit/egress foundation; store publishing remains post-beta.
+5. Use `#970` for measured test-total recertification rather than editing counts from estimates.
+
+Historical next-step list below is retained for continuity with earlier waves. Use Stage 8 in `docs/ISSUE_EXECUTION_GUIDE.md` and tracker `#972` as the current execution order.
+
 1. **Resolve `#508` and `#509` (P0 blockers above) before any other backlog work.**
 2. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Run the manual-audit follow-through wave in trust-first order: `#364` -> `#365` -> `#368`, then align product truthfulness through `#366` and `#367`, while routing review-readability detail through `#326`; keep `#369` explicitly lower priority.
@@ -1286,7 +1328,7 @@ Additional P1 issues from the same session (tracked in `#510`Ã¢â‚¬â€œ`
 17. **Security + testing + MCP wave (2026-04-04)**: 8 issues across 8 PRs (`#732`Ã¢â‚¬â€œ`#739`) with two rounds of adversarial self-review. ~300 new tests added. Key deliveries: SEC-20 ChangePassword identity bypass fix (`#722`/`#732`), golden-path captureÃ¢â€ â€™board integration test (`#703`/`#735`), cross-user data isolation tests (`#704`/`#733` Ã¢â‚¬â€ 38 tests, 3 false-positive tests caught in review), worker integration tests (`#700`/`#734` Ã¢â‚¬â€ 24 tests, fake repo status-tracking fixed in review), controller HTTP tests (`#702`/`#738` Ã¢â‚¬â€ 67 tests, 6 controllers, 2 pre-existing bugs found), proposal lifecycle edge cases (`#708`/`#736` Ã¢â‚¬â€ 74 tests, clock-flakiness fixed in review), OAuth/auth edge cases (`#707`/`#737` Ã¢â‚¬â€ 44 tests, found+fixed `ExternalLoginAsync` Substring overflow production bug), MCP full inventory (`#653`/`#739` Ã¢â‚¬â€ 9 resources + 11 tools, user-scoping gap found+fixed in review). Test expansion wave (`#721`) progress: 7 of 22 issues now delivered (`#699`, `#700`, `#702`, `#703`, `#704`, `#707`, `#708`); remaining 15 open.
 18. **Tech-debt, security, and feature hardening wave (2026-04-04)**: 7 issues across 7 PRs (`#765`Ã¢â‚¬â€œ`#770`, `#776`) with two rounds of adversarial review per PR (~65 new tests: 32 backend + 33 frontend). Key deliveries: Agent API 500 fix (`#758`/`#776` Ã¢â‚¬â€ `DateTimeOffset` ORDER BY in SQLite, `AgentRunRepository` upgraded to `IsSqlite()` SQL-level pattern, round 2 caught load-all-before-limit perf bug), DataExport exception logging (`#759`/`#766` Ã¢â‚¬â€ `ILogger` added to `DataExportService`/`AccountDeletionService`, round 2 added `OperationCanceledException` filter + `CancellationToken.None` rollback), streaming chat token usage (`#763`/`#768` Ã¢â‚¬â€ `LlmTokenEvent` extended, all 3 providers populated, `StreamResponseAsync` now persists messages + records quota), EF Core version alignment (`#760`/`#767` Ã¢â‚¬â€ 9.0.14Ã¢â€ â€™8.0.14, EF9-only API removed, `FrameworkReference` swap, round 2 added `PrivateAssets`), frontend HTTP interceptor/auth guard tests (`#725`/`#765` Ã¢â‚¬â€ 33 tests, round 2 fixed ESLint `no-import-assign` CI breaker), OAuth token lifecycle tests (`#723`/`#769` Ã¢â‚¬â€ 19 tests covering auth code store + JWT lifecycle + SignalR auth, round 2 fixed `HttpClient` leak + misleading test names), tool argument replay (`#673`/`#770` Ã¢â‚¬â€ `Arguments` field on `ToolCallResult`, OpenAI/Gemini replay now uses real arguments). Test expansion wave (`#721`) progress: 23 of 25 issues now delivered (waves 4+5 added `#711`, `#712`, `#716`, `#720`, `#723`, `#725`); remaining 2 open (`#705`, `#717`).
 19. **Feature, analytics, MCP, chat, testing, and UX expansion wave (2026-04-08)**: 7 issues across 7 PRs (`#787`Ã¢â‚¬â€œ`#793`) with two rounds of adversarial review per PR (~390+ new tests). Key deliveries: exportable analytics CSV (`#78`/`#787` Ã¢â‚¬â€ `MetricsExportService` with CSV injection protection, `ADR-0022` deferring PDF, 29 tests, adversarial review caught embedded-newline injection HIGH), forecasting service (`#79`/`#790` Ã¢â‚¬â€ heuristic `ForecastingService` with rolling-average throughput, std-dev confidence bands, frontend MetricsView section, 32 tests, adversarial review caught throughput double-counting HIGH + history window bug), MCP HTTP transport + API key auth (`#654`/`#792` Ã¢â‚¬â€ `ApiKey` entity with SHA-256, `ApiKeyMiddleware`, `HttpUserContextProvider`, `MapMcp()`, REST key management, rate limiting, 31 tests, adversarial review caught key-existence oracle + modulo bias), conversational refinement loop (`#576`/`#791` Ã¢â‚¬â€ `ClarificationDetector` with strong/weak signal split, max 2 rounds + skip, Mock simulation, frontend badge + skip button, 41 tests, adversarial review caught false-positive heuristic HIGH), concurrency stress tests (`#705`/`#793` Ã¢â‚¬â€ 13 `SemaphoreSlim`-barrier stress tests for queue claims, card conflicts, proposal races, rate limiting, multi-user), property-based adversarial tests (`#717`/`#789` Ã¢â‚¬â€ 211 FsCheck + fast-check tests across domain/API/frontend, no 500s from any input), inbox premium primitives (`#249`/`#788` Ã¢â‚¬â€ `TdSkeleton`/`TdInlineAlert`/`TdEmptyState`/`TdBadge` rework, 7 tests). Test expansion wave (`#721`) progress: 25 of 25 issues now delivered (this wave closed `#705` and `#717`). Additional issues closed: `#78`, `#79`, `#249`, `#576`, `#654`.
-10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+10. Treat `#107` as the closed historical wave index; keep active roadmap tracker `#972` synchronized and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 12. Test suite baseline counts recertified 2026-04-09: backend ~3,600+ passing, frontend ~1,984+ passing, combined ~5,600+. Rigorous test expansion wave (`#721`) fully delivered (25/25 issues).
 13. **Mutation testing pilot** (`#90`): Stryker.NET (backend Domain) and Stryker JS (frontend captureStore/boardStore) configured with non-blocking weekly CI lane; policy at `docs/testing/MUTATION_TESTING_POLICY.md`; scope expansion to Application layer and additional stores planned after baseline calibration from first 3-4 runs.

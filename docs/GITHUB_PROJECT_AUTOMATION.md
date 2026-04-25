@@ -190,3 +190,4 @@ Evidence of execution:
 - 2026-02-16 seeding pass populated Stage 0 governance issues (`#43`, `#59`, `#41`, `#55`, `#60`, `#56`) and Stage 1 security tranche issues.
 - 2026-02-18 expansion pass seeded future-development waves (`#67` to `#111`) and applied priority labels across all issues.
 - 2026-02-18 reconciliation pass applied issue-priority labels to all issues and synchronized project `Priority` for issues + PRs.
+- 2026-04-25 roadmap-v4 reconciliation pass intentionally exceeded the normal weekly intake cap to seed tracker `#972` and child issues `#973`--`#984`; WIP status discipline still applies before implementation starts.

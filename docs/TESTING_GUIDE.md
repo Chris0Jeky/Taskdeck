@@ -31,6 +31,19 @@ Verification note:
 - growth since last recertification: backend +700 tests, frontend +362 tests
 - pending (post-merge of PRs `#960`–`#969`): ~186 new tests estimated — 61 composable tests (`useCardModal`), 125 composable tests (`useStarterPackCatalog`/`useStarterPackImport`/`useStarterPackResult`), plus additional backend OAuth scope validator and audit retention tests
 
+## Roadmap v4 Verification Spine (Seeded 2026-04-25)
+
+Tracker `#972` seeds the next review-first AI verification program. These checks are planned work, not all current-main requirements until their implementation issues land:
+
+- `#973`: twelve roadmap invariants covering automation-only mutation safety, proposal execution idempotency/version checks, outbound egress envelope coverage, disclosure registry coverage, MCP tool-definition hash pinning, telemetry content rejection, and proposal source-span integrity.
+- `#974`: schema/provider smoke coverage for `IntentEnvelopeV1`, `TaskdeckProposalBatch`, `IChatClient` adapter viability, and the `JsonSchemaExporter` vs handwritten-schema decision.
+- `#975`--`#977`: golden proposal dataset checks for schema validity, extractive quote/span verification, inferred evidence-link resolution, field confidence scoring, and edit-before-approve paths.
+- `#978`--`#979`: vector-search fallback tests, embedding backfill safety, retrieval recall@10, and duplicate-detection calibration on labeled holdouts.
+- `#980`: `WireMock.Net` MITM egress test for capture -> proposal -> agent, prompt regression with `promptfoo --no-share`, telemetry guard fuzz rejection, and Where-your-data-goes registry completeness.
+- `#981`: agent runtime property tests proving no approve/direct-mutation tools, egress handler violation tests, MCP definition re-approval tests, and scheduled Inbox Digest quota/coalescing checks.
+- `#982`--`#983`: ambient capture provenance checks for PWA share target, browser extension prototype, and the selected voice or IDE channel.
+- `#984`: beta-gate recertification requiring all roadmap invariants, provenance verification targets, edit-before-approve, egress disclosure, optional Ollama safety, and current test totals.
+
 ## Windows PowerShell Command Convention
 
 For agent-run commands on Windows, do not use `&&` directly in PowerShell. Prefer fail-fast sequences that check `$LASTEXITCODE`, for example:

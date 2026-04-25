@@ -1,10 +1,11 @@
 # Taskdeck Next Work Checklist
 
-Last Updated: 2026-03-07
+Last Updated: 2026-04-25
 Source of truth for issue-level execution is now:
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
-- Issue wave index: `#107`
+- Active roadmap tracker: `#972`
+- Historical wave index: `#107`
 
 This checklist is now a lightweight promotion checklist (not a duplicate issue catalog).
 
@@ -19,8 +20,26 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 ## Thesis Alignment Gate (Capture Realignment)
 
 - [ ] Slice materially reduces maintenance overhead or capture friction.
-- [ ] Slice preserves review-first trust model (no silent destructive apply).
+- [ ] Slice preserves review-first trust model for automation-originated writes (no silent destructive apply).
+- [ ] Slice preserves direct manual board editing UX while recording user-manual provenance.
+- [ ] Slice identifies outbound data-flow implications when LLM, MCP, integration, agent, telemetry, voice, browser, or IDE channels are involved.
 - [ ] Slice includes provenance/error-policy implications where relevant.
+
+## Active Near-Horizon Roadmap (RFAI Wave)
+
+- [ ] Tracker `#972`: 12-week review-first AI roadmap.
+- [ ] Week 1 foundation: `#973` safety invariants, IA cut, eval seed, recertification.
+- [ ] Week 2 spine: `#974` IntentEnvelopeV1, IChatClient adapter, schema spike.
+- [ ] Week 3 generator: `#975` ProposalBatch generator, provenance verifier, outcomes ledger.
+- [ ] Week 4 review flow: `#976` typed ProposalCompiler and revision-backed edit-before-approve.
+- [ ] Week 5 trust UI: `#977` confidence pipeline and Review evidence section.
+- [ ] Week 6 memory foundation: `#978` IVectorIndex and local embeddings.
+- [ ] Week 7 retrieval: `#979` hybrid retrieval, duplicate calibration, EvidenceLink context.
+- [ ] Week 8 evaluation/privacy: `#980` eval harness, privacy analytics, egress disclosure.
+- [ ] Week 9 agents: `#981` runtime hardening, MCP integrity, scheduled Inbox Digest.
+- [ ] Week 10 ambient intake: `#982` PWA share-target and browser extension prototype.
+- [ ] Week 11 ambient channel: `#983`, reusing `#219` if voice is selected.
+- [ ] Week 12 beta gate: `#984` learning loop, provenance drawer, Ollama flag, recertification.
 
 ## Current Priority I Completion Tranche
 
@@ -37,7 +56,7 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave F capture realignment: `#199` to `#213` (`Priority II` to `Priority IV`)
 - [ ] Wave G testing harness guardrails: `#254` to `#260`
 - [ ] Wave H outreach CRM deferred expansion: `#262` to `#268` (`Priority IV`)
-- [ ] Meta index maintenance: `#107` (`Priority V`)
+- [x] Meta index maintenance: `#107` (`Priority V`, closed historical index)
 
 ## MVP Expansion Productization (Wave P Seeded)
 

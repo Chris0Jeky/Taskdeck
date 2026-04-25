@@ -40,6 +40,7 @@ Stable reference material belongs in topical subfolders.
   - `START_HERE.md` -> `manual/02_home_and_today.md` -> `manual/03_projects_and_cards.md` -> `manual/08_recipes.md`
 - Maintainer or planner:
   - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
+  - current roadmap input: root `taskdeck-12-week-roadmap-v4.md`, reconciled through tracker `#972`
 - Contributor or agent:
   - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `GOLDEN_PRINCIPLES.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `MCP_TOOLING_GUIDE.md`
 - Demo operator:
