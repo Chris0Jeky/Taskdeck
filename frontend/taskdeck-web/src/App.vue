@@ -16,6 +16,8 @@ const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
 
+paperTheme.apply()
+
 const showShell = computed(() => {
   return route.meta.requiresShell === true
 })
@@ -23,7 +25,6 @@ const showShell = computed(() => {
 onMounted(() => {
   session.restoreSession()
   featureFlags.restore()
-  paperTheme.apply()
 })
 
 watch(
