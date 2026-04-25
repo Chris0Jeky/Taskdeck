@@ -150,4 +150,85 @@ public class EgressRegistryTests
         entry.ToolOrAgentName.Should().Be("tool");
         entry.Classification.Should().Be(EgressDataClassification.None);
     }
+
+    // --- Wildcard host pattern matching ---
+
+    [Fact]
+    public void IsHostAllowed_ShouldMatchWildcardPattern_WebhookSite()
+    {
+        var registry = new EgressRegistry();
+        registry.IsHostAllowed("test.webhook.site").Should().BeTrue();
+        registry.IsHostAllowed("abc123.webhook.site").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsHostAllowed_ShouldMatchWildcardPattern_SentryIngest()
+    {
+        var registry = new EgressRegistry();
+        registry.IsHostAllowed("o123456.ingest.sentry.io").Should().BeTrue();
+        registry.IsHostAllowed("tenant.ingest.sentry.io").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsHostAllowed_ShouldMatchWildcardPattern_Plausible()
+    {
+        var registry = new EgressRegistry();
+        registry.IsHostAllowed("analytics.plausible.io").Should().BeTrue();
+        registry.IsHostAllowed("self-hosted.plausible.io").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsHostAllowed_ShouldNotMatchPartialWildcard()
+    {
+        var registry = new EgressRegistry();
+        // "webhook.site" alone should NOT match "*.webhook.site" -- wildcard requires a subdomain
+        registry.IsHostAllowed("webhook.site").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsHostAllowed_ShouldMatchWildcardCaseInsensitive()
+    {
+        var registry = new EgressRegistry();
+        registry.IsHostAllowed("TEST.WEBHOOK.SITE").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Register_ShouldSupportWildcardAtRuntime()
+    {
+        var registry = new EgressRegistry(Enumerable.Empty<EgressEntry>());
+        registry.Register(new EgressEntry(
+            Host: "*.custom-cdn.example.com",
+            PayloadCategory: "Static assets",
+            ToolOrAgentName: "CdnService",
+            Classification: EgressDataClassification.None));
+
+        registry.IsHostAllowed("us-east.custom-cdn.example.com").Should().BeTrue();
+        registry.IsHostAllowed("custom-cdn.example.com").Should().BeFalse();
+    }
+
+    // --- Host validation in Register ---
+
+    [Fact]
+    public void Register_ShouldThrowOnNullHost()
+    {
+        var registry = new EgressRegistry();
+        var act = () => registry.Register(new EgressEntry(
+            Host: null!,
+            PayloadCategory: "test",
+            ToolOrAgentName: "test",
+            Classification: EgressDataClassification.None));
+        act.Should().Throw<ArgumentException>().WithMessage("*Host*");
+    }
+
+    [Fact]
+    public void Register_ShouldThrowOnWhitespaceHost()
+    {
+        var registry = new EgressRegistry();
+        var act = () => registry.Register(new EgressEntry(
+            Host: "   ",
+            PayloadCategory: "test",
+            ToolOrAgentName: "test",
+            Classification: EgressDataClassification.None));
+        act.Should().Throw<ArgumentException>().WithMessage("*Host*");
+    }
 }
