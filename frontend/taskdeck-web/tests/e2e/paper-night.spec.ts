@@ -13,8 +13,11 @@
  * Strategy:
  * - Set `paperThemeStore` to `paper-night` via localStorage before navigation
  *   so the body class is set on first paint (no FOUC race).
- * - Capture console errors during the run; assert none.
- * - Assert the body has the `paper-night` class.
+ * - Capture console errors during the run; assert none from app-origin sources
+ *   (we ignore transient resource failures like Google Fonts, which can fail
+ *   on offline/restricted-network CI lanes without invalidating the night
+ *   render check).
+ * - Assert the body has the `paper-night` class (anchored, no substring leak).
  * - Assert at least one element computed style uses the night ember.
  *
  * Surface follow-ups (post-merge of #1013 #1014 #1025 #1026 #1027 #1028):
@@ -25,6 +28,25 @@
 import { expect, test, type ConsoleMessage } from '@playwright/test'
 
 const NIGHT_EMBER = 'rgb(217, 106, 62)' // #d96a3e
+const PAPER_NIGHT_CLASS = /(^|\s)paper-night(\s|$)/
+const PAPER_LIGHT_CLASS = /(^|\s)paper(\s|$)/
+
+/**
+ * Filter to console errors that indicate an app-side problem.  Resource-
+ * loading failures (Google Fonts in `paper-tokens.css`, fonts.gstatic.com,
+ * etc.) routinely fire `console.error` in restricted-network CI lanes and
+ * do NOT invalidate the night-render correctness signal.  Keep only errors
+ * that look like JS exceptions or app-origin warnings.
+ */
+function isAppRelevantError(text: string): boolean {
+  const lowered = text.toLowerCase()
+  // Resource-load failures we explicitly tolerate
+  if (lowered.includes('failed to load resource')) return false
+  if (lowered.includes('net::err_')) return false
+  if (lowered.includes('fonts.googleapis.com')) return false
+  if (lowered.includes('fonts.gstatic.com')) return false
+  return true
+}
 
 test.describe('Paper at Night — foundation + shell', () => {
   test('styleguide renders without console errors and uses night ember', async ({
@@ -40,7 +62,7 @@ test.describe('Paper at Night — foundation + shell', () => {
     })
 
     await page.goto('/styleguide/paper')
-    await expect(page.locator('body')).toHaveClass(/paper-night/)
+    await expect(page.locator('body')).toHaveClass(PAPER_NIGHT_CLASS)
 
     // Find an ember-toned utility (the styleguide always renders a tagstamp).
     const ember = page.locator('.tagstamp', { hasText: 'PROPOSED' }).first()
@@ -50,9 +72,10 @@ test.describe('Paper at Night — foundation + shell', () => {
     )
     expect(color).toBe(NIGHT_EMBER)
 
+    const appErrors = consoleErrors.filter(isAppRelevantError)
     expect(
-      consoleErrors,
-      `Console errors during paper-night styleguide render: ${consoleErrors.join('\n')}`,
+      appErrors,
+      `App-relevant console errors during paper-night styleguide render: ${appErrors.join('\n')}`,
     ).toEqual([])
   })
 
@@ -61,7 +84,7 @@ test.describe('Paper at Night — foundation + shell', () => {
       window.localStorage.setItem('td.paper.mode', 'paper')
     })
     await page.goto('/styleguide/paper')
-    await expect(page.locator('body')).toHaveClass(/(^|\s)paper(\s|$)/)
+    await expect(page.locator('body')).toHaveClass(PAPER_LIGHT_CLASS)
     const ember = page.locator('.tagstamp', { hasText: 'PROPOSED' }).first()
     const color = await ember.evaluate((el) =>
       window.getComputedStyle(el as HTMLElement).color,
