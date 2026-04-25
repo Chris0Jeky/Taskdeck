@@ -9,7 +9,7 @@
  * work queues. The SSR / initial markup also renders the dried+stamped frame
  * so progressive enhancement degrades gracefully when JS is disabled.
  *
- * Spec: design_handoff_taskdeck_paper/paper/surface-motion.jsx + issue #1006.
+ * Spec: design_handoff_taskdeck_paper/paper/surface-motion.jsx + issue GH-1006.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
@@ -297,8 +297,8 @@ const dropletData = computed<VisibleDroplet[]>(() =>
   transform: translate(-50%, -50%) scale(0.2);
   background: radial-gradient(
     circle,
-    var(--ember, #a8421f) 0%,
-    var(--ember, #a8421f) 28%,
+    var(--ember) 0%,
+    var(--ember) 28%,
     transparent 72%
   );
   filter: blur(6px);
@@ -327,8 +327,8 @@ const dropletData = computed<VisibleDroplet[]>(() =>
   filter: blur(10px);
   background: radial-gradient(
     circle,
-    var(--ink-deep, #0a0908) 0%,
-    var(--ink-deep, #0a0908) 28%,
+    var(--ink-deep) 0%,
+    var(--ink-deep) 28%,
     transparent 72%
   );
   transition:
@@ -340,7 +340,7 @@ const dropletData = computed<VisibleDroplet[]>(() =>
   position: absolute;
   inset: auto 8% 12% 8%;
   font-family: var(--serif, Georgia, serif);
-  color: var(--ink-deep, #0a0908);
+  color: var(--ink-deep);
 }
 
 .ink-bleed__eyebrow {
@@ -357,26 +357,26 @@ const dropletData = computed<VisibleDroplet[]>(() =>
   font-size: 28px;
   line-height: 1.06;
   letter-spacing: -0.014em;
-  color: var(--ink-deep, #0a0908);
+  color: var(--ink-deep);
 }
 
 .ink-bleed--drop .ink-bleed__headline,
 .ink-bleed--bloom .ink-bleed__headline {
   -webkit-mask-image: linear-gradient(
     90deg,
-    #000 0%,
+    black 0%,
     transparent 12%
   );
-  mask-image: linear-gradient(90deg, #000 0%, transparent 12%);
+  mask-image: linear-gradient(90deg, black 0%, transparent 12%);
 }
 
 .ink-bleed--compose .ink-bleed__headline {
   -webkit-mask-image: linear-gradient(
     90deg,
-    #000 60%,
+    black 60%,
     transparent 72%
   );
-  mask-image: linear-gradient(90deg, #000 60%, transparent 72%);
+  mask-image: linear-gradient(90deg, black 60%, transparent 72%);
   transition: -webkit-mask-image 2000ms cubic-bezier(0.3, 0.8, 0.3, 1),
     mask-image 2000ms cubic-bezier(0.3, 0.8, 0.3, 1);
 }
@@ -409,8 +409,8 @@ const dropletData = computed<VisibleDroplet[]>(() =>
   transform: translate(-50%, -50%) scale(1);
   background: radial-gradient(
     circle,
-    var(--ink-deep, #0a0908) 0%,
-    var(--ink-deep, #0a0908) 28%,
+    var(--ink-deep) 0%,
+    var(--ink-deep) 28%,
     transparent 72%
   );
 }
