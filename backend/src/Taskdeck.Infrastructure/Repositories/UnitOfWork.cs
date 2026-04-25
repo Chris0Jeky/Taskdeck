@@ -128,6 +128,13 @@ public class UnitOfWork : IUnitOfWork
                 "Record was updated by another session. Refresh and retry your action.",
                 ex);
         }
+        catch (DbUpdateException ex) when (IsProposalRevisionUniqueViolation(ex))
+        {
+            throw new DomainException(
+                ErrorCodes.Conflict,
+                "Proposal revision was created by another session. Refresh and retry your edit.",
+                ex);
+        }
         catch (DbUpdateException ex) when (TryResolveRecoverableUniqueConflicts(ex))
         {
             return await _context.SaveChangesAsync(cancellationToken);
@@ -247,6 +254,19 @@ public class UnitOfWork : IUnitOfWork
             StringComparison.OrdinalIgnoreCase)
             || exception.InnerException.Message.Contains(
                 "IX_UserPreferences_UserId",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsProposalRevisionUniqueViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is null)
+            return false;
+
+        return exception.InnerException.Message.Contains(
+            "ProposalRevisions.ProposalId, ProposalRevisions.RevisionNumber",
+            StringComparison.OrdinalIgnoreCase)
+            || exception.InnerException.Message.Contains(
+                "IX_ProposalRevisions_ProposalId_RevisionNumber",
                 StringComparison.OrdinalIgnoreCase);
     }
 }
