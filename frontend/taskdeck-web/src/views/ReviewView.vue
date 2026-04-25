@@ -6,6 +6,7 @@ import ReviewHeader from '../components/review/ReviewHeader.vue'
 import ReviewSummaryCards from '../components/review/ReviewSummaryCards.vue'
 import ReviewEmptyState from '../components/review/ReviewEmptyState.vue'
 import ReviewProposalCard from '../components/review/ReviewProposalCard.vue'
+import { TdSkeleton } from '../components/ui'
 import { useReviewProposals } from '../composables/useReviewProposals'
 import { useReviewActions } from '../composables/useReviewActions'
 import { useVirtualList } from '../composables/useVirtualList'
@@ -162,8 +163,22 @@ onUnmounted(() => {
 
     <ReviewSummaryCards :cards="summaryCards" />
 
-    <div v-if="proposalsLoading" class="td-panel td-review__loading" aria-live="polite">
-      Loading proposals to review...
+    <div v-if="proposalsLoading" class="td-review__skeleton" aria-live="polite" role="status">
+      <span class="sr-only">Loading proposals to review...</span>
+      <div v-for="n in 3" :key="n" class="td-panel td-review__skeleton-card">
+        <div class="td-review__skeleton-header">
+          <TdSkeleton width="60px" height="20px" />
+          <TdSkeleton width="200px" height="16px" />
+          <TdSkeleton width="80px" height="14px" />
+        </div>
+        <TdSkeleton width="90%" height="14px" />
+        <TdSkeleton width="70%" height="14px" />
+        <div class="td-review__skeleton-actions">
+          <TdSkeleton width="90px" height="32px" />
+          <TdSkeleton width="80px" height="32px" />
+          <TdSkeleton width="70px" height="32px" />
+        </div>
+      </div>
     </div>
 
     <ReviewEmptyState
@@ -232,8 +247,28 @@ onUnmounted(() => {
   gap: var(--td-space-4);
 }
 
-.td-review__loading {
-  color: var(--td-text-secondary);
+.td-review__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-3);
+}
+
+.td-review__skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-3);
+}
+
+.td-review__skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-3);
+}
+
+.td-review__skeleton-actions {
+  display: flex;
+  gap: var(--td-space-2);
+  margin-top: var(--td-space-2);
 }
 
 .td-review__list {

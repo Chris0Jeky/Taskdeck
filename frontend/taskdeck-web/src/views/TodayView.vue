@@ -2,6 +2,7 @@
 import { computed, onActivated, onMounted, ref } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import { TdSkeleton } from '../components/ui'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type {
@@ -235,8 +236,34 @@ onActivated(refreshTodaySummary)
       </template>
     </WorkspaceHelpCallout>
 
-    <div v-if="workspace.todayLoading" class="td-panel td-today__placeholder" aria-live="polite">
-      Loading today's agenda...
+    <div v-if="workspace.todayLoading" class="td-today__skeleton" aria-live="polite" role="status">
+      <span class="sr-only">Loading today's agenda...</span>
+      <!-- Stats skeleton -->
+      <div class="td-today__stats">
+        <div v-for="n in 3" :key="n" class="td-panel td-today-stat">
+          <TdSkeleton width="80px" height="12px" />
+          <TdSkeleton width="50px" height="32px" />
+          <TdSkeleton width="100%" height="10px" />
+        </div>
+      </div>
+      <!-- Agenda skeleton -->
+      <div class="td-today__agenda-grid">
+        <div v-for="n in 3" :key="n" class="td-panel td-today-card td-today-card--neutral">
+          <div class="td-today__section-head">
+            <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1">
+              <TdSkeleton width="120px" height="16px" />
+              <TdSkeleton width="90%" height="12px" />
+            </div>
+            <TdSkeleton width="28px" height="28px" circle />
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem">
+            <div v-for="m in 2" :key="m" class="td-today__skeleton-item">
+              <TdSkeleton width="70%" height="14px" />
+              <TdSkeleton width="50%" height="10px" />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-else-if="workspace.todayError" class="td-alert td-alert--error" role="alert">
@@ -456,8 +483,20 @@ onActivated(refreshTodaySummary)
 
 /* .td-panel, .td-section-title, .td-section-desc are global (src/style.css) */
 
-.td-today__placeholder {
-  color: var(--td-text-tertiary);
+.td-today__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-6);
+}
+
+.td-today__skeleton-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: var(--td-space-3);
+  border-radius: var(--td-radius-md);
+  border: 0.5px solid var(--td-border-ghost);
+  background: var(--td-surface-container-high);
 }
 
 /* ── Onboarding & Recommended sections ── */
