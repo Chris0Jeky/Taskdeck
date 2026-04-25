@@ -249,6 +249,54 @@ public class FallbackSemanticSearchServiceTests
             "documents belonging to other users must be excluded");
     }
 
+    [Fact]
+    public async Task SearchAsync_ArchivedDocument_ExcludedFromResults()
+    {
+        _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 1f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fakeEmbedding);
+
+        var docId = Guid.NewGuid();
+        var vectorResults = new List<VectorSearchResult>
+        {
+            new("chunk:abc", 0.9, new Dictionary<string, string>
+            {
+                ["type"] = "knowledge_chunk",
+                ["documentId"] = docId.ToString(),
+                ["userId"] = _userId.ToString()
+            })
+        };
+
+        _vectorIndexMock
+            .Setup(v => v.QueryAsync(
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<int>(),
+                It.IsAny<IReadOnlyDictionary<string, string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(vectorResults);
+
+        // Document is archived
+        var doc = new KnowledgeDocument(
+            _userId, "Archived Doc", "Archived content",
+            KnowledgeSourceType.Manual);
+        doc.Archive();
+        _docRepoMock
+            .Setup(r => r.GetByIdAsync(docId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(doc);
+
+        _ftsSearchMock
+            .Setup(f => f.SearchAsync(It.IsAny<string>(), _userId, null, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Empty<KnowledgeSearchResultDto>());
+
+        var results = await _sut.SearchAsync("test", _userId);
+
+        results.Should().BeEmpty(
+            "archived documents must be excluded from search results");
+    }
+
     #endregion
 
     #region Vector search failure -> FTS fallback

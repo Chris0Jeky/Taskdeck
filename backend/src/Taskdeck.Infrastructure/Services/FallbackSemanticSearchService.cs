@@ -127,6 +127,10 @@ public sealed class FallbackSemanticSearchService : ISemanticSearchService
             if (doc is null)
                 continue;
 
+            // Exclude archived documents from search results
+            if (doc.IsArchived)
+                continue;
+
             // Double-check access control at the document level
             if (doc.UserId != userId)
                 continue;
