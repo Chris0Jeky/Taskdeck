@@ -7,7 +7,7 @@ using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Services;
 
-public class KnowledgeFtsSearchService : IKnowledgeSearchService
+public class KnowledgeFtsSearchService : IFtsKnowledgeSearchService
 {
     private readonly TaskdeckDbContext _context;
 

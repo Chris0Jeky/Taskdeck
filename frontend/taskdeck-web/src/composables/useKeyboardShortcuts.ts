@@ -8,6 +8,7 @@ export interface ShortcutConfig {
   description: string
   action: () => void
   preventDefault?: boolean
+  enabled?: () => boolean
 }
 
 /**
@@ -40,8 +41,9 @@ export function useKeyboardShortcuts(shortcuts: ShortcutConfig[]) {
       const ctrlMatches = shortcut.ctrl === undefined || shortcut.ctrl === (event.ctrlKey || event.metaKey)
       const shiftMatches = shortcut.shift === undefined || shortcut.shift === event.shiftKey
       const altMatches = shortcut.alt === undefined || shortcut.alt === event.altKey
+      const enabled = shortcut.enabled === undefined || shortcut.enabled()
 
-      if (keyMatches && ctrlMatches && shiftMatches && altMatches) {
+      if (enabled && keyMatches && ctrlMatches && shiftMatches && altMatches) {
         if (shortcut.preventDefault !== false) {
           event.preventDefault()
         }

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import BoardView from '../../views/BoardView.vue'
+import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts'
+import { usePaperThemeStore } from '../../store/paperThemeStore'
 import type { BoardPresenceSnapshot } from '../../types/realtime'
 
 const mockSessionStore = reactive<{ userId: string | null; username: string | null }>({
@@ -55,6 +57,7 @@ const mockBoardStore = reactive({
   },
   currentBoardLabels: [],
   cardsByColumn: new Map([['column-1', []]]),
+  currentBoardCards: [],
   boardPresenceMembers: [] as Array<{ userId: string }>,
   editingCardId: null as string | null,
   loading: false,
@@ -161,9 +164,11 @@ describe('BoardView', () => {
       updatedAt: new Date().toISOString(),
     }
     mockBoardStore.cardsByColumn = new Map([['column-1', []]])
+    mockBoardStore.currentBoardCards = []
     mockBoardStore.loading = false
     mockBoardStore.error = null
     addCardToggleMock.mockReset()
+    usePaperThemeStore().disable()
   })
 
   it('renders the board action rail and preserves board context for review, inbox, and chat routes', async () => {
@@ -198,6 +203,26 @@ describe('BoardView', () => {
       name: 'workspace-review',
       query: { boardId: 'board-1' },
     })
+  })
+
+  it('keeps board navigation shortcuts enabled in paper mode while gating hidden controls', async () => {
+    usePaperThemeStore().setMode('paper')
+
+    mountView()
+    await waitForUi()
+
+    const shortcuts = vi.mocked(useKeyboardShortcuts).mock.calls.at(-1)?.[0] ?? []
+    const shortcut = (key: string, description: string) =>
+      shortcuts.find((s) => s.key === key && s.description === description)
+
+    expect(shortcut('j', 'Next card')?.enabled).toBeUndefined()
+    expect(shortcut('ArrowRight', 'Move card to next column')?.enabled).toBeUndefined()
+    expect(shortcut('Enter', 'Open selected card')?.enabled).toBeUndefined()
+    expect(shortcut('Escape', 'Close open dialog/panel')?.enabled).toBeUndefined()
+
+    expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(false)
+    expect(shortcut('?', 'Toggle keyboard shortcuts help')?.enabled?.()).toBe(false)
+    expect(shortcut('f', 'Toggle filter panel')?.enabled?.()).toBe(false)
   })
 
   it('shows a demo-board badge for the client onboarding demo board', async () => {
