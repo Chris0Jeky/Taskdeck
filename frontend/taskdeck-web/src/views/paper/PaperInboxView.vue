@@ -136,8 +136,9 @@ async function onTriageReject(itemId: string) {
   await ignoreSelected()
 }
 
-function onTriageOpen(itemId: string) {
-  selectedItemId.value = itemId
+function onTriageOpen(_itemId: string) {
+  // Paper Inbox has no detail panel. Avoid mutating selectedItemId here because
+  // the legacy selection watcher owns triage polling lifecycle cleanup.
 }
 
 onMounted(() => {

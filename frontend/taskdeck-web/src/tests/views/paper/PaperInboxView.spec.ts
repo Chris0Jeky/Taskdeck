@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import PaperInboxView from '../../../views/paper/PaperInboxView.vue'
+import type { CaptureItemSummary } from '../../../types/capture'
 
 const mockCaptureStore = reactive({
   loadingList: false,
@@ -209,5 +210,26 @@ describe('PaperInboxView', () => {
     expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
     resolveCreate({ id: 'created-1' })
     await flushPromises()
+  })
+
+  it('does not mutate selected item when opening a paper row', async () => {
+    orchestratorState.selectedItemId.value = 'polling-capture'
+    orchestratorState.items.value = [
+      {
+        id: 'capture-1',
+        userId: 'u-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Keep polling stable',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+      },
+    ] as CaptureItemSummary[]
+
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('.paper-triage__open').trigger('click')
+
+    expect(orchestratorState.selectedItemId.value).toBe('polling-capture')
   })
 })
