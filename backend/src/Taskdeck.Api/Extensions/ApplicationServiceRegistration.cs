@@ -117,6 +117,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IToolExecutor, ProposeBulkMoveExecutor>();
         services.AddScoped<IToolExecutor, ProposeCreateColumnExecutor>();
 
+        services.AddScoped<IDailySealService, DailySealService>();
+
         services.AddScoped<ToolExecutorRegistry>(sp =>
             new ToolExecutorRegistry(sp.GetServices<IToolExecutor>()));
         services.AddScoped<IToolStatusNotifier, SignalRToolStatusNotifier>();
