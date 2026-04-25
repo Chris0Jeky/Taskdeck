@@ -82,8 +82,13 @@ jobs:
 
           # 3. paper-tokens.css hex-literal count baseline.  Bump in the
           #    same PR that adds a new token + audit-doc rationale.
-          BASELINE=63
-          ACTUAL=$(grep -cE "$HEX_RE" frontend/taskdeck-web/src/paper-tokens.css)
+          #    Count individual occurrences (grep -oE | wc -l), not matching
+          #    lines, so a line with two hex values counts as two.  CSS
+          #    comment lines (leading `*` or `/*`) are excluded to avoid
+          #    false positives from issue references and illustrative values.
+          BASELINE=68
+          ACTUAL=$(grep -vE '^\s*(\*|/\*)' frontend/taskdeck-web/src/paper-tokens.css \
+                    | grep -oE "$HEX_RE" | wc -l)
           if [[ "$ACTUAL" -gt "$BASELINE" ]]; then
             echo "::error file=frontend/taskdeck-web/src/paper-tokens.css::paper-tokens.css contains $ACTUAL hex literals, baseline is $BASELINE.  If the new literals are intentional, update both the baseline in .github/workflows/reusable-paper-color-audit.yml and the rationale in PAPER_NIGHT_AUDIT.md."
             exit 1

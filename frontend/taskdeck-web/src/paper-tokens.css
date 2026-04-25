@@ -462,7 +462,7 @@
      without compounding (leaves multiply, the root only sets).
    - `--paper-safe-bottom` exposes `env(safe-area-inset-bottom, 0px)` for
      future phone bottom-bar variants of `PaperSidebar` (deferred to the
-     per-surface follow-ups against #1007). Currently unconsumed; do not
+     per-surface follow-ups against GH-1007). Currently unconsumed; do not
      remove without checking those follow-ups.
    - `--paper-density` flips to `compact` ≤1024px and is intended for
      leaf surfaces (e.g. card / row paddings) to opt into a tighter
