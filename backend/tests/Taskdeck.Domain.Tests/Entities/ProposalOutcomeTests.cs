@@ -99,7 +99,7 @@ public class ProposalOutcomeTests
             -1.0, 1, 0, "Queue", "Low");
 
         act.Should().Throw<DomainException>()
-            .WithMessage("DecisionLatencySeconds cannot be negative");
+            .WithMessage("DecisionLatencySeconds cannot be negative or NaN");
     }
 
     [Fact]
@@ -257,5 +257,27 @@ public class ProposalOutcomeTests
             0.0, 1, 0, "Queue", "Low");
 
         outcome.DecisionLatencySeconds.Should().Be(0.0);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenLatencyIsNaN()
+    {
+        var act = () => new ProposalOutcome(
+            _proposalId, _userId, OutcomeDecision.Approved,
+            double.NaN, 1, 0, "Queue", "Low");
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("DecisionLatencySeconds cannot be negative or NaN");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenAverageFieldConfidenceIsNaN()
+    {
+        var act = () => new ProposalOutcome(
+            _proposalId, _userId, OutcomeDecision.Approved,
+            1.0, 1, 0, "Queue", "Low", averageFieldConfidence: double.NaN);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("AverageFieldConfidence must be between 0.0 and 1.0");
     }
 }

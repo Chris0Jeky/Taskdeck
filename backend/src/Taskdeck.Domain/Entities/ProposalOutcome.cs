@@ -86,8 +86,8 @@ public class ProposalOutcome : Entity
             throw new DomainException(ErrorCodes.ValidationError, "DecidedByUserId cannot be empty");
         if (!Enum.IsDefined(decision))
             throw new DomainException(ErrorCodes.ValidationError, "OutcomeDecision value is invalid");
-        if (decisionLatencySeconds < 0)
-            throw new DomainException(ErrorCodes.ValidationError, "DecisionLatencySeconds cannot be negative");
+        if (double.IsNaN(decisionLatencySeconds) || decisionLatencySeconds < 0)
+            throw new DomainException(ErrorCodes.ValidationError, "DecisionLatencySeconds cannot be negative or NaN");
         if (fieldCount < 0)
             throw new DomainException(ErrorCodes.ValidationError, "FieldCount cannot be negative");
         if (editedFieldCount < 0)
@@ -104,7 +104,7 @@ public class ProposalOutcome : Entity
             throw new DomainException(ErrorCodes.ValidationError, "RiskLevel cannot exceed 50 characters");
         if (modelId != null && modelId.Length > 100)
             throw new DomainException(ErrorCodes.ValidationError, "ModelId cannot exceed 100 characters");
-        if (averageFieldConfidence.HasValue && (averageFieldConfidence.Value < 0.0 || averageFieldConfidence.Value > 1.0))
+        if (averageFieldConfidence.HasValue && (double.IsNaN(averageFieldConfidence.Value) || averageFieldConfidence.Value < 0.0 || averageFieldConfidence.Value > 1.0))
             throw new DomainException(ErrorCodes.ValidationError, "AverageFieldConfidence must be between 0.0 and 1.0");
         if (decision != OutcomeDecision.EditedThenApproved && editedFieldCount > 0)
             throw new DomainException(ErrorCodes.ValidationError, "EditedFieldCount must be 0 when decision is not EditedThenApproved");
