@@ -306,7 +306,7 @@ public class BoardJsonExportImportRoundTripTests
             {
                 new CardDto(Guid.NewGuid(), boardId, colId, "Card A", "Desc A", dueDate, false, null, 0,
                     new List<LabelDto> { new LabelDto(Guid.NewGuid(), boardId, "Bug", "#FF0000", now, now) }, now, now),
-                new CardDto(Guid.NewGuid(), boardId, colId, "Card B", null!, null, false, null, 1,
+                new CardDto(Guid.NewGuid(), boardId, colId, "Card B", string.Empty, null, false, null, 1,
                     new List<LabelDto>(), now, now)
             },
             new[]
@@ -384,7 +384,7 @@ public class BoardJsonExportImportRoundTripTests
         var exportDto = new ExportBoardDto(
             new BoardDto(Guid.NewGuid(), "Board", null, false, now, now),
             new[] { new ColumnDto(Guid.NewGuid(), Guid.NewGuid(), "Todo", 0, null, 0, now, now) },
-            new[] { new CardDto(Guid.NewGuid(), Guid.NewGuid(), unknownColId, "Orphan Card", null!, null, false, null, 0, new List<LabelDto>(), now, now) },
+            new[] { new CardDto(Guid.NewGuid(), Guid.NewGuid(), unknownColId, "Orphan Card", string.Empty, null, false, null, 0, new List<LabelDto>(), now, now) },
             Array.Empty<LabelDto>(),
             new List<BoardAccessDto>(),
             now, "tester");

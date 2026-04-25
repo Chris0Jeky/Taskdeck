@@ -127,7 +127,7 @@ public class CrossFormatImportIntegrityTests
         var exportDto = new ExportBoardDto(
             new BoardDto(Guid.NewGuid(), "Exported Board", "Desc", false, now, now),
             new[] { new ColumnDto(colId, Guid.NewGuid(), "Backlog", 0, null, 1, now, now) },
-            new[] { new CardDto(Guid.NewGuid(), Guid.NewGuid(), colId, "Card A", null!, null, false, null, 0, new List<LabelDto>(), now, now) },
+            new[] { new CardDto(Guid.NewGuid(), Guid.NewGuid(), colId, "Card A", string.Empty, null, false, null, 0, new List<LabelDto>(), now, now) },
             Array.Empty<LabelDto>(),
             new List<BoardAccessDto>(),
             now, "tester");

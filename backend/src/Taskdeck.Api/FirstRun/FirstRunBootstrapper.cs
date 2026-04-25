@@ -33,7 +33,7 @@ public static class FirstRunBootstrapper
     /// </summary>
     /// <remarks>
     /// The source is inserted <em>before</em> any
-    /// <c>EnvironmentVariablesConfigurationSource</c> entries so that
+    /// <see cref="T:Microsoft.Extensions.Configuration.EnvironmentVariables.EnvironmentVariablesConfigurationSource"/> entries so that
     /// environment variables always win over the auto-generated file.  This
     /// preserves 12-factor / container deployment patterns where operators
     /// supply <c>Jwt__SecretKey</c> (or similar) via environment variables
