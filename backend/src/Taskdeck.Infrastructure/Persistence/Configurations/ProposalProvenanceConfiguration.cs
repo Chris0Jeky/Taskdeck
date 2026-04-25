@@ -36,6 +36,11 @@ public class ProposalProvenanceConfiguration : IEntityTypeConfiguration<Proposal
             .IsRequired()
             .IsConcurrencyToken();
 
+        builder.HasOne<AutomationProposal>()
+            .WithOne()
+            .HasForeignKey<ProposalProvenance>(pp => pp.ProposalId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasIndex(pp => pp.ProposalId)
             .IsUnique();
 
