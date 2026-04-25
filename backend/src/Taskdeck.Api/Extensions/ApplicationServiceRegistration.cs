@@ -73,6 +73,7 @@ public static class ApplicationServiceRegistration
             new BoardMetricsService(
                 sp.GetRequiredService<IUnitOfWork>(),
                 sp.GetRequiredService<IAuthorizationService>()));
+        services.AddScoped<IStreakService, StreakService>();
         services.AddScoped<ApiKeyService>();
         services.AddScoped<IForecastingService>(sp =>
             new ForecastingService(
