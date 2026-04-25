@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '../../../store/boardStore'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
@@ -44,6 +44,13 @@ const dropActive = ref(false)
 
 const inputsDisabled = computed(() => !!props.submitting)
 const canSubmit = computed(() => body.value.trim().length > 0 && !props.submitting)
+
+watch(
+  () => props.defaultBoardId,
+  (next) => {
+    boardId.value = next ?? null
+  },
+)
 
 function onBodyKeydown(event: KeyboardEvent) {
   if (inputsDisabled.value) return

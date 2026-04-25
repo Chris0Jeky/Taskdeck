@@ -83,6 +83,19 @@ describe('PaperCaptureComposer', () => {
     expect(submitted.boardId).toBe('board-beta')
   })
 
+  it('syncs the board picker when the active inbox scope changes', async () => {
+    const wrapper = mount(PaperCaptureComposer, { props: { defaultBoardId: 'board-alpha' } })
+
+    await wrapper.setProps({ defaultBoardId: 'board-beta' })
+    expect((wrapper.find('select').element as HTMLSelectElement).value).toBe('board-beta')
+
+    await wrapper.find('textarea').setValue('Capture in the new board scope')
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+    const submitted = wrapper.emitted('submit')?.[0]?.[0] as { boardId: string | null }
+    expect(submitted.boardId).toBe('board-beta')
+  })
+
   it('reflects label selections in the submit payload', async () => {
     const wrapper = mount(PaperCaptureComposer)
     const labelInput = wrapper.find('input[type="text"]')
