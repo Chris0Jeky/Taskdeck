@@ -1,0 +1,53 @@
+<script setup lang="ts">
+import ReviewAuthorCard from './ReviewAuthorCard.vue'
+import ReviewWhyNow from './ReviewWhyNow.vue'
+import ReviewSimilarPast from './ReviewSimilarPast.vue'
+import ReviewKeysCard from './ReviewKeysCard.vue'
+import type {
+  ConfidenceBreakdown,
+  SimilarPastRow,
+} from '../../../composables/usePaperReviewSelectors'
+
+/**
+ * ReviewRightRail — the 320 px right column: author card with stamp,
+ * why-now, similar-past, decide-with-keys.
+ */
+defineProps<{
+  authorName: string
+  authorMeta: string
+  proposedDate: string
+  proposedTime: string
+  proposedNum: string
+  whyNowBody: string
+  whyNowHref?: string
+  breakdown: ConfidenceBreakdown
+  similarPast: SimilarPastRow[]
+  similarPastApplyRate: { applied: number; total: number; ratio: number }
+}>()
+</script>
+
+<template>
+  <aside class="paper-review-right" data-testid="paper-review-right-rail">
+    <ReviewAuthorCard
+      :author-name="authorName"
+      :author-meta="authorMeta"
+      :proposed-date="proposedDate"
+      :proposed-time="proposedTime"
+      :proposed-num="proposedNum"
+      :breakdown="breakdown"
+    />
+    <ReviewWhyNow :body="whyNowBody" :tune-href="whyNowHref" />
+    <ReviewSimilarPast :rows="similarPast" :apply-rate="similarPastApplyRate" />
+    <ReviewKeysCard />
+  </aside>
+</template>
+
+<style scoped>
+.paper-review-right {
+  border-left: 1px solid var(--line);
+  background: var(--paper-2);
+  padding: 20px 18px;
+  overflow: auto;
+  min-height: 0;
+}
+</style>
