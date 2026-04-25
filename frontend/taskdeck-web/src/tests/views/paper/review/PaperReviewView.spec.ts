@@ -166,6 +166,19 @@ describe('PaperReviewView', () => {
     expect(railText).not.toContain('Theirs proposal')
   })
 
+  it('normalizes numeric chat source types for queue attribution', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        sourceType: 1,
+        summary: 'Numeric chat proposal',
+      }),
+    ])
+
+    const railText = wrapper.find('[data-testid="paper-review-queue-rail"]').text()
+    expect(railText).toContain('haiku')
+    expect(railText).not.toContain('capture')
+  })
+
   it('renders a filter-empty state when another queue filter still has work', async () => {
     const wrapper = await mountView([
       makeProposal({

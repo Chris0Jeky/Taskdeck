@@ -13,7 +13,7 @@ import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelecto
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
-import { normalizeProposalStatus } from '../../utils/automation'
+import { normalizeProposalSourceType, normalizeProposalStatus } from '../../utils/automation'
 import type { Proposal as ApiProposal } from '../../types/automation'
 import { useRoute } from 'vue-router'
 import type {
@@ -193,7 +193,7 @@ const queueItems = computed<QueueRailItem[]>(() =>
       id: p.id,
       serial: `#${p.id.slice(0, 4).toUpperCase()}`,
       title: p.summary || '(no summary)',
-      who: p.sourceType === 'Chat' ? 'haiku' : 'capture',
+      who: normalizeProposalSourceType(p.sourceType) === 'Chat' ? 'haiku' : 'capture',
       // Confidence is not yet on the wire — leave null until the gap lands.
       confidence: null,
       age: ageLabel(p.createdAt),

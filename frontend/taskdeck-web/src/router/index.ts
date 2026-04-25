@@ -35,7 +35,7 @@ const NotificationPreferencesView = () => import('../views/NotificationPreferenc
 const InboxView = () => import('../views/InboxView.vue')
 const HomeView = () => import('../views/HomeView.vue')
 const TodayView = () => import('../views/TodayView.vue')
-const ReviewView = () => import('../views/ReviewView.vue')
+const PaperReviewView = () => import('../views/paper/PaperReviewView.vue')
 const DevToolsView = () => import('../views/DevToolsView.vue')
 const SavedViewsView = () => import('../views/SavedViewsView.vue')
 const MetricsView = () => import('../views/MetricsView.vue')
@@ -190,7 +190,7 @@ const router = createRouter({
     {
       path: '/workspace/review',
       name: 'workspace-review',
-      component: ReviewView,
+      component: PaperReviewView,
       meta: { requiresShell: true, automationSurface: 'review', requiresFlag: 'newAutomation' },
     },
     {
