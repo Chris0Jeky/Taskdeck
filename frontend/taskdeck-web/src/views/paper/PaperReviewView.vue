@@ -528,7 +528,6 @@ function onQueueFilterChange(filter: QueueFilter) {
 
 <template>
   <div class="paper paper-review-deep" data-testid="paper-review-view">
-    <h1 class="sr-only">Review</h1>
     <ReviewQueueRail
       :items="queueItems"
       :active-id="activeProposal?.id ?? null"
