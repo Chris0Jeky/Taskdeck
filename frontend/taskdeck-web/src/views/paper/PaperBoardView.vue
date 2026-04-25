@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useBoardDragDrop } from '../../composables/useBoardDragDrop'
@@ -60,6 +60,10 @@ const cardsByColumn = computed<Map<string, Card[]>>(() => {
 })
 
 const activeSelectedCardId = computed(() => props.selectedCardId ?? selectedCard.value?.id ?? null)
+
+watch(boardId, () => {
+  selectedCard.value = null
+})
 
 const totalCards = computed(() =>
   sortedColumns.value.reduce((sum, c) => sum + (cardsByColumn.value.get(c.id)?.length ?? 0), 0),
