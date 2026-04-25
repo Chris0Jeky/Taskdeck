@@ -13,6 +13,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## MCP tools (agent tooling)
 - See `docs/MCP_TOOLING_GUIDE.md` for tool selection rules and safe usage.
+- For high-autonomy Codex issue/PR/CI batches, see `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`.
 - MCP-first default: when an MCP tool can perform a task, use MCP before shell/CLI alternatives.
 - Prefer MCP tools over guessing:
     - OpenAI/Codex/API docs -> openaiDeveloperDocs MCP
@@ -23,12 +24,13 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - Fallback rule:
   - if MCP is unavailable, failing, or lacks required capability, use shell/CLI fallback and state that fallback briefly in handoff notes.
 
-## Multi-Agent Execution (required)
-- Use spawned agents aggressively for independent workstreams.
-- Spawn as many agents as needed to minimize wall-clock time when tasks can run in parallel.
-- Split agent ownership by file/concern so concurrent work does not overlap.
-- Keep one coordinator agent responsible for synthesis, final conflict resolution, and verification.
-- Do not serialize independent exploration, implementation, or verification steps when safe parallel execution is possible.
+## Multi-Agent / Parallel Execution (required)
+- Use spawned agents aggressively when the Codex runtime exposes them and work can be split safely.
+- If spawned agents are unavailable in the current runtime, use explicit git worktrees plus separate Codex sessions or GitHub coding-agent tasks; do not claim subagent execution unless it actually happened.
+- Split ownership by file/module/concern so concurrent work does not overlap.
+- Keep one coordinator responsible for issue selection, synthesis, conflict resolution, docs rehydration, project status/priority sync, and final verification.
+- Do not serialize independent exploration, implementation, review, or verification when safe parallel execution is possible.
+- For batch issue execution, PR review loops, CI recovery, and docs reconciliation, follow `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`.
 
 ## Project Operations Automation (required)
 - Read `docs/GITHUB_PROJECT_AUTOMATION.md` before changing project operations, issue templates, or workflow conventions.
@@ -44,6 +46,10 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## Local skill packs
 - Repo-local Codex skills live under `.codex/skills/` and supplement `AGENTS.md`; they do not override it.
+- Use `.codex/skills/taskdeck-issue-batch-orchestrator` when asked to take care of many issues, pick issues, coordinate worktrees/subagents, open PRs, run review loops, or reconcile a high-autonomy batch.
+- Use `.codex/skills/taskdeck-worktree-issue-worker` when implementing a single assigned issue in an isolated worktree.
+- Use `.codex/skills/taskdeck-pr-review-loop` when reviewing PRs, spinning fresh adversarial reviewers, posting findings, or addressing review/bot comments.
+- Use `.codex/skills/taskdeck-ci-conflict-recovery` when checking failing CI, resolving PR conflicts, inspecting bot comments, or recovering blocked PRs.
 - Use `.codex/skills/taskdeck-repo-onramp` when the request is broad, the repo area is unfamiliar, or current Taskdeck reality must be reconciled before planning.
 - Use `.codex/skills/taskdeck-backend-slice` for backend/API/application/infrastructure/worker/auth behavior changes.
 - Use `.codex/skills/taskdeck-frontend-workspace-slice` for frontend shell, workspace, route, help-state, and novice-legibility work outside the core capture-review semantics.
@@ -62,10 +68,17 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ### Windows Git Reliability Fallback
 - Run `bash scripts/check-git-env.sh` at the start of a session to validate git resolution and index.lock state.
+- In PowerShell/Codex-native sessions, prefer `powershell -File scripts/check-git-env.ps1`; the Bash script remains available for Bash shells.
 - If `git` resolves to Cygwin or produces signal/pipe-style failures, use `C:\Program Files\Git\cmd\git.exe` explicitly for repo operations (or add `C:\Program Files\Git\cmd` to the front of `PATH`).
 - When running automated commits in the background terminal, append `--no-gpg-sign` to `git commit` to prevent hidden GPG pinentry prompts from freezing the process. Do NOT use `--no-verify` — pre-commit hooks must run; if a hook fails, investigate and fix the underlying issue.
 - If a commit fails because `.git/index.lock` cannot be created, first check for active `git` processes; remove `.git/index.lock` only when no git process is running. The `check-git-env.sh` script automates this detection.
 - For stacked branches with small conflict surfaces, prefer `merge` over `rebase` when branch reconciliation starts stalling (for example long-running interactive/conflict loops). Resolve conflicts once, merge, and continue delivery.
+
+### Codex Worktree Safety
+- Use `scripts/git/New-CodexIssueWorktree.ps1` to create isolated issue worktrees under `.worktrees/`.
+- First command in a Codex worktree worker session must be `powershell -File scripts/worktree_guard.ps1` (or `source scripts/worktree_guard.sh` in Bash).
+- Do not pass absolute main-checkout paths to worktree workers; derive paths from `$env:WT_PROJECT_DIR` or `git rev-parse --show-toplevel`.
+- Only the coordinator should update canonical batch docs such as `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, and `docs/TESTING_GUIDE.md` unless a worker explicitly owns a docs-only issue.
 
 ### Small Mainline Exception
 - If a change is very small and low-risk (especially minor docs wording/checklist updates), do not automatically create a branch/PR.
