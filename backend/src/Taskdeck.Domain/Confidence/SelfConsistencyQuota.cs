@@ -120,16 +120,14 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
         return MaxCalls == other.MaxCalls
                && UsedCalls == other.UsedCalls
                && CostCap == other.CostCap
-               && Math.Abs(CostUsed - other.CostUsed) < Epsilon;
+               && CostUsed.Equals(other.CostUsed);
     }
 
     public override bool Equals(object? obj) => Equals(obj as SelfConsistencyQuota);
 
     public override int GetHashCode()
     {
-        // CostUsed participates in Equals with epsilon tolerance, so hashing its
-        // raw value or a rounded bucket can still split equal values at bucket edges.
-        return HashCode.Combine(MaxCalls, UsedCalls, CostCap);
+        return HashCode.Combine(MaxCalls, UsedCalls, CostCap, CostUsed);
     }
 
     #endregion

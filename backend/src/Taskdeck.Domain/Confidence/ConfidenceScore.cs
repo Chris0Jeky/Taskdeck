@@ -9,8 +9,6 @@ namespace Taskdeck.Domain.Confidence;
 /// </summary>
 public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<ConfidenceScore>
 {
-    private const double Epsilon = 1e-12;
-
     /// <summary>
     /// The confidence value in [0.0, 1.0].
     /// </summary>
@@ -77,8 +75,7 @@ public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<C
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
-        // Use epsilon comparison for floating-point equality
-        return Math.Abs(Score - other.Score) < Epsilon
+        return Score.Equals(other.Score)
                && Source == other.Source
                && Explanation == other.Explanation;
     }
@@ -87,9 +84,7 @@ public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<C
 
     public override int GetHashCode()
     {
-        // Score participates in Equals with epsilon tolerance, so hashing its raw
-        // value or a rounded bucket can still split equal values at bucket edges.
-        return HashCode.Combine(Source, Explanation);
+        return HashCode.Combine(Score, Source, Explanation);
     }
 
     public int CompareTo(ConfidenceScore? other)
@@ -98,7 +93,7 @@ public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<C
         if (Equals(other)) return 0;
 
         var scoreComparison = Score.CompareTo(other.Score);
-        if (scoreComparison != 0 && Math.Abs(Score - other.Score) >= Epsilon)
+        if (scoreComparison != 0)
             return scoreComparison;
 
         var sourceComparison = Source.CompareTo(other.Source);

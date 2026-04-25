@@ -303,13 +303,24 @@ public class SelfConsistencyQuotaTests
     }
 
     [Fact]
-    public void GetHashCode_ShouldMatch_WhenCostUsedIsEpsilonEqual()
+    public void Equals_ShouldReturnFalse_WhenCostUsedIsNearButDistinct()
     {
         var a = new SelfConsistencyQuota(5, 2, costCap: 1.0, costUsed: 0.5 - 1e-13);
         var b = new SelfConsistencyQuota(5, 2, costCap: 1.0, costUsed: 0.5 + 1e-13);
 
-        a.Should().Be(b);
-        a.GetHashCode().Should().Be(b.GetHashCode());
+        a.Should().NotBe(b);
+    }
+
+    [Fact]
+    public void Equals_ShouldBeTransitive_ForNearAdjacentCostUsedValues()
+    {
+        var a = new SelfConsistencyQuota(5, 2, costCap: 1.0, costUsed: 0.5);
+        var b = new SelfConsistencyQuota(5, 2, costCap: 1.0, costUsed: 0.5 + 7.5e-13);
+        var c = new SelfConsistencyQuota(5, 2, costCap: 1.0, costUsed: 0.5 + 1.5e-12);
+
+        a.Should().NotBe(b);
+        b.Should().NotBe(c);
+        a.Should().NotBe(c);
     }
 
     [Fact]

@@ -179,12 +179,14 @@ public class ConfidenceScoreTests
     }
 
     [Fact]
-    public void CompareTo_ShouldReturnZero_WhenScoresAreEpsilonEqualAndMetadataMatches()
+    public void CompareTo_ShouldOrderByExactScore_WhenScoresAreNearButDistinct()
     {
         var a = new ConfidenceScore(0.5, ConfidenceSource.Verbalized, "same");
         var b = new ConfidenceScore(0.5 + 4e-13, ConfidenceSource.Verbalized, "same");
 
-        a.CompareTo(b).Should().Be(0);
+        a.CompareTo(b).Should().BeNegative();
+        b.CompareTo(a).Should().BePositive();
+        a.Should().NotBe(b);
     }
 
     [Fact]
@@ -216,13 +218,15 @@ public class ConfidenceScoreTests
     }
 
     [Fact]
-    public void GetHashCode_ShouldMatch_WhenScoresAreEpsilonEqual()
+    public void Equals_ShouldBeTransitive_ForNearAdjacentScores()
     {
-        var a = new ConfidenceScore(0.5 - 1e-13, ConfidenceSource.Verbalized, "test");
-        var b = new ConfidenceScore(0.5 + 1e-13, ConfidenceSource.Verbalized, "test");
+        var a = new ConfidenceScore(0.5, ConfidenceSource.Verbalized, "test");
+        var b = new ConfidenceScore(0.5 + 7.5e-13, ConfidenceSource.Verbalized, "test");
+        var c = new ConfidenceScore(0.5 + 1.5e-12, ConfidenceSource.Verbalized, "test");
 
-        a.Should().Be(b);
-        a.GetHashCode().Should().Be(b.GetHashCode());
+        a.Should().NotBe(b);
+        b.Should().NotBe(c);
+        a.Should().NotBe(c);
     }
 
     [Fact]
