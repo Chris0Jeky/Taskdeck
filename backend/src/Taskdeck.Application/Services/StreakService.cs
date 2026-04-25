@@ -36,16 +36,12 @@ public class StreakService : IStreakService
         var from = new DateTimeOffset(startDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var to = new DateTimeOffset(today.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero);
 
-        var auditLogs = await _unitOfWork.AuditLogs.QueryAsync(
-            from, to,
-            userId: userId,
-            limit: 100_000,
-            cancellationToken: cancellationToken);
+        // Use a lightweight projection that groups and counts on the server
+        // instead of loading full AuditLog entities into memory.
+        var dailyAuditCounts = await _unitOfWork.AuditLogs.CountByDateAsync(
+            from, to, userId, cancellationToken);
 
-        // Group audit entries by date and count daily activity
-        var dailyCounts = auditLogs
-            .GroupBy(a => DateOnly.FromDateTime(a.Timestamp.UtcDateTime.Date))
-            .ToDictionary(g => g.Key, g => g.Count());
+        var dailyCounts = dailyAuditCounts.ToDictionary(d => d.Date, d => d.Count);
 
         // Compute intensity buckets via quartile-based bucketing
         var days = ComputeDays(startDate, today, dailyCounts);
