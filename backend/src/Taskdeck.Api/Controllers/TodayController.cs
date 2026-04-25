@@ -41,7 +41,7 @@ public class TodayController : AuthenticatedControllerBase
             return result.ToErrorActionResult();
 
         if (result.Value is null)
-            return Ok(new { });
+            return NoContent();
 
         return Ok(result.Value);
     }
