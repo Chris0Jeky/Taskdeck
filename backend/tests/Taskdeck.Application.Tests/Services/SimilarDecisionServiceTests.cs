@@ -245,13 +245,13 @@ public class SimilarDecisionServiceTests
         // We test the static helper directly since the proposal's DecidedAt is set internally.
         var weekStr = SimilarDecisionService.FormatWeekDate(new DateTimeOffset(2026, 4, 6, 0, 0, 0, TimeSpan.Zero));
 
-        // April 6, 2026 is ISO week 15
-        weekStr.Should().Be("wk 15");
+        // April 6, 2026 is ISO week 15 of 2026
+        weekStr.Should().Be("wk 15 '26");
     }
 
     [Theory]
-    [InlineData(2026, 1, 1, "wk 1")]   // Jan 1, 2026 is in ISO week 1
-    [InlineData(2025, 12, 29, "wk 1")]  // Dec 29, 2025 is in ISO week 1 of 2026
+    [InlineData(2026, 1, 1, "wk 1 '26")]   // Jan 1, 2026 is in ISO week 1 of 2026
+    [InlineData(2025, 12, 29, "wk 1 '26")]  // Dec 29, 2025 is in ISO week 1 of 2026 (cross-year)
     public void FormatWeekDate_ShouldReturnCorrectIsoWeek(int year, int month, int day, string expected)
     {
         var result = SimilarDecisionService.FormatWeekDate(new DateTimeOffset(year, month, day, 0, 0, 0, TimeSpan.Zero));

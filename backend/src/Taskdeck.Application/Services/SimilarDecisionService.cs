@@ -143,13 +143,15 @@ public class SimilarDecisionService : ISimilarDecisionService
     }
 
     /// <summary>
-    /// Formats a DateTime as an ISO week string, e.g. 'wk 14'.
+    /// Formats a DateTime as an ISO week string, e.g. "wk 14 '26".
     /// Uses ISO 8601 week numbering (Monday-start, first 4-day week).
+    /// Includes the 2-digit year to disambiguate cross-year boundaries.
     /// </summary>
     internal static string FormatWeekDate(DateTimeOffset dateTime)
     {
         var weekNumber = ISOWeek.GetWeekOfYear(dateTime.DateTime);
-        return $"wk {weekNumber}";
+        var isoYear = ISOWeek.GetYear(dateTime.DateTime);
+        return $"wk {weekNumber} '{isoYear % 100:D2}";
     }
 
     private static SimilarPastResultDto ToDto(SimilarPastResult result)
