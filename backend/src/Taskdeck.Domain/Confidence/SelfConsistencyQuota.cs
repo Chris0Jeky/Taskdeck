@@ -52,9 +52,17 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
             throw new DomainException(ErrorCodes.ValidationError,
                 $"UsedCalls ({usedCalls}) cannot exceed MaxCalls ({maxCalls}).");
 
+        if (costCap.HasValue && (double.IsNaN(costCap.Value) || double.IsInfinity(costCap.Value)))
+            throw new DomainException(ErrorCodes.ValidationError,
+                "CostCap must be a finite number.");
+
         if (costCap.HasValue && costCap.Value < 0)
             throw new DomainException(ErrorCodes.ValidationError,
                 "CostCap cannot be negative.");
+
+        if (double.IsNaN(costUsed) || double.IsInfinity(costUsed))
+            throw new DomainException(ErrorCodes.ValidationError,
+                "CostUsed must be a finite number.");
 
         if (costUsed < 0)
             throw new DomainException(ErrorCodes.ValidationError,
@@ -76,6 +84,10 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
     /// </summary>
     public SelfConsistencyQuota Consume(double callCost = 0.0)
     {
+        if (double.IsNaN(callCost) || double.IsInfinity(callCost))
+            throw new DomainException(ErrorCodes.ValidationError,
+                "Call cost must be a finite number.");
+
         if (callCost < 0)
             throw new DomainException(ErrorCodes.ValidationError,
                 "Call cost cannot be negative.");
@@ -107,7 +119,13 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
 
     public override bool Equals(object? obj) => Equals(obj as SelfConsistencyQuota);
 
-    public override int GetHashCode() => HashCode.Combine(MaxCalls, UsedCalls, CostCap, CostUsed);
+    public override int GetHashCode()
+    {
+        // Round CostUsed to a granularity coarser than the epsilon (1e-12) used in Equals
+        // so that two values within epsilon produce the same hash code.
+        long roundedCostBits = (long)Math.Round(CostUsed * 1e9);
+        return HashCode.Combine(MaxCalls, UsedCalls, CostCap, roundedCostBits);
+    }
 
     #endregion
 

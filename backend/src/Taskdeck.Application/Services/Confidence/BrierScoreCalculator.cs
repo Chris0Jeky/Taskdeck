@@ -64,6 +64,14 @@ public static class BrierScoreCalculator
     /// <returns>The Brier skill score.</returns>
     public static double CalculateSkillScore(double brierScore, double referenceBrierScore)
     {
+        if (double.IsNaN(brierScore) || double.IsInfinity(brierScore))
+            throw new DomainException(ErrorCodes.ValidationError,
+                "Brier score must be a finite number.");
+
+        if (double.IsNaN(referenceBrierScore) || double.IsInfinity(referenceBrierScore))
+            throw new DomainException(ErrorCodes.ValidationError,
+                "Reference Brier score must be a finite number.");
+
         if (referenceBrierScore <= 0.0)
             throw new DomainException(ErrorCodes.ValidationError,
                 "Reference Brier score must be positive for skill score calculation.");

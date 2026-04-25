@@ -75,11 +75,18 @@ public sealed class ConfidenceScore : IEquatable<ConfidenceScore>, IComparable<C
 
     public override bool Equals(object? obj) => Equals(obj as ConfidenceScore);
 
-    public override int GetHashCode() => HashCode.Combine(Score, Source, Explanation);
+    public override int GetHashCode()
+    {
+        // Round Score to a granularity coarser than the epsilon (1e-12) used in Equals
+        // so that two scores within epsilon produce the same hash code.
+        long roundedBits = (long)Math.Round(Score * 1e9);
+        return HashCode.Combine(roundedBits, Source, Explanation);
+    }
 
     public int CompareTo(ConfidenceScore? other)
     {
         if (other is null) return 1;
+        if (Equals(other)) return 0;
         return Score.CompareTo(other.Score);
     }
 

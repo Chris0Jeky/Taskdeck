@@ -98,6 +98,42 @@ public class SelfConsistencyQuotaTests
     }
 
     [Fact]
+    public void Constructor_ShouldThrow_WhenCostCapIsNaN()
+    {
+        var act = () => new SelfConsistencyQuota(10, costCap: double.NaN);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenCostCapIsInfinity()
+    {
+        var act = () => new SelfConsistencyQuota(10, costCap: double.PositiveInfinity);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenCostUsedIsNaN()
+    {
+        var act = () => new SelfConsistencyQuota(10, costUsed: double.NaN);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenCostUsedIsInfinity()
+    {
+        var act = () => new SelfConsistencyQuota(10, costUsed: double.PositiveInfinity);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public void Consume_ShouldReturnNewQuotaWithUpdatedCounts()
     {
         var quota = new SelfConsistencyQuota(5, 0, costCap: 2.0, costUsed: 0.0);
@@ -152,6 +188,28 @@ public class SelfConsistencyQuotaTests
         var quota = new SelfConsistencyQuota(10);
 
         var act = () => quota.Consume(-0.1);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Consume_ShouldThrow_WhenCallCostIsNaN()
+    {
+        var quota = new SelfConsistencyQuota(10);
+
+        var act = () => quota.Consume(double.NaN);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Consume_ShouldThrow_WhenCallCostIsInfinity()
+    {
+        var quota = new SelfConsistencyQuota(10);
+
+        var act = () => quota.Consume(double.PositiveInfinity);
 
         act.Should().Throw<DomainException>()
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);

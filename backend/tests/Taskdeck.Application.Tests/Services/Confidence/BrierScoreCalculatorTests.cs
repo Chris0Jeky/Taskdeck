@@ -281,5 +281,41 @@ public class BrierScoreCalculatorTests
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
     }
 
+    [Fact]
+    public void CalculateSkillScore_ShouldThrow_WhenBrierScoreIsNaN()
+    {
+        var act = () => BrierScoreCalculator.CalculateSkillScore(double.NaN, 0.25);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void CalculateSkillScore_ShouldThrow_WhenBrierScoreIsInfinity()
+    {
+        var act = () => BrierScoreCalculator.CalculateSkillScore(double.PositiveInfinity, 0.25);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void CalculateSkillScore_ShouldThrow_WhenReferenceIsNaN()
+    {
+        var act = () => BrierScoreCalculator.CalculateSkillScore(0.1, double.NaN);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void CalculateSkillScore_ShouldThrow_WhenReferenceIsInfinity()
+    {
+        var act = () => BrierScoreCalculator.CalculateSkillScore(0.1, double.PositiveInfinity);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
     #endregion
 }
