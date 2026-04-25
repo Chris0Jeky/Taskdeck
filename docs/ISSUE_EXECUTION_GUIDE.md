@@ -434,7 +434,7 @@ Tracker:
 1. `#972` RFAI-00 12-week review-first AI roadmap tracker
 
 Dependency order:
-1. `#973` RFAI-01 safety invariants, IA cut, eval seed, and recertification (`Priority I`)
+1. ~~`#973`~~ RFAI-01 safety invariants, IA cut, eval seed, and recertification (**delivered** PR `#986`)
 2. `#974` RFAI-02 IntentEnvelopeV1, IChatClient adapter, and schema spike (`Priority I`; depends on `#973`)
 3. `#975` RFAI-03 proposal generator V1 with verified provenance and outcomes ledger (`Priority I`; depends on `#974`)
 4. `#976` RFAI-04 typed ProposalCompiler and revision-backed edit-before-approve flow (`Priority I`; depends on `#975`)

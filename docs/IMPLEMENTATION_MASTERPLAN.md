@@ -52,6 +52,12 @@ Latest roadmap adoption (2026-04-25):
 - The roadmap is accepted with three corrections: proposal gating is for automation-originated writes only, exfiltration safety is separate from mutation safety, and dependency versions/empirical thresholds are measured implementation results rather than planning promises.
 - Existing shipped foundations are reused rather than reseeded: PWA/offline readiness (`#95`), voice-capture privacy anchor (`#219`), MCP hardening anchor (`#655`, for broader deferred production hardening), and test-total recertification follow-up (`#970`).
 
+Roadmap v4 first-wave delivery (2026-04-25, PRs `#985`--`#988`):
+- TST-DEBT CI annotation cleanup (`#971`/`#985`): 9 compiler warnings fixed, build warnings 22 → 12.
+- RFAI-01 safety invariants, IA cut, eval seed (`#973`/`#986`): 12 roadmap invariant tests, sidebar IA cut to 5 primary items, 15 eval golden fixtures.
+- TST-DOC test totals recertification (`#970`/`#987`): backend 5,060 / frontend 2,805 / combined 7,865+.
+- SEC-29 CSP inline style migration complete (`#855`/`#988`): all 22 `:style` bindings migrated; `'unsafe-inline'` dropped from reverse-proxy `style-src`.
+
 1. Backend advanced slices completed: automation proposals/executor, archive recovery, chat, ops/logs, workers/health.
 2. Frontend advanced views integrated: automations/chat/ops/archive and supporting APIs/types.
 3. Maintainability refactor delivered (PR #23):
@@ -696,10 +702,36 @@ Latest roadmap adoption (2026-04-25):
 
 136. Mobile, security, legal, and testing expansion wave (2026-04-23, PRs `#944`–`#949`, 5 PRs with adversarial review per PR):
     - **FE-19 mobile-responsive board, toolbar, and dialog** (`#860`/`#944`): board columns stack vertically on ≤640px; `TdDialog` full-bleed with `100dvh` at mobile; 44×44px tap targets on toolbar and action rail; `--td-font-lg` token for iOS zoom prevention; `@mobile` Playwright test; WCAG 2.4.3 footer tab-order fix; scoped slot CSS penetration fix (`:deep(> *)`) and `overflow-x: clip` for spec-correct mobile overflow
-    - **SEC-29 CSP style-src tightening (partial)** (`#855`/`#945`): removed `'unsafe-inline'` from `style-src` in API CSP; `style-src-elem 'self'` in reverse-proxy blocks inline `<style>` injection; regression test added; 4 docs updated; follow-up: migrate 27 `:style` binding files to CSS custom properties
+    - **SEC-29 CSP style-src tightening (partial)** (`#855`/`#945`): removed `'unsafe-inline'` from `style-src` in API CSP; `style-src-elem 'self'` in reverse-proxy blocks inline `<style>` injection; regression test added; 4 docs updated; **follow-up delivered** in entry 140 (`#855`/`#988`)
     - **Legal document drafts** (`#548`/`#946`): 5 DRAFT documents in `docs/legal/` — Privacy Policy, Terms of Service, Sub-Processors (with conditional Sentry), Cookie Policy (concrete localStorage keys, OAuth cookie disclosure), and README with launch checklist; grounded in actual codebase behavior with `[LEGAL REVIEW REQUIRED]` markers
     - **TST-59 visual regression expansion** (`#865`/`#948`): 15 new visual regression specs (total 20 components); clock pinning, timestamp masking, font-load determinism; redundant networkidle waits removed
     - **TST-60 E2E parallelization** (`#867`/`#949`): `fullyParallel: true` with 2-worker default; `Cache=Shared` dropped; idempotent `.check()` for WIP toggle; `Default Timeout=30` comment corrected; WAL mode documented as follow-up
+
+137. TST-DEBT CI annotation cleanup (`#971`/`#985`, 2026-04-25):
+    - Fixed 9 compiler warnings: nullable annotations in 4 test files, `[EnumeratorCancellation]` in LlmProviderAbstractionEdgeCaseTests, XML doc warnings in WorkspaceController/ConnectorProvidersController/FirstRunBootstrapper
+    - `null!` replaced with `string.Empty`; cref fully qualified
+    - Build warnings dropped from 22 to 12
+
+138. RFAI-01 safety invariants, IA cut, eval seed (`#973`/`#986`, 2026-04-25):
+    - 12 roadmap invariant tests in `RoadmapInvariantTests.cs` (8 passing: INV-01 through INV-08 covering mutation safety and EgressEnvelope HTTP audit; 4 skipped with TODO for future features)
+    - Sidebar IA reduced from 17 to 5 primary items (Today, Inbox, Review, Boards, Search) with Settings in footer; demoted surfaces accessible via command palette
+    - `?` shortcut help updated with navigation section for new IA model
+    - 15 eval golden fixtures in `evals/golden/` (5 happy-path, 4 multi-instruction, 3 ambiguous, 5 safety-boundary) with JSON schema and README
+    - AuditRetentionWorker config doc ranges corrected (CleanupBatchSize, CleanupIntervalHours)
+    - Review round 2: regex capture bug fixed in INV-04/INV-05, unused field removed, Settings link gated behind feature flag, sidebar tests rewritten
+
+139. TST-DOC test totals recertification (`#970`/`#987`, 2026-04-25):
+    - Backend: 4,979 → 5,060 passing (+81), 0 failures (5 previously-failing Api.Tests now pass), 2 skipped
+    - Frontend: 2,607 → 2,805 passing (+198)
+    - Combined: 7,586+ → 7,865+
+    - Updated TESTING_GUIDE.md, STATUS.md, RESEARCH_BRIEF.md
+    - Review round 2: verification date corrected, fraction notation fixed, en-dash consistency
+
+140. SEC-29 CSP inline style migration complete (`#855`/`#988`, 2026-04-25):
+    - Migrated all 22 `:style` bindings across 14 Vue files to CSS custom properties/v-bind()/utility classes
+    - Dropped `'unsafe-inline'` from `style-src` in reverse-proxy CSP
+    - TdSkeleton and TdTag test assertions updated for CSS custom property approach
+    - Completes the SEC-29 follow-up from `#855`/`#945` (partial)
 
 ## Current Planning Pivot (2026-03-07)
 

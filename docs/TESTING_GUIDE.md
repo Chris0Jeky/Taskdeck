@@ -10,26 +10,25 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-23)
+## Current Verified Totals (2026-04-25)
 
-- Backend: **4,979 passing** (5 failing, 2 skipped; 4,986 total) -- verified 2026-04-23 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main`
+- Backend: **5,060 passing** (0 failing, 2 skipped; 5,062 total) -- verified 2026-04-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main`
   - Domain: 962 passed
   - Application: 2,367 passed
-  - API integration: 1,540 passed (5 failed, 2 skipped; 1,547 total)
+  - API integration: 1,621 passed (0 failed, 2 skipped; 1,623 total)
   - CLI contract: 82 passed
   - Architecture boundaries: 8 passed
   - Integration (Testcontainers): 20 passed
-- Frontend unit: **2,607 passing** across 214 test files -- verified 2026-04-23 via `npx vitest --run --reporter=verbose` on `main`
+- Frontend unit: **2,805 passing** across 214+ test files -- verified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main`
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
-- Combined automated total: **7,586+ passing** (backend 4,979 + frontend unit 2,607 + E2E)
+- Combined automated total: **7,865+ passing** (backend 5,060 + frontend unit 2,805 + E2E)
 
 Verification note:
-- backend total of 4,979 passing (5 failing, 2 skipped; 4,986 total) recertified 2026-04-23 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` at commit `97d4856c`
-- frontend total of 2,607 passing across 214 test files recertified 2026-04-23 via `npx vitest --run --reporter=verbose` on `main` at commit `97d4856c`
-- 5 pre-existing backend failures (all in Api.Tests): 3 CorsApiTests environment-specific failures, 1 McpTelemetryMiddlewareTests, 1 SecurityHeadersApiTests; these are environment-dependent integration tests that fail outside CI/production config
-- prior recertification: backend 4,279 (2026-04-12), frontend 2,245 (2026-04-12) after PRs `#800`–`#820`
-- growth since last recertification: backend +700 tests, frontend +362 tests
-- pending (post-merge of PRs `#960`–`#969`): ~186 new tests estimated — 61 composable tests (`useCardModal`), 125 composable tests (`useStarterPackCatalog`/`useStarterPackImport`/`useStarterPackResult`), plus additional backend OAuth scope validator and audit retention tests
+- backend total of 5,060 passing (0 failing, 2 skipped; 5,062 total) recertified 2026-04-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` (PR `#987`)
+- frontend total of 2,805 passing across 214+ test files recertified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main` (PR `#987`)
+- 5 previously-failing Api.Tests (3 CorsApiTests, 1 McpTelemetryMiddlewareTests, 1 SecurityHeadersApiTests) now pass
+- prior recertification: backend 4,979 (2026-04-23), frontend 2,607 (2026-04-23) at commit `97d4856c`
+- growth since last recertification: backend +81 tests, frontend +198 tests
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
