@@ -72,6 +72,9 @@ public class IntentCandidate : Entity
 
     public void AddEvidenceLink(EvidenceLink link, SourceSpan sourceSpan)
     {
+        if (link is null)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "EvidenceLink cannot be null");
         if (sourceSpan is null)
             throw new DomainException(ErrorCodes.ValidationError,
                 "SourceSpan is required when adding an EvidenceLink");

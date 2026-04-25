@@ -177,6 +177,19 @@ public class IntentCandidateTests
     }
 
     [Fact]
+    public void AddEvidenceLink_ShouldRejectNullLink()
+    {
+        var candidate = new IntentCandidate(_envelopeId, "Label", 0.5, 0);
+        var block = new SourceBlock(_envelopeId, 0, "Key evidence text", "capture");
+        var span = block.AddSpan(0, 12, "Key evidence");
+
+        var act = () => candidate.AddEvidenceLink(null!, span);
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
+
+    [Fact]
     public void AddEvidenceLink_ShouldRejectLinkPointingToDifferentSpan()
     {
         var candidate = new IntentCandidate(_envelopeId, "Label", 0.5, 0);

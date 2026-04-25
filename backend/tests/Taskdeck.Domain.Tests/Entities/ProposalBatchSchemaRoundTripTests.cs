@@ -17,6 +17,9 @@ public class ProposalBatchSchemaRoundTripTests
         WriteIndented = false
     };
 
+    private static readonly Lazy<JsonDocument> Schema = new(() =>
+        JsonDocument.Parse(File.ReadAllText(FindSchemaPath())));
+
     private record ProposalBatchDto(
         int SchemaVersion,
         string EnvelopeId,
@@ -50,12 +53,183 @@ public class ProposalBatchSchemaRoundTripTests
             });
     }
 
+    private static string SerializeAndValidate(ProposalBatchDto batch)
+    {
+        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        ValidateAgainstProposalBatchSchema(json);
+        return json;
+    }
+
+    private static void ValidateAgainstProposalBatchSchema(string json)
+    {
+        using var payload = JsonDocument.Parse(json);
+        var errors = new List<string>();
+        ValidateElement(payload.RootElement, Schema.Value.RootElement, Schema.Value.RootElement, "$", errors);
+        errors.Should().BeEmpty("payload should satisfy proposal-batch.v1.schema.json");
+    }
+
+    private static string FindSchemaPath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "backend",
+                "src",
+                "Taskdeck.Application",
+                "Schemas",
+                "proposal-batch.v1.schema.json");
+            if (File.Exists(candidate))
+                return candidate;
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Could not locate proposal-batch.v1.schema.json.");
+    }
+
+    private static void ValidateElement(
+        JsonElement value,
+        JsonElement schema,
+        JsonElement rootSchema,
+        string path,
+        List<string> errors)
+    {
+        if (schema.TryGetProperty("$ref", out var reference))
+            schema = ResolveReference(rootSchema, reference.GetString()!);
+
+        if (schema.TryGetProperty("type", out var type) && !MatchesType(value, type))
+        {
+            errors.Add($"{path}: expected type {type.GetRawText()}, found {value.ValueKind}");
+            return;
+        }
+
+        if (schema.TryGetProperty("const", out var constant) && !JsonElementEquals(value, constant))
+            errors.Add($"{path}: value does not match const {constant.GetRawText()}");
+
+        if (schema.TryGetProperty("enum", out var enumValues) &&
+            !enumValues.EnumerateArray().Any(candidate => JsonElementEquals(value, candidate)))
+            errors.Add($"{path}: value is not in enum {enumValues.GetRawText()}");
+
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.Object:
+                ValidateObject(value, schema, rootSchema, path, errors);
+                break;
+            case JsonValueKind.Array:
+                ValidateArray(value, schema, rootSchema, path, errors);
+                break;
+            case JsonValueKind.String:
+                ValidateString(value, schema, path, errors);
+                break;
+        }
+    }
+
+    private static void ValidateObject(
+        JsonElement value,
+        JsonElement schema,
+        JsonElement rootSchema,
+        string path,
+        List<string> errors)
+    {
+        if (schema.TryGetProperty("required", out var required))
+        {
+            foreach (var property in required.EnumerateArray().Select(p => p.GetString()!))
+            {
+                if (!value.TryGetProperty(property, out _))
+                    errors.Add($"{path}: missing required property {property}");
+            }
+        }
+
+        var properties = schema.TryGetProperty("properties", out var declaredProperties)
+            ? declaredProperties
+            : default;
+        var hasProperties = properties.ValueKind == JsonValueKind.Object;
+        var allowAdditional = !schema.TryGetProperty("additionalProperties", out var additionalProperties)
+            || additionalProperties.ValueKind != JsonValueKind.False;
+
+        foreach (var property in value.EnumerateObject())
+        {
+            if (hasProperties && properties.TryGetProperty(property.Name, out var propertySchema))
+            {
+                ValidateElement(property.Value, propertySchema, rootSchema, $"{path}.{property.Name}", errors);
+            }
+            else if (!allowAdditional)
+            {
+                errors.Add($"{path}: unexpected property {property.Name}");
+            }
+        }
+    }
+
+    private static void ValidateArray(
+        JsonElement value,
+        JsonElement schema,
+        JsonElement rootSchema,
+        string path,
+        List<string> errors)
+    {
+        var count = value.GetArrayLength();
+        if (schema.TryGetProperty("minItems", out var minItems) && count < minItems.GetInt32())
+            errors.Add($"{path}: expected at least {minItems.GetInt32()} items");
+        if (schema.TryGetProperty("maxItems", out var maxItems) && count > maxItems.GetInt32())
+            errors.Add($"{path}: expected at most {maxItems.GetInt32()} items");
+
+        if (!schema.TryGetProperty("items", out var itemSchema))
+            return;
+
+        var index = 0;
+        foreach (var item in value.EnumerateArray())
+            ValidateElement(item, itemSchema, rootSchema, $"{path}[{index++}]", errors);
+    }
+
+    private static void ValidateString(JsonElement value, JsonElement schema, string path, List<string> errors)
+    {
+        var text = value.GetString() ?? string.Empty;
+        if (schema.TryGetProperty("minLength", out var minLength) && text.Length < minLength.GetInt32())
+            errors.Add($"{path}: string is shorter than {minLength.GetInt32()}");
+        if (schema.TryGetProperty("maxLength", out var maxLength) && text.Length > maxLength.GetInt32())
+            errors.Add($"{path}: string is longer than {maxLength.GetInt32()}");
+        if (schema.TryGetProperty("format", out var format) &&
+            format.GetString() == "uuid" &&
+            !Guid.TryParse(text, out _))
+            errors.Add($"{path}: string is not a uuid");
+    }
+
+    private static JsonElement ResolveReference(JsonElement rootSchema, string reference)
+    {
+        var current = rootSchema;
+        foreach (var segment in reference.TrimStart('#').Split('/', StringSplitOptions.RemoveEmptyEntries))
+            current = current.GetProperty(segment);
+
+        return current;
+    }
+
+    private static bool MatchesType(JsonElement value, JsonElement type)
+    {
+        if (type.ValueKind == JsonValueKind.Array)
+            return type.EnumerateArray().Any(candidate => MatchesType(value, candidate));
+
+        return type.GetString() switch
+        {
+            "array" => value.ValueKind == JsonValueKind.Array,
+            "integer" => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
+            "null" => value.ValueKind == JsonValueKind.Null,
+            "object" => value.ValueKind == JsonValueKind.Object,
+            "string" => value.ValueKind == JsonValueKind.String,
+            _ => true
+        };
+    }
+
+    private static bool JsonElementEquals(JsonElement left, JsonElement right) =>
+        left.ValueKind == right.ValueKind && left.GetRawText() == right.GetRawText();
+
     [Fact]
     public void Case01_MinimalBatch_ShouldRoundTrip()
     {
         var batch = CreateMinimalBatch();
 
-        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        var json = SerializeAndValidate(batch);
         var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
         deserialized.Should().NotBeNull();
@@ -84,7 +258,7 @@ public class ProposalBatchSchemaRoundTripTests
                 })
             });
 
-        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        var json = SerializeAndValidate(batch);
         var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
         deserialized!.Proposals.Should().HaveCount(2);
@@ -109,7 +283,7 @@ public class ProposalBatchSchemaRoundTripTests
                     })
                 });
 
-            var json = JsonSerializer.Serialize(batch, JsonOptions);
+            var json = SerializeAndValidate(batch);
             var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
             deserialized!.Proposals[0].RiskLevel.Should().Be(risk);
@@ -130,7 +304,7 @@ public class ProposalBatchSchemaRoundTripTests
         var batch = new ProposalBatchDto(1, Guid.NewGuid().ToString(), "All ops",
             new List<ProposalDto> { new("All operations", "Low", null, operations) });
 
-        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        var json = SerializeAndValidate(batch);
         var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
         deserialized!.Proposals[0].Operations.Should().HaveCount(opTypes.Length);
@@ -151,7 +325,7 @@ public class ProposalBatchSchemaRoundTripTests
                 })
             });
 
-        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        var json = SerializeAndValidate(batch);
         var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
         deserialized!.Proposals[0].SourceIntentLabel.Should().BeNull();
@@ -178,7 +352,7 @@ public class ProposalBatchSchemaRoundTripTests
                 })
             });
 
-        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        var json = SerializeAndValidate(batch);
         var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
         var payloadBack = deserialized!.Proposals[0].Operations[0].Payload;
@@ -203,7 +377,7 @@ public class ProposalBatchSchemaRoundTripTests
                 })
             });
 
-        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        var json = SerializeAndValidate(batch);
         var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
         Guid.Parse(deserialized!.EnvelopeId).Should().Be(envelopeId);
@@ -225,7 +399,7 @@ public class ProposalBatchSchemaRoundTripTests
                 })
             });
 
-        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        var json = SerializeAndValidate(batch);
         var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
         deserialized!.Summary.Length.Should().Be(1000);
@@ -251,7 +425,7 @@ public class ProposalBatchSchemaRoundTripTests
                 })
             });
 
-        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        var json = SerializeAndValidate(batch);
         var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
         deserialized!.Proposals[0].Operations.Should().HaveCount(3);
@@ -274,9 +448,28 @@ public class ProposalBatchSchemaRoundTripTests
                 })
             });
 
-        var json = JsonSerializer.Serialize(batch, JsonOptions);
+        var json = SerializeAndValidate(batch);
         var deserialized = JsonSerializer.Deserialize<ProposalBatchDto>(json, JsonOptions);
 
         deserialized!.Proposals[0].Operations[0].Payload.ValueKind.Should().Be(JsonValueKind.Object);
+    }
+
+    [Fact]
+    public void InvalidRiskLevel_ShouldFailSchemaValidation()
+    {
+        var payload = JsonSerializer.SerializeToElement(new { title = "X" }, JsonOptions);
+        var batch = new ProposalBatchDto(1, Guid.NewGuid().ToString(), "Invalid risk",
+            new List<ProposalDto>
+            {
+                new("Op", "Severe", null, new List<OperationDto>
+                {
+                    new("CreateCard", null, payload)
+                })
+            });
+        var json = JsonSerializer.Serialize(batch, JsonOptions);
+
+        var act = () => ValidateAgainstProposalBatchSchema(json);
+
+        act.Should().Throw<Xunit.Sdk.XunitException>();
     }
 }
