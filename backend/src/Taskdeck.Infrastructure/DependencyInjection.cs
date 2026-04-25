@@ -72,6 +72,13 @@ public static class DependencyInjection
         services.AddScoped<IConnectorCredentialRepository, ConnectorCredentialRepository>();
         services.AddScoped<IKnowledgeSearchService, Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
 
+        // Vector index and embedding services — in-memory defaults for local-first operation.
+        // Future: swap InMemoryVectorIndex for sqlite-vec or external store via config.
+        services.AddSingleton<IVectorIndex, Taskdeck.Infrastructure.Services.InMemoryVectorIndex>();
+        services.AddSingleton<IEmbeddingGenerator, Taskdeck.Infrastructure.Services.InMemoryEmbeddingGenerator>();
+        services.AddScoped<IEmbeddingBackfillService, Taskdeck.Infrastructure.Services.EmbeddingBackfillService>();
+        services.AddScoped<ISemanticSearchService, Taskdeck.Infrastructure.Services.FallbackSemanticSearchService>();
+
         // Credential encryption — requires a configured AES-256 key.
         // Fail-fast: the service refuses to start without a valid encryption key.
         var credentialEncryptionKey = configuration["Connectors:EncryptionKey"];
