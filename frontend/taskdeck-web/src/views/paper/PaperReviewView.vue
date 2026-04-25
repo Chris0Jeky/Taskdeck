@@ -481,9 +481,7 @@ function onDefer() {
 }
 
 function onToggleProvenance() {
-  // Provenance is rendered inline in the main column. This handler is
-  // wired so the keymap test can verify the binding fires; once a
-  // collapsible mode lands we will toggle a `ref<boolean>`.
+  toast.info('Provenance toggle is not wired yet; provenance is rendered inline below.')
 }
 
 function onPreviewDiff() {
@@ -530,6 +528,7 @@ function onQueueFilterChange(filter: QueueFilter) {
 
 <template>
   <div class="paper paper-review-deep" data-testid="paper-review-view">
+    <h1 class="sr-only">Review</h1>
     <ReviewQueueRail
       :items="queueItems"
       :active-id="activeProposal?.id ?? null"
