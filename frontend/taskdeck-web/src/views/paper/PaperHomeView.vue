@@ -81,7 +81,7 @@ const greeting = computed(() => {
 const proposalsAwaiting = computed(() => summary.value?.workload.proposalsPendingReview ?? 0)
 const carryOvers = computed(() => summary.value?.workload.capturesNeedingTriage ?? 0)
 const showLoadingState = computed(() => workspace.homeLoading && !summary.value)
-const showErrorState = computed(() => Boolean(workspace.homeError) && !summary.value)
+const showErrorState = computed(() => Boolean(workspace.homeError))
 
 const ledeText = computed(() => {
   if (showErrorState.value) {

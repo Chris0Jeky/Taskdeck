@@ -174,6 +174,25 @@ describe('PaperHomeView', () => {
       expect(wrapper.find('.paper-home__queue').exists()).toBe(false)
     })
 
+    it('renders refresh errors even when a cached summary exists', () => {
+      mockWorkspaceStore.homeSummary = buildSummary({
+        workload: {
+          capturesNeedingTriage: 0,
+          capturesInProgress: 0,
+          capturesReadyForFollowUp: 0,
+          proposalsPendingReview: 0,
+        },
+      })
+      mockWorkspaceStore.hasHomeSummary = true
+      mockWorkspaceStore.homeError = 'Could not refresh workspace summary'
+
+      const wrapper = mount(PaperHomeView)
+
+      expect(wrapper.find('[data-testid="paper-home-error"]').text()).toContain('Could not refresh workspace summary')
+      expect(wrapper.find('[data-testid="paper-home-empty"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-home-lede"]').text()).toContain('Could not refresh workspace summary')
+    })
+
     it('renders the empty state when nothing is queued', () => {
       mockWorkspaceStore.homeSummary = buildSummary()
       const wrapper = mount(PaperHomeView)
