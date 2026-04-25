@@ -19,9 +19,11 @@ public class ProposalOutcomeRepository : Repository<ProposalOutcome>, IProposalO
             .FirstOrDefaultAsync(o => o.ProposalId == proposalId, cancellationToken);
     }
 
+    private const int MaxLimit = 1000;
+
     public async Task<IReadOnlyList<ProposalOutcome>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
     {
-        var boundedLimit = limit <= 0 ? 100 : limit;
+        var boundedLimit = limit <= 0 ? 100 : Math.Min(limit, MaxLimit);
 
         return await _dbSet
             .AsNoTracking()
@@ -33,7 +35,7 @@ public class ProposalOutcomeRepository : Repository<ProposalOutcome>, IProposalO
 
     public async Task<IReadOnlyList<ProposalOutcome>> GetByDecisionAsync(OutcomeDecision decision, int limit = 100, CancellationToken cancellationToken = default)
     {
-        var boundedLimit = limit <= 0 ? 100 : limit;
+        var boundedLimit = limit <= 0 ? 100 : Math.Min(limit, MaxLimit);
 
         return await _dbSet
             .AsNoTracking()
