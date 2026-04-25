@@ -45,6 +45,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<IntegrationConnector> IntegrationConnectors => Set<IntegrationConnector>();
     public DbSet<ConnectorEvent> ConnectorEvents => Set<ConnectorEvent>();
     public DbSet<ConnectorCredential> ConnectorCredentials => Set<ConnectorCredential>();
+    public DbSet<ProposalOutcome> ProposalOutcomes => Set<ProposalOutcome>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
