@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onActivated, onMounted } from 'vue'
+import { computed, defineAsyncComponent, defineComponent, h, onActivated, onMounted } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { TdSkeleton } from '../components/ui'
@@ -13,7 +13,40 @@ import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 // Paper-skin variant is loaded lazily so the Obsidian path stays the
 // default code-split entry — only sessions that flip Paper on pay the
 // extra chunk.
-const PaperHomeView = defineAsyncComponent(() => import('./paper/PaperHomeView.vue'))
+const PaperHomeAsyncLoading = defineComponent({
+  name: 'PaperHomeAsyncLoading',
+  setup: () => () =>
+    h(
+      'div',
+      {
+        class: 'td-home__skeleton',
+        role: 'status',
+        'aria-live': 'polite',
+      },
+      [h('span', { class: 'sr-only' }, 'Loading Paper Home...'), h('div', { class: 'td-panel td-home-card' }, 'Loading Paper Home...')],
+    ),
+})
+
+const PaperHomeAsyncError = defineComponent({
+  name: 'PaperHomeAsyncError',
+  setup: () => () =>
+    h(
+      'div',
+      {
+        class: 'td-alert td-alert--error',
+        role: 'alert',
+      },
+      'Paper Home could not be loaded. Refresh and try again.',
+    ),
+})
+
+const PaperHomeView = defineAsyncComponent({
+  loader: () => import('./paper/PaperHomeView.vue'),
+  loadingComponent: PaperHomeAsyncLoading,
+  errorComponent: PaperHomeAsyncError,
+  delay: 0,
+  timeout: 30000,
+})
 
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
@@ -111,7 +144,7 @@ function openBoard(boardId: string) {
 }
 
 function refreshHomeSummary() {
-  if (workspace.homeLoading) {
+  if (paperTheme.isOn || workspace.homeLoading) {
     return
   }
 
