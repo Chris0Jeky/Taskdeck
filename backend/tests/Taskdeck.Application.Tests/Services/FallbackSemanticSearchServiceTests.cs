@@ -161,6 +161,123 @@ public class FallbackSemanticSearchServiceTests
         resultList[0].Tags.Should().Be("tag1,tag2");
     }
 
+    [Fact]
+    public async Task SearchAsync_VectorSearch_HydratesOverFetchedCandidatesBeforeApplyingLimit()
+    {
+        _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 1f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateAsync("semantic query", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fakeEmbedding);
+
+        var archivedDocId = Guid.NewGuid();
+        var validDocId = Guid.NewGuid();
+        var vectorResults = new List<VectorSearchResult>
+        {
+            new("chunk:archived", 0.99, new Dictionary<string, string>
+            {
+                ["type"] = "knowledge_chunk",
+                ["documentId"] = archivedDocId.ToString(),
+                ["userId"] = _userId.ToString()
+            }),
+            new("chunk:valid", 0.98, new Dictionary<string, string>
+            {
+                ["type"] = "knowledge_chunk",
+                ["documentId"] = validDocId.ToString(),
+                ["userId"] = _userId.ToString()
+            })
+        };
+
+        _vectorIndexMock
+            .Setup(v => v.QueryAsync(
+                It.IsAny<ReadOnlyMemory<float>>(),
+                2,
+                It.IsAny<IReadOnlyDictionary<string, string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(vectorResults);
+
+        var archivedDoc = new KnowledgeDocument(
+            _userId, "Archived", "Archived content", KnowledgeSourceType.Manual);
+        archivedDoc.Archive();
+        var validDoc = new KnowledgeDocument(
+            _userId, "Valid", "Valid content", KnowledgeSourceType.Manual);
+
+        _docRepoMock
+            .Setup(r => r.GetByIdAsync(archivedDocId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(archivedDoc);
+        _docRepoMock
+            .Setup(r => r.GetByIdAsync(validDocId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(validDoc);
+
+        var results = (await _sut.SearchAsync("semantic query", _userId, limit: 1)).ToList();
+
+        results.Should().ContainSingle();
+        results[0].DocumentId.Should().Be(validDocId,
+            "valid over-fetched candidates should be considered when earlier hits fail hydration");
+    }
+
+    [Fact]
+    public async Task SearchAsync_VectorSearch_DeduplicatesChunkHitsByDocumentId()
+    {
+        _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 1f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateAsync("semantic query", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fakeEmbedding);
+
+        var firstDocId = Guid.NewGuid();
+        var secondDocId = Guid.NewGuid();
+        var vectorResults = new List<VectorSearchResult>
+        {
+            new("chunk:first-a", 0.95, new Dictionary<string, string>
+            {
+                ["type"] = "knowledge_chunk",
+                ["documentId"] = firstDocId.ToString(),
+                ["userId"] = _userId.ToString()
+            }),
+            new("chunk:first-b", 0.90, new Dictionary<string, string>
+            {
+                ["type"] = "knowledge_chunk",
+                ["documentId"] = firstDocId.ToString(),
+                ["userId"] = _userId.ToString()
+            }),
+            new("chunk:second", 0.80, new Dictionary<string, string>
+            {
+                ["type"] = "knowledge_chunk",
+                ["documentId"] = secondDocId.ToString(),
+                ["userId"] = _userId.ToString()
+            })
+        };
+
+        _vectorIndexMock
+            .Setup(v => v.QueryAsync(
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<int>(),
+                It.IsAny<IReadOnlyDictionary<string, string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(vectorResults);
+
+        _docRepoMock
+            .Setup(r => r.GetByIdAsync(firstDocId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KnowledgeDocument(
+                _userId, "First", "First content", KnowledgeSourceType.Manual));
+        _docRepoMock
+            .Setup(r => r.GetByIdAsync(secondDocId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KnowledgeDocument(
+                _userId, "Second", "Second content", KnowledgeSourceType.Manual));
+
+        var results = (await _sut.SearchAsync("semantic query", _userId)).ToList();
+
+        results.Select(r => r.DocumentId).Should().BeEquivalentTo(new[] { firstDocId, secondDocId });
+        results.Should().HaveCount(2, "multiple chunk matches for one document should return one document result");
+        _docRepoMock.Verify(
+            r => r.GetByIdAsync(firstDocId, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "lower-ranked duplicate chunk hits should not require repeated hydration");
+    }
+
     #endregion
 
     #region Access control

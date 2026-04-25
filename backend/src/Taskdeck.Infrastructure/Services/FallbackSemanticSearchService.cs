@@ -106,9 +106,10 @@ public sealed class FallbackSemanticSearchService : ISemanticSearchService
                 query, userId, boardId, limit, cancellationToken);
         }
 
-        // Hydrate results with document metadata (Title, Snippet, etc.)
-        var results = new List<KnowledgeSearchResultDto>();
-        foreach (var r in vectorResults.Take(limit))
+        // Hydrate every over-fetched candidate until the requested number of
+        // distinct, authorized, non-archived documents has been collected.
+        var resultsByDocumentId = new Dictionary<Guid, KnowledgeSearchResultDto>();
+        foreach (var r in vectorResults)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -120,6 +121,12 @@ public sealed class FallbackSemanticSearchService : ISemanticSearchService
                     out var docId) || docId == Guid.Empty)
             {
                 _logger.LogDebug("Skipping vector result with unparseable documentId");
+                continue;
+            }
+
+            if (resultsByDocumentId.TryGetValue(docId, out var existingResult) &&
+                existingResult.Rank >= r.Score)
+            {
                 continue;
             }
 
@@ -142,7 +149,7 @@ public sealed class FallbackSemanticSearchService : ISemanticSearchService
                 ? doc.Content[..200] + "..."
                 : doc.Content;
 
-            results.Add(new KnowledgeSearchResultDto(
+            resultsByDocumentId[docId] = new KnowledgeSearchResultDto(
                 DocumentId: docId,
                 Title: doc.Title,
                 Snippet: snippet,
@@ -150,8 +157,16 @@ public sealed class FallbackSemanticSearchService : ISemanticSearchService
                 BoardId: doc.BoardId,
                 SourceType: doc.SourceType,
                 Tags: doc.Tags,
-                CreatedAt: doc.CreatedAt));
+                CreatedAt: doc.CreatedAt);
+
+            if (resultsByDocumentId.Count >= limit)
+                break;
         }
+
+        var results = resultsByDocumentId.Values
+            .OrderByDescending(r => r.Rank)
+            .Take(limit)
+            .ToList();
 
         if (results.Count == 0)
         {

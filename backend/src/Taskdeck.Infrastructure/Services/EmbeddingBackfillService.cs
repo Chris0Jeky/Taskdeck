@@ -7,7 +7,8 @@ namespace Taskdeck.Infrastructure.Services;
 /// <summary>
 /// Scans knowledge chunks and ensures they have vector embeddings.
 /// Tracks indexed chunk IDs via a process-local set to avoid re-processing.
-/// Prunes stale vectors whose chunks no longer exist in the repository.
+/// Fetches only the next unindexed page and prunes stale vectors whose
+/// tracked chunks no longer exist in the repository.
 /// Failure-safe: individual item errors are logged and skipped, not rethrown.
 /// </summary>
 public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
@@ -22,7 +23,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     // Static so it persists across scoped service instances within the same
     // process lifetime. Thread-safe via lock.
     // Bounded: pruned when stale chunks are detected.
-    private static readonly HashSet<string> _indexedChunkIds = new();
+    private static readonly HashSet<Guid> _indexedChunkIds = new();
     private static readonly object _indexedLock = new();
 
     public EmbeddingBackfillService(
@@ -49,32 +50,18 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: 0);
         }
 
-        // Load all chunks once per batch to build the current ID set.
-        // TODO: When IKnowledgeChunkRepository supports paginated queries
-        // (e.g. GetUnembeddedAsync(skip, take)), switch to that to avoid
-        // full-table reads on large datasets.
-        var allChunks = await _chunkRepository.GetAllAsync(cancellationToken);
-        var chunkList = allChunks.ToList();
+        await PruneStaleVectorsAsync(cancellationToken);
 
-        // Build a set of current chunk IDs for stale-vector detection
-        var currentChunkIds = new HashSet<string>(
-            chunkList.Select(c => c.Id.ToString()));
-
-        // Prune stale vectors: remove indexed entries whose chunks
-        // no longer exist (document was edited and chunks recreated
-        // with new IDs).
-        await PruneStaleVectorsAsync(currentChunkIds, cancellationToken);
-
-        // Filter out chunks that have already been indexed in this process lifetime
-        List<Domain.Entities.KnowledgeChunk> unindexed;
+        IReadOnlyCollection<Guid> indexedSnapshot;
         lock (_indexedLock)
         {
-            unindexed = chunkList
-                .Where(c => !_indexedChunkIds.Contains(c.Id.ToString()))
-                .ToList();
+            indexedSnapshot = _indexedChunkIds.ToList();
         }
 
-        var toProcess = unindexed.Take(batchSize).ToList();
+        var toProcess = (await _chunkRepository.GetUnindexedBatchAsync(
+            indexedSnapshot,
+            batchSize,
+            cancellationToken)).ToList();
 
         if (toProcess.Count == 0)
         {
@@ -101,7 +88,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             if (string.IsNullOrWhiteSpace(text))
             {
                 _logger.LogDebug("Skipping empty chunk {ChunkId}", chunk.Id);
-                lock (_indexedLock) { _indexedChunkIds.Add(chunk.Id.ToString()); }
+                lock (_indexedLock) { _indexedChunkIds.Add(chunk.Id); }
                 continue;
             }
             embeddable.Add((chunk, text));
@@ -109,7 +96,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         if (embeddable.Count == 0)
         {
-            int emptyRemaining = Math.Max(0, unindexed.Count - toProcess.Count);
+            var emptyRemaining = await CountRemainingAsync(cancellationToken);
             return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: emptyRemaining);
         }
 
@@ -130,7 +117,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             _logger.LogWarning(
                 "Batch embedding failed, falling back to individual embedding: {Error}",
                 ex.Message);
-            return await ProcessOneByOneAsync(embeddable, documentMap, unindexed.Count, toProcess.Count, cancellationToken);
+            return await ProcessOneByOneAsync(embeddable, documentMap, cancellationToken);
         }
 
         int processed = 0;
@@ -139,7 +126,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         // Build batch-upsert documents and track which chunk IDs they map to.
         // Chunks are NOT marked as indexed here -- only after successful upsert.
         var vectorDocs = new List<VectorDocument>();
-        var chunkIdsByDocId = new Dictionary<string, string>();
+        var chunkIdsByDocId = new Dictionary<string, Guid>();
         for (int i = 0; i < embeddable.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -155,7 +142,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                     embeddings[i],
                     metadata));
 
-                chunkIdsByDocId[docId] = chunk.Id.ToString();
+                chunkIdsByDocId[docId] = chunk.Id;
             }
             catch (Exception ex)
             {
@@ -218,7 +205,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        int remaining = Math.Max(0, unindexed.Count - toProcess.Count);
+        var remaining = await CountRemainingAsync(cancellationToken);
 
         _logger.LogInformation(
             "Embedding backfill batch complete: {Processed} processed, {Failed} failed, ~{Remaining} remaining",
@@ -234,22 +221,27 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     /// in the repository. Also removes them from the tracked set so the
     /// static set stays bounded.
     /// </summary>
-    private async Task PruneStaleVectorsAsync(
-        HashSet<string> currentChunkIds,
-        CancellationToken cancellationToken)
+    private async Task PruneStaleVectorsAsync(CancellationToken cancellationToken)
     {
-        List<string> staleKeys;
+        List<Guid> trackedIds;
         lock (_indexedLock)
         {
-            staleKeys = _indexedChunkIds
-                .Where(id => !currentChunkIds.Contains(id))
-                .ToList();
+            trackedIds = _indexedChunkIds.ToList();
         }
+
+        if (trackedIds.Count == 0)
+            return;
+
+        var existingIds = await _chunkRepository.GetExistingIdsAsync(
+            trackedIds,
+            cancellationToken);
+        var staleKeys = trackedIds
+            .Where(id => !existingIds.Contains(id))
+            .ToList();
 
         if (staleKeys.Count == 0)
             return;
 
-        // Delete stale vectors from the index
         var staleDocIds = staleKeys.Select(id => $"chunk:{id}").ToList();
         try
         {
@@ -281,8 +273,6 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     private async Task<BackfillBatchResult> ProcessOneByOneAsync(
         List<(Domain.Entities.KnowledgeChunk Chunk, string Text)> embeddable,
         Dictionary<Guid, Domain.Entities.KnowledgeDocument> documentMap,
-        int totalUnindexed,
-        int batchCount,
         CancellationToken cancellationToken)
     {
         int processed = 0;
@@ -304,7 +294,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                     cancellationToken);
 
                 processed++;
-                lock (_indexedLock) { _indexedChunkIds.Add(chunk.Id.ToString()); }
+                lock (_indexedLock) { _indexedChunkIds.Add(chunk.Id); }
             }
             catch (OperationCanceledException)
             {
@@ -320,13 +310,24 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        int remaining = Math.Max(0, totalUnindexed - batchCount);
+        var remaining = await CountRemainingAsync(cancellationToken);
 
         _logger.LogInformation(
             "Embedding backfill batch complete (one-by-one fallback): {Processed} processed, {Failed} failed, ~{Remaining} remaining",
             processed, failed, remaining);
 
         return new BackfillBatchResult(processed, failed, remaining);
+    }
+
+    private async Task<int> CountRemainingAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyCollection<Guid> indexedSnapshot;
+        lock (_indexedLock)
+        {
+            indexedSnapshot = _indexedChunkIds.ToList();
+        }
+
+        return await _chunkRepository.CountUnindexedAsync(indexedSnapshot, cancellationToken);
     }
 
     private static Dictionary<string, string> BuildMetadata(

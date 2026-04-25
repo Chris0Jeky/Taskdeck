@@ -31,6 +31,23 @@ public class EmbeddingBackfillServiceTests
 
         _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
         _embeddingGeneratorMock.Setup(g => g.Dimensions).Returns(64);
+        _vectorIndexMock
+            .Setup(v => v.UpsertBatchAsync(
+                It.IsAny<IReadOnlyList<VectorDocument>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _vectorIndexMock
+            .Setup(v => v.UpsertAsync(
+                It.IsAny<string>(),
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _vectorIndexMock
+            .Setup(v => v.DeleteBatchAsync(
+                It.IsAny<IReadOnlyList<string>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         _sut = new EmbeddingBackfillService(
             _vectorIndexMock.Object,
@@ -55,6 +72,33 @@ public class EmbeddingBackfillServiceTests
             .ReturnsAsync(doc);
     }
 
+    private void SetupChunkBatch(IReadOnlyList<KnowledgeChunk> chunks)
+    {
+        _chunkRepoMock
+            .Setup(r => r.GetExistingIdsAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<Guid> ids, CancellationToken _) => ids.ToHashSet());
+
+        _chunkRepoMock
+            .Setup(r => r.GetUnindexedBatchAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<Guid> indexedIds, int batchSize, CancellationToken _) =>
+                chunks
+                    .Where(c => !indexedIds.Contains(c.Id))
+                    .Take(batchSize)
+                    .ToList());
+
+        _chunkRepoMock
+            .Setup(r => r.CountUnindexedAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<Guid> indexedIds, CancellationToken _) =>
+                chunks.Count(c => !indexedIds.Contains(c.Id)));
+    }
+
     [Fact]
     public async Task ProcessBatchAsync_EmbeddingGeneratorUnavailable_ReturnsZeroResult()
     {
@@ -70,9 +114,7 @@ public class EmbeddingBackfillServiceTests
     [Fact]
     public async Task ProcessBatchAsync_NoChunks_ReturnsZeroResult()
     {
-        _chunkRepoMock
-            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Enumerable.Empty<KnowledgeChunk>());
+        SetupChunkBatch(Array.Empty<KnowledgeChunk>());
 
         var result = await _sut.ProcessBatchAsync(batchSize: 10);
 
@@ -91,9 +133,7 @@ public class EmbeddingBackfillServiceTests
             new(docId, 1, "chunk one content")
         };
 
-        _chunkRepoMock
-            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(chunks);
+        SetupChunkBatch(chunks);
 
         SetupDocumentLookup(docId, userId);
 
@@ -125,9 +165,7 @@ public class EmbeddingBackfillServiceTests
             .Select(i => new KnowledgeChunk(docId, i, $"content {i}"))
             .ToList();
 
-        _chunkRepoMock
-            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(chunks);
+        SetupChunkBatch(chunks);
 
         SetupDocumentLookup(docId, userId);
 
@@ -144,6 +182,73 @@ public class EmbeddingBackfillServiceTests
     }
 
     [Fact]
+    public async Task ProcessBatchAsync_UsesUnindexedBatchRepositoryInsteadOfFullTableScan()
+    {
+        var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var chunks = Enumerable.Range(0, 5)
+            .Select(i => new KnowledgeChunk(docId, i, $"content {i}"))
+            .ToList();
+
+        SetupChunkBatch(chunks);
+        SetupDocumentLookup(docId, userId);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
+
+        await _sut.ProcessBatchAsync(batchSize: 2);
+
+        _chunkRepoMock.Verify(
+            r => r.GetUnindexedBatchAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                2,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _chunkRepoMock.Verify(
+            r => r.GetAllAsync(It.IsAny<CancellationToken>()),
+            Times.Never,
+            "backfill should fetch only the next unindexed page");
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_PrunesTrackedStaleVectorBeforeNextBatch()
+    {
+        var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var chunk = new KnowledgeChunk(docId, 0, "content");
+        var chunks = new[] { chunk };
+
+        SetupChunkBatch(chunks);
+        SetupDocumentLookup(docId, userId);
+
+        _chunkRepoMock
+            .Setup(r => r.GetExistingIdsAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<Guid> ids, CancellationToken _) =>
+                ids.Where(id => id != chunk.Id).ToHashSet());
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
+
+        await _sut.ProcessBatchAsync(batchSize: 10);
+        await _sut.ProcessBatchAsync(batchSize: 10);
+
+        _vectorIndexMock.Verify(
+            v => v.DeleteBatchAsync(
+                It.Is<IReadOnlyList<string>>(ids => ids.Contains($"chunk:{chunk.Id}")),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "tracked vectors whose chunks disappear should be removed from the index");
+    }
+
+    [Fact]
     public async Task ProcessBatchAsync_BatchEmbeddingFails_FallsBackToOneByOne()
     {
         var docId = Guid.NewGuid();
@@ -155,9 +260,7 @@ public class EmbeddingBackfillServiceTests
             new(docId, 2, "also good content")
         };
 
-        _chunkRepoMock
-            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(chunks);
+        SetupChunkBatch(chunks);
 
         SetupDocumentLookup(docId, userId);
 
@@ -193,9 +296,7 @@ public class EmbeddingBackfillServiceTests
             new(docId, 0, "content")
         };
 
-        _chunkRepoMock
-            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(chunks);
+        SetupChunkBatch(chunks);
 
         SetupDocumentLookup(docId, userId);
 
@@ -215,9 +316,7 @@ public class EmbeddingBackfillServiceTests
         var boardId = Guid.NewGuid();
         var chunk = new KnowledgeChunk(docId, 0, "content for metadata test");
 
-        _chunkRepoMock
-            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { chunk });
+        SetupChunkBatch(new[] { chunk });
 
         SetupDocumentLookup(docId, userId, boardId);
 
