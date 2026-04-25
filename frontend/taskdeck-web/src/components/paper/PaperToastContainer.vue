@@ -60,6 +60,8 @@ type CountdownState = {
   remaining: number
   paused: boolean
   deadline: number
+  hover: boolean
+  focusWithin: boolean
 }
 const state = reactive<Record<string, CountdownState>>({})
 let intervalHandle: ReturnType<typeof setInterval> | null = null
@@ -70,6 +72,8 @@ function ensureCountdown(toast: Toast) {
     remaining: toast.duration,
     paused: false,
     deadline: Date.now() + toast.duration,
+    hover: false,
+    focusWithin: false,
   }
 }
 
@@ -124,7 +128,7 @@ onUnmounted(() => {
 
 // ── Hover pause / resume ──────────────────────────────────────────────────
 
-function pause(id: string) {
+function pauseTimer(id: string) {
   const c = state[id]
   if (!c || c.paused) return
   toastStore.pause(id)
@@ -132,12 +136,46 @@ function pause(id: string) {
   c.remaining = Math.max(0, c.deadline - Date.now())
 }
 
-function resume(id: string) {
+function resumeTimer(id: string) {
   const c = state[id]
   if (!c || !c.paused) return
   toastStore.resume(id)
   c.paused = false
   c.deadline = Date.now() + c.remaining
+}
+
+function syncPauseState(id: string) {
+  const c = state[id]
+  if (!c) return
+
+  if (c.hover || c.focusWithin) {
+    pauseTimer(id)
+    return
+  }
+
+  resumeTimer(id)
+}
+
+function setHover(id: string, isHovering: boolean) {
+  const c = state[id]
+  if (!c) return
+  c.hover = isHovering
+  syncPauseState(id)
+}
+
+function setFocusWithin(id: string, event: FocusEvent, isFocused: boolean) {
+  const c = state[id]
+  if (!c) return
+
+  if (!isFocused) {
+    const nextTarget = event.relatedTarget
+    if (nextTarget instanceof Node && (event.currentTarget as HTMLElement).contains(nextTarget)) {
+      return
+    }
+  }
+
+  c.focusWithin = isFocused
+  syncPauseState(id)
 }
 
 // ── Action ────────────────────────────────────────────────────────────────
@@ -193,10 +231,10 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
           `paper-toast--${describe(toast).tone}`,
         ]"
         :role="toast.type === 'error' ? 'alert' : undefined"
-        @mouseenter="pause(toast.id)"
-        @mouseleave="resume(toast.id)"
-        @focusin="pause(toast.id)"
-        @focusout="resume(toast.id)"
+        @mouseenter="setHover(toast.id, true)"
+        @mouseleave="setHover(toast.id, false)"
+        @focusin="setFocusWithin(toast.id, $event, true)"
+        @focusout="setFocusWithin(toast.id, $event, false)"
       >
         <div class="paper-toast__glyph" aria-hidden="true">
           {{ describe(toast).glyph }}

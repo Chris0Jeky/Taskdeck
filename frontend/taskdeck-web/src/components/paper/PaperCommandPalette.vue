@@ -170,7 +170,9 @@ const boardOffset = computed(() => commandCount.value)
 const cardOffset = computed(() => commandCount.value + boardCount.value)
 
 function labelFor(item: PaperPaletteItem): string {
-  if (item.type === 'command') return item.data.label
+  if (item.type === 'command') {
+    return item.data.kind === 'navigation' ? `Go to ${item.data.label}` : item.data.label
+  }
   if (item.type === 'board') return item.data.name
   return item.data.title
 }

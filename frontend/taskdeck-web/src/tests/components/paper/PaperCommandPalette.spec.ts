@@ -123,6 +123,19 @@ describe('PaperCommandPalette', () => {
     expect(visibleLabels.some((t) => t.includes('Home'))).toBe(false)
   })
 
+  it('preserves Go to labels for navigation commands', async () => {
+    wrapper = mount(PaperCommandPalette, {
+      props: { visible: true, items },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    const visibleLabels = rows().map((r) => r.textContent ?? '')
+    expect(visibleLabels.some((t) => t.includes('Go to Home'))).toBe(true)
+    expect(visibleLabels.some((t) => t.includes('Go to Boards'))).toBe(true)
+    expect(visibleLabels.some((t) => t.includes('Go to New Capture'))).toBe(false)
+  })
+
   it('separates AI (haiku) actions into their own section with the haiku tag', async () => {
     wrapper = mount(PaperCommandPalette, {
       props: { visible: true, items },

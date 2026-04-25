@@ -78,6 +78,42 @@ describe('PaperToastContainer', () => {
     expect(store.toasts).toHaveLength(0)
   })
 
+  it('keeps the countdown paused while the toast still has focus', async () => {
+    const store = useToastStore()
+    store.show('Focusable', 'success', 4000)
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const card = wrapper.find('.paper-toast')
+    expect(card.exists()).toBe(true)
+
+    function progressOf(): number {
+      const bar = card.find('.paper-toast__bar').element as HTMLElement
+      return Number(bar.style.getPropertyValue('--p'))
+    }
+
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+    const beforeFocus = progressOf()
+
+    await card.trigger('mouseenter')
+    await card.trigger('focusin')
+    await card.trigger('mouseleave')
+    vi.advanceTimersByTime(1500)
+    await nextTick()
+
+    expect(store.toasts).toHaveLength(1)
+    expect(progressOf()).toBeCloseTo(beforeFocus, 2)
+
+    card.element.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }))
+    await nextTick()
+
+    vi.advanceTimersByTime(500)
+    await nextTick()
+    expect(progressOf()).toBeLessThan(beforeFocus)
+  })
+
   it('runs the action handler and emits action when the undo link is clicked', async () => {
     const store = useToastStore()
     const handler = vi.fn()
