@@ -16,8 +16,10 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public sealed class EgressRegistry : IEgressRegistry
 {
+    private readonly object _lock = new();
     private readonly List<EgressEntry> _entries;
-    private readonly HashSet<string> _allowedHosts;
+    private readonly HashSet<string> _exactHosts;
+    private readonly List<string> _wildcardSuffixes;
 
     public EgressRegistry() : this(GetSeedEntries())
     {
@@ -26,12 +28,22 @@ public sealed class EgressRegistry : IEgressRegistry
     public EgressRegistry(IEnumerable<EgressEntry> entries)
     {
         _entries = entries.ToList();
-        _allowedHosts = new HashSet<string>(
-            _entries.Select(e => NormalizeHost(e.Host)),
-            StringComparer.OrdinalIgnoreCase);
+        _exactHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _wildcardSuffixes = new List<string>();
+
+        foreach (var entry in _entries)
+        {
+            ClassifyHost(NormalizeHost(entry.Host));
+        }
     }
 
-    public IReadOnlyList<EgressEntry> GetAllEntries() => _entries.AsReadOnly();
+    public IReadOnlyList<EgressEntry> GetAllEntries()
+    {
+        lock (_lock)
+        {
+            return _entries.ToList().AsReadOnly();
+        }
+    }
 
     public bool IsHostAllowed(string host)
     {
@@ -40,18 +52,62 @@ public sealed class EgressRegistry : IEgressRegistry
             return false;
         }
 
-        return _allowedHosts.Contains(NormalizeHost(host));
+        var normalized = NormalizeHost(host);
+
+        lock (_lock)
+        {
+            if (_exactHosts.Contains(normalized))
+            {
+                return true;
+            }
+
+            foreach (var suffix in _wildcardSuffixes)
+            {
+                if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
     /// Registers an additional egress entry at runtime (e.g., when webhook
     /// subscriptions are created or connector credentials are configured).
+    /// Thread-safe: protected by a lock over _entries, _exactHosts, and _wildcardSuffixes.
     /// </summary>
     public void Register(EgressEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
-        _entries.Add(entry);
-        _allowedHosts.Add(NormalizeHost(entry.Host));
+        if (string.IsNullOrWhiteSpace(entry.Host))
+        {
+            throw new ArgumentException("Host cannot be null or whitespace.", nameof(entry));
+        }
+
+        lock (_lock)
+        {
+            _entries.Add(entry);
+            ClassifyHost(NormalizeHost(entry.Host));
+        }
+    }
+
+    /// <summary>
+    /// Classifies a normalized host as either an exact match or a wildcard suffix.
+    /// Wildcard patterns start with "*." and match any subdomain.
+    /// </summary>
+    private void ClassifyHost(string normalized)
+    {
+        if (normalized.StartsWith("*.", StringComparison.Ordinal))
+        {
+            // Store the suffix (e.g., "*.webhook.site" -> ".webhook.site")
+            _wildcardSuffixes.Add(normalized[1..]);
+        }
+        else
+        {
+            _exactHosts.Add(normalized);
+        }
     }
 
     private static string NormalizeHost(string host)
