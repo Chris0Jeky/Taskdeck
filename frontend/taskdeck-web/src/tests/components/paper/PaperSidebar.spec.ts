@@ -9,6 +9,7 @@ const mockRoute = reactive({
 })
 
 const mockWorkspace = reactive({
+  mode: 'guided' as string,
   inboxBadgeCount: 0,
   reviewBadgeCount: 0,
 })
@@ -57,6 +58,7 @@ describe('PaperSidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRoute.path = '/workspace/home'
+    mockWorkspace.mode = 'guided'
     mockWorkspace.inboxBadgeCount = 0
     mockWorkspace.reviewBadgeCount = 0
     mockFeatureFlags.isEnabled = vi.fn(() => true)
@@ -202,6 +204,9 @@ describe('PaperSidebar', () => {
       expect.arrayContaining([
         expect.objectContaining({ label: 'Boards', icon: 'B', path: '/workspace/boards' }),
         expect.objectContaining({ label: 'Inbox', icon: 'I', path: '/workspace/inbox' }),
+        expect.objectContaining({ label: 'Agents', icon: 'G', path: '/workspace/agents' }),
+        expect.objectContaining({ label: 'Access', icon: 'A', path: '/workspace/settings/access' }),
+        expect.objectContaining({ label: 'Archive', icon: 'Z', path: '/workspace/archive' }),
       ]),
     )
     expect(exposed.availableNavItems.some((item) => item.path.startsWith('#'))).toBe(false)

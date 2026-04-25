@@ -160,6 +160,8 @@ describe('AppShell — paper variant routing', () => {
     const paletteText = wrapper.text()
     expect(paletteText).toContain('Go to Boards')
     expect(paletteText).toContain('Go to Inbox')
+    expect(paletteText).toContain('Go to Agents')
+    expect(paletteText).toContain('Go to Archive')
     expect(paletteText).toContain('New Capture')
   })
 

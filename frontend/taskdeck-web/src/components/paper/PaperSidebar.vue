@@ -30,6 +30,7 @@ type PaperNavItem = {
   badgeKey?: 'inbox' | 'review'
   /** Hide if this feature flag exists and is disabled. */
   flag?: keyof FeatureFlags
+  workbenchBypassesFlag?: boolean
   keywords?: string
 }
 
@@ -83,8 +84,15 @@ const metaItems: PaperNavItem[] = [
   { id: 'logout', label: 'Logout', glyph: '→', path: '#logout' },
 ]
 
+const commandOnlyItems: PaperNavItem[] = [
+  { id: 'agents', label: 'Agents', glyph: 'G', path: '/workspace/agents', keywords: 'agents profiles runs automation agent mode' },
+  { id: 'access', label: 'Access', glyph: 'A', path: '/workspace/settings/access', flag: 'newAccess', workbenchBypassesFlag: true, keywords: 'access board sharing permissions' },
+  { id: 'archive', label: 'Archive', glyph: 'Z', path: '/workspace/archive', flag: 'newArchive', workbenchBypassesFlag: true, keywords: 'archive restore hidden boards' },
+]
+
 function isAvailable(item: PaperNavItem): boolean {
   if (!item.flag) return true
+  if (workspace.mode === 'workbench' && item.workbenchBypassesFlag) return true
   return featureFlags.isEnabled(item.flag)
 }
 
@@ -93,6 +101,7 @@ const visibleWorkbench = computed(() => workbenchItems.filter(isAvailable))
 const visibleMeta = computed(() => metaItems.filter(isAvailable))
 const availableNavItems = computed(() =>
   [...visiblePrimary.value, ...visibleWorkbench.value, ...visibleMeta.value]
+    .concat(commandOnlyItems.filter(isAvailable))
     .filter((item) => !item.path.startsWith('#'))
     .map((item) => ({
       id: item.id,

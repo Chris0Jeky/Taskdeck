@@ -17,6 +17,11 @@ const mockSession = reactive({
   isAuthenticated: true,
 })
 
+const mockWorkspace = reactive({
+  mode: 'guided' as string,
+  updateMode: vi.fn(),
+})
+
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
   return {
@@ -27,6 +32,10 @@ vi.mock('vue-router', async () => {
 
 vi.mock('../../../store/sessionStore', () => ({
   useSessionStore: () => mockSession,
+}))
+
+vi.mock('../../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => mockWorkspace,
 }))
 
 function mountTopBar() {
@@ -45,6 +54,7 @@ describe('PaperTopBar', () => {
       { path: '/workspace/boards/:id', name: 'workspace-board', meta: { breadcrumb: 'Product Backlog' } },
     ]
     mockSession.username = 'Dora'
+    mockWorkspace.mode = 'guided'
   })
 
   afterEach(() => {
@@ -100,6 +110,18 @@ describe('PaperTopBar', () => {
   it('shows the platform command modifier label in the palette trigger', () => {
     wrapper = mountTopBar()
     expect(wrapper.find('.paper-topbar__palette').text()).toContain('Ctrl')
+  })
+
+  it('renders and updates the workspace mode selector', async () => {
+    wrapper = mountTopBar()
+    const select = wrapper.find('.paper-topbar__mode-select')
+
+    expect(select.exists()).toBe(true)
+    expect(select.attributes('aria-label')).toBe('Workspace mode')
+
+    await select.setValue('workbench')
+
+    expect(mockWorkspace.updateMode).toHaveBeenCalledWith('workbench')
   })
 
   it('shows the avatar with the first letter of the session username', () => {
