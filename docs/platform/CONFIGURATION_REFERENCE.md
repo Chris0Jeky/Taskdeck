@@ -49,6 +49,9 @@ Source files used to build this reference:
   - [`Sentry`](#sentry)
   - [`Telemetry`](#telemetry)
   - [`Analytics`](#analytics)
+- [Database](#database)
+  - [`Database`](#database-1)
+  - [`AuditRetention`](#auditretention)
 - [Persistence and first run](#persistence-and-first-run)
   - [`ConnectionStrings`](#connectionstrings)
   - [`Database`](#database)
@@ -138,6 +141,8 @@ Bound to `GitHubOAuthSettings`. GitHub OAuth is only registered when
 | --- | --- | --- | --- | --- |
 | `GitHubOAuth:ClientId` | `string` | `""` | GitHub OAuth App client ID. | Only when enabling GitHub login |
 | `GitHubOAuth:ClientSecret` | `string` | `""` | GitHub OAuth App client secret. Keep in a secret store. | Only when enabling GitHub login |
+| `GitHubOAuth:RequiredScopes` | `string[]` | `["user:email"]` | Scopes that must be present in the token response. Missing required scopes block login. Case-sensitive. | No |
+| `GitHubOAuth:ExpectedScopes` | `string[]` | `["read:user", "user:email"]` | Scopes expected but not mandatory. Missing expected scopes log warnings. Also synced into the OAuth request so GitHub grants them. | No |
 
 ### `Oidc`
 
@@ -450,6 +455,30 @@ frontend reads from the public config endpoint.
 | `Analytics:Provider` | `string` | `""` | `plausible` or `umami`. Case-insensitive. | Only for `Analytics:Enabled = true` |
 | `Analytics:ScriptUrl` | `string` | `""` | Absolute URL to the analytics script. | Only for `Analytics:Enabled = true` |
 | `Analytics:SiteId` | `string` | `""` | Site identifier used by the analytics provider. | Only for `Analytics:Enabled = true` |
+
+## Database
+
+### `Database`
+
+Bound to `DatabaseSettings` (`Taskdeck.Application.Services.DatabaseSettings`).
+Registered via `RegisterValidatedOptions<DatabaseSettings>` with
+`ValidateDataAnnotations().ValidateOnStart()`.
+
+| Key | Type | Default | Range | Description | Required? |
+| --- | --- | --- | --- | --- | --- |
+| `Database:CommandTimeoutSeconds` | `int` | `30` | 1–300 | EF Core command timeout applied to the SQLite `DbContext`. Affects all queries including `Database.Migrate()` calls — avoid very low values if migrations are expected. | No |
+
+### `AuditRetention`
+
+Bound to `AuditRetentionSettings` (`Taskdeck.Application.Services.AuditRetentionSettings`).
+Registered via `RegisterValidatedOptions<AuditRetentionSettings>` with
+`ValidateDataAnnotations().ValidateOnStart()`.
+
+| Key | Type | Default | Range | Description | Required? |
+| --- | --- | --- | --- | --- | --- |
+| `AuditRetention:MaxRetentionDays` | `int` | `90` | 1–3650 | Audit log entries older than this are eligible for cleanup. | No |
+| `AuditRetention:CleanupBatchSize` | `int` | `1000` | 100–100000 | Number of rows deleted per batch in the retention worker. | No |
+| `AuditRetention:CleanupIntervalHours` | `int` | `24` | 1–168 | How often the `AuditRetentionWorker` runs cleanup. | No |
 
 ## Persistence and first run
 

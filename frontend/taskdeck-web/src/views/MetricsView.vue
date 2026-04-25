@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '../store/boardStore'
 import { useMetricsStore } from '../store/metricsStore'
 import { useToastStore } from '../store/toastStore'
+import { TdSkeleton } from '../components/ui'
 import { metricsApi } from '../api/metricsApi'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import type { MetricsQuery, ForecastQuery } from '../types/metrics'
@@ -198,9 +199,34 @@ const maxWipCount = computed(() => {
     </section>
 
     <!-- Loading state -->
-    <div v-if="loading" class="td-metrics__state" role="status" aria-live="polite">
-      <div class="td-metrics__spinner" />
-      <p>Loading metrics...</p>
+    <div v-if="loading" class="td-metrics__skeleton" role="status" aria-live="polite">
+      <span class="sr-only">Loading metrics...</span>
+      <!-- Summary card skeletons -->
+      <div class="td-metrics__summary">
+        <div v-for="n in 4" :key="n" class="td-metrics__card">
+          <TdSkeleton width="100px" height="12px" />
+          <TdSkeleton width="60px" height="28px" />
+          <TdSkeleton width="80px" height="10px" />
+        </div>
+      </div>
+      <!-- Chart skeleton -->
+      <div class="td-metrics__section">
+        <TdSkeleton width="160px" height="18px" />
+        <div class="td-metrics__skeleton-chart">
+          <TdSkeleton width="100%" height="200px" />
+        </div>
+      </div>
+      <!-- WIP skeleton -->
+      <div class="td-metrics__section">
+        <TdSkeleton width="120px" height="18px" />
+        <div class="td-metrics__skeleton-rows">
+          <div v-for="n in 3" :key="n" class="td-metrics__skeleton-wip-row">
+            <TdSkeleton width="100px" height="14px" />
+            <TdSkeleton width="100%" height="24px" />
+            <TdSkeleton width="40px" height="14px" />
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Error state -->
@@ -253,9 +279,15 @@ const maxWipCount = computed(() => {
       <section class="td-metrics__section td-metrics__forecast" aria-label="Completion forecast">
         <h2 class="td-metrics__section-title">Completion Forecast</h2>
 
-        <div v-if="forecastLoading" class="td-metrics__forecast-loading">
-          <div class="td-metrics__spinner td-metrics__spinner--sm" />
-          <span>Computing forecast...</span>
+        <div v-if="forecastLoading" class="td-metrics__forecast-loading" role="status">
+          <span class="sr-only">Computing forecast...</span>
+          <div class="td-metrics__forecast-grid">
+            <div v-for="n in 4" :key="n" class="td-metrics__card">
+              <TdSkeleton width="80px" height="12px" />
+              <TdSkeleton width="50px" height="24px" />
+              <TdSkeleton width="70px" height="10px" />
+            </div>
+          </div>
         </div>
 
         <div v-else-if="forecastError" class="td-metrics__forecast-error" role="alert">
@@ -547,17 +579,30 @@ const maxWipCount = computed(() => {
   font-weight: 600;
 }
 
-.td-metrics__spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--td-border-ghost);
-  border-top-color: var(--td-color-ember);
-  border-radius: 50%;
-  animation: td-spin 0.8s linear infinite;
+.td-metrics__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-8);
 }
 
-@keyframes td-spin {
-  to { transform: rotate(360deg); }
+.td-metrics__skeleton-chart {
+  margin-top: var(--td-space-4);
+  border-radius: var(--td-radius-md);
+  overflow: hidden;
+}
+
+.td-metrics__skeleton-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-3);
+  margin-top: var(--td-space-4);
+}
+
+.td-metrics__skeleton-wip-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 60px;
+  align-items: center;
+  gap: var(--td-space-3);
 }
 
 /* Summary cards */
@@ -760,16 +805,8 @@ const maxWipCount = computed(() => {
 
 .td-metrics__forecast-loading {
   display: flex;
-  align-items: center;
-  gap: var(--td-space-3);
-  color: var(--td-text-secondary);
-  font-size: var(--td-font-sm);
-}
-
-.td-metrics__spinner--sm {
-  width: 20px;
-  height: 20px;
-  border-width: 2px;
+  flex-direction: column;
+  gap: var(--td-space-4);
 }
 
 .td-metrics__forecast-error {

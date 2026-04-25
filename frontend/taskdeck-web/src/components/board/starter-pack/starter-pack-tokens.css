@@ -1,0 +1,182 @@
+/* Shared design tokens for starter pack sub-components.
+   Imported by each sub-component so scoped styles resolve correctly. */
+
+/* ── Section divider (left panel border) ── */
+.sp-section-border {
+  border-bottom: 1px solid var(--td-border-default);
+}
+
+@media (min-width: 768px) {
+  .sp-section-border {
+    border-bottom: none;
+    border-right: 1px solid var(--td-border-default);
+  }
+}
+
+/* ── Text hierarchy ── */
+.sp-text-primary {
+  color: var(--td-text-primary);
+}
+
+.sp-text-secondary {
+  color: var(--td-text-secondary);
+}
+
+.sp-muted {
+  color: var(--td-text-muted);
+}
+
+.sp-label {
+  color: var(--td-text-secondary);
+}
+
+.sp-text-error {
+  color: var(--td-color-error);
+}
+
+.sp-text-warning {
+  color: var(--td-color-warning);
+}
+
+/* ── Form inputs ── */
+.sp-input {
+  border: 1px solid var(--td-border-default);
+  background: var(--td-surface-secondary);
+  color: var(--td-text-primary);
+}
+
+.sp-input:focus {
+  box-shadow: var(--td-focus-ring);
+}
+
+.sp-input::placeholder {
+  color: var(--td-text-tertiary);
+}
+
+/* ── Pack card (list item) ── */
+.sp-pack-card {
+  border-color: var(--td-border-default);
+  background: var(--td-surface-primary);
+}
+
+.sp-pack-card:hover {
+  border-color: var(--td-border-default);
+  background: var(--td-surface-tertiary);
+}
+
+.sp-pack-card--selected {
+  border-color: var(--td-color-primary);
+  background: var(--td-color-primary-light);
+}
+
+/* ── Badge (tag / pack-id chip) ── */
+.sp-badge {
+  background: var(--td-surface-tertiary);
+  color: var(--td-text-secondary);
+}
+
+/* ── Inset box (columns preview) ── */
+.sp-inset-box {
+  border: 1px solid var(--td-border-default);
+  background: var(--td-surface-secondary);
+}
+
+/* ── Result box ── */
+.sp-result-box {
+  border: 1px solid var(--td-border-default);
+  background: var(--td-surface-primary);
+}
+
+/* ── List box (actions list) ── */
+.sp-list-box {
+  border: 1px solid var(--td-border-ghost);
+  background: var(--td-surface-secondary);
+  color: var(--td-text-secondary);
+}
+
+/* ── Empty state ── */
+.sp-empty-state {
+  border-color: var(--td-border-default);
+  background: var(--td-surface-secondary);
+}
+
+/* ── Error box ── */
+.sp-error-box {
+  border: 1px solid var(--td-color-error-light, var(--td-color-error));
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+}
+
+/* ── Buttons ── */
+.sp-btn-primary {
+  background: var(--td-color-primary);
+  color: var(--td-text-inverse);
+}
+
+.sp-btn-primary:hover:not(:disabled) {
+  background: var(--td-color-primary-hover);
+}
+
+.sp-btn-primary:disabled {
+  background: var(--td-surface-bright);
+  color: var(--td-text-muted);
+}
+
+.sp-btn-secondary {
+  border: 1px solid var(--td-color-primary);
+  color: var(--td-color-primary);
+  background: transparent;
+}
+
+.sp-btn-secondary:hover:not(:disabled) {
+  background: var(--td-color-primary-light);
+}
+
+.sp-btn-upload {
+  border: 1px solid var(--td-border-default);
+  color: var(--td-text-secondary);
+  background: transparent;
+}
+
+.sp-btn-upload:hover {
+  background: var(--td-surface-tertiary);
+}
+
+/* ── Semantic tone badges (status indicators) ── */
+.sp-tone-neutral {
+  background: var(--td-surface-tertiary);
+  color: var(--td-text-secondary);
+}
+
+.sp-tone-success {
+  background: var(--td-color-success-light);
+  color: var(--td-color-success);
+}
+
+.sp-tone-error {
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+}
+
+.sp-tone-warning {
+  background: var(--td-color-warning-light);
+  color: var(--td-color-warning);
+}
+
+.sp-tone-info {
+  background: var(--td-color-info-light);
+  color: var(--td-color-info);
+}
+
+/* ── Callout boxes (bordered status regions) ── */
+.sp-callout-error {
+  border: 1px solid var(--td-color-error-light, var(--td-color-error));
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+}
+
+.sp-callout-warning {
+  border: 1px solid var(--td-color-warning-light, var(--td-color-warning));
+  background: var(--td-color-warning-light);
+  color: var(--td-color-warning);
+}

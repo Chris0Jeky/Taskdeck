@@ -544,6 +544,94 @@ public class OptionsValidationTests
         Assert.True(isValid);
     }
 
+    // ── AuditRetentionSettings ────────────────────────────────────────
+
+    [Fact]
+    public void AuditRetentionSettings_DefaultValues_PassValidation()
+    {
+        var settings = new AuditRetentionSettings();
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(3651)]
+    public void AuditRetentionSettings_MaxRetentionDays_RejectsOutOfRange(int value)
+    {
+        var settings = new AuditRetentionSettings { MaxRetentionDays = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(AuditRetentionSettings.MaxRetentionDays)));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(50001)]
+    public void AuditRetentionSettings_CleanupBatchSize_RejectsOutOfRange(int value)
+    {
+        var settings = new AuditRetentionSettings { CleanupBatchSize = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(AuditRetentionSettings.CleanupBatchSize)));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(721)]
+    public void AuditRetentionSettings_CleanupIntervalHours_RejectsOutOfRange(int value)
+    {
+        var settings = new AuditRetentionSettings { CleanupIntervalHours = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(AuditRetentionSettings.CleanupIntervalHours)));
+    }
+
+    [Theory]
+    [InlineData(1, 1, 1)]
+    [InlineData(3650, 50000, 720)]
+    [InlineData(90, 1000, 24)]
+    [InlineData(365, 5000, 12)]
+    public void AuditRetentionSettings_ValidBoundaryValues_PassValidation(int days, int batch, int hours)
+    {
+        var settings = new AuditRetentionSettings
+        {
+            MaxRetentionDays = days,
+            CleanupBatchSize = batch,
+            CleanupIntervalHours = hours
+        };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
     // ── Integration: app starts with valid default config ───────────────
 
     [Fact]
