@@ -74,6 +74,7 @@ describe('PaperLedgerRow', () => {
     const row = wrapper.find('.paper-ledger-row')
     expect(row.attributes('role')).toBeUndefined()
     expect(row.attributes('tabindex')).toBeUndefined()
+    expect(wrapper.find('svg[data-icon="chevronRight"]').exists()).toBe(false)
   })
 
   it('keeps the interactive row addressable as a button', () => {
