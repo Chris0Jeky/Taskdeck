@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { formatLocalDossierDate } from '../../../../composables/useTodayDossier'
 import PaperTodayView from '../../../../views/paper/PaperTodayView.vue'
 
 const mockWorkspaceStore = {
@@ -56,7 +57,7 @@ describe('PaperTodayView', () => {
   })
 
   it('scopes line-for-tomorrow storage by user and dossier date', () => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = formatLocalDossierDate(new Date())
     localStorage.setItem(`td.paper.line-for-tomorrow:user-1:${today}`, 'user-one note')
     localStorage.setItem(`td.paper.line-for-tomorrow:user-2:${today}`, 'user-two note')
 
@@ -73,5 +74,11 @@ describe('PaperTodayView', () => {
     expect(wrapper.text()).not.toContain('PRESS S TO SEAL')
     expect(wrapper.text()).not.toContain('⌘L FOR LEDGER')
     expect(wrapper.text()).toContain('SEAL ABOVE')
+  })
+
+  it('formats dossier storage dates from local calendar parts', () => {
+    const localEvening = new Date(2026, 3, 25, 23, 30)
+
+    expect(formatLocalDossierDate(localEvening)).toBe('2026-04-25')
   })
 })

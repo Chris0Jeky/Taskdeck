@@ -100,9 +100,7 @@ const DOSSIER_NUMBER_RE = /D-\d{4}-\d{2}-\d{2}-\d{3}/
  * a real backend should hand in the per-day sequence number.
  */
 export function formatDossierSerial(date: Date, seq = 1): string {
-  const yyyy = date.getFullYear().toString().padStart(4, '0')
-  const mm = (date.getMonth() + 1).toString().padStart(2, '0')
-  const dd = date.getDate().toString().padStart(2, '0')
+  const { yyyy, mm, dd } = formatLocalDossierDateParts(date)
   const nnn = seq.toString().padStart(3, '0')
   const serial = `D-${yyyy}-${mm}-${dd}-${nnn}`
   // Light invariant — useful in dev, harmless in prod.
@@ -110,6 +108,19 @@ export function formatDossierSerial(date: Date, seq = 1): string {
     throw new Error(`Invalid dossier serial: ${serial}`)
   }
   return serial
+}
+
+export function formatLocalDossierDate(date: Date): string {
+  const { yyyy, mm, dd } = formatLocalDossierDateParts(date)
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function formatLocalDossierDateParts(date: Date): { yyyy: string; mm: string; dd: string } {
+  return {
+    yyyy: date.getFullYear().toString().padStart(4, '0'),
+    mm: (date.getMonth() + 1).toString().padStart(2, '0'),
+    dd: date.getDate().toString().padStart(2, '0'),
+  }
 }
 
 /** Stub data the surface falls back to when the backend is silent. */

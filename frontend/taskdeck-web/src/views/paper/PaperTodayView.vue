@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useTodayDossier } from '../../composables/useTodayDossier'
+import { formatLocalDossierDate, useTodayDossier } from '../../composables/useTodayDossier'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
 
@@ -31,7 +31,7 @@ const toast = useToastStore()
 const ledgerEntryCount = computed(() => dossier.value.ledger.length)
 const lineForTomorrowStorageKey = computed(() => {
   const userPart = encodeURIComponent(session.userId?.trim() || 'anonymous')
-  const dayPart = dossier.value.date.toISOString().slice(0, 10)
+  const dayPart = formatLocalDossierDate(dossier.value.date)
   return `td.paper.line-for-tomorrow:${userPart}:${dayPart}`
 })
 
