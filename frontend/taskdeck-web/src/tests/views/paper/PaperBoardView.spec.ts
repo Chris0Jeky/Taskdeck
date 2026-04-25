@@ -22,7 +22,7 @@ function makeColumn(partial: Partial<Column> = {}): Column {
   }
 }
 
-function makeCard(id: string, columnId: string, title = 'card'): Card {
+function makeCard(id: string, columnId: string, title = 'card', position = 0): Card {
   return {
     id,
     boardId: 'board-1',
@@ -32,7 +32,7 @@ function makeCard(id: string, columnId: string, title = 'card'): Card {
     dueDate: null,
     isBlocked: false,
     blockReason: null,
-    position: 0,
+    position,
     labels: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -59,9 +59,9 @@ const board: BoardDetail = {
 const cardsByColumn = new Map<string, Card[]>([
   // Backlog has 3 cards but wipLimit is 2 → triggers the OVERDUE tagstamp.
   ['col-backlog', [
-    makeCard('card-1', 'col-backlog', 'A'),
-    makeCard('card-2', 'col-backlog', 'B'),
-    makeCard('card-3', 'col-backlog', 'C'),
+    makeCard('card-1', 'col-backlog', 'A', 0),
+    makeCard('card-2', 'col-backlog', 'B', 1),
+    makeCard('card-3', 'col-backlog', 'C', 2),
   ]],
   ['col-today', []],
   ['col-progress', [makeCard('card-4', 'col-progress', 'D')]],
@@ -181,7 +181,7 @@ describe('PaperBoardView', () => {
     expect(wrapper.find('[data-testid="paper-card-modal"]').text()).toContain('A')
   })
 
-  it('allows card drags to bubble through the lane without being canceled', async () => {
+  it('blocks paper card drags that do not start from the card handle', async () => {
     const wrapper = mountView()
     const card = wrapper.get('[data-card-id="card-1"]')
     const dragStart = makeDragEvent('dragstart')
@@ -189,13 +189,25 @@ describe('PaperBoardView', () => {
     card.element.dispatchEvent(dragStart)
     await nextTick()
 
+    expect(dragStart.defaultPrevented).toBe(true)
+    expect(mockBoardStore.moveCard).not.toHaveBeenCalled()
+  })
+
+  it('starts paper card drags from the explicit card handle', async () => {
+    const wrapper = mountView()
+    const handle = wrapper.get('[data-card-id="card-1"] [data-action="drag-card-handle"]')
+    const dragStart = makeDragEvent('dragstart')
+
+    handle.element.dispatchEvent(dragStart)
+    await nextTick()
+
     expect(dragStart.defaultPrevented).toBe(false)
   })
 
   it('highlights the target lane while a paper card is dragged over it and moves on drop', async () => {
     const wrapper = mountView()
-    const card = wrapper.get('[data-card-id="card-1"]')
-    card.element.dispatchEvent(makeDragEvent('dragstart'))
+    const handle = wrapper.get('[data-card-id="card-1"] [data-action="drag-card-handle"]')
+    handle.element.dispatchEvent(makeDragEvent('dragstart'))
     await nextTick()
 
     const targetLane = wrapper.get('[data-column-dnd-id="col-today"]')
@@ -209,5 +221,19 @@ describe('PaperBoardView', () => {
     await flushPromises()
 
     expect(mockBoardStore.moveCard).toHaveBeenCalledWith('board-1', 'card-1', 'col-today', 0)
+  })
+
+  it('reorders paper cards within the same column by dropping on another card', async () => {
+    const wrapper = mountView()
+    const handle = wrapper.get('[data-card-id="card-1"] [data-action="drag-card-handle"]')
+    handle.element.dispatchEvent(makeDragEvent('dragstart'))
+    await nextTick()
+
+    const targetCard = wrapper.get('[data-card-id="card-3"]')
+    targetCard.element.dispatchEvent(makeDragEvent('dragover'))
+    targetCard.element.dispatchEvent(makeDragEvent('drop'))
+    await flushPromises()
+
+    expect(mockBoardStore.moveCard).toHaveBeenCalledWith('board-1', 'card-1', 'col-backlog', 1)
   })
 })

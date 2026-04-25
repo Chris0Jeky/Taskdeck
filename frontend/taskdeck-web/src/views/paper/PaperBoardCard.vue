@@ -98,16 +98,34 @@ const tagstampTone = computed(() => {
   return null
 })
 
+function isDragHandleTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-action="drag-card-handle"]') !== null
+}
+
 function onClick() {
   emit('click', props.card)
 }
 
 function onDragStart(e: DragEvent) {
+  if (!isDragHandleTarget(e.target)) {
+    e.preventDefault()
+    return
+  }
+
+  e.stopPropagation()
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', props.card.id)
+  }
   emit('dragstart', props.card, e)
 }
 
 function onDragEnd() {
   emit('dragend')
+}
+
+function onDragHandleMouseDown() {
+  window.getSelection()?.removeAllRanges()
 }
 </script>
 
@@ -121,7 +139,7 @@ function onDragEnd() {
     :data-card-id="card.id"
     :data-variant="variant"
     :data-tone="tone || undefined"
-    draggable="true"
+    draggable="false"
     tabindex="0"
     role="button"
     :aria-label="`Card ${card.title}`"
@@ -140,15 +158,29 @@ function onDragEnd() {
     <div class="paper-board-card__body">
       <header class="paper-board-card__header">
         <span class="tk-serial paper-board-card__serial">{{ serial }}</span>
-        <span
-          v-if="tagstampTone"
-          class="tagstamp paper-board-card__tagstamp"
-          :data-tone="tagstampTone"
-          :style="{ color:
-            tagstampTone === 'ember' ? 'var(--ember)' :
-            tagstampTone === 'applied' ? 'var(--applied)' :
-            'var(--overdue)' }"
-        >{{ (tone ?? '').toUpperCase() }}</span>
+        <span class="paper-board-card__header-actions">
+          <span
+            v-if="tagstampTone"
+            class="tagstamp paper-board-card__tagstamp"
+            :data-tone="tagstampTone"
+            :style="{ color:
+              tagstampTone === 'ember' ? 'var(--ember)' :
+              tagstampTone === 'applied' ? 'var(--applied)' :
+              'var(--overdue)' }"
+          >{{ (tone ?? '').toUpperCase() }}</span>
+          <button
+            type="button"
+            class="paper-board-card__drag-handle"
+            data-action="drag-card-handle"
+            draggable="true"
+            title="Drag Card"
+            aria-label="Drag Card"
+            @click.stop
+            @mousedown="onDragHandleMouseDown"
+          >
+            <span aria-hidden="true">â‹®â‹®</span>
+          </button>
+        </span>
       </header>
 
       <h4 class="paper-board-card__title">{{ card.title }}</h4>
@@ -191,16 +223,12 @@ function onDragEnd() {
   box-shadow: var(--shadow-card);
   font-family: var(--sans);
   color: var(--ink);
-  cursor: grab;
+  cursor: pointer;
   transition:
     box-shadow var(--d-quick) var(--ease-paper),
     border-color var(--d-quick) var(--ease-paper),
     transform var(--d-quick) var(--ease-press);
   overflow: hidden;
-}
-
-.paper-board-card:active {
-  cursor: grabbing;
 }
 
 /* 1px lift on hover via shadow + inset highlight, no scale. */
@@ -252,6 +280,37 @@ function onDragEnd() {
   font-size: 10.5px;
   color: var(--faint);
   letter-spacing: .04em;
+}
+
+.paper-board-card__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.paper-board-card__drag-handle {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--mute);
+  cursor: grab;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.paper-board-card__drag-handle:active {
+  cursor: grabbing;
+}
+
+.paper-board-card__drag-handle:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 1px;
 }
 
 .paper-board-card__tagstamp {

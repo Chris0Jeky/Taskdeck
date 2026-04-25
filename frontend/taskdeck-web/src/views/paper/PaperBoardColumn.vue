@@ -39,6 +39,8 @@ const emit = defineEmits<{
   (event: 'card-click', card: Card): void
   (event: 'card-dragstart', card: Card, e: DragEvent): void
   (event: 'card-dragend'): void
+  (event: 'card-drop', card: Card, column: Column, e: DragEvent): void
+  (event: 'card-dragover', card: Card, e: DragEvent): void
 }>()
 
 const serial = computed(() => `§ ${String(props.index).padStart(2, '0')}`)
@@ -72,6 +74,14 @@ function onCardDragStart(card: Card, e: DragEvent) {
 
 function onCardDragEnd() {
   emit('card-dragend')
+}
+
+function onCardDrop(card: Card, e: DragEvent) {
+  emit('card-drop', card, props.column, e)
+}
+
+function onCardDragOver(card: Card, e: DragEvent) {
+  emit('card-dragover', card, e)
 }
 </script>
 
@@ -113,6 +123,8 @@ function onCardDragEnd() {
         @click="onCardClick"
         @dragstart="onCardDragStart"
         @dragend="onCardDragEnd"
+        @dragover="onCardDragOver(card, $event)"
+        @drop="onCardDrop(card, $event)"
       />
 
       <p

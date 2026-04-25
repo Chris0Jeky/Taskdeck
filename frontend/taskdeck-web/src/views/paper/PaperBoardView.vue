@@ -81,6 +81,36 @@ async function onCardDropOnColumn(column: Column, event: DragEvent) {
   }
 }
 
+async function onCardDropOnCard(targetCard: Card, column: Column, event: DragEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  if (!draggedCard.value) return
+  if (draggedCard.value.id === targetCard.id) {
+    handleCardDragEnd()
+    return
+  }
+
+  try {
+    let targetPosition = targetCard.position
+    if (draggedCard.value.columnId === column.id && draggedCard.value.position < targetCard.position) {
+      targetPosition -= 1
+    }
+
+    await boardStore.moveCard(boardId.value, draggedCard.value.id, column.id, targetPosition)
+  } catch (error) {
+    logError('Failed to reorder card (paper):', error)
+  } finally {
+    handleCardDragEnd()
+  }
+}
+
+function onCardDragOverCard(event: DragEvent) {
+  if (!draggedCard.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+}
+
 function onCardDragOverColumn(column: Column, event: DragEvent) {
   // Permit cards to be dropped onto columns even if column-reorder logic
   // (which only fires when a column is being dragged) doesn't claim the
@@ -207,6 +237,8 @@ function openCaptureBoard() {
             @card-click="openCard"
             @card-dragstart="(card) => handleCardDragStart(card)"
             @card-dragend="handleCardDragEnd"
+            @card-dragover="(_card, event) => onCardDragOverCard(event)"
+            @card-drop="onCardDropOnCard"
           />
         </div>
       </div>
