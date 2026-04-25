@@ -227,6 +227,34 @@ public class SelfConsistencyQuotaTests
     }
 
     [Fact]
+    public void Consume_ShouldTolerateFloatingPointDrift_NearCostCap()
+    {
+        // Simulate floating-point drift: 0.1 + 0.2 = 0.30000000000000004 in IEEE 754,
+        // and three such sums can accumulate drift slightly above the cap.
+        // The tolerance in Consume should prevent a spurious rejection.
+        var quota = new SelfConsistencyQuota(10, 0, costCap: 0.3);
+
+        // 0.1 + 0.2 = 0.30000000000000004 due to IEEE 754 representation
+        var q1 = quota.Consume(0.1);
+        var q2 = q1.Consume(0.2);
+
+        // Should succeed despite newCostUsed being slightly > 0.3
+        q2.CostUsed.Should().BeApproximately(0.3, 1e-12);
+    }
+
+    [Fact]
+    public void Consume_ShouldStillReject_WhenMeaningfullyOverCostCap()
+    {
+        var quota = new SelfConsistencyQuota(10, 0, costCap: 1.0, costUsed: 0.9);
+
+        // 0.9 + 0.2 = 1.1, which is meaningfully over the cap
+        var act = () => quota.Consume(0.2);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.LlmQuotaExceeded);
+    }
+
+    [Fact]
     public void Consume_ChainedCalls_ShouldTrackBudget()
     {
         var quota = new SelfConsistencyQuota(3, 0, costCap: 1.0);
