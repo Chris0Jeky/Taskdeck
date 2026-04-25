@@ -1,0 +1,4 @@
+interface:
+  display_name: "Taskdeck CI Conflict Recovery"
+  short_description: "Triage CI, bot comments, and conflicts"
+  default_prompt: "Use $taskdeck-ci-conflict-recovery to inspect failing CI, review bot comments, resolve conflicts, rerun checks, and report the recovery path."
