@@ -38,10 +38,12 @@ public class ProposalConflictDetector : IProposalConflictDetector
             return Result.Failure<IReadOnlyList<ConflictRowDto>>(authResult.ErrorCode, authResult.ErrorMessage);
 
         var rows = new List<ConflictRow>();
+        var flaggedCardIds = new HashSet<Guid>();
+        var flaggedColumnIds = new HashSet<Guid>();
 
         // Check each condition and collect rows
-        await CheckStaleDataAsync(proposal, rows, cancellationToken);
-        await CheckWipLimitAsync(proposal, rows, cancellationToken);
+        await CheckStaleDataAsync(proposal, rows, flaggedCardIds, cancellationToken);
+        await CheckWipLimitAsync(proposal, rows, flaggedColumnIds, cancellationToken);
         await CheckDuplicatePendingProposalsAsync(proposal, rows, cancellationToken);
         CheckHighRiskOperations(proposal, rows);
         await CheckOutboundWebhooksAsync(proposal, rows, cancellationToken);
@@ -56,7 +58,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         else
         {
             // Add positive signals when applicable
-            await AddPositiveSignalsAsync(proposal, rows, cancellationToken);
+            await AddPositiveSignalsAsync(proposal, rows, flaggedCardIds, flaggedColumnIds, cancellationToken);
         }
 
         // Sort: Warn first, then Info, then Ok
@@ -95,6 +97,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     private async Task CheckStaleDataAsync(
         AutomationProposal proposal,
         List<ConflictRow> rows,
+        HashSet<Guid> flaggedCardIds,
         CancellationToken cancellationToken)
     {
         var cardTargetIds = GetDistinctCardTargetIds(proposal);
@@ -105,6 +108,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
             var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
             if (card is null)
             {
+                flaggedCardIds.Add(cardId);
                 rows.Add(new ConflictRow(
                     ConflictTone.Warn,
                     "missing-target",
@@ -114,6 +118,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
             if (card.UpdatedAt > proposal.CreatedAt)
             {
+                flaggedCardIds.Add(cardId);
                 rows.Add(new ConflictRow(
                     ConflictTone.Warn,
                     "stale-data",
@@ -129,6 +134,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     private async Task CheckWipLimitAsync(
         AutomationProposal proposal,
         List<ConflictRow> rows,
+        HashSet<Guid> flaggedColumnIds,
         CancellationToken cancellationToken)
     {
         var targetColumnIds = GetTargetColumnIds(proposal);
@@ -141,6 +147,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
             if (column.WipLimit.HasValue && column.Cards.Count >= column.WipLimit.Value)
             {
+                flaggedColumnIds.Add(columnId);
                 rows.Add(new ConflictRow(
                     ConflictTone.Warn,
                     "wip-limit",
@@ -270,23 +277,20 @@ public class ProposalConflictDetector : IProposalConflictDetector
     private async Task AddPositiveSignalsAsync(
         AutomationProposal proposal,
         List<ConflictRow> rows,
+        HashSet<Guid> flaggedCardIds,
+        HashSet<Guid> flaggedColumnIds,
         CancellationToken cancellationToken)
     {
-        // Ok: target column has capacity (only if we didn't already warn about WIP)
-        var wipWarnColumnKeys = rows
-            .Where(r => r.Key == "wip-limit")
-            .Select(r => r.Value)
-            .ToHashSet();
-
+        // Ok: target column has capacity (only if we didn't already warn about WIP for this column)
         var targetColumnIds = GetTargetColumnIds(proposal);
         foreach (var columnId in targetColumnIds)
         {
+            if (flaggedColumnIds.Contains(columnId)) continue;
+
             var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(columnId, cancellationToken);
             if (column is null) continue;
 
-            // Only emit capacity-ok if we didn't already warn about this column
-            var alreadyWarned = wipWarnColumnKeys.Any(v => v.Contains(column.Name));
-            if (!alreadyWarned && column.WipLimit.HasValue)
+            if (column.WipLimit.HasValue)
             {
                 rows.Add(new ConflictRow(
                     ConflictTone.Ok,
@@ -295,27 +299,19 @@ public class ProposalConflictDetector : IProposalConflictDetector
             }
         }
 
-        // Ok: card data is fresh (only for cards we didn't already warn about)
-        var staleCardKeys = rows
-            .Where(r => r.Key is "stale-data" or "missing-target")
-            .ToList();
-
+        // Ok: card data is fresh (only for cards we didn't already flag as stale/missing)
         var cardTargetIds = GetDistinctCardTargetIds(proposal);
         foreach (var cardId in cardTargetIds)
         {
-            var alreadyFlagged = staleCardKeys.Any(r =>
-                r.Value.Contains(cardId.ToString()) || r.Value.Contains(cardId.ToString("N")));
+            if (flaggedCardIds.Contains(cardId)) continue;
 
-            if (!alreadyFlagged)
+            var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+            if (card is not null)
             {
-                var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
-                if (card is not null)
-                {
-                    rows.Add(new ConflictRow(
-                        ConflictTone.Ok,
-                        "fresh-data",
-                        $"Card \"{card.Title}\" data is current"));
-                }
+                rows.Add(new ConflictRow(
+                    ConflictTone.Ok,
+                    "fresh-data",
+                    $"Card \"{card.Title}\" data is current"));
             }
         }
     }
