@@ -428,3 +428,37 @@
   outline-offset: 1px;
   border-radius: var(--r-1);
 }
+
+/* =========================================================
+   Narrow companions — PAPER-11
+   Phone (≤480px) and tablet (≤1024px) responsive rules.
+   The `--paper-scale` token (default 1) is consumed by .tk-* utilities
+   via calc(...); shrinking it once at the .paper root cascades cleanly
+   without compounding (the leaf utilities multiply, the root only sets).
+   ========================================================= */
+.paper, .paper-night {
+  --paper-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --paper-density: comfortable;
+}
+
+@media (max-width: 1024px) {
+  .paper, .paper-night {
+    --paper-density: compact;
+  }
+}
+
+@media (max-width: 480px) {
+  .paper, .paper-night {
+    --paper-scale: 0.9;
+  }
+  .paper .stamp, .paper-night .stamp {
+    width: 48px;
+    height: 48px;
+  }
+  .paper .stamp b, .paper-night .stamp b {
+    font-size: 10px;
+  }
+  .paper .stamp .stamp-num, .paper-night .stamp .stamp-num {
+    font-size: 7px;
+  }
+}
