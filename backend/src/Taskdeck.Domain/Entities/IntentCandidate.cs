@@ -72,6 +72,10 @@ public class IntentCandidate : Entity
 
     public void AddEvidenceLink(EvidenceLink link)
     {
+        if (link.IntentCandidateId != Id)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "EvidenceLink does not belong to this IntentCandidate");
+
         _evidenceLinks.Add(link);
         Touch();
     }
