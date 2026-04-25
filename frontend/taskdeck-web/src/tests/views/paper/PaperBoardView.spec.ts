@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick, reactive } from 'vue'
 import PaperBoardView from '../../../views/paper/PaperBoardView.vue'
 import PaperBoardColumn from '../../../views/paper/PaperBoardColumn.vue'
 import type { BoardDetail, Card, Column } from '../../../types/board'
@@ -71,6 +71,7 @@ const cardsByColumn = new Map<string, Card[]>([
 const mockBoardStore = reactive({
   currentBoard: board,
   cardsByColumn,
+  currentBoardLabels: [],
   loading: false,
   error: null as string | null,
   fetchBoard: vi.fn(async () => {}),
@@ -90,7 +91,24 @@ vi.mock('../../../store/boardStore', () => ({
 function mountView() {
   return mount(PaperBoardView, {
     attachTo: document.body,
+    global: {
+      stubs: {
+        CardModal: {
+          props: ['card', 'isOpen', 'labels'],
+          template: '<div v-if="isOpen" data-testid="paper-card-modal">{{ card.title }}</div>',
+        },
+      },
+    },
   })
+}
+
+function makeDragEvent(type: string): DragEvent {
+  const event = new Event(type, { bubbles: true, cancelable: true }) as unknown as DragEvent
+  Object.defineProperty(event, 'dataTransfer', {
+    value: { effectAllowed: '', dropEffect: '', setData: vi.fn() },
+    configurable: true,
+  })
+  return event
 }
 
 describe('PaperBoardView', () => {
@@ -100,6 +118,10 @@ describe('PaperBoardView', () => {
     mockBoardStore.moveCard.mockClear()
     mockBoardStore.error = null
     mockBoardStore.loading = false
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
   })
 
   it('renders all four columns from the stubbed boardStore', () => {
@@ -135,5 +157,57 @@ describe('PaperBoardView', () => {
   it('renders the board title from the store', () => {
     const wrapper = mountView()
     expect(wrapper.find('.paper-board-view__title').text()).toBe('Product Backlog')
+  })
+
+  it('does not fetch board data itself because the wrapping BoardView owns loading', () => {
+    mountView()
+    expect(mockBoardStore.fetchBoard).not.toHaveBeenCalled()
+  })
+
+  it('wires the paper column header as the column drag handle', () => {
+    const wrapper = mountView()
+    const handle = wrapper.get('[data-action="drag-column-handle"]')
+
+    expect(handle.attributes('draggable')).toBe('true')
+  })
+
+  it('opens the card modal when a paper card is clicked', async () => {
+    const wrapper = mountView()
+    const firstColumn = wrapper.findAllComponents(PaperBoardColumn)[0]
+
+    firstColumn?.vm.$emit('card-click', cardsByColumn.get('col-backlog')![0])
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="paper-card-modal"]').text()).toContain('A')
+  })
+
+  it('allows card drags to bubble through the lane without being canceled', async () => {
+    const wrapper = mountView()
+    const card = wrapper.get('[data-card-id="card-1"]')
+    const dragStart = makeDragEvent('dragstart')
+
+    card.element.dispatchEvent(dragStart)
+    await nextTick()
+
+    expect(dragStart.defaultPrevented).toBe(false)
+  })
+
+  it('highlights the target lane while a paper card is dragged over it and moves on drop', async () => {
+    const wrapper = mountView()
+    const card = wrapper.get('[data-card-id="card-1"]')
+    card.element.dispatchEvent(makeDragEvent('dragstart'))
+    await nextTick()
+
+    const targetLane = wrapper.get('[data-column-dnd-id="col-today"]')
+    targetLane.element.dispatchEvent(makeDragEvent('dragover'))
+    await nextTick()
+
+    expect(wrapper.getComponent(PaperBoardColumn).exists()).toBe(true)
+    expect(targetLane.classes()).toContain('paper-board-view__lane--drop-target')
+
+    targetLane.element.dispatchEvent(makeDragEvent('drop'))
+    await flushPromises()
+
+    expect(mockBoardStore.moveCard).toHaveBeenCalledWith('board-1', 'card-1', 'col-today', 0)
   })
 })

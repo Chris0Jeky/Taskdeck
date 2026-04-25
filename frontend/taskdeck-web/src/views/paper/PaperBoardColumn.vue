@@ -84,7 +84,11 @@ function onCardDragEnd() {
     :aria-label="`Column ${column.name}`"
   >
     <header class="paper-board-column__header">
-      <div class="paper-board-column__heading">
+      <div
+        class="paper-board-column__heading"
+        data-action="drag-column-handle"
+        draggable="true"
+      >
         <span class="paper-board-column__serial tk-num">{{ serial }}</span>
         <h3 class="paper-board-column__name">{{ column.name }}</h3>
       </div>

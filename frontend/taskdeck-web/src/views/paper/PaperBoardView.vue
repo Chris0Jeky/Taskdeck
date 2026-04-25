@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useBoardDragDrop } from '../../composables/useBoardDragDrop'
 import PaperBoardColumn from './PaperBoardColumn.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
+import CardModal from '../../components/board/CardModal.vue'
 import type { Card, Column } from '../../types/board'
 import type { PaperBoardCardVariant } from './PaperBoardCard.vue'
 import { logError } from '../../utils/errorReporting'
@@ -32,7 +33,8 @@ const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
 
-const boardId = ref((route.params.id as string) ?? '')
+const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
+const selectedCard = ref<Card | null>(null)
 
 const sortedColumns = computed<Column[]>(() => {
   if (!boardStore.currentBoard) return []
@@ -58,29 +60,6 @@ const {
   handleCardDragEnd,
 } = useBoardDragDrop(() => boardId.value, sortedColumns)
 
-onMounted(async () => {
-  if (!boardId.value) return
-  try {
-    await boardStore.fetchBoard(boardId.value)
-  } catch (error) {
-    logError('Failed to load board (paper):', error)
-  }
-})
-
-watch(
-  () => route.params.id,
-  async (nextId) => {
-    const next = typeof nextId === 'string' ? nextId : ''
-    if (!next || next === boardId.value) return
-    boardId.value = next
-    try {
-      await boardStore.fetchBoard(boardId.value)
-    } catch (error) {
-      logError('Failed to switch board (paper):', error)
-    }
-  },
-)
-
 /**
  * Drop a card onto a column — reuses `boardStore.moveCard` so the same
  * audit-log + persistence path runs as the Obsidian view.
@@ -88,7 +67,10 @@ watch(
 async function onCardDropOnColumn(column: Column, event: DragEvent) {
   event.preventDefault()
   if (!draggedCard.value) return
-  if (draggedCard.value.columnId === column.id) return
+  if (draggedCard.value.columnId === column.id) {
+    handleCardDragEnd()
+    return
+  }
   try {
     const targetCards = cardsByColumn.value.get(column.id) ?? []
     await boardStore.moveCard(boardId.value, draggedCard.value.id, column.id, targetCards.length)
@@ -99,15 +81,34 @@ async function onCardDropOnColumn(column: Column, event: DragEvent) {
   }
 }
 
-function onCardDragOverColumn(event: DragEvent) {
+function onCardDragOverColumn(column: Column, event: DragEvent) {
   // Permit cards to be dropped onto columns even if column-reorder logic
   // (which only fires when a column is being dragged) doesn't claim the
   // event. handleColumnDragOver already calls preventDefault when a column
   // is being dragged.
   if (draggedCard.value) {
     event.preventDefault()
+    dragOverColumnId.value = column.id
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
   }
+}
+
+function isColumnDragHandleTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-action="drag-column-handle"]') !== null
+}
+
+function onLaneDragStart(column: Column, event: DragEvent) {
+  if (isColumnDragHandleTarget(event.target)) {
+    handleColumnDragStart(column, event)
+  }
+}
+
+function openCard(card: Card) {
+  selectedCard.value = card
+}
+
+function closeCard() {
+  selectedCard.value = null
 }
 
 function openCapture(_column: Column) {
@@ -189,9 +190,9 @@ function openCaptureBoard() {
             'paper-board-view__lane--dragging': draggedColumn?.id === column.id,
             'paper-board-view__lane--drop-target': dragOverColumnId === column.id,
           }"
-          @dragstart="handleColumnDragStart(column, $event)"
+          @dragstart="onLaneDragStart(column, $event)"
           @dragend="handleColumnDragEnd"
-          @dragover="(event) => { handleColumnDragOver(column, event); onCardDragOverColumn(event) }"
+          @dragover="(event) => { handleColumnDragOver(column, event); onCardDragOverColumn(column, event) }"
           @dragleave="handleColumnDragLeave"
           @drop="(event) => { handleColumnDrop(column, event); if (draggedCard) onCardDropOnColumn(column, event) }"
         >
@@ -201,12 +202,23 @@ function openCaptureBoard() {
             :cards="cardsByColumn.get(column.id) ?? []"
             :card-variant="props.cardVariant"
             :is-drag-over="dragOverColumnId === column.id"
+            :selected-card-id="selectedCard?.id ?? null"
             @capture="openCapture"
+            @card-click="openCard"
             @card-dragstart="(card) => handleCardDragStart(card)"
             @card-dragend="handleCardDragEnd"
           />
         </div>
       </div>
+
+      <CardModal
+        v-if="selectedCard"
+        :card="selectedCard"
+        :is-open="Boolean(selectedCard)"
+        :labels="boardStore.currentBoardLabels"
+        @close="closeCard"
+        @updated="closeCard"
+      />
     </div>
   </div>
 </template>
