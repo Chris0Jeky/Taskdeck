@@ -242,6 +242,44 @@ public class ConfidenceAggregatorTests
     }
 
     [Fact]
+    public void Aggregate_ShouldThrow_WhenWeightSourceIsUndefined()
+    {
+        var scores = new List<ConfidenceScore>
+        {
+            new(0.5, ConfidenceSource.Verbalized, "a")
+        };
+
+        var weights = new Dictionary<ConfidenceSource, double>
+        {
+            { (ConfidenceSource)999, 1.0 }
+        };
+
+        var act = () => _aggregator.Aggregate(scores, weights);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void AggregateForField_ShouldThrow_WhenWeightSourceIsUndefined()
+    {
+        var scores = new List<ConfidenceScore>
+        {
+            new(0.5, ConfidenceSource.Verbalized, "a")
+        };
+
+        var weights = new Dictionary<ConfidenceSource, double>
+        {
+            { (ConfidenceSource)999, 1.0 }
+        };
+
+        var act = () => _aggregator.AggregateForField("title", scores, weights);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public void Aggregate_ShouldHandleEmptyWeightsDictionary_AsEqualWeights()
     {
         var scores = new List<ConfidenceScore>

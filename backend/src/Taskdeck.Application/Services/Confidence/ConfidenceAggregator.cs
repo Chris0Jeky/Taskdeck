@@ -87,6 +87,10 @@ public sealed class ConfidenceAggregator : IConfidenceAggregator
 
         foreach (var kvp in weights)
         {
+            if (!Enum.IsDefined(kvp.Key))
+                throw new DomainException(ErrorCodes.ValidationError,
+                    $"Weight source {kvp.Key} is not a valid confidence source.");
+
             if (kvp.Value < 0.0)
                 throw new DomainException(ErrorCodes.ValidationError,
                     $"Weight for source {kvp.Key} cannot be negative ({kvp.Value}).");
