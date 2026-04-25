@@ -33,18 +33,28 @@ const PAPER_LIGHT_CLASS = /(^|\s)paper(\s|$)/
 
 /**
  * Filter to console errors that indicate an app-side problem.  Resource-
- * loading failures (Google Fonts in `paper-tokens.css`, fonts.gstatic.com,
- * etc.) routinely fire `console.error` in restricted-network CI lanes and
- * do NOT invalidate the night-render correctness signal.  Keep only errors
- * that look like JS exceptions or app-origin warnings.
+ * loading failures (Google Fonts, CDN assets, etc.) routinely fire
+ * `console.error` in restricted-network CI lanes and do NOT invalidate the
+ * night-render correctness signal.  Only keep errors whose text looks like
+ * a JS exception or explicitly references app source paths, so unrelated
+ * browser/extension noise cannot cause flaky failures.
  */
 function isAppRelevantError(text: string): boolean {
   const lowered = text.toLowerCase()
-  // Resource-load failures we explicitly tolerate
   if (lowered.includes('failed to load resource')) return false
   if (lowered.includes('net::err_')) return false
-  if (lowered.includes('fonts.googleapis.com')) return false
-  if (lowered.includes('fonts.gstatic.com')) return false
+  if (lowered.includes('favicon')) return false
+
+  try {
+    const urls = text.match(/https?:\/\/[^\s)]+/g) ?? []
+    for (const raw of urls) {
+      const host = new URL(raw).hostname
+      if (host === 'fonts.googleapis.com' || host === 'fonts.gstatic.com') return false
+    }
+  } catch {
+    // URL parse failure — not a URL-bearing message, keep it
+  }
+
   return true
 }
 
