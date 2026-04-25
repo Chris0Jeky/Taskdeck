@@ -251,6 +251,57 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
         return ids;
     }
 
+    public async Task<IReadOnlyList<DailyAuditCount>> CountByDateAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite stores DateTimeOffset as a string; use SUBSTR to extract the date portion
+            // and push the GROUP BY into SQL. The IX_AuditLogs_UserId_Timestamp index covers
+            // the WHERE clause so this avoids a full table scan.
+            var fromStr = from.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff") + "+00:00";
+            var toStr = to.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff") + "+00:00";
+
+            var rows = await _context.Database
+                .SqlQueryRaw<DateCountRow>(
+                    "SELECT SUBSTR(Timestamp, 1, 10) AS DateStr, COUNT(*) AS Count " +
+                    "FROM AuditLogs " +
+                    "WHERE UserId = {0} AND Timestamp >= {1} AND Timestamp <= {2} " +
+                    "GROUP BY SUBSTR(Timestamp, 1, 10)",
+                    userId, fromStr, toStr)
+                .ToListAsync(cancellationToken);
+
+            return rows
+                .Select(r => new DailyAuditCount(DateOnly.Parse(r.DateStr), r.Count))
+                .ToList();
+        }
+
+        // Non-SQLite: use EF LINQ projection with server-side GROUP BY.
+        var results = await _context.AuditLogs
+            .AsNoTracking()
+            .Where(al => al.UserId == userId && al.Timestamp >= from && al.Timestamp <= to)
+            .GroupBy(al => al.Timestamp.Date)
+            .Select(g => new { Date = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return results
+            .Select(r => new DailyAuditCount(DateOnly.FromDateTime(r.Date), r.Count))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Internal row type for SQLite raw SQL date-count projection.
+    /// EF Core's SqlQueryRaw requires a concrete type for materialisation.
+    /// </summary>
+    internal class DateCountRow
+    {
+        public string DateStr { get; set; } = string.Empty;
+        public int Count { get; set; }
+    }
+
     public async Task<int> DeleteOldEntriesAsync(DateTimeOffset olderThan, int batchSize, CancellationToken cancellationToken = default)
     {
         var totalDeleted = 0;
