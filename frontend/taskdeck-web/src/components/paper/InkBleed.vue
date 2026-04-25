@@ -77,6 +77,7 @@ const isReducedMotion = ref(false)
 // Initial render: dried+stamped frame so SSR / no-JS shows the final state.
 // onMounted will rewind to 'drop' for animated users (when phase === 'auto').
 const currentPhase = ref<InkBleedRuntimePhase>('dried')
+const doneEmitted = ref(false)
 
 const timers: ReturnType<typeof setTimeout>[] = []
 
@@ -90,7 +91,17 @@ function setPhase(next: InkBleedRuntimePhase): void {
   if (currentPhase.value === next) return
   currentPhase.value = next
   emit('phasechange', next)
-  if (next === 'dried') emit('done')
+  if (next === 'dried') {
+    emitDoneOnce()
+  } else {
+    doneEmitted.value = false
+  }
+}
+
+function emitDoneOnce(): void {
+  if (doneEmitted.value) return
+  doneEmitted.value = true
+  emit('done')
 }
 
 function scheduleSequence(): void {
@@ -109,7 +120,7 @@ function applyReducedPhase(next: InkBleedPhase): void {
   clearTimers()
   if (next === 'auto') {
     setPhase('dried')
-    if (currentPhase.value === 'dried') emit('done')
+    if (currentPhase.value === 'dried') emitDoneOnce()
     return
   }
   if (next === 'dried') {
