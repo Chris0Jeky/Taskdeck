@@ -89,6 +89,10 @@ public static class TelemetryGuard
         {
             throw new ArgumentException("StringValueKeys must not be null.", nameof(options));
         }
+        if (options.StringValueAllowlists is null)
+        {
+            throw new ArgumentException("StringValueAllowlists must not be null.", nameof(options));
+        }
         if (options.NumericValueKeys is null)
         {
             throw new ArgumentException("NumericValueKeys must not be null.", nameof(options));
@@ -96,6 +100,15 @@ public static class TelemetryGuard
         if (options.BooleanValueKeys is null)
         {
             throw new ArgumentException("BooleanValueKeys must not be null.", nameof(options));
+        }
+        foreach (var key in options.StringValueKeys)
+        {
+            if (!options.StringValueAllowlists.TryGetValue(key, out var allowedValues) || allowedValues is null)
+            {
+                throw new ArgumentException(
+                    $"String key '{key}' must define an allowed value set.",
+                    nameof(options));
+            }
         }
 
         _options = CloneOptions(options);
@@ -141,12 +154,6 @@ public static class TelemetryGuard
         {
             return TelemetryValidationResult.Rejected(
                 $"Value type '{value.GetType().Name}' is not supported. Only primitive types (string, int, long, double, float, decimal, bool) are allowed.");
-        }
-
-        if (!IsValueShapeAllowed(options, key, value))
-        {
-            return TelemetryValidationResult.Rejected(
-                $"Key '{key}' does not allow values of type '{value.GetType().Name}'.");
         }
 
         // Validate numeric values
@@ -210,6 +217,12 @@ public static class TelemetryGuard
                     return TelemetryValidationResult.Rejected("String value triggered regex timeout (potential ReDoS).");
                 }
             }
+        }
+
+        if (!IsValueShapeAllowed(options, key, value))
+        {
+            return TelemetryValidationResult.Rejected(
+                $"Key '{key}' does not allow values like '{value}' of type '{value.GetType().Name}'.");
         }
 
         return TelemetryValidationResult.Accepted();
@@ -282,6 +295,10 @@ public static class TelemetryGuard
             MaxStringLength = options.MaxStringLength,
             AllowedKeys = new HashSet<string>(options.AllowedKeys, options.AllowedKeys.Comparer),
             StringValueKeys = new HashSet<string>(options.StringValueKeys, options.StringValueKeys.Comparer),
+            StringValueAllowlists = options.StringValueAllowlists.ToDictionary(
+                pair => pair.Key,
+                pair => new HashSet<string>(pair.Value, pair.Value.Comparer),
+                options.StringValueAllowlists.Comparer),
             NumericValueKeys = new HashSet<string>(options.NumericValueKeys, options.NumericValueKeys.Comparer),
             BooleanValueKeys = new HashSet<string>(options.BooleanValueKeys, options.BooleanValueKeys.Comparer),
         };
@@ -291,8 +308,11 @@ public static class TelemetryGuard
     {
         var valueType = value.GetType();
 
-        if (options.StringValueKeys.Contains(key) && value is string)
-            return true;
+        if (options.StringValueKeys.Contains(key) && value is string stringValue)
+        {
+            return options.StringValueAllowlists.TryGetValue(key, out var allowedValues) &&
+                allowedValues.Contains(stringValue);
+        }
 
         if (options.NumericValueKeys.Contains(key) && NumericValueTypes.Contains(valueType))
             return true;

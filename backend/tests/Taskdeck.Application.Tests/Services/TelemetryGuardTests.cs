@@ -83,7 +83,17 @@ public class TelemetryGuardTests : IDisposable
     public void Validate_ShouldAccept_StringAtExactMaxLength()
     {
         var exactString = new string('a', 256);
-        var result = TelemetryGuard.Validate("workspace.mode", exactString);
+        TelemetryGuard.Configure(new TelemetryGuardOptions
+        {
+            AllowedKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.status" },
+            StringValueKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.status" },
+            StringValueAllowlists = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
+            {
+                ["custom.status"] = new(StringComparer.Ordinal) { exactString }
+            },
+        });
+
+        var result = TelemetryGuard.Validate("custom.status", exactString);
         result.IsValid.Should().BeTrue();
     }
 
@@ -102,10 +112,10 @@ public class TelemetryGuardTests : IDisposable
     }
 
     [Theory]
-    [InlineData("no-url-here")]
-    [InlineData("path/to/file")]
-    [InlineData("protocol without colon-slash")]
-    public void Validate_ShouldAccept_StringsWithoutUrls(string value)
+    [InlineData("guided")]
+    [InlineData("workbench")]
+    [InlineData("agent")]
+    public void Validate_ShouldAccept_AllowedWorkspaceModesWithoutUrls(string value)
     {
         var result = TelemetryGuard.Validate("workspace.mode", value);
         result.IsValid.Should().BeTrue();
@@ -125,10 +135,10 @@ public class TelemetryGuardTests : IDisposable
     }
 
     [Theory]
-    [InlineData("no-email")]
-    [InlineData("at-sign-alone@")]
-    [InlineData("@no-local-part.com")]
-    public void Validate_ShouldAccept_StringsWithoutEmails(string value)
+    [InlineData("guided")]
+    [InlineData("workbench")]
+    [InlineData("agent")]
+    public void Validate_ShouldAccept_AllowedWorkspaceModesWithoutEmails(string value)
     {
         var result = TelemetryGuard.Validate("workspace.mode", value);
         result.IsValid.Should().BeTrue();
@@ -191,6 +201,10 @@ public class TelemetryGuardTests : IDisposable
             MaxStringLength = 10,
             AllowedKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.key" },
             StringValueKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.key" },
+            StringValueAllowlists = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
+            {
+                ["custom.key"] = new(StringComparer.Ordinal) { "short" }
+            },
         };
         TelemetryGuard.Configure(customOptions);
 
@@ -207,6 +221,10 @@ public class TelemetryGuardTests : IDisposable
             MaxStringLength = 10,
             AllowedKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.key" },
             StringValueKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.key" },
+            StringValueAllowlists = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
+            {
+                ["custom.key"] = new(StringComparer.Ordinal) { "short" }
+            },
         };
 
         TelemetryGuard.Configure(customOptions);
@@ -271,6 +289,18 @@ public class TelemetryGuardTests : IDisposable
         result.Reason.Should().Contain("does not allow values");
     }
 
+    [Theory]
+    [InlineData("not-a-mode")]
+    [InlineData("write arbitrary user text")]
+    [InlineData("")]
+    public void Validate_ShouldReject_StringValueOutsideClosedDefaultSet(string value)
+    {
+        var result = TelemetryGuard.Validate("workspace.mode", value);
+
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("does not allow value");
+    }
+
     [Fact]
     public void Validate_ShouldReject_StringWithBothUrlAndEmail()
     {
@@ -282,14 +312,16 @@ public class TelemetryGuardTests : IDisposable
     public void Validate_ShouldHandle_UnicodeStringSafely()
     {
         var result = TelemetryGuard.Validate("workspace.mode", "日本語テスト");
-        result.IsValid.Should().BeTrue();
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("does not allow value");
     }
 
     [Fact]
     public void Validate_ShouldHandle_EmptyString()
     {
         var result = TelemetryGuard.Validate("workspace.mode", "");
-        result.IsValid.Should().BeTrue();
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("does not allow value");
     }
 
     [Fact]
@@ -506,7 +538,18 @@ public class TelemetryGuardTests : IDisposable
     public void Validate_ShouldAccept_PercentLiteralThatIsNotEncoding()
     {
         // A string with % that is NOT valid URL encoding should still pass if clean
-        var result = TelemetryGuard.Validate("workspace.mode", "100% complete");
+        var options = new TelemetryGuardOptions
+        {
+            AllowedKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.status" },
+            StringValueKeys = new HashSet<string>(StringComparer.Ordinal) { "custom.status" },
+            StringValueAllowlists = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
+            {
+                ["custom.status"] = new(StringComparer.Ordinal) { "100% complete" }
+            },
+        };
+        TelemetryGuard.Configure(options);
+
+        var result = TelemetryGuard.Validate("custom.status", "100% complete");
         result.IsValid.Should().BeTrue();
     }
 }

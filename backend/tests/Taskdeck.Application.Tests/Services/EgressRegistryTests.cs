@@ -169,7 +169,7 @@ public class EgressRegistryTests
                 Classification: EgressDataClassification.None)
         ]);
 
-        act.Should().Throw<ArgumentException>().WithMessage("*Host*");
+        act.Should().Throw<ArgumentException>();
     }
 
     [Fact]
@@ -260,6 +260,25 @@ public class EgressRegistryTests
 
         registry.IsHostAllowed("us-east.custom-cdn.example.com").Should().BeTrue();
         registry.IsHostAllowed("custom-cdn.example.com").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("*.com")]
+    [InlineData("*.*")]
+    [InlineData("*example.com")]
+    [InlineData("https://example.com")]
+    [InlineData("example.com/path")]
+    public void Register_ShouldRejectMalformedOrOverlyBroadWildcardHosts(string host)
+    {
+        var registry = new EgressRegistry(Enumerable.Empty<EgressEntry>());
+
+        var act = () => registry.Register(new EgressEntry(
+            Host: host,
+            PayloadCategory: "test",
+            ToolOrAgentName: "test",
+            Classification: EgressDataClassification.None));
+
+        act.Should().Throw<ArgumentException>().WithMessage("*Host*");
     }
 
     // --- Host validation in Register ---

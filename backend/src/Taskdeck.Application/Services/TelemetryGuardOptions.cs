@@ -59,6 +59,17 @@ public sealed class TelemetryGuardOptions
         "workspace.mode",
     };
 
+    public Dictionary<string, HashSet<string>> StringValueAllowlists { get; set; } =
+        new(StringComparer.Ordinal)
+        {
+            ["workspace.mode"] = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "guided",
+                "workbench",
+                "agent",
+            }
+        };
+
     public HashSet<string> NumericValueKeys { get; set; } = new(StringComparer.Ordinal)
     {
         "capture.count",

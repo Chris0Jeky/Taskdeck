@@ -100,6 +100,35 @@ public sealed class EgressRegistry : IEgressRegistry
         {
             throw new ArgumentException("Host cannot be null or whitespace.", nameof(entry));
         }
+
+        var normalized = NormalizeHost(entry.Host);
+        if (normalized.Contains("://", StringComparison.Ordinal) ||
+            normalized.Contains('/', StringComparison.Ordinal) ||
+            normalized.Contains('\\', StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Host must be a DNS host name, not a URL or path.", nameof(entry));
+        }
+
+        if (normalized.StartsWith("*.", StringComparison.Ordinal))
+        {
+            var suffix = normalized[2..];
+            var labels = suffix.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            if (labels.Length < 2 ||
+                labels.Any(static label => label.Length == 0) ||
+                suffix.Contains('*', StringComparison.Ordinal) ||
+                Uri.CheckHostName(suffix) != UriHostNameType.Dns)
+            {
+                throw new ArgumentException("Wildcard host must target a concrete multi-label DNS suffix.", nameof(entry));
+            }
+
+            return;
+        }
+
+        if (normalized.Contains('*', StringComparison.Ordinal) ||
+            Uri.CheckHostName(normalized) != UriHostNameType.Dns)
+        {
+            throw new ArgumentException("Host must be a valid DNS host name.", nameof(entry));
+        }
     }
 
     /// <summary>
