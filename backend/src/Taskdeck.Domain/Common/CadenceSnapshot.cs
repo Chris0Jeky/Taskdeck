@@ -25,23 +25,44 @@ public sealed record CadenceBucket
 /// Aggregated per-hour activity snapshot for a single day, used to drive the
 /// Today Cadence strip (24 SVG bars + first/peak/last action).
 /// </summary>
-public sealed record CadenceSnapshot(
-    IReadOnlyList<CadenceBucket> Buckets,
-    DateTimeOffset? FirstActionAt,
-    int? PeakHour,
-    DateTimeOffset? LastActionAt)
+public sealed record CadenceSnapshot
 {
-    /// <summary>
-    /// Returns an empty snapshot representing a day with no activity.
-    /// All 24 buckets are present with zero counts.
-    /// </summary>
-    public static CadenceSnapshot Empty()
-    {
-        var buckets = Enumerable.Range(0, 24)
+    private const int RequiredBucketCount = 24;
+
+    private static readonly CadenceSnapshot EmptyInstance = new(
+        Enumerable.Range(0, RequiredBucketCount)
             .Select(h => new CadenceBucket(h, 0))
             .ToList()
-            .AsReadOnly();
+            .AsReadOnly(),
+        null, null, null);
 
-        return new CadenceSnapshot(buckets, null, null, null);
+    public IReadOnlyList<CadenceBucket> Buckets { get; }
+    public DateTimeOffset? FirstActionAt { get; }
+    public int? PeakHour { get; }
+    public DateTimeOffset? LastActionAt { get; }
+
+    public CadenceSnapshot(
+        IReadOnlyList<CadenceBucket> buckets,
+        DateTimeOffset? firstActionAt,
+        int? peakHour,
+        DateTimeOffset? lastActionAt)
+    {
+        ArgumentNullException.ThrowIfNull(buckets);
+
+        if (buckets.Count != RequiredBucketCount)
+            throw new ArgumentException(
+                $"Buckets must contain exactly {RequiredBucketCount} entries, got {buckets.Count}.",
+                nameof(buckets));
+
+        Buckets = buckets;
+        FirstActionAt = firstActionAt;
+        PeakHour = peakHour;
+        LastActionAt = lastActionAt;
     }
+
+    /// <summary>
+    /// Returns a cached empty snapshot representing a day with no activity.
+    /// All 24 buckets are present with zero counts.
+    /// </summary>
+    public static CadenceSnapshot Empty() => EmptyInstance;
 }
