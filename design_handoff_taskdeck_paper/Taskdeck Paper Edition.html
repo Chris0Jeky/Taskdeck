@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Taskdeck — Paper &amp; Graphite, Ember Edition</title>
+<meta name="viewport" content="width=1480" />
+<link rel="stylesheet" href="paper/tokens.css" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #f3eee5; }
+  #root { width: 100%; min-height: 100vh; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="paper/icons.jsx"></script>
+<script type="text/babel" src="paper/components.jsx"></script>
+<script type="text/babel" src="paper/surface-home.jsx"></script>
+<script type="text/babel" src="paper/surface-board.jsx"></script>
+<script type="text/babel" src="paper/surface-review.jsx"></script>
+<script type="text/babel" src="paper/surface-inbox.jsx"></script>
+<script type="text/babel" src="paper/surface-misc.jsx"></script>
+<script type="text/babel" src="paper/surface-narrow.jsx"></script>
+<script type="text/babel" src="paper/surface-motion.jsx"></script>
+<script type="text/babel" src="paper/surface-review-deep.jsx"></script>
+<script type="text/babel" src="paper/surface-today.jsx"></script>
+
+<script type="text/babel" data-presets="env,react">
+function Frame({ width, height, children, label }) {
+  return (
+    <div data-screen-label={label} style={{ width, height, overflow: "hidden", position: "relative", background: "var(--paper)" }}>
+      {children}
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="foundation" title="Foundation · Paper & Graphite, Ember Edition">
+        <DCArtboard id="frontispiece" label="Frontispiece — system rationale" width={1280} height={760}>
+          <Frame width={1280} height={760} label="Frontispiece">
+            <div className="paper" style={{ width: "100%", height: "100%", padding: 56, display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 48, fontFamily: "var(--sans)" }}>
+              <div>
+                <div className="tk-eyebrow">Direction · approved · Apr 25 2026</div>
+                <h1 className="tk-display" style={{ margin: "12px 0 16px" }}>Paper &amp; Graphite,<br/><em>Ember Edition.</em></h1>
+                <p className="tk-lede">A premium light theme for the Capture → Review → Apply loop. Cream paper, ink-deep blacks, and a single seal-red accent that earns its place only on proposals, applied stamps, and italic-serif headlines. The board feels like a logbook kept in a quiet office — one where the auditor will, eventually, ask to see your work, and you'll be glad they did.</p>
+                <hr className="hr-double" style={{ margin: "28px 0" }} />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+                  <div><div className="tk-eyebrow">Type</div><div style={{ fontFamily: "var(--serif)", fontSize: 18, fontStyle: "italic" }}>Fraunces · Inter · JetBrains Mono</div></div>
+                  <div><div className="tk-eyebrow">Palette</div><div style={{ fontFamily: "var(--serif)", fontSize: 18, fontStyle: "italic" }}>Cream · Ink · Seal red</div></div>
+                  <div><div className="tk-eyebrow">Radius</div><div style={{ fontFamily: "var(--serif)", fontSize: 18, fontStyle: "italic" }}>2px · 4px · paper does not round</div></div>
+                  <div><div className="tk-eyebrow">Motion</div><div style={{ fontFamily: "var(--serif)", fontSize: 18, fontStyle: "italic" }}>Pages turn · ink dries · stamps press</div></div>
+                  <div><div className="tk-eyebrow">Iconography</div><div style={{ fontFamily: "var(--serif)", fontSize: 18, fontStyle: "italic" }}>Letterforms for nav, hairline for actions</div></div>
+                  <div><div className="tk-eyebrow">Sound</div><div style={{ fontFamily: "var(--serif)", fontSize: 18, fontStyle: "italic" }}>Sheet turn · stamp · pen capping</div></div>
+                </div>
+              </div>
+              <aside className="card" style={{ padding: 24, position: "relative" }}>
+                <div className="tk-eyebrow">Specimen</div>
+                <h2 className="tk-h1" style={{ margin: "8px 0 6px", fontSize: 56 }}>Capture, then <em>review.</em></h2>
+                <p className="tk-body" style={{ color: "var(--ink-2)" }}>No input — human or LLM-proposed — silently mutates the board. Every change flows through an explicit review step.</p>
+                <hr className="hr-soft" style={{ margin: "16px 0" }} />
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <Stamp kind="applied" />
+                  <Stamp kind="proposed" />
+                  <Stamp kind="captured" />
+                </div>
+                <div style={{ marginTop: 18, display: "flex", gap: 8 }}>
+                  <HLBtn label="Apply" kbd="⏎" ember />
+                  <HLBtn label="Reject" kbd="⌫" />
+                  <HLBtn label="Edit" kbd="E" />
+                </div>
+              </aside>
+            </div>
+          </Frame>
+        </DCArtboard>
+
+        <DCArtboard id="tokens" label="Tokens — light & dark" width={1280} height={520}>
+          <Frame width={1280} height={520} label="Tokens">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", height: "100%" }}>
+              <div className="paper" style={{ padding: 32 }}>
+                <div className="tk-eyebrow">Light · Paper</div>
+                <h3 className="tk-h2" style={{ margin: "6px 0 16px" }}>The substrate</h3>
+                <Ladder swatches={[
+                  ["#fbf7ee","paper-card"], ["#f3eee5","paper"], ["#ebe5d8","paper-2"], ["#d8d0bf","line"],
+                  ["#a39c8b","faint"], ["#6c6557","mute"], ["#3a352d","ink-2"], ["#1a1814","ink"], ["#0a0908","ink-deep"],
+                ]} />
+                <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
+                  <Sw c="#a8421f" l="ember" /><Sw c="#6e2810" l="ember-ink" /><Sw c="#4a6b3f" l="applied" /><Sw c="#8c4a26" l="overdue" />
+                </div>
+              </div>
+              <div className="paper-night" style={{ padding: 32 }}>
+                <div className="tk-eyebrow">Dark · Paper at Night</div>
+                <h3 className="tk-h2" style={{ margin: "6px 0 16px", color: "var(--ink-deep)" }}>Same metaphor</h3>
+                <Ladder swatches={[
+                  ["#1c1813","paper-card"], ["#14110d","paper"], ["#100d0a","paper-2"], ["#2a241c","line"],
+                  ["#685e4c","faint"], ["#9a8f7a","mute"], ["#c8bfa9","ink-2"], ["#ece4d3","ink"], ["#fbf3df","ink-deep"],
+                ]} />
+                <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
+                  <Sw c="#d96a3e" l="ember" /><Sw c="#ffb38c" l="ember-ink" /><Sw c="#8aae72" l="applied" /><Sw c="#d09257" l="overdue" />
+                </div>
+              </div>
+            </div>
+          </Frame>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="surfaces-light" title="Surfaces · light · 1280 desktop">
+        <DCArtboard id="home-light" label="Home / reset" width={1280} height={860}>
+          <Frame width={1280} height={860} label="01 Home"><HomeSurface theme="paper" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="board-A-light" label="Board · card variant A · ledger index" width={1280} height={860}>
+          <Frame width={1280} height={860} label="02 Board · A"><BoardSurface theme="paper" cardVariant="A" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="board-B-light" label="Board · card variant B · tag ribbon" width={1280} height={860}>
+          <Frame width={1280} height={860} label="02 Board · B"><BoardSurface theme="paper" cardVariant="B" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="review-A-light" label="Review · variant A · letterpress diff" width={1280} height={920}>
+          <Frame width={1280} height={920} label="03 Review · A"><ReviewSurface theme="paper" variant="A" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="review-B-light" label="Review · variant B · before/after boards" width={1280} height={920}>
+          <Frame width={1280} height={920} label="03 Review · B"><ReviewSurface theme="paper" variant="B" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="inbox-A-light" label="Inbox · variant A · single-line nib" width={1280} height={920}>
+          <Frame width={1280} height={920} label="04 Inbox · A"><InboxSurface theme="paper" variant="A" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="inbox-B-light" label="Inbox · variant B · composer ledger" width={1280} height={920}>
+          <Frame width={1280} height={920} label="04 Inbox · B"><InboxSurface theme="paper" variant="B" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="card-detail-light" label="Card detail · focus mode" width={1280} height={860}>
+          <Frame width={1280} height={860} label="05 Card detail"><CardDetailSurface theme="paper" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="palette-light" label="Command palette · ⌘K" width={1280} height={860}>
+          <Frame width={1280} height={860} label="06 Command palette"><CommandPaletteSurface theme="paper" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="shortcuts-light" label="Shortcuts overlay · ?" width={1280} height={860}>
+          <Frame width={1280} height={860} label="07 Shortcuts"><ShortcutsSurface theme="paper" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="toasts-light" label="Toasts · stacked" width={680} height={580}>
+          <Frame width={680} height={580} label="08 Toasts"><ToastSurface theme="paper" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="empty-light" label="Empty states" width={1100} height={720}>
+          <Frame width={1100} height={720} label="09 Empty states"><EmptyStatesSurface theme="paper" /></Frame>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="signature" title="Signature motion · LLM thinking state">
+        <DCArtboard id="thinking" label="Three comparators · pick one" width={1280} height={520}>
+          <Frame width={1280} height={520} label="Thinking comparators"><ThinkingComparators theme="paper" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="motion-spec-B" label="Variant B · Ink bleed · full motion spec (chosen)" width={1480} height={1480}>
+          <Frame width={1480} height={1480} label="Motion spec · Ink bleed"><MotionSpec theme="paper" /></Frame>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="deep-review" title="Review · deep · provenance, conflicts, history">
+        <DCArtboard id="review-deep" label="Review #014 · the central surface" width={1480} height={1180}>
+          <Frame width={1480} height={1180} label="Review · deep"><ReviewDeep theme="paper" /></Frame>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="today" title="Today · end-of-day dossier">
+        <DCArtboard id="today-light" label="Today · light · ledger + stats + carry-over" width={1480} height={1640}>
+          <Frame width={1480} height={1640} label="Today · light"><TodaySurface theme="paper" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="today-dark" label="Today · Paper at Night" width={1480} height={1640}>
+          <Frame width={1480} height={1640} label="Today · dark"><TodaySurface theme="paper-night" /></Frame>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="surfaces-dark" title="Paper at Night · dark companion">
+        <DCArtboard id="home-dark" label="Home · dark" width={1280} height={860}>
+          <Frame width={1280} height={860} label="01 Home · dark"><HomeSurface theme="paper-night" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="board-dark" label="Board · variant A · dark" width={1280} height={860}>
+          <Frame width={1280} height={860} label="02 Board · dark"><BoardSurface theme="paper-night" cardVariant="A" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="review-dark" label="Review · variant A · dark" width={1280} height={920}>
+          <Frame width={1280} height={920} label="03 Review · dark"><ReviewSurface theme="paper-night" variant="A" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="inbox-dark" label="Inbox · variant A · dark" width={1280} height={920}>
+          <Frame width={1280} height={920} label="04 Inbox · dark"><InboxSurface theme="paper-night" variant="A" /></Frame>
+        </DCArtboard>
+        <DCArtboard id="palette-dark" label="Command palette · dark" width={1280} height={860}>
+          <Frame width={1280} height={860} label="06 Palette · dark"><CommandPaletteSurface theme="paper-night" /></Frame>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="narrow" title="Narrow companions · 768 tablet & 375 phone">
+        <DCArtboard id="phone-light" label="Phone · 375 · light" width={420} height={820}>
+          <Frame width={420} height={820} label="Phone · light">
+            <div style={{ padding: 22, background: "#ebe5d8", height: "100%" }}>
+              <NarrowSurface theme="paper" width={375} />
+            </div>
+          </Frame>
+        </DCArtboard>
+        <DCArtboard id="phone-dark" label="Phone · 375 · dark" width={420} height={820}>
+          <Frame width={420} height={820} label="Phone · dark">
+            <div style={{ padding: 22, background: "#100d0a", height: "100%" }}>
+              <NarrowSurface theme="paper-night" width={375} />
+            </div>
+          </Frame>
+        </DCArtboard>
+        <DCArtboard id="tablet-light" label="Tablet · 768 · light" width={820} height={1060}>
+          <Frame width={820} height={1060} label="Tablet · light">
+            <div style={{ padding: 26, background: "#ebe5d8", height: "100%" }}>
+              <NarrowSurface theme="paper" width={768} />
+            </div>
+          </Frame>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="recommend" title="If I could only ship one">
+        <DCArtboard id="rec" label="Recommendation · why this stack" width={1280} height={560}>
+          <Frame width={1280} height={560} label="Recommendation">
+            <div className="paper" style={{ padding: 48, height: "100%", fontFamily: "var(--sans)" }}>
+              <div className="tk-eyebrow">Closing note · designer to manager</div>
+              <h2 className="tk-h1" style={{ margin: "10px 0 16px" }}>Ship <em>Letterpress</em> with the <em>index card</em>, on Paper.</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 32, marginTop: 8 }}>
+                <RecCol n="01" k="Capture" v="Single-line nib (Capture A)" why="Near-zero friction, italic serif makes the user feel they're writing in a journal. The ledger composer (B) is right for desktop power users; expose it via ⌘⇧;." />
+                <RecCol n="02" k="Review" v="Letterpress diff (Review A)" why="The card visibly debosses while haiku composes, then lifts to commit. Motion-as-meaning. Side-by-side (B) is great for boards-level diffs; keep as a toggle." />
+                <RecCol n="03" k="Board cards" v="Index card (A)" why="Serial number across the top reads as ledger; horizontal density survives 200-card boards. Tag ribbon (B) is best for designers' boards — keep as a per-board view setting." />
+              </div>
+              <hr className="hr-double" style={{ margin: "28px 0" }} />
+              <p className="tk-lede" style={{ marginTop: 0 }}>
+                Trust signals are encoded in <em>materials</em>, not labels: the embossed stamp un-embosses on undo; the seal-red appears six times on a screen, never seven; the dotted "reversibility" line literally erases as the 6-hour window closes. The first time a user undoes an apply and watches the stamp lift off, they'll understand the thesis without reading any marketing.
+              </p>
+            </div>
+          </Frame>
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+function Ladder({ swatches }) {
+  return (
+    <div style={{ display: "flex", height: 60, border: "1px solid var(--line)", borderRadius: 2, overflow: "hidden" }}>
+      {swatches.map(([c, n]) => (
+        <div key={n} style={{ flex: 1, background: c, display: "flex", alignItems: "flex-end", padding: 6, fontFamily: "var(--mono)", fontSize: 9, color: "rgba(255,255,255,.65)", mixBlendMode: "difference" }}>{n}</div>
+      ))}
+    </div>
+  );
+}
+function RecCol({ n, k, v, why }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span className="tk-serial">{n}</span>
+        <span className="tk-eyebrow">{k}</span>
+      </div>
+      <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 22, fontWeight: 500, color: "var(--ink-deep)", margin: "6px 0 8px", lineHeight: 1.2 }}>{v}</div>
+      <p className="tk-body" style={{ margin: 0, fontSize: 13, color: "var(--ink-2)" }}>{why}</p>
+    </div>
+  );
+}
+
+function Sw({ c, l }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ width: 22, height: 22, borderRadius: "50%", background: c, border: "1px solid var(--line)" }} />
+      <span className="tk-meta">{l}</span>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
