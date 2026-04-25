@@ -80,15 +80,32 @@ public class EmbeddingBackfillWorker : BackgroundService
                     consecutiveErrors,
                     SensitiveDataRedactor.SummarizeException(ex));
 
-                // Exponential backoff capped at MaxBackoffSeconds
-                var backoffSeconds = Math.Min(
-                    _settings.MaxBackoffSeconds,
-                    _settings.PollIntervalSeconds * (1 << Math.Min(consecutiveErrors, 10)));
+                var backoffSeconds = CalculateBackoffSeconds(consecutiveErrors);
 
                 await Task.Delay(TimeSpan.FromSeconds(backoffSeconds), stoppingToken);
             }
         }
 
         _logger.LogInformation("EmbeddingBackfillWorker stopped");
+    }
+
+    internal int CalculateBackoffSeconds(int consecutiveErrors)
+    {
+        var cappedErrors = Math.Min(
+            Math.Max(consecutiveErrors, 0),
+            _settings.MaxConsecutiveErrors);
+
+        var delaySeconds = _settings.PollIntervalSeconds;
+        for (var i = 0; i < cappedErrors; i++)
+        {
+            if (delaySeconds >= _settings.MaxBackoffSeconds / 2)
+            {
+                return _settings.MaxBackoffSeconds;
+            }
+
+            delaySeconds *= 2;
+        }
+
+        return Math.Min(_settings.MaxBackoffSeconds, delaySeconds);
     }
 }
