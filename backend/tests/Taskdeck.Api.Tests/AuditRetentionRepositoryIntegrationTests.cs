@@ -168,7 +168,7 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         // expressed in Eastern Standard Time (-05:00). The repository must convert to
         // UTC before building the SQLite comparison string.
         var utcBase = DateTimeOffset.UtcNow.AddDays(-30);
-        var nonUtcCutoff = new DateTimeOffset(utcBase.UtcDateTime.AddHours(-5), TimeSpan.FromHours(-5));
+        var nonUtcCutoff = utcBase.ToOffset(TimeSpan.FromHours(-5));
         var deleted = await repo.DeleteOldEntriesAsync(nonUtcCutoff, batchSize: 1000);
 
         deleted.Should().BeGreaterOrEqualTo(1,
