@@ -50,7 +50,7 @@ function tone(weight: ProvenanceWeight): string {
       </div>
     </div>
     <p class="tk-meta paper-review-prov__footnote">
-      Haiku ran <b>locally</b>. No data left this device.
+      Provider routing follows this workspace's AI settings and policy.
       <a href="#" class="paper-review-prov__more">View full read-set →</a>
     </p>
   </section>

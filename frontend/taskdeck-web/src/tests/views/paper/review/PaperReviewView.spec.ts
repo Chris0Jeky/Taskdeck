@@ -144,6 +144,37 @@ describe('PaperReviewView', () => {
     expect(emphasized.map((node) => node.text())).toEqual(['“dark mode”', '“QA pass”'])
   })
 
+  it('renders proposal operation details instead of the demo change preview', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        summary: 'Move invoice card',
+        operations: [
+          {
+            id: 'op-move',
+            proposalId: 'proposal-001',
+            sequence: 0,
+            actionType: 'MoveCard',
+            targetType: 'Card',
+            targetId: 'card-99',
+            parameters: JSON.stringify({ columnId: 'done', position: 2 }),
+            idempotencyKey: 'move-1',
+            expectedVersion: null,
+          },
+        ],
+      }),
+    ])
+
+    const mainText = wrapper.find('[data-testid="paper-review-main"]').text()
+    expect(mainText).toContain('Move Card · Card')
+    expect(mainText).toContain('columnId: done')
+    expect(mainText).not.toContain('Implement dark mode')
+    expect(mainText).not.toContain('No data left this device')
+
+    const viewText = wrapper.text()
+    expect(viewText).not.toContain('Haiku · local')
+    expect(viewText).not.toContain('crossed your "split this" threshold')
+  })
+
   it('uses proposal ownership for the Mine queue filter', async () => {
     const wrapper = await mountView([
       makeProposal({

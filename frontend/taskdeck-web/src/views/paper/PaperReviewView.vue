@@ -14,7 +14,7 @@ import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
 import { normalizeProposalSourceType, normalizeProposalStatus } from '../../utils/automation'
-import type { Proposal as ApiProposal } from '../../types/automation'
+import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
@@ -299,47 +299,91 @@ const headerMeta = computed(() => {
   return `${time} · ${status === 'PendingReview' ? 'awaiting decision' : status.toLowerCase()}`
 })
 
-// Demo "before/after" cards remain feature-flagged via the selectors module.
-// TODO(#1002): replace with backend-supplied field-level diffs.
+function formatActionLabel(actionType: string): string {
+  return actionType
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+}
+
+function parseOperationParameters(operation: ProposalOperation): Record<string, unknown> | null {
+  if (!operation.parameters) return null
+  try {
+    const parsed = JSON.parse(operation.parameters) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+  } catch {
+    return null
+  }
+}
+
+function formatParameterValue(value: unknown): string {
+  if (value === null || value === undefined) return 'null'
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  return JSON.stringify(value) ?? String(value)
+}
+
+function summarizeOperation(operation: ProposalOperation): string {
+  const params = parseOperationParameters(operation)
+  if (!params) return 'No parameter preview supplied for this operation.'
+  const entries = Object.entries(params).slice(0, 4)
+  if (entries.length === 0) return 'No parameter preview supplied for this operation.'
+  return entries.map(([key, value]) => `${key}: ${formatParameterValue(value)}`).join(' · ')
+}
+
 const before = computed<ChangeBeforeCard>(() => ({
-  serial: 'C-090',
-  title: 'Implement dark mode',
-  body: 'Apply Paper-at-Night tokens across all surfaces. Three-way variable swap with QA pass on every screen.',
-  meta: '· theme · 0/0 subtasks · 1d in column',
+  serial: activeProposal.value ? `#${activeProposal.value.id.slice(0, 8)}` : '—',
+  title: activeProposal.value?.summary ?? 'No proposal selected',
+  body:
+    activeProposal.value?.presentation?.impactSummary ??
+    `Review ${activeProposal.value?.operations?.length ?? 0} proposal operations before applying.`,
+  meta: `${activeProposal.value?.boardId ?? 'Inbox'} · ${activeProposal.value?.sourceType ?? 'proposal'}`,
 }))
 
-const after = computed<ChangeAfterCard[]>(() => [
-  {
-    serial: 'C-090',
-    title: 'Tokens · darken & QA',
-    body: 'Migrate the token sheet; verify contrast at AA on every surface.',
-    status: 'kept',
-  },
-  {
-    serial: 'C-090a',
-    title: 'Components · mode switch',
-    body: 'All components use semantic vars; ship a `data-theme` toggle with sticky preference.',
-    status: 'new',
-  },
-  {
-    serial: 'C-090b',
-    title: 'Hand-off · screenshots & PR',
-    body: 'Capture every surface in both modes. PR with QA evidence and reviewer checklist.',
-    status: 'new',
-  },
-])
+const after = computed<ChangeAfterCard[]>(() => {
+  const p = activeProposal.value
+  const operations = p?.operations ?? []
+  if (operations.length === 0) {
+    return [{
+      serial: p ? `#${p.id.slice(0, 8)}.0` : '—',
+      title: 'No operation preview',
+      body: p?.diffPreview ?? 'The proposal did not include operation details.',
+      status: 'kept',
+    }]
+  }
 
-const fields = computed<FieldDiff[]>(() => [
-  { key: 'title', before: 'Implement dark mode', after: 'Tokens · darken & QA · Components · mode switch · Hand-off' },
-  { key: 'subtasks', before: '0/0', after: '2/4 · 1/3 · 0/2 (3 + 3 + 2 = 8 total)' },
-  { key: 'labels', before: 'theme', after: 'theme · ui (added on hand-off card only)' },
-  { key: 'due', before: '—', after: 'kept blank · respects backlog convention' },
-  { key: 'assignee', before: 'Daniel L.', after: 'Daniel L. (preserved across all 3)', same: true },
-])
+  return [...operations]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((operation, index) => ({
+      serial: `op-${index + 1}`,
+      title: `${formatActionLabel(operation.actionType)} · ${operation.targetType}`,
+      body: summarizeOperation(operation),
+      status: operation.actionType.toLowerCase().startsWith('create') ? 'new' : 'kept',
+    }))
+})
+
+const fields = computed<FieldDiff[]>(() => {
+  const p = activeProposal.value
+  const operations = p?.operations ?? []
+  if (operations.length === 0) {
+    return [{ key: 'operations', before: 'none', after: p?.diffPreview ?? 'not provided', same: !p?.diffPreview }]
+  }
+
+  return [...operations]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((operation) => ({
+      key: formatActionLabel(operation.actionType),
+      before: operation.targetId ?? operation.targetType,
+      after: summarizeOperation(operation),
+    }))
+})
 
 const changeSubTitle = computed(() => {
   const ops = activeProposal.value?.operations?.length ?? 0
-  return `${ops || 3} changes · ${activeProposal.value?.boardId ?? 'this board'}`
+  return `${ops} ${ops === 1 ? 'operation' : 'operations'} · ${activeProposal.value?.boardId ?? 'this board'}`
 })
 
 // --- Right rail data ---------------------------------------------------
@@ -371,8 +415,18 @@ const authorMeta = computed(() => {
   return `${c.overall.toFixed(2)} confidence · 4s · 1.2k tokens`
 })
 
-const whyNowBody =
-  'Haiku noticed this card has accumulated several distinct workstreams in its body and crossed your "split this" threshold (Settings → Heuristics).'
+const authorName = computed(() => {
+  const source = activeProposal.value
+    ? normalizeProposalSourceType(activeProposal.value.sourceType).toLowerCase()
+    : 'proposal'
+  return `Haiku · ${source} proposal`
+})
+
+const whyNowBody = computed(() => {
+  const p = activeProposal.value
+  if (!p) return 'No proposal is selected.'
+  return p.presentation?.sourceCue ?? 'This proposal is awaiting review based on the source captured with it.'
+})
 
 // --- Action wiring -----------------------------------------------------
 
@@ -528,7 +582,7 @@ function onQueueFilterChange(filter: QueueFilter) {
 
     <ReviewRightRail
       v-if="activeProposal"
-      :author-name="'Haiku · local'"
+      :author-name="authorName"
       :author-meta="authorMeta"
       :proposed-date="proposedDate"
       :proposed-time="proposedTime"
