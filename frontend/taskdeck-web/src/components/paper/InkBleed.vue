@@ -298,10 +298,14 @@ const dropletData = computed<VisibleDroplet[]>(() =>
 .ink-bleed--bloom .ink-bleed__drop,
 .ink-bleed--compose .ink-bleed__drop,
 .ink-bleed--settle .ink-bleed__drop,
-.ink-bleed--stamp .ink-bleed__drop,
-.ink-bleed--dried .ink-bleed__drop {
+.ink-bleed--stamp .ink-bleed__drop {
   animation: ink-bleed-bloom 1400ms linear forwards,
     ink-bleed-grow 1000ms cubic-bezier(0.2, 0.65, 0.25, 1) forwards;
+}
+
+.ink-bleed--dried .ink-bleed__drop {
+  opacity: 0.78;
+  transform: translate(-50%, -50%) scale(1.4);
 }
 
 /* Settle: desaturate. Stamp / dried: hold the desaturated state with full blur. */

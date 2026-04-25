@@ -165,7 +165,7 @@ describe('useInkBleed', () => {
 
   it('cancel() clears state without firing done', () => {
     const { exposed } = createHost()
-    exposed.bleed.start()
+    const run = exposed.bleed.start()
     vi.advanceTimersByTime(1000)
 
     exposed.bleed.cancel()
@@ -190,11 +190,14 @@ describe('useInkBleed', () => {
     const { exposed } = createHost()
     expect(exposed.bleed.isReducedMotion.value).toBe(true)
 
-    exposed.bleed.start()
+    const run = exposed.bleed.start()
     expect(exposed.bleed.phase.value).toBe('dried')
 
     // Advance one tick — done should fire deferred via setTimeout(0).
     vi.advanceTimersByTime(0)
+    expect(exposed.doneCount).toBe(0)
+
+    exposed.bleed.finish(run)
     expect(exposed.doneCount).toBe(1)
 
     // Advancing further does nothing — no per-phase timers were ever queued.

@@ -12,7 +12,7 @@
  * - Singleton guard: at most one active bleed per view. Calling `start()` while
  *   one is already running cancels the previous and begins a new sequence.
  * - Reduced-motion users skip the timer pipeline entirely. `start()` resolves
- *   immediately to `dried` and `done` fires after one tick.
+ *   immediately to `dried`, but `done` still waits for `finish(runId)`.
  */
 import { onBeforeUnmount, readonly, ref } from 'vue'
 import {
@@ -90,14 +90,9 @@ export function useInkBleed(
     const runId = activeRunId
 
     if (isReducedMotion.value) {
-      // Short-circuit: skip the timer pipeline entirely.
+      // Short-circuit animation timers, but keep completion gated by the
+      // wrapped async work calling finish(runId).
       phase.value = 'dried'
-      // Defer done to next tick so callers can subscribe before it fires.
-      const id = (globalThis.setTimeout as typeof setTimeout)(() => {
-        if (!active || runId !== activeRunId) return
-        fireDone()
-      }, 0) as unknown as number
-      timers.push(id)
       return runId
     }
 
