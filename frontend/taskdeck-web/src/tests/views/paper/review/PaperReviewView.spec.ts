@@ -182,4 +182,35 @@ describe('PaperReviewView', () => {
     expect(railText).toContain('Pending work')
     expect(railText).toContain('Applied work')
   })
+
+  it('does not send apply or reject transitions for expired proposals', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Expired proposal',
+      }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      'This proposal is no longer actionable. Refresh review to see current status.',
+    )
+  })
+
+  it('surfaces feedback when defer is invoked before backend support exists', async () => {
+    const wrapper = await mountView([makeProposal()])
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      'Defer is not wired yet; the proposal is still in your queue.',
+    )
+  })
 })

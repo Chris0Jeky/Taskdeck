@@ -11,6 +11,7 @@ import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useSessionStore } from '../../store/sessionStore'
+import { useToastStore } from '../../store/toastStore'
 import { normalizeProposalStatus } from '../../utils/automation'
 import type { Proposal as ApiProposal } from '../../types/automation'
 import type {
@@ -56,6 +57,7 @@ const {
   stopClock,
 } = useReviewProposals()
 const session = useSessionStore()
+const toast = useToastStore()
 
 const {
   proposalActionBusyId,
@@ -318,9 +320,18 @@ const whyNowBody =
 
 const busy = computed(() => proposalActionBusyId.value !== null)
 
+function isDecisionActionable(proposal: ApiProposal): boolean {
+  const status = normalizeProposalStatus(proposal.status)
+  return (status === 'PendingReview' || status === 'Approved') && !isProposalExpired(proposal)
+}
+
 function onApply() {
   const p = activeProposal.value
   if (!p) return
+  if (!isDecisionActionable(p)) {
+    toast.info('This proposal is no longer actionable. Refresh review to see current status.')
+    return
+  }
   const status = normalizeProposalStatus(p.status)
   if (status === 'Approved') {
     void handleExecuteProposal(p.id)
@@ -332,6 +343,10 @@ function onApply() {
 function onReject() {
   const p = activeProposal.value
   if (!p) return
+  if (!isDecisionActionable(p)) {
+    toast.info('This proposal is no longer actionable. Refresh review to see current status.')
+    return
+  }
   void handleRejectProposal(p.id, p.riskLevel)
 }
 
@@ -346,6 +361,7 @@ function onDefer() {
   // endpoint (see backend-gap follow-up). For now we leave the proposal in
   // place; the toast confirms intent so testing can wire to a stub later.
   // TODO(#1002): call automationApi.deferProposal once available.
+  toast.info('Defer is not wired yet; the proposal is still in your queue.')
 }
 
 function onToggleProvenance() {
