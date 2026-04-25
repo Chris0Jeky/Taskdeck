@@ -1,0 +1,440 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { useFeatureFlagStore } from '../../store/featureFlagStore'
+import { usePaperThemeStore } from '../../store/paperThemeStore'
+import { useWorkspaceStore } from '../../store/workspaceStore'
+import type { FeatureFlags } from '../../types/feature-flags'
+import PaperIcon from './PaperIcon.vue'
+import PaperStatusPill from './PaperStatusPill.vue'
+
+/**
+ * PaperSidebar — Paper & Graphite shell sidebar.
+ *
+ * Mirrors the JSX in `design_handoff_taskdeck_paper/paper/components.jsx`
+ * (`Sidebar` + `SidebarGroup`).  Renders the three IA groups (Primary loop,
+ * Workbench tools, Meta) using router-aware active state and badge counts
+ * sourced from `useWorkspaceStore`.  Items whose `flag` is gated off are
+ * filtered out.  Theme toggle (sun/moon) flips between paper and paper-night
+ * via `paperThemeStore.toggleNight()`.
+ */
+
+type PaperNavItem = {
+  id: string
+  label: string
+  glyph: string
+  /** router-link `to` path */
+  path: string
+  /** badge counter source (workspace store) */
+  badgeKey?: 'inbox' | 'review'
+  /** Hide if this feature flag exists and is disabled. */
+  flag?: keyof FeatureFlags
+}
+
+const props = withDefaults(
+  defineProps<{
+    workspaceName?: string
+    /** Version label shown in the footer (mono). */
+    version?: string
+  }>(),
+  {
+    workspaceName: 'Solo Workspace',
+    version: 'v0.7.2',
+  },
+)
+
+const emit = defineEmits<{
+  logout: []
+  'open-shortcuts': []
+}>()
+
+const route = useRoute()
+const featureFlags = useFeatureFlagStore()
+const workspace = useWorkspaceStore()
+const paperTheme = usePaperThemeStore()
+
+const primaryItems: PaperNavItem[] = [
+  { id: 'home', label: 'Home', glyph: 'H', path: '/workspace/home' },
+  { id: 'today', label: 'Today', glyph: 'T', path: '/workspace/today' },
+  { id: 'review', label: 'Review', glyph: 'R', path: '/workspace/review', badgeKey: 'review', flag: 'newAutomation' },
+  { id: 'boards', label: 'Boards', glyph: 'B', path: '/workspace/boards' },
+  { id: 'inbox', label: 'Inbox', glyph: 'I', path: '/workspace/inbox', badgeKey: 'inbox' },
+]
+
+const workbenchItems: PaperNavItem[] = [
+  { id: 'views', label: 'Views', glyph: 'V', path: '/workspace/views' },
+  { id: 'notifications', label: 'Notifications', glyph: 'N', path: '/workspace/notifications' },
+  { id: 'chat', label: 'Chat', glyph: 'C', path: '/workspace/automations/chat', flag: 'newAutomation' },
+  { id: 'calendar', label: 'Calendar', glyph: 'D', path: '/workspace/calendar' },
+  { id: 'metrics', label: 'Metrics', glyph: 'M', path: '/workspace/metrics' },
+  { id: 'integrations', label: 'Integrations', glyph: 'X', path: '/workspace/integrations' },
+  { id: 'activity', label: 'Activity', glyph: 'Y', path: '/workspace/activity', flag: 'newActivity' },
+  { id: 'ops', label: 'Ops', glyph: 'O', path: '/workspace/ops/cli', flag: 'newOps' },
+]
+
+const metaItems: PaperNavItem[] = [
+  { id: 'settings', label: 'Settings', glyph: 'S', path: '/workspace/settings/profile', flag: 'newAuth' },
+  { id: 'api-keys', label: 'API Keys', glyph: 'K', path: '/workspace/settings/api-keys' },
+  { id: 'preferences', label: 'Preferences', glyph: 'P', path: '/workspace/settings/preferences' },
+  { id: 'shortcuts', label: 'Shortcuts', glyph: '?', path: '#shortcuts' },
+  { id: 'logout', label: 'Logout', glyph: '→', path: '#logout' },
+]
+
+function isAvailable(item: PaperNavItem): boolean {
+  if (!item.flag) return true
+  return featureFlags.isEnabled(item.flag)
+}
+
+const visiblePrimary = computed(() => primaryItems.filter(isAvailable))
+const visibleWorkbench = computed(() => workbenchItems.filter(isAvailable))
+const visibleMeta = computed(() => metaItems.filter(isAvailable))
+
+function badgeFor(item: PaperNavItem): number {
+  if (item.badgeKey === 'inbox') return workspace.inboxBadgeCount
+  if (item.badgeKey === 'review') return workspace.reviewBadgeCount
+  return 0
+}
+
+function isActive(item: PaperNavItem): boolean {
+  if (item.path.startsWith('#')) return false
+  if (item.path === '/workspace/home') return route.path === item.path
+  if (item.path === '/workspace/review') {
+    return route.path.startsWith('/workspace/review')
+      || route.path.startsWith('/workspace/automations/proposals')
+      || route.path.startsWith('/workspace/automations/queue')
+  }
+  if (item.path === '/workspace/ops/cli') return route.path.startsWith('/workspace/ops')
+  return route.path.startsWith(item.path)
+}
+
+const workspaceInitial = computed(() =>
+  (props.workspaceName?.trim().charAt(0) || 'S').toUpperCase(),
+)
+
+const themeToggleLabel = computed(() =>
+  paperTheme.activeClass === 'paper-night' ? 'Switch to light Paper theme' : 'Switch to dark Paper theme',
+)
+
+const themeIcon = computed<'sun' | 'moon'>(() =>
+  paperTheme.activeClass === 'paper-night' ? 'sun' : 'moon',
+)
+
+function handleMetaClick(item: PaperNavItem, event: MouseEvent) {
+  if (!item.path.startsWith('#')) return
+  event.preventDefault()
+  if (item.id === 'logout') emit('logout')
+  else if (item.id === 'shortcuts') emit('open-shortcuts')
+}
+
+function handleThemeToggle() {
+  paperTheme.toggleNight()
+}
+
+defineExpose({
+  visiblePrimary,
+  visibleWorkbench,
+  visibleMeta,
+})
+</script>
+
+<template>
+  <nav
+    class="paper-sidebar"
+    role="navigation"
+    aria-label="Workspace navigation"
+    data-paper-sidebar
+  >
+    <div class="paper-sidebar__header">
+      <div class="paper-sidebar__brand">Taskdeck</div>
+      <div class="tk-eyebrow paper-sidebar__eyebrow">
+        Precision Mode <span class="paper-sidebar__eyebrow-active">&middot; active</span>
+      </div>
+    </div>
+
+    <button type="button" class="paper-sidebar__workspace" aria-label="Switch workspace">
+      <span class="paper-sidebar__workspace-glyph">{{ workspaceInitial }}</span>
+      <span class="paper-sidebar__workspace-name">{{ workspaceName }}</span>
+      <PaperIcon name="chevronDown" />
+    </button>
+
+    <div class="paper-sidebar__group" data-group="primary">
+      <div class="tk-eyebrow paper-sidebar__group-label">Primary loop</div>
+      <ul class="paper-sidebar__list">
+        <li v-for="item in visiblePrimary" :key="item.id">
+          <router-link
+            :to="item.path"
+            class="paper-sidebar__item"
+            :class="{ 'paper-sidebar__item--active': isActive(item) }"
+            :aria-current="isActive(item) ? 'page' : undefined"
+          >
+            <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+            <span class="paper-sidebar__label">{{ item.label }}</span>
+            <span
+              v-if="badgeFor(item) > 0"
+              class="paper-sidebar__badge"
+              :aria-label="`${item.label}: ${badgeFor(item)} pending`"
+            >&middot; {{ badgeFor(item) }}</span>
+          </router-link>
+        </li>
+      </ul>
+    </div>
+
+    <div class="paper-sidebar__group" data-group="workbench">
+      <div class="tk-eyebrow paper-sidebar__group-label">Workbench tools</div>
+      <ul class="paper-sidebar__list">
+        <li v-for="item in visibleWorkbench" :key="item.id">
+          <router-link
+            :to="item.path"
+            class="paper-sidebar__item"
+            :class="{ 'paper-sidebar__item--active': isActive(item) }"
+            :aria-current="isActive(item) ? 'page' : undefined"
+          >
+            <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+            <span class="paper-sidebar__label">{{ item.label }}</span>
+          </router-link>
+        </li>
+      </ul>
+    </div>
+
+    <div class="paper-sidebar__spacer" />
+
+    <div class="paper-sidebar__group paper-sidebar__group--muted" data-group="meta">
+      <ul class="paper-sidebar__list">
+        <li v-for="item in visibleMeta" :key="item.id">
+          <router-link
+            v-if="!item.path.startsWith('#')"
+            :to="item.path"
+            class="paper-sidebar__item paper-sidebar__item--muted"
+            :class="{ 'paper-sidebar__item--active': isActive(item) }"
+            :aria-current="isActive(item) ? 'page' : undefined"
+          >
+            <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+            <span class="paper-sidebar__label">{{ item.label }}</span>
+          </router-link>
+          <a
+            v-else
+            href="#"
+            class="paper-sidebar__item paper-sidebar__item--muted"
+            @click="handleMetaClick(item, $event)"
+          >
+            <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+            <span class="paper-sidebar__label">{{ item.label }}</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+
+    <div class="paper-sidebar__footer">
+      <div class="paper-sidebar__footer-status">
+        <PaperStatusPill kind="live">SYSTEM LIVE</PaperStatusPill>
+        <span class="paper-sidebar__version">{{ version }}</span>
+      </div>
+      <button
+        type="button"
+        class="paper-sidebar__theme-toggle"
+        :aria-label="themeToggleLabel"
+        @click="handleThemeToggle"
+      >
+        <PaperIcon :name="themeIcon" :label="themeToggleLabel" />
+      </button>
+    </div>
+  </nav>
+</template>
+
+<style scoped>
+.paper-sidebar {
+  width: 232px;
+  flex: none;
+  background: var(--paper-2);
+  border-right: 1px solid var(--line);
+  padding: 20px 0 16px;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--sans);
+  position: relative;
+  min-height: 100vh;
+}
+
+.paper-sidebar__header {
+  padding: 0 20px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.paper-sidebar__brand {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+  color: var(--ink-deep);
+}
+
+.paper-sidebar__eyebrow {
+  margin-top: 4px;
+}
+
+.paper-sidebar__eyebrow-active {
+  color: var(--ember);
+}
+
+/* Workspace switcher */
+.paper-sidebar__workspace {
+  margin: 12px 12px 6px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+}
+
+.paper-sidebar__workspace-glyph {
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--ink-deep);
+  background: var(--paper-card);
+}
+
+.paper-sidebar__workspace-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* Groups */
+.paper-sidebar__group {
+  padding: 10px 0 4px;
+}
+
+.paper-sidebar__group-label {
+  padding: 8px 20px 6px;
+  color: var(--faint);
+}
+
+.paper-sidebar__spacer {
+  flex: 1;
+}
+
+.paper-sidebar__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Items */
+.paper-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 20px;
+  height: 36px;
+  text-decoration: none;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 400;
+  font-family: var(--sans);
+  border-left: 2px solid transparent;
+  background: transparent;
+  position: relative;
+  cursor: pointer;
+}
+
+.paper-sidebar__item:hover {
+  color: var(--ink-deep);
+  background: linear-gradient(90deg, var(--ember-bloom) 0%, transparent 50%);
+}
+
+.paper-sidebar__item--muted {
+  color: var(--mute);
+}
+
+.paper-sidebar__item--active {
+  color: var(--ink-deep);
+  font-weight: 600;
+  border-left-color: var(--ember);
+  background: linear-gradient(90deg, var(--ember-bloom) 0%, transparent 70%);
+}
+
+.paper-sidebar__item--active .paper-sidebar__glyph {
+  color: var(--ember);
+}
+
+.paper-sidebar__item--active .paper-sidebar__badge {
+  color: var(--ember);
+}
+
+.paper-sidebar__glyph {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--faint);
+  width: 14px;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.paper-sidebar__label {
+  flex: 1;
+}
+
+.paper-sidebar__badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mute);
+}
+
+/* Footer */
+.paper-sidebar__footer {
+  margin: 8px 12px 0;
+  padding: 10px 10px 0;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.paper-sidebar__footer-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+}
+
+.paper-sidebar__version {
+  color: var(--faint);
+}
+
+.paper-sidebar__theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.paper-sidebar__theme-toggle:hover {
+  border-color: var(--line);
+  color: var(--ember);
+}
+</style>
