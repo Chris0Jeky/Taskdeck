@@ -47,6 +47,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<ConnectorCredential> ConnectorCredentials => Set<ConnectorCredential>();
     public DbSet<ProposalRevision> ProposalRevisions => Set<ProposalRevision>();
     public DbSet<ProposalOutcome> ProposalOutcomes => Set<ProposalOutcome>();
+    public DbSet<TomorrowNote> TomorrowNotes => Set<TomorrowNote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
