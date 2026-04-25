@@ -236,16 +236,23 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
 
         var query = _dbSet
             .Where(p => matchingProposalIds.Contains(p.Id))
-            .Where(p => TerminalStatuses.Contains(p.Status))
-            .Where(p => p.RequestedByUserId == userId);
+            .Where(p => TerminalStatuses.Contains(p.Status));
 
         if (boardId.HasValue)
         {
+            // Board-scoped: show all decisions for this board regardless of who created them,
+            // so reviewers see the board's base rate for this action type.
             query = query.Where(p => p.BoardId == boardId.Value);
+        }
+        else
+        {
+            // User-scoped fallback: only show the caller's own decisions.
+            query = query.Where(p => p.RequestedByUserId == userId);
         }
 
         var proposalIds = await query
-            .OrderByDescending(p => p.DecidedAt ?? p.UpdatedAt)
+            .OrderByDescending(p => p.DecidedAt)
+            .ThenByDescending(p => p.UpdatedAt)
             .Take(boundedLimit)
             .Select(p => p.Id)
             .ToListAsync(cancellationToken);
@@ -259,7 +266,8 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .ToListAsync(cancellationToken);
 
         return proposals
-            .OrderByDescending(p => p.DecidedAt ?? p.UpdatedAt)
+            .OrderByDescending(p => p.DecidedAt)
+            .ThenByDescending(p => p.UpdatedAt)
             .ToList();
     }
 
