@@ -99,8 +99,9 @@ public class EmbeddingBackfillServiceTests
 
         var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f, 0.5f });
         _embeddingGeneratorMock
-            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
 
         var result = await _sut.ProcessBatchAsync(batchSize: 10);
 
@@ -108,12 +109,11 @@ public class EmbeddingBackfillServiceTests
         result.Failed.Should().Be(0);
 
         _vectorIndexMock.Verify(
-            v => v.UpsertAsync(
-                It.Is<string>(id => id.StartsWith("chunk:")),
-                It.IsAny<ReadOnlyMemory<float>>(),
-                It.IsAny<IReadOnlyDictionary<string, string>>(),
+            v => v.UpsertBatchAsync(
+                It.Is<IReadOnlyList<VectorDocument>>(docs => docs.Count == 2 &&
+                    docs.All(d => d.DocumentId.StartsWith("chunk:"))),
                 It.IsAny<CancellationToken>()),
-            Times.Exactly(2));
+            Times.Once);
     }
 
     [Fact]
@@ -133,8 +133,9 @@ public class EmbeddingBackfillServiceTests
 
         var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f, 0.5f });
         _embeddingGeneratorMock
-            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
 
         var result = await _sut.ProcessBatchAsync(batchSize: 3);
 
@@ -143,7 +144,7 @@ public class EmbeddingBackfillServiceTests
     }
 
     [Fact]
-    public async Task ProcessBatchAsync_IndividualItemFailure_ContinuesAndReportsFailed()
+    public async Task ProcessBatchAsync_BatchEmbeddingFails_FallsBackToOneByOne()
     {
         var docId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -160,6 +161,11 @@ public class EmbeddingBackfillServiceTests
 
         SetupDocumentLookup(docId, userId);
 
+        // Batch embedding fails, triggering one-by-one fallback
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("batch embedding failed"));
+
         var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
         _embeddingGeneratorMock
             .Setup(g => g.GenerateAsync("good content", It.IsAny<CancellationToken>()))
@@ -173,7 +179,7 @@ public class EmbeddingBackfillServiceTests
 
         var result = await _sut.ProcessBatchAsync(batchSize: 10);
 
-        result.Processed.Should().Be(2, "two of three chunks should succeed");
+        result.Processed.Should().Be(2, "two of three chunks should succeed in one-by-one fallback");
         result.Failed.Should().Be(1, "the 'bad content' chunk should fail");
     }
 
@@ -194,7 +200,7 @@ public class EmbeddingBackfillServiceTests
         SetupDocumentLookup(docId, userId);
 
         _embeddingGeneratorMock
-            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
 
         await Assert.ThrowsAsync<OperationCanceledException>(
@@ -217,22 +223,24 @@ public class EmbeddingBackfillServiceTests
 
         var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 1f });
         _embeddingGeneratorMock
-            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
 
-        IReadOnlyDictionary<string, string>? capturedMetadata = null;
+        IReadOnlyList<VectorDocument>? capturedDocs = null;
         _vectorIndexMock
-            .Setup(v => v.UpsertAsync(
-                It.IsAny<string>(),
-                It.IsAny<ReadOnlyMemory<float>>(),
-                It.IsAny<IReadOnlyDictionary<string, string>>(),
+            .Setup(v => v.UpsertBatchAsync(
+                It.IsAny<IReadOnlyList<VectorDocument>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<string, ReadOnlyMemory<float>, IReadOnlyDictionary<string, string>?, CancellationToken>(
-                (_, _, meta, _) => capturedMetadata = meta)
+            .Callback<IReadOnlyList<VectorDocument>, CancellationToken>(
+                (docs, _) => capturedDocs = docs)
             .Returns(Task.CompletedTask);
 
         await _sut.ProcessBatchAsync(batchSize: 10);
 
+        capturedDocs.Should().NotBeNull();
+        capturedDocs.Should().HaveCount(1);
+        var capturedMetadata = capturedDocs![0].Metadata;
         capturedMetadata.Should().NotBeNull();
         capturedMetadata!["type"].Should().Be("knowledge_chunk");
         capturedMetadata["documentId"].Should().Be(docId.ToString());
