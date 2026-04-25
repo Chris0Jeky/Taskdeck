@@ -64,7 +64,7 @@
           "description": "Risk classification for the proposal."
         },
         "sourceIntentLabel": {
-          "type": "string",
+          "type": ["string", "null"],
           "maxLength": 500,
           "description": "Label of the IntentCandidate that produced this proposal."
         },
@@ -102,7 +102,7 @@
           "description": "The type of board mutation this operation represents."
         },
         "targetId": {
-          "type": "string",
+          "type": ["string", "null"],
           "format": "uuid",
           "description": "ID of the entity being operated on (null for creates)."
         },
