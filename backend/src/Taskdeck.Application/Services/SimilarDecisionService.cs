@@ -149,8 +149,8 @@ public class SimilarDecisionService : ISimilarDecisionService
     /// </summary>
     internal static string FormatWeekDate(DateTimeOffset dateTime)
     {
-        var weekNumber = ISOWeek.GetWeekOfYear(dateTime.DateTime);
-        var isoYear = ISOWeek.GetYear(dateTime.DateTime);
+        var weekNumber = ISOWeek.GetWeekOfYear(dateTime.UtcDateTime);
+        var isoYear = ISOWeek.GetYear(dateTime.UtcDateTime);
         return $"wk {weekNumber} '{isoYear % 100:D2}";
     }
 
