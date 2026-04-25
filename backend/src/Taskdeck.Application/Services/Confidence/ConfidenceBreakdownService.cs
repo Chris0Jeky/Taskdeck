@@ -42,7 +42,8 @@ public sealed class ConfidenceBreakdownService : IConfidenceBreakdownService
     /// </summary>
     private static readonly HashSet<string> SafeActions = new(StringComparer.OrdinalIgnoreCase)
     {
-        "create", "add", "set", "update", "rename"
+        "create", "add", "set", "update", "rename", "move", "reorder",
+        "assign", "attach", "restore", "unarchive", "unblock"
     };
 
     /// <summary>
