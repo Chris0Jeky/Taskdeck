@@ -38,7 +38,7 @@ describe('PaperLedgerRow', () => {
     const wrapper = mount(PaperLedgerRow, {
       props: { idx: 1, title: 'Row' },
     })
-    await wrapper.trigger('click')
+    await wrapper.find('.paper-ledger-row').trigger('click')
     expect(wrapper.emitted('open')).toHaveLength(1)
   })
 
@@ -46,8 +46,9 @@ describe('PaperLedgerRow', () => {
     const wrapper = mount(PaperLedgerRow, {
       props: { idx: 1, title: 'Row' },
     })
-    await wrapper.trigger('keydown', { key: 'Enter' })
-    await wrapper.trigger('keydown', { key: ' ' })
+    const row = wrapper.find('.paper-ledger-row')
+    await row.trigger('keydown', { key: 'Enter' })
+    await row.trigger('keydown', { key: ' ' })
     expect(wrapper.emitted('open')).toHaveLength(2)
   })
 
@@ -55,9 +56,32 @@ describe('PaperLedgerRow', () => {
     const wrapper = mount(PaperLedgerRow, {
       props: { idx: 1, title: 'Row', interactive: false },
     })
-    await wrapper.trigger('click')
-    await wrapper.trigger('keydown', { key: 'Enter' })
+    const row = wrapper.find('.paper-ledger-row')
+    await row.trigger('click')
+    await row.trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('open')).toBeUndefined()
-    expect(wrapper.attributes('role')).toBeUndefined()
+    expect(row.attributes('role')).toBeUndefined()
+  })
+
+  it('does not advertise itself as clickable when interactive=false', () => {
+    // The cursor: pointer rule is scoped to the [role='button'] selector,
+    // so a non-interactive row should neither carry the role nor a tabindex.
+    // Exercising the absence of those attributes guarantees the CSS selector
+    // does NOT match, which keeps `cursor: pointer` from misleading users.
+    const wrapper = mount(PaperLedgerRow, {
+      props: { idx: 1, title: 'Static row', interactive: false },
+    })
+    const row = wrapper.find('.paper-ledger-row')
+    expect(row.attributes('role')).toBeUndefined()
+    expect(row.attributes('tabindex')).toBeUndefined()
+  })
+
+  it('keeps the interactive row addressable as a button', () => {
+    const wrapper = mount(PaperLedgerRow, {
+      props: { idx: 1, title: 'Active row' },
+    })
+    const row = wrapper.find('.paper-ledger-row')
+    expect(row.attributes('role')).toBe('button')
+    expect(row.attributes('tabindex')).toBe('0')
   })
 })

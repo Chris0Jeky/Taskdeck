@@ -1,8 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable vuejs-accessibility/no-static-element-interactions --
- * The row delegates open via click + Enter/Space, with role="button" and
- * tabindex applied dynamically when interactive.  The lint rule cannot
- * reason about the dynamic role binding, so we silence it for this SFC. */
 import PaperIcon from './PaperIcon.vue'
 import PaperStatusPill from './PaperStatusPill.vue'
 import type { PaperStatusKind } from './PaperStatusPill.vue'
@@ -44,6 +40,7 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- dynamic role="button" + tabindex when interactive; rule cannot follow the binding -->
   <div
     class="paper-ledger-row"
     :role="interactive ? 'button' : undefined"
@@ -72,9 +69,11 @@ function onKeydown(e: KeyboardEvent) {
   font-family: var(--sans);
   font-size: 13px;
   color: var(--ink);
-  cursor: pointer;
   background: transparent;
   transition: background 140ms cubic-bezier(0.2, 0.65, 0.25, 1);
+}
+.paper-ledger-row[role='button'] {
+  cursor: pointer;
 }
 .paper-ledger-row[role='button']:hover,
 .paper-ledger-row[role='button']:focus-visible {
