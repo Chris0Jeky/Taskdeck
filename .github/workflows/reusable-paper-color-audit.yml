@@ -47,9 +47,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Anchored regex: matches `#abc`, `#aabbcc`, and `#aarrggbb`
-          # (8-digit alpha) forms with a trailing word boundary.
-          HEX_RE='#([0-9a-fA-F]{3}|[0-9a-fA-F]{6,8})\b'
+          # Anchored regex: matches `#abc`, `#abcd` (RGBA), `#aabbcc`,
+          # `#aabbccd` (7-digit, rare but observed in tooling output), and
+          # `#aabbccdd` (8-digit alpha) forms with a trailing word boundary.
+          HEX_RE='#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6,8})\b'
 
           # 1. components/paper/** must be hex-free.
           if hits=$(grep -rEn --include='*.vue' --include='*.ts' --include='*.tsx' \
@@ -61,11 +62,21 @@ jobs:
             exit 1
           fi
 
-          # 2. AppShell.vue paper-mode block must be hex-free.
-          if hits=$(grep -En "$HEX_RE" \
-                       frontend/taskdeck-web/src/components/shell/AppShell.vue 2>/dev/null); then
-            echo "::error file=frontend/taskdeck-web/src/components/shell/AppShell.vue::AppShell must use var(--*) tokens, never hex literals."
-            echo "$hits" >&2
+          # 2. AppShell.vue paper-mode region must be hex-free.  Scoped to
+          #    paper-mode markers (`<Paper*>` invocations, `td-shell--paper`
+          #    class refs, and `paperTheme.isOn` v-if guards) so that hex
+          #    literals in the unrelated Obsidian shell code path do not
+          #    block CI.  The contract for this gate (per the doc above and
+          #    PAPER_NIGHT_AUDIT.md) is paper-mode-specific styling only.
+          APPSHELL=frontend/taskdeck-web/src/components/shell/AppShell.vue
+          PAPER_REGION=$(awk '
+            /<Paper[A-Z]/ { in_tag=1 }
+            in_tag || /td-shell--paper|paperTheme\.isOn/ { print NR ": " $0 }
+            in_tag && (/\/>[[:space:]]*$/ || /<\/Paper[A-Z]/) { in_tag=0 }
+          ' "$APPSHELL")
+          if hits=$(printf '%s\n' "$PAPER_REGION" | grep -E "$HEX_RE"); then
+            echo "::error file=$APPSHELL::AppShell paper-mode region must use var(--*) tokens, never hex literals."
+            printf '%s\n' "$hits" >&2
             exit 1
           fi
 

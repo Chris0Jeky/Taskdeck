@@ -18,12 +18,13 @@ the inversion and ships visibly broken in dark mode.
 
 ## Audit method
 
-A correctly-anchored regex matches both `#abc` and `#aabbcc` forms with a
-trailing word boundary on either branch (the previous form left the 6-digit
-branch unbounded and could partially-match `#abcdefg`):
+A correctly-anchored regex matches `#abc` (3-digit RGB), `#abcd`
+(4-digit RGBA), `#aabbcc` (6-digit RGB), and `#aabbccdd` (8-digit RGBA)
+forms with a trailing word boundary so partial matches like `#abcdefg`
+cannot slip through:
 
 ```sh
-grep -RnE "#([0-9a-fA-F]{3}){1,2}\b" \
+grep -RnE '#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6,8})\b' \
   frontend/taskdeck-web/src/paper-tokens.css \
   frontend/taskdeck-web/src/components/paper \
   frontend/taskdeck-web/src/views/PaperStyleGuideView.vue \
@@ -33,7 +34,10 @@ grep -RnE "#([0-9a-fA-F]{3}){1,2}\b" \
 The same regex is enforced by the CI workflow at
 `.github/workflows/reusable-paper-color-audit.yml`, which runs on PRs that
 touch any of the files in scope and fails on any hex literal that is not on
-the allow-list below.
+the allow-list below. The AppShell scan is scoped to the paper-mode region
+only (`<Paper*>` invocations, `td-shell--paper` class refs, and
+`paperTheme.isOn` v-if guards) so hex literals in the unrelated Obsidian
+shell code path do not block CI.
 
 The regex by itself does not cover Vue `<template>` `style="..."` inline
 attributes — those are caught by a second invocation of the same pattern
