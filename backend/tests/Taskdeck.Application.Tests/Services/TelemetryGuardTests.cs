@@ -348,4 +348,50 @@ public class TelemetryGuardTests : IDisposable
         result.IsValid.Should().BeFalse();
         result.Reason.Should().Contain("not supported");
     }
+
+    // --- Encoded string bypass prevention ---
+
+    [Fact]
+    public void Validate_ShouldReject_UrlEncodedEmail()
+    {
+        // %40 is URL-encoded '@' -- must still be caught
+        var result = TelemetryGuard.Validate("workspace.mode", "user%40example.com");
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("email");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_UrlEncodedUrl()
+    {
+        // %3A is URL-encoded ':' and %2F is '/'
+        var result = TelemetryGuard.Validate("workspace.mode", "https%3A%2F%2Fevil.com");
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("URL");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_HtmlEncodedEmail()
+    {
+        // &#64; is HTML-encoded '@'
+        var result = TelemetryGuard.Validate("workspace.mode", "user&#64;example.com");
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("email");
+    }
+
+    [Fact]
+    public void Validate_ShouldReject_HtmlEncodedUrl()
+    {
+        // &#58; is HTML-encoded ':'
+        var result = TelemetryGuard.Validate("workspace.mode", "https&#58;//evil.com");
+        result.IsValid.Should().BeFalse();
+        result.Reason.Should().Contain("URL");
+    }
+
+    [Fact]
+    public void Validate_ShouldAccept_PercentLiteralThatIsNotEncoding()
+    {
+        // A string with % that is NOT valid URL encoding should still pass if clean
+        var result = TelemetryGuard.Validate("workspace.mode", "100% complete");
+        result.IsValid.Should().BeTrue();
+    }
 }

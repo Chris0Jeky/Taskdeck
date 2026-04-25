@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.RegularExpressions;
 
 namespace Taskdeck.Application.Services;
@@ -134,32 +135,71 @@ public static class TelemetryGuard
                     $"String value exceeds maximum length of {options.MaxStringLength} characters.");
             }
 
-            try
-            {
-                if (UrlPattern.IsMatch(s))
-                {
-                    return TelemetryValidationResult.Rejected("String value must not contain URLs.");
-                }
-            }
-            catch (RegexMatchTimeoutException)
-            {
-                return TelemetryValidationResult.Rejected("String value triggered regex timeout (potential ReDoS).");
-            }
+            // Decode URL-encoded and HTML-encoded forms before pattern matching
+            // to prevent bypass via encoded characters (e.g., user%40example.com).
+            var candidates = GetDecodedCandidates(s);
 
-            try
+            foreach (var candidate in candidates)
             {
-                if (EmailPattern.IsMatch(s))
+                try
                 {
-                    return TelemetryValidationResult.Rejected("String value must not contain email addresses.");
+                    if (UrlPattern.IsMatch(candidate))
+                    {
+                        return TelemetryValidationResult.Rejected("String value must not contain URLs.");
+                    }
                 }
-            }
-            catch (RegexMatchTimeoutException)
-            {
-                return TelemetryValidationResult.Rejected("String value triggered regex timeout (potential ReDoS).");
+                catch (RegexMatchTimeoutException)
+                {
+                    return TelemetryValidationResult.Rejected("String value triggered regex timeout (potential ReDoS).");
+                }
+
+                try
+                {
+                    if (EmailPattern.IsMatch(candidate))
+                    {
+                        return TelemetryValidationResult.Rejected("String value must not contain email addresses.");
+                    }
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    return TelemetryValidationResult.Rejected("String value triggered regex timeout (potential ReDoS).");
+                }
             }
         }
 
         return TelemetryValidationResult.Accepted();
+    }
+
+    /// <summary>
+    /// Returns the raw string plus URL-decoded and HTML-decoded variants for
+    /// pattern matching. This prevents bypass via encoded characters such as
+    /// <c>user%40example.com</c> (URL-encoded @) or <c>https&#58;//evil.com</c>
+    /// (HTML-encoded colon). Deduplicates to avoid redundant regex passes.
+    /// </summary>
+    private static List<string> GetDecodedCandidates(string raw)
+    {
+        var candidates = new List<string>(3) { raw };
+
+        try
+        {
+            var urlDecoded = Uri.UnescapeDataString(raw);
+            if (urlDecoded != raw)
+            {
+                candidates.Add(urlDecoded);
+            }
+        }
+        catch (UriFormatException)
+        {
+            // Malformed percent-encoding -- skip URL decoding
+        }
+
+        var htmlDecoded = WebUtility.HtmlDecode(raw);
+        if (htmlDecoded != raw && !candidates.Contains(htmlDecoded))
+        {
+            candidates.Add(htmlDecoded);
+        }
+
+        return candidates;
     }
 }
 
