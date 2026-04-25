@@ -81,6 +81,38 @@
     "operation": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "operationType"
+            ],
+            "properties": {
+              "operationType": {
+                "not": {
+                  "enum": [
+                    "CreateCard",
+                    "CreateColumn",
+                    "CreateLabel"
+                  ]
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "targetId"
+            ],
+            "properties": {
+              "targetId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "ID of the existing entity being operated on."
+              }
+            }
+          }
+        }
+      ],
       "required": [
         "operationType",
         "payload"

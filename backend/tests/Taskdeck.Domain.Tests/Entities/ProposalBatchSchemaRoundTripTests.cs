@@ -99,6 +99,32 @@ public class ProposalBatchSchemaRoundTripTests
         if (schema.TryGetProperty("$ref", out var reference))
             schema = ResolveReference(rootSchema, reference.GetString()!);
 
+        if (schema.TryGetProperty("not", out var notSchema))
+        {
+            var notErrors = new List<string>();
+            ValidateElement(value, notSchema, rootSchema, path, notErrors);
+            if (notErrors.Count == 0)
+            {
+                errors.Add($"{path}: value matched disallowed schema");
+                return;
+            }
+        }
+
+        if (schema.TryGetProperty("allOf", out var allOf))
+        {
+            foreach (var nestedSchema in allOf.EnumerateArray())
+                ValidateElement(value, nestedSchema, rootSchema, path, errors);
+        }
+
+        if (schema.TryGetProperty("if", out var ifSchema) &&
+            schema.TryGetProperty("then", out var thenSchema))
+        {
+            var ifErrors = new List<string>();
+            ValidateElement(value, ifSchema, rootSchema, path, ifErrors);
+            if (ifErrors.Count == 0)
+                ValidateElement(value, thenSchema, rootSchema, path, errors);
+        }
+
         if (schema.TryGetProperty("type", out var type) && !MatchesType(value, type))
         {
             errors.Add($"{path}: expected type {type.GetRawText()}, found {value.ValueKind}");
@@ -464,6 +490,31 @@ public class ProposalBatchSchemaRoundTripTests
                 new("Op", "Severe", null, new List<OperationDto>
                 {
                     new("CreateCard", null, payload)
+                })
+            });
+        var json = JsonSerializer.Serialize(batch, JsonOptions);
+
+        var act = () => ValidateAgainstProposalBatchSchema(json);
+
+        act.Should().Throw<Xunit.Sdk.XunitException>();
+    }
+
+    [Theory]
+    [InlineData("UpdateCard")]
+    [InlineData("MoveCard")]
+    [InlineData("DeleteCard")]
+    [InlineData("UpdateColumn")]
+    [InlineData("AddLabel")]
+    [InlineData("RemoveLabel")]
+    public void NonCreateOperation_ShouldFailSchemaValidation_WhenTargetIdIsMissingOrNull(string operationType)
+    {
+        var payload = JsonSerializer.SerializeToElement(new { title = "X" }, JsonOptions);
+        var batch = new ProposalBatchDto(1, Guid.NewGuid().ToString(), "Missing target",
+            new List<ProposalDto>
+            {
+                new("Op", "Low", null, new List<OperationDto>
+                {
+                    new(operationType, null, payload)
                 })
             });
         var json = JsonSerializer.Serialize(batch, JsonOptions);
