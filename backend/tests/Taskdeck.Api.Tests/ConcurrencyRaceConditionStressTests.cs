@@ -845,9 +845,8 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
     /// <paramref name="stableFor"/>) and returns the last snapshot.
     /// Tracks total event count rather than member count so that events
     /// with the same member count (e.g., simultaneous join + leave) still
-    /// reset the stabilization timer. Falls back to the last snapshot at
-    /// timeout if stability is never reached. Returns null only if no
-    /// snapshots arrive at all.
+    /// reset the stabilization timer. Throws when no stable window is observed
+    /// before timeout.
     /// </summary>
     private static async Task<BoardPresenceSnapshot?> WaitForPresenceStabilizationAsync(
         EventCollector<BoardPresenceSnapshot> events,
@@ -879,8 +878,11 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             await Task.Delay(50);
         }
 
-        // Return whatever we have at timeout
-        return events.ToList().LastOrDefault();
+        var last = events.ToList().LastOrDefault();
+        var snapshotCount = events.ToList().Count;
+        throw new TimeoutException(
+            $"Presence snapshots did not stabilize for {effectiveStableFor.TotalSeconds}s within {effectiveTimeout.TotalSeconds}s. " +
+            $"Observed {snapshotCount} snapshots; last member count was {last?.Members.Count ?? 0}.");
     }
 
     /// <summary>
@@ -955,8 +957,8 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             await Task.WhenAll(joinTasks);
 
             var actualJoined = joinedConnections.Count;
-            actualJoined.Should().BeGreaterOrEqualTo(1,
-                "at least one concurrent join should succeed under stress");
+            actualJoined.Should().BeGreaterOrEqualTo(2,
+                "at least two concurrent joins must succeed to validate rapid join/leave behavior");
 
             // Wait for presence to stabilize after the burst of joins.
             // On resource-constrained CI runners, SignalR presence broadcasts
@@ -979,50 +981,44 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             // First half of successfully-joined connections leave rapidly.
             // Use the settled count from the join phase (not client-side
             // joinedConnections count) to set realistic leave expectations.
-            // When actualJoined is 1, integer division yields 0 leaving
-            // connections, so the leave phase is skipped entirely.
             observerEvents.Clear();
             var leavingConns = joinedConnections.Take(joinedConnections.Count / 2).ToList();
+            leavingConns.Should().NotBeEmpty(
+                "rapid join/leave stress must attempt at least one leave");
 
-            if (leavingConns.Count > 0)
+            var leaveSuccessCount = 0;
+            using var leaveBarrier = new Barrier(leavingConns.Count + 1);
+            var leaveTasks = leavingConns.Select(async conn =>
             {
-                var leaveSuccessCount = 0;
-                using var leaveBarrier = new Barrier(leavingConns.Count + 1);
-                var leaveTasks = leavingConns.Select(async conn =>
-                {
-                    leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
-                    try
-                    {
-                        await conn.InvokeAsync("LeaveBoard", board.Id);
-                        Interlocked.Increment(ref leaveSuccessCount);
-                    }
-                    catch (Exception ex) when (ex is HubException or HttpRequestException)
-                    {
-                        // Tolerate transient HubException during rapid leave
-                    }
-                }).ToArray();
-
                 leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
-                await Task.WhenAll(leaveTasks);
-
-                var actualLeft = Interlocked.CompareExchange(ref leaveSuccessCount, 0, 0);
-
-                // Only assert on leave-phase presence changes if leaves were attempted
-                if (actualLeft > 0)
+                try
                 {
-                    // Wait for presence to stabilize after the burst of leaves.
-                    var afterLeave = await WaitForPresenceStabilizationAsync(
-                        observerEvents, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(2));
-                    afterLeave.Should().NotBeNull("at least one presence snapshot should arrive after leaves");
-                    var settledLeaveCount = afterLeave!.Members.Count;
-                    // After leaves, the count should have decreased
-                    settledLeaveCount.Should().BeLessThan(settledJoinCount,
-                        "presence count should decrease after members leave");
-                    // Should still include at least the owner
-                    settledLeaveCount.Should().BeGreaterOrEqualTo(1,
-                        "the observer owner should always remain in presence");
+                    await conn.InvokeAsync("LeaveBoard", board.Id);
+                    Interlocked.Increment(ref leaveSuccessCount);
                 }
-            }
+                catch (Exception ex) when (ex is HubException or HttpRequestException)
+                {
+                    // Tolerate individual transient failures, but require at least
+                    // one successful leave below so this test still covers leave behavior.
+                }
+            }).ToArray();
+
+            leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
+            await Task.WhenAll(leaveTasks);
+
+            var actualLeft = Interlocked.CompareExchange(ref leaveSuccessCount, 0, 0);
+            actualLeft.Should().BeGreaterThan(0,
+                "at least one LeaveBoard invocation must succeed to validate rapid leave behavior");
+
+            // Wait for presence to stabilize after the burst of leaves.
+            var afterLeave = await WaitForPresenceStabilizationAsync(
+                observerEvents, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(2));
+            afterLeave.Should().NotBeNull("at least one presence snapshot should arrive after leaves");
+            var settledLeaveCount = afterLeave!.Members.Count;
+            settledLeaveCount.Should().BeLessThan(settledJoinCount,
+                "presence count should decrease after members leave");
+            settledLeaveCount.Should().BeGreaterOrEqualTo(1,
+                "the observer owner should always remain in presence");
         }
         finally
         {
