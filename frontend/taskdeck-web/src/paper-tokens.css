@@ -136,8 +136,10 @@
       transparent 0 47px,
       #1a181408 47px 48px,
       transparent 48px 113px),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .1   0 0 0 0 .09   0 0 0 0 .08   0 0 0 .035 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+    radial-gradient(circle at 24px 32px, #1a181406 0 1px, transparent 1px 100%),
+    radial-gradient(circle at 160px 96px, #1a181405 0 1px, transparent 1px 100%);
   background-blend-mode: multiply, normal;
+  background-size: auto, 240px 240px, 240px 240px;
 }
 .paper-night {
   background-color: var(--paper);
@@ -146,8 +148,10 @@
       transparent 0 47px,
       #ffffff05 47px 48px,
       transparent 48px 113px),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1   0 0 0 0 .96   0 0 0 0 .85   0 0 0 .03 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+    radial-gradient(circle at 24px 32px, #ffffff05 0 1px, transparent 1px 100%),
+    radial-gradient(circle at 160px 96px, #ffffff04 0 1px, transparent 1px 100%);
   background-blend-mode: screen, normal;
+  background-size: auto, 240px 240px, 240px 240px;
 }
 
 @media (prefers-reduced-transparency: reduce) {
