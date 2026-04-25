@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PaperCard from '../../components/paper/PaperCard.vue'
 import PaperKbd from '../../components/paper/PaperKbd.vue'
@@ -56,9 +56,9 @@ function resolveFirstName(username: string | null | undefined): string | null {
   const beforeAt = trimmed.split('@')[0]
   if (!beforeAt) return null
   // Take the first whitespace- or dot-delimited token.
-  const token = beforeAt.split(/[\s._-]+/).find((part) => /^[A-Za-z][A-Za-z'-]*$/.test(part))
+  const token = beforeAt.split(/[\s._-]+/).find((part) => /^[\p{L}][\p{L}'-]*$/u.test(part))
   if (!token) return null
-  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase()
+  return token.toLocaleLowerCase().replace(/^\p{L}/u, (first) => first.toLocaleUpperCase())
 }
 
 function periodFor(hour: number): 'morning' | 'afternoon' | 'evening' {
@@ -67,9 +67,10 @@ function periodFor(hour: number): 'morning' | 'afternoon' | 'evening' {
   return 'evening'
 }
 
+const currentHour = ref(new Date().getHours())
+
 const greeting = computed(() => {
-  const hour = new Date().getHours()
-  const period = periodFor(hour)
+  const period = periodFor(currentHour.value)
   const name = resolveFirstName(session.username)
   const opener = name ? `Good ${period}` : 'Hello'
   return { opener, name, period }
@@ -79,8 +80,16 @@ const greeting = computed(() => {
 
 const proposalsAwaiting = computed(() => summary.value?.workload.proposalsPendingReview ?? 0)
 const carryOvers = computed(() => summary.value?.workload.capturesNeedingTriage ?? 0)
+const showLoadingState = computed(() => workspace.homeLoading && !summary.value)
+const showErrorState = computed(() => Boolean(workspace.homeError) && !summary.value)
 
 const ledeText = computed(() => {
+  if (showErrorState.value) {
+    return workspace.homeError ?? 'Workspace summary could not be loaded.'
+  }
+  if (showLoadingState.value || !summary.value) {
+    return 'Loading your workspace summary...'
+  }
   const p = proposalsAwaiting.value
   const c = carryOvers.value
   if (p === 0 && c === 0) {
@@ -187,16 +196,48 @@ function maybeFetchHomeSummary() {
   })
 }
 
+let shortcutListening = false
+let greetingTimer: ReturnType<typeof window.setInterval> | null = null
+
+function refreshCurrentHour() {
+  currentHour.value = new Date().getHours()
+}
+
+function startActiveHomeHandlers() {
+  refreshCurrentHour()
+  if (!shortcutListening) {
+    window.addEventListener('keydown', onCaptureShortcut)
+    shortcutListening = true
+  }
+  if (!greetingTimer) {
+    greetingTimer = window.setInterval(refreshCurrentHour, 60_000)
+  }
+}
+
+function stopActiveHomeHandlers() {
+  if (shortcutListening) {
+    window.removeEventListener('keydown', onCaptureShortcut)
+    shortcutListening = false
+  }
+  if (greetingTimer) {
+    window.clearInterval(greetingTimer)
+    greetingTimer = null
+  }
+}
+
 onMounted(() => {
+  startActiveHomeHandlers()
   maybeFetchHomeSummary()
-  window.addEventListener('keydown', onCaptureShortcut)
 })
 
-onActivated(maybeFetchHomeSummary)
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onCaptureShortcut)
+onActivated(() => {
+  startActiveHomeHandlers()
+  maybeFetchHomeSummary()
 })
+
+onDeactivated(stopActiveHomeHandlers)
+
+onBeforeUnmount(stopActiveHomeHandlers)
 
 // ── Affordance: open Review when a proposal card is activated ────────────
 
@@ -236,7 +277,34 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     </header>
 
     <section
-      v-if="showEmptyState"
+      v-if="showLoadingState"
+      class="paper-home__loading"
+      data-testid="paper-home-loading"
+      aria-live="polite"
+      role="status"
+    >
+      <PaperCard variant="flat">
+        <p class="tk-meta paper-home__state-text">
+          Loading your workspace summary...
+        </p>
+      </PaperCard>
+    </section>
+
+    <section
+      v-else-if="showErrorState"
+      class="paper-home__error"
+      data-testid="paper-home-error"
+      role="alert"
+    >
+      <PaperCard variant="flat">
+        <p class="tk-meta paper-home__state-text">
+          {{ workspace.homeError }}
+        </p>
+      </PaperCard>
+    </section>
+
+    <section
+      v-else-if="showEmptyState"
       class="paper-home__empty"
       data-testid="paper-home-empty"
     >
@@ -431,7 +499,8 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   color: var(--mute);
 }
 
-.paper-home__empty-text {
+.paper-home__empty-text,
+.paper-home__state-text {
   padding: 18px;
   margin: 0;
   font-style: italic;

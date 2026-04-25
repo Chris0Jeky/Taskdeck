@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import PaperHomeView from '../../../views/paper/PaperHomeView.vue'
 import type { HomeSummary } from '../../../types/workspace'
 
@@ -25,6 +25,7 @@ const mockSessionStore = reactive({
 const mockWorkspaceStore = reactive({
   homeSummary: null as HomeSummary | null,
   homeLoading: false,
+  homeError: null as string | null,
   hasHomeSummary: false,
   fetchHomeSummary: vi.fn<() => Promise<void>>(),
 })
@@ -83,6 +84,7 @@ describe('PaperHomeView', () => {
     mockSessionStore.username = 'daniel'
     mockWorkspaceStore.homeSummary = buildSummary()
     mockWorkspaceStore.homeLoading = false
+    mockWorkspaceStore.homeError = null
     mockWorkspaceStore.hasHomeSummary = true
     mockWorkspaceStore.fetchHomeSummary.mockResolvedValue(undefined)
     mockCaptureStore.createItem.mockReset()
@@ -122,9 +124,56 @@ describe('PaperHomeView', () => {
       expect(greeting.text()).toBe('Hello.')
       expect(greeting.text()).not.toContain('Good morning')
     })
+
+    it('supports Unicode first-name tokens', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 3, 25, 9, 0, 0))
+      mockSessionStore.username = 'élodie.smith@example.test'
+
+      const wrapper = mount(PaperHomeView)
+
+      expect(wrapper.get('[data-testid="paper-home-greeting"]').text()).toContain('Élodie')
+    })
+
+    it('refreshes the greeting period while the view stays active', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 3, 25, 11, 59, 30))
+
+      const wrapper = mount(PaperHomeView)
+      expect(wrapper.get('[data-testid="paper-home-period"]').text()).toContain('morning')
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      await nextTick()
+
+      expect(wrapper.get('[data-testid="paper-home-period"]').text()).toContain('afternoon')
+    })
   })
 
   describe('queue cards', () => {
+    it('renders loading instead of an empty queue while summary is missing', () => {
+      mockWorkspaceStore.homeSummary = null
+      mockWorkspaceStore.hasHomeSummary = false
+      mockWorkspaceStore.homeLoading = true
+
+      const wrapper = mount(PaperHomeView)
+
+      expect(wrapper.find('[data-testid="paper-home-loading"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="paper-home-empty"]').exists()).toBe(false)
+      expect(wrapper.find('.paper-home__queue').exists()).toBe(false)
+    })
+
+    it('renders the store error instead of an empty queue when summary loading fails', () => {
+      mockWorkspaceStore.homeSummary = null
+      mockWorkspaceStore.hasHomeSummary = false
+      mockWorkspaceStore.homeError = 'Failed to load workspace summary'
+
+      const wrapper = mount(PaperHomeView)
+
+      expect(wrapper.find('[data-testid="paper-home-error"]').text()).toContain('Failed to load workspace summary')
+      expect(wrapper.find('[data-testid="paper-home-empty"]').exists()).toBe(false)
+      expect(wrapper.find('.paper-home__queue').exists()).toBe(false)
+    })
+
     it('renders the empty state when nothing is queued', () => {
       mockWorkspaceStore.homeSummary = buildSummary()
       const wrapper = mount(PaperHomeView)
@@ -170,6 +219,17 @@ describe('PaperHomeView', () => {
   })
 
   describe('quick capture', () => {
+    it('cleans up the global capture shortcut listener on unmount', () => {
+      const addSpy = vi.spyOn(window, 'addEventListener')
+      const removeSpy = vi.spyOn(window, 'removeEventListener')
+
+      const wrapper = mount(PaperHomeView)
+      wrapper.unmount()
+
+      expect(addSpy).toHaveBeenCalledWith('keydown', expect.any(Function))
+      expect(removeSpy).toHaveBeenCalledWith('keydown', expect.any(Function))
+    })
+
     it('does not dispatch on empty Enter', async () => {
       const wrapper = mount(PaperHomeView)
       const input = wrapper.get('[data-testid="paper-home-capture-input"]')
