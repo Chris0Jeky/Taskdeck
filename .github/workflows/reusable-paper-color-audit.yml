@@ -1,0 +1,100 @@
+name: Reusable Paper Color Audit
+
+# =============================================================================
+# Paper at Night — color audit gate (PAPER-12 / #1008)
+# =============================================================================
+#
+# Cheap regression gate that asserts:
+#
+#   1. `frontend/taskdeck-web/src/components/paper/**` (the Paper Vue
+#      primitives) contains ZERO hex literals — every color reference must
+#      go through a `var(--*)` token.  Any author-introduced hex inside a
+#      paper component is a regression.
+#
+#   2. `frontend/taskdeck-web/src/components/shell/AppShell.vue` paper-mode
+#      block (the part wired by `paperTheme.isOn`) contains ZERO hex
+#      literals.
+#
+#   3. `frontend/taskdeck-web/src/paper-tokens.css` hex-literal COUNT does
+#      not exceed a documented baseline.  Each new literal must be
+#      reviewed and the baseline + audit doc updated in the same PR.  This
+#      catches accidental "paste a hex from the design comp instead of
+#      using a token" regressions cheaply, without parsing CSS selectors.
+#
+# Audit doc at:
+#   frontend/taskdeck-web/src/components/paper/PAPER_NIGHT_AUDIT.md
+#
+# When the surface PRs (#1013 #1014 #1025 #1026 #1027 #1028) merge, extend
+# this workflow with `views/paper/**` (zero-hex check) and update the
+# baseline if `paper-tokens.css` grows new tokens.
+# =============================================================================
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  paper-color-audit:
+    name: Paper Color Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Audit Paper component primitives have no hex literals
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Anchored regex: matches `#abc`, `#abcd` (RGBA), `#aabbcc`,
+          # `#aabbccd` (7-digit, rare but observed in tooling output), and
+          # `#aabbccdd` (8-digit alpha) forms with a trailing word boundary.
+          HEX_RE='#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6,8})\b'
+
+          # 1. components/paper/** must be hex-free.
+          if hits=$(grep -rEn --include='*.vue' --include='*.ts' --include='*.tsx' \
+                       --exclude='PAPER_NIGHT_AUDIT.md' \
+                       "$HEX_RE" \
+                       frontend/taskdeck-web/src/components/paper 2>/dev/null); then
+            echo "::error::Paper component primitives must use var(--*) tokens, never hex literals."
+            echo "$hits" >&2
+            exit 1
+          fi
+
+          # 2. AppShell.vue paper-mode region must be hex-free.  Scoped to
+          #    paper-mode markers (`<Paper*>` invocations, `td-shell--paper`
+          #    class refs, and `paperTheme.isOn` v-if guards) so that hex
+          #    literals in the unrelated Obsidian shell code path do not
+          #    block CI.  The contract for this gate (per the doc above and
+          #    PAPER_NIGHT_AUDIT.md) is paper-mode-specific styling only.
+          APPSHELL=frontend/taskdeck-web/src/components/shell/AppShell.vue
+          PAPER_REGION=$(awk '
+            /<Paper[A-Z]/ { in_tag=1 }
+            in_tag || /td-shell--paper|paperTheme\.isOn/ { print NR ": " $0 }
+            in_tag && (/\/>[[:space:]]*$/ || /<\/Paper[A-Z]/) { in_tag=0 }
+          ' "$APPSHELL")
+          if hits=$(printf '%s\n' "$PAPER_REGION" | grep -E "$HEX_RE"); then
+            echo "::error file=$APPSHELL::AppShell paper-mode region must use var(--*) tokens, never hex literals."
+            printf '%s\n' "$hits" >&2
+            exit 1
+          fi
+
+          # 3. paper-tokens.css hex-literal count baseline.  Bump in the
+          #    same PR that adds a new token + audit-doc rationale.
+          #    Count individual occurrences (grep -oE | wc -l), not matching
+          #    lines, so a line with two hex values counts as two.  CSS
+          #    comment lines (leading `*` or `/*`) are excluded to avoid
+          #    false positives from issue references and illustrative values.
+          BASELINE=68
+          ACTUAL=$(grep -vE '^\s*(\*|/\*)' frontend/taskdeck-web/src/paper-tokens.css \
+                    | grep -oE "$HEX_RE" | wc -l)
+          if [[ "$ACTUAL" -gt "$BASELINE" ]]; then
+            echo "::error file=frontend/taskdeck-web/src/paper-tokens.css::paper-tokens.css contains $ACTUAL hex literals, baseline is $BASELINE.  If the new literals are intentional, update both the baseline in .github/workflows/reusable-paper-color-audit.yml and the rationale in PAPER_NIGHT_AUDIT.md."
+            exit 1
+          fi
+          if [[ "$ACTUAL" -lt "$BASELINE" ]]; then
+            echo "::warning file=frontend/taskdeck-web/src/paper-tokens.css::paper-tokens.css hex-literal count dropped from $BASELINE to $ACTUAL — please lower the baseline in this workflow to match."
+          fi
+
+          echo "Paper color audit passed: components hex-free, tokens count $ACTUAL/$BASELINE."
