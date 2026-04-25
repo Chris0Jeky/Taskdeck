@@ -36,6 +36,25 @@ describe('PaperTriageTable', () => {
     expect(wrapper.find('.paper-triage__list').exists()).toBe(false)
   })
 
+  it('surfaces list errors with a retry action instead of the empty state', async () => {
+    const wrapper = mount(PaperTriageTable, {
+      props: { items: [], listError: 'Failed to load captures' },
+    })
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('Failed to load captures')
+    expect(wrapper.text()).not.toContain('A pen and a phrase')
+    await wrapper.find('.paper-triage__retry').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+
+  it('prioritizes failed/error status tone over triage wording', () => {
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'Triage Failed' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+
+    expect(wrapper.find('.tagstamp').attributes('data-tone')).toBe('overdue')
+  })
+
   it('emits accept with the item id when the Accept button is clicked', async () => {
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     const acceptBtn = wrapper.findAll('button[data-action="accept"]')[0]

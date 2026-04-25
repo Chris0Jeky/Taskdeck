@@ -23,6 +23,7 @@ import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
 type Variant = 'nib' | 'composer'
 
 const variant = ref<Variant>('composer')
+const composerRef = ref<InstanceType<typeof PaperCaptureComposer> | null>(null)
 const nibBleeding = ref(false)
 let bleedTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -55,7 +56,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   }
 }
 
-async function dispatchCapture(text: string, opts: { boardId?: string | null } = {}) {
+async function dispatchCapture(text: string, opts: { boardId?: string | null } = {}): Promise<boolean> {
   try {
     await captureStore.createItem({
       boardId: opts.boardId ?? null,
@@ -63,8 +64,10 @@ async function dispatchCapture(text: string, opts: { boardId?: string | null } =
       source: 'Typed',
     })
     await loadInbox()
+    return true
   } catch {
     // captureStore handles toast surfacing; we keep the surface usable.
+    return false
   }
 }
 
@@ -93,7 +96,10 @@ async function onComposerSubmit(payload: {
   // Labels / dueAt aren't part of CreateCaptureItemDto yet — they're surfaced
   // for the design but not persisted by the current API.  We still pass the
   // boardId so the capture lands on the right board.
-  await dispatchCapture(payload.text, { boardId: payload.boardId })
+  const created = await dispatchCapture(payload.text, { boardId: payload.boardId })
+  if (created) {
+    composerRef.value?.resetDraft()
+  }
 }
 
 function onComposerAttachments(_files: File[]) {
@@ -171,6 +177,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       />
       <PaperCaptureComposer
         v-else
+        ref="composerRef"
         @submit="onComposerSubmit"
         @attachments-changed="onComposerAttachments"
       />
@@ -179,10 +186,12 @@ defineExpose({ variant, toggleVariant, setVariant })
     <PaperTriageTable
       :items="items"
       :loading-list="captureStore.loadingList"
+      :list-error="captureStore.listError"
       :action-busy-item-id="captureStore.actionBusyItemId"
       @accept="onTriageAccept"
       @reject="onTriageReject"
       @open="onTriageOpen"
+      @retry="loadInbox"
     />
   </div>
 </template>

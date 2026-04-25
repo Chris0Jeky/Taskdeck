@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import PaperInboxView from '../../../views/paper/PaperInboxView.vue'
 
 const mockCaptureStore = reactive({
   loadingList: false,
+  listError: null as string | null,
   actionBusyItemId: null as string | null,
   createItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
 })
@@ -40,6 +41,7 @@ describe('PaperInboxView', () => {
     orchestratorState.triageSelected.mockResolvedValue(undefined)
     orchestratorState.ignoreSelected.mockResolvedValue(undefined)
     mockCaptureStore.createItem.mockResolvedValue({ id: 'created-1' })
+    mockCaptureStore.listError = null
     mockBoardStore.boards = []
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
   })
@@ -95,5 +97,31 @@ describe('PaperInboxView', () => {
     expect(nibBtn).toBeDefined()
     await nibBtn!.trigger('click')
     expect(wrapper.attributes('data-variant')).toBe('nib')
+  })
+
+  it('resets the composer draft after capture creation succeeds', async () => {
+    const wrapper = mount(PaperInboxView)
+    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    await textarea.setValue('Ship the inbox fix')
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+      boardId: null,
+      text: 'Ship the inbox fix',
+      source: 'Typed',
+    })
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('preserves the composer draft when capture creation fails', async () => {
+    mockCaptureStore.createItem.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mount(PaperInboxView)
+    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    await textarea.setValue('Do not lose this draft')
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('Do not lose this draft')
   })
 })

@@ -114,4 +114,20 @@ describe('PaperCaptureComposer', () => {
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
+
+  it('keeps the draft after submit until the parent confirms success', async () => {
+    const wrapper = mount(PaperCaptureComposer)
+    await wrapper.find('textarea').setValue('Preserve this if the API fails')
+    await wrapper.find('input[type="text"]').setValue('paper')
+    await wrapper.find('input[type="text"]').trigger('keydown', { key: 'Enter' })
+
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('Preserve this if the API fails')
+    expect(wrapper.text()).toContain('paper')
+
+    ;(wrapper.vm as unknown as { resetDraft: () => void }).resetDraft()
+    await wrapper.vm.$nextTick()
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+    expect(wrapper.text()).not.toContain('paper')
+  })
 })

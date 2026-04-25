@@ -15,6 +15,7 @@ import type { CaptureItemSummary } from '../../../types/capture'
 const props = defineProps<{
   items: CaptureItemSummary[]
   loadingList?: boolean
+  listError?: string | null
   actionBusyItemId?: string | null
 }>()
 
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   (event: 'accept', itemId: string): void
   (event: 'reject', itemId: string): void
   (event: 'open', itemId: string): void
+  (event: 'retry'): void
 }>()
 
 const hasItems = computed(() => props.items.length > 0)
@@ -42,10 +44,10 @@ function onReject(itemId: string) {
 
 function statusTone(status: string | number): 'ember' | 'applied' | 'overdue' | 'mute' {
   const value = typeof status === 'string' ? status.toLowerCase() : String(status).toLowerCase()
+  if (value.includes('failed') || value.includes('error')) return 'overdue'
   if (value.includes('triag')) return 'ember'
   if (value.includes('proposed')) return 'ember'
   if (value.includes('applied') || value.includes('accept')) return 'applied'
-  if (value.includes('failed') || value.includes('error')) return 'overdue'
   return 'mute'
 }
 
@@ -71,6 +73,13 @@ function formatTime(iso: string): string {
 
     <div v-if="loadingList && !hasItems" class="paper-triage__empty">
       <span class="tk-meta">Loading…</span>
+    </div>
+
+    <div v-else-if="listError && !hasItems" class="paper-triage__empty paper-triage__empty--error" role="alert">
+      <p class="tk-body">{{ listError }}</p>
+      <button type="button" class="paper-triage__retry" @click="emit('retry')">
+        Retry
+      </button>
     </div>
 
     <div v-else-if="!hasItems" class="paper-triage__empty">
@@ -142,6 +151,23 @@ function formatTime(iso: string): string {
   border-radius: 4px;
   background: var(--paper-card);
   color: var(--mute);
+}
+.paper-triage__empty--error {
+  border-color: var(--overdue);
+  color: var(--overdue);
+}
+.paper-triage__retry {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 .paper-triage__list {
   margin: 0;

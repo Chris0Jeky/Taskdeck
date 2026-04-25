@@ -102,6 +102,9 @@ function submit() {
     labels: [...labels.value],
     dueAt: dueAt.value || null,
   })
+}
+
+function resetDraft() {
   body.value = ''
   labels.value = []
   dueAt.value = ''
@@ -122,6 +125,8 @@ onMounted(async () => {
   await nextTick()
   bodyRef.value?.focus()
 })
+
+defineExpose({ resetDraft })
 </script>
 
 <template>
