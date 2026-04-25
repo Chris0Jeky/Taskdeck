@@ -42,9 +42,11 @@ const bodyRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const dropActive = ref(false)
 
+const inputsDisabled = computed(() => !!props.submitting)
 const canSubmit = computed(() => body.value.trim().length > 0 && !props.submitting)
 
 function onBodyKeydown(event: KeyboardEvent) {
+  if (inputsDisabled.value) return
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     event.preventDefault()
     submit()
@@ -61,6 +63,7 @@ function addLabel() {
 }
 
 function onLabelKeydown(event: KeyboardEvent) {
+  if (inputsDisabled.value) return
   if (event.isComposing) {
     return
   }
@@ -71,10 +74,12 @@ function onLabelKeydown(event: KeyboardEvent) {
 }
 
 function removeLabel(label: string) {
+  if (inputsDisabled.value) return
   labels.value = labels.value.filter((l) => l !== label)
 }
 
 function onFilesChosen(event: Event) {
+  if (inputsDisabled.value) return
   const files = (event.target as HTMLInputElement).files
   if (!files) return
   appendFiles(Array.from(files))
@@ -82,18 +87,21 @@ function onFilesChosen(event: Event) {
 
 function onDrop(event: DragEvent) {
   dropActive.value = false
+  if (inputsDisabled.value) return
   const files = event.dataTransfer?.files
   if (!files) return
   appendFiles(Array.from(files))
 }
 
 function appendFiles(next: File[]) {
+  if (inputsDisabled.value) return
   if (next.length === 0) return
   attachments.value = [...attachments.value, ...next]
   emit('attachments-changed', attachments.value)
 }
 
 function removeAttachment(file: File) {
+  if (inputsDisabled.value) return
   attachments.value = attachments.value.filter((f) => f !== file)
   emit('attachments-changed', attachments.value)
 }
@@ -151,6 +159,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
             rows="6"
             aria-label="Capture body"
             placeholder="The thought, in plain language…"
+            :disabled="inputsDisabled"
             @keydown="onBodyKeydown"
           />
         </label>
@@ -167,7 +176,12 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
           @drop.prevent="onDrop"
         >
           <span class="tk-meta">Drop files here, or</span>
-          <button type="button" class="paper-composer__file-trigger" @click="fileInputRef?.click()">
+          <button
+            type="button"
+            class="paper-composer__file-trigger"
+            :disabled="inputsDisabled"
+            @click="fileInputRef?.click()"
+          >
             Browse
           </button>
           <input
@@ -176,6 +190,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
             multiple
             class="paper-composer__file-input"
             aria-label="Attach files"
+            :disabled="inputsDisabled"
             @change="onFilesChosen"
           />
         </div>
@@ -183,7 +198,12 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
         <ul v-if="attachments.length > 0" class="paper-composer__attachments">
           <li v-for="file in attachments" :key="file.name + ':' + file.size">
             <span class="paper-composer__attachment-name">{{ file.name }}</span>
-            <button type="button" class="paper-composer__attachment-remove" @click="removeAttachment(file)">
+            <button
+              type="button"
+              class="paper-composer__attachment-remove"
+              :disabled="inputsDisabled"
+              @click="removeAttachment(file)"
+            >
               Remove
             </button>
           </li>
@@ -193,7 +213,12 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
       <aside class="paper-composer__aside">
         <label class="paper-composer__label">
           <span class="tk-eyebrow">Board</span>
-          <select v-model="boardId" class="paper-composer__select" aria-label="Board picker">
+          <select
+            v-model="boardId"
+            class="paper-composer__select"
+            aria-label="Board picker"
+            :disabled="inputsDisabled"
+          >
             <option :value="null">No board · land in inbox</option>
             <option v-for="board in boardStore.boards" :key="board.id" :value="board.id">
               {{ board.name }}
@@ -209,12 +234,18 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
             type="text"
             aria-label="Add label"
             placeholder="add and press Enter"
+            :disabled="inputsDisabled"
             @keydown="onLabelKeydown"
           />
           <ul v-if="labels.length > 0" class="paper-composer__labels">
             <li v-for="label in labels" :key="label">
               <PaperTagstamp tone="ember">{{ label }}</PaperTagstamp>
-              <button type="button" class="paper-composer__label-remove" @click="removeLabel(label)">
+              <button
+                type="button"
+                class="paper-composer__label-remove"
+                :disabled="inputsDisabled"
+                @click="removeLabel(label)"
+              >
                 ×
               </button>
             </li>
@@ -228,6 +259,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
             class="paper-composer__input"
             type="date"
             aria-label="Due date"
+            :disabled="inputsDisabled"
           />
         </label>
       </aside>

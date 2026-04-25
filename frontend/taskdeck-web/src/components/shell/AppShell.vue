@@ -49,7 +49,7 @@ const commandItems = computed<CommandItem[]>(() => {
   const navItems = sidebarRef.value?.availableNavItems ?? []
   const navigationItems = navItems.map((item) => ({
     id: `nav:${item.path}`,
-    label: item.label,
+    label: paperTheme.isOn ? `Go to ${item.label}` : item.label,
     icon: item.icon,
     path: item.path,
     keywords: `${item.path} ${item.keywords ?? ''}`.trim(),

@@ -127,7 +127,14 @@ describe('PaperCaptureComposer', () => {
 
   it('does not submit while creation is already in flight', async () => {
     const wrapper = mount(PaperCaptureComposer, { props: { submitting: true } })
-    await wrapper.find('textarea').setValue('Wait for the first create')
+    expect(wrapper.find('textarea').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('select[aria-label="Board picker"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('input[aria-label="Add label"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('input[aria-label="Due date"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('input[aria-label="Attach files"]').attributes('disabled')).toBeDefined()
+    const browseButton = wrapper.findAll('button').find((button) => button.text().includes('Browse'))
+    expect(browseButton?.attributes('disabled')).toBeDefined()
+
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
 
     expect(wrapper.emitted('submit')).toBeUndefined()
