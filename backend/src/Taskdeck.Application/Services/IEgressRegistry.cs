@@ -17,4 +17,11 @@ public interface IEgressRegistry
     /// Unknown hosts are not allowed.
     /// </summary>
     bool IsHostAllowed(string host);
+
+    /// <summary>
+    /// Registers an additional egress entry at runtime (e.g., when webhook
+    /// subscriptions are created or connector credentials are configured).
+    /// Implementations must be thread-safe.
+    /// </summary>
+    void Register(EgressEntry entry);
 }
