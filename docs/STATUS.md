@@ -941,7 +941,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-03-31 (recertified after PRs #588–#607 merge wave)
+Verification Date: 2026-04-25 (recertified after PRs #960–#969 audit-remediation wave)
 
 ### Backend (Executed)
 
@@ -951,11 +951,11 @@ Command:
 Result:
 - Domain: 962/962 passing
 - Application: 2396/2396 passing
-- API integration: 1592/1592 passing (2 skipped)
+- API integration: 1592/1594 passing (2 skipped)
 - CLI contract: 82/82 passing
 - Architecture boundaries: 8/8 passing
 - Integration (Testcontainers): 20/20 passing
-- Backend Total: 5060/5060 passing (2 skipped; 5062 total)
+- Backend Total: 5060/5062 passing (2 skipped)
 
 ### Frontend Unit + Build (Executed)
 
