@@ -18,9 +18,8 @@ import { useToastStore, type Toast } from '../../store/toastStore'
  *   └─────────────┴────────────────────────────────┴────────────────────┘
  *
  * Behaviour notes:
- *   - The countdown is computed locally from `toast.duration` (the store
- *     already auto-removes after that duration).
- *   - Hovering pauses the countdown by freezing the per-toast deadline.
+ *   - The countdown is computed locally from `toast.duration`.
+ *   - Hovering/focus pauses both the visual countdown and store removal timer.
  *   - The "undo"/action link emits `action(toast.id)` and runs the toast's
  *     `action.handler` if one was provided through the store options bag.
  */
@@ -53,11 +52,8 @@ function describe(toast: Toast): ToastDescriptor {
 
 // ── Countdown ─────────────────────────────────────────────────────────────
 //
-// We don't want to fight the store's own setTimeout-based removal — the store
-// is the source of truth.  We track `remaining` purely for the visual clock
-// and pause it on hover.  When unhover happens we let the deadline catch up
-// against the original duration so the bar finishes around the same time the
-// store removes the toast.
+// The store owns removal semantics; this local state mirrors the same pause
+// and resume lifecycle so the visible countdown remains aligned.
 //
 // `state[id]` carries: { remaining, paused, deadline }
 type CountdownState = {
@@ -110,9 +106,8 @@ watch(
 watch(
   () => toastStore.toasts.map((t) => t.id),
   (ids, prev) => {
-    for (const id of ids) {
-      const toast = toastStore.toasts.find((t) => t.id === id)
-      if (toast) ensureCountdown(toast)
+    for (const toast of toastStore.toasts) {
+      ensureCountdown(toast)
     }
     if (prev) {
       for (const oldId of prev) {
@@ -132,6 +127,7 @@ onUnmounted(() => {
 function pause(id: string) {
   const c = state[id]
   if (!c || c.paused) return
+  toastStore.pause(id)
   c.paused = true
   c.remaining = Math.max(0, c.deadline - Date.now())
 }
@@ -139,6 +135,7 @@ function pause(id: string) {
 function resume(id: string) {
   const c = state[id]
   if (!c || !c.paused) return
+  toastStore.resume(id)
   c.paused = false
   c.deadline = Date.now() + c.remaining
 }

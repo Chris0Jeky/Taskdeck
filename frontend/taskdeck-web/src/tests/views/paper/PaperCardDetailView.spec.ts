@@ -50,6 +50,19 @@ describe('PaperCardDetailView', () => {
     expect(banner.text()).toContain('Pending proposal')
   })
 
+  it('preserves manual description line breaks and whitespace', () => {
+    const wrapper = mount(PaperCardDetailView, {
+      props: {
+        card: makeCard({
+          description: 'First paragraph\n\n  Indented follow-up',
+        }),
+      },
+    })
+
+    const description = wrapper.find('.paper-card-detail__description')
+    expect(description.element.textContent).toBe('First paragraph\n\n  Indented follow-up')
+  })
+
   it('emits open-proposal with the proposal id when the banner CTA is clicked', async () => {
     const provenance: CardCaptureProvenance = {
       cardId: 'c-1',

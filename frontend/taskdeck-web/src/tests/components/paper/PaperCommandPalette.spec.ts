@@ -1,8 +1,34 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import PaperCommandPalette from '../../../components/paper/PaperCommandPalette.vue'
 import type { CommandItem } from '../../../components/shell/ShellCommandPalette.vue'
+
+const searchMock = vi.hoisted(() => ({
+  query: { value: '' },
+  boards: { value: [] as Array<{ id: string; name: string; description: string | null; isArchived: boolean }> },
+  cards: {
+    value: [] as Array<{
+      id: string
+      boardId: string
+      boardName: string
+      columnId: string
+      columnName: string
+      title: string
+      description: string
+    }>,
+  },
+  loading: { value: false },
+  hasMoreCards: { value: false },
+  loadingMore: { value: false },
+  totalCardCount: { value: 0 },
+  reset: vi.fn(),
+  loadMore: vi.fn(),
+}))
+
+vi.mock('../../../composables/useGlobalSearch', () => ({
+  useGlobalSearch: () => searchMock,
+}))
 
 const items: CommandItem[] = [
   {
@@ -52,6 +78,15 @@ describe('PaperCommandPalette', () => {
 
   beforeEach(() => {
     document.body.innerHTML = ''
+    searchMock.query.value = ''
+    searchMock.boards.value = []
+    searchMock.cards.value = []
+    searchMock.loading.value = false
+    searchMock.hasMoreCards.value = false
+    searchMock.loadingMore.value = false
+    searchMock.totalCardCount.value = 0
+    searchMock.reset.mockClear()
+    searchMock.loadMore.mockClear()
   })
 
   afterEach(() => {
@@ -146,6 +181,76 @@ describe('PaperCommandPalette', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await nextTick()
     expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('does not set aria-activedescendant when there are no results', async () => {
+    wrapper = mount(PaperCommandPalette, {
+      props: { visible: true, items: [] },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    const input = backdrop()?.querySelector('input.paper-palette__input') as HTMLInputElement
+    expect(input.getAttribute('aria-activedescendant')).toBeNull()
+  })
+
+  it('emits close when Escape is pressed from a focused result row', async () => {
+    wrapper = mount(PaperCommandPalette, {
+      props: { visible: true, items },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    const firstRow = rows()[0]
+    firstRow.focus()
+    firstRow.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('shows board and card search results and activates them as navigation items', async () => {
+    searchMock.boards.value = [
+      { id: 'board-1', name: 'Launch Board', description: 'Demo launch', isArchived: false },
+    ]
+    searchMock.cards.value = [
+      {
+        id: 'card-1',
+        boardId: 'board-1',
+        boardName: 'Launch Board',
+        columnId: 'col-1',
+        columnName: 'Doing',
+        title: 'Prep demo script',
+        description: 'Walkthrough',
+      },
+    ]
+
+    wrapper = mount(PaperCommandPalette, {
+      props: { visible: true, items: [] },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    expect(backdrop()?.querySelector('[data-section="boards"]')?.textContent).toContain('Launch Board')
+    expect(backdrop()?.querySelector('[data-section="cards"]')?.textContent).toContain('Prep demo script')
+
+    const boardRow = backdrop()?.querySelector('[data-section="boards"] .paper-palette__row') as HTMLElement
+    boardRow.click()
+    await nextTick()
+    expect(wrapper.emitted('activate')?.[0]?.[0]).toMatchObject({
+      id: 'search:board:board-1',
+      path: '/workspace/boards/board-1',
+      kind: 'navigation',
+    })
+
+    const cardRow = backdrop()?.querySelector('[data-section="cards"] .paper-palette__row') as HTMLElement
+    cardRow.click()
+    await nextTick()
+    expect(wrapper.emitted('activate')?.[1]?.[0]).toMatchObject({
+      id: 'search:card:card-1',
+      path: '/workspace/boards/board-1',
+      kind: 'navigation',
+    })
   })
 
   it('emits close on backdrop click', async () => {

@@ -241,7 +241,6 @@ onUnmounted(() => {
       v-if="paperTheme.isOn"
       :visible="showKeyboardHelp"
       @close="showKeyboardHelp = false"
-      @open="showKeyboardHelp = true"
     />
     <ShellKeyboardHelp
       v-else

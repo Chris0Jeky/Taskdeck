@@ -63,6 +63,7 @@ describe('PaperToastContainer', () => {
     await nextTick()
     const afterHover = progressOf()
     expect(afterHover).toBeCloseTo(beforeHover, 2)
+    expect(store.toasts).toHaveLength(1)
 
     await card.trigger('mouseleave')
     // After resume, the displayed progress should drop again.
@@ -70,6 +71,11 @@ describe('PaperToastContainer', () => {
     await nextTick()
     const afterResume = progressOf()
     expect(afterResume).toBeLessThan(beforeHover)
+    expect(store.toasts).toHaveLength(1)
+
+    vi.advanceTimersByTime(2500)
+    await nextTick()
+    expect(store.toasts).toHaveLength(0)
   })
 
   it('runs the action handler and emits action when the undo link is clicked', async () => {

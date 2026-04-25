@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useGlobalSearch } from '../../composables/useGlobalSearch'
+import type { SearchBoardHit, SearchCardHit } from '../../api/searchApi'
 import PaperIcon from './PaperIcon.vue'
 import PaperKbd from './PaperKbd.vue'
 import type { CommandItem } from '../shell/ShellCommandPalette.vue'
@@ -40,7 +42,24 @@ const query = ref('')
 const selectedIndex = ref(0)
 const listboxId = 'paper-command-palette-listbox'
 
-const filteredItems = computed(() => {
+type PaperPaletteItem =
+  | { type: 'command'; data: CommandItem }
+  | { type: 'board'; data: SearchBoardHit }
+  | { type: 'card'; data: SearchCardHit }
+
+const {
+  query: searchQuery,
+  boards: searchBoards,
+  cards: searchCards,
+  loading: searchLoading,
+  hasMoreCards,
+  loadingMore: searchLoadingMore,
+  totalCardCount,
+  reset: resetSearch,
+  loadMore: searchLoadMore,
+} = useGlobalSearch(200)
+
+const filteredCommandItems = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return props.items
   return props.items.filter((item) => {
@@ -60,10 +79,28 @@ function isAiItem(item: CommandItem): boolean {
   return item.kind === 'action' && /haiku|propose|split/i.test(`${item.label} ${item.keywords ?? ''}`)
 }
 
-const aiItems = computed(() => filteredItems.value.filter(isAiItem))
-const otherItems = computed(() => filteredItems.value.filter((item) => !isAiItem(item)))
+const aiItems = computed<PaperPaletteItem[]>(() =>
+  filteredCommandItems.value.filter(isAiItem).map((item) => ({ type: 'command', data: item })),
+)
+const otherItems = computed<PaperPaletteItem[]>(() =>
+  filteredCommandItems.value.filter((item) => !isAiItem(item)).map((item) => ({ type: 'command', data: item })),
+)
+const boardItems = computed<PaperPaletteItem[]>(() =>
+  searchBoards.value.map((board) => ({ type: 'board', data: board })),
+)
+const cardItems = computed<PaperPaletteItem[]>(() =>
+  searchCards.value.map((card) => ({ type: 'card', data: card })),
+)
 
-const orderedItems = computed<CommandItem[]>(() => [...aiItems.value, ...otherItems.value])
+const orderedItems = computed<PaperPaletteItem[]>(() => [
+  ...aiItems.value,
+  ...otherItems.value,
+  ...boardItems.value,
+  ...cardItems.value,
+])
+const hasQuery = computed(() => query.value.trim().length >= 2)
+const commandCount = computed(() => aiItems.value.length + otherItems.value.length)
+const boardCount = computed(() => boardItems.value.length)
 
 function isActive(index: number): boolean {
   return index === selectedIndex.value
@@ -81,13 +118,37 @@ function selectPrev() {
   selectedIndex.value = (selectedIndex.value - 1 + total) % total
 }
 
-function activate(item: CommandItem) {
-  emit('activate', item)
+function activate(item: PaperPaletteItem) {
+  if (item.type === 'command') {
+    emit('activate', item.data)
+    return
+  }
+
+  if (item.type === 'board') {
+    emit('activate', {
+      id: `search:board:${item.data.id}`,
+      label: item.data.name,
+      icon: 'board',
+      path: `/workspace/boards/${item.data.id}`,
+      keywords: item.data.description ?? '',
+      kind: 'navigation',
+    })
+    return
+  }
+
+  emit('activate', {
+    id: `search:card:${item.data.id}`,
+    label: item.data.title,
+    icon: 'card',
+    path: `/workspace/boards/${item.data.boardId}`,
+    keywords: `${item.data.boardName} ${item.data.columnName} ${item.data.description ?? ''}`.trim(),
+    kind: 'navigation',
+  })
 }
 
 function activateSelected() {
   const item = orderedItems.value[selectedIndex.value]
-  if (item) emit('activate', item)
+  if (item) activate(item)
 }
 
 function setSelected(index: number) {
@@ -98,11 +159,41 @@ function handleClose() {
   emit('close')
 }
 
-const activeItemId = computed(() => `paper-palette-row-${selectedIndex.value}`)
+const activeItemId = computed(() =>
+  orderedItems.value.length > 0 ? `paper-palette-row-${selectedIndex.value}` : undefined,
+)
 
 // Compute an "AI offset" so we can render the section break and reset
 // numbering between AI and non-AI rows visually.
 const aiCount = computed(() => aiItems.value.length)
+const boardOffset = computed(() => commandCount.value)
+const cardOffset = computed(() => commandCount.value + boardCount.value)
+
+function labelFor(item: PaperPaletteItem): string {
+  if (item.type === 'command') return item.data.label
+  if (item.type === 'board') return item.data.name
+  return item.data.title
+}
+
+function subtextFor(item: PaperPaletteItem): string | undefined {
+  if (item.type === 'command') return item.data.path
+  if (item.type === 'board') return item.data.description ?? undefined
+  return `${item.data.boardName} / ${item.data.columnName}`
+}
+
+function keywordsFor(item: PaperPaletteItem): string | undefined {
+  return item.type === 'command' ? item.data.keywords : subtextFor(item)
+}
+
+function tagFor(item: PaperPaletteItem): string {
+  if (item.type === 'board') return 'board'
+  if (item.type === 'card') return 'card'
+  return item.data.kind === 'navigation' ? 'jump' : 'do'
+}
+
+watch(query, (value) => {
+  searchQuery.value = value
+})
 
 watch(
   () => props.visible,
@@ -110,6 +201,7 @@ watch(
     if (!open) {
       query.value = ''
       selectedIndex.value = 0
+      resetSearch()
       return
     }
     await nextTick()
@@ -126,7 +218,7 @@ watch(orderedItems, (items) => {
 
 <template>
   <Teleport to="body">
-    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions, vuejs-accessibility/click-events-have-key-events -- modal backdrop with dialog role; Escape close is wired on the input element; click-to-close is standard modal UX -->
+    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions, vuejs-accessibility/click-events-have-key-events -- modal backdrop with dialog role; Escape close is wired on the dialog container; click-to-close is standard modal UX -->
     <div
       v-if="visible"
       class="paper-palette-backdrop"
@@ -134,6 +226,7 @@ watch(orderedItems, (items) => {
       aria-modal="true"
       aria-label="Command palette"
       @click.self="handleClose"
+      @keydown.escape.prevent="handleClose"
     >
       <div class="paper-palette card-lift" data-paper-palette>
         <header class="paper-palette__head">
@@ -150,7 +243,6 @@ watch(orderedItems, (items) => {
             :aria-expanded="visible"
             :aria-controls="listboxId"
             :aria-activedescendant="activeItemId"
-            @keydown.escape.prevent="handleClose"
             @keydown.down.prevent="selectNext"
             @keydown.up.prevent="selectPrev"
             @keydown.enter.prevent="activateSelected"
@@ -164,7 +256,7 @@ watch(orderedItems, (items) => {
             <button
               v-for="(item, i) in aiItems"
               :id="`paper-palette-row-${i}`"
-              :key="item.id"
+              :key="`${item.type}-${item.data.id}`"
               type="button"
               role="option"
               :aria-selected="isActive(i)"
@@ -176,12 +268,13 @@ watch(orderedItems, (items) => {
               tabindex="-1"
               @mouseenter="setSelected(i)"
               @focusin="setSelected(i)"
+              @keydown.enter.prevent="activate(item)"
               @click="activate(item)"
             >
               <span class="paper-palette__row-glyph paper-palette__row-glyph--ember" aria-hidden="true">◆</span>
               <span class="paper-palette__row-body">
-                <span class="paper-palette__row-label">{{ item.label }}</span>
-                <span v-if="item.keywords" class="paper-palette__row-sub">{{ item.keywords }}</span>
+                <span class="paper-palette__row-label">{{ labelFor(item) }}</span>
+                <span v-if="keywordsFor(item)" class="paper-palette__row-sub">{{ keywordsFor(item) }}</span>
               </span>
               <span class="paper-palette__row-tag paper-palette__row-tag--ember">haiku</span>
             </button>
@@ -192,7 +285,7 @@ watch(orderedItems, (items) => {
             <button
               v-for="(item, i) in otherItems"
               :id="`paper-palette-row-${aiCount + i}`"
-              :key="item.id"
+              :key="`${item.type}-${item.data.id}`"
               type="button"
               role="option"
               :aria-selected="isActive(aiCount + i)"
@@ -203,18 +296,90 @@ watch(orderedItems, (items) => {
               tabindex="-1"
               @mouseenter="setSelected(aiCount + i)"
               @focusin="setSelected(aiCount + i)"
+              @keydown.enter.prevent="activate(item)"
               @click="activate(item)"
             >
               <span class="paper-palette__row-glyph" aria-hidden="true">·</span>
               <span class="paper-palette__row-body">
-                <span class="paper-palette__row-label">{{ item.label }}</span>
-                <span v-if="item.path" class="paper-palette__row-sub">{{ item.path }}</span>
+                <span class="paper-palette__row-label">{{ labelFor(item) }}</span>
+                <span v-if="subtextFor(item)" class="paper-palette__row-sub">{{ subtextFor(item) }}</span>
               </span>
-              <span class="paper-palette__row-tag">{{ item.kind === 'navigation' ? 'jump' : 'do' }}</span>
+              <span class="paper-palette__row-tag">{{ tagFor(item) }}</span>
             </button>
           </section>
 
-          <div v-if="orderedItems.length === 0" class="paper-palette__empty">
+          <section v-if="boardItems.length > 0" class="paper-palette__section" data-section="boards">
+            <div class="paper-palette__section-title tk-eyebrow">Boards</div>
+            <button
+              v-for="(item, i) in boardItems"
+              :id="`paper-palette-row-${boardOffset + i}`"
+              :key="`${item.type}-${item.data.id}`"
+              type="button"
+              role="option"
+              :aria-selected="isActive(boardOffset + i)"
+              :class="[
+                'paper-palette__row',
+                { 'paper-palette__row--active': isActive(boardOffset + i) },
+              ]"
+              tabindex="-1"
+              @mouseenter="setSelected(boardOffset + i)"
+              @focusin="setSelected(boardOffset + i)"
+              @keydown.enter.prevent="activate(item)"
+              @click="activate(item)"
+            >
+              <span class="paper-palette__row-glyph" aria-hidden="true">.</span>
+              <span class="paper-palette__row-body">
+                <span class="paper-palette__row-label">{{ labelFor(item) }}</span>
+                <span v-if="subtextFor(item)" class="paper-palette__row-sub">{{ subtextFor(item) }}</span>
+              </span>
+              <span class="paper-palette__row-tag">{{ tagFor(item) }}</span>
+            </button>
+          </section>
+
+          <section v-if="cardItems.length > 0" class="paper-palette__section" data-section="cards">
+            <div class="paper-palette__section-title tk-eyebrow">Cards</div>
+            <button
+              v-for="(item, i) in cardItems"
+              :id="`paper-palette-row-${cardOffset + i}`"
+              :key="`${item.type}-${item.data.id}`"
+              type="button"
+              role="option"
+              :aria-selected="isActive(cardOffset + i)"
+              :class="[
+                'paper-palette__row',
+                { 'paper-palette__row--active': isActive(cardOffset + i) },
+              ]"
+              tabindex="-1"
+              @mouseenter="setSelected(cardOffset + i)"
+              @focusin="setSelected(cardOffset + i)"
+              @keydown.enter.prevent="activate(item)"
+              @click="activate(item)"
+            >
+              <span class="paper-palette__row-glyph" aria-hidden="true">.</span>
+              <span class="paper-palette__row-body">
+                <span class="paper-palette__row-label">{{ labelFor(item) }}</span>
+                <span v-if="subtextFor(item)" class="paper-palette__row-sub">{{ subtextFor(item) }}</span>
+              </span>
+              <span class="paper-palette__row-tag">{{ tagFor(item) }}</span>
+            </button>
+          </section>
+
+          <div v-if="hasMoreCards && hasQuery && !searchLoading" class="paper-palette__load-more">
+            <button
+              type="button"
+              class="paper-palette__load-more-btn"
+              :disabled="searchLoadingMore"
+              @click="searchLoadMore()"
+            >
+              {{ searchLoadingMore ? 'Loading...' : `Load more cards (${cardItems.length} of ${totalCardCount})` }}
+            </button>
+          </div>
+
+          <div v-if="(searchLoading || searchLoadingMore) && hasQuery" class="paper-palette__loading">
+            {{ searchLoadingMore ? 'Loading more...' : 'Searching...' }}
+          </div>
+
+          <div v-if="orderedItems.length === 0 && !searchLoading" class="paper-palette__empty">
             <span class="tk-meta">No results — try a card serial like C-090</span>
           </div>
         </div>
@@ -374,6 +539,38 @@ watch(orderedItems, (items) => {
 .paper-palette__empty {
   padding: 24px 18px;
   text-align: center;
+}
+
+.paper-palette__load-more,
+.paper-palette__loading {
+  padding: 14px 18px;
+  text-align: center;
+}
+
+.paper-palette__load-more-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ember);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  padding: 6px 10px;
+  text-transform: uppercase;
+}
+
+.paper-palette__load-more-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.paper-palette__loading {
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .paper-palette__footer {

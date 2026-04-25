@@ -295,6 +295,7 @@ function handleOpenProposal() {
   line-height: 1.55;
   color: var(--ink);
   font-family: var(--sans);
+  white-space: pre-wrap;
 }
 
 .paper-card-detail__section + .paper-card-detail__section {

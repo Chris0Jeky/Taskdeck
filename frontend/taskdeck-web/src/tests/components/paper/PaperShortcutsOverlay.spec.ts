@@ -34,10 +34,10 @@ describe('PaperShortcutsOverlay', () => {
     expect(titles).toEqual(['Navigate', 'Capture & Review', 'Boards'])
   })
 
-  it('emits open when ? is pressed while closed (and not in a text field)', async () => {
+  it('does not handle ? because AppShell owns the toggle', async () => {
     wrapper = mount(PaperShortcutsOverlay, { props: { visible: false }, attachTo: document.body })
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))
-    expect(wrapper.emitted('open')).toHaveLength(1)
+    expect(wrapper.emitted()).toEqual({})
   })
 
   it('emits close on Escape when open', async () => {
@@ -46,19 +46,19 @@ describe('PaperShortcutsOverlay', () => {
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
-  it('emits close when ? is pressed again while open (toggle)', async () => {
+  it('does not close when ? is pressed while open', async () => {
     wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))
-    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(wrapper.emitted('close')).toBeUndefined()
   })
 
-  it('does not toggle when ? is pressed inside a text input', async () => {
+  it('does not react to ? inside a text input', async () => {
     wrapper = mount(PaperShortcutsOverlay, { props: { visible: false }, attachTo: document.body })
     const input = document.createElement('input')
     document.body.appendChild(input)
     input.focus()
     input.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))
-    expect(wrapper.emitted('open')).toBeUndefined()
+    expect(wrapper.emitted()).toEqual({})
   })
 
   it('emits close when the close button is clicked', async () => {

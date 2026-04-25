@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import PaperKbd from './PaperKbd.vue'
 
 /**
@@ -7,10 +7,8 @@ import PaperKbd from './PaperKbd.vue'
  * Three-column reference card mirroring `ShortcutsSurface` in
  * `design_handoff_taskdeck_paper/paper/surface-misc.jsx`.
  *
- * The overlay opens on `?` (when focus is not in a text input) or by setting
- * the `visible` prop.  Escape and the close button both emit `close`.  The
- * trigger key is suppressed when the overlay is already open so the parent
- * shell doesn't need to special-case `?` behaviour.
+ * AppShell owns the `?` toggle.  This overlay closes on Escape, backdrop, or
+ * the close button.
  *
  * Three groups: Navigate / Capture & Review / Boards.  Each row is a kbd pill
  * paired with a short label, separated by a hairline soft-rule.
@@ -21,7 +19,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  open: []
 }>()
 
 type ShortcutRow = {
@@ -70,28 +67,12 @@ const groups: ShortcutGroup[] = [
   },
 ]
 
-function isTextEntryTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  )
-}
-
 function handleGlobalKeydown(event: KeyboardEvent) {
   // Escape always closes when open, even from inside the overlay.
   if (props.visible && event.key === 'Escape') {
     event.preventDefault()
     emit('close')
-    return
   }
-  if (event.key !== '?') return
-  if (isTextEntryTarget(event.target)) return
-  // Pressing ? while open should close (toggle behaviour mirrors the shell).
-  event.preventDefault()
-  if (props.visible) emit('close')
-  else emit('open')
 }
 
 onMounted(() => {
@@ -101,16 +82,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
 })
-
-// If the parent shell controls visibility but never wires the `?` toggle, the
-// component still works through props alone.  No additional watch needed; the
-// keydown handler reads `props.visible` directly.
-watch(
-  () => props.visible,
-  () => {
-    /* placeholder for future focus management */
-  },
-)
 
 function onBackdropClick() {
   emit('close')
