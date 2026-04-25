@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import ReviewHeader from '../components/review/ReviewHeader.vue'
 import ReviewSummaryCards from '../components/review/ReviewSummaryCards.vue'
@@ -7,6 +8,7 @@ import ReviewEmptyState from '../components/review/ReviewEmptyState.vue'
 import ReviewProposalCard from '../components/review/ReviewProposalCard.vue'
 import { useReviewProposals } from '../composables/useReviewProposals'
 import { useReviewActions } from '../composables/useReviewActions'
+import { useVirtualList } from '../composables/useVirtualList'
 
 const {
   proposals,
@@ -45,6 +47,75 @@ const {
   handleDismissProposal,
   handleDismissApplied,
 } = useReviewActions(proposals, dismissableProposalIds, loadProposals)
+
+const _vl = useVirtualList({
+  count: computed(() => visibleProposals.value.length),
+  estimateSize: 220,
+  overscan: 3,
+})
+
+// vue-tsc >=3.2.6 does not count ref="name" in templates as a script read;
+// these refs are intentionally bound via template ref attributes.
+// @ts-expect-error TS6133
+const reviewParentRef = _vl.parentRef
+// @ts-expect-error TS6133
+const reviewVirtualItemEls = _vl.virtualItemEls
+const reviewVirtualRows = _vl.virtualRows
+const reviewTotalSize = _vl.totalSize
+const reviewTranslateY = _vl.translateY
+
+/** Tracked keyboard cursor for ArrowUp/ArrowDown navigation. */
+const activeReviewIndex = ref(0)
+
+const route = useRoute()
+
+/**
+ * Scroll the virtualizer to the proposal targeted by the URL hash.
+ * This ensures the targeted proposal is rendered in the virtual window
+ * before the composable's scrollToProposalFromHash tries getElementById.
+ */
+function scrollVirtualizerToHashProposal() {
+  const hash = route.hash
+  if (!hash.startsWith('#proposal-')) return
+  const rawId = hash.slice('#proposal-'.length).trim()
+  if (!rawId) return
+  let proposalId: string
+  try {
+    proposalId = decodeURIComponent(rawId)
+  } catch {
+    return
+  }
+  const index = visibleProposals.value.findIndex((p) => p.id === proposalId)
+  if (index >= 0) {
+    _vl.scrollToIndex(index)
+    activeReviewIndex.value = index
+  }
+}
+
+watch(
+  () => [route.hash, visibleProposals.value.length] as const,
+  async () => {
+    scrollVirtualizerToHashProposal()
+    await nextTick()
+    scrollVirtualizerToHashProposal()
+  },
+  { flush: 'post' },
+)
+
+function handleReviewKeydown(event: KeyboardEvent) {
+  if (visibleProposals.value.length === 0) return
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    const next = Math.min(activeReviewIndex.value + 1, visibleProposals.value.length - 1)
+    activeReviewIndex.value = next
+    _vl.scrollToIndex(next)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    const prev = Math.max(activeReviewIndex.value - 1, 0)
+    activeReviewIndex.value = prev
+    _vl.scrollToIndex(prev)
+  }
+}
 
 onMounted(() => {
   void loadBoardOptions()
@@ -101,24 +172,55 @@ onUnmounted(() => {
       @navigate="openRoute"
     />
 
-    <section v-else class="td-review__list" aria-label="Proposals awaiting review">
-      <ReviewProposalCard
-        v-for="proposal in visibleProposals"
-        :key="proposal.id"
-        :proposal="proposal"
-        :is-expired="isProposalExpired(proposal)"
-        :is-busy="proposalActionBusyId === proposal.id"
-        :selected-diff-proposal-id="selectedDiffProposalId"
-        :selected-diff="selectedDiff"
-        :capture-href="captureHrefForProposal(proposal)"
-        :proposal-href="proposalHref(proposal)"
-        @approve="handleApproveProposal"
-        @reject="handleRejectProposal"
-        @execute="handleExecuteProposal"
-        @toggle-diff="handleToggleDiff"
-        @dismiss="handleDismissProposal"
-        @open-board="openBoard"
-      />
+    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- scrollable virtual list with keyboard handler -->
+    <section
+      v-else
+      ref="reviewParentRef"
+      class="td-review__list td-review__list--virtual"
+      aria-label="Proposals awaiting review"
+      tabindex="0"
+      @keydown="handleReviewKeydown"
+    >
+      <div
+        role="presentation"
+        :style="{ height: `${reviewTotalSize}px`, width: '100%', position: 'relative' }"
+      >
+        <div
+          role="presentation"
+          :style="{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            transform: `translateY(${reviewTranslateY}px)`,
+          }"
+        >
+          <div
+            v-for="virtualRow in reviewVirtualRows"
+            :key="visibleProposals[virtualRow.index]?.id ?? String(virtualRow.key)"
+            :data-index="virtualRow.index"
+            ref="reviewVirtualItemEls"
+            role="presentation"
+          >
+            <ReviewProposalCard
+              v-if="visibleProposals[virtualRow.index]"
+              :proposal="visibleProposals[virtualRow.index]!"
+              :is-expired="isProposalExpired(visibleProposals[virtualRow.index]!)"
+              :is-busy="proposalActionBusyId === visibleProposals[virtualRow.index]!.id"
+              :selected-diff-proposal-id="selectedDiffProposalId"
+              :selected-diff="selectedDiff"
+              :capture-href="captureHrefForProposal(visibleProposals[virtualRow.index]!)"
+              :proposal-href="proposalHref(visibleProposals[virtualRow.index]!)"
+              @approve="handleApproveProposal"
+              @reject="handleRejectProposal"
+              @execute="handleExecuteProposal"
+              @toggle-diff="handleToggleDiff"
+              @dismiss="handleDismissProposal"
+              @open-board="openBoard"
+            />
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -138,6 +240,17 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--td-space-3);
+}
+
+.td-review__list--virtual {
+  max-height: 80vh;
+  overflow-y: auto;
+  contain: layout paint;
+  outline: none;
+}
+
+.td-review__list--virtual:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(255, 77, 77, 0.35);
 }
 
 @media (max-width: 640px) {

@@ -11,6 +11,7 @@ import {
   type NotificationGroup,
   type TimeGroup,
 } from '../composables/useNotificationGrouping'
+import { useVirtualList } from '../composables/useVirtualList'
 import type { NotificationItem } from '../types/notifications'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
@@ -27,21 +28,96 @@ const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boar
 
 const grouped = computed<NotificationGroup[]>(() => groupNotifications(items.value))
 
-/** Distinct time headers in display order */
-const timeHeaders = computed<TimeGroup[]>(() => {
-  const seen = new Set<TimeGroup>()
-  const result: TimeGroup[] = []
-  for (const g of grouped.value) {
-    if (!seen.has(g.timeHeader)) {
-      seen.add(g.timeHeader)
-      result.push(g.timeHeader)
+/**
+ * Flatten the grouped notification structure into a single list of display rows.
+ * Each row is either a time header, a collapsed group summary, a collapse button,
+ * or an individual notification item.
+ */
+type FlatRow =
+  | { kind: 'time-header'; header: TimeGroup; key: string }
+  | { kind: 'collapsed-summary'; group: NotificationGroup; key: string }
+  | { kind: 'collapse-button'; group: NotificationGroup; key: string }
+  | { kind: 'notification'; item: NotificationItem; group: NotificationGroup; key: string }
+
+const flatRows = computed<FlatRow[]>(() => {
+  const rows: FlatRow[] = []
+  let lastHeader: TimeGroup | null = null
+
+  for (const group of grouped.value) {
+    // Insert a time header row when the time section changes
+    if (group.timeHeader !== lastHeader) {
+      rows.push({ kind: 'time-header', header: group.timeHeader, key: `header-${group.timeHeader}` })
+      lastHeader = group.timeHeader
+    }
+
+    if (group.isCollapsed && !expandedGroups.value.has(group.key)) {
+      // Collapsed group: show a single summary row
+      rows.push({ kind: 'collapsed-summary', group, key: `collapsed-${group.key}` })
+    } else {
+      // Expanded group or single-item group
+      if (group.isCollapsed) {
+        // Add a collapse button row before the expanded items
+        rows.push({ kind: 'collapse-button', group, key: `collapse-btn-${group.key}` })
+      }
+      for (const item of group.items) {
+        rows.push({ kind: 'notification', item, group, key: `item-${item.id}` })
+      }
     }
   }
-  return result
+
+  return rows
 })
 
-function groupsForHeader(header: TimeGroup): NotificationGroup[] {
-  return grouped.value.filter((g) => g.timeHeader === header)
+const _vl = useVirtualList({
+  count: computed(() => flatRows.value.length),
+  estimateSize: 100,
+  overscan: 5,
+})
+
+// vue-tsc >=3.2.6 does not count ref="name" in templates as a script read;
+// these refs are intentionally bound via template ref attributes.
+// @ts-expect-error TS6133
+const notifParentRef = _vl.parentRef
+// @ts-expect-error TS6133
+const notifVirtualItemEls = _vl.virtualItemEls
+const notifVirtualRows = _vl.virtualRows
+const notifTotalSize = _vl.totalSize
+const notifTranslateY = _vl.translateY
+
+const activeNotifIndex = ref(0)
+
+function handleNotifKeydown(event: KeyboardEvent) {
+  if (flatRows.value.length === 0) return
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    const next = Math.min(activeNotifIndex.value + 1, flatRows.value.length - 1)
+    activeNotifIndex.value = next
+    _vl.scrollToIndex(next)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    const prev = Math.max(activeNotifIndex.value - 1, 0)
+    activeNotifIndex.value = prev
+    _vl.scrollToIndex(prev)
+  }
+}
+
+/** Accessor helpers to simplify template type narrowing for flat rows. */
+function rowHeader(index: number): TimeGroup {
+  const row = flatRows.value[index]
+  if (row && row.kind === 'time-header') return row.header
+  return '' as TimeGroup
+}
+
+function rowGroup(index: number): NotificationGroup {
+  const row = flatRows.value[index]
+  if (row && (row.kind === 'collapsed-summary' || row.kind === 'collapse-button')) return row.group
+  return { key: '', timeHeader: '' as TimeGroup, isCollapsed: false, summaryLabel: '', items: [] } as unknown as NotificationGroup
+}
+
+function rowItem(index: number): NotificationItem {
+  const row = flatRows.value[index]
+  if (row && row.kind === 'notification') return row.item
+  return {} as NotificationItem
 }
 
 function formatCadence(value: number | string): string {
@@ -173,100 +249,130 @@ watch([unreadOnly, activeBoardId], () => {
     <div v-if="notifications.loading" class="td-placeholder">Loading notifications...</div>
     <div v-else-if="items.length === 0" class="td-placeholder">No notifications found.</div>
 
-    <template v-else>
-      <section v-for="header in timeHeaders" :key="header" class="mb-6">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-[color:var(--td-text-tertiary)] mb-3">
-          {{ header }}
-        </h2>
+    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- virtual scrollable list with keyboard handler -->
+    <div
+      v-else
+      ref="notifParentRef"
+      class="td-notif-virtual"
+      tabindex="0"
+      @keydown="handleNotifKeydown"
+    >
+      <div
+        role="presentation"
+        :style="{ height: `${notifTotalSize}px`, width: '100%', position: 'relative' }"
+      >
+        <div
+          role="presentation"
+          :style="{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            transform: `translateY(${notifTranslateY}px)`,
+          }"
+        >
+          <div
+            v-for="virtualRow in notifVirtualRows"
+            :key="String(virtualRow.key)"
+            :data-index="virtualRow.index"
+            ref="notifVirtualItemEls"
+            role="presentation"
+          >
+            <template v-if="flatRows[virtualRow.index]">
+              <!-- Time header row -->
+              <h2
+                v-if="flatRows[virtualRow.index]!.kind === 'time-header'"
+                class="text-sm font-semibold uppercase tracking-wide text-[color:var(--td-text-tertiary)] mb-3 mt-4"
+              >
+                {{ rowHeader(virtualRow.index) }}
+              </h2>
 
-        <ul class="flex flex-col gap-3 list-none m-0 p-0">
-          <template v-for="group in groupsForHeader(header)" :key="group.key">
-            <!-- Collapsed group summary -->
-            <li v-if="group.isCollapsed && !expandedGroups.has(group.key)">
+              <!-- Collapsed group summary -->
               <button
-                class="w-full text-left rounded-lg border border-[color:var(--td-border-default)] bg-[color:var(--td-surface-primary)] p-4 hover:bg-[color:var(--td-surface-secondary)] transition-colors"
-                :class="typeBorderClass(group.items[0].type)"
-                @click="toggleGroupExpand(group.key)"
+                v-else-if="flatRows[virtualRow.index]!.kind === 'collapsed-summary'"
+                class="w-full text-left rounded-lg border border-[color:var(--td-border-default)] bg-[color:var(--td-surface-primary)] p-4 hover:bg-[color:var(--td-surface-secondary)] transition-colors mb-3"
+                :class="typeBorderClass(rowGroup(virtualRow.index).items[0].type)"
+                @click="toggleGroupExpand(rowGroup(virtualRow.index).key)"
               >
                 <div class="flex items-center gap-3">
                   <span
                     class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                    :class="typeBadgeClass(group.items[0].type)"
+                    :class="typeBadgeClass(rowGroup(virtualRow.index).items[0].type)"
                   >
-                    {{ typeLabel(group.items[0].type) }}
+                    {{ typeLabel(rowGroup(virtualRow.index).items[0].type) }}
                   </span>
                   <span class="font-medium text-[color:var(--td-text-primary)]">
-                    {{ group.summaryLabel }}
+                    {{ rowGroup(virtualRow.index).summaryLabel }}
                   </span>
                   <span class="text-xs text-[color:var(--td-text-tertiary)] ml-auto">
                     Click to expand
                   </span>
                 </div>
               </button>
-            </li>
 
-            <!-- Expanded group or single item -->
-            <template v-else>
               <!-- Collapse button for expanded groups -->
-              <li v-if="group.isCollapsed" class="flex items-center gap-2 mb-1">
+              <div
+                v-else-if="flatRows[virtualRow.index]!.kind === 'collapse-button'"
+                class="flex items-center gap-2 mb-1"
+              >
                 <button
                   class="text-xs text-[color:var(--td-color-primary)] hover:underline"
-                  @click="toggleGroupExpand(group.key)"
+                  @click="toggleGroupExpand(rowGroup(virtualRow.index).key)"
                 >
-                  Collapse {{ group.items.length }} {{ typeLabel(group.items[0].type).toLowerCase() }} notifications
+                  Collapse {{ rowGroup(virtualRow.index).items.length }} {{ typeLabel(rowGroup(virtualRow.index).items[0].type).toLowerCase() }} notifications
                 </button>
-              </li>
+              </div>
 
-              <li
-                v-for="item in group.items"
-                :key="item.id"
-                class="td-notification-row flex justify-between gap-4 items-start rounded-lg border border-[color:var(--td-border-default)] bg-[color:var(--td-surface-primary)] p-4"
+              <!-- Individual notification item -->
+              <div
+                v-else-if="flatRows[virtualRow.index]!.kind === 'notification'"
+                class="td-notification-row flex justify-between gap-4 items-start rounded-lg border border-[color:var(--td-border-default)] bg-[color:var(--td-surface-primary)] p-4 mb-3"
                 :class="[
-                  typeBorderClass(item.type),
-                  { 'border-[color:var(--td-color-primary)]': !item.isRead },
+                  typeBorderClass(rowItem(virtualRow.index).type),
+                  { 'border-[color:var(--td-color-primary)]': !rowItem(virtualRow.index).isRead },
                 ]"
               >
                 <div class="flex flex-col gap-2">
                   <div class="flex items-center gap-2">
                     <span
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                      :class="typeBadgeClass(item.type)"
+                      :class="typeBadgeClass(rowItem(virtualRow.index).type)"
                     >
-                      {{ typeLabel(item.type) }}
+                      {{ typeLabel(rowItem(virtualRow.index).type) }}
                     </span>
                     <span class="font-semibold text-[color:var(--td-text-primary)]">
-                      {{ item.title }}
+                      {{ rowItem(virtualRow.index).title }}
                     </span>
                   </div>
-                  <div class="text-[color:var(--td-text-secondary)]">{{ item.message }}</div>
+                  <div class="text-[color:var(--td-text-secondary)]">{{ rowItem(virtualRow.index).message }}</div>
                   <div class="flex flex-wrap gap-3 text-sm text-[color:var(--td-text-tertiary)]">
-                    <span v-if="item.boardId">Board-linked</span>
-                    <span>{{ formatCadence(item.cadence) }}</span>
-                    <span>{{ new Date(item.createdAt).toLocaleString() }}</span>
+                    <span v-if="rowItem(virtualRow.index).boardId">Board-linked</span>
+                    <span>{{ formatCadence(rowItem(virtualRow.index).cadence) }}</span>
+                    <span>{{ new Date(rowItem(virtualRow.index).createdAt).toLocaleString() }}</span>
                   </div>
                 </div>
                 <div class="flex flex-wrap justify-end gap-2">
                   <button
-                    v-if="destinationLabel(item)"
+                    v-if="destinationLabel(rowItem(virtualRow.index))"
                     class="td-btn td-btn--secondary"
-                    @click="openNotificationDestination(item)"
+                    @click="openNotificationDestination(rowItem(virtualRow.index))"
                   >
-                    {{ destinationLabel(item) }}
+                    {{ destinationLabel(rowItem(virtualRow.index)) }}
                   </button>
                   <button
-                    v-if="!item.isRead"
+                    v-if="!rowItem(virtualRow.index).isRead"
                     class="td-btn td-btn--primary"
-                    @click="markAsRead(item.id)"
+                    @click="markAsRead(rowItem(virtualRow.index).id)"
                   >
                     Mark read
                   </button>
                 </div>
-              </li>
+              </div>
             </template>
-          </template>
-        </ul>
-      </section>
-    </template>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -303,5 +409,16 @@ watch([unreadOnly, activeBoardId], () => {
   background: var(--td-surface-tertiary);
   color: var(--td-text-primary);
   border: 1px solid var(--td-border-default);
+}
+
+.td-notif-virtual {
+  max-height: 70vh;
+  overflow-y: auto;
+  contain: layout paint;
+  outline: none;
+}
+
+.td-notif-virtual:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(255, 77, 77, 0.35);
 }
 </style>
