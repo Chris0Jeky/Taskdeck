@@ -48,6 +48,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IHistoryService>(sp => sp.GetRequiredService<HistoryService>());
         services.AddScoped<IAutomationProposalService, AutomationProposalService>();
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
+        services.AddScoped<ISimilarDecisionService, SimilarDecisionService>();
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
         services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
