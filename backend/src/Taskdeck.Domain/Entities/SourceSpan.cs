@@ -44,6 +44,9 @@ public class SourceSpan : Entity
             throw new DomainException(ErrorCodes.ValidationError, "SnippetText cannot be empty");
         if (snippetText.Length > 2000)
             throw new DomainException(ErrorCodes.ValidationError, "SnippetText cannot exceed 2000 characters");
+        if (snippetText.Length != (endOffset - startOffset))
+            throw new DomainException(ErrorCodes.ValidationError,
+                $"SnippetText length ({snippetText.Length}) must match the span range ({endOffset - startOffset})");
 
         SourceBlockId = sourceBlockId;
         StartOffset = startOffset;
