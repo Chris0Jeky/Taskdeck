@@ -62,6 +62,31 @@ public sealed class FieldVerificationResult
         if (similarityScore.HasValue && (similarityScore.Value < 0.0 || similarityScore.Value > 1.0))
             throw new DomainException(ErrorCodes.ValidationError, "SimilarityScore must be between 0.0 and 1.0");
 
+        // Enforce verification-status/confidence consistency.
+        // The contract (see AdjustedConfidence doc) requires:
+        //   Verified   -> AdjustedConfidence == OriginalConfidence
+        //   Downgraded -> AdjustedConfidence < OriginalConfidence
+        //   Failed     -> AdjustedConfidence == 0.0
+        //   Unverified -> no constraint (not yet processed)
+        switch (status)
+        {
+            case VerificationStatus.Verified:
+                if (adjustedConfidence != originalConfidence)
+                    throw new DomainException(ErrorCodes.ValidationError,
+                        "AdjustedConfidence must equal OriginalConfidence for Verified status");
+                break;
+            case VerificationStatus.Downgraded:
+                if (adjustedConfidence >= originalConfidence)
+                    throw new DomainException(ErrorCodes.ValidationError,
+                        "AdjustedConfidence must be less than OriginalConfidence for Downgraded status");
+                break;
+            case VerificationStatus.Failed:
+                if (adjustedConfidence != 0.0)
+                    throw new DomainException(ErrorCodes.ValidationError,
+                        "AdjustedConfidence must be 0.0 for Failed status");
+                break;
+        }
+
         FieldName = fieldName;
         Status = status;
         OriginalConfidence = originalConfidence;

@@ -131,4 +131,79 @@ public class FieldVerificationResultTests
         result.Status.Should().Be(VerificationStatus.Failed);
         result.AdjustedConfidence.Should().Be(0.0);
     }
+
+    // --- Status/confidence consistency enforcement ---
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenVerifiedButAdjustedDiffersFromOriginal()
+    {
+        var act = () => new FieldVerificationResult(
+            "Title", VerificationStatus.Verified,
+            originalConfidence: 0.9,
+            adjustedConfidence: 0.7);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("AdjustedConfidence must equal OriginalConfidence for Verified status");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenDowngradedButAdjustedNotLess()
+    {
+        var act = () => new FieldVerificationResult(
+            "Title", VerificationStatus.Downgraded,
+            originalConfidence: 0.8,
+            adjustedConfidence: 0.8);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("AdjustedConfidence must be less than OriginalConfidence for Downgraded status");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenDowngradedButAdjustedHigherThanOriginal()
+    {
+        var act = () => new FieldVerificationResult(
+            "Title", VerificationStatus.Downgraded,
+            originalConfidence: 0.5,
+            adjustedConfidence: 0.8);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("AdjustedConfidence must be less than OriginalConfidence for Downgraded status");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenFailedButAdjustedNonZero()
+    {
+        var act = () => new FieldVerificationResult(
+            "Title", VerificationStatus.Failed,
+            originalConfidence: 0.9,
+            adjustedConfidence: 0.5);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("AdjustedConfidence must be 0.0 for Failed status");
+    }
+
+    [Fact]
+    public void Constructor_ShouldAcceptUnverified_WithAnyConfidenceValues()
+    {
+        // Unverified has no consistency constraint
+        var result = new FieldVerificationResult(
+            "Title", VerificationStatus.Unverified,
+            originalConfidence: 0.9,
+            adjustedConfidence: 0.9);
+
+        result.Status.Should().Be(VerificationStatus.Unverified);
+    }
+
+    [Fact]
+    public void Constructor_ShouldAcceptDowngraded_WithLowerAdjusted()
+    {
+        var result = new FieldVerificationResult(
+            "Title", VerificationStatus.Downgraded,
+            originalConfidence: 0.9,
+            adjustedConfidence: 0.5,
+            similarityScore: 0.6,
+            reason: "Partial match");
+
+        result.AdjustedConfidence.Should().Be(0.5);
+    }
 }
