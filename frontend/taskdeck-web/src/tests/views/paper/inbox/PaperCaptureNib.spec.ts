@@ -74,6 +74,17 @@ describe('PaperCaptureNib', () => {
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
 
+  it('does not submit while IME composition is active', async () => {
+    const wrapper = mount(PaperCaptureNib)
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('input in progress')
+    const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, isComposing: true })
+    textarea.element.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(wrapper.emitted('submit')).toBeUndefined()
+  })
+
   it('renders the static ember placeholder while bleeding (TODO: ink bleed)', async () => {
     const wrapper = mount(PaperCaptureNib, { props: { bleeding: true } })
     expect(wrapper.find('[data-testid="paper-nib-bleed"]').exists()).toBe(true)

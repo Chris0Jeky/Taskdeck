@@ -33,6 +33,9 @@ const text = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 
 function onKeydown(event: KeyboardEvent) {
+  if (event.isComposing) {
+    return
+  }
   // Shift+Enter — let the textarea insert a newline (default behaviour).
   if (event.key === 'Enter' && event.shiftKey) {
     return

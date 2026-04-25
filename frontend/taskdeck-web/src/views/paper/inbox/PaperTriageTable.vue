@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
+import { canMutateSelection } from '../../../components/inbox/inboxUtils'
 import type { CaptureItemSummary } from '../../../types/capture'
 
 /**
@@ -32,14 +33,22 @@ function isBusy(itemId: string): boolean {
   return props.actionBusyItemId === itemId
 }
 
-function onAccept(itemId: string) {
-  if (isBusy(itemId)) return
-  emit('accept', itemId)
+function canMutate(item: CaptureItemSummary): boolean {
+  return canMutateSelection(item.status)
 }
 
-function onReject(itemId: string) {
-  if (isBusy(itemId)) return
-  emit('reject', itemId)
+function isActionDisabled(item: CaptureItemSummary): boolean {
+  return isBusy(item.id) || !canMutate(item)
+}
+
+function onAccept(item: CaptureItemSummary) {
+  if (isActionDisabled(item)) return
+  emit('accept', item.id)
+}
+
+function onReject(item: CaptureItemSummary) {
+  if (isActionDisabled(item)) return
+  emit('reject', item.id)
 }
 
 function statusTone(status: string | number): 'ember' | 'applied' | 'overdue' | 'mute' {
@@ -112,16 +121,16 @@ function formatTime(iso: string): string {
           <PaperHLBtn
             label="Accept"
             variant="ember"
-            :disabled="isBusy(item.id)"
+            :disabled="isActionDisabled(item)"
             data-action="accept"
-            @click="onAccept(item.id)"
+            @click="onAccept(item)"
           />
           <PaperHLBtn
             label="Reject"
             variant="ghost"
-            :disabled="isBusy(item.id)"
+            :disabled="isActionDisabled(item)"
             data-action="reject"
-            @click="onReject(item.id)"
+            @click="onReject(item)"
           />
         </div>
       </li>

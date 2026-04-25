@@ -76,11 +76,28 @@ describe('PaperTriageTable', () => {
 
   it('emits reject with the item id when the Reject button is clicked', async () => {
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
-    const rejectBtn = wrapper.findAll('button[data-action="reject"]')[1]
+    const rejectBtn = wrapper.findAll('button[data-action="reject"]')[0]
     await rejectBtn.trigger('click')
     const events = wrapper.emitted('reject')
     expect(events).toBeDefined()
-    expect(events?.[0]).toEqual(['capture-2'])
+    expect(events?.[0]).toEqual(['capture-1'])
+  })
+
+  it('disables row actions for immutable capture statuses', async () => {
+    const items = makeItems()
+    items[1] = { ...items[1], status: 'ProposalCreated' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+
+    const acceptBtn = wrapper.findAll('button[data-action="accept"]')[1]
+    const rejectBtn = wrapper.findAll('button[data-action="reject"]')[1]
+
+    expect(acceptBtn.attributes('disabled')).toBeDefined()
+    expect(rejectBtn.attributes('disabled')).toBeDefined()
+
+    await acceptBtn.trigger('click')
+    await rejectBtn.trigger('click')
+    expect(wrapper.emitted('accept')).toBeUndefined()
+    expect(wrapper.emitted('reject')).toBeUndefined()
   })
 
   it('idempotent: double-click on Accept fires once when busy guard is in place', async () => {
