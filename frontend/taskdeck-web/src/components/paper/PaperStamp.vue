@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 /**
  * PaperStamp — round embossed stamp used on cards and proposals.
@@ -91,6 +91,13 @@ watch(
     }, 240)
   },
 )
+
+onBeforeUnmount(() => {
+  if (fadeTimer) {
+    clearTimeout(fadeTimer)
+    fadeTimer = null
+  }
+})
 </script>
 
 <template>

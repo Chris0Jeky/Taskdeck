@@ -43,7 +43,7 @@ let mql: MediaQueryList | null = null
 let mqlHandler: ((e: MediaQueryListEvent) => void) | null = null
 
 let rafId: number | null = null
-let lastTickAt = 0
+let tickTimer: ReturnType<typeof setTimeout> | null = null
 
 function computeProgress(now: number) {
   const elapsed = now - appliedTimestamp.value
@@ -52,25 +52,27 @@ function computeProgress(now: number) {
   return elapsed / props.windowMs
 }
 
-function tick(now: number) {
-  if (lastTickAt === 0 || now - lastTickAt >= 1000) {
-    progress.value = computeProgress(Date.now())
-    lastTickAt = now
-  }
+function tick() {
+  rafId = null
+  progress.value = computeProgress(Date.now())
   if (progress.value < 1) {
-    rafId = requestAnimationFrame(tick)
-  } else {
-    rafId = null
+    tickTimer = setTimeout(() => {
+      tickTimer = null
+      rafId = requestAnimationFrame(tick)
+    }, 1000)
   }
 }
 
 function startLoop() {
-  if (rafId != null) return
-  lastTickAt = 0
+  if (rafId != null || tickTimer != null) return
   rafId = requestAnimationFrame(tick)
 }
 
 function stopLoop() {
+  if (tickTimer != null) {
+    clearTimeout(tickTimer)
+    tickTimer = null
+  }
   if (rafId != null) {
     cancelAnimationFrame(rafId)
     rafId = null
@@ -96,7 +98,6 @@ function syncReducedMotion(matches: boolean) {
 watch(
   () => [appliedTimestamp.value, props.windowMs] as const,
   () => {
-    lastTickAt = 0
     progress.value = computeProgress(Date.now())
     if (reducedMotion.value) return
     if (progress.value < 1) {
