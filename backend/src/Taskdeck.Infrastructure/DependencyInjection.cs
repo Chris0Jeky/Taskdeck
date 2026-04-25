@@ -70,6 +70,7 @@ public static class DependencyInjection
         services.AddScoped<IIntegrationConnectorRepository, IntegrationConnectorRepository>();
         services.AddScoped<IConnectorEventRepository, ConnectorEventRepository>();
         services.AddScoped<IConnectorCredentialRepository, ConnectorCredentialRepository>();
+        services.AddScoped<IProposalOutcomeRepository, ProposalOutcomeRepository>();
         services.AddScoped<Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
         services.AddScoped<IFtsKnowledgeSearchService>(sp =>
             sp.GetRequiredService<Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>());
@@ -93,6 +94,10 @@ public static class DependencyInjection
             sp.GetRequiredService<Taskdeck.Infrastructure.Services.FallbackSemanticSearchService>());
         services.AddScoped<IKnowledgeSearchService>(sp =>
             sp.GetRequiredService<Taskdeck.Infrastructure.Services.FallbackSemanticSearchService>());
+
+        // Provenance services
+        services.AddSingleton<IFuzzyTextMatcher, Taskdeck.Application.Services.FuzzyTextMatcher>();
+        services.AddSingleton<IDeterministicPreExtractor, Taskdeck.Infrastructure.Services.DeterministicPreExtractor>();
 
         // Credential encryption — requires a configured AES-256 key.
         // Fail-fast: the service refuses to start without a valid encryption key.
