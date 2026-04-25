@@ -56,7 +56,7 @@ public class ProvenanceField : Entity
             throw new DomainException(ErrorCodes.ValidationError, "FieldName cannot exceed 100 characters");
         if (!Enum.IsDefined(kind))
             throw new DomainException(ErrorCodes.ValidationError, "ProvenanceKind value is invalid");
-        if (confidence < 0.0 || confidence > 1.0)
+        if (!double.IsFinite(confidence) || confidence < 0.0 || confidence > 1.0)
             throw new DomainException(ErrorCodes.ValidationError, "Confidence must be between 0.0 and 1.0");
         if (proposalProvenanceId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "ProposalProvenanceId cannot be empty");
@@ -74,6 +74,8 @@ public class ProvenanceField : Entity
 
     public void AddEvidenceLink(EvidenceLink link)
     {
+        if (link is null)
+            throw new DomainException(ErrorCodes.ValidationError, "EvidenceLink cannot be null");
         if (link.ProvenanceFieldId != Id)
             throw new DomainException(ErrorCodes.ValidationError, "EvidenceLink does not belong to this ProvenanceField");
 
@@ -87,7 +89,7 @@ public class ProvenanceField : Entity
     /// </summary>
     public void DowngradeConfidence(double newConfidence)
     {
-        if (newConfidence < 0.0 || newConfidence > 1.0)
+        if (!double.IsFinite(newConfidence) || newConfidence < 0.0 || newConfidence > 1.0)
             throw new DomainException(ErrorCodes.ValidationError, "Confidence must be between 0.0 and 1.0");
         if (newConfidence >= Confidence)
             throw new DomainException(ErrorCodes.InvalidOperation, "New confidence must be lower than current confidence for a downgrade");

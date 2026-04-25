@@ -99,7 +99,7 @@ public class ProposalOutcomeTests
             -1.0, 1, 0, "Queue", "Low");
 
         act.Should().Throw<DomainException>()
-            .WithMessage("DecisionLatencySeconds cannot be negative or NaN");
+            .WithMessage("DecisionLatencySeconds cannot be negative or non-finite");
     }
 
     [Fact]
@@ -205,6 +205,17 @@ public class ProposalOutcomeTests
     }
 
     [Fact]
+    public void Constructor_ShouldThrow_WhenEditedThenApprovedHasNoEdits()
+    {
+        var act = () => new ProposalOutcome(
+            _proposalId, _userId, OutcomeDecision.EditedThenApproved,
+            1.0, 3, 0, "Queue", "Low");
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("EditedFieldCount must be greater than 0 when decision is EditedThenApproved");
+    }
+
+    [Fact]
     public void Constructor_ShouldThrow_WhenRejectedWithEditedFieldCount()
     {
         var act = () => new ProposalOutcome(
@@ -267,15 +278,32 @@ public class ProposalOutcomeTests
             double.NaN, 1, 0, "Queue", "Low");
 
         act.Should().Throw<DomainException>()
-            .WithMessage("DecisionLatencySeconds cannot be negative or NaN");
+            .WithMessage("DecisionLatencySeconds cannot be negative or non-finite");
     }
 
-    [Fact]
-    public void Constructor_ShouldThrow_WhenAverageFieldConfidenceIsNaN()
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Constructor_ShouldThrow_WhenLatencyIsNonFinite(double latency)
     {
         var act = () => new ProposalOutcome(
             _proposalId, _userId, OutcomeDecision.Approved,
-            1.0, 1, 0, "Queue", "Low", averageFieldConfidence: double.NaN);
+            latency, 1, 0, "Queue", "Low");
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("DecisionLatencySeconds cannot be negative or non-finite");
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Constructor_ShouldThrow_WhenAverageFieldConfidenceIsNonFinite(double confidence)
+    {
+        var act = () => new ProposalOutcome(
+            _proposalId, _userId, OutcomeDecision.Approved,
+            1.0, 1, 0, "Queue", "Low", averageFieldConfidence: confidence);
 
         act.Should().Throw<DomainException>()
             .WithMessage("AverageFieldConfidence must be between 0.0 and 1.0");

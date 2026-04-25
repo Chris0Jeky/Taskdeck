@@ -80,6 +80,18 @@ public class ProvenanceFieldTests
     }
 
     [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Constructor_ShouldThrow_WhenConfidenceIsNonFinite(double confidence)
+    {
+        var act = () => new ProvenanceField("Title", ProvenanceKind.Inferred, confidence, _provenanceId);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Confidence must be between 0.0 and 1.0");
+    }
+
+    [Theory]
     [InlineData(0.0)]
     [InlineData(0.5)]
     [InlineData(1.0)]
@@ -144,6 +156,17 @@ public class ProvenanceFieldTests
     }
 
     [Fact]
+    public void AddEvidenceLink_ShouldThrow_WhenLinkIsNull()
+    {
+        var field = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.9, _provenanceId);
+
+        var act = () => field.AddEvidenceLink(null!);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("EvidenceLink cannot be null");
+    }
+
+    [Fact]
     public void DowngradeConfidence_ShouldReduceConfidence()
     {
         var field = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.9, _provenanceId);
@@ -171,6 +194,20 @@ public class ProvenanceFieldTests
         var field = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.9, _provenanceId);
 
         var act = () => field.DowngradeConfidence(-0.1);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Confidence must be between 0.0 and 1.0");
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void DowngradeConfidence_ShouldThrow_WhenNewConfidenceIsNonFinite(double confidence)
+    {
+        var field = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.9, _provenanceId);
+
+        var act = () => field.DowngradeConfidence(confidence);
 
         act.Should().Throw<DomainException>()
             .WithMessage("Confidence must be between 0.0 and 1.0");

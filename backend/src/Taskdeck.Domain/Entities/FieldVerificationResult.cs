@@ -55,11 +55,11 @@ public sealed class FieldVerificationResult
             throw new DomainException(ErrorCodes.ValidationError, "FieldName cannot be empty");
         if (!Enum.IsDefined(status))
             throw new DomainException(ErrorCodes.ValidationError, "VerificationStatus value is invalid");
-        if (originalConfidence < 0.0 || originalConfidence > 1.0)
+        if (!double.IsFinite(originalConfidence) || originalConfidence < 0.0 || originalConfidence > 1.0)
             throw new DomainException(ErrorCodes.ValidationError, "OriginalConfidence must be between 0.0 and 1.0");
-        if (adjustedConfidence < 0.0 || adjustedConfidence > 1.0)
+        if (!double.IsFinite(adjustedConfidence) || adjustedConfidence < 0.0 || adjustedConfidence > 1.0)
             throw new DomainException(ErrorCodes.ValidationError, "AdjustedConfidence must be between 0.0 and 1.0");
-        if (similarityScore.HasValue && (similarityScore.Value < 0.0 || similarityScore.Value > 1.0))
+        if (similarityScore.HasValue && (!double.IsFinite(similarityScore.Value) || similarityScore.Value < 0.0 || similarityScore.Value > 1.0))
             throw new DomainException(ErrorCodes.ValidationError, "SimilarityScore must be between 0.0 and 1.0");
 
         // Enforce verification-status/confidence consistency.

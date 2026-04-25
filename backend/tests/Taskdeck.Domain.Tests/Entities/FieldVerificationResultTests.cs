@@ -70,6 +70,18 @@ public class FieldVerificationResultTests
     }
 
     [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Constructor_ShouldThrow_WhenOriginalConfidenceIsNonFinite(double confidence)
+    {
+        var act = () => new FieldVerificationResult("Title", VerificationStatus.Verified, confidence, 0.9);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("OriginalConfidence must be between 0.0 and 1.0");
+    }
+
+    [Theory]
     [InlineData(-0.01)]
     [InlineData(1.01)]
     public void Constructor_ShouldThrow_WhenAdjustedConfidenceOutOfRange(double confidence)
@@ -81,9 +93,33 @@ public class FieldVerificationResultTests
     }
 
     [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Constructor_ShouldThrow_WhenAdjustedConfidenceIsNonFinite(double confidence)
+    {
+        var act = () => new FieldVerificationResult("Title", VerificationStatus.Verified, 0.9, confidence);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("AdjustedConfidence must be between 0.0 and 1.0");
+    }
+
+    [Theory]
     [InlineData(-0.01)]
     [InlineData(1.01)]
     public void Constructor_ShouldThrow_WhenSimilarityScoreOutOfRange(double score)
+    {
+        var act = () => new FieldVerificationResult("Title", VerificationStatus.Verified, 0.9, 0.9, similarityScore: score);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("SimilarityScore must be between 0.0 and 1.0");
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Constructor_ShouldThrow_WhenSimilarityScoreIsNonFinite(double score)
     {
         var act = () => new FieldVerificationResult("Title", VerificationStatus.Verified, 0.9, 0.9, similarityScore: score);
 
