@@ -16,7 +16,7 @@ namespace Taskdeck.Infrastructure.Services;
 public class DeterministicPreExtractor : IDeterministicPreExtractor
 {
     private static readonly Regex UrlRegex = new(
-        @"https?://[^\s<>""')\]]+",
+        @"https?://[^\s<>""')\]]+(?<=[^\s<>""')\].,;:!?])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex EmailRegex = new(
