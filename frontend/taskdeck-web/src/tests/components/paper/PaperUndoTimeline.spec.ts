@@ -90,6 +90,27 @@ describe('PaperUndoTimeline', () => {
     expect(spent).toBeLessThan(24)
   })
 
+  it('keeps the final dash visible until the undo window has fully closed', async () => {
+    const nowSpy = vi.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(new Date('2026-04-25T12:00:00Z').getTime())
+    stubMatchMedia(false)
+    const wrapper = mount(PaperUndoTimeline, {
+      props: { appliedAt: Date.now() - 979, windowMs: 1_000 },
+    })
+
+    rafCalls.shift()!(0)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('.paper-undo__dash[data-spent="true"]')).toHaveLength(23)
+
+    nowSpy.mockReturnValue(new Date('2026-04-25T12:00:01Z').getTime())
+    await wrapper.setProps({ appliedAt: Date.now() - 1_000 })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('.paper-undo__dash[data-spent="true"]')).toHaveLength(24)
+    nowSpy.mockRestore()
+  })
+
   it('throttles rAF scheduling to one-second ticks while active', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('requestAnimationFrame', (cb: (t: number) => void) => {

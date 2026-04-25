@@ -131,7 +131,8 @@ onBeforeUnmount(() => {
 })
 
 const dashes = computed(() => {
-  const filled = Math.round(progress.value * DASH_COUNT)
+  const filled =
+    progress.value >= 1 ? DASH_COUNT : Math.floor(progress.value * DASH_COUNT)
   return Array.from({ length: DASH_COUNT }, (_, i) => i < filled)
 })
 </script>
