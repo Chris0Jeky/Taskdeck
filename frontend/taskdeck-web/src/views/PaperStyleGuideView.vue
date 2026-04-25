@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { usePaperThemeStore, type PaperMode } from '../store/paperThemeStore'
+import InkBleed from '../components/paper/InkBleed.vue'
 
 const themeStore = usePaperThemeStore()
 
@@ -19,6 +20,14 @@ function setGlobal(mode: PaperMode) {
   if (mode === 'paper' || mode === 'paper-night') {
     previewMode.value = mode
   }
+}
+
+// Ink Bleed demo — bumping this key remounts the component so the full 4.6s
+// sequence replays from t=0. Avoids exposing imperative replay state on the
+// component itself.
+const inkBleedKey = ref(0)
+function replayInkBleed() {
+  inkBleedKey.value += 1
 }
 </script>
 
@@ -143,6 +152,27 @@ function setGlobal(mode: PaperMode) {
           <div class="diff-rem">- Implement dark mode</div>
           <div class="diff-add">+ Tokens · darken &amp; QA</div>
           <div class="diff-add">+ Components · mode switch</div>
+        </div>
+
+        <hr class="hr-line sg-rule" />
+
+        <h3 class="tk-eyebrow">Ink Bleed (LLM thinking state)</h3>
+        <p class="tk-body">
+          Replaces every loading / spinner / skeleton in LLM-driven flows.
+          Five phases over 4.6s — drop, bloom, compose, settle, stamp. Reduced
+          motion users get a 200ms opacity fade with the dried frame.
+        </p>
+        <div class="sg-row" style="margin-bottom: 12px;">
+          <button class="pbtn pbtn-primary" type="button" @click="replayInkBleed">
+            Replay sequence
+          </button>
+        </div>
+        <div class="sg-ink-bleed-stage">
+          <InkBleed
+            :key="inkBleedKey"
+            phase="auto"
+            headline="Split &quot;Implement dark mode&quot; into three smaller cards."
+          />
         </div>
 
         <hr class="hr-line sg-rule" />
@@ -279,5 +309,14 @@ function setGlobal(mode: PaperMode) {
   margin-top: 36px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+
+.sg-ink-bleed-stage {
+  position: relative;
+  height: 320px;
+  border: 1px solid var(--line);
+  background: var(--paper-card);
+  overflow: hidden;
+  border-radius: 2px;
 }
 </style>
