@@ -72,12 +72,12 @@ describe('useInkBleed', () => {
 
   it('runs the full 4.6s sequence even when finish() resolves early', async () => {
     const { exposed } = createHost()
-    exposed.bleed.start()
+    const run = exposed.bleed.start()
     expect(exposed.bleed.phase.value).toBe('drop')
 
     // Caller's async work resolves at 200ms.
     vi.advanceTimersByTime(200)
-    exposed.bleed.finish()
+    exposed.bleed.finish(run)
 
     // Should still be in drop/bloom — not done yet.
     expect(exposed.doneCount).toBe(0)
@@ -105,7 +105,7 @@ describe('useInkBleed', () => {
 
   it('holds the dried state and pulses loop when work overruns 4.6s', async () => {
     const { exposed } = createHost()
-    exposed.bleed.start()
+    const run = exposed.bleed.start()
 
     // Run past the full schedule without calling finish().
     vi.advanceTimersByTime(4600)
@@ -117,7 +117,7 @@ describe('useInkBleed', () => {
 
     // Some time later (e.g. +1500ms), the LLM call resolves.
     vi.advanceTimersByTime(1500)
-    exposed.bleed.finish()
+    exposed.bleed.finish(run)
 
     expect(exposed.bleed.phase.value).toBe('dried')
     expect(exposed.bleed.loop.value).toBe(false)
@@ -132,16 +132,35 @@ describe('useInkBleed', () => {
     expect(exposed.bleed.phase.value).toBe('compose')
 
     // Re-enter; should reset to drop without firing done for the previous run.
-    exposed.bleed.start()
+    const run = exposed.bleed.start()
     expect(exposed.bleed.phase.value).toBe('drop')
     expect(exposed.doneCount).toBe(0)
 
     // Run the new sequence to completion; finish() arrives early.
     vi.advanceTimersByTime(200)
-    exposed.bleed.finish()
+    exposed.bleed.finish(run)
     vi.advanceTimersByTime(4600)
     expect(exposed.bleed.phase.value).toBe('dried')
     expect(exposed.doneCount).toBe(1)
+  })
+
+  it('ignores stale finish calls from canceled runs', async () => {
+    const { exposed } = createHost()
+    const staleRun = exposed.bleed.start()
+
+    vi.advanceTimersByTime(1500)
+    const currentRun = exposed.bleed.start()
+
+    exposed.bleed.finish(staleRun)
+    vi.advanceTimersByTime(4600)
+
+    expect(exposed.doneCount).toBe(0)
+    expect(exposed.bleed.phase.value).toBe('dried')
+    expect(exposed.bleed.loop.value).toBe(true)
+
+    exposed.bleed.finish(currentRun)
+    expect(exposed.doneCount).toBe(1)
+    expect(exposed.bleed.loop.value).toBe(false)
   })
 
   it('cancel() clears state without firing done', () => {
@@ -185,16 +204,16 @@ describe('useInkBleed', () => {
 
   it('finish() called after natural dried completion is a no-op', () => {
     const { exposed } = createHost()
-    exposed.bleed.start()
+    const run = exposed.bleed.start()
 
     vi.advanceTimersByTime(4600)
     expect(exposed.doneCount).toBe(0) // held for late finish
 
-    exposed.bleed.finish()
+    exposed.bleed.finish(run)
     expect(exposed.doneCount).toBe(1)
 
     // Calling finish again should not re-fire done.
-    exposed.bleed.finish()
+    exposed.bleed.finish(run)
     expect(exposed.doneCount).toBe(1)
   })
 })

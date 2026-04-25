@@ -23,16 +23,17 @@ import {
 } from './inkBleedMotion'
 
 export type InkBleedPhase = InkBleedRuntimePhase
+export type InkBleedRunId = number
 
 export interface UseInkBleedReturn {
   /** Begin (or restart) the bleed. Cancels any in-flight bleed. */
-  start: () => void
+  start: () => InkBleedRunId
   /**
    * Signal that the wrapped async call has completed. If called early the
    * bleed runs through the full 4.6s before `done` is emitted; if called
    * late (already in dried hold) it resolves immediately.
    */
-  finish: () => void
+  finish: (runId: InkBleedRunId) => void
   /** Cancel and discard the current bleed without firing `done`. */
   cancel: () => void
   /** Current phase (readonly Vue ref). */
@@ -65,6 +66,7 @@ export function useInkBleed(
   let finishedEarly = false
   let scheduledEnd = 0
   let active = false
+  let activeRunId = 0
 
   function clearTimers(): void {
     for (const id of timers) {
@@ -78,23 +80,25 @@ export function useInkBleed(
     options.onDone?.()
   }
 
-  function start(): void {
+  function start(): InkBleedRunId {
     // Singleton: cancel previous (no done fired — last write wins).
     clearTimers()
     finishedEarly = false
     loop.value = false
     active = true
+    activeRunId += 1
+    const runId = activeRunId
 
     if (isReducedMotion.value) {
       // Short-circuit: skip the timer pipeline entirely.
       phase.value = 'dried'
       // Defer done to next tick so callers can subscribe before it fires.
       const id = (globalThis.setTimeout as typeof setTimeout)(() => {
-        if (!active) return
+        if (!active || runId !== activeRunId) return
         fireDone()
       }, 0) as unknown as number
       timers.push(id)
-      return
+      return runId
     }
 
     scheduledEnd = Date.now() + INK_BLEED_TOTAL_MS
@@ -103,6 +107,7 @@ export function useInkBleed(
     for (const step of INK_BLEED_PHASE_SCHEDULE) {
       if (step.at === 0) continue
       const id = setTimeout(() => {
+        if (!active || runId !== activeRunId) return
         phase.value = step.phase
         if (step.phase === 'dried') {
           if (finishedEarly) {
@@ -115,10 +120,11 @@ export function useInkBleed(
       }, step.at)
       timers.push(id)
     }
+    return runId
   }
 
-  function finish(): void {
-    if (!active) return
+  function finish(runId: InkBleedRunId): void {
+    if (!active || runId !== activeRunId) return
 
     const remaining = scheduledEnd - Date.now()
 
@@ -138,6 +144,7 @@ export function useInkBleed(
   function cancel(): void {
     clearTimers()
     active = false
+    activeRunId += 1
     finishedEarly = false
     loop.value = false
     phase.value = 'dried'
@@ -146,6 +153,7 @@ export function useInkBleed(
   onBeforeUnmount(() => {
     clearTimers()
     active = false
+    activeRunId += 1
   })
 
   return {
