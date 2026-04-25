@@ -116,7 +116,7 @@ public class ProvenanceQueryService : IProvenanceQueryService
     /// </summary>
     internal static string BuildValue(ProvenanceField field)
     {
-        var confidencePercent = (int)(field.Confidence * 100);
+        var confidencePercent = (int)Math.Round(field.Confidence * 100);
 
         if (field.Kind == ProvenanceKind.Extractive && !string.IsNullOrWhiteSpace(field.ExtractiveQuote))
         {
