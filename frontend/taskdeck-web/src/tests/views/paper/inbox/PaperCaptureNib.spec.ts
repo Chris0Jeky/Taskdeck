@@ -30,7 +30,28 @@ describe('PaperCaptureNib', () => {
     const events = wrapper.emitted('submit')
     expect(events).toBeDefined()
     expect(events?.[0]).toEqual(['Look into local-first conflict resolution'])
-    // After submit the input is cleared.
+    // The parent clears only after async creation succeeds.
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('  Look into local-first conflict resolution  ')
+  })
+
+  it('does not submit while creation is already in flight', async () => {
+    const wrapper = mount(PaperCaptureNib, { props: { submitting: true } })
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('Do not duplicate this capture')
+    await textarea.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    expect(textarea.attributes('disabled')).toBeDefined()
+  })
+
+  it('exposes resetDraft so the parent can clear after success', async () => {
+    const wrapper = mount(PaperCaptureNib)
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('Clear only after success')
+
+    ;(wrapper.vm as unknown as { resetDraft: () => void }).resetDraft()
+    await wrapper.vm.$nextTick()
+
     expect((textarea.element as HTMLTextAreaElement).value).toBe('')
   })
 

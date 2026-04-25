@@ -16,12 +16,13 @@ import { nextTick, onMounted, ref } from 'vue'
  * render a static ember placeholder at the same position so the intended
  * structure is reviewable.
  */
-defineProps<{
+const props = defineProps<{
   /**
    * When true, suppress the textarea and render the static ember placeholder
    * for ~1.4s.  The parent owns the timer so it can also reset state.
    */
   bleeding?: boolean
+  submitting?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -43,9 +44,13 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 function submit() {
+  if (props.submitting) return
   const value = text.value.trim()
   if (!value) return
   emit('submit', value)
+}
+
+function resetDraft() {
   text.value = ''
 }
 
@@ -54,7 +59,7 @@ onMounted(async () => {
   inputRef.value?.focus()
 })
 
-defineExpose({ focus: () => inputRef.value?.focus() })
+defineExpose({ focus: () => inputRef.value?.focus(), resetDraft })
 </script>
 
 <template>
@@ -75,6 +80,7 @@ defineExpose({ focus: () => inputRef.value?.focus() })
       rows="1"
       aria-label="Quick capture input"
       placeholder="What's on your mind, quickly?"
+      :disabled="submitting"
       @keydown="onKeydown"
     />
 

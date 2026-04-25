@@ -47,6 +47,16 @@ describe('PaperTriageTable', () => {
     expect(wrapper.emitted('retry')).toHaveLength(1)
   })
 
+  it('surfaces list errors above stale rows when refresh fails after prior data', () => {
+    const wrapper = mount(PaperTriageTable, {
+      props: { items: makeItems(), listError: 'Refresh failed' },
+    })
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('Refresh failed')
+    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('A pen and a phrase')
+  })
+
   it('prioritizes failed/error status tone over triage wording', () => {
     const items = makeItems()
     items[0] = { ...items[0], status: 'Triage Failed' }

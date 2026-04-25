@@ -75,18 +75,18 @@ function formatTime(iso: string): string {
       <span class="tk-meta">Loading…</span>
     </div>
 
-    <div v-else-if="listError && !hasItems" class="paper-triage__empty paper-triage__empty--error" role="alert">
+    <div v-else-if="listError" class="paper-triage__empty paper-triage__empty--error" role="alert">
       <p class="tk-body">{{ listError }}</p>
       <button type="button" class="paper-triage__retry" @click="emit('retry')">
         Retry
       </button>
     </div>
 
-    <div v-else-if="!hasItems" class="paper-triage__empty">
+    <div v-if="!loadingList && !listError && !hasItems" class="paper-triage__empty">
       <p class="tk-body">A pen and a phrase. Drop a thought above to start.</p>
     </div>
 
-    <ul v-else class="paper-triage__list">
+    <ul v-if="hasItems" class="paper-triage__list">
       <li
         v-for="item in items"
         :key="item.id"

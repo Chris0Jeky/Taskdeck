@@ -115,6 +115,16 @@ describe('PaperCaptureComposer', () => {
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
 
+  it('does not submit while creation is already in flight', async () => {
+    const wrapper = mount(PaperCaptureComposer, { props: { submitting: true } })
+    await wrapper.find('textarea').setValue('Wait for the first create')
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    const captureButton = wrapper.findAll('button').find((button) => button.text().includes('Capture'))
+    expect(captureButton?.attributes('disabled')).toBeDefined()
+  })
+
   it('keeps the draft after submit until the parent confirms success', async () => {
     const wrapper = mount(PaperCaptureComposer)
     await wrapper.find('textarea').setValue('Preserve this if the API fails')

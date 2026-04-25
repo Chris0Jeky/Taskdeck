@@ -124,4 +124,55 @@ describe('PaperInboxView', () => {
 
     expect((textarea.element as HTMLTextAreaElement).value).toBe('Do not lose this draft')
   })
+
+  it('guards composer submissions while capture creation is in flight', async () => {
+    let resolveCreate: (value: unknown) => void = () => undefined
+    mockCaptureStore.createItem.mockReturnValueOnce(new Promise((resolve) => {
+      resolveCreate = resolve
+    }))
+
+    const wrapper = mount(PaperInboxView)
+    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    await textarea.setValue('Submit this once')
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
+    resolveCreate({ id: 'created-1' })
+    await flushPromises()
+  })
+
+  it('preserves the nib draft when capture creation fails', async () => {
+    mockCaptureStore.createItem.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mount(PaperInboxView)
+    ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+    await wrapper.vm.$nextTick()
+
+    const textarea = wrapper.find('textarea[aria-label="Quick capture input"]')
+    await textarea.setValue('Do not lose this quick note')
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('Do not lose this quick note')
+  })
+
+  it('guards nib submissions while capture creation is in flight', async () => {
+    let resolveCreate: (value: unknown) => void = () => undefined
+    mockCaptureStore.createItem.mockReturnValueOnce(new Promise((resolve) => {
+      resolveCreate = resolve
+    }))
+
+    const wrapper = mount(PaperInboxView)
+    ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+    await wrapper.vm.$nextTick()
+
+    const textarea = wrapper.find('textarea[aria-label="Quick capture input"]')
+    await textarea.setValue('Submit this nib once')
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await textarea.trigger('keydown', { key: 'Enter' })
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
+    resolveCreate({ id: 'created-1' })
+    await flushPromises()
+  })
 })

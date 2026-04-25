@@ -24,7 +24,9 @@ type Variant = 'nib' | 'composer'
 
 const variant = ref<Variant>('composer')
 const composerRef = ref<InstanceType<typeof PaperCaptureComposer> | null>(null)
+const nibRef = ref<InstanceType<typeof PaperCaptureNib> | null>(null)
 const nibBleeding = ref(false)
+const captureSubmitting = ref(false)
 let bleedTimer: ReturnType<typeof setTimeout> | null = null
 
 const {
@@ -57,6 +59,11 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 }
 
 async function dispatchCapture(text: string, opts: { boardId?: string | null } = {}): Promise<boolean> {
+  if (captureSubmitting.value) {
+    return false
+  }
+
+  captureSubmitting.value = true
   try {
     await captureStore.createItem({
       boardId: opts.boardId ?? null,
@@ -68,13 +75,20 @@ async function dispatchCapture(text: string, opts: { boardId?: string | null } =
   } catch {
     // captureStore handles toast surfacing; we keep the surface usable.
     return false
+  } finally {
+    captureSubmitting.value = false
   }
 }
 
 async function onNibSubmit(text: string) {
-  // Show the static ember placeholder (TODO: ink bleed) for ~1.4s, regardless
-  // of whether the create call resolves first; the placeholder is purely
-  // motion stand-in.
+  const created = await dispatchCapture(text)
+  if (!created) {
+    return
+  }
+
+  nibRef.value?.resetDraft()
+  // Show the static ember placeholder (TODO: ink bleed) for ~1.4s after a
+  // confirmed create; the placeholder is purely motion stand-in.
   nibBleeding.value = true
   if (bleedTimer) {
     clearTimeout(bleedTimer)
@@ -83,8 +97,6 @@ async function onNibSubmit(text: string) {
     nibBleeding.value = false
     bleedTimer = null
   }, 1400)
-
-  await dispatchCapture(text)
 }
 
 async function onComposerSubmit(payload: {
@@ -172,12 +184,15 @@ defineExpose({ variant, toggleVariant, setVariant })
     <section class="paper-inbox__capture" data-testid="paper-inbox-capture">
       <PaperCaptureNib
         v-if="variant === 'nib'"
+        ref="nibRef"
         :bleeding="nibBleeding"
+        :submitting="captureSubmitting"
         @submit="onNibSubmit"
       />
       <PaperCaptureComposer
         v-else
         ref="composerRef"
+        :submitting="captureSubmitting"
         @submit="onComposerSubmit"
         @attachments-changed="onComposerAttachments"
       />

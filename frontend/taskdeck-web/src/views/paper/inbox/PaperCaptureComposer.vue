@@ -16,6 +16,7 @@ import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 const props = defineProps<{
   /** Optional board id to default the picker to. */
   defaultBoardId?: string | null
+  submitting?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -41,7 +42,7 @@ const bodyRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const dropActive = ref(false)
 
-const canSubmit = computed(() => body.value.trim().length > 0)
+const canSubmit = computed(() => body.value.trim().length > 0 && !props.submitting)
 
 function onBodyKeydown(event: KeyboardEvent) {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
