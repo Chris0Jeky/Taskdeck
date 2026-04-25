@@ -136,8 +136,10 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         int processed = 0;
         int failed = 0;
 
-        // Build batch-upsert documents
+        // Build batch-upsert documents and track which chunk IDs they map to.
+        // Chunks are NOT marked as indexed here -- only after successful upsert.
         var vectorDocs = new List<VectorDocument>();
+        var chunkIdsByDocId = new Dictionary<string, string>();
         for (int i = 0; i < embeddable.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -146,14 +148,14 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             try
             {
                 var metadata = BuildMetadata(chunk, documentMap);
+                var docId = $"chunk:{chunk.Id}";
 
                 vectorDocs.Add(new VectorDocument(
-                    $"chunk:{chunk.Id}",
+                    docId,
                     embeddings[i],
                     metadata));
 
-                processed++;
-                lock (_indexedLock) { _indexedChunkIds.Add(chunk.Id.ToString()); }
+                chunkIdsByDocId[docId] = chunk.Id.ToString();
             }
             catch (Exception ex)
             {
@@ -165,12 +167,20 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        // Batch upsert all vectors at once
+        // Batch upsert all vectors at once, then mark as indexed on success
         if (vectorDocs.Count > 0)
         {
             try
             {
                 await _vectorIndex.UpsertBatchAsync(vectorDocs, cancellationToken);
+
+                // Batch succeeded -- mark all chunks as indexed
+                processed = vectorDocs.Count;
+                lock (_indexedLock)
+                {
+                    foreach (var chunkId in chunkIdsByDocId.Values)
+                        _indexedChunkIds.Add(chunkId);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -182,7 +192,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                     "Batch upsert failed, falling back to individual upserts: {Error}",
                     ex.Message);
 
-                // Fall back to individual upserts
+                // Fall back to individual upserts -- mark each chunk only on success
                 foreach (var doc in vectorDocs)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -190,9 +200,16 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                     {
                         await _vectorIndex.UpsertAsync(
                             doc.DocumentId, doc.Vector, doc.Metadata, cancellationToken);
+
+                        processed++;
+                        if (chunkIdsByDocId.TryGetValue(doc.DocumentId, out var chunkId))
+                        {
+                            lock (_indexedLock) { _indexedChunkIds.Add(chunkId); }
+                        }
                     }
                     catch (Exception upsertEx)
                     {
+                        failed++;
                         _logger.LogWarning(
                             "Individual upsert failed for {DocId}: {Error}",
                             doc.DocumentId, upsertEx.Message);
