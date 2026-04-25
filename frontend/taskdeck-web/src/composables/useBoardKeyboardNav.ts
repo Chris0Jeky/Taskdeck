@@ -1,6 +1,6 @@
 import { ref, nextTick, type ComputedRef } from 'vue'
 import { useBoardStore } from '../store/boardStore'
-import type { Column } from '../types/board'
+import type { Card, Column } from '../types/board'
 
 /**
  * Composable encapsulating card/column keyboard navigation state and actions
@@ -10,11 +10,16 @@ import type { Column } from '../types/board'
 export function useBoardKeyboardNav(
   sortedColumns: ComputedRef<Column[]>,
   boardId?: () => string,
+  cardsByColumnSource?: ComputedRef<Map<string, Card[]>>,
 ) {
   const boardStore = useBoardStore()
 
   const selectedCardId = ref<string | null>(null)
   const selectedColumnIndex = ref<number>(0)
+
+  function cardsForColumn(columnId: string): Card[] {
+    return cardsByColumnSource?.value.get(columnId) ?? boardStore.cardsByColumn.get(columnId) ?? []
+  }
 
   function selectNextCard() {
     const columns = sortedColumns.value
@@ -23,7 +28,7 @@ export function useBoardKeyboardNav(
     const currentColumn = columns[selectedColumnIndex.value]
     if (!currentColumn) return
 
-    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+    const cards = cardsForColumn(currentColumn.id)
     if (cards.length === 0) return
 
     if (!selectedCardId.value) {
@@ -44,7 +49,7 @@ export function useBoardKeyboardNav(
     const currentColumn = columns[selectedColumnIndex.value]
     if (!currentColumn) return
 
-    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+    const cards = cardsForColumn(currentColumn.id)
     if (cards.length === 0) return
 
     if (!selectedCardId.value) {
@@ -66,7 +71,7 @@ export function useBoardKeyboardNav(
       selectedColumnIndex.value++
       const newColumn = columns[selectedColumnIndex.value]
       if (newColumn) {
-        const cards = boardStore.cardsByColumn.get(newColumn.id) || []
+        const cards = cardsForColumn(newColumn.id)
         selectedCardId.value = cards.length > 0 ? (cards[0]?.id || null) : null
       }
     }
@@ -80,7 +85,7 @@ export function useBoardKeyboardNav(
       selectedColumnIndex.value--
       const newColumn = columns[selectedColumnIndex.value]
       if (newColumn) {
-        const cards = boardStore.cardsByColumn.get(newColumn.id) || []
+        const cards = cardsForColumn(newColumn.id)
         selectedCardId.value = cards.length > 0 ? (cards[0]?.id || null) : null
       }
     }
@@ -93,7 +98,7 @@ export function useBoardKeyboardNav(
     const currentColumn = columns[selectedColumnIndex.value]
     if (!currentColumn) return
 
-    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+    const cards = cardsForColumn(currentColumn.id)
     if (cards.length === 0) return
 
     if (!selectedCardId.value) {
@@ -181,11 +186,11 @@ export function useBoardKeyboardNav(
     const targetColumn = columns[targetColIndex]
     if (!targetColumn) return
 
-    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+    const cards = cardsForColumn(currentColumn.id)
     const card = cards.find((c) => c.id === selectedCardId.value)
     if (!card) return
 
-    const targetCards = boardStore.cardsByColumn.get(targetColumn.id) || []
+    const targetCards = cardsForColumn(targetColumn.id)
     const targetPosition = targetCards.length
 
     try {
@@ -226,7 +231,7 @@ export function useBoardKeyboardNav(
     const currentColumn = columns[selectedColumnIndex.value]
     if (!currentColumn) return
 
-    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+    const cards = cardsForColumn(currentColumn.id)
     const cardIndex = cards.findIndex((c) => c.id === selectedCardId.value)
 
     if (direction === 'up') {
