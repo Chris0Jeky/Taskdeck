@@ -99,6 +99,7 @@ watch(
     await nextTick()
     scrollVirtualizerToHashProposal()
   },
+  { flush: 'post' },
 )
 
 function handleReviewKeydown(event: KeyboardEvent) {
@@ -244,7 +245,7 @@ onUnmounted(() => {
 .td-review__list--virtual {
   max-height: 80vh;
   overflow-y: auto;
-  contain: strict;
+  contain: layout paint;
   outline: none;
 }
 

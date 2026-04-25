@@ -414,7 +414,7 @@ watch([unreadOnly, activeBoardId], () => {
 .td-notif-virtual {
   max-height: 70vh;
   overflow-y: auto;
-  contain: strict;
+  contain: layout paint;
   outline: none;
 }
 
