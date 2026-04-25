@@ -295,7 +295,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
-        var result = await _confidenceBreakdownService.GetBreakdownAsync(id, callerUserId, cancellationToken);
+        var result = await _confidenceBreakdownService.GetBreakdownAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
