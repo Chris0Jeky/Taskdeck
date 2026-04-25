@@ -48,11 +48,16 @@ function applyBodyClass(klass: 'paper' | 'paper-night' | null) {
   if (klass) body.classList.add(klass)
 }
 
+// The prefers-color-scheme listener is module-scoped rather than living in
+// Pinia state. Functions in reactive state get proxied, leak into devtools
+// snapshots, and confuse $state cloning. We only ever need one listener at a
+// time; the store action below tears down the previous one before wiring a
+// new one.
+let mediaListener: ((ev: MediaQueryListEvent) => void) | null = null
+
 export const usePaperThemeStore = defineStore('paperTheme', {
   state: () => ({
     mode: readStoredMode() as PaperMode,
-    // Tracks the prefers-color-scheme listener so we can clean up
-    _mediaListener: null as ((ev: MediaQueryListEvent) => void) | null,
   }),
   getters: {
     isOn(state): boolean {
@@ -99,10 +104,10 @@ export const usePaperThemeStore = defineStore('paperTheme', {
     _wireAutoListener() {
       if (typeof window === 'undefined' || !window.matchMedia) return
       const mq = window.matchMedia('(prefers-color-scheme: dark)')
-      // Tear down previous listener if any
-      if (this._mediaListener) {
-        mq.removeEventListener?.('change', this._mediaListener)
-        this._mediaListener = null
+      // Tear down the previously-registered listener if any
+      if (mediaListener) {
+        mq.removeEventListener?.('change', mediaListener)
+        mediaListener = null
       }
       if (this.mode !== 'auto') return
       // Note: re-resolve from `this.mode` directly rather than the
@@ -112,7 +117,7 @@ export const usePaperThemeStore = defineStore('paperTheme', {
       // string itself changing.
       const listener = () => applyBodyClass(resolveBodyClass(this.mode))
       mq.addEventListener?.('change', listener)
-      this._mediaListener = listener
+      mediaListener = listener
     },
   },
 })
