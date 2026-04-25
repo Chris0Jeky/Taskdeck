@@ -1,0 +1,4 @@
+interface:
+  display_name: "Taskdeck Issue Batch Orchestrator"
+  short_description: "Coordinate many issues through PRs"
+  default_prompt: "Use $taskdeck-issue-batch-orchestrator to select, split, assign, verify, review, and close out a batch of Taskdeck issues."
