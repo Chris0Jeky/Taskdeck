@@ -10,6 +10,7 @@ import { useReviewProposals } from '../../composables/useReviewProposals'
 import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
+import { useSessionStore } from '../../store/sessionStore'
 import { normalizeProposalStatus } from '../../utils/automation'
 import type { Proposal as ApiProposal } from '../../types/automation'
 import type {
@@ -44,14 +45,17 @@ import type {
 const {
   proposals,
   proposalsLoading,
+  nowMs,
   visibleProposals,
   dismissableProposalIds,
+  matchesActiveBoardFilter,
   isProposalExpired,
   loadProposals,
   loadBoardOptions,
   startClock,
   stopClock,
 } = useReviewProposals()
+const session = useSessionStore()
 
 const {
   proposalActionBusyId,
@@ -101,7 +105,7 @@ const awaitingCount = computed(() => {
 
 const staleCount = computed(() => {
   // A proposal is "stale" when older than 24h and still pending review.
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000
+  const cutoff = nowMs.value - 24 * 60 * 60 * 1000
   return visibleProposals.value.filter((p) => {
     if (normalizeProposalStatus(p.status) !== 'PendingReview') return false
     return new Date(p.createdAt).getTime() < cutoff
@@ -109,7 +113,7 @@ const staleCount = computed(() => {
 })
 
 function ageLabel(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime()
+  const ms = nowMs.value - new Date(iso).getTime()
   if (ms < 60_000) return `${Math.max(1, Math.floor(ms / 1000))}s`
   if (ms < 60 * 60_000) return `${Math.floor(ms / 60_000)}m`
   if (ms < 24 * 60 * 60_000) return `${Math.floor(ms / (60 * 60_000))}h`
@@ -124,7 +128,7 @@ function summariseReach(proposal: ApiProposal): string {
 
 const queueItems = computed<QueueRailItem[]>(() =>
   visibleProposals.value.map((p) => {
-    const ageMs = Date.now() - new Date(p.createdAt).getTime()
+    const ageMs = nowMs.value - new Date(p.createdAt).getTime()
     const stale =
       normalizeProposalStatus(p.status) === 'PendingReview' && ageMs >= 24 * 60 * 60 * 1000
     return {
@@ -136,19 +140,20 @@ const queueItems = computed<QueueRailItem[]>(() =>
       confidence: null,
       age: ageLabel(p.createdAt),
       reach: summariseReach(p),
-      mine: false,
+      mine: !!session.userId && p.requestedByUserId === session.userId,
       stale,
     }
   }),
 )
 
 const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
-  const cutoff = Date.now() - 6 * 60 * 60 * 1000 // 6h undo window
-  return visibleProposals.value
+  const cutoff = nowMs.value - 6 * 60 * 60 * 1000 // 6h undo window
+  return proposals.value
+    .filter((p) => matchesActiveBoardFilter(p.boardId))
     .filter((p) => normalizeProposalStatus(p.status) === 'Applied' && p.appliedAt)
     .map((p) => {
       const appliedMs = new Date(p.appliedAt as string).getTime()
-      const left = appliedMs + 6 * 60 * 60 * 1000 - Date.now()
+      const left = appliedMs + 6 * 60 * 60 * 1000 - nowMs.value
       const expired = appliedMs < cutoff || left <= 0
       return {
         serial: `#${p.id.slice(0, 4).toUpperCase()}`,
@@ -175,17 +180,36 @@ const titleParts = computed(() => {
   if (!p) return [{ text: '' }]
   // Render summary as a single emphasised serif italic span. Until the
   // backend annotates highlight ranges, we wrap any quoted phrase in <em>.
-  const summary = p.summary ?? ''
-  const match = summary.match(/^(.*?)["“]([^"”]+)["”](.*)$/)
-  if (match) {
-    return [
-      { text: match[1] },
-      { text: `“${match[2]}”`, emphasis: true },
-      { text: match[3] },
-    ]
-  }
-  return [{ text: summary, emphasis: true }]
+  return splitQuotedSummary(p.summary ?? '')
 })
+
+function splitQuotedSummary(summary: string): Array<{ text: string; emphasis?: boolean }> {
+  if (!summary) return [{ text: '' }]
+  const parts: Array<{ text: string; emphasis?: boolean }> = []
+  let cursor = 0
+
+  while (cursor < summary.length) {
+    const straight = summary.indexOf('"', cursor)
+    const curly = summary.indexOf('“', cursor)
+    const startCandidates = [straight, curly].filter((index) => index >= 0)
+    if (startCandidates.length === 0) break
+    const start = Math.min(...startCandidates)
+    const endQuote = summary[start] === '“' ? '”' : '"'
+    const end = summary.indexOf(endQuote, start + 1)
+    if (end < 0) break
+
+    if (start > cursor) {
+      parts.push({ text: summary.slice(cursor, start) })
+    }
+    parts.push({ text: `“${summary.slice(start + 1, end)}”`, emphasis: true })
+    cursor = end + 1
+  }
+
+  if (cursor < summary.length) {
+    parts.push({ text: summary.slice(cursor) })
+  }
+  return parts.length > 0 ? parts : [{ text: summary, emphasis: true }]
+}
 
 const lede = computed(
   () =>

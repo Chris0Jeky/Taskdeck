@@ -3,6 +3,7 @@ import { defineComponent, h, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import {
   isEditableTarget,
+  isInteractiveTarget,
   useReviewKeymap,
   type ReviewKeymapHandlers,
 } from '../../../../composables/useReviewKeymap'
@@ -19,6 +20,7 @@ function makeHost(handlers: ReviewKeymapHandlers, enabled = () => true) {
       return h('div', [
         h('input', { 'data-testid': 'reason-input', type: 'text' }),
         h('textarea', { 'data-testid': 'edit-composer' }),
+        h('button', { 'data-testid': 'focused-action' }, 'Focused action'),
         h('div', { 'data-testid': 'editable', contenteditable: 'true' }),
       ])
     },
@@ -94,6 +96,19 @@ describe('useReviewKeymap', () => {
     wrapper.unmount()
   })
 
+  it('does NOT intercept Enter or Space on focused interactive controls', () => {
+    const Host = makeHost({ onApply, onReject, onRequestEdit, onDefer, onToggleProvenance, onPreviewDiff })
+    const wrapper = mount(Host, { attachTo: document.body })
+
+    const button = wrapper.get('[data-testid="focused-action"]').element as HTMLButtonElement
+    dispatchKey('Enter', button)
+    dispatchKey(' ', button)
+
+    expect(onApply).not.toHaveBeenCalled()
+    expect(onPreviewDiff).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('maps ⌫ → reject, E → request-edit, D → defer, P → provenance, Space → preview', () => {
     const Host = makeHost({ onApply, onReject, onRequestEdit, onDefer, onToggleProvenance, onPreviewDiff })
     const wrapper = mount(Host, { attachTo: document.body })
@@ -159,5 +174,21 @@ describe('useReviewKeymap', () => {
     document.body.removeChild(div)
 
     expect(isEditableTarget(null)).toBe(false)
+  })
+
+  it('isInteractiveTarget detects controls and explicit keyboard targets', () => {
+    const button = document.createElement('button')
+    expect(isInteractiveTarget(button)).toBe(true)
+
+    const link = document.createElement('a')
+    link.href = '/workspace/review'
+    expect(isInteractiveTarget(link)).toBe(true)
+
+    const keyboardRow = document.createElement('div')
+    keyboardRow.setAttribute('tabindex', '0')
+    expect(isInteractiveTarget(keyboardRow)).toBe(true)
+
+    const inert = document.createElement('div')
+    expect(isInteractiveTarget(inert)).toBe(false)
   })
 })

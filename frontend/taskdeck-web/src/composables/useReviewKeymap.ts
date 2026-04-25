@@ -59,8 +59,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   if (target instanceof HTMLTextAreaElement) return true
   if (target instanceof HTMLSelectElement) return true
   if (target instanceof HTMLInputElement) {
-    const type = (target.type || 'text').toLowerCase()
-    return TEXT_INPUT_TYPES.has(type) || type === 'textarea'
+    return TEXT_INPUT_TYPES.has(target.type.toLowerCase())
   }
   if (target instanceof HTMLElement && target.isContentEditable) return true
 
@@ -71,6 +70,26 @@ export function isEditableTarget(target: EventTarget | null): boolean {
     return true
   }
   return false
+}
+
+export function isInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false
+  return !!target.closest(
+    [
+      'a[href]',
+      'button',
+      'summary',
+      'select',
+      'textarea',
+      'input',
+      '[role="button"]',
+      '[role="link"]',
+      '[role="menuitem"]',
+      '[role="option"]',
+      '[role="tab"]',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(','),
+  )
 }
 
 /**
@@ -89,6 +108,7 @@ export function useReviewKeymap(
     // Don't fire while the user is typing or composing in an IME.
     if (event.isComposing) return
     if (isEditableTarget(event.target)) return
+    if (isInteractiveTarget(event.target)) return
     // Modifier keys (⌘/Ctrl/Alt) belong to other shortcut layers.
     if (event.metaKey || event.ctrlKey || event.altKey) return
 
