@@ -15,7 +15,7 @@ const props = withDefaults(
     title: string
     meta?: string
     status?: { kind: PaperStatusKind; label: string }
-    /** Render as a link instead of a div if you want native focus. */
+    /** Make the row focusable and activate it with button-like affordances. */
     interactive?: boolean
   }>(),
   { interactive: true },
@@ -55,7 +55,9 @@ function onKeydown(e: KeyboardEvent) {
       <PaperStatusPill v-if="status" :kind="status.kind">{{ status.label }}</PaperStatusPill>
       <span v-else class="paper-ledger-row__placeholder">—</span>
     </span>
-    <span class="paper-ledger-row__chev"><PaperIcon name="chevronRight" /></span>
+    <span v-if="interactive" class="paper-ledger-row__chev">
+      <PaperIcon name="chevronRight" />
+    </span>
   </div>
 </template>
 

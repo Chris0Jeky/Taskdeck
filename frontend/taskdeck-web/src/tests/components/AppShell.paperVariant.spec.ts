@@ -147,4 +147,35 @@ describe('AppShell — paper variant routing', () => {
     await Promise.resolve()
     expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(true)
   })
+
+  it('keeps paper navigation items available in the command palette', async () => {
+    mockPaperTheme.mode = 'paper'
+    mockPaperTheme.isOn = true
+    mockPaperTheme.activeClass = 'paper'
+    wrapper = mountShell()
+
+    await wrapper.find('.paper-topbar__palette').trigger('click')
+    await Promise.resolve()
+
+    const paletteText = wrapper.text()
+    expect(paletteText).toContain('Go to Boards')
+    expect(paletteText).toContain('Go to Inbox')
+    expect(paletteText).toContain('Go to Agents')
+    expect(paletteText).toContain('Go to Archive')
+    expect(paletteText).toContain('New Capture')
+  })
+
+  it('keeps the mobile menu trigger wired in paper mode', async () => {
+    mockPaperTheme.mode = 'paper'
+    mockPaperTheme.isOn = true
+    mockPaperTheme.activeClass = 'paper'
+    wrapper = mountShell()
+
+    const hamburger = wrapper.find('.td-mobile-topbar__hamburger')
+    expect(hamburger.exists()).toBe(true)
+
+    await hamburger.trigger('click')
+
+    expect(wrapper.find('.paper-sidebar--mobile-open').exists()).toBe(true)
+  })
 })

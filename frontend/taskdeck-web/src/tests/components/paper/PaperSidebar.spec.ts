@@ -9,6 +9,7 @@ const mockRoute = reactive({
 })
 
 const mockWorkspace = reactive({
+  mode: 'guided' as string,
   inboxBadgeCount: 0,
   reviewBadgeCount: 0,
 })
@@ -57,6 +58,7 @@ describe('PaperSidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRoute.path = '/workspace/home'
+    mockWorkspace.mode = 'guided'
     mockWorkspace.inboxBadgeCount = 0
     mockWorkspace.reviewBadgeCount = 0
     mockFeatureFlags.isEnabled = vi.fn(() => true)
@@ -152,6 +154,19 @@ describe('PaperSidebar', () => {
     expect(hrefs).toContain('/workspace/boards')
   })
 
+  it('keeps workbench bypass routes available when their feature flags are disabled', () => {
+    mockWorkspace.mode = 'workbench'
+    mockFeatureFlags.isEnabled = vi.fn(() => false)
+    const wrapper = mountSidebar()
+
+    const hrefs = wrapper.findAll('a.paper-sidebar__item').map((l) => l.attributes('href'))
+    expect(hrefs).toContain('/workspace/review')
+    expect(hrefs).toContain('/workspace/automations/chat')
+    expect(hrefs).toContain('/workspace/activity')
+    expect(hrefs).toContain('/workspace/ops/cli')
+    expect(hrefs).toContain('/workspace/settings/profile')
+  })
+
   it('calls paperThemeStore.toggleNight() when the theme toggle is clicked', async () => {
     const wrapper = mountSidebar()
     const toggle = wrapper.find('.paper-sidebar__theme-toggle')
@@ -180,5 +195,53 @@ describe('PaperSidebar', () => {
       .find((l) => l.text().includes('Shortcuts'))
     await shortcutsLink?.trigger('click')
     expect(wrapper.emitted('open-shortcuts')).toHaveLength(1)
+  })
+
+  it('does not mark prefix-matched sibling routes as active', () => {
+    mockRoute.path = '/workspace/boards-archive'
+    const wrapper = mountSidebar()
+    const boardsLink = wrapper.findAll('a.paper-sidebar__item')
+      .find((l) => l.attributes('href') === '/workspace/boards')
+
+    expect(boardsLink?.classes()).not.toContain('paper-sidebar__item--active')
+    expect(boardsLink?.attributes('aria-current')).toBeUndefined()
+  })
+
+  it('exposes command-palette navigation items with icon fields', () => {
+    const wrapper = mountSidebar()
+    const exposed = wrapper.vm as unknown as {
+      availableNavItems: Array<{ label: string; icon: string; path: string; keywords?: string }>
+    }
+
+    expect(exposed.availableNavItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'Boards', icon: 'B', path: '/workspace/boards' }),
+        expect.objectContaining({ label: 'Inbox', icon: 'I', path: '/workspace/inbox' }),
+        expect.objectContaining({ label: 'Agents', icon: 'G', path: '/workspace/agents' }),
+        expect.objectContaining({ label: 'Access', icon: 'A', path: '/workspace/settings/access' }),
+        expect.objectContaining({ label: 'Archive', icon: 'Z', path: '/workspace/archive' }),
+      ]),
+    )
+    expect(exposed.availableNavItems.some((item) => item.path.startsWith('#'))).toBe(false)
+  })
+
+  it('exposes and closes the mobile menu controls', async () => {
+    const wrapper = mountSidebar()
+    const exposed = wrapper.vm as unknown as {
+      mobileOpen: boolean
+      toggleMobileMenu: () => void
+    }
+
+    exposed.toggleMobileMenu()
+    await wrapper.vm.$nextTick()
+
+    expect(exposed.mobileOpen).toBe(true)
+    expect(wrapper.find('.paper-sidebar--mobile-open').exists()).toBe(true)
+
+    const boardsLink = wrapper.findAll('a.paper-sidebar__item')
+      .find((l) => l.attributes('href') === '/workspace/boards')
+    await boardsLink?.trigger('click')
+
+    expect(exposed.mobileOpen).toBe(false)
   })
 })

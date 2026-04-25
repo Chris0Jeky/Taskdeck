@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { useRoute, type RouteLocationMatched } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
+import { useWorkspaceStore } from '../../store/workspaceStore'
+import type { WorkspaceMode } from '../../types/workspace'
+import { isWorkspaceMode } from '../../types/workspace'
 import PaperIcon from './PaperIcon.vue'
 import PaperKbd from './PaperKbd.vue'
 import PaperStatusPill from './PaperStatusPill.vue'
@@ -23,6 +26,22 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const session = useSessionStore()
+const workspace = useWorkspaceStore()
+
+const workspaceModeMeta: Record<WorkspaceMode, { label: string; description: string }> = {
+  guided: {
+    label: 'Guided',
+    description: 'Core loop',
+  },
+  workbench: {
+    label: 'Workbench',
+    description: 'Full workspace',
+  },
+  agent: {
+    label: 'Agent',
+    description: 'Agent surfaces',
+  },
+}
 
 type Crumb = {
   label: string
@@ -72,24 +91,30 @@ const avatarLetter = computed(() => {
   return name.trim().charAt(0).toUpperCase() || 'D'
 })
 
+const activeWorkspaceMode = computed<WorkspaceMode>(() =>
+  isWorkspaceMode(workspace.mode)
+    ? workspace.mode
+    : 'guided')
+
+const currentModeMeta = computed(() => workspaceModeMeta[activeWorkspaceMode.value])
+
+const commandModifierLabel = computed(() => {
+  if (typeof navigator === 'undefined') return 'Ctrl'
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? '⌘' : 'Ctrl'
+})
+
 function handlePaletteClick() {
   emit('palette:open')
 }
 
-function handleKeydown(event: KeyboardEvent) {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-    event.preventDefault()
-    emit('palette:open')
+function handleWorkspaceModeChange(event: Event) {
+  const nextMode = (event.target as HTMLSelectElement | null)?.value
+  if (!nextMode || !isWorkspaceMode(nextMode)) {
+    return
   }
+
+  void workspace.updateMode(nextMode)
 }
-
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
-})
 </script>
 
 <template>
@@ -107,6 +132,21 @@ onUnmounted(() => {
 
     <div class="paper-topbar__spacer" />
 
+    <label class="paper-topbar__mode">
+      <span class="tk-eyebrow paper-topbar__mode-label">Workspace</span>
+      <select
+        class="paper-topbar__mode-select"
+        :value="activeWorkspaceMode"
+        aria-label="Workspace mode"
+        :title="currentModeMeta.description"
+        @change="handleWorkspaceModeChange"
+      >
+        <option value="guided">Guided</option>
+        <option value="workbench">Workbench</option>
+        <option value="agent">Agent</option>
+      </select>
+    </label>
+
     <button
       type="button"
       class="paper-topbar__palette"
@@ -116,7 +156,7 @@ onUnmounted(() => {
       <PaperIcon name="search" />
       <span class="paper-topbar__palette-label">Go anywhere &middot; capture &middot; ask</span>
       <span class="paper-topbar__palette-spacer" />
-      <PaperKbd>&#8984;</PaperKbd>
+      <PaperKbd>{{ commandModifierLabel }}</PaperKbd>
       <PaperKbd>K</PaperKbd>
     </button>
 
@@ -178,6 +218,35 @@ onUnmounted(() => {
 
 .paper-topbar__spacer {
   flex: 1;
+}
+
+.paper-topbar__mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.paper-topbar__mode-label {
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.paper-topbar__mode-select {
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper-card);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.paper-topbar__mode-select:focus {
+  border-color: var(--ember);
+  outline: none;
 }
 
 .paper-topbar__palette {

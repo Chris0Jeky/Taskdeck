@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
@@ -29,6 +30,8 @@ type PaperNavItem = {
   badgeKey?: 'inbox' | 'review'
   /** Hide if this feature flag exists and is disabled. */
   flag?: keyof FeatureFlags
+  workbenchBypassesFlag?: boolean
+  keywords?: string
 }
 
 const props = withDefaults(
@@ -52,42 +55,62 @@ const route = useRoute()
 const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
+const mobileOpen = ref(false)
 
 const primaryItems: PaperNavItem[] = [
-  { id: 'home', label: 'Home', glyph: 'H', path: '/workspace/home' },
-  { id: 'today', label: 'Today', glyph: 'T', path: '/workspace/today' },
-  { id: 'review', label: 'Review', glyph: 'R', path: '/workspace/review', badgeKey: 'review', flag: 'newAutomation' },
-  { id: 'boards', label: 'Boards', glyph: 'B', path: '/workspace/boards' },
-  { id: 'inbox', label: 'Inbox', glyph: 'I', path: '/workspace/inbox', badgeKey: 'inbox' },
+  { id: 'home', label: 'Home', glyph: 'H', path: '/workspace/home', keywords: 'home start summary workspace' },
+  { id: 'today', label: 'Today', glyph: 'T', path: '/workspace/today', keywords: 'today agenda daily focus overdue blocked' },
+  { id: 'review', label: 'Review', glyph: 'R', path: '/workspace/review', badgeKey: 'review', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: 'review proposals automations approve reject execute' },
+  { id: 'boards', label: 'Boards', glyph: 'B', path: '/workspace/boards', keywords: 'boards projects workspace' },
+  { id: 'inbox', label: 'Inbox', glyph: 'I', path: '/workspace/inbox', badgeKey: 'inbox', keywords: 'inbox captures triage' },
 ]
 
 const workbenchItems: PaperNavItem[] = [
-  { id: 'views', label: 'Views', glyph: 'V', path: '/workspace/views' },
-  { id: 'notifications', label: 'Notifications', glyph: 'N', path: '/workspace/notifications' },
-  { id: 'chat', label: 'Chat', glyph: 'C', path: '/workspace/automations/chat', flag: 'newAutomation' },
-  { id: 'calendar', label: 'Calendar', glyph: 'D', path: '/workspace/calendar' },
-  { id: 'metrics', label: 'Metrics', glyph: 'M', path: '/workspace/metrics' },
-  { id: 'integrations', label: 'Integrations', glyph: 'X', path: '/workspace/integrations' },
-  { id: 'activity', label: 'Activity', glyph: 'Y', path: '/workspace/activity', flag: 'newActivity' },
-  { id: 'ops', label: 'Ops', glyph: 'O', path: '/workspace/ops/cli', flag: 'newOps' },
+  { id: 'views', label: 'Views', glyph: 'V', path: '/workspace/views', keywords: 'views saved filters shortcuts blocked due week review' },
+  { id: 'notifications', label: 'Notifications', glyph: 'N', path: '/workspace/notifications', keywords: 'notifications updates mention assignment' },
+  { id: 'chat', label: 'Chat', glyph: 'C', path: '/workspace/automations/chat', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: 'chat automation assistant board context' },
+  { id: 'calendar', label: 'Calendar', glyph: 'D', path: '/workspace/calendar', keywords: 'calendar timeline planning due dates schedule deadlines' },
+  { id: 'metrics', label: 'Metrics', glyph: 'M', path: '/workspace/metrics', keywords: 'metrics analytics throughput cycle time wip blocked dashboard' },
+  { id: 'integrations', label: 'Integrations', glyph: 'X', path: '/workspace/integrations', keywords: 'integrations connectors inbound outbound webhook import' },
+  { id: 'activity', label: 'Activity', glyph: 'Y', path: '/workspace/activity', flag: 'newActivity', workbenchBypassesFlag: true, keywords: 'activity audit history events' },
+  { id: 'ops', label: 'Ops', glyph: 'O', path: '/workspace/ops/cli', flag: 'newOps', workbenchBypassesFlag: true, keywords: 'ops logs cli endpoints' },
 ]
 
 const metaItems: PaperNavItem[] = [
-  { id: 'settings', label: 'Settings', glyph: 'S', path: '/workspace/settings/profile', flag: 'newAuth' },
-  { id: 'api-keys', label: 'API Keys', glyph: 'K', path: '/workspace/settings/api-keys' },
-  { id: 'preferences', label: 'Preferences', glyph: 'P', path: '/workspace/settings/preferences' },
+  { id: 'settings', label: 'Settings', glyph: 'S', path: '/workspace/settings/profile', flag: 'newAuth', workbenchBypassesFlag: true, keywords: 'settings profile password account' },
+  { id: 'api-keys', label: 'API Keys', glyph: 'K', path: '/workspace/settings/api-keys', keywords: 'api keys mcp tokens authentication' },
+  { id: 'preferences', label: 'Preferences', glyph: 'P', path: '/workspace/settings/preferences', keywords: 'preferences notifications' },
   { id: 'shortcuts', label: 'Shortcuts', glyph: '?', path: '#shortcuts' },
   { id: 'logout', label: 'Logout', glyph: '→', path: '#logout' },
 ]
 
+const commandOnlyItems: PaperNavItem[] = [
+  { id: 'agents', label: 'Agents', glyph: 'G', path: '/workspace/agents', keywords: 'agents profiles runs automation agent mode' },
+  { id: 'access', label: 'Access', glyph: 'A', path: '/workspace/settings/access', flag: 'newAccess', workbenchBypassesFlag: true, keywords: 'access board sharing permissions' },
+  { id: 'archive', label: 'Archive', glyph: 'Z', path: '/workspace/archive', flag: 'newArchive', workbenchBypassesFlag: true, keywords: 'archive restore hidden boards' },
+]
+
 function isAvailable(item: PaperNavItem): boolean {
   if (!item.flag) return true
+  if (workspace.mode === 'workbench' && item.workbenchBypassesFlag) return true
   return featureFlags.isEnabled(item.flag)
 }
 
 const visiblePrimary = computed(() => primaryItems.filter(isAvailable))
 const visibleWorkbench = computed(() => workbenchItems.filter(isAvailable))
 const visibleMeta = computed(() => metaItems.filter(isAvailable))
+const availableNavItems = computed(() =>
+  [...visiblePrimary.value, ...visibleWorkbench.value, ...visibleMeta.value]
+    .concat(commandOnlyItems.filter(isAvailable))
+    .filter((item) => !item.path.startsWith('#'))
+    .map((item) => ({
+      id: item.id,
+      label: item.label,
+      icon: item.glyph,
+      path: item.path,
+      keywords: item.keywords,
+    })),
+)
 
 function badgeFor(item: PaperNavItem): number {
   if (item.badgeKey === 'inbox') return workspace.inboxBadgeCount
@@ -99,12 +122,16 @@ function isActive(item: PaperNavItem): boolean {
   if (item.path.startsWith('#')) return false
   if (item.path === '/workspace/home') return route.path === item.path
   if (item.path === '/workspace/review') {
-    return route.path.startsWith('/workspace/review')
-      || route.path.startsWith('/workspace/automations/proposals')
-      || route.path.startsWith('/workspace/automations/queue')
+    return isCurrentOrChild('/workspace/review')
+      || isCurrentOrChild('/workspace/automations/proposals')
+      || isCurrentOrChild('/workspace/automations/queue')
   }
-  if (item.path === '/workspace/ops/cli') return route.path.startsWith('/workspace/ops')
-  return route.path.startsWith(item.path)
+  if (item.path === '/workspace/ops/cli') return isCurrentOrChild('/workspace/ops')
+  return isCurrentOrChild(item.path)
+}
+
+function isCurrentOrChild(path: string): boolean {
+  return route.path === path || route.path.startsWith(`${path}/`)
 }
 
 const workspaceInitial = computed(() =>
@@ -122,6 +149,7 @@ const themeIcon = computed<'sun' | 'moon'>(() =>
 function handleMetaClick(item: PaperNavItem, event: MouseEvent) {
   if (!item.path.startsWith('#')) return
   event.preventDefault()
+  closeMobileMenu()
   if (item.id === 'logout') emit('logout')
   else if (item.id === 'shortcuts') emit('open-shortcuts')
 }
@@ -130,16 +158,53 @@ function handleThemeToggle() {
   paperTheme.toggleNight()
 }
 
+function closeMobileMenu() {
+  mobileOpen.value = false
+}
+
+function toggleMobileMenu() {
+  mobileOpen.value = !mobileOpen.value
+}
+
+watch(mobileOpen, (isOpen, _, onCleanup) => {
+  if (!isOpen) return
+
+  document.body.style.overflow = 'hidden'
+  const unregisterEscape = registerEscapeHandler(closeMobileMenu)
+
+  onCleanup(() => {
+    document.body.style.overflow = ''
+    unregisterEscape()
+  })
+})
+
+onUnmounted(() => {
+  if (mobileOpen.value) {
+    document.body.style.overflow = ''
+  }
+})
+
 defineExpose({
+  availableNavItems,
   visiblePrimary,
   visibleWorkbench,
   visibleMeta,
+  mobileOpen,
+  toggleMobileMenu,
+  closeMobileMenu,
 })
 </script>
 
 <template>
+  <div
+    v-if="mobileOpen"
+    class="paper-sidebar-overlay"
+    aria-hidden="true"
+    @click="closeMobileMenu"
+  />
   <nav
     class="paper-sidebar"
+    :class="{ 'paper-sidebar--mobile-open': mobileOpen }"
     role="navigation"
     aria-label="Workspace navigation"
     data-paper-sidebar
@@ -166,6 +231,7 @@ defineExpose({
             class="paper-sidebar__item"
             :class="{ 'paper-sidebar__item--active': isActive(item) }"
             :aria-current="isActive(item) ? 'page' : undefined"
+            @click="closeMobileMenu"
           >
             <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
             <span class="paper-sidebar__label">{{ item.label }}</span>
@@ -188,6 +254,7 @@ defineExpose({
             class="paper-sidebar__item"
             :class="{ 'paper-sidebar__item--active': isActive(item) }"
             :aria-current="isActive(item) ? 'page' : undefined"
+            @click="closeMobileMenu"
           >
             <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
             <span class="paper-sidebar__label">{{ item.label }}</span>
@@ -207,6 +274,7 @@ defineExpose({
             class="paper-sidebar__item paper-sidebar__item--muted"
             :class="{ 'paper-sidebar__item--active': isActive(item) }"
             :aria-current="isActive(item) ? 'page' : undefined"
+            @click="closeMobileMenu"
           >
             <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
             <span class="paper-sidebar__label">{{ item.label }}</span>
@@ -253,6 +321,10 @@ defineExpose({
   font-family: var(--sans);
   position: relative;
   min-height: 100vh;
+}
+
+.paper-sidebar-overlay {
+  display: none;
 }
 
 .paper-sidebar__header {
@@ -436,5 +508,34 @@ defineExpose({
 .paper-sidebar__theme-toggle:hover {
   border-color: var(--line);
   color: var(--ember);
+}
+
+@media (max-width: 640px) {
+  .paper-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: auto;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 50;
+  }
+
+  .paper-sidebar--mobile-open {
+    transform: translateX(0);
+  }
+
+  .paper-sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(26, 24, 20, 0.42);
+    z-index: 45;
+  }
+
+  .paper-sidebar__item {
+    min-height: 44px;
+  }
 }
 </style>
