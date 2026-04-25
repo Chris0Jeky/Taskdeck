@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { usePaperThemeStore, type PaperMode } from '../store/paperThemeStore'
+import PaperStamp from '../components/paper/PaperStamp.vue'
+import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
+import PaperTagstamp from '../components/paper/PaperTagstamp.vue'
+import PaperCard from '../components/paper/PaperCard.vue'
+import PaperKbd from '../components/paper/PaperKbd.vue'
+import PaperIcon from '../components/paper/PaperIcon.vue'
+import PaperStatusPill from '../components/paper/PaperStatusPill.vue'
+import PaperLedgerRow from '../components/paper/PaperLedgerRow.vue'
+import PaperConfidenceDial from '../components/paper/PaperConfidenceDial.vue'
+import PaperUndoTimeline from '../components/paper/PaperUndoTimeline.vue'
+import { PAPER_ICON_SHAPES, type PaperIconName } from '../components/paper/paperIconPaths'
 
 const themeStore = usePaperThemeStore()
 
@@ -20,6 +31,15 @@ function setGlobal(mode: PaperMode) {
     previewMode.value = mode
   }
 }
+
+const iconNames = Object.keys(PAPER_ICON_SHAPES) as PaperIconName[]
+
+// Stamp showroom — let visitors flip between proposed/applied to feel the undo
+// crossfade.  Default to applied so the embossed style is visible immediately.
+const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>('applied')
+
+// PaperUndoTimeline — anchor in the past so a partial bar is visible by default.
+const undoApplied = new Date(Date.now() - 90 * 60 * 1000) // 90 min ago
 </script>
 
 <template>
@@ -152,9 +172,164 @@ function setGlobal(mode: PaperMode) {
           <span class="erase-line">undo within 6 hours · single keystroke</span>
         </p>
 
+        <hr class="hr-double sg-rule" />
+
+        <h2 class="tk-h2">Component <em>primitives</em></h2>
+        <p class="tk-lede">
+          Reusable Vue 3 SFCs under <code>src/components/paper/</code>. Each
+          primitive composes from the tokens above and works inside both
+          <code>.paper</code> and <code>.paper-night</code> without a dark-mode prop.
+        </p>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperStamp</h3>
+        <div class="sg-row sg-stamps">
+          <PaperStamp kind="applied" date="Apr 25" time="11:42" num="014" />
+          <PaperStamp kind="proposed" date="Apr 25" time="11:50" num="015" />
+          <PaperStamp kind="captured" date="Apr 25" time="10:01" num="021" />
+          <PaperStamp kind="overdue" date="3d" time="past" num="007" />
+          <PaperStamp kind="draft" date="Apr 25" time="—" num="—" />
+        </div>
+        <div class="sg-row" style="margin-top: 14px;">
+          <PaperHLBtn
+            label="Toggle stamp kind"
+            kbd="U"
+            @click="stampKind = stampKind === 'applied' ? 'proposed' : 'applied'"
+          />
+          <PaperStamp :kind="stampKind" date="Apr 25" time="11:42" num="014" />
+          <span class="tk-meta">crossfades 240ms (skipped for reduced-motion)</span>
+        </div>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperHLBtn</h3>
+        <div class="sg-row">
+          <PaperHLBtn label="Default" kbd="⌫" />
+          <PaperHLBtn variant="primary" label="Primary" kbd="P" />
+          <PaperHLBtn variant="ember" label="Apply" kbd="⏎" />
+          <PaperHLBtn variant="ghost" label="Ghost" />
+          <PaperHLBtn label="Capture" kbd="space">
+            <template #icon><PaperIcon name="plus" /></template>
+          </PaperHLBtn>
+        </div>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperTagstamp</h3>
+        <div class="sg-row">
+          <PaperTagstamp tone="ember">PROPOSED · DIFF</PaperTagstamp>
+          <PaperTagstamp tone="applied">APPLIED</PaperTagstamp>
+          <PaperTagstamp tone="overdue">OVERDUE</PaperTagstamp>
+          <PaperTagstamp tone="mute">DRAFT</PaperTagstamp>
+        </div>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperCard</h3>
+        <div class="sg-grid-3">
+          <PaperCard variant="flat" class="sg-pad-tight">
+            <span class="tk-eyebrow">flat</span>
+            <p class="tk-body">Hairline border, single shadow.</p>
+          </PaperCard>
+          <PaperCard variant="lift" class="sg-pad-tight">
+            <span class="tk-eyebrow">lift</span>
+            <p class="tk-body">Lifted shadow for decision rails.</p>
+          </PaperCard>
+          <PaperCard variant="well" class="sg-pad-tight">
+            <span class="tk-eyebrow">well</span>
+            <p class="tk-body">Recessed surface for column wells.</p>
+          </PaperCard>
+          <PaperCard variant="flat" :halo="true" class="sg-pad-tight">
+            <span class="tk-eyebrow" style="color: var(--ember)">halo</span>
+            <p class="tk-body">Active proposal halo.</p>
+          </PaperCard>
+        </div>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperKbd</h3>
+        <div class="sg-row">
+          <PaperKbd>⌘</PaperKbd>
+          <PaperKbd>K</PaperKbd>
+          <PaperKbd>⌫</PaperKbd>
+          <PaperKbd :light="true">space</PaperKbd>
+          <PaperKbd :light="true">tab</PaperKbd>
+        </div>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperIcon · hairline set</h3>
+        <div class="sg-icon-grid">
+          <span v-for="name in iconNames" :key="name" class="sg-icon-cell">
+            <PaperIcon :name="name" :size="16" />
+            <span class="tk-meta">{{ name }}</span>
+          </span>
+        </div>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperStatusPill</h3>
+        <div class="sg-row">
+          <PaperStatusPill kind="proposed">PROPOSED</PaperStatusPill>
+          <PaperStatusPill kind="applied">APPLIED</PaperStatusPill>
+          <PaperStatusPill kind="overdue">OVERDUE</PaperStatusPill>
+          <PaperStatusPill kind="draft">DRAFT</PaperStatusPill>
+          <PaperStatusPill kind="live">LIVE</PaperStatusPill>
+        </div>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperLedgerRow</h3>
+        <PaperCard variant="flat">
+          <PaperLedgerRow
+            idx="014"
+            title="Split &quot;Implement dark mode&quot; into three smaller cards."
+            meta="Apr 25 · 11:42"
+            :status="{ kind: 'applied', label: 'APPLIED' }"
+          />
+          <PaperLedgerRow
+            idx="015"
+            title="Add provenance trail to applied proposals."
+            meta="Apr 25 · 11:50"
+            :status="{ kind: 'proposed', label: 'PROPOSED' }"
+          />
+          <PaperLedgerRow
+            idx="016"
+            title="Audit overdue items in Inbox."
+            meta="2d"
+            :status="{ kind: 'overdue', label: 'OVERDUE' }"
+          />
+        </PaperCard>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperConfidenceDial</h3>
+        <div class="sg-row" style="gap: 28px;">
+          <PaperConfidenceDial :value="0.18" subline="router · v3" />
+          <PaperConfidenceDial :value="0.5" subline="haiku" />
+          <PaperConfidenceDial :value="0.84" subline="opus" />
+          <PaperConfidenceDial :value="1" caption="LIVE" subline="local" />
+        </div>
+
+        <h3 class="tk-eyebrow sg-section-eyebrow">PaperUndoTimeline</h3>
+        <div class="sg-undo-demo">
+          <PaperUndoTimeline :applied-at="undoApplied" :window-ms="6 * 60 * 60 * 1000" />
+        </div>
+
+        <hr class="hr-line sg-rule" />
+
         <footer class="tk-serial sg-footer">
           STYLEGUIDE · PAPER &amp; GRAPHITE · {{ previewMode.toUpperCase() }}
         </footer>
+      </div>
+    </section>
+
+    <!-- Side-by-side opposite-theme preview frame so primitives can be checked
+         in both substrates without flipping the toggle. -->
+    <section :class="['sg-frame', 'sg-frame-mini', previewMode === 'paper' ? 'paper-night' : 'paper']">
+      <div class="sg-pad">
+        <h3 class="tk-eyebrow">Primitives in {{ previewMode === 'paper' ? 'NIGHT' : 'LIGHT' }}</h3>
+        <div class="sg-row sg-stamps">
+          <PaperStamp kind="applied" date="Apr 25" time="11:42" num="014" />
+          <PaperStamp kind="proposed" date="Apr 25" time="11:50" num="015" />
+          <PaperStamp kind="overdue" date="3d" time="past" num="007" />
+        </div>
+        <div class="sg-row">
+          <PaperHLBtn label="Default" kbd="⌫" />
+          <PaperHLBtn variant="ember" label="Apply" kbd="⏎" />
+          <PaperTagstamp tone="ember">PROPOSED</PaperTagstamp>
+          <PaperStatusPill kind="live">LIVE</PaperStatusPill>
+        </div>
+        <div class="sg-row" style="gap: 28px;">
+          <PaperConfidenceDial :value="0.62" subline="haiku" />
+          <PaperCard variant="lift" class="sg-pad-tight" style="min-width: 200px;">
+            <span class="tk-eyebrow">card-lift</span>
+            <p class="tk-body">Both themes share one stylesheet.</p>
+          </PaperCard>
+        </div>
       </div>
     </section>
   </div>
@@ -279,5 +454,35 @@ function setGlobal(mode: PaperMode) {
   margin-top: 36px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+.sg-section-eyebrow {
+  display: block;
+  margin-top: 28px;
+  margin-bottom: 10px;
+}
+.sg-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 12px;
+}
+.sg-icon-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--paper-card);
+}
+.sg-undo-demo {
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--paper-2);
+  max-width: 480px;
+}
+.sg-frame-mini {
+  margin-top: 16px;
 }
 </style>
