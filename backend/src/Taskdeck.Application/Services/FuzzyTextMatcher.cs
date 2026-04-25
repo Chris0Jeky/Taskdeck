@@ -59,7 +59,8 @@ public class FuzzyTextMatcher : IFuzzyTextMatcher
         if (bestDistance == int.MaxValue)
             return 0.0;
 
-        return 1.0 - (double)bestDistance / normalizedCandidate.Length;
+        var similarity = 1.0 - (double)bestDistance / normalizedCandidate.Length;
+        return Math.Max(0.0, similarity);
     }
 
     public bool IsMatch(string candidate, string source, double threshold = 0.8)

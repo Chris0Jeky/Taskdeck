@@ -30,20 +30,18 @@ public class DeterministicPreExtractor : IDeterministicPreExtractor
 
         var results = new List<ExtractedEntity>();
 
-        // Date/time recognition
+        // Date/time and duration recognition (single call, split by type)
         try
         {
             var dateTimeResults = DateTimeRecognizer.RecognizeDateTime(text, culture);
             foreach (var result in dateTimeResults)
             {
-                // Skip duration types here -- they are handled separately below
-                if (result.TypeName.Contains("duration", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
+                var isDuration = result.TypeName.Contains("duration", StringComparison.OrdinalIgnoreCase);
+                var entityType = isDuration ? "Duration" : "DateTime";
                 var resolved = ResolveValue(result);
                 // ModelResult.End is the last character index (inclusive), so +1 for exclusive end
                 results.Add(new ExtractedEntity(
-                    "DateTime",
+                    entityType,
                     result.Text,
                     resolved,
                     result.Start,
@@ -52,7 +50,7 @@ public class DeterministicPreExtractor : IDeterministicPreExtractor
         }
         catch
         {
-            // Malformed input -- skip datetime extraction
+            // Malformed input -- skip datetime/duration extraction
         }
 
         // Number recognition
@@ -73,29 +71,6 @@ public class DeterministicPreExtractor : IDeterministicPreExtractor
         catch
         {
             // Malformed input -- skip number extraction
-        }
-
-        // Duration recognition (uses DateTimeRecognizer with duration type)
-        try
-        {
-            var durationResults = DateTimeRecognizer.RecognizeDateTime(text, culture);
-            foreach (var result in durationResults)
-            {
-                if (result.TypeName.Contains("duration", StringComparison.OrdinalIgnoreCase))
-                {
-                    var resolved = ResolveValue(result);
-                    results.Add(new ExtractedEntity(
-                        "Duration",
-                        result.Text,
-                        resolved,
-                        result.Start,
-                        result.End + 1));
-                }
-            }
-        }
-        catch
-        {
-            // Malformed input -- skip duration extraction
         }
 
         // URL extraction (regex-based, more reliable than Recognizers for URLs)
