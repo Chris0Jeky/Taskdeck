@@ -46,10 +46,12 @@ public class RoadmapInvariantTests
     [Fact]
     public void Invariant01_AutomationSurfaces_DoNotMutateBoards_Directly()
     {
-        // Automation surfaces that must NOT call board mutation methods directly
+        // Automation surfaces that must NOT call board mutation methods directly.
+        // Scan the entire Application/Services tree plus MCP tools so that new
+        // automation entrypoints (ChatService, CaptureService, etc.) are covered.
         var automationDirs = new[]
         {
-            "src/Taskdeck.Application/Services/Tools",     // write tool executors
+            "src/Taskdeck.Application/Services",           // all application services
             "src/Taskdeck.Api/Mcp",                        // MCP tools
         };
 
@@ -63,11 +65,17 @@ public class RoadmapInvariantTests
 
         // Files that are explicitly allowed to call mutations:
         // - operation handlers in the executor pipeline (run AFTER approval)
-        // - the AutomationExecutorService itself
+        // - the AutomationExecutorService itself (delegates to pipeline)
+        // - the core service implementations (BoardService, CardService, ColumnService)
+        //   which ARE the mutation layer, not consumers of it
         var allowedFilePatterns = new[]
         {
             "OperationHandler",       // Pipeline handlers execute approved operations
             "ExecutionAuditRecorder",  // Records audit for executed operations
+            "AutomationExecutorService", // Executor delegates to pipeline after approval
+            "BoardService",           // Core service — IS the mutation layer
+            "CardService",            // Core service — IS the mutation layer
+            "ColumnService",          // Core service — IS the mutation layer
         };
 
         var violations = new List<string>();
@@ -344,10 +352,11 @@ public class RoadmapInvariantTests
         };
 
         var httpPatterns = new Regex(
-            @"new\s+HttpClient\s*\(|" +
-            @"IHttpClientFactory|" +
-            @"\.AddHttpClient\s*[<(]|" +
-            @"HttpClient\s+\w+\s*=",
+            @"new\s+HttpClient\s*\(|" +                      // direct construction
+            @"IHttpClientFactory|" +                          // factory injection
+            @"\.AddHttpClient\s*[<(]|" +                      // DI registration
+            @"HttpClient\s+\w+\s*=|" +                        // local assignment
+            @"HttpClient\s+_?\w+\s*[;,]",                     // field declaration or ctor parameter
             RegexOptions.Compiled);
 
         // Known/expected outbound HTTP usage sites (file names without extension)
@@ -357,12 +366,10 @@ public class RoadmapInvariantTests
             "OpenAiLlmProvider",
             "GeminiLlmProvider",
             "OutboundWebhookDeliveryWorker",
-            "OutboundWebhookDeliveryService",
-            "ApplicationServiceRegistration",
             "WorkerRegistration",
-            "InfrastructureServiceRegistration",
             "DependencyInjection",
             "LlmProviderRegistration",
+            "GitHubConnectorProvider",     // typed-client for GitHub API health check
             "Program",
         };
 
