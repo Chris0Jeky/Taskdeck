@@ -145,6 +145,7 @@ function onDragHandleMouseDown() {
     :aria-label="`Card ${card.title}`"
     @click="onClick"
     @keydown.enter.prevent="onClick"
+    @keydown.space.prevent="onClick"
     @dragstart="onDragStart"
     @dragend="onDragEnd"
   >

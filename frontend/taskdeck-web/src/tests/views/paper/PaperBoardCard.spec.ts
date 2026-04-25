@@ -89,6 +89,13 @@ describe('PaperBoardCard', () => {
     expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
   })
 
+  it('emits click with the card payload from Space key activation', async () => {
+    const card = makeCard()
+    const wrapper = mount(PaperBoardCard, { props: { card } })
+    await wrapper.trigger('keydown', { key: ' ' })
+    expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
+  })
+
   it('emits dragstart and dragend events', async () => {
     const card = makeCard()
     const wrapper = mount(PaperBoardCard, { props: { card } })
