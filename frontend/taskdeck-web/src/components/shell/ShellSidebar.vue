@@ -402,6 +402,7 @@ defineExpose({
       <!-- Settings link at bottom of nav (above footer) -->
       <div class="td-sidebar__spacer" />
       <router-link
+        v-if="featureFlags.isEnabled('newAuth')"
         to="/workspace/settings/profile"
         class="td-nav-item td-nav-item--secondary"
         :class="{ 'td-nav-item--active': isActiveRoute('/workspace/settings') }"
