@@ -299,10 +299,19 @@
   box-shadow: var(--shadow-press);
 }
 .paper .halo-ember, .paper-night .halo-ember {
+  /*
+   * Outermost glow uses --ember-bloom so the halo warms in night mode.
+   * The handoff CSS pinned this to `#a8421f30` (light ember at 18% alpha),
+   * which short-circuits the `.paper-night` inversion.  Substituting the
+   * --ember-bloom token keeps the same intent (a soft, ~20% alpha halo
+   * in the active accent hue) and inverts cleanly:
+   *   .paper       → --ember-bloom = #a8421f1a (light ember, ~10% alpha)
+   *   .paper-night → --ember-bloom = #d96a3e22 (night ember, ~13% alpha)
+   */
   box-shadow:
     0 0 0 1px var(--ember),
     0 0 0 6px var(--ember-bloom),
-    0 8px 24px -10px #a8421f30,
+    0 8px 24px -10px var(--ember-bloom),
     0 1px 0 var(--line);
 }
 
@@ -328,7 +337,18 @@
 .paper .pbtn-primary, .paper-night .pbtn-primary {
   background: var(--ink-deep); color: var(--paper-card); border-color: var(--ink-deep);
 }
-.paper .pbtn-primary:hover, .paper-night .pbtn-primary:hover { background: #000; border-color: #000; }
+/*
+ * Hover is "press a little harder into the ink".  The handoff CSS pins this
+ * to `#000`, which works in light mode (--ink-deep is #0a0908, hovering to
+ * pure black is barely a shift) but breaks in night mode where --ink-deep
+ * is `#fbf3df` (light cream) — flipping a light pill to pure black on hover
+ * is jarring and inverts the visual intent.  Split per theme so the hover
+ * always darkens the resting state by a small amount.
+ */
+.paper .pbtn-primary:hover { background: #000; border-color: #000; }
+.paper-night .pbtn-primary:hover {
+  background: var(--ink-2); border-color: var(--ink-2);
+}
 .paper .pbtn-ember, .paper-night .pbtn-ember {
   background: var(--ember); color: #fbf2e8; border-color: var(--ember-deep);
   box-shadow: inset 0 1px 0 #ffffff20, 0 1px 0 var(--ember-deep);
