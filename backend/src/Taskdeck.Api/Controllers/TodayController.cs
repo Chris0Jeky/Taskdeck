@@ -39,12 +39,14 @@ public class TodayController : AuthenticatedControllerBase
     [ProducesResponseType(typeof(StreakResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> GetStreak([FromQuery] int days = 90)
+    public async Task<IActionResult> GetStreak(
+        [FromQuery] int days = 90,
+        CancellationToken cancellationToken = default)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _streakService.GetStreakAsync(userId, days);
+        var result = await _streakService.GetStreakAsync(userId, days, cancellationToken);
 
         if (!result.IsSuccess)
             return result.ToErrorActionResult();
