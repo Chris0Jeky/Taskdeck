@@ -63,7 +63,7 @@ public class ConfidenceBreakdownServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((AutomationProposal?)null);
 
-        var result = await _sut.GetBreakdownAsync(proposalId, Guid.NewGuid());
+        var result = await _sut.GetBreakdownAsync(proposalId);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
@@ -78,7 +78,7 @@ public class ConfidenceBreakdownServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
-        var result = await _sut.GetBreakdownAsync(proposal.Id, Guid.NewGuid());
+        var result = await _sut.GetBreakdownAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Components.Should().HaveCount(4);
@@ -93,7 +93,7 @@ public class ConfidenceBreakdownServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
-        var result = await _sut.GetBreakdownAsync(proposal.Id, Guid.NewGuid());
+        var result = await _sut.GetBreakdownAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Threshold.Should().Be(0.7);
@@ -108,7 +108,7 @@ public class ConfidenceBreakdownServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
-        var result = await _sut.GetBreakdownAsync(proposal.Id, Guid.NewGuid());
+        var result = await _sut.GetBreakdownAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Overall.Should().BeInRange(0.0, 1.0);
@@ -123,7 +123,7 @@ public class ConfidenceBreakdownServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
-        var result = await _sut.GetBreakdownAsync(proposal.Id, Guid.NewGuid());
+        var result = await _sut.GetBreakdownAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         foreach (var component in result.Value.Components)
@@ -142,7 +142,7 @@ public class ConfidenceBreakdownServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
-        var result = await _sut.GetBreakdownAsync(proposal.Id, Guid.NewGuid());
+        var result = await _sut.GetBreakdownAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.MeetsThreshold.Should().Be(result.Value.Overall >= result.Value.Threshold);
@@ -490,7 +490,7 @@ public class ConfidenceBreakdownServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
-        var result = await _sut.GetBreakdownAsync(proposal.Id, Guid.NewGuid());
+        var result = await _sut.GetBreakdownAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         var reversibility = result.Value.Components.First(c => c.Key == "Reversibility");
@@ -506,7 +506,7 @@ public class ConfidenceBreakdownServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
-        var result = await _sut.GetBreakdownAsync(proposal.Id, Guid.NewGuid());
+        var result = await _sut.GetBreakdownAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         var reversibility = result.Value.Components.First(c => c.Key == "Reversibility");
@@ -525,7 +525,7 @@ public class ConfidenceBreakdownServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
-        var result = await _sut.GetBreakdownAsync(proposal.Id, Guid.NewGuid());
+        var result = await _sut.GetBreakdownAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         var reach = result.Value.Components.First(c => c.Key == "Reach");
