@@ -13,41 +13,23 @@ public class KnowledgeChunkRepository : Repository<KnowledgeChunk>, IKnowledgeCh
 
     public async Task<IEnumerable<KnowledgeChunk>> GetUnindexedBatchAsync(
         KnowledgeChunkBackfillCursor? cursor,
+        IReadOnlyCollection<Guid> excludedChunkIds,
         int batchSize,
         CancellationToken cancellationToken = default)
     {
-        if (cursor is null)
-        {
-            return await _dbSet
-                .OrderBy(c => c.CreatedAt)
-                .ThenBy(c => c.Id)
-                .Take(batchSize)
-                .ToListAsync(cancellationToken);
-        }
+        var query = _dbSet.AsQueryable();
 
-        var sameTimestamp = await _dbSet
-            .Where(c => c.CreatedAt == cursor.CreatedAt)
+        if (excludedChunkIds.Count > 0)
+            query = query.Where(c => !excludedChunkIds.Contains(c.Id));
+
+        if (cursor is not null)
+            query = query.Where(c => c.CreatedAt >= cursor.CreatedAt);
+
+        return await query
             .OrderBy(c => c.CreatedAt)
             .ThenBy(c => c.Id)
-            .ToListAsync(cancellationToken);
-
-        var page = sameTimestamp
-            .Where(c => IsAfterCursor(c, cursor))
             .Take(batchSize)
-            .ToList();
-
-        if (page.Count >= batchSize)
-            return page;
-
-        var newer = await _dbSet
-            .Where(c => c.CreatedAt > cursor.CreatedAt)
-            .OrderBy(c => c.CreatedAt)
-            .ThenBy(c => c.Id)
-            .Take(batchSize - page.Count)
             .ToListAsync(cancellationToken);
-
-        page.AddRange(newer);
-        return page;
     }
 
     public async Task<IReadOnlySet<Guid>> GetExistingIdsAsync(
@@ -67,21 +49,18 @@ public class KnowledgeChunkRepository : Repository<KnowledgeChunk>, IKnowledgeCh
 
     public async Task<int> CountUnindexedAsync(
         KnowledgeChunkBackfillCursor? cursor,
+        IReadOnlyCollection<Guid> excludedChunkIds,
         CancellationToken cancellationToken = default)
     {
-        if (cursor is null)
-            return await _dbSet.CountAsync(cancellationToken);
+        var query = _dbSet.AsQueryable();
 
-        var sameTimestamp = await _dbSet
-            .Where(c => c.CreatedAt == cursor.CreatedAt)
-            .ToListAsync(cancellationToken);
+        if (excludedChunkIds.Count > 0)
+            query = query.Where(c => !excludedChunkIds.Contains(c.Id));
 
-        var sameTimestampRemaining = sameTimestamp.Count(c => IsAfterCursor(c, cursor));
-        var newerRemaining = await _dbSet
-            .Where(c => c.CreatedAt > cursor.CreatedAt)
-            .CountAsync(cancellationToken);
+        if (cursor is not null)
+            query = query.Where(c => c.CreatedAt >= cursor.CreatedAt);
 
-        return sameTimestampRemaining + newerRemaining;
+        return await query.CountAsync(cancellationToken);
     }
 
     public async Task<IEnumerable<KnowledgeChunk>> GetByDocumentIdAsync(
@@ -103,11 +82,4 @@ public class KnowledgeChunkRepository : Repository<KnowledgeChunk>, IKnowledgeCh
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    private static bool IsAfterCursor(KnowledgeChunk chunk, KnowledgeChunkBackfillCursor cursor)
-    {
-        if (chunk.CreatedAt > cursor.CreatedAt)
-            return true;
-
-        return chunk.CreatedAt == cursor.CreatedAt && chunk.Id.CompareTo(cursor.Id) > 0;
-    }
 }

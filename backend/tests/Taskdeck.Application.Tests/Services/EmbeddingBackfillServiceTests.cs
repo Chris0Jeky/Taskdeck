@@ -86,22 +86,27 @@ public class EmbeddingBackfillServiceTests
         _chunkRepoMock
             .Setup(r => r.GetUnindexedBatchAsync(
                 It.IsAny<KnowledgeChunkBackfillCursor?>(),
+                It.IsAny<IReadOnlyCollection<Guid>>(),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, int batchSize, CancellationToken _) =>
+            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, IReadOnlyCollection<Guid> excludedChunkIds, int batchSize, CancellationToken _) =>
                 chunks
                     .OrderBy(c => c.CreatedAt)
                     .ThenBy(c => c.Id)
-                    .Where(c => cursor is null || IsAfterCursor(c, cursor))
+                    .Where(c => !excludedChunkIds.Contains(c.Id))
+                    .Where(c => cursor is null || c.CreatedAt >= cursor.CreatedAt)
                     .Take(batchSize)
                     .ToList());
 
         _chunkRepoMock
             .Setup(r => r.CountUnindexedAsync(
                 It.IsAny<KnowledgeChunkBackfillCursor?>(),
+                It.IsAny<IReadOnlyCollection<Guid>>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, CancellationToken _) =>
-                chunks.Count(c => cursor is null || IsAfterCursor(c, cursor)));
+            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, IReadOnlyCollection<Guid> excludedChunkIds, CancellationToken _) =>
+                chunks.Count(c =>
+                    !excludedChunkIds.Contains(c.Id) &&
+                    (cursor is null || c.CreatedAt >= cursor.CreatedAt)));
     }
 
     [Fact]
@@ -250,6 +255,7 @@ public class EmbeddingBackfillServiceTests
         _chunkRepoMock.Verify(
             r => r.GetUnindexedBatchAsync(
                 It.Is<KnowledgeChunkBackfillCursor?>(cursor => cursor == null),
+                It.IsAny<IReadOnlyCollection<Guid>>(),
                 2,
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -369,6 +375,53 @@ public class EmbeddingBackfillServiceTests
     }
 
     [Fact]
+    public async Task ProcessBatchAsync_RevisitsCurrentTimestamp_ForLateInsertedLowerGuidChunk()
+    {
+        var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var processedFirst = new KnowledgeChunk(docId, 0, "first content");
+        var lateLowerId = new KnowledgeChunk(docId, 1, "late lower id content");
+        var laterTimestamp = new KnowledgeChunk(docId, 2, "later timestamp content");
+
+        SetId(processedFirst, Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"));
+        SetId(lateLowerId, Guid.Parse("00000000-0000-0000-0000-000000000001"));
+        SetCreatedAt(processedFirst, createdAt);
+        SetCreatedAt(lateLowerId, createdAt);
+        SetCreatedAt(laterTimestamp, createdAt.AddSeconds(1));
+
+        var chunks = new List<KnowledgeChunk> { processedFirst };
+        SetupChunkBatch(chunks);
+        SetupDocumentLookup(docId, userId);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
+
+        await _sut.ProcessBatchAsync(batchSize: 1);
+        chunks.Add(lateLowerId);
+        chunks.Add(laterTimestamp);
+
+        var secondResult = await _sut.ProcessBatchAsync(batchSize: 1);
+
+        secondResult.Processed.Should().Be(1);
+        _vectorIndexMock.Verify(
+            v => v.UpsertBatchAsync(
+                It.Is<IReadOnlyList<VectorDocument>>(docs => docs.Any(d => d.DocumentId == $"chunk:{lateLowerId.Id}")),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "forward paging must not skip same-CreatedAt rows inserted after the cursor with lower random GUIDs");
+        _vectorIndexMock.Verify(
+            v => v.UpsertBatchAsync(
+                It.Is<IReadOnlyList<VectorDocument>>(docs => docs.Any(d => d.DocumentId == $"chunk:{laterTimestamp.Id}")),
+                It.IsAny<CancellationToken>()),
+            Times.Never,
+            "the late same-timestamp chunk should be processed before newer timestamps");
+    }
+
+    [Fact]
     public async Task ProcessBatchAsync_DefersFailedChunkAndContinuesForwardProgress()
     {
         var docId = Guid.NewGuid();
@@ -425,8 +478,8 @@ public class EmbeddingBackfillServiceTests
 
         result.Processed.Should().Be(1);
         result.Failed.Should().Be(1);
-        forwardResult.Processed.Should().Be(1, "later chunks should not starve behind a poison chunk");
-        retryResult.Processed.Should().Be(1, "deferred failed chunks should still be retried after forward progress reaches the tail");
+        forwardResult.Processed.Should().Be(2, "deferred failed chunks should be retried before forward catch-up without starving later chunks");
+        retryResult.Processed.Should().Be(0, "the deferred chunk should already have been retried before tail catch-up");
         _vectorIndexMock.Verify(
             v => v.UpsertBatchAsync(
                 It.Is<IReadOnlyList<VectorDocument>>(docs => docs.Any(d => d.DocumentId == $"chunk:{ordered[2].Id}")),
@@ -548,6 +601,16 @@ public class EmbeddingBackfillServiceTests
             ?? throw new InvalidOperationException("Expected Entity.CreatedAt setter to exist.");
 
         setter.Invoke(entity, [createdAt]);
+    }
+
+    private static void SetId(Entity entity, Guid id)
+    {
+        var property = typeof(Entity).GetProperty(nameof(Entity.Id))
+            ?? throw new InvalidOperationException("Expected Entity.Id property to exist.");
+        var setter = property.GetSetMethod(nonPublic: true)
+            ?? throw new InvalidOperationException("Expected Entity.Id setter to exist.");
+
+        setter.Invoke(entity, [id]);
     }
 
     private static bool IsAfterCursor(KnowledgeChunk chunk, KnowledgeChunkBackfillCursor cursor)
