@@ -70,7 +70,29 @@ public static class DependencyInjection
         services.AddScoped<IIntegrationConnectorRepository, IntegrationConnectorRepository>();
         services.AddScoped<IConnectorEventRepository, ConnectorEventRepository>();
         services.AddScoped<IConnectorCredentialRepository, ConnectorCredentialRepository>();
-        services.AddScoped<IKnowledgeSearchService, Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
+        services.AddScoped<Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
+        services.AddScoped<IFtsKnowledgeSearchService>(sp =>
+            sp.GetRequiredService<Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>());
+        services.AddScoped<IProposalRevisionRepository, ProposalRevisionRepository>();
+
+        // Vector index is local; hash-based in-memory embeddings are development/test
+        // oriented and stay disabled unless explicitly opted in.
+        var enableInMemoryEmbeddings = configuration.GetValue<bool>("Knowledge:EnableInMemoryEmbeddings");
+        services.AddSingleton<IVectorIndex, Taskdeck.Infrastructure.Services.InMemoryVectorIndex>();
+        if (enableInMemoryEmbeddings)
+        {
+            services.AddSingleton<IEmbeddingGenerator, Taskdeck.Infrastructure.Services.InMemoryEmbeddingGenerator>();
+        }
+        else
+        {
+            services.AddSingleton<IEmbeddingGenerator, Taskdeck.Infrastructure.Services.DisabledEmbeddingGenerator>();
+        }
+        services.AddScoped<IEmbeddingBackfillService, Taskdeck.Infrastructure.Services.EmbeddingBackfillService>();
+        services.AddScoped<Taskdeck.Infrastructure.Services.FallbackSemanticSearchService>();
+        services.AddScoped<ISemanticSearchService>(sp =>
+            sp.GetRequiredService<Taskdeck.Infrastructure.Services.FallbackSemanticSearchService>());
+        services.AddScoped<IKnowledgeSearchService>(sp =>
+            sp.GetRequiredService<Taskdeck.Infrastructure.Services.FallbackSemanticSearchService>());
 
         // Credential encryption — requires a configured AES-256 key.
         // Fail-fast: the service refuses to start without a valid encryption key.

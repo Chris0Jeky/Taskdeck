@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
+import { usePaperThemeStore } from '../store/paperThemeStore'
 import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import { createBoardRealtimeController } from '../composables/useBoardRealtime'
 import { useBoardDragDrop } from '../composables/useBoardDragDrop'
@@ -14,7 +15,9 @@ import BoardCanvas from '../components/board/BoardCanvas.vue'
 import BoardDialogHost from '../components/board/BoardDialogHost.vue'
 import FilterPanel from '../components/board/FilterPanel.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import PaperBoardView from './paper/PaperBoardView.vue'
 import { TdSkeleton } from '../components/ui'
+import type { Card } from '../types/board'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
 import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
@@ -24,6 +27,8 @@ const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
 const sessionStore = useSessionStore()
+const paperTheme = usePaperThemeStore()
+const paperOn = computed(() => paperTheme.isOn)
 
 const newColumnName = ref('')
 const showColumnForm = ref(false)
@@ -86,6 +91,20 @@ const sortedColumns = computed(() => {
   return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
 })
 const isDemoBoard = computed(() => isClientOnboardingDemoBoardName(boardStore.currentBoard?.name))
+const paperCardsByColumn = computed<Map<string, Card[]>>(() => {
+  const map = new Map<string, Card[]>()
+  for (const card of boardStore.currentBoardCards) {
+    if (!map.has(card.columnId)) {
+      map.set(card.columnId, [])
+    }
+    map.get(card.columnId)!.push(card)
+  }
+
+  map.forEach((cards) => {
+    cards.sort((a, b) => a.position - b.position)
+  })
+  return map
+})
 
 // Composables
 const {
@@ -114,7 +133,11 @@ const {
   moveCardUp,
   moveCardDown,
   resetSelection,
-} = useBoardKeyboardNav(sortedColumns, () => boardId.value)
+} = useBoardKeyboardNav(
+  sortedColumns,
+  () => boardId.value,
+  computed(() => paperOn.value ? paperCardsByColumn.value : boardStore.cardsByColumn),
+)
 
 function applyPresenceSeed() {
   const seed = currentUserPresenceSeed()
@@ -283,10 +306,16 @@ function closeOpenUi() {
   router.push('/workspace/boards')
 }
 
+function standardBoardOnlyShortcutsEnabled() {
+  return !paperOn.value
+}
+
 // Setup keyboard shortcuts
 // Card movement shortcuts (Alt+Arrow) are listed before plain Arrow navigation
 // so the modifier-qualified binding matches first. Plain arrow navigation
 // explicitly sets `alt: false` to avoid firing when Alt is held.
+// PaperBoardView still uses the shared board keyboard navigation state, but
+// shortcuts that depend on hidden standard-board controls stay scoped out.
 useKeyboardShortcuts([
   // Card movement (Alt + Arrow keys)
   { key: 'ArrowRight', alt: true, description: 'Move card to next column', action: moveCardToNextColumn },
@@ -306,17 +335,18 @@ useKeyboardShortcuts([
 
   // Actions
   { key: 'Enter', description: 'Open selected card', action: openSelectedCard },
-  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn },
+  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn, enabled: standardBoardOnlyShortcutsEnabled },
   { key: 'Escape', description: 'Close open dialog/panel', action: closeOpenUi },
 
   // Help
-  { key: '?', description: 'Toggle keyboard shortcuts help', action: toggleKeyboardHelp },
-  { key: 'f', description: 'Toggle filter panel', action: toggleFilterPanel },
+  { key: '?', description: 'Toggle keyboard shortcuts help', action: toggleKeyboardHelp, enabled: standardBoardOnlyShortcutsEnabled },
+  { key: 'f', description: 'Toggle filter panel', action: toggleFilterPanel, enabled: standardBoardOnlyShortcutsEnabled },
 ])
 </script>
 
 <template>
-  <div class="min-h-screen bg-surface">
+  <PaperBoardView v-if="paperOn" :selected-card-id="selectedCardId" />
+  <div v-else class="min-h-screen bg-surface">
     <!-- Header -->
     <div class="bg-surface-container border-b border-outline-variant/15">
       <div class="max-w-full px-4 sm:px-6 lg:px-8 py-4">

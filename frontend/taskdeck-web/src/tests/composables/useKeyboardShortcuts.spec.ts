@@ -163,4 +163,19 @@ describe('useKeyboardShortcuts', () => {
 
     wrapper.unmount()
   })
+
+  it('should skip disabled matching shortcuts without preventing the event', () => {
+    const action = vi.fn()
+    const event = new KeyboardEvent('keydown', { key: 'j', cancelable: true })
+    const preventDefault = vi.spyOn(event, 'preventDefault')
+    const wrapper = mountWithShortcuts([
+      { key: 'j', description: 'Disabled', action, enabled: () => false },
+    ])
+
+    window.dispatchEvent(event)
+
+    expect(action).not.toHaveBeenCalled()
+    expect(preventDefault).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 })

@@ -1,4 +1,7 @@
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Validation;
 using Taskdeck.Application.Services;
 using Xunit;
@@ -630,6 +633,58 @@ public class OptionsValidationTests
             settings, context, results, validateAllProperties: true);
 
         Assert.True(isValid);
+    }
+
+    // ── EmbeddingBackfillSettings ─────────────────────────────────────
+
+    [Fact]
+    public void EmbeddingBackfillSettings_DefaultValues_PassValidation()
+    {
+        var settings = new EmbeddingBackfillSettings();
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(501)]
+    public void EmbeddingBackfillSettings_BatchSize_RejectsOutOfRange(int value)
+    {
+        var settings = new EmbeddingBackfillSettings { BatchSize = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(EmbeddingBackfillSettings.BatchSize)));
+    }
+
+    [Fact]
+    public void AddOptionsValidation_RegistersEmbeddingBackfillSettingsValidation()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["EmbeddingBackfill:BatchSize"] = "0"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddOptionsValidation(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<EmbeddingBackfillSettings>>().Value);
+        Assert.Contains(nameof(EmbeddingBackfillSettings.BatchSize), exception.Message);
     }
 
     // ── Integration: app starts with valid default config ───────────────

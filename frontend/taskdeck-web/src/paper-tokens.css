@@ -7,10 +7,9 @@
    remain canonical until Paper is promoted by paperThemeStore.
    ========================================================= */
 
-/* Fonts: self-host in production. We import via Google Fonts during
-   the foundation slice; PAPER-01 follow-up replaces with @font-face
-   pointing at /public/fonts/*.woff2 with font-display: swap. */
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Paper references preferred local font names first and falls back to system
+   families. External font imports are intentionally avoided so production CSP
+   can keep style-src locked to self. */
 
 .paper {
   /* --- Substrate --- */
@@ -137,8 +136,10 @@
       transparent 0 47px,
       #1a181408 47px 48px,
       transparent 48px 113px),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .1   0 0 0 0 .09   0 0 0 0 .08   0 0 0 .035 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+    radial-gradient(circle at 24px 32px, #1a181406 0 1px, transparent 1px 100%),
+    radial-gradient(circle at 160px 96px, #1a181405 0 1px, transparent 1px 100%);
   background-blend-mode: multiply, normal;
+  background-size: auto, 240px 240px, 240px 240px;
 }
 .paper-night {
   background-color: var(--paper);
@@ -147,8 +148,10 @@
       transparent 0 47px,
       #ffffff05 47px 48px,
       transparent 48px 113px),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1   0 0 0 0 .96   0 0 0 0 .85   0 0 0 .03 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+    radial-gradient(circle at 24px 32px, #ffffff05 0 1px, transparent 1px 100%),
+    radial-gradient(circle at 160px 96px, #ffffff04 0 1px, transparent 1px 100%);
   background-blend-mode: screen, normal;
+  background-size: auto, 240px 240px, 240px 240px;
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -447,4 +450,47 @@
   outline: 2px solid var(--ember);
   outline-offset: 1px;
   border-radius: var(--r-1);
+}
+
+/* =========================================================
+   Narrow companions — PAPER-11
+   Phone (≤480px) and tablet (≤1024px) responsive rules.
+
+   Tokens introduced here:
+   - `--paper-scale` (default 1) is consumed by `.tk-*` utilities via
+     calc(...); shrinking it once at the .paper root cascades cleanly
+     without compounding (leaves multiply, the root only sets).
+   - `--paper-safe-bottom` exposes `env(safe-area-inset-bottom, 0px)` for
+     future phone bottom-bar variants of `PaperSidebar` (deferred to the
+     per-surface follow-ups against #1007). Currently unconsumed; do not
+     remove without checking those follow-ups.
+   - `--paper-density` flips to `compact` ≤1024px and is intended for
+     leaf surfaces (e.g. card / row paddings) to opt into a tighter
+     spacing variant in follow-up patches. Currently unconsumed.
+   ========================================================= */
+.paper, .paper-night {
+  --paper-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --paper-density: comfortable;
+}
+
+@media (max-width: 1024px) {
+  .paper, .paper-night {
+    --paper-density: compact;
+  }
+}
+
+@media (max-width: 480px) {
+  .paper, .paper-night {
+    --paper-scale: 0.9;
+  }
+  .paper .stamp, .paper-night .stamp {
+    width: 48px;
+    height: 48px;
+  }
+  .paper .stamp b, .paper-night .stamp b {
+    font-size: 10px;
+  }
+  .paper .stamp .stamp-num, .paper-night .stamp .stamp-num {
+    font-size: 7px;
+  }
 }

@@ -278,6 +278,29 @@ public class WorkerResilienceTests
             "warning logged for the proposal that could not be expired");
     }
 
+    [Fact]
+    public void EmbeddingBackfillWorker_BackoffUsesConfiguredConsecutiveErrorCap()
+    {
+        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var settings = new EmbeddingBackfillSettings
+        {
+            Enabled = true,
+            PollIntervalSeconds = 2,
+            MaxConsecutiveErrors = 3,
+            MaxBackoffSeconds = 1000
+        };
+        var worker = new EmbeddingBackfillWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            settings,
+            new WorkerHeartbeatRegistry(),
+            NullLogger<EmbeddingBackfillWorker>.Instance);
+
+        var backoffSeconds = worker.CalculateBackoffSeconds(consecutiveErrors: 10);
+
+        backoffSeconds.Should().Be(16,
+            "the configured MaxConsecutiveErrors cap should control exponential backoff");
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -601,6 +624,7 @@ public class WorkerResilienceTests
         public IIntegrationConnectorRepository IntegrationConnectors => null!;
         public IConnectorEventRepository ConnectorEvents => null!;
         public IConnectorCredentialRepository ConnectorCredentials => null!;
+        public IProposalRevisionRepository ProposalRevisions => null!;
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -641,6 +665,7 @@ public class WorkerResilienceTests
         public IIntegrationConnectorRepository IntegrationConnectors => null!;
         public IConnectorEventRepository ConnectorEvents => null!;
         public IConnectorCredentialRepository ConnectorCredentials => null!;
+        public IProposalRevisionRepository ProposalRevisions => null!;
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

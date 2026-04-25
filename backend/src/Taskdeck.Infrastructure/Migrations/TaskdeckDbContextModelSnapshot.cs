@@ -1646,6 +1646,82 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("OutboundWebhookSubscriptions", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalOutcome", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("DecidedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("DecidedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("OutcomeType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ProposalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DecidedByUserId");
+
+                    b.HasIndex("ProposalId");
+
+                    b.ToTable("ProposalOutcomes", (string)null);
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EditorUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ProposalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("RevisedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RevisedPayload")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EditorUserId");
+
+                    b.HasIndex("ProposalId");
+
+                    b.HasIndex("ProposalId", "RevisionNumber")
+                        .IsUnique();
+
+                    b.ToTable("ProposalRevisions", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2070,6 +2146,28 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("CreatedByUser");
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalOutcome", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.AutomationProposal", "Proposal")
+                        .WithMany("Outcomes")
+                        .HasForeignKey("ProposalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Proposal");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalRevision", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.AutomationProposal", "Proposal")
+                        .WithMany("Revisions")
+                        .HasForeignKey("ProposalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Proposal");
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.UserPreference", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.User", "User")
@@ -2089,6 +2187,10 @@ namespace Taskdeck.Infrastructure.Migrations
             modelBuilder.Entity("Taskdeck.Domain.Entities.AutomationProposal", b =>
                 {
                     b.Navigation("Operations");
+
+                    b.Navigation("Outcomes");
+
+                    b.Navigation("Revisions");
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.Board", b =>
