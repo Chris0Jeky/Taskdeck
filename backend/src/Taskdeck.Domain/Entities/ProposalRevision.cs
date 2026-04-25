@@ -27,7 +27,7 @@ public class ProposalRevision : Entity
     public string RevisedPayload { get; private set; } = string.Empty;
 
     /// <summary>Timestamp when the revision was created (UTC).</summary>
-    public DateTime RevisedAt { get; private set; }
+    public DateTimeOffset RevisedAt { get; private set; }
 
     /// <summary>Human-readable reason for the revision (e.g., "Updated card title").</summary>
     public string Reason { get; private set; } = string.Empty;
@@ -62,6 +62,6 @@ public class ProposalRevision : Entity
         EditorUserId = editorUserId;
         RevisedPayload = revisedPayload;
         Reason = reason;
-        RevisedAt = DateTime.UtcNow;
+        RevisedAt = DateTimeOffset.UtcNow;
     }
 }

@@ -51,6 +51,16 @@ public class ProposalRevisionService : IProposalRevisionService
         }
     }
 
+    // NOTE: There is a narrow race window between GetNextRevisionNumberAsync and
+    // SaveChangesAsync. If two concurrent callers both read the same next revision
+    // number, the DB unique constraint on (ProposalId, RevisionNumber) will reject
+    // one of them. The UnitOfWork surfaces DbUpdateConcurrencyException as a
+    // DomainException(Conflict), which is caught above. The unique constraint
+    // violation (DbUpdateException) will propagate as a 500 until the UnitOfWork
+    // is extended with a recovery handler for ProposalRevision conflicts.
+    // This is acceptable for now: the data model is safe, and the race is extremely
+    // narrow in a single-user local-first context.
+
     public async Task<Result<IReadOnlyList<ProposalRevisionDto>>> GetRevisionsForProposalAsync(
         Guid proposalId,
         CancellationToken cancellationToken = default)
@@ -62,8 +72,8 @@ public class ProposalRevisionService : IProposalRevisionService
         var revisions = await _unitOfWork.ProposalRevisions
             .GetByProposalIdAsync(proposalId, cancellationToken);
 
-        var dtos = revisions.Select(MapToDto).ToList() as IReadOnlyList<ProposalRevisionDto>;
-        return Result.Success(dtos);
+        var dtos = revisions.Select(MapToDto).ToList();
+        return Result.Success<IReadOnlyList<ProposalRevisionDto>>(dtos);
     }
 
     public async Task<Result<ProposalRevisionDto?>> GetLatestRevisionAsync(

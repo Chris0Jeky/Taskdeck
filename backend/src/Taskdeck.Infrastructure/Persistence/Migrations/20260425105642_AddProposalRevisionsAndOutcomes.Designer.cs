@@ -1657,7 +1657,7 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("DecidedAt")
+                    b.Property<DateTimeOffset>("DecidedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("DecidedByUserId")
@@ -1700,7 +1700,7 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("RevisedAt")
+                    b.Property<DateTimeOffset>("RevisedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RevisedPayload")

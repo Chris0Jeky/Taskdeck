@@ -6,7 +6,7 @@ public record ProposalRevisionDto(
     int RevisionNumber,
     Guid EditorUserId,
     string RevisedPayload,
-    DateTime RevisedAt,
+    DateTimeOffset RevisedAt,
     string Reason,
     DateTimeOffset CreatedAt
 );
@@ -23,6 +23,6 @@ public record ProposalOutcomeDto(
     Guid ProposalId,
     string OutcomeType,
     Guid DecidedByUserId,
-    DateTime DecidedAt,
+    DateTimeOffset DecidedAt,
     DateTimeOffset CreatedAt
 );

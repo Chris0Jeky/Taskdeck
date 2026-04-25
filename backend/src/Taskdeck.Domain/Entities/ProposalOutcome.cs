@@ -20,7 +20,7 @@ public class ProposalOutcome : Entity
     public Guid DecidedByUserId { get; private set; }
 
     /// <summary>When the decision was recorded (UTC).</summary>
-    public DateTime DecidedAt { get; private set; }
+    public DateTimeOffset DecidedAt { get; private set; }
 
     // Navigation
     public AutomationProposal Proposal { get; private set; } = null!;
@@ -42,6 +42,6 @@ public class ProposalOutcome : Entity
         ProposalId = proposalId;
         OutcomeType = outcomeType;
         DecidedByUserId = decidedByUserId;
-        DecidedAt = DateTime.UtcNow;
+        DecidedAt = DateTimeOffset.UtcNow;
     }
 }

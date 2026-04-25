@@ -19,7 +19,7 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                     ProposalId = table.Column<Guid>(type: "TEXT", nullable: false),
                     OutcomeType = table.Column<int>(type: "INTEGER", nullable: false),
                     DecidedByUserId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    DecidedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    DecidedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false)
                 },
@@ -43,7 +43,7 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                     RevisionNumber = table.Column<int>(type: "INTEGER", nullable: false),
                     EditorUserId = table.Column<Guid>(type: "TEXT", nullable: false),
                     RevisedPayload = table.Column<string>(type: "TEXT", nullable: false),
-                    RevisedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    RevisedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     Reason = table.Column<string>(type: "TEXT", maxLength: 500, nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false)

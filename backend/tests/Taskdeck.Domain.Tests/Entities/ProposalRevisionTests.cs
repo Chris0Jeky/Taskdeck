@@ -14,7 +14,7 @@ public class ProposalRevisionTests
     public void Constructor_ShouldCreateRevision_WithValidData()
     {
         // Arrange & Act
-        var before = DateTime.UtcNow;
+        var before = DateTimeOffset.UtcNow;
         var revision = new ProposalRevision(
             _proposalId,
             1,
@@ -30,7 +30,7 @@ public class ProposalRevisionTests
         revision.RevisedPayload.Should().Be("{\"operations\": []}");
         revision.Reason.Should().Be("Updated card title");
         revision.RevisedAt.Should().BeOnOrAfter(before);
-        revision.RevisedAt.Should().BeOnOrBefore(DateTime.UtcNow);
+        revision.RevisedAt.Should().BeOnOrBefore(DateTimeOffset.UtcNow);
     }
 
     [Fact]

@@ -17,7 +17,7 @@ public class ProposalOutcomeTests
     [InlineData(OutcomeType.Ignored)]
     public void Constructor_ShouldCreateOutcome_ForEachValidOutcomeType(OutcomeType outcomeType)
     {
-        var before = DateTime.UtcNow;
+        var before = DateTimeOffset.UtcNow;
 
         var outcome = new ProposalOutcome(_proposalId, outcomeType, _decidedByUserId);
 
@@ -26,7 +26,7 @@ public class ProposalOutcomeTests
         outcome.OutcomeType.Should().Be(outcomeType);
         outcome.DecidedByUserId.Should().Be(_decidedByUserId);
         outcome.DecidedAt.Should().BeOnOrAfter(before);
-        outcome.DecidedAt.Should().BeOnOrBefore(DateTime.UtcNow);
+        outcome.DecidedAt.Should().BeOnOrBefore(DateTimeOffset.UtcNow);
     }
 
     [Fact]
