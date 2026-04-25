@@ -9,15 +9,15 @@ Implement the smallest backend slice that fits the existing layering and contrac
 
 ## Read first
 
-1. `CLAUDE.md`
-2. `AGENTS.md`
-3. `docs/STATUS.md`
-4. `docs/GOLDEN_PRINCIPLES.md`
-5. `docs/TESTING_GUIDE.md`
+1. `AGENTS.md`
+2. `docs/STATUS.md`
+3. `docs/GOLDEN_PRINCIPLES.md`
+4. `docs/TESTING_GUIDE.md`
 
 Read as needed:
 
 - `docs/ISSUE_EXECUTION_GUIDE.md` for backlog-driven work
+- `CLAUDE.md` only when comparing Claude-specific workflows or legacy agent assumptions
 - feature docs for the touched slice
 
 ## Placement rules
