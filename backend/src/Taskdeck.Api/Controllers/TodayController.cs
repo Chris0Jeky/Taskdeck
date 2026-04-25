@@ -27,6 +27,7 @@ public class TodayController : AuthenticatedControllerBase
     /// </summary>
     [HttpGet("tomorrow-note")]
     [ProducesResponseType(typeof(TomorrowNoteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetTomorrowNote(
