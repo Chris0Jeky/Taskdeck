@@ -31,6 +31,7 @@ public static class McpApplicationServiceRegistration
         services.AddScoped<AutomationProposalService>();
         services.AddScoped<IAutomationProposalService>(
             sp => sp.GetRequiredService<AutomationProposalService>());
+        services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
         services.AddScoped<CaptureService>();
         services.AddScoped<ICaptureService>(
             sp => sp.GetRequiredService<CaptureService>());
