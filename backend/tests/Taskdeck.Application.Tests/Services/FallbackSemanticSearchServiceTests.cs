@@ -15,6 +15,7 @@ public class FallbackSemanticSearchServiceTests
     private readonly Mock<IVectorIndex> _vectorIndexMock;
     private readonly Mock<IEmbeddingGenerator> _embeddingGeneratorMock;
     private readonly Mock<IKnowledgeSearchService> _ftsSearchMock;
+    private readonly Mock<IKnowledgeDocumentRepository> _docRepoMock;
     private readonly InMemoryLogger<FallbackSemanticSearchService> _logger;
     private readonly FallbackSemanticSearchService _sut;
 
@@ -26,12 +27,14 @@ public class FallbackSemanticSearchServiceTests
         _vectorIndexMock = new Mock<IVectorIndex>();
         _embeddingGeneratorMock = new Mock<IEmbeddingGenerator>();
         _ftsSearchMock = new Mock<IKnowledgeSearchService>();
+        _docRepoMock = new Mock<IKnowledgeDocumentRepository>();
         _logger = new InMemoryLogger<FallbackSemanticSearchService>();
 
         _sut = new FallbackSemanticSearchService(
             _vectorIndexMock.Object,
             _embeddingGeneratorMock.Object,
             _ftsSearchMock.Object,
+            _docRepoMock.Object,
             _logger);
     }
 
@@ -103,10 +106,10 @@ public class FallbackSemanticSearchServiceTests
 
     #endregion
 
-    #region Vector search happy path
+    #region Vector search happy path with hydration
 
     [Fact]
-    public async Task SearchAsync_VectorAvailable_UsesVectorSearch()
+    public async Task SearchAsync_VectorAvailable_UsesVectorSearchAndHydratesResults()
     {
         _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
 
@@ -125,7 +128,8 @@ public class FallbackSemanticSearchServiceTests
                 {
                     ["type"] = "knowledge_chunk",
                     ["documentId"] = docId.ToString(),
-                    ["chunkId"] = Guid.NewGuid().ToString()
+                    ["chunkId"] = Guid.NewGuid().ToString(),
+                    ["userId"] = _userId.ToString()
                 })
         };
 
@@ -137,16 +141,117 @@ public class FallbackSemanticSearchServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(vectorResults);
 
+        // Set up document hydration
+        var doc = new KnowledgeDocument(
+            _userId, "Hydrated Title", "Hydrated content for the document.",
+            KnowledgeSourceType.Manual, null, null, "tag1,tag2");
+        _docRepoMock
+            .Setup(r => r.GetByIdAsync(docId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(doc);
+
         var results = await _sut.SearchAsync("semantic query", _userId);
 
-        results.Should().HaveCount(1);
-        var first = results.First();
-        first.DocumentId.Should().Be(docId);
+        var resultList = results.ToList();
+        resultList.Should().HaveCount(1);
+        resultList[0].DocumentId.Should().Be(docId);
+        resultList[0].Title.Should().Be("Hydrated Title",
+            "result should be hydrated from the document repository");
+        resultList[0].Snippet.Should().Contain("Hydrated content",
+            "snippet should contain document content");
+        resultList[0].Tags.Should().Be("tag1,tag2");
     }
 
     #endregion
 
-    #region Vector search failure → FTS fallback
+    #region Access control
+
+    [Fact]
+    public async Task SearchAsync_VectorSearch_FiltersQueryByUserId()
+    {
+        _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 1f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fakeEmbedding);
+
+        _vectorIndexMock
+            .Setup(v => v.QueryAsync(
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<int>(),
+                It.IsAny<IReadOnlyDictionary<string, string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<VectorSearchResult>());
+
+        _ftsSearchMock
+            .Setup(f => f.SearchAsync(It.IsAny<string>(), _userId, null, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Empty<KnowledgeSearchResultDto>());
+
+        await _sut.SearchAsync("test", _userId);
+
+        // Verify the vector index query included userId in the filter
+        _vectorIndexMock.Verify(
+            v => v.QueryAsync(
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<int>(),
+                It.Is<IReadOnlyDictionary<string, string>>(f =>
+                    f.ContainsKey("userId") && f["userId"] == _userId.ToString()),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "vector query must include userId filter for access control");
+    }
+
+    [Fact]
+    public async Task SearchAsync_DocumentBelongsToDifferentUser_ExcludedFromResults()
+    {
+        _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 1f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fakeEmbedding);
+
+        var docId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var vectorResults = new List<VectorSearchResult>
+        {
+            new("chunk:abc", 0.9, new Dictionary<string, string>
+            {
+                ["type"] = "knowledge_chunk",
+                ["documentId"] = docId.ToString(),
+                ["userId"] = _userId.ToString()
+            })
+        };
+
+        _vectorIndexMock
+            .Setup(v => v.QueryAsync(
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<int>(),
+                It.IsAny<IReadOnlyDictionary<string, string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(vectorResults);
+
+        // Document belongs to a different user
+        var doc = new KnowledgeDocument(
+            otherUserId, "Other User Doc", "Other user content",
+            KnowledgeSourceType.Manual);
+        _docRepoMock
+            .Setup(r => r.GetByIdAsync(docId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(doc);
+
+        _ftsSearchMock
+            .Setup(f => f.SearchAsync(It.IsAny<string>(), _userId, null, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Empty<KnowledgeSearchResultDto>());
+
+        var results = await _sut.SearchAsync("test", _userId);
+
+        results.Should().BeEmpty(
+            "documents belonging to other users must be excluded");
+    }
+
+    #endregion
+
+    #region Vector search failure -> FTS fallback
 
     [Fact]
     public async Task SearchAsync_VectorSearchThrows_FallsBackToFts()
@@ -176,48 +281,7 @@ public class FallbackSemanticSearchServiceTests
 
     #endregion
 
-    #region Vector search returns no results → FTS fallback
-
-    [Fact]
-    public async Task SearchAsync_VectorReturnsNoResults_FallsBackToFts()
-    {
-        _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
-
-        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 1f, 0f });
-        _embeddingGeneratorMock
-            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
-
-        // Vector index returns results but with no valid documentId in metadata
-        var vectorResults = new List<VectorSearchResult>
-        {
-            new("chunk:abc", 0.9, new Dictionary<string, string>
-            {
-                ["type"] = "knowledge_chunk",
-                ["documentId"] = "not-a-guid"
-            })
-        };
-
-        _vectorIndexMock
-            .Setup(v => v.QueryAsync(
-                It.IsAny<ReadOnlyMemory<float>>(),
-                It.IsAny<int>(),
-                It.IsAny<IReadOnlyDictionary<string, string>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(vectorResults);
-
-        var ftsResults = new List<KnowledgeSearchResultDto>
-        {
-            CreateFtsResult("FTS fallback due to empty vector results")
-        };
-        _ftsSearchMock
-            .Setup(f => f.SearchAsync("test", _userId, null, 20, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(ftsResults);
-
-        var results = await _sut.SearchAsync("test", _userId);
-
-        results.Should().HaveCount(1, "should fall back to FTS when vector results are empty after filtering");
-    }
+    #region Vector search returns no results -> FTS fallback
 
     [Fact]
     public async Task SearchAsync_VectorReturnsEmptyList_FallsBackToFts()

@@ -18,17 +18,20 @@ public sealed class FallbackSemanticSearchService : ISemanticSearchService
     private readonly IVectorIndex _vectorIndex;
     private readonly IEmbeddingGenerator _embeddingGenerator;
     private readonly IKnowledgeSearchService _ftsSearchService;
+    private readonly IKnowledgeDocumentRepository _documentRepository;
     private readonly ILogger<FallbackSemanticSearchService> _logger;
 
     public FallbackSemanticSearchService(
         IVectorIndex vectorIndex,
         IEmbeddingGenerator embeddingGenerator,
         IKnowledgeSearchService ftsSearchService,
+        IKnowledgeDocumentRepository documentRepository,
         ILogger<FallbackSemanticSearchService> logger)
     {
         _vectorIndex = vectorIndex;
         _embeddingGenerator = embeddingGenerator;
         _ftsSearchService = ftsSearchService;
+        _documentRepository = documentRepository;
         _logger = logger;
     }
 
@@ -75,42 +78,81 @@ public sealed class FallbackSemanticSearchService : ISemanticSearchService
     {
         var queryVector = await _embeddingGenerator.GenerateAsync(query, cancellationToken);
 
+        // Filter by type and userId for access control
         var filter = new Dictionary<string, string>
         {
-            ["type"] = "knowledge_chunk"
+            ["type"] = "knowledge_chunk",
+            ["userId"] = userId.ToString()
         };
 
-        // Request more results than needed so we can filter by user/board client-side
-        // Future: push userId/boardId filters into the vector index metadata
+        // When a boardId is specified, further restrict to that board
+        if (boardId.HasValue)
+        {
+            filter["boardId"] = boardId.Value.ToString();
+        }
+
+        // Request more results than needed to account for post-filtering
         var vectorResults = await _vectorIndex.QueryAsync(
             queryVector,
-            topK: limit * 3,
+            topK: limit * 2,
             filter: filter,
             cancellationToken: cancellationToken);
 
-        // Map vector results back to knowledge search DTOs
-        // For now, return basic results; full DTO mapping requires joining
-        // with the knowledge document repository
-        var results = vectorResults
-            .Take(limit)
-            .Select(r => new KnowledgeSearchResultDto(
-                DocumentId: Guid.TryParse(
-                    r.Metadata?.GetValueOrDefault("documentId") ?? string.Empty,
-                    out var docId) ? docId : Guid.Empty,
-                Title: string.Empty,
-                Snippet: string.Empty,
+        if (vectorResults.Count == 0)
+        {
+            _logger.LogDebug(
+                "Vector search returned no results for query, falling back to FTS");
+            return await _ftsSearchService.SearchAsync(
+                query, userId, boardId, limit, cancellationToken);
+        }
+
+        // Hydrate results with document metadata (Title, Snippet, etc.)
+        var results = new List<KnowledgeSearchResultDto>();
+        foreach (var r in vectorResults.Take(limit))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (r.Metadata is null)
+                continue;
+
+            if (!Guid.TryParse(
+                    r.Metadata.GetValueOrDefault("documentId") ?? string.Empty,
+                    out var docId) || docId == Guid.Empty)
+            {
+                _logger.LogDebug("Skipping vector result with unparseable documentId");
+                continue;
+            }
+
+            var doc = await _documentRepository.GetByIdAsync(docId, cancellationToken);
+            if (doc is null)
+                continue;
+
+            // Double-check access control at the document level
+            if (doc.UserId != userId)
+                continue;
+
+            if (boardId.HasValue && doc.BoardId != boardId)
+                continue;
+
+            var snippet = doc.Content.Length > 200
+                ? doc.Content[..200] + "..."
+                : doc.Content;
+
+            results.Add(new KnowledgeSearchResultDto(
+                DocumentId: docId,
+                Title: doc.Title,
+                Snippet: snippet,
                 Rank: r.Score,
-                BoardId: boardId,
-                SourceType: Domain.Entities.KnowledgeSourceType.Manual,
-                Tags: null,
-                CreatedAt: DateTimeOffset.MinValue))
-            .Where(r => r.DocumentId != Guid.Empty)
-            .ToList();
+                BoardId: doc.BoardId,
+                SourceType: doc.SourceType,
+                Tags: doc.Tags,
+                CreatedAt: doc.CreatedAt));
+        }
 
         if (results.Count == 0)
         {
             _logger.LogDebug(
-                "Vector search returned no results for query, falling back to FTS");
+                "Vector search yielded no hydrated results, falling back to FTS");
             return await _ftsSearchService.SearchAsync(
                 query, userId, boardId, limit, cancellationToken);
         }

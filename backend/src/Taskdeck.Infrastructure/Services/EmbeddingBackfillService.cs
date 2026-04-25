@@ -6,27 +6,34 @@ namespace Taskdeck.Infrastructure.Services;
 
 /// <summary>
 /// Scans knowledge chunks and ensures they have vector embeddings.
-/// Idempotent: uses upsert so re-processing is safe across restarts.
+/// Tracks indexed chunk IDs via a process-local set to avoid re-processing.
 /// Failure-safe: individual item errors are logged and skipped, not rethrown.
-/// Note: currently loads all chunks per batch; a future optimization could
-/// track embedded status in the database to skip already-processed chunks.
 /// </summary>
 public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 {
     private readonly IVectorIndex _vectorIndex;
     private readonly IEmbeddingGenerator _embeddingGenerator;
     private readonly IKnowledgeChunkRepository _chunkRepository;
+    private readonly IKnowledgeDocumentRepository _documentRepository;
     private readonly ILogger<EmbeddingBackfillService> _logger;
+
+    // Tracks which chunk IDs have already been embedded to avoid re-processing.
+    // Static so it persists across scoped service instances within the same
+    // process lifetime. Thread-safe via lock.
+    private static readonly HashSet<string> _indexedChunkIds = new();
+    private static readonly object _indexedLock = new();
 
     public EmbeddingBackfillService(
         IVectorIndex vectorIndex,
         IEmbeddingGenerator embeddingGenerator,
         IKnowledgeChunkRepository chunkRepository,
+        IKnowledgeDocumentRepository documentRepository,
         ILogger<EmbeddingBackfillService> logger)
     {
         _vectorIndex = vectorIndex;
         _embeddingGenerator = embeddingGenerator;
         _chunkRepository = chunkRepository;
+        _documentRepository = documentRepository;
         _logger = logger;
     }
 
@@ -40,14 +47,37 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: 0);
         }
 
-        // Get all knowledge chunks. The current approach loads all chunks and
-        // re-upserts them (idempotent). A future optimization could track embedded
-        // status via a database flag or separate table to skip already-processed
-        // chunks. For small-to-medium collections (<100k) this is acceptable.
         var allChunks = await _chunkRepository.GetAllAsync(cancellationToken);
         var chunkList = allChunks.ToList();
 
-        var toProcess = chunkList.Take(batchSize).ToList();
+        // Filter out chunks that have already been indexed in this process lifetime
+        List<Domain.Entities.KnowledgeChunk> unindexed;
+        lock (_indexedLock)
+        {
+            unindexed = chunkList
+                .Where(c => !_indexedChunkIds.Contains(c.Id.ToString()))
+                .ToList();
+        }
+
+        var toProcess = unindexed.Take(batchSize).ToList();
+
+        if (toProcess.Count == 0)
+        {
+            return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: 0);
+        }
+
+        // Pre-fetch parent documents for userId/boardId metadata.
+        // Group by DocumentId to minimize repository lookups.
+        var documentIds = toProcess.Select(c => c.DocumentId).Distinct().ToList();
+        var documentMap = new Dictionary<Guid, Domain.Entities.KnowledgeDocument>();
+        foreach (var docId in documentIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var doc = await _documentRepository.GetByIdAsync(docId, cancellationToken);
+            if (doc is not null)
+                documentMap[docId] = doc;
+        }
+
         int processed = 0;
         int failed = 0;
 
@@ -63,6 +93,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                     _logger.LogDebug(
                         "Skipping empty chunk {ChunkId}",
                         chunk.Id);
+                    lock (_indexedLock) { _indexedChunkIds.Add(chunk.Id.ToString()); }
                     continue;
                 }
 
@@ -75,6 +106,14 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                     ["chunkId"] = chunk.Id.ToString()
                 };
 
+                // Include userId and boardId for access-control filtering
+                if (documentMap.TryGetValue(chunk.DocumentId, out var parentDoc))
+                {
+                    metadata["userId"] = parentDoc.UserId.ToString();
+                    if (parentDoc.BoardId.HasValue)
+                        metadata["boardId"] = parentDoc.BoardId.Value.ToString();
+                }
+
                 await _vectorIndex.UpsertAsync(
                     $"chunk:{chunk.Id}",
                     embedding,
@@ -82,6 +121,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                     cancellationToken);
 
                 processed++;
+                lock (_indexedLock) { _indexedChunkIds.Add(chunk.Id.ToString()); }
             }
             catch (OperationCanceledException)
             {
@@ -97,7 +137,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        int remaining = Math.Max(0, chunkList.Count - batchSize);
+        int remaining = Math.Max(0, unindexed.Count - toProcess.Count);
 
         _logger.LogInformation(
             "Embedding backfill batch complete: {Processed} processed, {Failed} failed, ~{Remaining} remaining",

@@ -14,14 +14,19 @@ public class EmbeddingBackfillServiceTests
     private readonly Mock<IVectorIndex> _vectorIndexMock;
     private readonly Mock<IEmbeddingGenerator> _embeddingGeneratorMock;
     private readonly Mock<IKnowledgeChunkRepository> _chunkRepoMock;
+    private readonly Mock<IKnowledgeDocumentRepository> _docRepoMock;
     private readonly InMemoryLogger<EmbeddingBackfillService> _logger;
     private readonly EmbeddingBackfillService _sut;
+
+    // Each test uses unique chunk IDs (via Guid.NewGuid) so the static
+    // _indexedChunkIds set does not interfere across tests.
 
     public EmbeddingBackfillServiceTests()
     {
         _vectorIndexMock = new Mock<IVectorIndex>();
         _embeddingGeneratorMock = new Mock<IEmbeddingGenerator>();
         _chunkRepoMock = new Mock<IKnowledgeChunkRepository>();
+        _docRepoMock = new Mock<IKnowledgeDocumentRepository>();
         _logger = new InMemoryLogger<EmbeddingBackfillService>();
 
         _embeddingGeneratorMock.Setup(g => g.IsAvailable).Returns(true);
@@ -31,7 +36,23 @@ public class EmbeddingBackfillServiceTests
             _vectorIndexMock.Object,
             _embeddingGeneratorMock.Object,
             _chunkRepoMock.Object,
+            _docRepoMock.Object,
             _logger);
+    }
+
+    private KnowledgeDocument CreateDocument(Guid docId, Guid userId, Guid? boardId = null)
+    {
+        return new KnowledgeDocument(
+            userId, "Test Doc", "Test content",
+            KnowledgeSourceType.Manual, boardId);
+    }
+
+    private void SetupDocumentLookup(Guid docId, Guid userId, Guid? boardId = null)
+    {
+        var doc = CreateDocument(docId, userId, boardId);
+        _docRepoMock
+            .Setup(r => r.GetByIdAsync(docId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(doc);
     }
 
     [Fact]
@@ -63,6 +84,7 @@ public class EmbeddingBackfillServiceTests
     public async Task ProcessBatchAsync_ChunksExist_EmbeddsAndUpsertsEach()
     {
         var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var chunks = new List<KnowledgeChunk>
         {
             new(docId, 0, "chunk zero content"),
@@ -72,6 +94,8 @@ public class EmbeddingBackfillServiceTests
         _chunkRepoMock
             .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(chunks);
+
+        SetupDocumentLookup(docId, userId);
 
         var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f, 0.5f });
         _embeddingGeneratorMock
@@ -96,6 +120,7 @@ public class EmbeddingBackfillServiceTests
     public async Task ProcessBatchAsync_BatchSizeLimitsProcessed()
     {
         var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var chunks = Enumerable.Range(0, 10)
             .Select(i => new KnowledgeChunk(docId, i, $"content {i}"))
             .ToList();
@@ -103,6 +128,8 @@ public class EmbeddingBackfillServiceTests
         _chunkRepoMock
             .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(chunks);
+
+        SetupDocumentLookup(docId, userId);
 
         var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f, 0.5f });
         _embeddingGeneratorMock
@@ -119,6 +146,7 @@ public class EmbeddingBackfillServiceTests
     public async Task ProcessBatchAsync_IndividualItemFailure_ContinuesAndReportsFailed()
     {
         var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var chunks = new List<KnowledgeChunk>
         {
             new(docId, 0, "good content"),
@@ -129,6 +157,8 @@ public class EmbeddingBackfillServiceTests
         _chunkRepoMock
             .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(chunks);
+
+        SetupDocumentLookup(docId, userId);
 
         var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
         _embeddingGeneratorMock
@@ -151,6 +181,7 @@ public class EmbeddingBackfillServiceTests
     public async Task ProcessBatchAsync_OperationCanceled_PropagatesException()
     {
         var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var chunks = new List<KnowledgeChunk>
         {
             new(docId, 0, "content")
@@ -159,6 +190,8 @@ public class EmbeddingBackfillServiceTests
         _chunkRepoMock
             .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(chunks);
+
+        SetupDocumentLookup(docId, userId);
 
         _embeddingGeneratorMock
             .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -169,14 +202,18 @@ public class EmbeddingBackfillServiceTests
     }
 
     [Fact]
-    public async Task ProcessBatchAsync_MetadataIncludesDocumentIdAndChunkId()
+    public async Task ProcessBatchAsync_MetadataIncludesUserIdAndDocumentId()
     {
         var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
         var chunk = new KnowledgeChunk(docId, 0, "content for metadata test");
 
         _chunkRepoMock
             .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { chunk });
+
+        SetupDocumentLookup(docId, userId, boardId);
 
         var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 1f });
         _embeddingGeneratorMock
@@ -200,5 +237,9 @@ public class EmbeddingBackfillServiceTests
         capturedMetadata!["type"].Should().Be("knowledge_chunk");
         capturedMetadata["documentId"].Should().Be(docId.ToString());
         capturedMetadata["chunkId"].Should().Be(chunk.Id.ToString());
+        capturedMetadata["userId"].Should().Be(userId.ToString(),
+            "userId must be included for access control");
+        capturedMetadata["boardId"].Should().Be(boardId.ToString(),
+            "boardId must be included when the document belongs to a board");
     }
 }
