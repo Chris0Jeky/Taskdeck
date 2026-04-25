@@ -97,7 +97,7 @@ describe('InkBleed', () => {
     expect(wrapper.emitted('done')?.length ?? 0).toBeGreaterThan(0)
   })
 
-  it('short-circuits to dried with no timer work when reduced-motion is set', async () => {
+  it('short-circuits to dried and emits done when reduced-motion is set', async () => {
     installMatchMedia(true)
     const wrapper = mount(InkBleed, { props: { phase: 'auto' } })
     await wrapper.vm.$nextTick()
@@ -105,7 +105,7 @@ describe('InkBleed', () => {
     expect(wrapper.classes()).toContain('ink-bleed--reduced')
     expect(wrapper.classes()).toContain('ink-bleed--dried')
 
-    // Even after advancing past the full schedule, no other phase events fire.
+    // Even after advancing past the full schedule, no phase timers fire.
     vi.advanceTimersByTime(5000)
     await wrapper.vm.$nextTick()
 
@@ -115,6 +115,7 @@ describe('InkBleed', () => {
     // Initial phase was already 'dried' before mount, so setPhase('dried')
     // is a no-op; we expect zero phasechange events on the reduced path.
     expect(events.length).toBe(0)
+    expect(wrapper.emitted('done')).toHaveLength(1)
   })
 
   it('renders explicit phase=dried as final state without scheduling timers', () => {

@@ -12,6 +12,11 @@
  * Spec: design_handoff_taskdeck_paper/paper/surface-motion.jsx + issue #1006.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  INK_BLEED_PHASE_SCHEDULE,
+  detectInkBleedReducedMotion,
+  type InkBleedRuntimePhase,
+} from '../../composables/inkBleedMotion'
 
 export type InkBleedPhase =
   | 'auto'
@@ -43,19 +48,6 @@ const emit = defineEmits<{
 
 /* ---------------------------------------------------------------- timing -- */
 
-// Schedule of phase boundaries in ms (0..4600). Mirrors the spec table.
-const PHASE_SCHEDULE: ReadonlyArray<{
-  at: number
-  phase: Exclude<InkBleedPhase, 'auto'>
-}> = [
-  { at: 0, phase: 'drop' },
-  { at: 400, phase: 'bloom' },
-  { at: 1400, phase: 'compose' },
-  { at: 3400, phase: 'settle' },
-  { at: 4200, phase: 'stamp' },
-  { at: 4600, phase: 'dried' },
-]
-
 /* --------------------------------------------------- droplets (seeded) --- */
 
 // Deterministic pseudo-random so SSR and hydration agree, and reduced-motion
@@ -78,29 +70,15 @@ const DROPLETS: ReadonlyArray<Droplet> = [
 
 /* --------------------------------------------------- reduced-motion ------ */
 
-function detectReducedMotion(): boolean {
-  if (typeof globalThis === 'undefined') return false
-  // matchMedia may be missing in non-DOM environments; treat absence as "no".
-  const mm = (globalThis as { matchMedia?: (q: string) => MediaQueryList })
-    .matchMedia
-  if (typeof mm !== 'function') return false
-  try {
-    return mm('(prefers-reduced-motion: reduce)').matches === true
-  } catch {
-    return false
-  }
-}
-
 const isReducedMotion = ref(false)
 
 /* --------------------------------------------------- phase state --------- */
 
 // Initial render: dried+stamped frame so SSR / no-JS shows the final state.
 // onMounted will rewind to 'drop' for animated users (when phase === 'auto').
-const currentPhase = ref<Exclude<InkBleedPhase, 'auto'>>('dried')
+const currentPhase = ref<InkBleedRuntimePhase>('dried')
 
-const startTime = ref<number | null>(null)
-const timers: number[] = []
+const timers: ReturnType<typeof setTimeout>[] = []
 
 function clearTimers(): void {
   for (const id of timers.splice(0)) {
@@ -108,7 +86,7 @@ function clearTimers(): void {
   }
 }
 
-function setPhase(next: Exclude<InkBleedPhase, 'auto'>): void {
+function setPhase(next: InkBleedRuntimePhase): void {
   if (currentPhase.value === next) return
   currentPhase.value = next
   emit('phasechange', next)
@@ -117,13 +95,12 @@ function setPhase(next: Exclude<InkBleedPhase, 'auto'>): void {
 
 function scheduleSequence(): void {
   clearTimers()
-  startTime.value = Date.now()
   setPhase('drop')
-  for (const step of PHASE_SCHEDULE) {
+  for (const step of INK_BLEED_PHASE_SCHEDULE) {
     if (step.at === 0) continue
-    const id = (globalThis.setTimeout as typeof setTimeout)(() => {
+    const id = setTimeout(() => {
       setPhase(step.phase)
-    }, step.at) as unknown as number
+    }, step.at)
     timers.push(id)
   }
 }
@@ -131,19 +108,23 @@ function scheduleSequence(): void {
 /* --------------------------------------------------- lifecycle ----------- */
 
 onMounted(() => {
-  isReducedMotion.value = detectReducedMotion()
+  isReducedMotion.value = detectInkBleedReducedMotion()
 
   if (isReducedMotion.value) {
     // Short-circuit: no timer work, no phase transitions. Hold dried frame
-    // (initial render is already dried) and emit done after the 200ms fade.
-    setPhase('dried')
+    // (initial render is already dried) and still complete the auto flow.
+    if (props.phase === 'auto' || props.phase === 'dried') {
+      emit('done')
+    } else {
+      setPhase(props.phase)
+    }
     return
   }
 
   if (props.phase === 'auto') {
     scheduleSequence()
   } else {
-    setPhase(props.phase as Exclude<InkBleedPhase, 'auto'>)
+    setPhase(props.phase)
   }
 })
 
@@ -159,7 +140,7 @@ watch(
     if (next === 'auto') {
       scheduleSequence()
     } else {
-      setPhase(next as Exclude<InkBleedPhase, 'auto'>)
+      setPhase(next)
     }
   },
 )

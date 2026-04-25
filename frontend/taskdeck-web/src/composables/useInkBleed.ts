@@ -15,14 +15,14 @@
  *   immediately to `dried` and `done` fires after one tick.
  */
 import { onBeforeUnmount, readonly, ref } from 'vue'
+import {
+  INK_BLEED_PHASE_SCHEDULE,
+  INK_BLEED_TOTAL_MS,
+  detectInkBleedReducedMotion,
+  type InkBleedRuntimePhase,
+} from './inkBleedMotion'
 
-export type InkBleedPhase =
-  | 'drop'
-  | 'bloom'
-  | 'compose'
-  | 'settle'
-  | 'stamp'
-  | 'dried'
+export type InkBleedPhase = InkBleedRuntimePhase
 
 export interface UseInkBleedReturn {
   /** Begin (or restart) the bleed. Cancels any in-flight bleed. */
@@ -47,29 +47,6 @@ export interface UseInkBleedReturn {
   loop: Readonly<ReturnType<typeof ref<boolean>>>
 }
 
-const PHASE_SCHEDULE: ReadonlyArray<{ at: number; phase: InkBleedPhase }> = [
-  { at: 0, phase: 'drop' },
-  { at: 400, phase: 'bloom' },
-  { at: 1400, phase: 'compose' },
-  { at: 3400, phase: 'settle' },
-  { at: 4200, phase: 'stamp' },
-  { at: 4600, phase: 'dried' },
-]
-
-const TOTAL_MS = 4600
-
-function detectReducedMotion(): boolean {
-  if (typeof globalThis === 'undefined') return false
-  const mm = (globalThis as { matchMedia?: (q: string) => MediaQueryList })
-    .matchMedia
-  if (typeof mm !== 'function') return false
-  try {
-    return mm('(prefers-reduced-motion: reduce)').matches === true
-  } catch {
-    return false
-  }
-}
-
 export interface UseInkBleedOptions {
   /** Optional callback fired when the bleed reaches the `dried` end-state. */
   onDone?: () => void
@@ -79,12 +56,12 @@ export function useInkBleed(
   options: UseInkBleedOptions = {},
 ): UseInkBleedReturn {
   const phase = ref<InkBleedPhase>('dried')
-  const isReducedMotion = ref(detectReducedMotion())
+  const isReducedMotion = ref(detectInkBleedReducedMotion())
   const loop = ref(false)
 
   // Active sequence state. We store all timer ids so we can cancel them when
   // a new `start()` arrives or the host unmounts.
-  let timers: number[] = []
+  let timers: ReturnType<typeof setTimeout>[] = []
   let finishedEarly = false
   let scheduledEnd = 0
   let active = false
@@ -120,12 +97,12 @@ export function useInkBleed(
       return
     }
 
-    scheduledEnd = Date.now() + TOTAL_MS
+    scheduledEnd = Date.now() + INK_BLEED_TOTAL_MS
     phase.value = 'drop'
 
-    for (const step of PHASE_SCHEDULE) {
+    for (const step of INK_BLEED_PHASE_SCHEDULE) {
       if (step.at === 0) continue
-      const id = (globalThis.setTimeout as typeof setTimeout)(() => {
+      const id = setTimeout(() => {
         phase.value = step.phase
         if (step.phase === 'dried') {
           if (finishedEarly) {
@@ -135,7 +112,7 @@ export function useInkBleed(
             loop.value = true
           }
         }
-      }, step.at) as unknown as number
+      }, step.at)
       timers.push(id)
     }
   }
