@@ -25,7 +25,7 @@ const summary = computed(() => {
     </div>
     <div
       v-for="board in boards"
-      :key="board.name"
+      :key="board.id"
       class="today-board"
       :class="{ 'today-board--dim': board.moves === 0 && board.proposals === 0 }"
     >

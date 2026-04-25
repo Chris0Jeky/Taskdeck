@@ -34,6 +34,31 @@ describe('TodayLineForTomorrow', () => {
     expect(wrapper.emitted('save')?.[0]).toEqual(['AA contrast first'])
   })
 
+  it('reports save failures without emitting a successful save', async () => {
+    const originalLocalStorage = window.localStorage
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn(() => null),
+        setItem: vi.fn(() => {
+          throw new Error('quota')
+        }),
+      },
+    })
+    const wrapper = mount(TodayLineForTomorrow, {
+      props: { storageKey: KEY, debounceMs: 100, initial: '' },
+    })
+    const input = wrapper.find<HTMLTextAreaElement>('[data-testid="line-for-tomorrow-input"]')
+
+    await input.setValue('AA contrast first')
+    vi.advanceTimersByTime(150)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Save unavailable')
+    expect(wrapper.emitted('save')).toBeUndefined()
+    Object.defineProperty(window, 'localStorage', { configurable: true, value: originalLocalStorage })
+  })
+
   it('persists across remount via the same storage key', async () => {
     // First mount writes
     const a = mount(TodayLineForTomorrow, {

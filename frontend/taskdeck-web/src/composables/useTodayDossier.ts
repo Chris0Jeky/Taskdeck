@@ -38,6 +38,7 @@ export interface DossierDecision {
 }
 
 export interface DossierBoardLine {
+  id: string
   name: string
   moves: number
   proposals: number
@@ -210,11 +211,11 @@ function buildStubDossier(now: Date, summary: TodaySummary | null): DossierData 
   ]
 
   const boards: DossierBoardLine[] = [
-    { name: 'Product Backlog', moves: 6, proposals: 2 },
-    { name: 'Sprint 12', moves: 3, proposals: 1 },
-    { name: 'Personal', moves: 1, proposals: 0 },
-    { name: 'Side projects', moves: 0, proposals: 0 },
-    { name: 'Notes & references', moves: 0, proposals: 0 },
+    { id: 'product-backlog', name: 'Product Backlog', moves: 6, proposals: 2 },
+    { id: 'sprint-12', name: 'Sprint 12', moves: 3, proposals: 1 },
+    { id: 'personal', name: 'Personal', moves: 1, proposals: 0 },
+    { id: 'side-projects', name: 'Side projects', moves: 0, proposals: 0 },
+    { id: 'notes-references', name: 'Notes & references', moves: 0, proposals: 0 },
   ]
 
   const carryOver: DossierCarryOverCard[] = [

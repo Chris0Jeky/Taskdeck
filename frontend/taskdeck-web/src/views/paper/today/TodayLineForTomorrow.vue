@@ -38,7 +38,7 @@ function readStored(): string {
 }
 
 const text = ref<string>(readStored())
-const status = ref<'idle' | 'saving' | 'saved'>('saved')
+const status = ref<'idle' | 'saving' | 'saved' | 'error'>('saved')
 
 let timer: ReturnType<typeof setTimeout> | null = null
 let suppressNextSave = false
@@ -48,7 +48,8 @@ function flush() {
   try {
     window.localStorage.setItem(props.storageKey, text.value)
   } catch {
-    // ignore quota / private mode failures
+    status.value = 'error'
+    return
   }
   status.value = 'saved'
   emit('save', text.value)
@@ -100,6 +101,7 @@ onBeforeUnmount(() => {
     <div class="tk-meta today-line__meta">
       <span data-testid="line-for-tomorrow-status">
         <template v-if="status === 'saving'">Saving…</template>
+        <template v-else-if="status === 'error'">Save unavailable</template>
         <template v-else>Saved · auto</template>
       </span>
       <span>shows on tomorrow's open</span>
