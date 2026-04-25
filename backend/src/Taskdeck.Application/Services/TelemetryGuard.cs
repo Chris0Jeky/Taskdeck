@@ -33,7 +33,28 @@ public static class TelemetryGuard
         RegexOptions.Compiled,
         TimeSpan.FromMilliseconds(100));
 
-    private static TelemetryGuardOptions _options = new();
+    /// <summary>
+    /// Allowed value types for telemetry properties. Only primitives are accepted;
+    /// complex objects (dictionaries, DTOs, arrays) could smuggle user content or PII.
+    /// </summary>
+    private static readonly HashSet<Type> AllowedValueTypes = new()
+    {
+        typeof(string),
+        typeof(int),
+        typeof(long),
+        typeof(double),
+        typeof(float),
+        typeof(decimal),
+        typeof(bool),
+        typeof(byte),
+        typeof(short),
+        typeof(uint),
+        typeof(ulong),
+        typeof(ushort),
+        typeof(sbyte),
+    };
+
+    private static volatile TelemetryGuardOptions _options = new();
 
     /// <summary>
     /// Configures the guard with custom options. Call once at startup.
@@ -76,6 +97,15 @@ public static class TelemetryGuard
         if (!options.AllowedKeys.Contains(key))
         {
             return TelemetryValidationResult.Rejected($"Key '{key}' is not in the allowlist.");
+        }
+
+        // Reject unsupported value types -- only primitives are allowed.
+        // Complex objects (dictionaries, DTOs, arrays, etc.) could carry user
+        // content or PII that bypasses string/numeric validation below.
+        if (!AllowedValueTypes.Contains(value.GetType()))
+        {
+            return TelemetryValidationResult.Rejected(
+                $"Value type '{value.GetType().Name}' is not supported. Only primitive types (string, int, long, double, float, decimal, bool) are allowed.");
         }
 
         // Validate numeric values
