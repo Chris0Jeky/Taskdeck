@@ -34,6 +34,7 @@ public interface IUnitOfWork
     IConnectorEventRepository ConnectorEvents { get; }
     IConnectorCredentialRepository ConnectorCredentials { get; }
     IProposalRevisionRepository ProposalRevisions { get; }
+    ITomorrowNoteRepository TomorrowNotes { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
