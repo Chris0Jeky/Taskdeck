@@ -306,35 +306,41 @@ function closeOpenUi() {
   router.push('/workspace/boards')
 }
 
+function standardBoardShortcutsEnabled() {
+  return !paperOn.value
+}
+
 // Setup keyboard shortcuts
 // Card movement shortcuts (Alt+Arrow) are listed before plain Arrow navigation
 // so the modifier-qualified binding matches first. Plain arrow navigation
 // explicitly sets `alt: false` to avoid firing when Alt is held.
+// PaperBoardView renders a separate board surface; keep these Obsidian-board
+// shortcuts scoped out while paper mode is active.
 useKeyboardShortcuts([
   // Card movement (Alt + Arrow keys)
-  { key: 'ArrowRight', alt: true, description: 'Move card to next column', action: moveCardToNextColumn },
-  { key: 'ArrowLeft', alt: true, description: 'Move card to previous column', action: moveCardToPreviousColumn },
-  { key: 'ArrowUp', alt: true, description: 'Move card up in column', action: moveCardUp },
-  { key: 'ArrowDown', alt: true, description: 'Move card down in column', action: moveCardDown },
+  { key: 'ArrowRight', alt: true, description: 'Move card to next column', action: moveCardToNextColumn, enabled: standardBoardShortcutsEnabled },
+  { key: 'ArrowLeft', alt: true, description: 'Move card to previous column', action: moveCardToPreviousColumn, enabled: standardBoardShortcutsEnabled },
+  { key: 'ArrowUp', alt: true, description: 'Move card up in column', action: moveCardUp, enabled: standardBoardShortcutsEnabled },
+  { key: 'ArrowDown', alt: true, description: 'Move card down in column', action: moveCardDown, enabled: standardBoardShortcutsEnabled },
 
   // Navigation
-  { key: 'j', description: 'Next card', action: selectNextCard },
-  { key: 'ArrowDown', alt: false, description: 'Next card', action: selectNextCard },
-  { key: 'k', description: 'Previous card', action: selectPreviousCard },
-  { key: 'ArrowUp', alt: false, description: 'Previous card', action: selectPreviousCard },
-  { key: 'h', description: 'Previous column', action: selectPreviousColumn },
-  { key: 'ArrowLeft', alt: false, description: 'Previous column', action: selectPreviousColumn },
-  { key: 'l', description: 'Next column', action: selectNextColumn },
-  { key: 'ArrowRight', alt: false, description: 'Next column', action: selectNextColumn },
+  { key: 'j', description: 'Next card', action: selectNextCard, enabled: standardBoardShortcutsEnabled },
+  { key: 'ArrowDown', alt: false, description: 'Next card', action: selectNextCard, enabled: standardBoardShortcutsEnabled },
+  { key: 'k', description: 'Previous card', action: selectPreviousCard, enabled: standardBoardShortcutsEnabled },
+  { key: 'ArrowUp', alt: false, description: 'Previous card', action: selectPreviousCard, enabled: standardBoardShortcutsEnabled },
+  { key: 'h', description: 'Previous column', action: selectPreviousColumn, enabled: standardBoardShortcutsEnabled },
+  { key: 'ArrowLeft', alt: false, description: 'Previous column', action: selectPreviousColumn, enabled: standardBoardShortcutsEnabled },
+  { key: 'l', description: 'Next column', action: selectNextColumn, enabled: standardBoardShortcutsEnabled },
+  { key: 'ArrowRight', alt: false, description: 'Next column', action: selectNextColumn, enabled: standardBoardShortcutsEnabled },
 
   // Actions
-  { key: 'Enter', description: 'Open selected card', action: openSelectedCard },
-  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn },
-  { key: 'Escape', description: 'Close open dialog/panel', action: closeOpenUi },
+  { key: 'Enter', description: 'Open selected card', action: openSelectedCard, enabled: standardBoardShortcutsEnabled },
+  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn, enabled: standardBoardShortcutsEnabled },
+  { key: 'Escape', description: 'Close open dialog/panel', action: closeOpenUi, enabled: standardBoardShortcutsEnabled },
 
   // Help
-  { key: '?', description: 'Toggle keyboard shortcuts help', action: toggleKeyboardHelp },
-  { key: 'f', description: 'Toggle filter panel', action: toggleFilterPanel },
+  { key: '?', description: 'Toggle keyboard shortcuts help', action: toggleKeyboardHelp, enabled: standardBoardShortcutsEnabled },
+  { key: 'f', description: 'Toggle filter panel', action: toggleFilterPanel, enabled: standardBoardShortcutsEnabled },
 ])
 </script>
 
