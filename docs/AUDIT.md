@@ -15,7 +15,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | Backend Architecture | 9/10 | Clean Architecture enforced by tests | Only 1 EF migration in history |
 | Frontend Architecture | 7/10 | TypeScript 9/10, Routing 9/10 | 3 views >1,500 lines, no error boundary |
 | Test Coverage | 9/10 | 7,070+ tests, property-based, mutation | Some E2E flakiness in extended matrix |
-| Security Posture | 7.5/10 | All 37 controllers authorized, CSP, rate limiting | SSRF gap in webhooks, no RBAC |
+| Security Posture | 7.5/10 | All 37 controllers authorized, CSP, rate limiting, OAuth scope validation | No RBAC, no encryption at rest |
 | CI/CD & DevOps | 8/10 | Advanced multi-lane topology with SBOM | No SAST, basic production readiness |
 | Performance | 6.5/10 | Lazy loading, virtual scroll, performance marks | No response compression, missing indexes |
 | Documentation | 8.5/10 | 338 docs, 30 ADRs, user manual, ops runbooks | No config reference, no data model docs |
@@ -65,10 +65,10 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | ~~CRITICAL~~ RESOLVED | ~~Only 1 EF migration in source control — fresh environments cannot bootstrap~~ 21 migrations in source control; full chain applies cleanly to fresh SQLite; `MigrationBootstrapTests` guard regression; workflow documented in `docs/platform/EF_MIGRATION_WORKFLOW.md` (`#864`/PR `#907`) | `backend/src/Taskdeck.Infrastructure/Migrations/` |
 | ~~CRITICAL~~ RESOLVED | ~~No configuration validation at startup (`ValidateOnStart()`)~~ data annotations on 15 settings classes + 4 `IValidateOptions<T>` cross-property validators + `ValidateOnStart()` via `RegisterValidatedOptions<T>` helper; 34 `OptionsValidationTests` (OPS-27 `#863`/PR `#908`) | `Program.cs`, all settings classes |
 | HIGH | No API versioning strategy — breaking changes have no compatibility path | All controllers |
-| MEDIUM | MCP mode duplicates DI registration from web mode | `Program.cs` lines 72-91 |
+| ~~MEDIUM~~ RESOLVED | ~~MCP mode duplicates DI registration from web mode~~ Extracted into `McpApplicationServiceRegistration.cs` and `McpResourcesAndToolsRegistration.cs` shared extension methods (DEBT-05 `#951`/PR `#961`) | `Program.cs` lines 72-91 |
 | MEDIUM | No value objects for Email/Username — validation scattered | Domain entities |
-| MEDIUM | No connection timeout or retry policy on DbContext | `DependencyInjection.cs` |
-| LOW | FluentValidation referenced but no validators found | `.csproj` |
+| ~~MEDIUM~~ RESOLVED | ~~No connection timeout or retry policy on DbContext~~ `DatabaseSettings.CommandTimeoutSeconds` (default 30, range 1-300) wired to SQLite DbContext options (PERF-14 `#952`/PR `#966`) | `DependencyInjection.cs` |
+| ~~LOW~~ RESOLVED | ~~FluentValidation referenced but no validators found~~ Removed unused NuGet reference (DEBT-04 `#950`/PR `#960`) | `.csproj` |
 
 ### Production Readiness: 75%
 
@@ -91,12 +91,12 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | ~~CRITICAL~~ | ~~Views over 1,500 lines~~ | ~~ReviewView (1,659), InboxView (1,527), AutomationChatView (1,523)~~ RESOLVED: all 3 decomposed in PRs #920, #921, #923 |
 | CRITICAL | No error boundary | Component render errors crash entire app |
 | HIGH | No request retry/backoff | Network failures not recovered gracefully |
-| HIGH | Modals oversized | StarterPackCatalogModal (1,253), CardModal (681) |
+| ~~HIGH~~ RESOLVED | ~~Modals oversized~~ StarterPackCatalogModal decomposed 1,253→234 lines (FE-21 `#953`/PR `#963`); CardModal decomposed 681→190 lines (FE-22 `#954`/PR `#962`) | StarterPackCatalogModal, CardModal |
 | HIGH | No responsive design strategy | Only 8 media queries — mobile board view broken |
 | MEDIUM | JWT stored in localStorage | Vulnerable to XSS (mitigated by CSP) |
-| MEDIUM | No loading skeleton consistency | TdSkeleton exists but not used in all views |
+| ~~MEDIUM~~ RESOLVED | ~~No loading skeleton consistency~~ `TdSkeleton` expanded across 7 views: HomeView, TodayView, BoardView, MetricsView, ReviewView, NotificationInboxView, BoardsListView (FE-23 `#955`/PR `#965`) | TdSkeleton now used consistently |
 | MEDIUM | No offline mutation queue | Changes made while offline are lost |
-| MEDIUM | Virtual scrolling in only 2 of 16 list views | ReviewView, ActivityView need it |
+| ~~MEDIUM~~ RESOLVED | ~~Virtual scrolling in only 2 of 16 list views~~ Added to ReviewView and NotificationInboxView via `@tanstack/vue-virtual` with keyboard nav (PERF-15 `#959`/PR `#964`) | ReviewView, NotificationInboxView now virtualized |
 | ~~LOW~~ | ~~No session timeout warning~~ | ~~Token expires silently~~ RESOLVED: `useSessionTimeout` composable + `SessionTimeoutWarning.vue` (PR #919); backend refresh endpoint not yet implemented |
 
 ### Production Readiness: 65%
@@ -126,11 +126,11 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | MEDIUM | No vulnerability disclosure policy (`SECURITY.md`) | No responsible disclosure path |
 | ~~MEDIUM~~ PARTIAL | ~~`style-src 'unsafe-inline'` in CSP~~ **Partially mitigated** (SEC-29 `#855`/`#945`): API CSP no longer has `'unsafe-inline'` in `style-src`; reverse-proxy uses `style-src-elem 'self'` to block `<style>` injection in modern browsers; `'unsafe-inline'` remains in `style-src` fallback for Vue `:style` bindings (27 files); follow-up: migrate to CSS custom properties | Allows inline style injection |
 | MEDIUM | No distributed rate limiting | Multi-instance bypasses in-process limits |
-| MEDIUM | Audit trail retention unbounded | Grows indefinitely |
-| LOW | No OAuth scope validation | Scope claims not checked |
-| LOW | Console.error exposes API error details | DevTools visible |
+| ~~MEDIUM~~ RESOLVED | ~~Audit trail retention unbounded~~ `AuditRetentionWorker` with configurable `MaxRetentionDays` (90), `CleanupBatchSize` (1000), `CleanupIntervalHours` (24); batch SQL DELETE with SQLite/SQL Server dialect support (OPS-31 `#956`/PR `#967`) | No longer grows indefinitely |
+| ~~LOW~~ RESOLVED | ~~No OAuth scope validation~~ `OAuthScopeValidator` validates required/expected scopes with case-sensitive comparison; configurable via `GitHubOAuthSettings.RequiredScopes`/`ExpectedScopes` (SEC-31 `#957`/PR `#969`) | Scope claims now checked |
+| ~~LOW~~ RESOLVED | ~~Console.error exposes API error details~~ Centralized `errorReporting.ts` with `logError`/`logWarn` using `import.meta.env.DEV` for dev/prod sanitization; 17 files migrated (FE-24 `#958`/PR `#968`) | DevTools no longer exposes API details in production |
 
-### Overall Risk Level: LOW-MEDIUM (0 Critical, 1 HIGH, 8 MEDIUM, 5 LOW after 2026-04-22 hardening wave)
+### Overall Risk Level: LOW-MEDIUM (0 Critical, 1 HIGH, 5 MEDIUM, 2 LOW after 2026-04-24 remediation wave)
 
 ---
 
@@ -160,7 +160,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 ### Existing Optimizations (Positive)
 - Lazy route splitting (16/18 views)
-- Virtual scrolling (Inbox, Activity)
+- Virtual scrolling (Inbox, Activity, Review, NotificationInbox)
 - `AsNoTracking()` consistent on reads
 - Hard result limits on all queries
 - Performance marks with budget enforcement
@@ -198,7 +198,6 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 - Manual validation slices C/D/E with 45+25+25 scenario catalogs
 
 ### Test Gaps
-- Frontend views >1,000 lines are harder to test thoroughly
 - Virtual scrolling not tested under load
 - ~~No performance regression tests in CI gate~~ RESOLVED: k6 thresholds + bundle size checks in `ci-extended`/`ci-nightly` (CI-03 `#872`/PR `#918`)
 - E2E cross-browser is advisory, not required
@@ -297,7 +296,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 ### Tier 2: Before Production Launch (This Month)
 
-6. ~~**Decompose oversized views**~~ RESOLVED: ReviewView (PR #923), InboxView (PR #921), AutomationChatView (PR #920) — all decomposed to <250-line shells + extracted components/composables
+6. ~~**Decompose oversized views**~~ RESOLVED: ReviewView (PR #923), InboxView (PR #921), AutomationChatView (PR #920) — all decomposed to <250-line shells + extracted components/composables; CardModal (PR #962) and StarterPackCatalogModal (PR #963) also decomposed in 2026-04-24 wave
 7. **Implement error boundary** — catch render errors with fallback UI — 2 hours — Open
 8. ~~**Add configuration validation at startup**~~ RESOLVED (OPS-27 `#863`/PR `#908`)
 9. **Add API response pagination** — board list RESOLVED (PERF-12 `#848`/PR `#909`); audit, activity still Open
@@ -309,6 +308,18 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 - **Import file content validation** (SEC-30 `#860`/PR `#910`): `FileContentValidator` with text/JSON/binary/SQLite magic-byte checks, CJK-safe character-based limits, 52 tests
 - **Secrets detection in CI** (CI-02 `#871`/PR `#902`): Gitleaks advisory + blocking scans
 - **CLI test discovery fix** (TST-58 `#853`/PR `#906`): missing `[Fact]`/`[Theory]` attributes + shared `CliTestHarness`
+
+### Additional work delivered in the 2026-04-24 audit remediation wave
+
+- **Unused dependency removal** (DEBT-04 `#950`/PR `#960`): FluentValidation NuGet package removed
+- **MCP DI deduplication** (DEBT-05 `#951`/PR `#961`): shared extension methods for MCP mode registrations
+- **Modal decompositions** (FE-21 `#953`/PR `#963`, FE-22 `#954`/PR `#962`): StarterPackCatalogModal 1,253→234 lines, CardModal 681→190 lines; +186 composable tests
+- **Virtual scrolling expansion** (PERF-15 `#959`/PR `#964`): ReviewView + NotificationInboxView with keyboard nav
+- **Loading skeleton consistency** (FE-23 `#955`/PR `#965`): TdSkeleton across 7 views
+- **DbContext timeout configuration** (PERF-14 `#952`/PR `#966`): `DatabaseSettings.CommandTimeoutSeconds`
+- **Audit trail retention** (OPS-31 `#956`/PR `#967`): `AuditRetentionWorker` with batch cleanup
+- **Console error sanitization** (FE-24 `#958`/PR `#968`): centralized `errorReporting.ts` across 17 files
+- **OAuth scope validation** (SEC-31 `#957`/PR `#969`): `OAuthScopeValidator` with case-sensitive comparison
 
 ### Tier 3: v0.1.0 Release Prerequisites
 
@@ -325,8 +336,8 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 
 Taskdeck is an **impressively engineered product** with production-quality architecture, comprehensive testing, and mature documentation. The core build is effectively complete — what remains is the bridge from "engineering project" to "product people use."
 
-The 14 open issues are all strategic expansion work. The codebase is clean (2 TODOs in 160K lines), well-tested (7,070+ automated tests with adversarial review), and thoroughly documented (30 ADRs, 338 doc files).
+The remaining open issues are strategic expansion work. The codebase is clean (2 TODOs in 160K lines), well-tested (7,770+ automated tests with adversarial review), and thoroughly documented (30+ ADRs, 340+ doc files).
 
-**The primary risk is not code quality — it's operational readiness.** Response compression, database indexes, configuration validation, and error boundaries are the gap between "works locally" and "works in production." All are addressable in days, not weeks.
+**The primary risk is not code quality — it's operational readiness.** Response compression, database indexes, and error boundaries are the gap between "works locally" and "works in production." All are addressable in days, not weeks.
 
 The project is ready to ship v0.1.0 with targeted fixes from Tier 1 and Tier 2 above.

@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
 import { logError } from '../utils/errorReporting'
+import { TdSkeleton } from '../components/ui'
 
 const router = useRouter()
 const boardStore = useBoardStore()
@@ -82,9 +83,18 @@ function goToBoard(id: string) {
       </div>
 
       <!-- Loading State -->
-      <div v-if="boardStore.loading" class="text-center py-12">
-        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary-container"></div>
-        <p class="mt-4 text-on-surface/60">Loading boards...</p>
+      <div v-if="boardStore.loading" class="td-boards-skeleton" role="status" aria-live="polite">
+        <span class="sr-only">Loading boards...</span>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div v-for="n in 6" :key="n" class="td-boards-skeleton__card">
+            <TdSkeleton width="70%" height="20px" />
+            <TdSkeleton width="90%" height="12px" />
+            <TdSkeleton width="50%" height="12px" />
+            <div style="margin-top: auto; padding-top: 0.75rem">
+              <TdSkeleton width="120px" height="10px" />
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Error State -->
@@ -147,3 +157,16 @@ function goToBoard(id: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.td-boards-skeleton__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: var(--td-space-6);
+  border-radius: var(--td-radius-lg);
+  background: var(--td-surface-container-low);
+  border: 1px solid var(--td-border-ghost);
+  min-height: 140px;
+}
+</style>

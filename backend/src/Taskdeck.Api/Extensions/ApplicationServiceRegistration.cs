@@ -28,6 +28,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<AuthenticationService>();
         services.AddScoped<AuthorizationService>();
         services.AddScoped<MfaService>();
+        services.AddSingleton<OAuthScopeValidator>();
         services.AddScoped<IAuthorizationService>(sp => sp.GetRequiredService<AuthorizationService>());
         services.AddScoped<UserService>();
         services.AddScoped<BoardAccessService>();

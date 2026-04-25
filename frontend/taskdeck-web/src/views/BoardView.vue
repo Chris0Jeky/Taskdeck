@@ -14,6 +14,7 @@ import BoardCanvas from '../components/board/BoardCanvas.vue'
 import BoardDialogHost from '../components/board/BoardDialogHost.vue'
 import FilterPanel from '../components/board/FilterPanel.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import { TdSkeleton } from '../components/ui'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
 import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
@@ -399,9 +400,26 @@ useKeyboardShortcuts([
     />
 
     <!-- Loading State -->
-    <div v-if="boardStore.loading && !boardStore.currentBoard" class="flex justify-center items-center py-12" aria-live="polite">
-      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary-container" role="status" aria-label="Loading board">
-        <span class="sr-only">Loading board...</span>
+    <div v-if="boardStore.loading && !boardStore.currentBoard" class="td-board-skeleton" aria-live="polite" role="status">
+      <span class="sr-only">Loading board...</span>
+      <div class="td-board-skeleton__toolbar">
+        <TdSkeleton width="200px" height="24px" />
+        <TdSkeleton width="300px" height="14px" />
+      </div>
+      <div class="td-board-skeleton__columns">
+        <div v-for="n in 4" :key="n" class="td-board-skeleton__column">
+          <TdSkeleton width="80%" height="16px" />
+          <div class="td-board-skeleton__cards">
+            <div v-for="m in (n % 2 === 0 ? 3 : 2)" :key="m" class="td-board-skeleton__card">
+              <TdSkeleton width="90%" height="14px" />
+              <TdSkeleton width="60%" height="10px" />
+              <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem">
+                <TdSkeleton width="48px" height="18px" />
+                <TdSkeleton width="48px" height="18px" />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -453,6 +471,52 @@ useKeyboardShortcuts([
 </template>
 
 <style scoped>
+/* ── Board Skeleton ── */
+.td-board-skeleton {
+  padding: var(--td-space-6) var(--td-space-8);
+}
+
+.td-board-skeleton__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+  margin-bottom: var(--td-space-6);
+}
+
+.td-board-skeleton__columns {
+  display: flex;
+  gap: var(--td-space-4);
+  overflow-x: auto;
+}
+
+.td-board-skeleton__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-3);
+  min-width: 280px;
+  width: 280px;
+  padding: var(--td-space-4);
+  border-radius: var(--td-radius-lg);
+  background: var(--td-surface-container);
+  border: 0.5px solid var(--td-border-ghost);
+}
+
+.td-board-skeleton__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+}
+
+.td-board-skeleton__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: var(--td-space-3);
+  border-radius: var(--td-radius-md);
+  background: var(--td-surface-container-high);
+  border: 0.5px solid var(--td-border-ghost);
+}
+
 /* ── Create Column Form — token-based ── */
 .td-column-form {
   margin-top: var(--td-space-5);

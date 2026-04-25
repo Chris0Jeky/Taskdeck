@@ -69,26 +69,8 @@ if (args.Contains("--mcp"))
         // Infrastructure (DbContext, Repositories, UoW)
         mcpHttpBuilder.Services.AddInfrastructure(mcpHttpBuilder.Configuration);
 
-        // Register Application services needed by MCP resources and tools.
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.AuthorizationService>();
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.IAuthorizationService>(
-            sp => sp.GetRequiredService<Taskdeck.Application.Services.AuthorizationService>());
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.BoardService>(sp =>
-            new Taskdeck.Application.Services.BoardService(
-                sp.GetRequiredService<IUnitOfWork>(),
-                sp.GetRequiredService<Taskdeck.Application.Services.IAuthorizationService>()));
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.ColumnService>();
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.CardService>();
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.LabelService>();
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.AutomationProposalService>();
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.IAutomationProposalService>(
-            sp => sp.GetRequiredService<Taskdeck.Application.Services.AutomationProposalService>());
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.CaptureService>();
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.ICaptureService>(
-            sp => sp.GetRequiredService<Taskdeck.Application.Services.CaptureService>());
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.NotificationService>();
-        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.INotificationService>(
-            sp => sp.GetRequiredService<Taskdeck.Application.Services.NotificationService>());
+        // Application services needed by MCP resources and tools (shared with stdio mode).
+        mcpHttpBuilder.Services.AddMcpApplicationServices();
 
         // HTTP identity: maps API key to user via HttpUserContextProvider.
         mcpHttpBuilder.Services.AddHttpContextAccessor();
@@ -119,12 +101,7 @@ if (args.Contains("--mcp"))
         // MCP server: HTTP transport + all resources and tools.
         mcpHttpBuilder.Services.AddMcpServer()
             .WithHttpTransport()
-            .WithResources<BoardResources>()
-            .WithResources<CaptureResources>()
-            .WithResources<ProposalResources>()
-            .WithTools<ReadTools>()
-            .WithTools<WriteTools>()
-            .WithTools<ProposalTools>();
+            .AddMcpResourcesAndTools();
 
         var mcpHttpApp = mcpHttpBuilder.Build();
 
@@ -189,28 +166,8 @@ if (args.Contains("--mcp"))
             // Infrastructure (DbContext, Repositories, UoW)
             services.AddInfrastructure(ctx.Configuration);
 
-            // Register Application services needed by MCP resources and tools.
-            // We deliberately skip web-only services (SignalR notifiers, workers,
-            // LLM providers, rate limiting, etc.) to keep the MCP host minimal.
-            services.AddScoped<Taskdeck.Application.Services.AuthorizationService>();
-            services.AddScoped<Taskdeck.Application.Services.IAuthorizationService>(
-                sp => sp.GetRequiredService<Taskdeck.Application.Services.AuthorizationService>());
-            services.AddScoped<Taskdeck.Application.Services.BoardService>(sp =>
-                new Taskdeck.Application.Services.BoardService(
-                    sp.GetRequiredService<IUnitOfWork>(),
-                    sp.GetRequiredService<Taskdeck.Application.Services.IAuthorizationService>()));
-            services.AddScoped<Taskdeck.Application.Services.ColumnService>();
-            services.AddScoped<Taskdeck.Application.Services.CardService>();
-            services.AddScoped<Taskdeck.Application.Services.LabelService>();
-            services.AddScoped<Taskdeck.Application.Services.AutomationProposalService>();
-            services.AddScoped<Taskdeck.Application.Services.IAutomationProposalService>(
-                sp => sp.GetRequiredService<Taskdeck.Application.Services.AutomationProposalService>());
-            services.AddScoped<Taskdeck.Application.Services.CaptureService>();
-            services.AddScoped<Taskdeck.Application.Services.ICaptureService>(
-                sp => sp.GetRequiredService<Taskdeck.Application.Services.CaptureService>());
-            services.AddScoped<Taskdeck.Application.Services.NotificationService>();
-            services.AddScoped<Taskdeck.Application.Services.INotificationService>(
-                sp => sp.GetRequiredService<Taskdeck.Application.Services.NotificationService>());
+            // Application services needed by MCP resources and tools (shared with HTTP mode).
+            services.AddMcpApplicationServices();
 
             // Stdio identity: maps the OS process owner to the local default user.
             services.AddScoped<IUserContextProvider, StdioUserContextProvider>();
@@ -221,12 +178,7 @@ if (args.Contains("--mcp"))
             // MCP server: stdio transport + all resources and tools.
             services.AddMcpServer()
                 .WithStdioServerTransport()
-                .WithResources<BoardResources>()
-                .WithResources<CaptureResources>()
-                .WithResources<ProposalResources>()
-                .WithTools<ReadTools>()
-                .WithTools<WriteTools>()
-                .WithTools<ProposalTools>();
+                .AddMcpResourcesAndTools();
         })
         .Build();
 
@@ -357,12 +309,7 @@ builder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.Htt
 builder.Services.AddMcpTelemetry();
 builder.Services.AddMcpServer()
     .WithHttpTransport()
-    .WithResources<BoardResources>()
-    .WithResources<CaptureResources>()
-    .WithResources<ProposalResources>()
-    .WithTools<ReadTools>()
-    .WithTools<WriteTools>()
-    .WithTools<ProposalTools>();
+    .AddMcpResourcesAndTools();
 
 // Add JWT Authentication (with optional GitHub OAuth and OIDC providers, circuit-breaker-protected backchannel)
 // CircuitBreakerStateTracker is already registered as a singleton by AddLlmProviders above.

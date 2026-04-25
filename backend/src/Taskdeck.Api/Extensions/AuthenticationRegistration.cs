@@ -3,10 +3,13 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Authentication.OAuth.Claims;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Polly;
 using Polly.Extensions.Http;
@@ -135,6 +138,20 @@ public static class AuthenticationRegistration
                 options.Scope.Add("read:user");
                 options.Scope.Add("user:email");
 
+                // Ensure any additional RequiredScopes from configuration are also
+                // requested from GitHub. Without this, configuring a required scope
+                // that isn't requested causes all logins to be rejected.
+                foreach (var scope in gitHubOAuthSettings.RequiredScopes ?? Enumerable.Empty<string>())
+                {
+                    if (!options.Scope.Contains(scope))
+                        options.Scope.Add(scope);
+                }
+                foreach (var scope in gitHubOAuthSettings.ExpectedScopes ?? Enumerable.Empty<string>())
+                {
+                    if (!options.Scope.Contains(scope))
+                        options.Scope.Add(scope);
+                }
+
                 options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
                 options.ClaimActions.MapJsonKey(ClaimTypes.Name, "login");
                 options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
@@ -142,8 +159,48 @@ public static class AuthenticationRegistration
                 options.ClaimActions.MapJsonKey("urn:github:login", "login");
                 options.ClaimActions.MapJsonKey("urn:github:avatar", "avatar_url");
 
-                // OAuthHandler fetches UserInformationEndpoint automatically
-                // and applies ClaimActions — no custom OnCreatingTicket needed.
+                // Validate OAuth scopes after token exchange.
+                // GitHub returns the granted scopes in the token response body as "scope"
+                // (comma-separated). Reject authentication if required scopes are missing.
+                var scopeSettings = gitHubOAuthSettings;
+                options.Events = new OAuthEvents
+                {
+                    OnCreatingTicket = context =>
+                    {
+                        var scopeValidator = context.HttpContext.RequestServices
+                            .GetRequiredService<OAuthScopeValidator>();
+
+                        // GitHub returns granted scopes in the token response "scope" field.
+                        // The X-OAuth-Scopes header appears on API responses, but the token
+                        // response body is the authoritative source at auth time.
+                        var grantedScopesRaw = context.TokenResponse?.Response?.RootElement
+                            .TryGetProperty("scope", out var scopeElement) == true
+                            ? scopeElement.GetString()
+                            : null;
+
+                        var validationResult = scopeValidator.Validate(
+                            grantedScopesRaw,
+                            scopeSettings.RequiredScopes,
+                            scopeSettings.ExpectedScopes);
+
+                        if (!validationResult.IsValid)
+                        {
+                            var logger = context.HttpContext.RequestServices
+                                .GetRequiredService<ILoggerFactory>()
+                                .CreateLogger("Taskdeck.Api.OAuth.ScopeValidation");
+
+                            logger.LogError(
+                                "GitHub OAuth authentication rejected: missing required scopes. " +
+                                "Missing: [{MissingScopes}]. User must re-authorize with required permissions.",
+                                string.Join(", ", validationResult.MissingRequiredScopes));
+
+                            context.Fail(validationResult.ErrorMessage
+                                ?? "GitHub OAuth scope validation failed");
+                        }
+
+                        return Task.CompletedTask;
+                    }
+                };
 
                 // Circuit breaker for the OAuth backchannel (token exchange + user info).
                 if (circuitBreakerTracker is not null && circuitBreakerSettings is not null)

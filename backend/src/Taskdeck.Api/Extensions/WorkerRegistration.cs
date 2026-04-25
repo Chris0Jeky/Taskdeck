@@ -39,10 +39,14 @@ public static class WorkerRegistration
             };
         });
 
+        var auditRetentionSettings = configuration.GetSection("AuditRetention").Get<AuditRetentionSettings>() ?? new AuditRetentionSettings();
+        services.AddSingleton(auditRetentionSettings);
+
         services.AddSingleton<WorkerHeartbeatRegistry>();
         services.AddHostedService<LlmQueueToProposalWorker>();
         services.AddHostedService<ProposalHousekeepingWorker>();
         services.AddHostedService<OutboundWebhookDeliveryWorker>();
+        services.AddHostedService<AuditRetentionWorker>();
 
         return services;
     }

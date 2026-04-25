@@ -17,4 +17,14 @@ public interface IAuditLogRepository : IRepository<AuditLog>
         string? level = null,
         int limit = 100,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes audit log entries older than the specified cutoff date in batches.
+    /// Uses direct SQL DELETE for efficiency (does not load entities into memory).
+    /// </summary>
+    /// <param name="olderThan">Entries with a Timestamp before this value are deleted.</param>
+    /// <param name="batchSize">Maximum number of rows to delete per batch.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The total number of rows deleted.</returns>
+    Task<int> DeleteOldEntriesAsync(DateTimeOffset olderThan, int batchSize, CancellationToken cancellationToken = default);
 }

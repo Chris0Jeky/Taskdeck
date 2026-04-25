@@ -1,8 +1,8 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-23
+Last Updated: 2026-04-24
 
-Post-merge sweep for PRs #936--#949.
+Post-merge sweep for PRs #960--#969 (audit-finding remediation wave).
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -181,6 +181,18 @@ Current constraints are mostly hardening and consistency:
   - **TST-59 visual regression expansion** (`#865`/`#948`): 15 additional Playwright visual regression specs bringing total from 5 to 20 components — auth views, TodayView, CalendarView, MetricsView, ReviewView, NotificationInboxView, SettingsView, CardModal, ColumnEditModal, board toolbar, capture/inbox views; clock pinning for calendar snapshots; timestamp masking for modal metadata; `document.fonts.ready` wait for font-load determinism; redundant `networkidle` waits removed; policy doc updated
   - **TST-60 E2E parallelization** (`#867`/`#949`): switched Playwright E2E from serial to parallel with `fullyParallel: true`; default 2 workers for both local and CI (overridable via `TASKDECK_E2E_WORKERS`); SQLite connection string uses `Pooling=True;Default Timeout=30` (dropped `Cache=Shared` per review — shared-cache mode increases contention); WIP-limit test fixed with idempotent `.check()` to prevent toggle oscillation under CPU contention; WAL mode documented as future follow-up
 
+- Audit-finding remediation wave (2026-04-24, PRs `#960`--`#969`, 10 issues from `docs/AUDIT.md` unresolved findings):
+  - **DEBT-04 Remove unused FluentValidation** (`#950`/`#960`): removed orphaned `FluentValidation` v12.1.1 NuGet reference from `Taskdeck.Application.csproj`; confirmed zero usage via codebase-wide search
+  - **DEBT-05 Deduplicate MCP DI registration** (`#951`/`#961`): extracted ~60 lines of duplicated DI registrations from `Program.cs` into `McpApplicationServiceRegistration.cs` (12 shared application services) and `McpResourcesAndToolsRegistration.cs` (6 shared resource/tool registrations) extension methods; all 3 MCP modes (HTTP, stdio, co-hosted web) now call the shared methods
+  - **FE-22 Decompose CardModal** (`#954`/`#962`): 681-line `CardModal.vue` reduced to 190-line thin shell + 6 sub-components (`CardModalHeader`, `CardModalForm`, `CardModalLabels`, `CardModalComments`, `CardModalMetadata`, `CardModalActions`) + `useCardModal` composable (242 lines); 61 new composable tests; adversarial review confirmed all props/events/watchers preserved
+  - **FE-21 Decompose StarterPackCatalogModal** (`#953`/`#963`): 1,253-line `StarterPackCatalogModal.vue` reduced to 234-line thin shell + 5 sub-components (`StarterPackCatalogList`, `StarterPackCatalogDetail`, `StarterPackImportInput`, `StarterPackImportDetail`, `StarterPackResultPanel`) + 3 composables (`useStarterPackCatalog`, `useStarterPackImport`, `useStarterPackResult`) + shared CSS tokens; 125 new composable tests; adversarial review confirmed decomposition correctness
+  - **PERF-15 Virtual scrolling expansion** (`#959`/`#964`): added `@tanstack/vue-virtual` virtual scrolling to `ReviewView` and `NotificationInboxView` with `useVirtualList` composable, `estimateSize: 220px`, overscan 3, keyboard navigation (ArrowUp/ArrowDown); `NotificationInboxView` uses `FlatRow` discriminated union for grouped notifications; adversarial review fixed broken keyboard nav (computed→ref), negative index on empty list, and unsafe type assertions
+  - **FE-23 Loading skeleton consistency** (`#955`/`#965`): expanded `TdSkeleton` usage across 7 views (`HomeView`, `TodayView`, `BoardView`, `MetricsView`, `ReviewView`, `NotificationInboxView`, `BoardsListView`); each skeleton layout matches the loaded content structure; adversarial review fixed orphaned CSS class in NotificationInboxView and stale test name
+  - **PERF-14 DbContext connection resilience** (`#952`/`#966`): new `DatabaseSettings` class with `CommandTimeoutSeconds` (default 30, range 1--300) wired to SQLite `DbContext` options via `RegisterValidatedOptions<T>` pattern; adversarial review removed misleading `MaxRetryCount` no-op (SQLite doesn't support retries)
+  - **OPS-31 Audit trail retention policy** (`#956`/`#967`): new `AuditRetentionSettings` (`MaxRetentionDays: 90`, `CleanupBatchSize: 1000`, `CleanupIntervalHours: 24`); `AuditRetentionWorker` BackgroundService for daily batch cleanup; `DeleteOldEntriesAsync` with parameterized batch SQL DELETE supporting SQLite/SQL Server dialects; adversarial review fixed critical SQLite DateTimeOffset string comparison bug, SQL Server `DELETE TOP` syntax, and missing `ORDER BY`
+  - **FE-24 Console error sanitization** (`#958`/`#968`): new `errorReporting.ts` utility with `logError`/`logWarn` functions using `import.meta.env.DEV` for dev/prod sanitization; `safeErrorDetail` handles Error instances, strings, objects with `.message`, and unknown types; 17 frontend source files migrated from direct `console.error`/`console.warn`; adversarial review fixed object handling, variadic args, and restored `info` parameter; 3 new tests
+  - **SEC-31 OAuth scope validation** (`#957`/`#969`): new `OAuthScopeValidator` with `RequiredScopes` and `ExpectedScopes` configuration on `GitHubOAuthSettings`; parses comma/space/tab-separated scope formats; validates required vs expected with configurable policy; adversarial review fixed case-sensitive comparison (security), scope sync into OAuth `options.Scope`, null safety, and whitespace parsing
+
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
 - capture artifact to reviewed/applicable proposal should be achievable inside a ~60-second loop
@@ -201,6 +213,7 @@ Direction guardrails (explicit):
 - Worker runtime:
   - `LlmQueueToProposalWorker`
   - `ProposalHousekeepingWorker`
+  - `AuditRetentionWorker` (daily batch cleanup of old audit entries; configurable via `AuditRetentionSettings`)
   - `WorkerHeartbeatRegistry` (used by `/health/ready`)
 - Cross-cutting API consistency:
   - `ApiErrorResponse` contract for stable error payload shape (`errorCode`, `message`)
@@ -233,7 +246,7 @@ Direction guardrails (explicit):
   - JWT middleware is wired
   - `ActiveUserValidationMiddleware` checks user active status on every authenticated request (30-second in-memory cache, invalidated on deletion/deactivation); tokens issued before account deletion/deactivation are rejected even if JWT is unexpired
   - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, notifications, automation-proposals, archive, ops-cli, and logs controllers
-  - GitHub OAuth login (`CLD-03`): environment-gated OAuth middleware activates only when `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` are configured; `ExternalLogin` entity links GitHub accounts to users without auto-linking by email (prevents account takeover); OAuth callback uses short-lived single-use authorization codes (now DB-backed with atomic consumption, replacing in-memory `ConcurrentDictionary`); PKCE enabled via `UsePkce = true`; account linking endpoints allow existing users to link/unlink GitHub identity from settings; frontend LoginView conditionally shows "Sign in with GitHub" button based on `/api/auth/providers` response; full test coverage in Domain, Application, and frontend layers
+  - GitHub OAuth login (`CLD-03`): environment-gated OAuth middleware activates only when `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` are configured; `ExternalLogin` entity links GitHub accounts to users without auto-linking by email (prevents account takeover); OAuth callback uses short-lived single-use authorization codes (now DB-backed with atomic consumption, replacing in-memory `ConcurrentDictionary`); PKCE enabled via `UsePkce = true`; account linking endpoints allow existing users to link/unlink GitHub identity from settings; frontend LoginView conditionally shows "Sign in with GitHub" button based on `/api/auth/providers` response; `OAuthScopeValidator` validates required vs expected scopes with case-sensitive comparison and configurable policy (`RequiredScopes`, `ExpectedScopes` on `GitHubOAuthSettings`); full test coverage in Domain, Application, and frontend layers
   - OIDC/SSO integration (`SEC-07`): config-gated pluggable OIDC provider support (Microsoft Entra ID, Google, generic OIDC) via `IOidcProviderFactory`; OIDC login/callback/exchange with open-redirect protection; cross-provider identity isolation (`provider + providerUserId` unique key); no auto-linking by email; disabled by default
   - TOTP MFA (`SEC-07`): optional MFA via `MfaPolicy` configuration; TOTP setup with QR URI and 8 bcrypt-hashed recovery codes; constant-time comparison; replay protection; `MfaChallengeModal` gates sensitive actions when policy requires
 
@@ -294,6 +307,8 @@ Direction guardrails (explicit):
   - `ReviewView.vue` decomposed from ~1,659 lines to ~148-line shell + 6 components (`ReviewHeader`, `ReviewSummaryCards`, `ReviewEmptyState`, `ReviewProposalCard`, `ReviewProposalActions`, `ReviewProposalDetails`) + 2 composables (`useReviewProposals`, `useReviewActions`)
   - `InboxView.vue` decomposed from ~1,527 lines to ~222-line shell + `InboxListPanel`, `InboxDetailPanel`, `useInboxOrchestrator` composable, and `inboxUtils`
   - `AutomationChatView.vue` decomposed from ~1,523 lines to ~235-line shell + 7 components (`ChatHeroHeader`, `LlmHealthStatusBar`, `ChatSessionSidebar`, `ChatMessageList`, `ChatParseHintCard`, `ChatToolCallDetails`, `ChatComposeBar`) + `useAutomationChat` composable
+  - `CardModal.vue` decomposed from ~681 lines to ~190-line shell + 6 components (`CardModalHeader`, `CardModalForm`, `CardModalLabels`, `CardModalComments`, `CardModalMetadata`, `CardModalActions`) + `useCardModal` composable (242 lines)
+  - `StarterPackCatalogModal.vue` decomposed from ~1,253 lines to ~234-line shell + 5 components (`StarterPackCatalogList`, `StarterPackCatalogDetail`, `StarterPackImportInput`, `StarterPackImportDetail`, `StarterPackResultPanel`) + 3 composables (`useStarterPackCatalog`, `useStarterPackImport`, `useStarterPackResult`) + shared CSS tokens
 - Demo baseline (migration batches A + B + C + D + E delivered):
   - `frontend/taskdeck-web/scripts/demo-seed.mjs` + `npm run demo:seed` for first-run seeded workspace generation, now bounded on reruns so canonical seeded captures, queue samples, chat evidence, comments, and Ops logs are reused instead of appended indefinitely
   - `frontend/taskdeck-web/scripts/demo-lib.mjs`, `frontend/taskdeck-web/scripts/demo-run.mjs`, `frontend/taskdeck-web/scripts/demo-autopilot.mjs`, `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`, `frontend/taskdeck-web/scripts/scenarios-json/*`, and `frontend/taskdeck-web/scripts/scenarios/*` (compatibility path) for reusable scripted scenario/autopilot harness flows
@@ -323,6 +338,7 @@ Direction guardrails (explicit):
 - Shared maintainability utilities:
   - `buildQueryString` for API query construction across filter-driven endpoints
   - `getErrorMessage` for consistent API/store error extraction
+  - `errorReporting.ts` (`logError`/`logWarn`) for production-safe console error sanitization via `import.meta.env.DEV`; all 17 frontend source files migrated from direct `console.error`/`console.warn`
 
 ## Platform Expansion Wave (2026-04-09, PRs `#796`–`#805`, 10 issues)
 
