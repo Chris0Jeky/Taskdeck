@@ -27,6 +27,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     // Bounded: pruned when stale chunks are detected.
     private static readonly HashSet<Guid> _indexedChunkIds = new();
     private static readonly HashSet<Guid> _deferredRetryChunkIds = new();
+    private static readonly HashSet<Guid> _processedIdsAtCursorTimestamp = new();
     private static readonly object _indexedLock = new();
     private static KnowledgeChunkBackfillCursor? _processedThrough;
     private static int _nextPruneProbeStartIndex;
@@ -52,6 +53,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         {
             _indexedChunkIds.Clear();
             _deferredRetryChunkIds.Clear();
+            _processedIdsAtCursorTimestamp.Clear();
             _processedThrough = null;
             _nextPruneProbeStartIndex = 0;
             _nextDeferredRetryStartIndex = 0;
@@ -79,7 +81,6 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         var toProcess = (await _chunkRepository.GetUnindexedBatchAsync(
             GetProcessedThrough(),
-            GetForwardScanExcludedChunkIds(),
             batchSize,
             cancellationToken)).ToList();
 
@@ -373,7 +374,6 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     {
         var remainingAfterCursor = await _chunkRepository.CountUnindexedAsync(
             GetProcessedThrough(),
-            GetForwardScanExcludedChunkIds(),
             cancellationToken);
         return remainingAfterCursor + GetDeferredRetryCount();
     }
@@ -382,7 +382,13 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     {
         lock (_indexedLock)
         {
-            return _processedThrough;
+            if (_processedThrough is null)
+                return null;
+
+            return _processedThrough with
+            {
+                ProcessedIdsAtCreatedAt = _processedIdsAtCursorTimestamp.ToHashSet()
+            };
         }
     }
 
@@ -421,16 +427,6 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         lock (_indexedLock)
         {
             return _deferredRetryChunkIds.Count;
-        }
-    }
-
-    private static IReadOnlyCollection<Guid> GetForwardScanExcludedChunkIds()
-    {
-        lock (_indexedLock)
-        {
-            return _indexedChunkIds
-                .Concat(_deferredRetryChunkIds)
-                .ToHashSet();
         }
     }
 
@@ -609,33 +605,29 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         if (chunks.Count == 0)
             return;
 
-        KnowledgeChunkBackfillCursor? candidate = null;
-        foreach (var chunk in chunks.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id))
-        {
-            if (!visitedChunkIds.Contains(chunk.Id))
-                break;
-
-            candidate = new KnowledgeChunkBackfillCursor(chunk.CreatedAt, chunk.Id);
-        }
-
-        if (candidate is null)
-            return;
-
         lock (_indexedLock)
         {
-            if (_processedThrough is null || IsAfterCursor(candidate, _processedThrough))
-                _processedThrough = candidate;
+            foreach (var chunk in chunks.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id))
+            {
+                if (!visitedChunkIds.Contains(chunk.Id))
+                    break;
+
+                if (_processedThrough is null || chunk.CreatedAt > _processedThrough.CreatedAt)
+                {
+                    _processedIdsAtCursorTimestamp.Clear();
+                    _processedIdsAtCursorTimestamp.Add(chunk.Id);
+                    _processedThrough = new KnowledgeChunkBackfillCursor(chunk.CreatedAt, chunk.Id);
+                    continue;
+                }
+
+                if (chunk.CreatedAt == _processedThrough.CreatedAt)
+                {
+                    _processedIdsAtCursorTimestamp.Add(chunk.Id);
+                    if (chunk.Id.CompareTo(_processedThrough.Id) > 0)
+                        _processedThrough = new KnowledgeChunkBackfillCursor(chunk.CreatedAt, chunk.Id);
+                }
+            }
         }
-    }
-
-    private static bool IsAfterCursor(
-        KnowledgeChunkBackfillCursor candidate,
-        KnowledgeChunkBackfillCursor current)
-    {
-        if (candidate.CreatedAt > current.CreatedAt)
-            return true;
-
-        return candidate.CreatedAt == current.CreatedAt && candidate.Id.CompareTo(current.Id) > 0;
     }
 
     private static Dictionary<string, string> BuildMetadata(

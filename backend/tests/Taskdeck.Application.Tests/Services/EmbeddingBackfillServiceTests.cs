@@ -86,27 +86,17 @@ public class EmbeddingBackfillServiceTests
         _chunkRepoMock
             .Setup(r => r.GetUnindexedBatchAsync(
                 It.IsAny<KnowledgeChunkBackfillCursor?>(),
-                It.IsAny<IReadOnlyCollection<Guid>>(),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, IReadOnlyCollection<Guid> excludedChunkIds, int batchSize, CancellationToken _) =>
-                chunks
-                    .OrderBy(c => c.CreatedAt)
-                    .ThenBy(c => c.Id)
-                    .Where(c => !excludedChunkIds.Contains(c.Id))
-                    .Where(c => cursor is null || c.CreatedAt >= cursor.CreatedAt)
-                    .Take(batchSize)
-                    .ToList());
+            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, int batchSize, CancellationToken _) =>
+                GetBatchAfterCursor(chunks, cursor, batchSize));
 
         _chunkRepoMock
             .Setup(r => r.CountUnindexedAsync(
                 It.IsAny<KnowledgeChunkBackfillCursor?>(),
-                It.IsAny<IReadOnlyCollection<Guid>>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, IReadOnlyCollection<Guid> excludedChunkIds, CancellationToken _) =>
-                chunks.Count(c =>
-                    !excludedChunkIds.Contains(c.Id) &&
-                    (cursor is null || c.CreatedAt >= cursor.CreatedAt)));
+            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, CancellationToken _) =>
+                CountAfterCursor(chunks, cursor));
     }
 
     [Fact]
@@ -255,7 +245,6 @@ public class EmbeddingBackfillServiceTests
         _chunkRepoMock.Verify(
             r => r.GetUnindexedBatchAsync(
                 It.Is<KnowledgeChunkBackfillCursor?>(cursor => cursor == null),
-                It.IsAny<IReadOnlyCollection<Guid>>(),
                 2,
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -613,11 +602,49 @@ public class EmbeddingBackfillServiceTests
         setter.Invoke(entity, [id]);
     }
 
-    private static bool IsAfterCursor(KnowledgeChunk chunk, KnowledgeChunkBackfillCursor cursor)
+    private static List<KnowledgeChunk> GetBatchAfterCursor(
+        IReadOnlyList<KnowledgeChunk> chunks,
+        KnowledgeChunkBackfillCursor? cursor,
+        int batchSize)
     {
-        if (chunk.CreatedAt > cursor.CreatedAt)
-            return true;
+        if (cursor is null)
+        {
+            return chunks
+                .OrderBy(c => c.CreatedAt)
+                .ThenBy(c => c.Id)
+                .Take(batchSize)
+                .ToList();
+        }
 
-        return chunk.CreatedAt == cursor.CreatedAt && chunk.Id.CompareTo(cursor.Id) > 0;
+        var processedAtTimestamp = cursor.ProcessedIdsAtCreatedAt ?? new HashSet<Guid>();
+        var page = chunks
+            .Where(c => c.CreatedAt == cursor.CreatedAt && !processedAtTimestamp.Contains(c.Id))
+            .OrderBy(c => c.Id)
+            .Take(batchSize)
+            .ToList();
+
+        if (page.Count >= batchSize)
+            return page;
+
+        page.AddRange(chunks
+            .Where(c => c.CreatedAt > cursor.CreatedAt)
+            .OrderBy(c => c.CreatedAt)
+            .ThenBy(c => c.Id)
+            .Take(batchSize - page.Count));
+
+        return page;
+    }
+
+    private static int CountAfterCursor(
+        IReadOnlyList<KnowledgeChunk> chunks,
+        KnowledgeChunkBackfillCursor? cursor)
+    {
+        if (cursor is null)
+            return chunks.Count;
+
+        var processedAtTimestamp = cursor.ProcessedIdsAtCreatedAt ?? new HashSet<Guid>();
+        return chunks.Count(c =>
+            (c.CreatedAt == cursor.CreatedAt && !processedAtTimestamp.Contains(c.Id)) ||
+            c.CreatedAt > cursor.CreatedAt);
     }
 }

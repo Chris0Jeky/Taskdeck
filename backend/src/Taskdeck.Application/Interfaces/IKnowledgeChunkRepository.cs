@@ -6,7 +6,6 @@ public interface IKnowledgeChunkRepository : IRepository<KnowledgeChunk>
 {
     Task<IEnumerable<KnowledgeChunk>> GetUnindexedBatchAsync(
         KnowledgeChunkBackfillCursor? cursor,
-        IReadOnlyCollection<Guid> excludedChunkIds,
         int batchSize,
         CancellationToken cancellationToken = default);
 
@@ -16,7 +15,6 @@ public interface IKnowledgeChunkRepository : IRepository<KnowledgeChunk>
 
     Task<int> CountUnindexedAsync(
         KnowledgeChunkBackfillCursor? cursor,
-        IReadOnlyCollection<Guid> excludedChunkIds,
         CancellationToken cancellationToken = default);
 
     Task<IEnumerable<KnowledgeChunk>> GetByDocumentIdAsync(
@@ -30,4 +28,5 @@ public interface IKnowledgeChunkRepository : IRepository<KnowledgeChunk>
 
 public sealed record KnowledgeChunkBackfillCursor(
     DateTimeOffset CreatedAt,
-    Guid Id);
+    Guid Id,
+    IReadOnlySet<Guid>? ProcessedIdsAtCreatedAt = null);
