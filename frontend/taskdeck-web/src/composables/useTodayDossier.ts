@@ -272,7 +272,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     liveNow.value = new Date()
     const nextDay = new Date(liveNow.value)
     nextDay.setHours(24, 0, 0, 0)
-    const delay = Math.max(1_000, nextDay.getTime() - liveNow.value.getTime() + 1_000)
+    const delay = Math.max(0, nextDay.getTime() - liveNow.value.getTime())
     dayTimer = setTimeout(scheduleNextDayTick, delay)
   }
 

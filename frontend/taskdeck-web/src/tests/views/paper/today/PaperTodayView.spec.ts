@@ -93,7 +93,7 @@ describe('PaperTodayView', () => {
 
     expect(wrapper.find('[data-testid="dossier-serial"]').text()).toContain('2026-04-25')
 
-    vi.advanceTimersByTime(2_000)
+    await vi.advanceTimersByTimeAsync(1_000)
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('[data-testid="dossier-serial"]').text()).toContain('2026-04-26')
