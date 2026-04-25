@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using FluentAssertions;
 using Xunit;
@@ -298,7 +299,7 @@ public class LlmProviderAbstractionEdgeCaseTests
         public Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
             => Task.FromResult(new LlmCompletionResult("test", 0, false));
 
-        public async IAsyncEnumerable<LlmTokenEvent> StreamAsync(ChatCompletionRequest request, CancellationToken ct = default)
+        public async IAsyncEnumerable<LlmTokenEvent> StreamAsync(ChatCompletionRequest request, [EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return new LlmTokenEvent("test", true);
             await Task.CompletedTask;

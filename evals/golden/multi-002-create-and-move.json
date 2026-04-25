@@ -1,0 +1,48 @@
+{
+  "id": "multi-002",
+  "category": "multi-instruction",
+  "description": "Mixed operations: create a new card and move an existing one.",
+  "input": {
+    "text": "Add a card 'Write API docs' to Backlog, and move card a1b2c3d4 to Done",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        {
+          "id": "00000000-0000-0000-0000-000000000010",
+          "name": "Backlog",
+          "position": 0,
+          "cards": []
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000011",
+          "name": "In Progress",
+          "position": 1,
+          "cards": [
+            { "id": "a1b2c3d4", "title": "Fix auth bug" }
+          ]
+        },
+        { "id": "00000000-0000-0000-0000-000000000012", "name": "Done", "position": 2, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "proposals",
+    "proposals": [
+      {
+        "actionType": "create",
+        "targetType": "card",
+        "title": "Write API docs",
+        "targetColumn": "Backlog"
+      },
+      {
+        "actionType": "move",
+        "targetType": "card",
+        "cardIdPrefix": "a1b2c3d4",
+        "targetColumn": "Done"
+      }
+    ]
+  },
+  "tags": ["multi", "create", "move", "mixed"]
+}

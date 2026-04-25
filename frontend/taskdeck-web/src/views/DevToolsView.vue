@@ -357,8 +357,7 @@ function formatDuration(ms: number): string {
             <div v-if="replayTraceIndex === index && replayState" class="mb-2">
               <div class="w-full bg-zinc-700 rounded-full h-2">
                 <div
-                  class="bg-emerald-500 h-2 rounded-full transition-all"
-                  :style="{ width: `${replayProgress}%` }"
+                  class="td-devtools-progress-fill bg-emerald-500 h-2 rounded-full transition-all"
                 />
               </div>
               <div class="flex justify-between text-xs text-zinc-400 mt-1">
@@ -607,3 +606,9 @@ function formatDuration(ms: number): string {
     </div>
   </div>
 </template>
+
+<style scoped>
+.td-devtools-progress-fill {
+  width: v-bind("replayProgress + '%'");
+}
+</style>

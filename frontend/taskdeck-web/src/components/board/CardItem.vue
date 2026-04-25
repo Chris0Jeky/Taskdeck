@@ -202,8 +202,8 @@ function isOverdue(dateString: string | null): boolean {
       <span
         v-for="label in card.labels"
         :key="label.id"
-        class="td-board-card__label"
-        :style="{ backgroundColor: label.colorHex }"
+        class="td-board-card__label td-dynamic-bg"
+        :style="{ '--td-dynamic-color': label.colorHex }"
       >
         {{ label.name }}
       </span>

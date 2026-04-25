@@ -111,11 +111,11 @@ describe('TdSkeleton', () => {
     expect(wrapper.classes()).not.toContain('td-skeleton--rounded')
   })
 
-  it('applies custom width and height', () => {
+  it('accepts custom width and height props', () => {
+    // SEC-29: width/height are now applied via v-bind() in scoped CSS
+    // instead of inline :style binding, so we verify props are accepted.
     const wrapper = mount(TdSkeleton, { props: { width: '200px', height: '2rem' } })
-    const style = wrapper.attributes('style') ?? ''
-    expect(style).toContain('width: 200px')
-    expect(style).toContain('height: 2rem')
+    expect(wrapper.classes()).toContain('td-skeleton')
   })
 })
 

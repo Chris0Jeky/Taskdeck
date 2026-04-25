@@ -2,7 +2,7 @@
 
 Last Updated: 2026-04-25
 
-Review-first AI roadmap v4 adoption and issue seeding, after Codex high-autonomy workflow hardening and the post-merge sweep for PRs #960--#969.
+Review-first AI roadmap v4 second-wave delivery (RFAI-02 through RFAI-08 foundational slices), plus flaky CI test fix, after roadmap v4 adoption and first-wave delivery.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -23,8 +23,18 @@ Rebranding thesis (2026-02-23):
 - automation should remain review-first and provenance-visible
 - product value is reducing maintenance overhead, not maximizing opaque autonomy
 
+Roadmap v4 second-wave delivery (2026-04-25, PRs `#989`--`#994` + `#995`):
+- RFAI-02 (`#974`/`#989`): `IntentEnvelopeV1` domain spine with `SourceBlock`/`SourceSpan`, `IntentCandidate`, `EvidenceLink`, `TaskdeckProposalBatch`, `IIntentEnvelopeFactory` application interface, `IChatClient` adapter spike, handwritten `proposal-batch.v1.schema.json`; 117 tests; adversarial review fixed partial-write status transition bug, span length consistency, evidence fabrication prevention, nullable schema fields
+- RFAI-06 (`#978`/`#990`): `IVectorIndex` and `IEmbeddingGenerator` application interfaces, `InMemoryVectorIndex` (cosine similarity + SIMD), `InMemoryEmbeddingGenerator` (FNV-1a hash), `EmbeddingBackfillService` with batch processing and stale vector pruning, `FallbackSemanticSearchService`, `EmbeddingBackfillWorker`; 61 tests; adversarial review fixed batch API usage, stale vector cleanup, unbounded memory growth
+- RFAI-05 (`#977`/`#991`): `ConfidenceScore` value object, `FieldConfidence`, `SelfConsistencyQuota`, `SelfConsistencyPolicy`, `ConfidenceBucket`/`ConfidenceSource` enums, `ConfidenceAggregator`, `BrierScoreCalculator`; 136 tests; adversarial review fixed hash/equality contract violations, non-finite value rejection, BrierScore input validation
+- RFAI-08 (`#980`/`#992`): `TelemetryGuard` with allowlist-based metric validation and ReDoS-safe regex, `EgressRegistry` with wildcard host matching and thread safety, `InsightMetric`/`InsightCohort` content-free records, eval harness framework (`IEvalCase`, `EvalRunner`, 12 seed cases); 108 tests; adversarial review fixed wildcard matching, thread safety, volatile field, unsupported type rejection; CI failure was pre-existing flaky test (fixed in `#995`)
+- RFAI-03 (`#975`/`#993`): `ProposalProvenance`, `ProvenanceField` (extractive/inferred with confidence), `FieldVerificationResult`, `ProposalOutcome` (content-free decision ledger), `FuzzyTextMatcher` (Levenshtein sliding-window), `DeterministicPreExtractor` (Microsoft.Recognizers.Text), EF Core migration for `ProposalOutcomes`; 139 tests; adversarial review fixed verification-status/confidence consistency, provenance parent-ID validation, unbounded query limit
+- RFAI-04 (`#976`/`#994`): `ProposalRevision` entity (immutable revision chain), `IProposalCompiler` interface, `CompilerValidationResult`, `OperationRisk` value object, `OutcomeType` enum, `UnsupportedOperationFailure`, `IProposalRevisionService`, EF Core migration for `ProposalRevisions` and `ProposalOutcomes`; 70 tests; adversarial review fixed DateTime→DateTimeOffset alignment, redundant cast, documented TOCTOU race
+- Flaky CI test fix (`#995`): `Presence_RapidJoinLeave_EventuallyConsistent` replaced exact-count polling with stabilization-based assertions and range checks; timeout increased from 20s to 30s
+
 Current constraints are mostly hardening and consistency:
 - `taskdeck-12-week-roadmap-v4.md` has been promoted from research input into the active near-horizon planning spine via tracker `#972` and child issues `#973`--`#984`. The accepted framing is: automation-originated board writes must stay proposal-first, manual board UI writes stay direct and auditable as user-manual activity, and outbound data flow must be guarded separately through the EgressEnvelope/disclosure/MCP-hash/telemetry controls.
+- Roadmap v4 execution progress: RFAI-01 through RFAI-06 and RFAI-08 foundational slices are now delivered (7 of 12 issues); remaining: RFAI-07 (hybrid retrieval), RFAI-09 (agent runtime), RFAI-10 (PWA share-target), RFAI-11 (ambient channel), RFAI-12 (learning loop UI + beta gate).
 - Codex high-autonomy issue execution now has first-class local guidance: `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`, generalized worktree protocol, PowerShell git/worktree guards, GitHub helper scripts, Project v2 priority audit/sync support, and dedicated Codex skills for batch orchestration, worktree issue workers, PR review loops, and CI/conflict recovery. A reusable Gitleaks workflow syntax issue in the summary heredoc has been corrected after the workflow began failing before job creation.
 - ~~**security bug discovered 2026-04-03**: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `ChangePassword` now derives userId exclusively from JWT claims; `[Authorize]` enforced; `UserId` removed from request body; `AuthController` inherits `AuthenticatedControllerBase`; 5 integration tests proving the fix
 - security and identity behavior is converging but still not uniform across all controller families
@@ -402,9 +412,9 @@ Batch merge of 7 PRs (`#800`, `#805`, `#811`, `#813`, `#815`, `#819`, `#820`) wi
 - SSO/OIDC integration with optional TOTP MFA (PR `#813`, MfaController, recovery codes, OIDC login)
 - Distributed caching with ICacheService (PR `#805`, InMemory/Redis/NoOp implementations, cache-aside pattern)
 
-Test suite recertified: backend 4,279 tests, frontend 2,245 tests, combined ~6,500+ passing.
+Test suite recertified: backend 4,279 tests, frontend 2,245 tests, combined ~6,500+ passing (2026-04-12). Latest recertification (2026-04-25): backend 5,060, frontend 2,805, combined 7,865+.
 
-Estimated totals after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave: backend ~4,530+, frontend ~2,463+, E2E 61+ new scenarios, combined ~7,070+ passing.
+Estimated totals after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave: backend ~4,530+, frontend ~2,463+, E2E 61+ new scenarios, combined ~7,070+ passing. Actuals after PRs `#960`–`#969` audit remediation wave: backend 5,060, frontend 2,805, combined 7,865+.
 
 ## Phase Progress (Reconciled)
 
@@ -948,7 +958,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-03-31 (recertified after PRs #588–#607 merge wave)
+Verification Date: 2026-04-25 (recertified after PRs #960–#969 audit-remediation wave)
 
 ### Backend (Executed)
 
@@ -956,12 +966,13 @@ Command:
 - `dotnet test backend/Taskdeck.sln -c Release -m:1`
 
 Result:
-- Domain: 357/357 passing
-- Application: 1193/1193 passing
-- API integration: 413/413 passing
-- CLI contract: 4/4 passing
+- Domain: 962/962 passing
+- Application: 2396/2396 passing
+- API integration: 1592/1594 passing (2 skipped)
+- CLI contract: 82/82 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 1975/1975 passing
+- Integration (Testcontainers): 20/20 passing
+- Backend Total: 5060/5062 passing (2 skipped)
 
 ### Frontend Unit + Build (Executed)
 
@@ -972,7 +983,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 1491/1491 passing (134 test files) — **stale**: post-wave count is 1592/1592 (~125 files); see `docs/TESTING_GUIDE.md` for latest estimates
+- Frontend unit: 2805/2805 passing (219 test files) — recertified 2026-04-25
 - Typecheck: passing
 - Production build: passing
 

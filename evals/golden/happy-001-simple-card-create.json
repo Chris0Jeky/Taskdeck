@@ -1,0 +1,30 @@
+{
+  "id": "happy-001",
+  "category": "happy-path",
+  "description": "Simple card creation from a clear, unambiguous capture.",
+  "input": {
+    "text": "Add a card called 'Fix login timeout bug' to the Backlog column",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        { "id": "00000000-0000-0000-0000-000000000010", "name": "Backlog", "position": 0, "cards": [] },
+        { "id": "00000000-0000-0000-0000-000000000011", "name": "In Progress", "position": 1, "cards": [] },
+        { "id": "00000000-0000-0000-0000-000000000012", "name": "Done", "position": 2, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "proposal",
+    "proposals": [
+      {
+        "actionType": "create",
+        "targetType": "card",
+        "title": "Fix login timeout bug",
+        "targetColumn": "Backlog"
+      }
+    ]
+  },
+  "tags": ["create", "card", "simple", "column-target"]
+}

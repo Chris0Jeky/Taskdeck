@@ -284,7 +284,7 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
         var columns = await columnsResponse.Content.ReadFromJsonAsync<List<ColumnDto>>();
         columns.Should().NotBeNull();
         columns!.Should().HaveCountGreaterThanOrEqualTo(2, "board should have original + restored column");
-        var restoredCol = columns.FirstOrDefault(c => c.Name == "Restored Column");
+        var restoredCol = columns!.FirstOrDefault(c => c.Name == "Restored Column");
         restoredCol.Should().NotBeNull("restored column should appear in the board");
         restoredCol!.Position.Should().BeGreaterThanOrEqualTo(existingColumn.Position,
             "restored column should be at or after the existing column's position");

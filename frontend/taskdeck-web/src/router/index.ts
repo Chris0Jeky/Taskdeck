@@ -45,6 +45,7 @@ const AgentsView = () => import('../views/AgentsView.vue')
 const AgentRunsView = () => import('../views/AgentRunsView.vue')
 const AgentRunDetailView = () => import('../views/AgentRunDetailView.vue')
 const ApiKeySettingsView = () => import('../views/ApiKeySettingsView.vue')
+const PaperStyleGuideView = () => import('../views/PaperStyleGuideView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -60,6 +61,15 @@ const router = createRouter({
       path: '/register',
       name: 'register',
       component: RegisterView,
+      meta: { public: true },
+    },
+
+    // Paper styleguide — design surface for the Paper & Graphite overhaul.
+    // Public so QA can hit it directly; renders no user data.
+    {
+      path: '/styleguide/paper',
+      name: 'styleguide-paper',
+      component: PaperStyleGuideView,
       meta: { public: true },
     },
 

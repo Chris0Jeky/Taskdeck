@@ -198,17 +198,13 @@ onUnmounted(() => {
     >
       <div
         role="presentation"
-        :style="{ height: `${reviewTotalSize}px`, width: '100%', position: 'relative' }"
+        class="td-virtual-scroll-sizer"
+        :style="{ '--td-virtual-size': `${reviewTotalSize}px` }"
       >
         <div
           role="presentation"
-          :style="{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            transform: `translateY(${reviewTranslateY}px)`,
-          }"
+          class="td-virtual-scroll-offset"
+          :style="{ '--td-virtual-offset': `${reviewTranslateY}px` }"
         >
           <div
             v-for="virtualRow in reviewVirtualRows"

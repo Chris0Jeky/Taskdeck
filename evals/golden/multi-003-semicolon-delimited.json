@@ -1,0 +1,25 @@
+{
+  "id": "multi-003",
+  "category": "multi-instruction",
+  "description": "Semicolon-delimited batch of three create instructions.",
+  "input": {
+    "text": "Create card 'Set up monitoring'; Create card 'Add health checks'; Create card 'Configure alerts'",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Ops Board",
+      "columns": [
+        { "id": "00000000-0000-0000-0000-000000000010", "name": "To Do", "position": 0, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "proposals",
+    "proposals": [
+      { "actionType": "create", "targetType": "card", "title": "Set up monitoring" },
+      { "actionType": "create", "targetType": "card", "title": "Add health checks" },
+      { "actionType": "create", "targetType": "card", "title": "Configure alerts" }
+    ]
+  },
+  "tags": ["multi", "create", "batch", "semicolon"]
+}

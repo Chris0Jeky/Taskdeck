@@ -58,31 +58,54 @@ describe('ShellSidebar', () => {
     expect(wrapper.text()).toContain('Precision Mode Active')
   })
 
-  it('renders primary nav items for guided mode', () => {
+  it('renders reduced IA sidebar items: Today, Review, Boards, Inbox', () => {
     const wrapper = mountSidebar()
-    expect(wrapper.text()).toContain('Home')
     expect(wrapper.text()).toContain('Today')
     expect(wrapper.text()).toContain('Review')
     expect(wrapper.text()).toContain('Boards')
     expect(wrapper.text()).toContain('Inbox')
   })
 
-  it('shows secondary nav items with Workbench Tools section label in guided mode', () => {
-    mockWorkspaceStore.mode = 'guided'
+  it('renders Search button that opens command palette', () => {
     const wrapper = mountSidebar()
-    // In guided mode, items with secondaryModes including 'guided' appear as secondary
-    expect(wrapper.text()).toContain('Workbench Tools')
-    expect(wrapper.text()).toContain('Views')
-    expect(wrapper.text()).toContain('Notifications')
+    expect(wrapper.text()).toContain('Search')
+    // Search button should have Ctrl+K hint
+    expect(wrapper.text()).toContain('Ctrl+K')
   })
 
-  it('promotes all nav items to primary in workbench mode', () => {
-    mockWorkspaceStore.mode = 'workbench'
+  it('renders Settings link in sidebar footer area', () => {
     const wrapper = mountSidebar()
-    // In workbench mode, items with primaryModes=['workbench'] are primary, not secondary
-    expect(wrapper.text()).toContain('Metrics')
-    expect(wrapper.text()).toContain('Activity')
-    expect(wrapper.text()).toContain('Ops')
+    expect(wrapper.text()).toContain('Settings')
+  })
+
+  it('does not show demoted items (Metrics, Activity, Ops, etc.) in the sidebar', () => {
+    const wrapper = mountSidebar()
+    // These items were demoted from sidebar and are now command-palette-only
+    expect(wrapper.text()).not.toContain('Metrics')
+    expect(wrapper.text()).not.toContain('Activity')
+    expect(wrapper.text()).not.toContain('Ops')
+    expect(wrapper.text()).not.toContain('Views')
+    expect(wrapper.text()).not.toContain('Notifications')
+    expect(wrapper.text()).not.toContain('Chat')
+    expect(wrapper.text()).not.toContain('Calendar')
+    expect(wrapper.text()).not.toContain('Integrations')
+  })
+
+  it('does not show Home in the sidebar (Home is not sidebarPrimary)', () => {
+    const wrapper = mountSidebar()
+    // Home is in navCatalog but not sidebarPrimary, so it should not appear
+    // in the reduced sidebar nav (it remains accessible via command palette)
+    const sidebarNavItems = wrapper.findAll('.td-sidebar__nav .td-nav-item')
+    const homeItem = sidebarNavItems.find((el) => el.text().includes('Home'))
+    expect(homeItem).toBeUndefined()
+  })
+
+  it('emits open-search when Search button is clicked', async () => {
+    const wrapper = mountSidebar()
+    const searchBtn = wrapper.findAll('.td-nav-item').find((el) => el.text().includes('Search'))
+    expect(searchBtn).toBeTruthy()
+    await searchBtn!.trigger('click')
+    expect(wrapper.emitted('open-search')).toHaveLength(1)
   })
 
   it('shows badge count on inbox when inboxBadgeCount > 0', () => {
@@ -150,6 +173,15 @@ describe('ShellSidebar', () => {
     expect(wrapper.text()).not.toContain('Review')
   })
 
+  it('hides Settings link when newAuth flag is disabled', () => {
+    mockFeatureFlags.isEnabled = vi.fn((flag: string) => {
+      if (flag === 'newAuth') return false
+      return true
+    })
+    const wrapper = mountSidebar()
+    expect(wrapper.text()).not.toContain('Settings')
+  })
+
   it('shows feature-flagged items in workbench mode even when flag is disabled (workbenchBypassesFlag)', () => {
     mockWorkspaceStore.mode = 'workbench'
     mockFeatureFlags.isEnabled = vi.fn(() => false)
@@ -185,5 +217,17 @@ describe('ShellSidebar', () => {
     expect(Array.isArray(exposed)).toBe(true)
     expect(exposed.length).toBeGreaterThan(0)
     expect(exposed.some((item) => item.id === 'home')).toBe(true)
+  })
+
+  it('exposes demoted items in availableNavItems (accessible via command palette)', () => {
+    const wrapper = mountSidebar()
+    const exposed = (wrapper.vm as unknown as { availableNavItems: Array<{ id: string }> }).availableNavItems
+    // Demoted items should still be available in the nav catalog for command palette
+    expect(exposed.some((item) => item.id === 'metrics')).toBe(true)
+    expect(exposed.some((item) => item.id === 'activity')).toBe(true)
+    expect(exposed.some((item) => item.id === 'ops')).toBe(true)
+    expect(exposed.some((item) => item.id === 'views')).toBe(true)
+    expect(exposed.some((item) => item.id === 'notifications')).toBe(true)
+    expect(exposed.some((item) => item.id === 'chat')).toBe(true)
   })
 })

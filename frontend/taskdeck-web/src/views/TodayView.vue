@@ -250,13 +250,13 @@ onActivated(refreshTodaySummary)
       <div class="td-today__agenda-grid">
         <div v-for="n in 3" :key="n" class="td-panel td-today-card td-today-card--neutral">
           <div class="td-today__section-head">
-            <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1">
+            <div class="flex flex-col gap-2 flex-1">
               <TdSkeleton width="120px" height="16px" />
               <TdSkeleton width="90%" height="12px" />
             </div>
             <TdSkeleton width="28px" height="28px" circle />
           </div>
-          <div style="display: flex; flex-direction: column; gap: 0.5rem">
+          <div class="flex flex-col gap-2">
             <div v-for="m in 2" :key="m" class="td-today__skeleton-item">
               <TdSkeleton width="70%" height="14px" />
               <TdSkeleton width="50%" height="10px" />

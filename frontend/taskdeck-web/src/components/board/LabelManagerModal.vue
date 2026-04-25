@@ -173,9 +173,9 @@ useEscapeToClose(() => props.isOpen, handleClose)
                   :key="color"
                   @click="labelColor = color"
                   type="button"
-                  class="w-8 h-8 rounded-md border-2 transition-all"
+                  class="w-8 h-8 rounded-md border-2 transition-all td-dynamic-bg"
                   :class="labelColor === color ? 'border-on-surface ring-2 ring-offset-2 ring-offset-surface-container-high ring-on-surface' : 'border-outline-variant/40'"
-                  :style="{ backgroundColor: color }"
+                  :style="{ '--td-dynamic-color': color }"
                   :title="color"
                 ></button>
               </div>
@@ -205,8 +205,8 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 Preview
               </p>
               <span
-                class="inline-block px-3 py-1.5 rounded-md text-sm font-medium text-white"
-                :style="{ backgroundColor: labelColor }"
+                class="inline-block px-3 py-1.5 rounded-md text-sm font-medium text-white td-dynamic-bg"
+                :style="{ '--td-dynamic-color': labelColor }"
               >
                 {{ labelName || 'Label Name' }}
               </span>
@@ -247,8 +247,8 @@ useEscapeToClose(() => props.isOpen, handleClose)
           >
             <div class="flex items-center gap-3 flex-1 min-w-0">
               <span
-                class="inline-block px-3 py-1.5 rounded-md text-sm font-medium text-white flex-shrink-0"
-                :style="{ backgroundColor: label.colorHex }"
+                class="inline-block px-3 py-1.5 rounded-md text-sm font-medium text-white flex-shrink-0 td-dynamic-bg"
+                :style="{ '--td-dynamic-color': label.colorHex }"
               >
                 {{ label.name }}
               </span>

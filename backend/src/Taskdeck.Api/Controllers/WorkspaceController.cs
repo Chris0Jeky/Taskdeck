@@ -81,6 +81,7 @@ public class WorkspaceController : AuthenticatedControllerBase
     /// </summary>
     /// <param name="from">Start of the date range (inclusive). Defaults to start of current month.</param>
     /// <param name="to">End of the date range (exclusive). Defaults to end of current month.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">Returns calendar cards for the date range.</response>
     /// <response code="400">Invalid date range (from >= to or span > 90 days).</response>
     /// <response code="401">Authentication required.</response>
