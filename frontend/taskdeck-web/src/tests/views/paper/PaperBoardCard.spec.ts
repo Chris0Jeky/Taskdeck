@@ -92,7 +92,7 @@ describe('PaperBoardCard', () => {
   it('emits dragstart and dragend events', async () => {
     const card = makeCard()
     const wrapper = mount(PaperBoardCard, { props: { card } })
-    await wrapper.trigger('dragstart')
+    await wrapper.find('[data-action="drag-card-handle"]').trigger('dragstart')
     await wrapper.trigger('dragend')
     expect(wrapper.emitted('dragstart')?.[0]?.[0]).toStrictEqual(card)
     expect(wrapper.emitted('dragend')).toHaveLength(1)
