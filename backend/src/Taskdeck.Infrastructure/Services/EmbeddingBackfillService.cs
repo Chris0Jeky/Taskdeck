@@ -86,8 +86,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         if (toProcess.Count == 0)
         {
-            var tailRetryResult = await ProcessDeferredRetriesAsync(batchSize, cancellationToken);
-            return CombineResults(deferredRetryResult, tailRetryResult);
+            return deferredRetryResult;
         }
 
         // Pre-fetch parent documents for userId/boardId metadata.
@@ -586,16 +585,6 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         RemoveDeferredRetries(completedChunkIds);
         return new BackfillBatchResult(processed, failed, await CountRemainingAsync(cancellationToken));
-    }
-
-    private static BackfillBatchResult CombineResults(
-        BackfillBatchResult first,
-        BackfillBatchResult second)
-    {
-        return new BackfillBatchResult(
-            first.Processed + second.Processed,
-            first.Failed + second.Failed,
-            second.Remaining);
     }
 
     private static void AdvanceProcessedThroughVisitedPrefix(

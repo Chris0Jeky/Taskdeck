@@ -485,6 +485,55 @@ public class EmbeddingBackfillServiceTests
     }
 
     [Fact]
+    public async Task ProcessBatchAsync_WithOnlyDeferredWork_RetriesDeferredChunkOnce()
+    {
+        var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var chunk = new KnowledgeChunk(docId, 0, "content");
+        SetupChunkBatch(new[] { chunk });
+        SetupDocumentLookup(docId, userId);
+        _chunkRepoMock
+            .Setup(r => r.GetByIdAsync(chunk.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(chunk);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fakeEmbedding);
+        _vectorIndexMock
+            .Setup(v => v.UpsertBatchAsync(
+                It.IsAny<IReadOnlyList<VectorDocument>>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("batch upsert failed"));
+        _vectorIndexMock
+            .SetupSequence(v => v.UpsertAsync(
+                $"chunk:{chunk.Id}",
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("transient index failure"))
+            .Returns(Task.CompletedTask);
+
+        await _sut.ProcessBatchAsync(batchSize: 1);
+        var retryResult = await _sut.ProcessBatchAsync(batchSize: 1);
+
+        retryResult.Processed.Should().Be(1);
+        retryResult.Failed.Should().Be(0);
+        _vectorIndexMock.Verify(
+            v => v.UpsertAsync(
+                $"chunk:{chunk.Id}",
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2),
+            "tail-only deferred work should be retried once during a worker iteration");
+    }
+
+    [Fact]
     public async Task ProcessBatchAsync_PrunesTrackedStaleVectorsWithBoundedProbeBatch()
     {
         var docId = Guid.NewGuid();
