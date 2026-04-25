@@ -4,6 +4,7 @@ param(
     [int]$ProjectNumber = 1,
     [string]$Repository = "Chris0Jeky/Taskdeck",
     [int]$Limit = 1000,
+    [switch]$StrictFallbackPriority,
     [switch]$Apply,
     [switch]$Json
 )
@@ -166,6 +167,14 @@ $audit = foreach ($item in $items) {
     $needsUpdate = $false
     if ($expectedPriority -and $actualPriority -ne $expectedPriority) {
         $needsUpdate = $true
+    }
+
+    if ($content.type -eq "PullRequest" -and
+        $reason -eq "pr-no-derived-issue-fallback" -and
+        $actualPriority -and
+        -not $StrictFallbackPriority) {
+        $needsUpdate = $false
+        $reason = "pr-no-derived-issue-existing-priority"
     }
 
     [pscustomobject]@{

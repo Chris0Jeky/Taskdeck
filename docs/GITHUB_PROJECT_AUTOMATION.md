@@ -158,6 +158,7 @@ Local helper scripts:
 - `scripts/github/Sync-TaskdeckProjectPriority.ps1` — audit issue/PR Project v2 `Priority` drift and optionally apply fixes.
 
 These helpers are fallbacks for GitHub MCP gaps. Project v2 priority audit needs `read:project`; applying field updates with `Sync-TaskdeckProjectPriority.ps1 -Apply` requires `gh auth refresh -s project`.
+The sync helper preserves an existing PR priority when no linked/referenced issue can be derived; use `-StrictFallbackPriority` only when intentionally forcing those PRs to `Priority V`.
 
 ## Weekly Backlog Seeding Cadence (OPS-06)
 

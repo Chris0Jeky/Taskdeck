@@ -201,6 +201,7 @@ powershell -File scripts/github/Sync-TaskdeckProjectPriority.ps1 -Apply
 ```
 
 Audit mode requires `read:project`. Apply mode requires the broader GitHub CLI project write scope: `gh auth refresh -s project`. If GitHub MCP or `gh` project writes are unavailable, report exactly what could not be synced.
+The helper does not overwrite an existing PR priority when no linked/referenced issue can be derived unless `-StrictFallbackPriority` is supplied.
 
 ## Stop Conditions
 
