@@ -23,8 +23,12 @@ function installMatchMedia() {
     writable: true,
     value: vi.fn((query: string) => {
       const entry = get(query)
+      // Real MediaQueryList.matches is a live getter; mirror that so
+      // composables that read .matches from a captured MQL stay reactive.
       return {
-        matches: entry.matches,
+        get matches() {
+          return entry.matches
+        },
         media: query,
         addEventListener: (type: string, listener: Listener) => {
           if (type === 'change') entry.listeners.add(listener)
@@ -106,5 +110,34 @@ describe('useViewportMode', () => {
     wrapper.unmount()
     expect(mq.listenerCount('(max-width: 480px)')).toBe(0)
     expect(mq.listenerCount('(max-width: 1024px)')).toBe(0)
+  })
+
+  it('does not leak listeners across multiple mount/unmount cycles', () => {
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const wrapper = mount(Host)
+      expect(mq.listenerCount('(max-width: 480px)')).toBe(1)
+      expect(mq.listenerCount('(max-width: 1024px)')).toBe(1)
+      wrapper.unmount()
+      expect(mq.listenerCount('(max-width: 480px)')).toBe(0)
+      expect(mq.listenerCount('(max-width: 1024px)')).toBe(0)
+    }
+  })
+
+  it('treats absent matchMedia as desktop without throwing', () => {
+    const original = Object.getOwnPropertyDescriptor(window, 'matchMedia')
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    })
+    try {
+      const wrapper = mount(Host)
+      expect(readMode(wrapper)).toBe('desktop')
+      wrapper.unmount()
+    } finally {
+      if (original) {
+        Object.defineProperty(window, 'matchMedia', original)
+      }
+    }
   })
 })
