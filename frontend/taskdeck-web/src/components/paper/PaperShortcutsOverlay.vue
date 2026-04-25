@@ -45,7 +45,7 @@ const groups: ShortcutGroup[] = [
   {
     title: 'Capture & Review',
     rows: [
-      { kbd: '⌘;', label: 'Quick capture', note: 'anywhere' },
+      { kbd: 'Ctrl/Cmd+Shift+C', label: 'Quick capture', note: 'anywhere' },
       { kbd: '⏎', label: 'Apply / commit decision' },
       { kbd: '⌫', label: 'Reject / dismiss' },
       { kbd: 'E', label: 'Request edit' },

@@ -34,6 +34,14 @@ describe('PaperShortcutsOverlay', () => {
     expect(titles).toEqual(['Navigate', 'Capture & Review', 'Boards'])
   })
 
+  it('documents the AppShell quick-capture shortcut', () => {
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const root = teleportContent().querySelector('[data-paper-shortcuts]') as HTMLElement
+
+    expect(root.textContent).toContain('Ctrl/Cmd+Shift+C')
+    expect(root.textContent).toContain('Quick capture')
+  })
+
   it('does not handle ? because AppShell owns the toggle', async () => {
     wrapper = mount(PaperShortcutsOverlay, { props: { visible: false }, attachTo: document.body })
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))
