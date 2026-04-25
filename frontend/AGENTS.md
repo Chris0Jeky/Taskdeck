@@ -10,7 +10,7 @@
 - For Vue/Vite/TS questions: use Context7 docs lookups before guessing.
 - For UI regression: use Playwright MCP to reproduce and capture screenshots; prefer stable selectors and avoid sleeps.
 - For repo-wide searching: prefer native `rg`; fallback to GitHub MCP search_code.
-- CI parity: always run `npm run typecheck && npm run build && npx vitest --run` for frontend changes.
+- CI parity: in PowerShell, run `npm run typecheck; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npx vitest --run` for frontend changes.
 
 ## Required checks (from frontend/taskdeck-web)
 npm run typecheck
