@@ -61,6 +61,9 @@ function addLabel() {
 }
 
 function onLabelKeydown(event: KeyboardEvent) {
+  if (event.isComposing) {
+    return
+  }
   if (event.key === 'Enter' || event.key === ',') {
     event.preventDefault()
     addLabel()

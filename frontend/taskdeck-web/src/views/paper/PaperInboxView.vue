@@ -103,6 +103,11 @@ async function onNibSubmit(text: string) {
   bleedTimer = setTimeout(() => {
     nibBleeding.value = false
     bleedTimer = null
+    void nextTick(() => {
+      if (variant.value === 'nib') {
+        nibRef.value?.focus()
+      }
+    })
   }, 1400)
 }
 

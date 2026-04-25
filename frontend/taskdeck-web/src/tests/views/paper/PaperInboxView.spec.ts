@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import PaperInboxView from '../../../views/paper/PaperInboxView.vue'
@@ -48,6 +48,10 @@ describe('PaperInboxView', () => {
     mockCaptureStore.triagePollingItemId = null
     mockBoardStore.boards = []
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('defaults to the composer variant', () => {
@@ -213,6 +217,28 @@ describe('PaperInboxView', () => {
     expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
     resolveCreate({ id: 'created-1' })
     await flushPromises()
+  })
+
+  it('refocuses the nib input after the bleed placeholder clears', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(PaperInboxView, { attachTo: document.body })
+    ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+    await wrapper.vm.$nextTick()
+
+    const textarea = wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Quick capture input"]')
+    await textarea.setValue('Capture and keep typing')
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-nib-bleed"]').exists()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(1400)
+    await wrapper.vm.$nextTick()
+
+    expect(document.activeElement).toBe(
+      wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Quick capture input"]').element,
+    )
+    wrapper.unmount()
   })
 
   it('does not mutate selected item when opening a paper row', async () => {

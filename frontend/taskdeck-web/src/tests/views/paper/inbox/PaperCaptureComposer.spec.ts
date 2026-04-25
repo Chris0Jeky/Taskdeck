@@ -98,6 +98,16 @@ describe('PaperCaptureComposer', () => {
     expect(submitted.labels).toEqual(['motion', 'qa'])
   })
 
+  it('does not add labels on Enter while IME composition is active', async () => {
+    const wrapper = mount(PaperCaptureComposer)
+    const labelInput = wrapper.find('input[type="text"]')
+    await labelInput.setValue('nihongo')
+    await labelInput.trigger('keydown', { key: 'Enter', isComposing: true })
+
+    expect((labelInput.element as HTMLInputElement).value).toBe('nihongo')
+    expect(wrapper.text()).not.toContain('nihongo')
+  })
+
   it('emits attachments-changed when files are dropped', async () => {
     const wrapper = mount(PaperCaptureComposer)
     const dropZone = wrapper.find('[data-testid="paper-composer-drop"]')
