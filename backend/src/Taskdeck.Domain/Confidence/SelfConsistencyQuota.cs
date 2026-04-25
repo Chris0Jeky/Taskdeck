@@ -9,6 +9,12 @@ namespace Taskdeck.Domain.Confidence;
 public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
 {
     /// <summary>
+    /// Epsilon used for floating-point tolerance in cost comparisons,
+    /// consistent with the epsilon used in Equals.
+    /// </summary>
+    private const double Epsilon = 1e-12;
+
+    /// <summary>
     /// Maximum number of self-consistency calls allowed in this budget window.
     /// </summary>
     public int MaxCalls { get; }
@@ -68,7 +74,7 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
             throw new DomainException(ErrorCodes.ValidationError,
                 "CostUsed cannot be negative.");
 
-        if (costCap.HasValue && costUsed > costCap.Value)
+        if (costCap.HasValue && costUsed > costCap.Value + Epsilon)
             throw new DomainException(ErrorCodes.ValidationError,
                 $"CostUsed ({costUsed}) cannot exceed CostCap ({costCap.Value}).");
 
@@ -98,7 +104,7 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
 
         var newCostUsed = CostUsed + callCost;
 
-        if (CostCap.HasValue && newCostUsed > CostCap.Value)
+        if (CostCap.HasValue && newCostUsed > CostCap.Value + Epsilon)
             throw new DomainException(ErrorCodes.LlmQuotaExceeded,
                 $"Self-consistency cost cap would be exceeded ({newCostUsed:F4} > {CostCap.Value:F4}).");
 
@@ -114,7 +120,7 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
         return MaxCalls == other.MaxCalls
                && UsedCalls == other.UsedCalls
                && CostCap == other.CostCap
-               && Math.Abs(CostUsed - other.CostUsed) < 1e-12;
+               && Math.Abs(CostUsed - other.CostUsed) < Epsilon;
     }
 
     public override bool Equals(object? obj) => Equals(obj as SelfConsistencyQuota);
