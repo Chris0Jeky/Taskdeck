@@ -242,6 +242,24 @@ public class ProvenanceQueryServiceTests
         value.Should().Contain("72%");
     }
 
+    [Fact]
+    public void BuildValue_RoundsConfidenceInsteadOfTruncating()
+    {
+        // 0.959 * 100 = 95.9 -- truncation would give "95%", rounding gives "96%"
+        var provenance = CreateProvenance();
+        var field = new ProvenanceField(
+            "title",
+            ProvenanceKind.Extractive,
+            0.959,
+            provenance.Id,
+            "Round me correctly");
+
+        var value = ProvenanceQueryService.BuildValue(field);
+
+        value.Should().Contain("96%");
+        value.Should().NotContain("95%");
+    }
+
     // ----- MapFieldToRow integration -----
 
     [Fact]
