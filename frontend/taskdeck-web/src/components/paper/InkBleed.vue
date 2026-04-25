@@ -107,10 +107,13 @@ function scheduleSequence(): void {
 
 function applyReducedPhase(next: InkBleedPhase): void {
   clearTimers()
-  if (next === 'auto' || next === 'dried') {
-    const wasDried = currentPhase.value === 'dried'
+  if (next === 'auto') {
     setPhase('dried')
-    if (wasDried) emit('done')
+    if (currentPhase.value === 'dried') emit('done')
+    return
+  }
+  if (next === 'dried') {
+    setPhase('dried')
     return
   }
   setPhase(next)

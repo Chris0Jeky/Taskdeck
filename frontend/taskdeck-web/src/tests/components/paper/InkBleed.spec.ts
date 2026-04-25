@@ -118,6 +118,15 @@ describe('InkBleed', () => {
     expect(wrapper.emitted('done')).toHaveLength(1)
   })
 
+  it('does not emit done for an idempotent reduced-motion dried phase', async () => {
+    installMatchMedia(true)
+    const wrapper = mount(InkBleed, { props: { phase: 'dried' } })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.classes()).toContain('ink-bleed--dried')
+    expect(wrapper.emitted('done')).toBeUndefined()
+  })
+
   it('honors controlled phase changes under reduced motion', async () => {
     installMatchMedia(true)
     const wrapper = mount(InkBleed, { props: { phase: 'drop' } })
