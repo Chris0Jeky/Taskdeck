@@ -230,6 +230,29 @@ describe('PaperReviewView', () => {
     expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-first')
   })
 
+  it('retargets active proposal when the route hash changes', async () => {
+    mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-target' }))
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'proposal-first', summary: 'First proposal' }),
+        makeProposal({ id: 'proposal-target', summary: 'Target proposal' }),
+      ],
+      '/workspace/review#proposal-proposal-first',
+    )
+
+    await (wrapper.vm as unknown as {
+      $router: { push: (path: string) => Promise<void> }
+    }).$router.push('/workspace/review#proposal-proposal-target')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Target proposal')
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-target')
+  })
+
   it('falls back to normal selection for malformed hash proposal ids', async () => {
     const wrapper = await mountView(
       [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],

@@ -6,6 +6,7 @@
  * the same clock that drives the queue's now()).
  */
 export interface RecentlyAppliedRow {
+  id: string
   serial: string
   title: string
   /** Pre-formatted "5h 48m" string, or null when expired. */
@@ -26,7 +27,7 @@ defineProps<{
     </div>
     <div
       v-for="row in rows"
-      :key="row.serial"
+      :key="row.id"
       class="paper-review-recent__row"
       :data-expired="row.expired ? 'true' : null"
     >

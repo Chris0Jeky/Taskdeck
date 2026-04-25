@@ -124,8 +124,8 @@ describe('ReviewQueueRail', () => {
   it('renders recently-applied rows when provided', () => {
     const wrapper = mountRail({
       recentlyApplied: [
-        { serial: '#R01', title: 'Move done', left: '5h 48m', expired: false },
-        { serial: '#R02', title: 'Old apply', left: null, expired: true },
+        { id: 'recent-1', serial: '#R01', title: 'Move done', left: '5h 48m', expired: false },
+        { id: 'recent-2', serial: '#R02', title: 'Old apply', left: null, expired: true },
       ],
     })
     expect(wrapper.text()).toContain('5h 48m')

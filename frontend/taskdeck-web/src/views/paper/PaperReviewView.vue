@@ -131,6 +131,17 @@ watch(
   },
 )
 
+watch(
+  hashProposalId,
+  (id) => {
+    if (!id) return
+    if (filteredVisibleProposals.value.some((proposal) => proposal.id === id)) {
+      explicitActiveId.value = id
+    }
+  },
+  { immediate: true },
+)
+
 const selectors = usePaperReviewSelectors(activeProposal)
 
 // --- Queue rail data ---------------------------------------------------
@@ -194,6 +205,7 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
       const left = appliedMs + 6 * 60 * 60 * 1000 - nowMs.value
       const expired = appliedMs < cutoff || left <= 0
       return {
+        id: p.id,
         serial: `#${p.id.slice(0, 4).toUpperCase()}`,
         title: p.summary || '(applied)',
         left: expired ? null : formatRemaining(left),
