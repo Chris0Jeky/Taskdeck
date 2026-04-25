@@ -131,6 +131,17 @@ public class SourceBlockTests
     }
 
     [Fact]
+    public void AddSpan_ShouldRejectStartOffsetBeyondContentLength()
+    {
+        var block = new SourceBlock(_envelopeId, 0, "Short", "capture");
+
+        var act = () => block.AddSpan(100, 200, "x");
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
+
+    [Fact]
     public void AddSpan_ShouldAllowMultipleSpans()
     {
         var block = new SourceBlock(_envelopeId, 0, "Hello, world! Goodbye.", "capture");

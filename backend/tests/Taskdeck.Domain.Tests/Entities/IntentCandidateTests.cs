@@ -153,4 +153,17 @@ public class IntentCandidateTests
         candidate.EvidenceLinks.Should().HaveCount(1);
         candidate.EvidenceLinks[0].Should().Be(link);
     }
+
+    [Fact]
+    public void AddEvidenceLink_ShouldRejectLinkBelongingToDifferentCandidate()
+    {
+        var candidate = new IntentCandidate(_envelopeId, "Label", 0.5, 0);
+        var otherCandidateId = Guid.NewGuid();
+        var link = new EvidenceLink(otherCandidateId, Guid.NewGuid(), 0.8);
+
+        var act = () => candidate.AddEvidenceLink(link);
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
 }

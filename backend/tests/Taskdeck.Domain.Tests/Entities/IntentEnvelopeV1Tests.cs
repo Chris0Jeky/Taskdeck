@@ -253,6 +253,36 @@ public class IntentEnvelopeV1Tests
         envelope.MarkFailed("Processing error");
 
         envelope.Status.Should().Be(EnvelopeStatus.Failed);
+        envelope.FailureReason.Should().Be("Processing error");
+    }
+
+    [Fact]
+    public void MarkFailed_ShouldStoreNullReason_WhenWhitespace()
+    {
+        var envelope = new IntentEnvelopeV1("capture", "content", _userId);
+
+        envelope.MarkFailed("   ");
+
+        envelope.Status.Should().Be(EnvelopeStatus.Failed);
+        envelope.FailureReason.Should().BeNull();
+    }
+
+    [Fact]
+    public void MarkFailed_ShouldTrimReason()
+    {
+        var envelope = new IntentEnvelopeV1("capture", "content", _userId);
+
+        envelope.MarkFailed("  trimmed reason  ");
+
+        envelope.FailureReason.Should().Be("trimmed reason");
+    }
+
+    [Fact]
+    public void FailureReason_ShouldBeNull_WhenNotFailed()
+    {
+        var envelope = new IntentEnvelopeV1("capture", "content", _userId);
+
+        envelope.FailureReason.Should().BeNull();
     }
 
     [Fact]
