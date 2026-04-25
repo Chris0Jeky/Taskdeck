@@ -31,6 +31,7 @@ public class TodayController : AuthenticatedControllerBase
     /// Get streak data (daily activity intensity and sealed status) for the authenticated user.
     /// </summary>
     /// <param name="days">Number of days to include (1-365, default 90).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Streak data with daily intensity buckets and streak lengths.</returns>
     /// <response code="200">Streak data returned successfully.</response>
     /// <response code="400">Invalid days parameter.</response>
