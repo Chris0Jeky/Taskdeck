@@ -238,6 +238,17 @@ public class SelfConsistencyQuotaTests
     }
 
     [Fact]
+    public void Consume_ShouldThrow_WhenCostCapAlreadyReached()
+    {
+        var quota = new SelfConsistencyQuota(10, 1, costCap: 1.0, costUsed: 1.0);
+
+        var act = () => quota.Consume(0.0);
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.LlmQuotaExceeded);
+    }
+
+    [Fact]
     public void Consume_ShouldTolerateFloatingPointDrift_NearCostCap()
     {
         // Simulate floating-point drift: 0.1 + 0.2 = 0.30000000000000004 in IEEE 754,

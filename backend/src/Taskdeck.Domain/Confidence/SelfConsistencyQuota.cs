@@ -108,6 +108,10 @@ public sealed class SelfConsistencyQuota : IEquatable<SelfConsistencyQuota>
             throw new DomainException(ErrorCodes.LlmQuotaExceeded,
                 "Self-consistency call budget exhausted.");
 
+        if (CostCap.HasValue && CostUsed >= CostCap.Value)
+            throw new DomainException(ErrorCodes.LlmQuotaExceeded,
+                $"Self-consistency cost cap has been reached ({CostUsed:F4} >= {CostCap.Value:F4}).");
+
         var newCostUsed = CostUsed + effectiveCallCost;
 
         if (CostCap.HasValue && newCostUsed > CostCap.Value + Epsilon)
