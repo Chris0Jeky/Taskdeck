@@ -412,6 +412,19 @@ describe('PaperReviewView', () => {
     )
   })
 
+  it('surfaces feedback when provenance toggle is invoked before collapsible mode exists', async () => {
+    const wrapper = await mountView([makeProposal()])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      'Provenance toggle is not wired yet; provenance is rendered inline below.',
+    )
+
+    wrapper.unmount()
+  })
+
   it('surfaces feedback when preview diff is invoked before visible diff UI exists', async () => {
     const wrapper = await mountView([makeProposal()])
 
