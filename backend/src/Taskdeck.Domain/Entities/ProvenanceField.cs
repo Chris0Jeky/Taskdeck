@@ -74,6 +74,9 @@ public class ProvenanceField : Entity
 
     public void AddEvidenceLink(EvidenceLink link)
     {
+        if (link.ProvenanceFieldId != Id)
+            throw new DomainException(ErrorCodes.ValidationError, "EvidenceLink does not belong to this ProvenanceField");
+
         _evidenceLinks.Add(link);
         Touch();
     }

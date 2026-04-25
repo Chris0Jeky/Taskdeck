@@ -131,6 +131,19 @@ public class ProvenanceFieldTests
     }
 
     [Fact]
+    public void AddEvidenceLink_ShouldThrow_WhenLinkBelongsToDifferentField()
+    {
+        var field = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.9, _provenanceId);
+        var otherFieldId = Guid.NewGuid();
+        var link = new EvidenceLink("InboxCapture", "cap-456", otherFieldId);
+
+        var act = () => field.AddEvidenceLink(link);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("EvidenceLink does not belong to this ProvenanceField");
+    }
+
+    [Fact]
     public void DowngradeConfidence_ShouldReduceConfidence()
     {
         var field = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.9, _provenanceId);
