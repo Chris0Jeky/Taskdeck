@@ -29,9 +29,19 @@ public static class EvalRunner
 
         foreach (var evalCase in cases)
         {
-            var output = systemFunction(evalCase.Input);
-            var result = evalCase.Evaluate(output);
-            results.Add((evalCase, result));
+            try
+            {
+                var output = systemFunction(evalCase.Input);
+                var result = evalCase.Evaluate(output);
+                results.Add((evalCase, result));
+            }
+            catch (Exception ex)
+            {
+                results.Add((evalCase, new EvalResult(
+                    false,
+                    string.Empty,
+                    $"Eval case threw {ex.GetType().Name}: {ex.Message}")));
+            }
         }
 
         return results;

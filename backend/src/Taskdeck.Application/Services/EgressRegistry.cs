@@ -27,12 +27,16 @@ public sealed class EgressRegistry : IEgressRegistry
 
     public EgressRegistry(IEnumerable<EgressEntry> entries)
     {
-        _entries = entries.ToList();
+        ArgumentNullException.ThrowIfNull(entries);
+
+        _entries = new List<EgressEntry>();
         _exactHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         _wildcardSuffixes = new List<string>();
 
-        foreach (var entry in _entries)
+        foreach (var entry in entries)
         {
+            ValidateEntry(entry);
+            _entries.Add(entry);
             ClassifyHost(NormalizeHost(entry.Host));
         }
     }
@@ -80,16 +84,21 @@ public sealed class EgressRegistry : IEgressRegistry
     /// </summary>
     public void Register(EgressEntry entry)
     {
-        ArgumentNullException.ThrowIfNull(entry);
-        if (string.IsNullOrWhiteSpace(entry.Host))
-        {
-            throw new ArgumentException("Host cannot be null or whitespace.", nameof(entry));
-        }
+        ValidateEntry(entry);
 
         lock (_lock)
         {
             _entries.Add(entry);
             ClassifyHost(NormalizeHost(entry.Host));
+        }
+    }
+
+    private static void ValidateEntry(EgressEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        if (string.IsNullOrWhiteSpace(entry.Host))
+        {
+            throw new ArgumentException("Host cannot be null or whitespace.", nameof(entry));
         }
     }
 

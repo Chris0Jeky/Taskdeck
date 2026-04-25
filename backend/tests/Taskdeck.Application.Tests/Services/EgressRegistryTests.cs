@@ -145,6 +145,48 @@ public class EgressRegistryTests
     }
 
     [Fact]
+    public void Constructor_ShouldThrowOnNullEntries()
+    {
+        var act = () => new EgressRegistry(null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrowOnNullEntry()
+    {
+        var act = () => new EgressRegistry([null!]);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrowOnNullHost()
+    {
+        var act = () => new EgressRegistry([
+            new EgressEntry(
+                Host: null!,
+                PayloadCategory: "test",
+                ToolOrAgentName: "test",
+                Classification: EgressDataClassification.None)
+        ]);
+
+        act.Should().Throw<ArgumentException>().WithMessage("*Host*");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrowOnWhitespaceHost()
+    {
+        var act = () => new EgressRegistry([
+            new EgressEntry(
+                Host: "   ",
+                PayloadCategory: "test",
+                ToolOrAgentName: "test",
+                Classification: EgressDataClassification.None)
+        ]);
+
+        act.Should().Throw<ArgumentException>().WithMessage("*Host*");
+    }
+
+    [Fact]
     public void EgressDataClassification_ShouldHaveExpectedValues()
     {
         // Verify the enum covers all expected classifications

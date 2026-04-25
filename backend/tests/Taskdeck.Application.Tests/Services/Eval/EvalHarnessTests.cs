@@ -180,6 +180,32 @@ public class EvalHarnessTests
     }
 
     [Fact]
+    public void EvalRunner_ShouldRecordCaseFailureAndContinue_WhenSystemFunctionThrows()
+    {
+        var cases = new IEvalCase[]
+        {
+            new SimpleEvalCase("throws", EvalCategory.Safety, "throw", "records failure", ["never"]),
+            new SimpleEvalCase("passes", EvalCategory.HappyPath, "pass", "passes", ["ok"]),
+        };
+
+        var results = EvalRunner.RunAll(cases, input =>
+        {
+            if (input == "throw")
+            {
+                throw new InvalidOperationException("case failed");
+            }
+
+            return "ok";
+        });
+
+        results.Should().HaveCount(2);
+        results[0].Result.Passed.Should().BeFalse();
+        results[0].Result.Explanation.Should().Contain("InvalidOperationException");
+        results[0].Result.Explanation.Should().Contain("case failed");
+        results[1].Result.Passed.Should().BeTrue();
+    }
+
+    [Fact]
     public void Summarize_ShouldGroupByCategory()
     {
         var cases = SeedEvalCases.GetAll();
