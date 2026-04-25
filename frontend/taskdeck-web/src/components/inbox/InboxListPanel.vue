@@ -175,17 +175,13 @@ defineExpose({
       <div
         v-if="hasItems && !loadingList && !listError"
         role="presentation"
-        :style="{ height: `${virtualTotalSize}px`, width: '100%', position: 'relative' }"
+        class="td-virtual-scroll-sizer"
+        :style="{ '--td-virtual-size': `${virtualTotalSize}px` }"
       >
         <div
           role="presentation"
-          :style="{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            transform: `translateY(${virtualTranslateY}px)`,
-          }"
+          class="td-virtual-scroll-offset"
+          :style="{ '--td-virtual-offset': `${virtualTranslateY}px` }"
         >
           <div
             v-for="virtualRow in virtualRows"

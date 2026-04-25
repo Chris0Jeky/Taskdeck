@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 const props = withDefaults(
   defineProps<{
     color?: string
@@ -13,12 +15,13 @@ const props = withDefaults(
 const emit = defineEmits<{
   remove: []
 }>()
+
+const tagColor = computed(() => props.color || 'transparent')
 </script>
 
 <template>
   <span
     class="td-tag"
-    :style="props.color ? { '--td-tag-color': props.color } : undefined"
     :class="{ 'td-tag--custom': !!props.color }"
   >
     <span class="td-tag__label">
@@ -54,6 +57,7 @@ const emit = defineEmits<{
 }
 
 .td-tag--custom {
+  --td-tag-color: v-bind(tagColor);
   background: color-mix(in srgb, var(--td-tag-color) 15%, transparent);
   color: var(--td-tag-color);
   border-color: color-mix(in srgb, var(--td-tag-color) 30%, transparent);

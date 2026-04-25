@@ -22,13 +22,14 @@ const props = withDefaults(
       'td-skeleton--rounded': props.rounded && !props.circle,
       'td-skeleton--circle': props.circle,
     }"
-    :style="{ width: props.width, height: props.height }"
     aria-hidden="true"
   />
 </template>
 
 <style scoped>
 .td-skeleton {
+  width: v-bind('props.width');
+  height: v-bind('props.height');
   background: var(--td-surface-container-high);
   animation: td-skeleton-pulse 1.5s ease-in-out infinite;
 }

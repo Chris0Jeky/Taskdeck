@@ -337,7 +337,7 @@ onMounted(loadAllCards)
               <span class="td-saved-views__result-meta">
                 <span v-if="card.isBlocked" class="td-saved-views__blocked-badge">Blocked</span>
                 <span v-if="card.dueDate">Due {{ formatDueDate(card.dueDate) }}</span>
-                <span v-for="label in card.labels" :key="label.id" class="td-saved-views__label-tag" :style="{ background: label.colorHex + '33', color: label.colorHex }">
+                <span v-for="label in card.labels" :key="label.id" class="td-saved-views__label-tag td-dynamic-label" :style="{ '--td-dynamic-color': label.colorHex }">
                   {{ label.name }}
                 </span>
               </span>
