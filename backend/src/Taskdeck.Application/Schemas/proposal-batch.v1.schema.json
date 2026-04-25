@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/proposal-batch.v1.schema.json",
+  "title": "Taskdeck Proposal Batch v1",
+  "description": "Schema for a batch of proposals generated from an IntentEnvelopeV1. Used for structured output from LLM providers and for validation of proposal payloads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "envelopeId",
+    "summary",
+    "proposals"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for format evolution."
+    },
+    "envelopeId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "ID of the originating IntentEnvelopeV1."
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "description": "Human-readable summary of the batch."
+    },
+    "proposals": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/proposal"
+      }
+    }
+  },
+  "$defs": {
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "riskLevel",
+        "operations"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Human-readable summary of this proposal."
+        },
+        "riskLevel": {
+          "type": "string",
+          "enum": [
+            "Low",
+            "Medium",
+            "High",
+            "Critical"
+          ],
+          "description": "Risk classification for the proposal."
+        },
+        "sourceIntentLabel": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Label of the IntentCandidate that produced this proposal."
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationType",
+        "payload"
+      ],
+      "properties": {
+        "operationType": {
+          "type": "string",
+          "enum": [
+            "CreateCard",
+            "UpdateCard",
+            "MoveCard",
+            "DeleteCard",
+            "CreateColumn",
+            "UpdateColumn",
+            "CreateLabel",
+            "AddLabel",
+            "RemoveLabel"
+          ],
+          "description": "The type of board mutation this operation represents."
+        },
+        "targetId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of the entity being operated on (null for creates)."
+        },
+        "payload": {
+          "type": "object",
+          "description": "Operation-specific payload. Shape varies by operationType.",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}
