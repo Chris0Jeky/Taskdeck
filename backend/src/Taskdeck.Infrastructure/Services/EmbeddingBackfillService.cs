@@ -6,8 +6,8 @@ namespace Taskdeck.Infrastructure.Services;
 
 /// <summary>
 /// Scans knowledge chunks and ensures they have vector embeddings.
-/// Tracks progress via a process-local created-at cursor to avoid re-processing.
-/// Fetches only newer pages and prunes stale vectors whose tracked chunks no
+/// Tracks progress via a process-local (CreatedAt, Id) cursor to avoid re-processing.
+/// Fetches only later pages and prunes stale vectors whose tracked chunks no
 /// longer exist in the repository.
 /// Failure-safe: individual item errors are logged and skipped, not rethrown.
 /// </summary>
@@ -25,7 +25,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     // Bounded: pruned when stale chunks are detected.
     private static readonly HashSet<Guid> _indexedChunkIds = new();
     private static readonly object _indexedLock = new();
-    private static DateTimeOffset? _processedThroughCreatedAt;
+    private static KnowledgeChunkBackfillCursor? _processedThrough;
 
     public EmbeddingBackfillService(
         IVectorIndex vectorIndex,
@@ -46,7 +46,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         lock (_indexedLock)
         {
             _indexedChunkIds.Clear();
-            _processedThroughCreatedAt = null;
+            _processedThrough = null;
         }
     }
 
@@ -62,7 +62,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         await PruneStaleVectorsAsync(cancellationToken);
 
-        var processedThrough = GetProcessedThroughCreatedAt();
+        var processedThrough = GetProcessedThrough();
 
         var toProcess = (await _chunkRepository.GetUnindexedBatchAsync(
             processedThrough,
@@ -88,12 +88,14 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         // Separate embeddable chunks from empty ones
         var embeddable = new List<(Domain.Entities.KnowledgeChunk Chunk, string Text)>();
+        var completedChunkIds = new HashSet<Guid>();
         foreach (var chunk in toProcess)
         {
             var text = chunk.Content;
             if (string.IsNullOrWhiteSpace(text))
             {
                 _logger.LogDebug("Skipping empty chunk {ChunkId}", chunk.Id);
+                completedChunkIds.Add(chunk.Id);
                 continue;
             }
             embeddable.Add((chunk, text));
@@ -101,7 +103,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         if (embeddable.Count == 0)
         {
-            AdvanceProcessedThrough(toProcess);
+            AdvanceProcessedThroughCompletedPrefix(toProcess, completedChunkIds);
             var emptyRemaining = await CountRemainingAsync(cancellationToken);
             return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: emptyRemaining);
         }
@@ -123,7 +125,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             _logger.LogWarning(
                 "Batch embedding failed, falling back to individual embedding: {Error}",
                 ex.Message);
-            return await ProcessOneByOneAsync(embeddable, toProcess, documentMap, cancellationToken);
+            return await ProcessOneByOneAsync(embeddable, toProcess, completedChunkIds, documentMap, cancellationToken);
         }
 
         int processed = 0;
@@ -172,7 +174,10 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                 lock (_indexedLock)
                 {
                     foreach (var chunkId in chunkIdsByDocId.Values)
+                    {
                         _indexedChunkIds.Add(chunkId);
+                        completedChunkIds.Add(chunkId);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -198,6 +203,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
                         if (chunkIdsByDocId.TryGetValue(doc.DocumentId, out var chunkId))
                         {
                             TrackIndexedChunks(new[] { chunkId });
+                            completedChunkIds.Add(chunkId);
                         }
                     }
                     catch (Exception upsertEx)
@@ -211,7 +217,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        AdvanceProcessedThrough(toProcess);
+        AdvanceProcessedThroughCompletedPrefix(toProcess, completedChunkIds);
         var remaining = await CountRemainingAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -280,6 +286,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     private async Task<BackfillBatchResult> ProcessOneByOneAsync(
         List<(Domain.Entities.KnowledgeChunk Chunk, string Text)> embeddable,
         IReadOnlyList<Domain.Entities.KnowledgeChunk> batchChunks,
+        HashSet<Guid> completedChunkIds,
         Dictionary<Guid, Domain.Entities.KnowledgeDocument> documentMap,
         CancellationToken cancellationToken)
     {
@@ -303,6 +310,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
                 processed++;
                 TrackIndexedChunks(new[] { chunk.Id });
+                completedChunkIds.Add(chunk.Id);
             }
             catch (OperationCanceledException)
             {
@@ -318,7 +326,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        AdvanceProcessedThrough(batchChunks);
+        AdvanceProcessedThroughCompletedPrefix(batchChunks, completedChunkIds);
         var remaining = await CountRemainingAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -331,15 +339,15 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     private async Task<int> CountRemainingAsync(CancellationToken cancellationToken)
     {
         return await _chunkRepository.CountUnindexedAsync(
-            GetProcessedThroughCreatedAt(),
+            GetProcessedThrough(),
             cancellationToken);
     }
 
-    private static DateTimeOffset? GetProcessedThroughCreatedAt()
+    private static KnowledgeChunkBackfillCursor? GetProcessedThrough()
     {
         lock (_indexedLock)
         {
-            return _processedThroughCreatedAt;
+            return _processedThrough;
         }
     }
 
@@ -352,17 +360,40 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         }
     }
 
-    private static void AdvanceProcessedThrough(IReadOnlyList<Domain.Entities.KnowledgeChunk> chunks)
+    private static void AdvanceProcessedThroughCompletedPrefix(
+        IReadOnlyList<Domain.Entities.KnowledgeChunk> chunks,
+        IReadOnlySet<Guid> completedChunkIds)
     {
         if (chunks.Count == 0)
             return;
 
-        var maxCreatedAt = chunks.Max(c => c.CreatedAt);
+        KnowledgeChunkBackfillCursor? candidate = null;
+        foreach (var chunk in chunks.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id))
+        {
+            if (!completedChunkIds.Contains(chunk.Id))
+                break;
+
+            candidate = new KnowledgeChunkBackfillCursor(chunk.CreatedAt, chunk.Id);
+        }
+
+        if (candidate is null)
+            return;
+
         lock (_indexedLock)
         {
-            if (!_processedThroughCreatedAt.HasValue || maxCreatedAt > _processedThroughCreatedAt.Value)
-                _processedThroughCreatedAt = maxCreatedAt;
+            if (_processedThrough is null || IsAfterCursor(candidate, _processedThrough))
+                _processedThrough = candidate;
         }
+    }
+
+    private static bool IsAfterCursor(
+        KnowledgeChunkBackfillCursor candidate,
+        KnowledgeChunkBackfillCursor current)
+    {
+        if (candidate.CreatedAt > current.CreatedAt)
+            return true;
+
+        return candidate.CreatedAt == current.CreatedAt && candidate.Id.CompareTo(current.Id) > 0;
     }
 
     private static Dictionary<string, string> BuildMetadata(

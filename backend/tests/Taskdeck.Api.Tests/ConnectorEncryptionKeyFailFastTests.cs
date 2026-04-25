@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Services;
@@ -102,5 +103,33 @@ public class ConnectorEncryptionKeyFailFastTests
             .Should().BeOfType<FallbackSemanticSearchService>();
         scope.ServiceProvider.GetRequiredService<IFtsKnowledgeSearchService>()
             .Should().BeOfType<KnowledgeFtsSearchService>();
+        scope.ServiceProvider.GetRequiredService<IEmbeddingGenerator>()
+            .Should().BeOfType<DisabledEmbeddingGenerator>();
+    }
+
+    [Fact]
+    public void AddInfrastructure_ShouldResolveInMemoryEmbeddingGeneratorOnlyWhenExplicitlyEnabled()
+    {
+        var keyBytes = new byte[32];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(keyBytes);
+        var validKey = Convert.ToBase64String(keyBytes);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Data Source=:memory:",
+                ["Connectors:EncryptionKey"] = validKey,
+                ["Knowledge:EnableInMemoryEmbeddings"] = "true"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddInfrastructure(config);
+
+        using var provider = services.BuildServiceProvider(validateScopes: true);
+
+        provider.GetRequiredService<IEmbeddingGenerator>()
+            .Should().BeOfType<InMemoryEmbeddingGenerator>();
     }
 }

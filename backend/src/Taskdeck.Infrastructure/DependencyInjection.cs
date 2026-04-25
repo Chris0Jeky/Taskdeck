@@ -74,10 +74,18 @@ public static class DependencyInjection
         services.AddScoped<IFtsKnowledgeSearchService>(sp =>
             sp.GetRequiredService<Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>());
 
-        // Vector index and embedding services — in-memory defaults for local-first operation.
-        // Future: swap InMemoryVectorIndex for sqlite-vec or external store via config.
+        // Vector index is local; hash-based in-memory embeddings are development/test
+        // oriented and stay disabled unless explicitly opted in.
+        var enableInMemoryEmbeddings = configuration.GetValue<bool>("Knowledge:EnableInMemoryEmbeddings");
         services.AddSingleton<IVectorIndex, Taskdeck.Infrastructure.Services.InMemoryVectorIndex>();
-        services.AddSingleton<IEmbeddingGenerator, Taskdeck.Infrastructure.Services.InMemoryEmbeddingGenerator>();
+        if (enableInMemoryEmbeddings)
+        {
+            services.AddSingleton<IEmbeddingGenerator, Taskdeck.Infrastructure.Services.InMemoryEmbeddingGenerator>();
+        }
+        else
+        {
+            services.AddSingleton<IEmbeddingGenerator, Taskdeck.Infrastructure.Services.DisabledEmbeddingGenerator>();
+        }
         services.AddScoped<IEmbeddingBackfillService, Taskdeck.Infrastructure.Services.EmbeddingBackfillService>();
         services.AddScoped<Taskdeck.Infrastructure.Services.FallbackSemanticSearchService>();
         services.AddScoped<ISemanticSearchService>(sp =>

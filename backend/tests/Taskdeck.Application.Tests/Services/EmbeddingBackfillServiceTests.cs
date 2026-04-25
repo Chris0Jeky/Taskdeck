@@ -85,23 +85,23 @@ public class EmbeddingBackfillServiceTests
 
         _chunkRepoMock
             .Setup(r => r.GetUnindexedBatchAsync(
-                It.IsAny<DateTimeOffset?>(),
+                It.IsAny<KnowledgeChunkBackfillCursor?>(),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((DateTimeOffset? createdAfter, int batchSize, CancellationToken _) =>
+            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, int batchSize, CancellationToken _) =>
                 chunks
                     .OrderBy(c => c.CreatedAt)
                     .ThenBy(c => c.Id)
-                    .Where(c => !createdAfter.HasValue || c.CreatedAt > createdAfter.Value)
+                    .Where(c => cursor is null || IsAfterCursor(c, cursor))
                     .Take(batchSize)
                     .ToList());
 
         _chunkRepoMock
             .Setup(r => r.CountUnindexedAsync(
-                It.IsAny<DateTimeOffset?>(),
+                It.IsAny<KnowledgeChunkBackfillCursor?>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((DateTimeOffset? createdAfter, CancellationToken _) =>
-                chunks.Count(c => !createdAfter.HasValue || c.CreatedAt > createdAfter.Value));
+            .ReturnsAsync((KnowledgeChunkBackfillCursor? cursor, CancellationToken _) =>
+                chunks.Count(c => cursor is null || IsAfterCursor(c, cursor)));
     }
 
     [Fact]
@@ -249,7 +249,7 @@ public class EmbeddingBackfillServiceTests
 
         _chunkRepoMock.Verify(
             r => r.GetUnindexedBatchAsync(
-                It.Is<DateTimeOffset?>(cursor => cursor == null),
+                It.Is<KnowledgeChunkBackfillCursor?>(cursor => cursor == null),
                 2,
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -333,6 +333,101 @@ public class EmbeddingBackfillServiceTests
     }
 
     [Fact]
+    public async Task ProcessBatchAsync_CursorUsesIdTieBreaker_ForChunksWithSameCreatedAt()
+    {
+        var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var chunks = Enumerable.Range(0, 3)
+            .Select(i => new KnowledgeChunk(docId, i, $"content {i}"))
+            .ToList();
+
+        foreach (var chunk in chunks)
+        {
+            SetCreatedAt(chunk, createdAt);
+        }
+
+        var ordered = chunks.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToList();
+        SetupChunkBatch(chunks);
+        SetupDocumentLookup(docId, userId);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
+
+        await _sut.ProcessBatchAsync(batchSize: 1);
+        await _sut.ProcessBatchAsync(batchSize: 1);
+
+        _vectorIndexMock.Verify(
+            v => v.UpsertBatchAsync(
+                It.Is<IReadOnlyList<VectorDocument>>(docs => docs.Any(d => d.DocumentId == $"chunk:{ordered[1].Id}")),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "chunks sharing a CreatedAt timestamp should page by Id instead of being skipped");
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_DoesNotAdvanceCursorPastFailedChunk()
+    {
+        var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var chunks = Enumerable.Range(0, 3)
+            .Select(i => new KnowledgeChunk(docId, i, $"content {i}"))
+            .ToList();
+
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            SetCreatedAt(chunks[i], createdAt.AddSeconds(i));
+        }
+
+        var ordered = chunks.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToList();
+        SetupChunkBatch(chunks);
+        SetupDocumentLookup(docId, userId);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
+        _vectorIndexMock
+            .Setup(v => v.UpsertBatchAsync(
+                It.IsAny<IReadOnlyList<VectorDocument>>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("batch upsert failed"));
+        _vectorIndexMock
+            .Setup(v => v.UpsertAsync(
+                $"chunk:{ordered[0].Id}",
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _vectorIndexMock
+            .Setup(v => v.UpsertAsync(
+                $"chunk:{ordered[1].Id}",
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("transient index failure"));
+
+        var result = await _sut.ProcessBatchAsync(batchSize: 2);
+        await _sut.ProcessBatchAsync(batchSize: 1);
+
+        result.Processed.Should().Be(1);
+        result.Failed.Should().Be(1);
+        _vectorIndexMock.Verify(
+            v => v.UpsertAsync(
+                $"chunk:{ordered[1].Id}",
+                It.IsAny<ReadOnlyMemory<float>>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2),
+            "failed chunks must remain after the cursor so the next batch retries them");
+    }
+
+    [Fact]
     public async Task ProcessBatchAsync_OperationCanceled_PropagatesException()
     {
         var docId = Guid.NewGuid();
@@ -404,5 +499,13 @@ public class EmbeddingBackfillServiceTests
             ?? throw new InvalidOperationException("Expected Entity.CreatedAt setter to exist.");
 
         setter.Invoke(entity, [createdAt]);
+    }
+
+    private static bool IsAfterCursor(KnowledgeChunk chunk, KnowledgeChunkBackfillCursor cursor)
+    {
+        if (chunk.CreatedAt > cursor.CreatedAt)
+            return true;
+
+        return chunk.CreatedAt == cursor.CreatedAt && chunk.Id.CompareTo(cursor.Id) > 0;
     }
 }
