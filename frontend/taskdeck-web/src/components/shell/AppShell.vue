@@ -14,6 +14,8 @@ import ShellCommandPalette from './ShellCommandPalette.vue'
 import ShellKeyboardHelp from './ShellKeyboardHelp.vue'
 import PaperSidebar from '../paper/PaperSidebar.vue'
 import PaperTopBar from '../paper/PaperTopBar.vue'
+import PaperCommandPalette from '../paper/PaperCommandPalette.vue'
+import PaperShortcutsOverlay from '../paper/PaperShortcutsOverlay.vue'
 import ErrorBoundary from '../ErrorBoundary.vue'
 import type { CommandItem } from './ShellCommandPalette.vue'
 
@@ -231,7 +233,15 @@ onUnmounted(() => {
       </main>
     </div>
 
+    <PaperCommandPalette
+      v-if="paperTheme.isOn"
+      :visible="showCommandPalette"
+      :items="commandItems"
+      @close="closeCommandPalette"
+      @activate="handleCommandActivate"
+    />
     <ShellCommandPalette
+      v-else
       :visible="showCommandPalette"
       :items="commandItems"
       @close="closeCommandPalette"
@@ -240,7 +250,13 @@ onUnmounted(() => {
       @navigate-to-card="handleNavigateToCard"
     />
 
+    <PaperShortcutsOverlay
+      v-if="paperTheme.isOn"
+      :visible="showKeyboardHelp"
+      @close="showKeyboardHelp = false"
+    />
     <ShellKeyboardHelp
+      v-else
       :visible="showKeyboardHelp"
       @close="showKeyboardHelp = false"
     />
