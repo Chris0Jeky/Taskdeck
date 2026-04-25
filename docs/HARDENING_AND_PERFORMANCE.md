@@ -196,9 +196,7 @@ axiosRetry(http, {
 
 ### 4.3 CSP Hardening
 
-**Partially mitigated** (SEC-29, `#855`/`#945`): API CSP no longer includes `'unsafe-inline'` in `style-src` (serves JSON only; Swagger already excluded from CSP). Reverse-proxy CSP adds `style-src-elem 'self'` to block inline `<style>` blocks and injected external stylesheets in modern browsers. `'unsafe-inline'` remains in the `style-src` fallback for Vue's reactive `:style` bindings (27 files — label color swatches, dynamic progress widths, virtualization offsets).
-
-**Remaining fix**: Migrate the 27 `:style` binding files to CSS custom properties (e.g., `style="--tag-color: ..."` set once on a wrapper, consumed by scoped stylesheet) so `'unsafe-inline'` can be dropped entirely from `style-src`.
+**RESOLVED** (SEC-29, `#855`/`#945` partial + `#855`/`#988` complete): API CSP no longer includes `'unsafe-inline'` in `style-src` (serves JSON only; Swagger already excluded from CSP). All 22 `:style` bindings across 14 Vue files have been migrated to CSS custom properties, `v-bind()`, and utility classes (`#855`/`#988`). `'unsafe-inline'` has been dropped from `style-src` in the reverse-proxy CSP. No inline style vectors remain.
 
 ### 4.4 Import File Validation
 

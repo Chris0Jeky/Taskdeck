@@ -14,22 +14,21 @@ Companion Active Docs:
 
 - Backend: **5,060 passing** (0 failing, 2 skipped; 5,062 total) -- verified 2026-04-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main`
   - Domain: 962 passed
-  - Application: 2,396 passed
-  - API integration: 1,592 passed (0 failed, 2 skipped; 1,594 total)
+  - Application: 2,367 passed
+  - API integration: 1,621 passed (0 failed, 2 skipped; 1,623 total)
   - CLI contract: 82 passed
   - Architecture boundaries: 8 passed
   - Integration (Testcontainers): 20 passed
-- Frontend unit: **2,805 passing** across 219 test files -- verified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main`
+- Frontend unit: **2,805 passing** across 214+ test files -- verified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main`
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
 - Combined automated total: **7,865+ passing** (backend 5,060 + frontend unit 2,805 + E2E)
 
 Verification note:
-- backend total of 5,060 passing (0 failing, 2 skipped; 5,062 total) recertified 2026-04-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` at commit `297fb39e`
-- frontend total of 2,805 passing across 219 test files recertified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main` at commit `297fb39e`
-- 2 skipped backend tests (both in Api.Tests): `ProposalOperationsAdversarialTests.KnownBug_XssInActionType_Causes500` and `ProposalOperationsAdversarialTests.KnownBug_DeepNestedParameters_Causes500` (known-bug tracking tests, intentionally skipped)
-- 5 previously-failing Api.Tests (3 CorsApiTests, 1 McpTelemetryMiddlewareTests, 1 SecurityHeadersApiTests) now all passing after PR `#942` fixes
+- backend total of 5,060 passing (0 failing, 2 skipped; 5,062 total) recertified 2026-04-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` (PR `#987`)
+- frontend total of 2,805 passing across 214+ test files recertified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main` (PR `#987`)
+- 5 previously-failing Api.Tests (3 CorsApiTests, 1 McpTelemetryMiddlewareTests, 1 SecurityHeadersApiTests) now pass
 - prior recertification: backend 4,979 (2026-04-23), frontend 2,607 (2026-04-23) at commit `97d4856c`
-- growth since last recertification: backend +81 tests (Application +29, API +52), frontend +198 tests (+5 test files)
+- growth since last recertification: backend +81 tests, frontend +198 tests
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
