@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 /**
  * PaperUndoTimeline — dashed timeline that crossfades dashes left-to-right
@@ -86,6 +86,24 @@ function syncReducedMotion(matches: boolean) {
     startLoop()
   }
 }
+
+/**
+ * If `appliedAt` or `windowMs` change after the loop has self-stopped (e.g. a
+ * fresh undo window opens after the previous one closed), restart the rAF
+ * loop so the timeline animates the new window instead of remaining stuck at
+ * `progress = 1`.  Under reduced motion we just refresh `progress` once.
+ */
+watch(
+  () => [appliedTimestamp.value, props.windowMs] as const,
+  () => {
+    lastTickAt = 0
+    progress.value = computeProgress(Date.now())
+    if (reducedMotion.value) return
+    if (progress.value < 1) {
+      startLoop()
+    }
+  },
+)
 
 onMounted(() => {
   if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {

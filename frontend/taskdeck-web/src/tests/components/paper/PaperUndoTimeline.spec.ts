@@ -89,6 +89,32 @@ describe('PaperUndoTimeline', () => {
     expect(spent).toBeLessThan(24)
   })
 
+  it('resumes the rAF loop when appliedAt advances after the window expired', async () => {
+    stubMatchMedia(false)
+    // Mount with an `appliedAt` whose window has already closed.
+    const expiredApplied = Date.now() - 10_000
+    const wrapper = mount(PaperUndoTimeline, {
+      props: { appliedAt: new Date(expiredApplied), windowMs: 5_000 },
+    })
+    // The initial loop runs once and self-stops at progress >= 1.
+    expect(rafCalls.length).toBeGreaterThan(0)
+    rafCalls.shift()!(0)
+    await wrapper.vm.$nextTick()
+    // No more frames should be queued because progress is 1.
+    expect(rafCalls.length).toBe(0)
+    const initialDashes = wrapper.findAll('.paper-undo__dash[data-spent="true"]').length
+    expect(initialDashes).toBe(24)
+
+    // Parent flips appliedAt to a fresh timestamp; the loop should restart
+    // and progress should drop back below 1.
+    await wrapper.setProps({ appliedAt: new Date(Date.now()), windowMs: 5_000 })
+    expect(rafCalls.length).toBeGreaterThan(0)
+    rafCalls.shift()!(0)
+    await wrapper.vm.$nextTick()
+    const resumedDashes = wrapper.findAll('.paper-undo__dash[data-spent="true"]').length
+    expect(resumedDashes).toBeLessThan(24)
+  })
+
   it('cancels rAF on unmount', () => {
     stubMatchMedia(false)
     const wrapper = mount(PaperUndoTimeline, {
