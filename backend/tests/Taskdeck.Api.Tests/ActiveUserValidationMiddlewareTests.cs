@@ -306,6 +306,7 @@ public class ActiveUserValidationMiddlewareTests
         public IIntegrationConnectorRepository IntegrationConnectors => throw new NotImplementedException();
         public IConnectorEventRepository ConnectorEvents => throw new NotImplementedException();
         public IConnectorCredentialRepository ConnectorCredentials => throw new NotImplementedException();
+        public IProposalRevisionRepository ProposalRevisions => throw new NotImplementedException();
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

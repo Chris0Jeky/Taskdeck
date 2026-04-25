@@ -5,33 +5,56 @@ import { resolveBodyClass, usePaperThemeStore } from '../../store/paperThemeStor
 const STORAGE_KEY = 'td.paper.mode'
 
 function setMatchMediaDark(isDark: boolean) {
-  const listeners = new Set<(ev: MediaQueryListEvent) => void>()
-  const mql = {
-    matches: isDark,
-    media: '(prefers-color-scheme: dark)',
-    addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => {
-      if (type === 'change' && typeof listener === 'function') {
-        listeners.add(listener as (ev: MediaQueryListEvent) => void)
-      }
-    },
-    removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => {
-      if (type === 'change' && typeof listener === 'function') {
-        listeners.delete(listener as (ev: MediaQueryListEvent) => void)
-      }
-    },
-  }
+  let currentMatches = isDark
+  const instances: Array<{
+    matches: boolean
+    listeners: Set<(ev: MediaQueryListEvent) => void>
+  }> = []
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     writable: true,
-    value: vi.fn().mockReturnValue(mql),
+    value: vi.fn().mockImplementation(() => {
+      const instance = {
+        matches: currentMatches,
+        listeners: new Set<(ev: MediaQueryListEvent) => void>(),
+      }
+      instances.push(instance)
+      return {
+        get matches() {
+          return instance.matches
+        },
+        media: '(prefers-color-scheme: dark)',
+        addEventListener: (
+          type: string,
+          listener: EventListenerOrEventListenerObject,
+        ) => {
+          if (type === 'change' && typeof listener === 'function') {
+            instance.listeners.add(listener as (ev: MediaQueryListEvent) => void)
+          }
+        },
+        removeEventListener: (
+          type: string,
+          listener: EventListenerOrEventListenerObject,
+        ) => {
+          if (type === 'change' && typeof listener === 'function') {
+            instance.listeners.delete(listener as (ev: MediaQueryListEvent) => void)
+          }
+        },
+      }
+    }),
   })
   return {
     fire(matches: boolean) {
       // Real browsers update .matches before firing 'change'.
-      mql.matches = matches
-      listeners.forEach((l) => l({ matches } as MediaQueryListEvent))
+      currentMatches = matches
+      instances.forEach((instance) => {
+        instance.matches = matches
+        instance.listeners.forEach((l) => l({ matches } as MediaQueryListEvent))
+      })
     },
-    listenerCount: () => listeners.size,
+    listenerCount: () =>
+      instances.reduce((count, instance) => count + instance.listeners.size, 0),
+    instanceCount: () => instances.length,
   }
 }
 
@@ -144,11 +167,25 @@ describe('paperThemeStore', () => {
     expect(document.body.classList.contains('paper-night')).toBe(false)
   })
 
+  it('re-resolves auto mode whenever apply() runs after an OS theme change', () => {
+    const mq = setMatchMediaDark(false)
+    const store = usePaperThemeStore()
+    store.setMode('auto')
+    expect(document.body.classList.contains('paper')).toBe(true)
+
+    mq.fire(true)
+    store.apply()
+
+    expect(document.body.classList.contains('paper-night')).toBe(true)
+    expect(document.body.classList.contains('paper')).toBe(false)
+  })
+
   it('cleans up the auto listener when leaving auto mode', () => {
     const mq = setMatchMediaDark(false)
     const store = usePaperThemeStore()
     store.setMode('auto')
     expect(mq.listenerCount()).toBe(1)
+    expect(mq.instanceCount()).toBeGreaterThanOrEqual(1)
     store.setMode('paper')
     expect(mq.listenerCount()).toBe(0)
   })

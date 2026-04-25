@@ -74,6 +74,16 @@ public class AutomationProposalConfiguration : IEntityTypeConfiguration<Automati
             .HasForeignKey(o => o.ProposalId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.HasMany(ap => ap.Revisions)
+            .WithOne(r => r.Proposal)
+            .HasForeignKey(r => r.ProposalId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(ap => ap.Outcomes)
+            .WithOne(o => o.Proposal)
+            .HasForeignKey(o => o.ProposalId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasIndex(ap => ap.Status);
         builder.HasIndex(ap => ap.RequestedByUserId);
         builder.HasIndex(ap => ap.BoardId);

@@ -347,6 +347,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public IIntegrationConnectorRepository IntegrationConnectors => null!;
         public IConnectorEventRepository ConnectorEvents => null!;
         public IConnectorCredentialRepository ConnectorCredentials => null!;
+        public IProposalRevisionRepository ProposalRevisions => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
