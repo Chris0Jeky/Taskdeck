@@ -155,6 +155,12 @@ public class IntentEnvelopeV1 : Entity
         if (_intentCandidates.Count == 0)
             throw new DomainException(ErrorCodes.ValidationError,
                 "Cannot mark as processed without at least one intent candidate");
+        if (_batches.Count == 0)
+            throw new DomainException(ErrorCodes.ValidationError,
+                "Cannot mark as processed without at least one proposal batch");
+        if (_batches.Any(batch => batch.Status != ProposalBatchStatus.Sealed))
+            throw new DomainException(ErrorCodes.InvalidOperation,
+                "Cannot mark as processed until all proposal batches are sealed");
 
         Status = EnvelopeStatus.Processed;
         Touch();

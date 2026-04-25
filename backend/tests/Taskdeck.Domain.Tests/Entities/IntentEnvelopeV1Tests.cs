@@ -9,6 +9,14 @@ public class IntentEnvelopeV1Tests
 {
     private readonly Guid _userId = Guid.NewGuid();
 
+    private static TaskdeckProposalBatch CreateSealedBatch(IntentEnvelopeV1 envelope, Guid userId)
+    {
+        var batch = envelope.CreateBatch(userId, "Batch summary");
+        batch.AddProposalId(Guid.NewGuid());
+        batch.Seal();
+        return batch;
+    }
+
     [Fact]
     public void Constructor_ShouldCreateEnvelope_WithValidData()
     {
@@ -173,6 +181,7 @@ public class IntentEnvelopeV1Tests
     {
         var envelope = new IntentEnvelopeV1("capture", "content", _userId);
         envelope.AddIntentCandidate("intent", 0.5, 0);
+        CreateSealedBatch(envelope, _userId);
         envelope.MarkProcessed();
 
         var act = () => envelope.AddIntentCandidate("another intent", 0.3, 1);
@@ -226,6 +235,7 @@ public class IntentEnvelopeV1Tests
     {
         var envelope = new IntentEnvelopeV1("capture", "content", _userId);
         envelope.AddIntentCandidate("intent", 0.5, 0);
+        CreateSealedBatch(envelope, _userId);
 
         envelope.MarkProcessed();
 
@@ -246,10 +256,40 @@ public class IntentEnvelopeV1Tests
     }
 
     [Fact]
+    public void MarkProcessed_ShouldRejectWithoutProposalBatch()
+    {
+        var envelope = new IntentEnvelopeV1("capture", "content", _userId);
+        envelope.AddIntentCandidate("intent", 0.5, 0);
+
+        var act = () => envelope.MarkProcessed();
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public void MarkProcessed_ShouldRejectWhenAnyBatchIsDraft()
+    {
+        var envelope = new IntentEnvelopeV1("capture", "content", _userId);
+        envelope.AddIntentCandidate("intent", 0.5, 0);
+        var sealedBatch = CreateSealedBatch(envelope, _userId);
+        var draftBatch = envelope.CreateBatch(_userId, "Draft batch");
+
+        var act = () => envelope.MarkProcessed();
+
+        act.Should().Throw<DomainException>()
+            .Which.ErrorCode.Should().Be("InvalidOperation");
+        envelope.Status.Should().Be(EnvelopeStatus.Extracting);
+        sealedBatch.Status.Should().Be(ProposalBatchStatus.Sealed);
+        draftBatch.Status.Should().Be(ProposalBatchStatus.Draft);
+    }
+
+    [Fact]
     public void MarkProcessed_ShouldRejectWhenAlreadyProcessed()
     {
         var envelope = new IntentEnvelopeV1("capture", "content", _userId);
         envelope.AddIntentCandidate("intent", 0.5, 0);
+        CreateSealedBatch(envelope, _userId);
         envelope.MarkProcessed();
 
         var act = () => envelope.MarkProcessed();
@@ -305,6 +345,7 @@ public class IntentEnvelopeV1Tests
     {
         var envelope = new IntentEnvelopeV1("capture", "content", _userId);
         envelope.AddIntentCandidate("intent", 0.5, 0);
+        CreateSealedBatch(envelope, _userId);
         envelope.MarkProcessed();
 
         var act = () => envelope.MarkFailed("too late");
