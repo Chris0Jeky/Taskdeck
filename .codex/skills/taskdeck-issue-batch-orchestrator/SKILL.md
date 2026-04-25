@@ -104,6 +104,22 @@ After PR creation and after every fix push:
 
 Use `taskdeck-ci-conflict-recovery` for failing CI, comments, or conflicts.
 
+## Project priority sync
+
+Audit project priority drift before handoff:
+
+```powershell
+powershell -File scripts/github/Sync-TaskdeckProjectPriority.ps1
+```
+
+Apply fixes when the GitHub CLI has project write scope:
+
+```powershell
+powershell -File scripts/github/Sync-TaskdeckProjectPriority.ps1 -Apply
+```
+
+If apply fails with missing `project` scope, tell the coordinator/user to run `gh auth refresh -s project` and rerun the apply command.
+
 ## Deferral rule
 
 No silent deferrals. If a task uncovers out-of-scope work, choose one:

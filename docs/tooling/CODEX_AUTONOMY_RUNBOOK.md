@@ -193,7 +193,14 @@ Follow `docs/GITHUB_PROJECT_AUTOMATION.md`:
 - Move issue to `Review` when PR opens.
 - Move to `Done` only after merge and verification.
 
-GitHub Project v2 field sync may require GraphQL. If GitHub MCP or `gh api graphql` is unavailable, report exactly what could not be synced.
+Audit and sync project priority drift with:
+
+```powershell
+powershell -File scripts/github/Sync-TaskdeckProjectPriority.ps1
+powershell -File scripts/github/Sync-TaskdeckProjectPriority.ps1 -Apply
+```
+
+Audit mode requires `read:project`. Apply mode requires the broader GitHub CLI project write scope: `gh auth refresh -s project`. If GitHub MCP or `gh` project writes are unavailable, report exactly what could not be synced.
 
 ## Stop Conditions
 

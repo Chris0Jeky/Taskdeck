@@ -108,16 +108,16 @@ jobs:
         if: always()
         run: |
           cat <<'SUMMARY' >> "$GITHUB_STEP_SUMMARY"
-## Gitleaks Secrets Detection
+          ## Gitleaks Secrets Detection
 
-| Setting | Value |
-|---------|-------|
-| Scan mode | `${{ inputs.scan-mode }}` |
-| Fail on findings | `${{ inputs.fail-on-findings }}` |
-| Config | `.gitleaks.toml` |
-| Ignore file | `.gitleaksignore` |
+          | Setting | Value |
+          |---------|-------|
+          | Scan mode | `${{ inputs.scan-mode }}` |
+          | Fail on findings | `${{ inputs.fail-on-findings }}` |
+          | Config | `.gitleaks.toml` |
+          | Ignore file | `.gitleaksignore` |
 
-If findings were detected, review the uploaded `gitleaks-report` artifact
-for details. False positives can be suppressed by adding fingerprints to
-`.gitleaksignore` or by extending allowlists in `.gitleaks.toml`.
-SUMMARY
+          If findings were detected, review the uploaded `gitleaks-report` artifact
+          for details. False positives can be suppressed by adding fingerprints to
+          `.gitleaksignore` or by extending allowlists in `.gitleaks.toml`.
+          SUMMARY

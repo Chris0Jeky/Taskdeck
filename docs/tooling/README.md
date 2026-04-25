@@ -6,3 +6,5 @@ This folder contains MCP/tooling/runbook material that supports development and 
 - `CODEX_AUTONOMY_RUNBOOK.md`
 - `DEVTOOLS_OBSERVABILITY_ADDON.md`
 - `FUTURE_HARNESS_BACKLOG.md`
+
+Related helper scripts live under `scripts/github/`, including project priority audit/sync via `Sync-TaskdeckProjectPriority.ps1`.

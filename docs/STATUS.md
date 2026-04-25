@@ -24,7 +24,7 @@ Rebranding thesis (2026-02-23):
 - product value is reducing maintenance overhead, not maximizing opaque autonomy
 
 Current constraints are mostly hardening and consistency:
-- Codex high-autonomy issue execution now has first-class local guidance: `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`, generalized worktree protocol, PowerShell git/worktree guards, GitHub helper scripts, and dedicated Codex skills for batch orchestration, worktree issue workers, PR review loops, and CI/conflict recovery.
+- Codex high-autonomy issue execution now has first-class local guidance: `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`, generalized worktree protocol, PowerShell git/worktree guards, GitHub helper scripts, Project v2 priority audit/sync support, and dedicated Codex skills for batch orchestration, worktree issue workers, PR review loops, and CI/conflict recovery. A reusable Gitleaks workflow syntax issue in the summary heredoc has been corrected after the workflow began failing before job creation.
 - ~~**security bug discovered 2026-04-03**: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `ChangePassword` now derives userId exclusively from JWT claims; `[Authorize]` enforced; `UserId` removed from request body; `AuthController` inherits `AuthenticatedControllerBase`; 5 integration tests proving the fix
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first

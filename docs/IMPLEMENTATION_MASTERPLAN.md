@@ -43,6 +43,7 @@ Latest tooling addition (2026-04-25):
 - Codex high-autonomy workflow hardening delivered: `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` now defines issue batch orchestration, worktree workers, PR review loops, CI/comment/conflict recovery, no-silent-deferral rules, and docs rehydration.
 - Repo-local Codex skills added for issue batch orchestration, isolated issue workers, PR review loops, and CI/conflict recovery.
 - PowerShell git/worktree guard scripts and GitHub helper scripts added for Windows-safe batch execution.
+- Follow-up hardening added `scripts/github/Sync-TaskdeckProjectPriority.ps1` for Project v2 priority audit/sync and fixed `reusable-gitleaks.yml` summary indentation so the reusable workflow can create jobs instead of failing at YAML parse time.
 
 1. Backend advanced slices completed: automation proposals/executor, archive recovery, chat, ops/logs, workers/health.
 2. Frontend advanced views integrated: automations/chat/ops/archive and supporting APIs/types.

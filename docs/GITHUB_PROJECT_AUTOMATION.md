@@ -155,8 +155,9 @@ Local helper scripts:
 - `scripts/github/Inspect-TaskdeckPrs.ps1` — summarize open PRs, linked issues, comments, and check status counts.
 - `scripts/github/Seed-TaskdeckFollowupIssue.ps1` — create explicit follow-up issues for accepted deferrals.
 - `scripts/github/New-TaskdeckDocsRehydrationChecklist.ps1` — list recently merged PRs and docs that may need rehydration.
+- `scripts/github/Sync-TaskdeckProjectPriority.ps1` — audit issue/PR Project v2 `Priority` drift and optionally apply fixes.
 
-These helpers are fallbacks for GitHub MCP gaps. They do not replace project-field verification; Project v2 priority/status field sync may still require GitHub MCP or `gh api graphql`.
+These helpers are fallbacks for GitHub MCP gaps. Project v2 priority audit needs `read:project`; applying field updates with `Sync-TaskdeckProjectPriority.ps1 -Apply` requires `gh auth refresh -s project`.
 
 ## Weekly Backlog Seeding Cadence (OPS-06)
 
