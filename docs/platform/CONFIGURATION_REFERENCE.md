@@ -477,8 +477,8 @@ Registered via `RegisterValidatedOptions<AuditRetentionSettings>` with
 | Key | Type | Default | Range | Description | Required? |
 | --- | --- | --- | --- | --- | --- |
 | `AuditRetention:MaxRetentionDays` | `int` | `90` | 1–3650 | Audit log entries older than this are eligible for cleanup. | No |
-| `AuditRetention:CleanupBatchSize` | `int` | `1000` | 100–100000 | Number of rows deleted per batch in the retention worker. | No |
-| `AuditRetention:CleanupIntervalHours` | `int` | `24` | 1–168 | How often the `AuditRetentionWorker` runs cleanup. | No |
+| `AuditRetention:CleanupBatchSize` | `int` | `1000` | 1–50000 | Number of rows deleted per batch in the retention worker. | No |
+| `AuditRetention:CleanupIntervalHours` | `int` | `24` | 1–720 | How often the `AuditRetentionWorker` runs cleanup. | No |
 
 ## Persistence and first run
 

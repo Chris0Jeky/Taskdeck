@@ -175,8 +175,8 @@ const hasActiveFilters = computed(() => {
                 class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
               />
               <span
-                class="ml-2 px-2 py-0.5 rounded text-xs font-medium text-white"
-                :style="{ backgroundColor: label.colorHex }"
+                class="ml-2 px-2 py-0.5 rounded text-xs font-medium text-white td-dynamic-bg"
+                :style="{ '--td-dynamic-color': label.colorHex }"
               >
                 {{ label.name }}
               </span>

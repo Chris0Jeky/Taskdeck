@@ -250,13 +250,13 @@ watch([unreadOnly, activeBoardId], () => {
     <div v-if="notifications.loading" class="td-notification-skeleton" role="status" aria-live="polite">
       <span class="sr-only">Loading notifications...</span>
       <div v-for="n in 4" :key="n" class="td-notification-skeleton__row">
-        <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1">
-          <div style="display: flex; align-items: center; gap: 0.5rem">
+        <div class="flex flex-col gap-2 flex-1">
+          <div class="flex items-center gap-2">
             <TdSkeleton width="60px" height="20px" />
             <TdSkeleton width="200px" height="14px" />
           </div>
           <TdSkeleton width="80%" height="12px" />
-          <div style="display: flex; gap: 0.75rem">
+          <div class="flex gap-3">
             <TdSkeleton width="70px" height="10px" />
             <TdSkeleton width="100px" height="10px" />
           </div>
@@ -276,17 +276,13 @@ watch([unreadOnly, activeBoardId], () => {
     >
       <div
         role="presentation"
-        :style="{ height: `${notifTotalSize}px`, width: '100%', position: 'relative' }"
+        class="td-virtual-scroll-sizer"
+        :style="{ '--td-virtual-size': `${notifTotalSize}px` }"
       >
         <div
           role="presentation"
-          :style="{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            transform: `translateY(${notifTranslateY}px)`,
-          }"
+          class="td-virtual-scroll-offset"
+          :style="{ '--td-virtual-offset': `${notifTranslateY}px` }"
         >
           <div
             v-for="virtualRow in notifVirtualRows"

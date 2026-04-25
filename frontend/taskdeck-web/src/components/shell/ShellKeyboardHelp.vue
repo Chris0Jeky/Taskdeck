@@ -28,10 +28,16 @@ const emit = defineEmits<{
         <div class="td-keyboard-help__content">
           <div class="td-keyboard-help__section">
             <h3>Global</h3>
-            <div class="td-shortcut-row"><kbd>Ctrl+K</kbd><span>Command palette</span></div>
+            <div class="td-shortcut-row"><kbd>Ctrl+K</kbd><span>Command palette / Search</span></div>
             <div class="td-shortcut-row"><kbd>Ctrl+Shift+C</kbd><span>Quick capture modal</span></div>
             <div class="td-shortcut-row"><kbd>?</kbd><span>This help</span></div>
             <div class="td-shortcut-row"><kbd>Escape</kbd><span>Close top surface</span></div>
+          </div>
+          <div class="td-keyboard-help__section">
+            <h3>Navigation</h3>
+            <div class="td-shortcut-row"><span class="td-shortcut-hint">Sidebar</span><span>Today, Inbox, Review, Boards, Search</span></div>
+            <div class="td-shortcut-row"><span class="td-shortcut-hint">Ctrl+K</span><span>All other surfaces (Chat, Metrics, Ops, etc.)</span></div>
+            <div class="td-shortcut-row"><span class="td-shortcut-hint">Settings</span><span>Activity, Notifications, Archive, Calendar, etc.</span></div>
           </div>
           <div class="td-keyboard-help__section">
             <h3>Board Navigation</h3>
@@ -155,5 +161,12 @@ const emit = defineEmits<{
   font-size: var(--td-font-xs);
   letter-spacing: 0.05em;
   color: var(--td-color-primary);
+}
+
+.td-shortcut-hint {
+  font-family: 'Space Grotesk', monospace;
+  font-size: var(--td-font-xs);
+  color: var(--td-text-tertiary);
+  letter-spacing: 0.05em;
 }
 </style>

@@ -176,7 +176,9 @@ describe('CardItem — labels', () => {
     const labels = wrapper.findAll('.td-board-card__label')
     expect(labels).toHaveLength(2)
     expect(labels[0].text()).toBe('Urgent')
-    expect(labels[0].attributes('style')).toContain('background-color: #ff0000')
+    // SEC-29: label color now set via CSS custom property instead of inline backgroundColor
+    expect(labels[0].attributes('style')).toContain('--td-dynamic-color: #ff0000')
+    expect(labels[0].classes()).toContain('td-dynamic-bg')
     expect(labels[1].text()).toBe('Feature')
   })
 

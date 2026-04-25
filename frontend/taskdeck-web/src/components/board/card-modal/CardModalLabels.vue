@@ -18,10 +18,12 @@ const selectedLabelIds = defineModel<string[]>('selectedLabelIds', { required: t
         v-for="label in labels"
         :key="label.id"
         class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer"
-        :class="selectedLabelIds.includes(label.id)
-          ? 'text-white ring-2 ring-offset-2 ring-primary/50'
-          : 'text-on-surface bg-surface-container-high hover:bg-surface-container-highest'"
-        :style="selectedLabelIds.includes(label.id) ? { backgroundColor: label.colorHex } : {}"
+        :class="[
+          selectedLabelIds.includes(label.id)
+            ? 'text-white ring-2 ring-offset-2 ring-primary/50 td-dynamic-bg'
+            : 'text-on-surface bg-surface-container-high hover:bg-surface-container-highest',
+        ]"
+        :style="selectedLabelIds.includes(label.id) ? { '--td-dynamic-color': label.colorHex } : undefined"
       >
         <input
           :id="`label-${label.id}`"
@@ -32,8 +34,9 @@ const selectedLabelIds = defineModel<string[]>('selectedLabelIds', { required: t
         />
         <!-- Color swatch always visible so users can identify labels before selecting -->
         <span
-          class="inline-block w-3 h-3 rounded-full flex-shrink-0 bg-outline-variant"
-          :style="label.colorHex ? { backgroundColor: label.colorHex } : {}"
+          class="inline-block w-3 h-3 rounded-full flex-shrink-0"
+          :class="label.colorHex ? 'td-dynamic-bg' : 'bg-outline-variant'"
+          :style="label.colorHex ? { '--td-dynamic-color': label.colorHex } : undefined"
           aria-hidden="true"
         />
         <span>{{ label.name }}</span>

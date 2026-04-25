@@ -1,0 +1,36 @@
+{
+  "id": "ambiguous-003",
+  "category": "ambiguous",
+  "description": "Reference to a card by title when multiple cards have similar titles.",
+  "input": {
+    "text": "Move the login card to Done",
+    "source": "Typed",
+    "boardContext": {
+      "boardId": "00000000-0000-0000-0000-000000000001",
+      "boardName": "Sprint Board",
+      "columns": [
+        {
+          "id": "00000000-0000-0000-0000-000000000010",
+          "name": "In Progress",
+          "position": 0,
+          "cards": [
+            { "id": "a1b2c3d4", "title": "Fix login timeout" },
+            { "id": "e5f6a7b8", "title": "Login page redesign" }
+          ]
+        },
+        { "id": "00000000-0000-0000-0000-000000000012", "name": "Done", "position": 1, "cards": [] }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "clarification",
+    "clarification": {
+      "reason": "Multiple cards match 'login': 'Fix login timeout' (a1b2c3d4) and 'Login page redesign' (e5f6a7b8). Which one should be moved?",
+      "suggestedActions": [
+        "Move card a1b2c3d4 to Done",
+        "Move card e5f6a7b8 to Done"
+      ]
+    }
+  },
+  "tags": ["ambiguous", "move", "title-match", "disambiguation"]
+}

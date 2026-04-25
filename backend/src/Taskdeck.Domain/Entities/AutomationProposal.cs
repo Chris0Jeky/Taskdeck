@@ -24,6 +24,12 @@ public class AutomationProposal : Entity
     private readonly List<AutomationProposalOperation> _operations = new();
     public IReadOnlyList<AutomationProposalOperation> Operations => _operations.AsReadOnly();
 
+    private readonly List<ProposalRevision> _revisions = new();
+    public IReadOnlyList<ProposalRevision> Revisions => _revisions.AsReadOnly();
+
+    private readonly List<ProposalOutcome> _outcomes = new();
+    public IReadOnlyList<ProposalOutcome> Outcomes => _outcomes.AsReadOnly();
+
     private AutomationProposal() { } // EF Core
 
     public AutomationProposal(

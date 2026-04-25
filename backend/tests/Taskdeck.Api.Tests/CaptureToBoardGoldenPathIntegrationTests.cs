@@ -97,9 +97,9 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
         cards.Should().NotBeNull();
         cards!.Should().ContainSingle();
-        cards[0].Title.Should().Be("Fix login bug");
-        cards[0].BoardId.Should().Be(board.Id);
-        cards[0].ColumnId.Should().Be(column!.Id, "card should be placed in the first (Backlog) column");
+        cards![0].Title.Should().Be("Fix login bug");
+        cards![0].BoardId.Should().Be(board.Id);
+        cards![0].ColumnId.Should().Be(column!.Id, "card should be placed in the first (Backlog) column");
 
         // Assert: Capture item is now Converted
         var converted = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.Converted);
@@ -172,9 +172,9 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
         cards.Should().NotBeNull();
         cards!.Should().HaveCount(3);
-        cards.Select(c => c.Title).Should().BeEquivalentTo(
+        cards!.Select(c => c.Title).Should().BeEquivalentTo(
             new[] { "Implement user authentication", "Write API integration tests", "Update deployment docs" });
-        cards.Should().OnlyContain(c => c.ColumnId == column!.Id, "all cards should be placed in the Backlog column");
+        cards!.Should().OnlyContain(c => c.ColumnId == column!.Id, "all cards should be placed in the Backlog column");
     }
 
     [Fact]

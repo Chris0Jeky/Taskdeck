@@ -56,11 +56,11 @@ describe('TdTag', () => {
     expect(wrapper.emitted('remove')).toHaveLength(1)
   })
 
-  it('applies custom color via CSS variable', () => {
+  it('applies custom color class when color prop is set', () => {
+    // SEC-29: color is now applied via v-bind() in scoped CSS rather
+    // than an inline :style binding setting --td-tag-color directly.
     const wrapper = mount(TdTag, { props: { color: '#ff0000' } })
     expect(wrapper.classes()).toContain('td-tag--custom')
-    const style = wrapper.attributes('style') ?? ''
-    expect(style).toContain('--td-tag-color: #ff0000')
   })
 
   it('does not apply custom class when no color', () => {

@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/evals/golden/format.schema.json",
+  "title": "Taskdeck Golden Eval Fixture",
+  "description": "Schema for synthetic evaluation fixtures used to test the capture-to-proposal pipeline.",
+  "type": "object",
+  "required": ["id", "category", "description", "input", "expected"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique fixture identifier (e.g. happy-001)",
+      "pattern": "^[a-z]+-[0-9]{3}(-[a-z0-9-]+)?$"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["happy-path", "multi-instruction", "ambiguous", "safety-boundary"],
+      "description": "Test category for grouping and filtering."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable explanation of what this fixture tests."
+    },
+    "input": {
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The raw capture text from the user."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["Typed", "Pasted", "Voice", "Import", "MCP"],
+          "default": "Typed",
+          "description": "How the capture was created."
+        },
+        "boardContext": {
+          "type": "object",
+          "description": "Simulated board state available during instruction extraction.",
+          "additionalProperties": false,
+          "properties": {
+            "boardId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "boardName": {
+              "type": "string"
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "name"],
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "type": "string", "format": "uuid" },
+                  "name": { "type": "string" },
+                  "position": { "type": "integer" },
+                  "cards": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["id", "title"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": { "type": "string" },
+                        "title": { "type": "string" },
+                        "labels": {
+                          "type": "array",
+                          "items": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "color"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" },
+                  "color": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "required": ["outcome"],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": ["proposal", "proposals", "clarification", "rejection"],
+          "description": "What the pipeline should produce."
+        },
+        "proposals": {
+          "type": "array",
+          "description": "Expected proposals (for 'proposal' or 'proposals' outcomes).",
+          "items": {
+            "type": "object",
+            "required": ["actionType", "targetType"],
+            "additionalProperties": false,
+            "properties": {
+              "actionType": {
+                "type": "string",
+                "enum": ["create", "move", "update", "archive", "create_column"],
+                "description": "The operation type."
+              },
+              "targetType": {
+                "type": "string",
+                "enum": ["card", "column"],
+                "description": "What entity the operation targets."
+              },
+              "title": {
+                "type": "string",
+                "description": "Expected card title (for create operations)."
+              },
+              "targetColumn": {
+                "type": "string",
+                "description": "Expected target column name."
+              },
+              "cardIdPrefix": {
+                "type": "string",
+                "description": "Expected 8-char card ID prefix (for move/update/archive)."
+              },
+              "description": {
+                "type": "string",
+                "description": "Expected card description."
+              },
+              "labels": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Expected label names."
+              }
+            }
+          }
+        },
+        "clarification": {
+          "type": "object",
+          "description": "Expected clarification request (for 'clarification' outcome).",
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "type": "string",
+              "description": "Why clarification is needed."
+            },
+            "suggestedActions": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Suggested rephrased actions."
+            }
+          }
+        },
+        "rejection": {
+          "type": "object",
+          "description": "Expected rejection (for 'rejection' outcome).",
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "type": "string",
+              "description": "Why the capture was rejected."
+            },
+            "safetyCategory": {
+              "type": "string",
+              "enum": ["injection", "pii", "abuse", "off-topic"],
+              "description": "Safety category that triggered the rejection."
+            }
+          }
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Searchable tags for filtering fixtures."
+    }
+  }
+}

@@ -44,7 +44,8 @@ public class UnitOfWork : IUnitOfWork
         IMfaCredentialRepository mfaCredentials,
         IIntegrationConnectorRepository integrationConnectors,
         IConnectorEventRepository connectorEvents,
-        IConnectorCredentialRepository connectorCredentials)
+        IConnectorCredentialRepository connectorCredentials,
+        IProposalRevisionRepository proposalRevisions)
     {
         _context = context;
         Boards = boards;
@@ -78,6 +79,7 @@ public class UnitOfWork : IUnitOfWork
         IntegrationConnectors = integrationConnectors;
         ConnectorEvents = connectorEvents;
         ConnectorCredentials = connectorCredentials;
+        ProposalRevisions = proposalRevisions;
     }
 
     public IBoardRepository Boards { get; }
@@ -111,6 +113,7 @@ public class UnitOfWork : IUnitOfWork
     public IIntegrationConnectorRepository IntegrationConnectors { get; }
     public IConnectorEventRepository ConnectorEvents { get; }
     public IConnectorCredentialRepository ConnectorCredentials { get; }
+    public IProposalRevisionRepository ProposalRevisions { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -123,6 +126,13 @@ public class UnitOfWork : IUnitOfWork
             throw new DomainException(
                 ErrorCodes.Conflict,
                 "Record was updated by another session. Refresh and retry your action.",
+                ex);
+        }
+        catch (DbUpdateException ex) when (IsProposalRevisionUniqueViolation(ex))
+        {
+            throw new DomainException(
+                ErrorCodes.Conflict,
+                "Proposal revision was created by another session. Refresh and retry your edit.",
                 ex);
         }
         catch (DbUpdateException ex) when (TryResolveRecoverableUniqueConflicts(ex))
@@ -244,6 +254,19 @@ public class UnitOfWork : IUnitOfWork
             StringComparison.OrdinalIgnoreCase)
             || exception.InnerException.Message.Contains(
                 "IX_UserPreferences_UserId",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsProposalRevisionUniqueViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is null)
+            return false;
+
+        return exception.InnerException.Message.Contains(
+            "ProposalRevisions.ProposalId, ProposalRevisions.RevisionNumber",
+            StringComparison.OrdinalIgnoreCase)
+            || exception.InnerException.Message.Contains(
+                "IX_ProposalRevisions_ProposalId_RevisionNumber",
                 StringComparison.OrdinalIgnoreCase);
     }
 }

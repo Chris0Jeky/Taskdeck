@@ -68,6 +68,7 @@ public class ConnectorProvidersController : AuthenticatedControllerBase
     /// Check the health of a specific connector provider.
     /// </summary>
     /// <param name="providerId">The provider identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">Health check result.</response>
     /// <response code="401">Authentication required.</response>
     /// <response code="404">Provider not found.</response>

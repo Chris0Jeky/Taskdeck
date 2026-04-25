@@ -1,0 +1,433 @@
+/* =========================================================
+   Paper & Graphite — Ember Edition · Tokens
+   Mirror of design_handoff_taskdeck_paper/paper/tokens.css.
+
+   Scope: Paper variables are scoped under `.paper` / `.paper-night`.
+   They DO NOT apply at :root, so existing Obsidian (`--td-*`) tokens
+   remain canonical until Paper is promoted by paperThemeStore.
+   ========================================================= */
+
+/* Paper references preferred local font names first and falls back to system
+   families. External font imports are intentionally avoided so production CSP
+   can keep style-src locked to self. */
+
+.paper {
+  /* --- Substrate --- */
+  --paper:        #f3eee5;
+  --paper-2:      #ebe5d8;
+  --paper-card:   #fbf7ee;
+  --paper-edge:   #e3dac8;
+  --line:         #d8d0bf;
+  --line-soft:    #e3dcc9;
+  --rule:         #1a181410;
+
+  /* --- Ink ladder --- */
+  --ink:          #1a1814;
+  --ink-deep:     #0a0908;
+  --ink-2:        #3a352d;
+  --mute:         #6c6557;
+  --faint:        #a39c8b;
+  --whisper:      #c2bba8;
+
+  /* --- Ember --- */
+  --ember:        #a8421f;
+  --ember-deep:   #7a2e15;
+  --ember-bloom:  #a8421f1a;
+  --ember-tint:   #f0d9c8;
+  --ember-ink:    #6e2810;
+
+  /* --- Earth-tone semantics --- */
+  --applied:      #4a6b3f;
+  --applied-tint: #d8e0ce;
+  --overdue:      #8c4a26;
+  --overdue-tint: #ecd9c4;
+  --awaits:       #6c6557;
+
+  /* --- Type --- */
+  --serif:  'Fraunces', 'Iowan Old Style', 'Charter', Georgia, serif;
+  --sans:   'Inter', -apple-system, system-ui, sans-serif;
+  --mono:   'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* --- Scale --- */
+  --t-xs:  10.5px;
+  --t-sm:  12px;
+  --t-md:  13.5px;
+  --t-bd:  15px;
+  --t-lg:  18px;
+  --t-h3:  22px;
+  --t-h2:  32px;
+  --t-h1:  44px;
+  --t-display: 64px;
+
+  /* --- Spacing & radius --- */
+  --r-0: 0px;
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 6px;
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 56px;
+
+  /* --- Shadows --- */
+  --shadow-card:   0 1px 0 var(--line), 0 .5px 0 #1a18140d;
+  --shadow-lift:   0 .5px 0 #1a18140f, 0 6px 14px -8px #1a181430, 0 1.5px 0 var(--line);
+  --shadow-stamp:  0 2px 0 var(--line);
+  --shadow-press:  inset 0 1px 0 #1a181410;
+
+  /* --- Motion --- */
+  --ease-paper: cubic-bezier(.2, .65, .25, 1);
+  --ease-press: cubic-bezier(.4, 0, .15, 1);
+  --d-quick: 140ms;
+  --d-base:  240ms;
+  --d-press: 320ms;
+  --d-amb:   880ms;
+
+  /* --- Narrow scaling (PAPER-11 hook) --- */
+  --paper-scale: 1;
+
+  color-scheme: light;
+}
+
+.paper-night {
+  --paper:        #14110d;
+  --paper-2:      #100d0a;
+  --paper-card:   #1c1813;
+  --paper-edge:   #20180e;
+  --line:         #2a241c;
+  --line-soft:    #221c14;
+  --rule:         #ffffff0a;
+
+  --ink:          #ece4d3;
+  --ink-deep:     #fbf3df;
+  --ink-2:        #c8bfa9;
+  --mute:         #9a8f7a;
+  --faint:        #685e4c;
+  --whisper:      #3e362a;
+
+  --ember:        #d96a3e;
+  --ember-deep:   #b54e26;
+  --ember-bloom:  #d96a3e22;
+  --ember-tint:   #2d1a12;
+  --ember-ink:    #ffb38c;
+
+  --applied:      #8aae72;
+  --applied-tint: #1d2417;
+  --overdue:      #d09257;
+  --overdue-tint: #2a1f12;
+
+  --serif:  'Fraunces', 'Iowan Old Style', 'Charter', Georgia, serif;
+  --sans:   'Inter', -apple-system, system-ui, sans-serif;
+  --mono:   'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --shadow-card:  0 1px 0 #00000060, inset 0 1px 0 #ffffff04;
+  --shadow-lift:  0 8px 22px -10px #00000080, 0 1.5px 0 var(--line), inset 0 1px 0 #ffffff05;
+  --shadow-stamp: 0 2px 0 var(--line);
+  --shadow-press: inset 0 1px 0 #00000040;
+
+  color-scheme: dark;
+}
+
+/* =========================================================
+   Paper substrate — fiber texture (light + night)
+   ========================================================= */
+.paper {
+  background-color: var(--paper);
+  background-image:
+    repeating-linear-gradient(91deg,
+      transparent 0 47px,
+      #1a181408 47px 48px,
+      transparent 48px 113px),
+    radial-gradient(circle at 24px 32px, #1a181406 0 1px, transparent 1px 100%),
+    radial-gradient(circle at 160px 96px, #1a181405 0 1px, transparent 1px 100%);
+  background-blend-mode: multiply, normal;
+  background-size: auto, 240px 240px, 240px 240px;
+}
+.paper-night {
+  background-color: var(--paper);
+  background-image:
+    repeating-linear-gradient(91deg,
+      transparent 0 47px,
+      #ffffff05 47px 48px,
+      transparent 48px 113px),
+    radial-gradient(circle at 24px 32px, #ffffff05 0 1px, transparent 1px 100%),
+    radial-gradient(circle at 160px 96px, #ffffff04 0 1px, transparent 1px 100%);
+  background-blend-mode: screen, normal;
+  background-size: auto, 240px 240px, 240px 240px;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .paper, .paper-night {
+    background-image: none;
+  }
+}
+
+/* =========================================================
+   Type primitives — only active when a Paper class is set
+   ========================================================= */
+.paper, .paper-night {
+  font-family: var(--sans);
+  color: var(--ink);
+  font-size: calc(var(--t-md) * var(--paper-scale, 1));
+  line-height: 1.5;
+  font-feature-settings: "ss01", "cv11", "kern", "liga";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.paper .tk-display, .paper-night .tk-display {
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: calc(var(--t-display) * var(--paper-scale, 1));
+  line-height: 1.02;
+  letter-spacing: -.022em;
+  font-variation-settings: "opsz" 144;
+  color: var(--ink-deep);
+}
+.paper .tk-display em, .paper-night .tk-display em {
+  font-style: italic; font-weight: 400; color: var(--ember);
+  font-variation-settings: "opsz" 144;
+}
+.paper .tk-h1, .paper-night .tk-h1 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: calc(var(--t-h1) * var(--paper-scale, 1));
+  line-height: 1.04; letter-spacing: -.018em; color: var(--ink-deep);
+  font-variation-settings: "opsz" 96;
+}
+.paper .tk-h1 em, .paper-night .tk-h1 em { font-style: italic; color: var(--ember); }
+.paper .tk-h2, .paper-night .tk-h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: calc(var(--t-h2) * var(--paper-scale, 1));
+  line-height: 1.08; letter-spacing: -.014em; color: var(--ink-deep);
+  font-variation-settings: "opsz" 48;
+}
+.paper .tk-h2 em, .paper-night .tk-h2 em { font-style: italic; color: var(--ember); }
+.paper .tk-h3, .paper-night .tk-h3 {
+  font-family: var(--serif); font-weight: 500;
+  font-size: calc(var(--t-h3) * var(--paper-scale, 1));
+  line-height: 1.18; letter-spacing: -.008em; color: var(--ink-deep);
+  font-variation-settings: "opsz" 24;
+}
+.paper .tk-lede, .paper-night .tk-lede {
+  font-family: var(--sans);
+  font-size: calc(var(--t-bd) * var(--paper-scale, 1));
+  color: var(--ink-2); line-height: 1.55; max-width: 64ch;
+}
+.paper .tk-body, .paper-night .tk-body {
+  font-family: var(--sans);
+  font-size: calc(var(--t-md) * var(--paper-scale, 1));
+  color: var(--ink); line-height: 1.55;
+}
+.paper .tk-meta, .paper-night .tk-meta {
+  font-family: var(--mono); font-size: var(--t-xs); color: var(--mute);
+  letter-spacing: .04em;
+}
+.paper .tk-eyebrow, .paper-night .tk-eyebrow {
+  font-family: var(--mono); font-size: 10px; color: var(--mute);
+  letter-spacing: .22em; text-transform: uppercase; font-weight: 500;
+}
+.paper .tk-num, .paper-night .tk-num {
+  font-family: var(--mono); font-feature-settings: "tnum" 1, "ss01";
+}
+.paper .tk-serial, .paper-night .tk-serial {
+  font-family: var(--mono); font-size: 10.5px; color: var(--faint);
+  letter-spacing: .04em;
+}
+.paper .tk-ink-italic, .paper-night .tk-ink-italic {
+  font-family: var(--serif); font-style: italic; font-weight: 400;
+  color: var(--ember);
+}
+
+/* =========================================================
+   Hairlines, rules, stamps
+   ========================================================= */
+.paper .hr-line, .paper-night .hr-line { height: 1px; background: var(--line); border: 0; margin: 0; }
+.paper .hr-soft, .paper-night .hr-soft { height: 1px; background: var(--line-soft); border: 0; margin: 0; }
+.paper .hr-double, .paper-night .hr-double { height: 4px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: transparent; margin: 0; }
+
+.paper .rule-ledger, .paper-night .rule-ledger {
+  background-image: repeating-linear-gradient(180deg, transparent 0 27px, var(--rule) 27px 28px);
+}
+
+/* Round embossed stamp */
+.paper .stamp, .paper-night .stamp {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  border: 1.5px solid currentColor; border-radius: 50%;
+  font-family: var(--sans); font-weight: 500; font-size: 9px; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--ink-deep);
+  width: 84px; height: 84px;
+  position: relative;
+  filter: contrast(1.04);
+}
+.paper .stamp.ember, .paper-night .stamp.ember { color: var(--ember); }
+.paper .stamp.applied, .paper-night .stamp.applied { color: var(--applied); }
+.paper .stamp.overdue, .paper-night .stamp.overdue { color: var(--overdue); }
+.paper .stamp b, .paper-night .stamp b {
+  font-family: var(--serif); font-weight: 400; font-style: italic;
+  font-size: 13px; letter-spacing: .03em; text-transform: none;
+  display: block; margin-top: 2px; line-height: 1;
+}
+.paper .stamp .stamp-num, .paper-night .stamp .stamp-num {
+  font-size: 8px; letter-spacing: .14em; color: currentColor; opacity: .7; margin-top: 4px;
+}
+
+.paper .letterpress { text-shadow: 0 1px 0 #ffffffa0, 0 -.5px 0 #1a18141a; }
+.paper-night .letterpress { text-shadow: 0 1px 0 #00000080, 0 -.5px 0 #ffffff10; }
+
+.paper .tagstamp, .paper-night .tagstamp {
+  display: inline-block; padding: 3px 8px 2px;
+  border: 1px solid currentColor; border-radius: 1px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .22em; text-transform: uppercase; font-weight: 600;
+  line-height: 1;
+}
+
+/* =========================================================
+   Surfaces
+   ========================================================= */
+.paper .surface, .paper-night .surface { background: var(--paper); }
+.paper .card, .paper-night .card {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  box-shadow: var(--shadow-card);
+}
+.paper .card-lift, .paper-night .card-lift {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  box-shadow: var(--shadow-lift);
+}
+.paper .well, .paper-night .well {
+  background: var(--paper-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-2);
+  box-shadow: var(--shadow-press);
+}
+.paper .halo-ember, .paper-night .halo-ember {
+  box-shadow:
+    0 0 0 1px var(--ember),
+    0 0 0 6px var(--ember-bloom),
+    0 8px 24px -10px #a8421f30,
+    0 1px 0 var(--line);
+}
+
+/* =========================================================
+   Buttons / chips
+   ========================================================= */
+.paper .pbtn, .paper-night .pbtn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  font-family: var(--sans); font-size: var(--t-sm); font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    transform var(--d-quick) var(--ease-press),
+    background var(--d-quick) var(--ease-paper),
+    border-color var(--d-quick) var(--ease-paper);
+}
+.paper .pbtn:hover, .paper-night .pbtn:hover { background: var(--paper); border-color: var(--ink-2); }
+.paper .pbtn:active, .paper-night .pbtn:active { transform: translateY(1px); }
+.paper .pbtn-primary, .paper-night .pbtn-primary {
+  background: var(--ink-deep); color: var(--paper-card); border-color: var(--ink-deep);
+}
+.paper .pbtn-primary:hover, .paper-night .pbtn-primary:hover { background: var(--ink); border-color: var(--ink); }
+.paper .pbtn-ember, .paper-night .pbtn-ember {
+  background: var(--ember); color: #fbf2e8; border-color: var(--ember-deep);
+  box-shadow: inset 0 1px 0 #ffffff20, 0 1px 0 var(--ember-deep);
+}
+.paper .pbtn-ember:hover, .paper-night .pbtn-ember:hover { background: var(--ember-deep); }
+.paper .pbtn-ghost, .paper-night .pbtn-ghost { background: transparent; border-color: transparent; }
+.paper .pbtn-ghost:hover, .paper-night .pbtn-ghost:hover { background: var(--paper-2); }
+
+.paper .pkbd, .paper-night .pkbd {
+  display: inline-grid; place-items: center;
+  min-width: 18px; padding: 1px 5px;
+  font-family: var(--mono); font-size: 10px; color: var(--mute);
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  letter-spacing: .04em;
+}
+.paper .pkbd-light, .paper-night .pkbd-light {
+  background: transparent; border-color: var(--whisper); color: var(--faint);
+}
+
+/* =========================================================
+   Hairline icons
+   ========================================================= */
+.paper .hl-icon, .paper-night .hl-icon {
+  width: 14px; height: 14px; stroke: currentColor; fill: none;
+  stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; flex: none;
+}
+.paper .hl-icon-md, .paper-night .hl-icon-md { width: 16px; height: 16px; }
+.paper .hl-icon-lg, .paper-night .hl-icon-lg { width: 20px; height: 20px; }
+
+/* =========================================================
+   Status pills
+   ========================================================= */
+.paper .pstatus, .paper-night .pstatus {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--mute);
+}
+.paper .pstatus::before, .paper-night .pstatus::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none;
+}
+.paper .pstatus.proposed, .paper-night .pstatus.proposed { color: var(--ember); }
+.paper .pstatus.applied,  .paper-night .pstatus.applied  { color: var(--applied); }
+.paper .pstatus.overdue,  .paper-night .pstatus.overdue  { color: var(--overdue); }
+.paper .pstatus.draft,    .paper-night .pstatus.draft    { color: var(--mute); }
+.paper .pstatus.live,     .paper-night .pstatus.live     { color: var(--applied); }
+.paper .pstatus.live::before, .paper-night .pstatus.live::before {
+  animation: paper-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes paper-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paper .pstatus.live::before, .paper-night .pstatus.live::before {
+    animation: none;
+  }
+}
+
+/* =========================================================
+   Diff strips — Review
+   ========================================================= */
+.paper .diff-add, .paper-night .diff-add {
+  background: linear-gradient(90deg, var(--applied-tint) 0%, transparent 100%);
+  border-left: 2px solid var(--applied);
+  padding: 6px 10px;
+}
+.paper .diff-rem, .paper-night .diff-rem {
+  background: linear-gradient(90deg, var(--ember-tint) 0%, transparent 100%);
+  border-left: 2px solid var(--ember);
+  padding: 6px 10px;
+  text-decoration: line-through;
+  text-decoration-color: var(--ember);
+  text-decoration-thickness: 1px;
+}
+
+/* =========================================================
+   Erasing dotted underline — reversibility countdown
+   ========================================================= */
+.paper .erase-line, .paper-night .erase-line {
+  background-image: linear-gradient(90deg, var(--ember) 50%, transparent 50%);
+  background-size: 6px 1px;
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+  padding-bottom: 4px;
+}
+
+/* =========================================================
+   Focus rings — Paper substitutes browser default
+   ========================================================= */
+.paper :focus-visible, .paper-night :focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 1px;
+  border-radius: var(--r-1);
+}

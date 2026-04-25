@@ -152,16 +152,16 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString()
 }
 
-function statusColor(status: QueueStatus | number): string {
+function statusClass(status: QueueStatus | number): string {
   const normalized = normalizeQueueStatus(status)
-  const colors: Record<string, string> = {
-    Pending: 'var(--td-color-warning)',
-    Processing: 'var(--td-color-info)',
-    Completed: 'var(--td-color-success)',
-    Failed: 'var(--td-color-error)',
-    Cancelled: 'var(--td-text-tertiary)',
+  const classes: Record<string, string> = {
+    Pending: 'td-status-badge--warning',
+    Processing: 'td-status-badge--info',
+    Completed: 'td-status-badge--success',
+    Failed: 'td-status-badge--error',
+    Cancelled: 'td-status-badge--muted',
   }
-  return colors[normalized] ?? 'var(--td-text-secondary)'
+  return classes[normalized] ?? 'td-status-badge--muted'
 }
 
 async function loadBoardOptions() {
@@ -322,7 +322,7 @@ onMounted(() => {
         <article v-for="request in queue.requests" :key="request.id" class="td-request-card">
           <div class="td-request-header">
             <span class="td-request-type">{{ request.requestType }}</span>
-            <span class="td-status-badge" :style="{ color: statusColor(request.status), borderColor: statusColor(request.status) }">
+            <span class="td-status-badge" :class="statusClass(request.status)">
               {{ normalizeQueueStatus(request.status) }}
             </span>
           </div>
@@ -534,6 +534,27 @@ onMounted(() => {
   padding: 0.25rem 0.625rem;
   font-size: var(--td-font-xs);
   font-weight: 700;
+  color: var(--td-text-secondary);
+}
+
+.td-status-badge--warning {
+  color: var(--td-color-warning);
+}
+
+.td-status-badge--info {
+  color: var(--td-color-info);
+}
+
+.td-status-badge--success {
+  color: var(--td-color-success);
+}
+
+.td-status-badge--error {
+  color: var(--td-color-error);
+}
+
+.td-status-badge--muted {
+  color: var(--td-text-tertiary);
 }
 
 .td-request-meta {

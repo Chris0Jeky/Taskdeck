@@ -393,7 +393,7 @@ const maxWipCount = computed(() => {
           >
             <div
               class="td-metrics__bar"
-              :style="{ height: `${(dp.completedCount / maxThroughput) * 100}%` }"
+              :style="{ '--td-bar-size': `${(dp.completedCount / maxThroughput) * 100}%` }"
               :title="`${dp.completedCount} completed`"
             />
             <span class="td-metrics__bar-label">{{ new Date(dp.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }}</span>
@@ -417,7 +417,7 @@ const maxWipCount = computed(() => {
             <div class="td-metrics__wip-bar-track">
               <div
                 class="td-metrics__wip-bar-fill"
-                :style="{ width: `${(wip.cardCount / maxWipCount) * 100}%` }"
+                :style="{ '--td-bar-size': `${(wip.cardCount / maxWipCount) * 100}%` }"
                 :class="{ 'td-metrics__wip-bar-fill--over': wip.wipLimit !== null && wip.cardCount > wip.wipLimit }"
               />
             </div>
@@ -695,6 +695,7 @@ const maxWipCount = computed(() => {
 .td-metrics__bar {
   width: 100%;
   max-width: 40px;
+  height: var(--td-bar-size, 0%);
   background: var(--td-color-ember);
   border-radius: var(--td-radius-sm) var(--td-radius-sm) 0 0;
   min-height: 4px;
@@ -741,6 +742,7 @@ const maxWipCount = computed(() => {
 
 .td-metrics__wip-bar-fill {
   height: 100%;
+  width: var(--td-bar-size, 0%);
   background: var(--td-color-ember);
   border-radius: var(--td-radius-sm);
   transition: width 0.3s ease;
