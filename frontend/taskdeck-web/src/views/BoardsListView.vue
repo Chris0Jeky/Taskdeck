@@ -90,7 +90,7 @@ function goToBoard(id: string) {
             <TdSkeleton width="70%" height="20px" />
             <TdSkeleton width="90%" height="12px" />
             <TdSkeleton width="50%" height="12px" />
-            <div style="margin-top: auto; padding-top: 0.75rem">
+            <div class="mt-auto pt-3">
               <TdSkeleton width="120px" height="10px" />
             </div>
           </div>

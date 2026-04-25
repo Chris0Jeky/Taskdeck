@@ -413,7 +413,7 @@ useKeyboardShortcuts([
             <div v-for="m in (n % 2 === 0 ? 3 : 2)" :key="m" class="td-board-skeleton__card">
               <TdSkeleton width="90%" height="14px" />
               <TdSkeleton width="60%" height="10px" />
-              <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem">
+              <div class="flex gap-2 mt-1">
                 <TdSkeleton width="48px" height="18px" />
                 <TdSkeleton width="48px" height="18px" />
               </div>
