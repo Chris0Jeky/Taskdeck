@@ -61,9 +61,6 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         bool hasActiveWebhooks)
     {
         bool hasCardMutation = operations.Any(op => CardMutatingActions.Contains(op.ActionType));
-        bool hasColumnMutation = operations.Any(op =>
-            string.Equals(op.TargetType, "column", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(op.ActionType, "create_column", StringComparison.OrdinalIgnoreCase));
         bool hasAnyOperation = operations.Count > 0;
 
         return new List<SideEffectRow>
