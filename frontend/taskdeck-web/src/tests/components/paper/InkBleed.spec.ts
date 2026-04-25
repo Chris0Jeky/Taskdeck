@@ -118,6 +118,22 @@ describe('InkBleed', () => {
     expect(wrapper.emitted('done')).toHaveLength(1)
   })
 
+  it('honors controlled phase changes under reduced motion', async () => {
+    installMatchMedia(true)
+    const wrapper = mount(InkBleed, { props: { phase: 'drop' } })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.classes()).toContain('ink-bleed--drop')
+
+    await wrapper.setProps({ phase: 'dried' })
+    expect(wrapper.classes()).toContain('ink-bleed--dried')
+    expect(wrapper.emitted('done')?.length ?? 0).toBeGreaterThan(0)
+
+    vi.advanceTimersByTime(5000)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.classes()).toContain('ink-bleed--dried')
+  })
+
   it('renders explicit phase=dried as final state without scheduling timers', () => {
     const wrapper = mount(InkBleed, { props: { phase: 'dried' } })
     expect(wrapper.classes()).toContain('ink-bleed--dried')

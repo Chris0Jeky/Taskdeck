@@ -105,19 +105,26 @@ function scheduleSequence(): void {
   }
 }
 
+function applyReducedPhase(next: InkBleedPhase): void {
+  clearTimers()
+  if (next === 'auto' || next === 'dried') {
+    const wasDried = currentPhase.value === 'dried'
+    setPhase('dried')
+    if (wasDried) emit('done')
+    return
+  }
+  setPhase(next)
+}
+
 /* --------------------------------------------------- lifecycle ----------- */
 
 onMounted(() => {
   isReducedMotion.value = detectInkBleedReducedMotion()
 
   if (isReducedMotion.value) {
-    // Short-circuit: no timer work, no phase transitions. Hold dried frame
-    // (initial render is already dried) and still complete the auto flow.
-    if (props.phase === 'auto' || props.phase === 'dried') {
-      emit('done')
-    } else {
-      setPhase(props.phase)
-    }
+    // Short-circuit timers, but still honor controlled phase updates so
+    // reduced-motion users see the same semantic state as animated users.
+    applyReducedPhase(props.phase)
     return
   }
 
@@ -135,8 +142,11 @@ onBeforeUnmount(() => {
 watch(
   () => props.phase,
   (next) => {
-    if (isReducedMotion.value) return
     clearTimers()
+    if (isReducedMotion.value) {
+      applyReducedPhase(next)
+      return
+    }
     if (next === 'auto') {
       scheduleSequence()
     } else {
