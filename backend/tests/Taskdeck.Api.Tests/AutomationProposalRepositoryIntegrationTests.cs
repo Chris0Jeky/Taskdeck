@@ -72,10 +72,11 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         var user = new User("ap-expiry-user", "ap-expiry@example.com", "hash");
         db.Users.Add(user);
 
-        // Create with minimum valid expiry, then force ExpiresAt to the past via raw SQL
+        // Create with minimum valid expiry, then force ExpiresAt to the past before saving.
         var expired = new AutomationProposal(
             ProposalSourceType.Queue, user.Id, "Will expire soon", RiskLevel.Low,
             $"corr-exp-{Guid.NewGuid():N}", expiryMinutes: 1);
+        SetExpiresAt(expired, DateTime.UtcNow.AddDays(-1));
 
         // Long expiry that should NOT appear
         var notExpired = new AutomationProposal(
@@ -84,15 +85,6 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
 
         db.AutomationProposals.AddRange(expired, notExpired);
         await db.SaveChangesAsync();
-
-        // Force the "expired" proposal's ExpiresAt to a past date.
-        // Use an explicit ISO 8601 string for the UPDATE so the value is stored in
-        // the same format EF Core SQLite uses for DateTime comparisons in LINQ queries.
-        // Parameterized DateTime values can format differently across platforms (Windows vs Linux).
-        var pastDateStr = DateTime.UtcNow.AddDays(-1).ToString("yyyy-MM-dd HH:mm:ss.fffffff");
-        await db.Database.ExecuteSqlRawAsync(
-            "UPDATE AutomationProposals SET ExpiresAt = {0} WHERE Id = {1}",
-            pastDateStr, expired.Id);
 
         // Clear the change tracker so the subsequent query reads fresh data from the database
         // rather than serving the stale tracked entity with the old ExpiresAt value.
@@ -396,5 +388,12 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
 
         // ExpiresAt is in the future, so strict < should NOT include it
         results.Should().NotContain(p => p.Id == proposal.Id);
+    }
+
+    private static void SetExpiresAt(AutomationProposal proposal, DateTime expiresAt)
+    {
+        typeof(AutomationProposal)
+            .GetProperty(nameof(AutomationProposal.ExpiresAt))!
+            .SetValue(proposal, expiresAt);
     }
 }

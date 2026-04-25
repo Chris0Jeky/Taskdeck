@@ -5,6 +5,8 @@ import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.v
 import { TdSkeleton } from '../components/ui'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { usePaperThemeStore } from '../store/paperThemeStore'
+import PaperTodayView from './paper/PaperTodayView.vue'
 import type {
   HomeRecommendedAction,
   TodayAgendaCard,
@@ -12,6 +14,7 @@ import type {
 } from '../types/workspace'
 
 const workspace = useWorkspaceStore()
+const paperTheme = usePaperThemeStore()
 
 const summary = computed(() => workspace.todaySummary)
 const onboarding = computed<WorkspaceOnboarding | null>(() => summary.value?.onboarding ?? workspace.onboarding)
@@ -208,7 +211,8 @@ onActivated(refreshTodaySummary)
 </script>
 
 <template>
-  <div class="td-today" role="region" aria-label="Today agenda">
+  <PaperTodayView v-if="paperTheme.isOn" />
+  <div v-else class="td-today" role="region" aria-label="Today agenda">
     <header class="td-today__hero td-panel">
       <div class="td-today__hero-copy">
         <span class="td-today__eyebrow" aria-hidden="true">Daily Agenda</span>
