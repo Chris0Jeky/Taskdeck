@@ -15,6 +15,7 @@ const mockCaptureStore = reactive({
 const orchestratorState = {
   captureStore: mockCaptureStore,
   items: ref<Array<{ id: string }>>([]),
+  activeBoardId: ref<string | null>(null),
   selectedItemId: ref<string | null>(null),
   loadInbox: vi.fn<() => Promise<void>>(),
   triageSelected: vi.fn<() => Promise<void>>(),
@@ -38,6 +39,7 @@ describe('PaperInboxView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     orchestratorState.items.value = []
+    orchestratorState.activeBoardId.value = null
     orchestratorState.selectedItemId.value = null
     orchestratorState.loadInbox.mockResolvedValue(undefined)
     orchestratorState.triageSelected.mockResolvedValue(undefined)
@@ -155,6 +157,62 @@ describe('PaperInboxView', () => {
       source: 'Typed',
     })
     expect((textarea.element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('defaults composer captures to the active board', async () => {
+    orchestratorState.activeBoardId.value = 'board-active'
+    mockBoardStore.boards = [{ id: 'board-active', name: 'Active board' }]
+
+    const wrapper = mount(PaperInboxView)
+    await flushPromises()
+    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    await textarea.setValue('Capture in board context')
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+      boardId: 'board-active',
+      text: 'Capture in board context',
+      source: 'Typed',
+    })
+  })
+
+  it('lets composer captures explicitly land outside the active board', async () => {
+    orchestratorState.activeBoardId.value = 'board-active'
+    mockBoardStore.boards = [{ id: 'board-active', name: 'Active board' }]
+
+    const wrapper = mount(PaperInboxView)
+    await flushPromises()
+    await wrapper.find('select[aria-label="Board picker"]').setValue('')
+    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    await textarea.setValue('Capture without board context')
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+      boardId: null,
+      text: 'Capture without board context',
+      source: 'Typed',
+    })
+  })
+
+  it('defaults nib captures to the active board', async () => {
+    orchestratorState.activeBoardId.value = 'board-active'
+
+    const wrapper = mount(PaperInboxView)
+    ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+    await wrapper.vm.$nextTick()
+
+    const textarea = wrapper.find('textarea[aria-label="Quick capture input"]')
+    await textarea.setValue('Quick note in board context')
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+      boardId: 'board-active',
+      text: 'Quick note in board context',
+      source: 'Typed',
+    })
   })
 
   it('preserves the composer draft when capture creation fails', async () => {

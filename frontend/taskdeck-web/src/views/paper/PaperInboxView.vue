@@ -32,6 +32,7 @@ let bleedTimer: ReturnType<typeof setTimeout> | null = null
 const {
   captureStore,
   items,
+  activeBoardId,
   selectedItemId,
   loadInbox,
   triageSelected,
@@ -73,7 +74,7 @@ async function dispatchCapture(text: string, opts: { boardId?: string | null } =
   captureSubmitting.value = true
   try {
     await captureStore.createItem({
-      boardId: opts.boardId ?? null,
+      boardId: Object.hasOwn(opts, 'boardId') ? opts.boardId ?? null : activeBoardId.value,
       text,
       source: 'Typed',
     })
@@ -205,6 +206,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       <PaperCaptureComposer
         v-show="variant === 'composer'"
         ref="composerRef"
+        :default-board-id="activeBoardId"
         :submitting="captureSubmitting"
         @submit="onComposerSubmit"
         @attachments-changed="onComposerAttachments"
