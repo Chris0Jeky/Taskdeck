@@ -181,6 +181,14 @@ public class ProposalHousekeepingWorkerTests
             throw new NotSupportedException();
         }
 
+        public Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(
+            string targetType,
+            string targetId,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
