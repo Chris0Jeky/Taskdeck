@@ -9,18 +9,18 @@ Establish current Taskdeck truth before editing code or docs.
 
 ## Read first
 
-1. `CLAUDE.md`
-2. `AGENTS.md`
-3. `docs/STATUS.md`
-4. `docs/IMPLEMENTATION_MASTERPLAN.md`
-5. `docs/GOLDEN_PRINCIPLES.md`
-6. `docs/ISSUE_EXECUTION_GUIDE.md`
-7. `docs/TESTING_GUIDE.md`
+1. `AGENTS.md`
+2. `docs/STATUS.md`
+3. `docs/IMPLEMENTATION_MASTERPLAN.md`
+4. `docs/GOLDEN_PRINCIPLES.md`
+5. `docs/ISSUE_EXECUTION_GUIDE.md`
+6. `docs/TESTING_GUIDE.md`
 
 Read when relevant:
 
 - `docs/START_HERE.md` for product-facing or UX work
 - `docs/GITHUB_PROJECT_AUTOMATION.md` for issue, PR, or project-ops work
+- `CLAUDE.md` only when comparing Claude-specific workflows or migrating Claude instructions
 - feature-specific docs for the touched slice
 
 ## Produce a working summary

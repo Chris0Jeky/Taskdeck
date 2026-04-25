@@ -1,0 +1,4 @@
+interface:
+  display_name: "Taskdeck Worktree Issue Worker"
+  short_description: "Implement one issue in an isolated worktree"
+  default_prompt: "Use $taskdeck-worktree-issue-worker to implement one Taskdeck issue from an isolated worktree with focused commits, tests, and PR handoff."
