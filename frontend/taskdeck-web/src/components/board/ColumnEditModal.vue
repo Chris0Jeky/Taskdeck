@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Column } from '../../types/board'
+import { logError } from '../../utils/errorReporting'
 
 const props = defineProps<{
   column: Column
@@ -50,7 +51,7 @@ async function handleSave() {
     emit('updated')
     emit('close')
   } catch (error) {
-    console.error('Failed to update column:', error)
+    logError('Failed to update column:', error)
   }
 }
 
@@ -67,7 +68,7 @@ async function handleDelete() {
     emit('updated')
     emit('close')
   } catch (error) {
-    console.error('Failed to delete column:', error)
+    logError('Failed to delete column:', error)
   }
 }
 

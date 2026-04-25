@@ -7,6 +7,7 @@ import CardItem from './CardItem.vue'
 import CardModal from './CardModal.vue'
 import ColumnEditModal from './ColumnEditModal.vue'
 import type { Column, Card, Label } from '../../types/board'
+import { logError } from '../../utils/errorReporting'
 
 const props = defineProps<{
   column: Column
@@ -66,7 +67,7 @@ async function createCard() {
   } catch (error) {
     const { message } = getErrorDisplay(error, 'Failed to create card')
     toast.error(message)
-    console.error('Failed to create card:', error)
+    logError('Failed to create card:', error)
   }
 }
 
@@ -120,7 +121,7 @@ async function handleDrop(event: DragEvent) {
       targetPosition
     )
   } catch (error) {
-    console.error('Failed to move card:', error)
+    logError('Failed to move card:', error)
   }
 }
 
@@ -151,7 +152,7 @@ async function handleCardDrop(targetCard: Card, event: DragEvent) {
       targetPosition
     )
   } catch (error) {
-    console.error('Failed to move card:', error)
+    logError('Failed to move card:', error)
   }
 }
 
@@ -173,7 +174,7 @@ async function handleCardMoveTo(card: Card, targetColumnId: string) {
       el.focus()
     }
   } catch (error) {
-    console.error('Failed to move card:', error)
+    logError('Failed to move card:', error)
   }
 }
 

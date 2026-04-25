@@ -3,6 +3,7 @@ import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
 import type { Card, CardCaptureProvenance, Label } from '../types/board'
 import type { CardComment } from '../types/comments'
+import { logError } from '../utils/errorReporting'
 
 export interface UseCardModalOptions {
   getCard: () => Card
@@ -154,7 +155,7 @@ export function useCardModal(options: UseCardModalOptions) {
       options.onUpdated()
       options.onClose()
     } catch (error) {
-      console.error('Failed to update card:', error)
+      logError('Failed to update card:', error)
     }
   }
 
@@ -176,7 +177,7 @@ export function useCardModal(options: UseCardModalOptions) {
       options.onUpdated()
       options.onClose()
     } catch (error) {
-      console.error('Failed to delete card:', error)
+      logError('Failed to delete card:', error)
     } finally {
       isDeleting.value = false
     }
@@ -217,7 +218,7 @@ export function useCardModal(options: UseCardModalOptions) {
         newCommentContent.value = ''
       }
     } catch (error) {
-      console.error('Failed to add comment:', error)
+      logError('Failed to add comment:', error)
     }
   }
 
@@ -245,7 +246,7 @@ export function useCardModal(options: UseCardModalOptions) {
       await boardStore.updateCardComment(card.value.boardId, card.value.id, commentId, { content })
       handleCancelEditComment()
     } catch (error) {
-      console.error('Failed to update comment:', error)
+      logError('Failed to update comment:', error)
     }
   }
 
@@ -261,7 +262,7 @@ export function useCardModal(options: UseCardModalOptions) {
     try {
       await boardStore.deleteCardComment(card.value.boardId, card.value.id, comment.id)
     } catch (error) {
-      console.error('Failed to delete comment:', error)
+      logError('Failed to delete comment:', error)
     }
   }
 

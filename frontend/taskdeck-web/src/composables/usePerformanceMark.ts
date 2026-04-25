@@ -15,6 +15,7 @@
  */
 
 import { ref, type Ref } from 'vue'
+import { logWarn, logError } from '../utils/errorReporting'
 
 /** Interaction latency budgets (milliseconds). */
 export const PERF_BUDGETS: Record<string, number> = {
@@ -86,14 +87,14 @@ export function usePerformanceMark(
       overBudget.value = budget != null ? measure.duration > budget : null
 
       if (overBudget.value) {
-        console.warn(
+        logWarn(
           `[perf] "${name}" took ${measure.duration.toFixed(1)}ms (budget: ${budget}ms)`,
         )
       }
     } catch (error) {
       // Missing start mark — caller error, but don't crash
       if (import.meta.env.DEV) {
-        console.error(
+        logError(
           `[perf] usePerformanceMark('${name}').end() called without a preceding start().`,
           error,
         )

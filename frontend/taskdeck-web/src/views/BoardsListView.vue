@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
+import { logError } from '../utils/errorReporting'
 import { TdSkeleton } from '../components/ui'
 
 const router = useRouter()
@@ -31,7 +32,7 @@ async function createBoard() {
     // Navigate to the new board
     router.push(`/boards/${board.id}`)
   } catch (error) {
-    console.error('Failed to create board:', error)
+    logError('Failed to create board:', error)
   }
 }
 

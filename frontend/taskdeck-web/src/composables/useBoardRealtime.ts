@@ -7,6 +7,7 @@ import {
 } from '@microsoft/signalr'
 import type { BoardPresenceSnapshot, BoardRealtimeEvent } from '../types/realtime'
 import { getToken } from '../utils/tokenStorage'
+import { logWarn } from '../utils/errorReporting'
 
 const BOARD_MUTATION_EVENT = 'boardMutation'
 const BOARD_PRESENCE_EVENT = 'boardPresence'
@@ -159,7 +160,7 @@ export function createBoardRealtimeController(
       try {
         await hubConnection.start()
       } catch (error) {
-        console.warn('SignalR board realtime unavailable, using polling fallback.', error)
+        logWarn('SignalR board realtime unavailable, using polling fallback.', error)
         startFallbackPolling(boardId)
         subscribedBoardId = boardId
         return

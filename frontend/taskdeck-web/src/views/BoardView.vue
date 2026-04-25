@@ -18,6 +18,7 @@ import { TdSkeleton } from '../components/ui'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
 import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
+import { logError } from '../utils/errorReporting'
 
 const route = useRoute()
 const router = useRouter()
@@ -132,7 +133,7 @@ onMounted(async () => {
     await boardStore.fetchBoard(boardId.value)
     await realtime.start(boardId.value)
   } catch (error) {
-    console.error('Failed to load board:', error)
+    logError('Failed to load board:', error)
   } finally {
     boardLoadPerf.end()
   }
@@ -156,7 +157,7 @@ watch(
       await boardStore.fetchBoard(boardId.value)
       await realtime.switchBoard(boardId.value)
     } catch (error) {
-      console.error('Failed to switch board:', error)
+      logError('Failed to switch board:', error)
     }
   }
 )
@@ -185,7 +186,7 @@ async function createColumn() {
     newColumnName.value = ''
     showColumnForm.value = false
   } catch (error) {
-    console.error('Failed to create column:', error)
+    logError('Failed to create column:', error)
   }
 }
 

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Label } from '../../types/board'
+import { logError } from '../../utils/errorReporting'
 
 const props = defineProps<{
   isOpen: boolean
@@ -87,7 +88,7 @@ async function handleSaveLabel() {
     cancelForm()
     emit('updated')
   } catch (error) {
-    console.error('Failed to save label:', error)
+    logError('Failed to save label:', error)
   }
 }
 
@@ -98,7 +99,7 @@ async function handleDeleteLabel(label: Label) {
     await boardStore.deleteLabel(props.boardId, label.id)
     emit('updated')
   } catch (error) {
-    console.error('Failed to delete label:', error)
+    logError('Failed to delete label:', error)
   }
 }
 

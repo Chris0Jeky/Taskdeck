@@ -17,6 +17,7 @@ import type {
   TraceActionPayload,
   TraceMetadata,
 } from '../types/trace'
+import { logWarn } from '../utils/errorReporting'
 
 let idCounter = 0
 function nextId(): string {
@@ -65,7 +66,7 @@ export function useTraceRecorder(): UseTraceRecorderReturn {
 
   function start(name: string): void {
     if (isRecording.value) {
-      console.warn('[trace-recorder] Already recording. Stop the current trace first.')
+      logWarn('[trace-recorder] Already recording. Stop the current trace first.')
       return
     }
 

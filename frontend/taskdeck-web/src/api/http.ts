@@ -4,6 +4,7 @@ import { createRequestId } from '../utils/requestId'
 import { isAuthRoutePath } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
 import * as tokenStorage from '../utils/tokenStorage'
+import { logError, logWarn } from '../utils/errorReporting'
 import {
   MAX_RETRIES,
   computeRetryDelay,
@@ -51,7 +52,16 @@ http.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
-      console.error('API Error:', error.response.data)
+      // Log only safe, non-sensitive details -- never the full error object,
+      // which includes error.config.headers (Authorization: Bearer ...).
+      const safeDetails = {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method,
+      }
+      logError('API Error:', safeDetails)
 
       // Handle 401 - clear session and redirect to login (skip in demo mode).
       // Callers can set `skipAuth401` on the request config to suppress this
@@ -66,9 +76,9 @@ http.interceptors.response.use(
         }
       }
     } else if (error.request) {
-      console.error('Network Error:', error.message)
+      logError('Network Error:', { message: error.message })
     } else {
-      console.error('Error:', error.message)
+      logError('Error:', { message: error.message })
     }
     return Promise.reject(error)
   }
@@ -108,7 +118,7 @@ http.interceptors.response.use(
     const delay = computeRetryDelay(error, attempt)
     if (import.meta.env.DEV) {
       const status = error.response?.status ?? 'network'
-      console.warn(
+      logWarn(
         `[http] retry ${attempt}/${MAX_RETRIES} for ${config.method?.toUpperCase()} ${config.url} ` +
           `after ${delay}ms (status=${status})`,
       )
