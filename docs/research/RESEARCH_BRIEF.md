@@ -64,8 +64,8 @@ Validated current state:
   lacks edit-before-approve and consistently grounded "why this proposal?"
   explanations.
 - Verified automated baseline in `docs/TESTING_GUIDE.md` is 7,865+ passing as of
-  2026-04-23. The 2026-04-24 audit-remediation wave claims about 186 additional
-  tests, but the test guide has not recertified a new combined total.
+  2026-04-25 (backend 5,060 + frontend unit 2,805 + E2E). Recertified after the
+  2026-04-24 audit-remediation wave (PRs `#960`–`#969`).
 
 Known source/doc conflict to handle carefully:
 

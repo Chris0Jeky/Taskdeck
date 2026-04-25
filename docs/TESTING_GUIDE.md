@@ -147,7 +147,7 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Options
 
 ### CLI Tests Restored (TST-58, `#853`/`#906`)
 
-CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite totalled approximately **78 tests across 10 files** at time of this wave (see [Current Verified Totals](#current-verified-totals-2026-04-23) for latest count of 82):
+CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite totalled approximately **78 tests across 10 files** at time of this wave (see [Current Verified Totals](#current-verified-totals-2026-04-25) for latest count of 82):
 
 | File | Tests |
 |------|-------|
@@ -1484,7 +1484,7 @@ New test coverage (~390+ new tests total):
 - **MEDIUM**: Key-existence oracle + modulo bias in API key generation (`#792`), capture DTO round-trip test (`#789`), history window denominator (`#790`), CancellationToken forwarding (`#787`)
 - Fixed test quality issues: misleading doc comments, weak assertions, non-thread-safe variables, redundant ARIA roles, missing screen reader announcements
 
-Backend suite total after this wave: **~3,460+ passing** (estimated at time of wave). Frontend suite total: **~1,891 passing** (estimated at time of wave). Combined: **~5,370+** (estimated at time of wave). See [Current Verified Totals](#current-verified-totals-2026-04-23) for latest recertified counts.
+Backend suite total after this wave: **~3,460+ passing** (estimated at time of wave). Frontend suite total: **~1,891 passing** (estimated at time of wave). Combined: **~5,370+** (estimated at time of wave). See [Current Verified Totals](#current-verified-totals-2026-04-25) for latest recertified counts.
 
 ### Test expansion wave (`#721`) completion
 

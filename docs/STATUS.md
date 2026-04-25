@@ -402,9 +402,9 @@ Batch merge of 7 PRs (`#800`, `#805`, `#811`, `#813`, `#815`, `#819`, `#820`) wi
 - SSO/OIDC integration with optional TOTP MFA (PR `#813`, MfaController, recovery codes, OIDC login)
 - Distributed caching with ICacheService (PR `#805`, InMemory/Redis/NoOp implementations, cache-aside pattern)
 
-Test suite recertified: backend 4,279 tests, frontend 2,245 tests, combined ~6,500+ passing.
+Test suite recertified: backend 4,279 tests, frontend 2,245 tests, combined ~6,500+ passing (2026-04-12). Latest recertification (2026-04-25): backend 5,060, frontend 2,805, combined 7,865+.
 
-Estimated totals after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave: backend ~4,530+, frontend ~2,463+, E2E 61+ new scenarios, combined ~7,070+ passing.
+Estimated totals after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave: backend ~4,530+, frontend ~2,463+, E2E 61+ new scenarios, combined ~7,070+ passing. Actuals after PRs `#960`–`#969` audit remediation wave: backend 5,060, frontend 2,805, combined 7,865+.
 
 ## Phase Progress (Reconciled)
 
@@ -948,7 +948,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-03-31 (recertified after PRs #588–#607 merge wave)
+Verification Date: 2026-04-25 (recertified after PRs #960–#969 audit-remediation wave)
 
 ### Backend (Executed)
 
@@ -956,12 +956,13 @@ Command:
 - `dotnet test backend/Taskdeck.sln -c Release -m:1`
 
 Result:
-- Domain: 357/357 passing
-- Application: 1193/1193 passing
-- API integration: 413/413 passing
-- CLI contract: 4/4 passing
+- Domain: 962/962 passing
+- Application: 2396/2396 passing
+- API integration: 1592/1594 passing (2 skipped)
+- CLI contract: 82/82 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 1975/1975 passing
+- Integration (Testcontainers): 20/20 passing
+- Backend Total: 5060/5062 passing (2 skipped)
 
 ### Frontend Unit + Build (Executed)
 
@@ -972,7 +973,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 1491/1491 passing (134 test files) — **stale**: post-wave count is 1592/1592 (~125 files); see `docs/TESTING_GUIDE.md` for latest estimates
+- Frontend unit: 2805/2805 passing (219 test files) — recertified 2026-04-25
 - Typecheck: passing
 - Production build: passing
 
