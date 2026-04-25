@@ -7,6 +7,23 @@ sandbox_mode = "workspace-write"
 [features]
 multi_agent = true
 
+[agents]
+max_threads = 10
+max_depth = 2
+job_max_runtime_seconds = 8000
+
+[agents.issue_worker]
+description = "Implement one Taskdeck issue in an isolated worktree. Use taskdeck-worktree-issue-worker, keep ownership narrow, commit small, test, open a PR, and self-review."
+nickname_candidates = ["IssueWorker", "WorktreeWorker", "PatchWorker"]
+
+[agents.pr_reviewer]
+description = "Perform a fresh adversarial review of a Taskdeck PR. Use taskdeck-pr-review-loop and focus on bugs, security, missing tests, docs drift, and merge risk."
+nickname_candidates = ["Reviewer", "ColdReview", "Adversary"]
+
+[agents.ci_recovery]
+description = "Triage failing CI, review comments, bot comments, and conflicts for a Taskdeck PR. Use taskdeck-ci-conflict-recovery."
+nickname_candidates = ["CIFixer", "Recovery", "Triage"]
+
 [shell_environment_policy]
 inherit = "all"
 
