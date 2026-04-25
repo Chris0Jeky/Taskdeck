@@ -5,9 +5,11 @@ using Taskdeck.Application.Services;
 namespace Taskdeck.Infrastructure.Services;
 
 /// <summary>
-/// Scans entities that lack vector embeddings and backfills them.
-/// Resumable: tracks which entities have been embedded via the vector index.
+/// Scans knowledge chunks and ensures they have vector embeddings.
+/// Idempotent: uses upsert so re-processing is safe across restarts.
 /// Failure-safe: individual item errors are logged and skipped, not rethrown.
+/// Note: currently loads all chunks per batch; a future optimization could
+/// track embedded status in the database to skip already-processed chunks.
 /// </summary>
 public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 {
@@ -38,25 +40,14 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: 0);
         }
 
-        // Get all knowledge chunks and check which ones need embedding
+        // Get all knowledge chunks. The current approach loads all chunks and
+        // re-upserts them (idempotent). A future optimization could track embedded
+        // status via a database flag or separate table to skip already-processed
+        // chunks. For small-to-medium collections (<100k) this is acceptable.
         var allChunks = await _chunkRepository.GetAllAsync(cancellationToken);
         var chunkList = allChunks.ToList();
 
-        // Check which chunks already have embeddings by testing presence in the vector index
-        var unembedded = new List<Domain.Entities.KnowledgeChunk>();
-        foreach (var chunk in chunkList)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var docId = $"chunk:{chunk.Id}";
-            // Query for exact match by upserting would overwrite, so we check count
-            // A simple approach: try to find the document by querying with a zero vector
-            // Better approach: maintain a metadata tag or separate tracking
-            // For now, we use a conservative approach -- always upsert (idempotent)
-            unembedded.Add(chunk);
-        }
-
-        var toProcess = unembedded.Take(batchSize).ToList();
+        var toProcess = chunkList.Take(batchSize).ToList();
         int processed = 0;
         int failed = 0;
 
@@ -106,7 +97,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        int remaining = Math.Max(0, unembedded.Count - batchSize);
+        int remaining = Math.Max(0, chunkList.Count - batchSize);
 
         _logger.LogInformation(
             "Embedding backfill batch complete: {Processed} processed, {Failed} failed, ~{Remaining} remaining",
