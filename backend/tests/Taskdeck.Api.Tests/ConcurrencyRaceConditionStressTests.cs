@@ -1015,10 +1015,10 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 observerEvents, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(2));
             afterLeave.Should().NotBeNull("at least one presence snapshot should arrive after leaves");
             var settledLeaveCount = afterLeave!.Members.Count;
-            settledLeaveCount.Should().BeLessThan(settledJoinCount,
-                "presence count should decrease after members leave");
-            settledLeaveCount.Should().BeGreaterOrEqualTo(1,
-                "the observer owner should always remain in presence");
+            settledLeaveCount.Should().BeInRange(
+                1,
+                actualJoined + 1 - actualLeft,
+                "presence after successful leaves should include the owner and no more than the remaining successfully joined members");
         }
         finally
         {
