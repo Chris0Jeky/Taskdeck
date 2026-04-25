@@ -1,4 +1,4 @@
-import { computed, ref, type Ref } from 'vue'
+import { computed, onScopeDispose, ref, type Ref } from 'vue'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type { TodaySummary } from '../types/workspace'
 
@@ -265,10 +265,32 @@ export interface UseTodayDossierOptions {
 export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   const workspace = useWorkspaceStore()
   const fixedNow = options.now instanceof Date ? options.now : null
+  const liveNow = ref(new Date())
+  let dayTimer: ReturnType<typeof setTimeout> | null = null
+
+  function scheduleNextDayTick() {
+    liveNow.value = new Date()
+    const nextDay = new Date(liveNow.value)
+    nextDay.setHours(24, 0, 0, 0)
+    const delay = Math.max(1_000, nextDay.getTime() - liveNow.value.getTime() + 1_000)
+    dayTimer = setTimeout(scheduleNextDayTick, delay)
+  }
+
+  if (!fixedNow && !options.now) {
+    scheduleNextDayTick()
+  }
+
+  onScopeDispose(() => {
+    if (dayTimer) {
+      clearTimeout(dayTimer)
+      dayTimer = null
+    }
+  })
+
   const now = computed<Date>(() => {
     if (fixedNow) return fixedNow
     if (options.now && 'value' in options.now) return options.now.value
-    return new Date()
+    return liveNow.value
   })
 
   const sealed = ref(false)

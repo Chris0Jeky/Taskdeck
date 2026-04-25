@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { formatLocalDossierDate } from '../../../../composables/useTodayDossier'
@@ -24,6 +24,10 @@ describe('PaperTodayView', () => {
     setActivePinia(createPinia())
     localStorage.clear()
     mockSessionStore.userId = 'user-1'
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('smoke renders the dossier with all 9 sections present', () => {
@@ -80,5 +84,18 @@ describe('PaperTodayView', () => {
     const localEvening = new Date(2026, 3, 25, 23, 30)
 
     expect(formatLocalDossierDate(localEvening)).toBe('2026-04-25')
+  })
+
+  it('rolls the dossier serial to the next local day in long-lived sessions', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 25, 23, 59, 59))
+    const wrapper = mount(PaperTodayView)
+
+    expect(wrapper.find('[data-testid="dossier-serial"]').text()).toContain('2026-04-25')
+
+    vi.advanceTimersByTime(2_000)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="dossier-serial"]').text()).toContain('2026-04-26')
   })
 })
