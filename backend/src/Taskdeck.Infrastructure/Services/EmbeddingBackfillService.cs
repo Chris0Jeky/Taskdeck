@@ -6,9 +6,9 @@ namespace Taskdeck.Infrastructure.Services;
 
 /// <summary>
 /// Scans knowledge chunks and ensures they have vector embeddings.
-/// Tracks progress via a process-local offset to avoid re-processing.
-/// Fetches only the next page and prunes stale vectors whose tracked chunks
-/// no longer exist in the repository.
+/// Tracks progress via a process-local created-at cursor to avoid re-processing.
+/// Fetches only newer pages and prunes stale vectors whose tracked chunks no
+/// longer exist in the repository.
 /// Failure-safe: individual item errors are logged and skipped, not rethrown.
 /// </summary>
 public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
@@ -25,7 +25,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     // Bounded: pruned when stale chunks are detected.
     private static readonly HashSet<Guid> _indexedChunkIds = new();
     private static readonly object _indexedLock = new();
-    private static int _processedChunkOffset;
+    private static DateTimeOffset? _processedThroughCreatedAt;
 
     public EmbeddingBackfillService(
         IVectorIndex vectorIndex,
@@ -46,7 +46,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         lock (_indexedLock)
         {
             _indexedChunkIds.Clear();
-            _processedChunkOffset = 0;
+            _processedThroughCreatedAt = null;
         }
     }
 
@@ -62,10 +62,10 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         await PruneStaleVectorsAsync(cancellationToken);
 
-        var processedOffset = GetProcessedChunkOffset();
+        var processedThrough = GetProcessedThroughCreatedAt();
 
         var toProcess = (await _chunkRepository.GetUnindexedBatchAsync(
-            processedOffset,
+            processedThrough,
             batchSize,
             cancellationToken)).ToList();
 
@@ -101,7 +101,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
 
         if (embeddable.Count == 0)
         {
-            AdvanceProcessedOffset(toProcess.Count);
+            AdvanceProcessedThrough(toProcess);
             var emptyRemaining = await CountRemainingAsync(cancellationToken);
             return new BackfillBatchResult(Processed: 0, Failed: 0, Remaining: emptyRemaining);
         }
@@ -123,7 +123,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             _logger.LogWarning(
                 "Batch embedding failed, falling back to individual embedding: {Error}",
                 ex.Message);
-            return await ProcessOneByOneAsync(embeddable, documentMap, cancellationToken);
+            return await ProcessOneByOneAsync(embeddable, toProcess, documentMap, cancellationToken);
         }
 
         int processed = 0;
@@ -211,7 +211,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        AdvanceProcessedOffset(toProcess.Count);
+        AdvanceProcessedThrough(toProcess);
         var remaining = await CountRemainingAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -279,6 +279,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     /// </summary>
     private async Task<BackfillBatchResult> ProcessOneByOneAsync(
         List<(Domain.Entities.KnowledgeChunk Chunk, string Text)> embeddable,
+        IReadOnlyList<Domain.Entities.KnowledgeChunk> batchChunks,
         Dictionary<Guid, Domain.Entities.KnowledgeDocument> documentMap,
         CancellationToken cancellationToken)
     {
@@ -317,7 +318,7 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
             }
         }
 
-        AdvanceProcessedOffset(embeddable.Count);
+        AdvanceProcessedThrough(batchChunks);
         var remaining = await CountRemainingAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -330,15 +331,15 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
     private async Task<int> CountRemainingAsync(CancellationToken cancellationToken)
     {
         return await _chunkRepository.CountUnindexedAsync(
-            GetProcessedChunkOffset(),
+            GetProcessedThroughCreatedAt(),
             cancellationToken);
     }
 
-    private static int GetProcessedChunkOffset()
+    private static DateTimeOffset? GetProcessedThroughCreatedAt()
     {
         lock (_indexedLock)
         {
-            return _processedChunkOffset;
+            return _processedThroughCreatedAt;
         }
     }
 
@@ -351,11 +352,16 @@ public sealed class EmbeddingBackfillService : IEmbeddingBackfillService
         }
     }
 
-    private static void AdvanceProcessedOffset(int count)
+    private static void AdvanceProcessedThrough(IReadOnlyList<Domain.Entities.KnowledgeChunk> chunks)
     {
+        if (chunks.Count == 0)
+            return;
+
+        var maxCreatedAt = chunks.Max(c => c.CreatedAt);
         lock (_indexedLock)
         {
-            _processedChunkOffset += count;
+            if (!_processedThroughCreatedAt.HasValue || maxCreatedAt > _processedThroughCreatedAt.Value)
+                _processedThroughCreatedAt = maxCreatedAt;
         }
     }
 

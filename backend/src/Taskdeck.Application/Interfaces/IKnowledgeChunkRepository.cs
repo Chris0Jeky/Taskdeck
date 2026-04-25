@@ -5,7 +5,7 @@ namespace Taskdeck.Application.Interfaces;
 public interface IKnowledgeChunkRepository : IRepository<KnowledgeChunk>
 {
     Task<IEnumerable<KnowledgeChunk>> GetUnindexedBatchAsync(
-        int processedOffset,
+        DateTimeOffset? createdAfter,
         int batchSize,
         CancellationToken cancellationToken = default);
 
@@ -14,7 +14,7 @@ public interface IKnowledgeChunkRepository : IRepository<KnowledgeChunk>
         CancellationToken cancellationToken = default);
 
     Task<int> CountUnindexedAsync(
-        int processedOffset,
+        DateTimeOffset? createdAfter,
         CancellationToken cancellationToken = default);
 
     Task<IEnumerable<KnowledgeChunk>> GetByDocumentIdAsync(

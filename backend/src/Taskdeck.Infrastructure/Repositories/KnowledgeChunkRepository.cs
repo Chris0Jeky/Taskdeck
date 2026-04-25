@@ -12,16 +12,17 @@ public class KnowledgeChunkRepository : Repository<KnowledgeChunk>, IKnowledgeCh
     }
 
     public async Task<IEnumerable<KnowledgeChunk>> GetUnindexedBatchAsync(
-        int processedOffset,
+        DateTimeOffset? createdAfter,
         int batchSize,
         CancellationToken cancellationToken = default)
     {
-        var skip = Math.Max(0, processedOffset);
+        var query = _dbSet.AsQueryable();
+        if (createdAfter.HasValue)
+            query = query.Where(c => c.CreatedAt > createdAfter.Value);
 
-        return await _dbSet
+        return await query
             .OrderBy(c => c.CreatedAt)
             .ThenBy(c => c.Id)
-            .Skip(skip)
             .Take(batchSize)
             .ToListAsync(cancellationToken);
     }
@@ -42,11 +43,14 @@ public class KnowledgeChunkRepository : Repository<KnowledgeChunk>, IKnowledgeCh
     }
 
     public async Task<int> CountUnindexedAsync(
-        int processedOffset,
+        DateTimeOffset? createdAfter,
         CancellationToken cancellationToken = default)
     {
-        var total = await _dbSet.CountAsync(cancellationToken);
-        return Math.Max(0, total - Math.Max(0, processedOffset));
+        var query = _dbSet.AsQueryable();
+        if (createdAfter.HasValue)
+            query = query.Where(c => c.CreatedAt > createdAfter.Value);
+
+        return await query.CountAsync(cancellationToken);
     }
 
     public async Task<IEnumerable<KnowledgeChunk>> GetByDocumentIdAsync(

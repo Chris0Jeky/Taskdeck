@@ -2,6 +2,7 @@ using FluentAssertions;
 using Moq;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Tests.TestUtilities;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Services;
 using Taskdeck.Tests.Support;
@@ -84,23 +85,23 @@ public class EmbeddingBackfillServiceTests
 
         _chunkRepoMock
             .Setup(r => r.GetUnindexedBatchAsync(
-                It.IsAny<int>(),
+                It.IsAny<DateTimeOffset?>(),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((int processedOffset, int batchSize, CancellationToken _) =>
+            .ReturnsAsync((DateTimeOffset? createdAfter, int batchSize, CancellationToken _) =>
                 chunks
                     .OrderBy(c => c.CreatedAt)
                     .ThenBy(c => c.Id)
-                    .Skip(Math.Max(0, processedOffset))
+                    .Where(c => !createdAfter.HasValue || c.CreatedAt > createdAfter.Value)
                     .Take(batchSize)
                     .ToList());
 
         _chunkRepoMock
             .Setup(r => r.CountUnindexedAsync(
-                It.IsAny<int>(),
+                It.IsAny<DateTimeOffset?>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((int processedOffset, CancellationToken _) =>
-                Math.Max(0, chunks.Count - Math.Max(0, processedOffset)));
+            .ReturnsAsync((DateTimeOffset? createdAfter, CancellationToken _) =>
+                chunks.Count(c => !createdAfter.HasValue || c.CreatedAt > createdAfter.Value));
     }
 
     [Fact]
@@ -186,6 +187,47 @@ public class EmbeddingBackfillServiceTests
     }
 
     [Fact]
+    public async Task ProcessBatchAsync_CreatedAtCursorDoesNotSkipNextChunk_WhenEarlierChunkIsDeleted()
+    {
+        var docId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var chunks = new List<KnowledgeChunk>
+        {
+            new(docId, 0, "chunk zero content"),
+            new(docId, 1, "chunk one content"),
+            new(docId, 2, "chunk two content")
+        };
+
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            SetCreatedAt(chunks[i], createdAt.AddSeconds(i));
+        }
+
+        SetupChunkBatch(chunks);
+        SetupDocumentLookup(docId, userId);
+
+        var fakeEmbedding = new ReadOnlyMemory<float>(new float[] { 0.5f });
+        _embeddingGeneratorMock
+            .Setup(g => g.GenerateBatchAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> texts, CancellationToken _) =>
+                texts.Select(_ => fakeEmbedding).ToList());
+
+        await _sut.ProcessBatchAsync(batchSize: 1);
+        chunks.RemoveAt(0);
+
+        var secondResult = await _sut.ProcessBatchAsync(batchSize: 1);
+
+        secondResult.Processed.Should().Be(1);
+        _vectorIndexMock.Verify(
+            v => v.UpsertBatchAsync(
+                It.Is<IReadOnlyList<VectorDocument>>(docs => docs.Any(d => d.DocumentId == $"chunk:{chunks[0].Id}")),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "backfill progress should use a stable cursor instead of a table-size-dependent offset");
+    }
+
+    [Fact]
     public async Task ProcessBatchAsync_UsesUnindexedBatchRepositoryInsteadOfFullTableScan()
     {
         var docId = Guid.NewGuid();
@@ -207,7 +249,7 @@ public class EmbeddingBackfillServiceTests
 
         _chunkRepoMock.Verify(
             r => r.GetUnindexedBatchAsync(
-                It.Is<int>(offset => offset == 0),
+                It.Is<DateTimeOffset?>(cursor => cursor == null),
                 2,
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -352,5 +394,15 @@ public class EmbeddingBackfillServiceTests
             "userId must be included for access control");
         capturedMetadata["boardId"].Should().Be(boardId.ToString(),
             "boardId must be included when the document belongs to a board");
+    }
+
+    private static void SetCreatedAt(Entity entity, DateTimeOffset createdAt)
+    {
+        var property = typeof(Entity).GetProperty(nameof(Entity.CreatedAt))
+            ?? throw new InvalidOperationException("Expected Entity.CreatedAt property to exist.");
+        var setter = property.GetSetMethod(nonPublic: true)
+            ?? throw new InvalidOperationException("Expected Entity.CreatedAt setter to exist.");
+
+        setter.Invoke(entity, [createdAt]);
     }
 }
