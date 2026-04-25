@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
+import { usePaperThemeStore } from '../store/paperThemeStore'
 import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import { createBoardRealtimeController } from '../composables/useBoardRealtime'
 import { useBoardDragDrop } from '../composables/useBoardDragDrop'
@@ -14,6 +15,7 @@ import BoardCanvas from '../components/board/BoardCanvas.vue'
 import BoardDialogHost from '../components/board/BoardDialogHost.vue'
 import FilterPanel from '../components/board/FilterPanel.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import PaperBoardView from './paper/PaperBoardView.vue'
 import { TdSkeleton } from '../components/ui'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
@@ -24,6 +26,8 @@ const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
 const sessionStore = useSessionStore()
+const paperTheme = usePaperThemeStore()
+const paperOn = computed(() => paperTheme.isOn)
 
 const newColumnName = ref('')
 const showColumnForm = ref(false)
@@ -316,7 +320,8 @@ useKeyboardShortcuts([
 </script>
 
 <template>
-  <div class="min-h-screen bg-surface">
+  <PaperBoardView v-if="paperOn" />
+  <div v-else class="min-h-screen bg-surface">
     <!-- Header -->
     <div class="bg-surface-container border-b border-outline-variant/15">
       <div class="max-w-full px-4 sm:px-6 lg:px-8 py-4">
