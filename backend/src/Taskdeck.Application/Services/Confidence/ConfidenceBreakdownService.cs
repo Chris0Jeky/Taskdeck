@@ -56,6 +56,18 @@ public sealed class ConfidenceBreakdownService : IConfidenceBreakdownService
         "assign", "attach", "reorder", "apply"
     };
 
+    /// <summary>
+    /// Component weights for the overall score computation (must sum to 1.0).
+    /// Static to avoid allocation on every call.
+    /// </summary>
+    private static readonly Dictionary<string, double> ComponentWeights = new()
+    {
+        [ComponentKeys.PatternMatch] = 0.30,
+        [ComponentKeys.Reach] = 0.20,
+        [ComponentKeys.Reversibility] = 0.35,
+        [ComponentKeys.Recency] = 0.15
+    };
+
     private readonly IUnitOfWork _unitOfWork;
 
     public ConfidenceBreakdownService(IUnitOfWork unitOfWork)
@@ -66,7 +78,6 @@ public sealed class ConfidenceBreakdownService : IConfidenceBreakdownService
     /// <inheritdoc />
     public async Task<Result<ConfidenceBreakdownDto>> GetBreakdownAsync(
         Guid proposalId,
-        Guid userId,
         CancellationToken cancellationToken = default)
     {
         var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId, cancellationToken);
@@ -126,7 +137,7 @@ public sealed class ConfidenceBreakdownService : IConfidenceBreakdownService
     /// <summary>
     /// Reach: how many entities are affected. Single-entity proposals score high (focused);
     /// multi-entity proposals score lower (broader blast radius).
-    /// Score = 1.0 / (1.0 + log2(distinctTargets))
+    /// Score = 2.0 / (2.0 + log2(distinctTargets))
     /// </summary>
     internal static double ComputeReach(AutomationProposal proposal)
     {
@@ -146,7 +157,7 @@ public sealed class ConfidenceBreakdownService : IConfidenceBreakdownService
 
         // Score inversely proportional to the number of affected entities.
         // 1 target => 1.0, 2 targets => ~0.67, 4 targets => ~0.5, 8 targets => ~0.4
-        var score = 1.0 / (1.0 + Math.Log2(distinctTargets));
+        var score = 2.0 / (2.0 + Math.Log2(distinctTargets));
         return Math.Clamp(score, 0.0, 1.0);
     }
 
@@ -231,21 +242,12 @@ public sealed class ConfidenceBreakdownService : IConfidenceBreakdownService
         if (components.Count == 0)
             return 0.0;
 
-        // Component weights (must sum to 1.0)
-        var weights = new Dictionary<string, double>
-        {
-            [ComponentKeys.PatternMatch] = 0.30,
-            [ComponentKeys.Reach] = 0.20,
-            [ComponentKeys.Reversibility] = 0.35,
-            [ComponentKeys.Recency] = 0.15
-        };
-
         double weightedSum = 0.0;
         double totalWeight = 0.0;
 
         foreach (var component in components)
         {
-            if (weights.TryGetValue(component.Key, out var weight))
+            if (ComponentWeights.TryGetValue(component.Key, out var weight))
             {
                 weightedSum += component.Value * weight;
                 totalWeight += weight;
