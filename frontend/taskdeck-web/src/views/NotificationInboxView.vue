@@ -276,17 +276,13 @@ watch([unreadOnly, activeBoardId], () => {
     >
       <div
         role="presentation"
-        :style="{ height: `${notifTotalSize}px`, width: '100%', position: 'relative' }"
+        class="td-virtual-scroll-sizer"
+        :style="{ '--td-virtual-size': `${notifTotalSize}px` }"
       >
         <div
           role="presentation"
-          :style="{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            transform: `translateY(${notifTranslateY}px)`,
-          }"
+          class="td-virtual-scroll-offset"
+          :style="{ '--td-virtual-offset': `${notifTranslateY}px` }"
         >
           <div
             v-for="virtualRow in notifVirtualRows"
