@@ -74,7 +74,7 @@ export const usePaperThemeStore = defineStore('paperTheme', {
      * Also wires the prefers-color-scheme listener when in auto mode.
      */
     apply() {
-      applyBodyClass(this.activeClass)
+      applyBodyClass(resolveBodyClass(this.mode))
       this._wireAutoListener()
     },
     setMode(mode: PaperMode) {

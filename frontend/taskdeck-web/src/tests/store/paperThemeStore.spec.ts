@@ -167,6 +167,19 @@ describe('paperThemeStore', () => {
     expect(document.body.classList.contains('paper-night')).toBe(false)
   })
 
+  it('re-resolves auto mode whenever apply() runs after an OS theme change', () => {
+    const mq = setMatchMediaDark(false)
+    const store = usePaperThemeStore()
+    store.setMode('auto')
+    expect(document.body.classList.contains('paper')).toBe(true)
+
+    mq.fire(true)
+    store.apply()
+
+    expect(document.body.classList.contains('paper-night')).toBe(true)
+    expect(document.body.classList.contains('paper')).toBe(false)
+  })
+
   it('cleans up the auto listener when leaving auto mode', () => {
     const mq = setMatchMediaDark(false)
     const store = usePaperThemeStore()
