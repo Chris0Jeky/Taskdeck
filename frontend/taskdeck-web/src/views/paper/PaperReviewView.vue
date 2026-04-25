@@ -105,12 +105,12 @@ const filteredVisibleProposals = computed(() => {
 })
 
 const activeProposal = computed<ApiProposal | null>(() => {
-  if (hashProposalId.value) {
-    const found = filteredVisibleProposals.value.find((p) => p.id === hashProposalId.value)
-    if (found) return found
-  }
   if (explicitActiveId.value) {
     const found = filteredVisibleProposals.value.find((p) => p.id === explicitActiveId.value)
+    if (found) return found
+  }
+  if (hashProposalId.value) {
+    const found = filteredVisibleProposals.value.find((p) => p.id === hashProposalId.value)
     if (found) return found
   }
   // Default to the first pending-review item in the queue.

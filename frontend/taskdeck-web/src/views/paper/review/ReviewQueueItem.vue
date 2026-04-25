@@ -36,13 +36,12 @@ const formattedConfidence = computed(() =>
 </script>
 
 <template>
-  <a
+  <button
+    type="button"
     :class="classes"
-    href="#"
-    role="button"
     :aria-pressed="active"
     :data-serial="serial"
-    @click.prevent="emit('select')"
+    @click="emit('select')"
   >
     <div class="paper-review-q__row">
       <span class="tk-serial paper-review-q__serial">{{ serial }}</span>
@@ -58,17 +57,22 @@ const formattedConfidence = computed(() =>
       <span aria-hidden="true"> · </span>
       <span>{{ reach }}</span>
     </div>
-  </a>
+  </button>
 </template>
 
 <style scoped>
 .paper-review-q {
   display: block;
+  width: 100%;
   padding: 12px 18px;
-  text-decoration: none;
-  color: inherit;
+  border: 0;
   border-left: 2px solid transparent;
+  text-decoration: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
   background: transparent;
+  cursor: pointer;
   transition: background 200ms ease, opacity 200ms ease;
 }
 .paper-review-q:focus-visible {

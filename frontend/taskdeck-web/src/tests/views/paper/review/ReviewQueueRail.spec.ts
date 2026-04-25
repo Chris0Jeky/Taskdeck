@@ -74,6 +74,13 @@ describe('ReviewQueueRail', () => {
     expect(wrapper.emitted('select')?.[0]).toEqual(['p-42'])
   })
 
+  it('renders queue rows as native buttons for keyboard activation', () => {
+    const wrapper = mountRail({ items: [makeItem({ id: 'p-42' })] })
+    const row = wrapper.find('.paper-review-q')
+    expect(row.element.tagName).toBe('BUTTON')
+    expect(row.attributes('type')).toBe('button')
+  })
+
   it('filter pill "Mine" hides items not flagged as mine', async () => {
     const items = [
       makeItem({ id: 'a', mine: true, title: 'Mine 1' }),
