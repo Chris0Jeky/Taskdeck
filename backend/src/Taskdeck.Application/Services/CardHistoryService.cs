@@ -1,3 +1,4 @@
+using System.Globalization;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -15,6 +16,7 @@ namespace Taskdeck.Application.Services;
 public class CardHistoryService : ICardHistoryService
 {
     private const int MaxAuditEntriesPerCard = 200;
+    private const int MaxTotalHistoryRows = 500;
 
     private readonly IUnitOfWork _unitOfWork;
 
@@ -105,9 +107,10 @@ public class CardHistoryService : ICardHistoryService
                 CardHistoryStatus.Pending));
         }
 
-        // Sort by timestamp descending (newest first), then assign serial numbers.
+        // Sort by timestamp descending (newest first), cap total rows, then assign serial numbers.
         var sorted = allEntries
             .OrderByDescending(e => e.Timestamp)
+            .Take(MaxTotalHistoryRows)
             .ToList();
 
         var rows = new List<CardHistoryRowDto>(sorted.Count);
@@ -168,24 +171,24 @@ public class CardHistoryService : ICardHistoryService
         if (timestampDate == nowDate)
         {
             // Same day: just time
-            return utcTimestamp.ToString("H:mm");
+            return utcTimestamp.ToString("H:mm", CultureInfo.InvariantCulture);
         }
 
         if (timestampDate == nowDate.AddDays(-1))
         {
             // Yesterday
-            return $"yest {utcTimestamp:H:mm}";
+            return $"yest {utcTimestamp.ToString("H:mm", CultureInfo.InvariantCulture)}";
         }
 
         var daysDiff = (nowDate - timestampDate).Days;
         if (daysDiff >= 2 && daysDiff <= 6)
         {
             // This week (2-6 days ago): abbreviated day name + time
-            return $"{utcTimestamp:ddd} {utcTimestamp:H:mm}";
+            return $"{utcTimestamp.ToString("ddd", CultureInfo.InvariantCulture)} {utcTimestamp.ToString("H:mm", CultureInfo.InvariantCulture)}";
         }
 
         // Older: abbreviated month + day
-        return $"{utcTimestamp:MMM} {utcTimestamp:dd}";
+        return $"{utcTimestamp.ToString("MMM", CultureInfo.InvariantCulture)} {utcTimestamp.ToString("dd", CultureInfo.InvariantCulture)}";
     }
 
     private static string FormatAuditEvent(AuditLog log)
