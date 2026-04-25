@@ -17,12 +17,24 @@ import PaperTopBar from '../paper/PaperTopBar.vue'
 import ErrorBoundary from '../ErrorBoundary.vue'
 import type { CommandItem } from './ShellCommandPalette.vue'
 
+type SidebarNavItem = {
+  label: string
+  icon: string
+  path: string
+  keywords?: string
+}
+
+type SidebarRef = {
+  availableNavItems: SidebarNavItem[]
+  toggleMobileMenu?: () => void
+}
+
 const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
 
-const sidebarRef = ref<InstanceType<typeof ShellSidebar> | null>(null)
+const sidebarRef = ref<SidebarRef | null>(null)
 
 const showCommandPalette = ref(false)
 const showKeyboardHelp = ref(false)
@@ -174,6 +186,7 @@ onUnmounted(() => {
   <div class="td-shell" :class="{ 'td-shell--paper': paperTheme.isOn }">
     <PaperSidebar
       v-if="paperTheme.isOn"
+      ref="sidebarRef"
       @logout="handleLogout"
       @open-shortcuts="showKeyboardHelp = true"
     />
@@ -189,11 +202,11 @@ onUnmounted(() => {
     <div class="td-main-container">
       <OfflineBanner />
       <SwUpdatePrompt />
-      <div v-if="!paperTheme.isOn" class="td-mobile-topbar">
+      <div class="td-mobile-topbar">
         <button
           class="td-mobile-topbar__hamburger"
           aria-label="Open navigation menu"
-          @click="sidebarRef?.toggleMobileMenu()"
+          @click="sidebarRef?.toggleMobileMenu?.()"
         >
           <span class="material-symbols-outlined">menu</span>
         </button>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { useRoute, type RouteLocationMatched } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
 import PaperIcon from './PaperIcon.vue'
@@ -72,24 +72,14 @@ const avatarLetter = computed(() => {
   return name.trim().charAt(0).toUpperCase() || 'D'
 })
 
+const commandModifierLabel = computed(() => {
+  if (typeof navigator === 'undefined') return 'Ctrl'
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? '⌘' : 'Ctrl'
+})
+
 function handlePaletteClick() {
   emit('palette:open')
 }
-
-function handleKeydown(event: KeyboardEvent) {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-    event.preventDefault()
-    emit('palette:open')
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
-})
 </script>
 
 <template>
@@ -116,7 +106,7 @@ onUnmounted(() => {
       <PaperIcon name="search" />
       <span class="paper-topbar__palette-label">Go anywhere &middot; capture &middot; ask</span>
       <span class="paper-topbar__palette-spacer" />
-      <PaperKbd>&#8984;</PaperKbd>
+      <PaperKbd>{{ commandModifierLabel }}</PaperKbd>
       <PaperKbd>K</PaperKbd>
     </button>
 

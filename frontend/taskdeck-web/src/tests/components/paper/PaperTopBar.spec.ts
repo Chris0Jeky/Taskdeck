@@ -85,16 +85,21 @@ describe('PaperTopBar', () => {
     expect(wrapper.emitted('palette:open')).toHaveLength(1)
   })
 
-  it('emits palette:open on global Ctrl+K keydown', async () => {
+  it('does not own the global Ctrl+K keydown shortcut', async () => {
     wrapper = mountTopBar()
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
-    expect(wrapper.emitted('palette:open')).toHaveLength(1)
+    expect(wrapper.emitted('palette:open')).toBeUndefined()
   })
 
-  it('emits palette:open on global Cmd+K keydown', async () => {
+  it('does not own the global Cmd+K keydown shortcut', async () => {
     wrapper = mountTopBar()
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'K', metaKey: true }))
-    expect(wrapper.emitted('palette:open')).toHaveLength(1)
+    expect(wrapper.emitted('palette:open')).toBeUndefined()
+  })
+
+  it('shows the platform command modifier label in the palette trigger', () => {
+    wrapper = mountTopBar()
+    expect(wrapper.find('.paper-topbar__palette').text()).toContain('Ctrl')
   })
 
   it('shows the avatar with the first letter of the session username', () => {

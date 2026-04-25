@@ -181,4 +181,49 @@ describe('PaperSidebar', () => {
     await shortcutsLink?.trigger('click')
     expect(wrapper.emitted('open-shortcuts')).toHaveLength(1)
   })
+
+  it('does not mark prefix-matched sibling routes as active', () => {
+    mockRoute.path = '/workspace/boards-archive'
+    const wrapper = mountSidebar()
+    const boardsLink = wrapper.findAll('a.paper-sidebar__item')
+      .find((l) => l.attributes('href') === '/workspace/boards')
+
+    expect(boardsLink?.classes()).not.toContain('paper-sidebar__item--active')
+    expect(boardsLink?.attributes('aria-current')).toBeUndefined()
+  })
+
+  it('exposes command-palette navigation items with icon fields', () => {
+    const wrapper = mountSidebar()
+    const exposed = wrapper.vm as unknown as {
+      availableNavItems: Array<{ label: string; icon: string; path: string; keywords?: string }>
+    }
+
+    expect(exposed.availableNavItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'Boards', icon: 'B', path: '/workspace/boards' }),
+        expect.objectContaining({ label: 'Inbox', icon: 'I', path: '/workspace/inbox' }),
+      ]),
+    )
+    expect(exposed.availableNavItems.some((item) => item.path.startsWith('#'))).toBe(false)
+  })
+
+  it('exposes and closes the mobile menu controls', async () => {
+    const wrapper = mountSidebar()
+    const exposed = wrapper.vm as unknown as {
+      mobileOpen: boolean
+      toggleMobileMenu: () => void
+    }
+
+    exposed.toggleMobileMenu()
+    await wrapper.vm.$nextTick()
+
+    expect(exposed.mobileOpen).toBe(true)
+    expect(wrapper.find('.paper-sidebar--mobile-open').exists()).toBe(true)
+
+    const boardsLink = wrapper.findAll('a.paper-sidebar__item')
+      .find((l) => l.attributes('href') === '/workspace/boards')
+    await boardsLink?.trigger('click')
+
+    expect(exposed.mobileOpen).toBe(false)
+  })
 })
