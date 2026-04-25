@@ -60,7 +60,7 @@ const mobileOpen = ref(false)
 const primaryItems: PaperNavItem[] = [
   { id: 'home', label: 'Home', glyph: 'H', path: '/workspace/home', keywords: 'home start summary workspace' },
   { id: 'today', label: 'Today', glyph: 'T', path: '/workspace/today', keywords: 'today agenda daily focus overdue blocked' },
-  { id: 'review', label: 'Review', glyph: 'R', path: '/workspace/review', badgeKey: 'review', flag: 'newAutomation', keywords: 'review proposals automations approve reject execute' },
+  { id: 'review', label: 'Review', glyph: 'R', path: '/workspace/review', badgeKey: 'review', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: 'review proposals automations approve reject execute' },
   { id: 'boards', label: 'Boards', glyph: 'B', path: '/workspace/boards', keywords: 'boards projects workspace' },
   { id: 'inbox', label: 'Inbox', glyph: 'I', path: '/workspace/inbox', badgeKey: 'inbox', keywords: 'inbox captures triage' },
 ]
@@ -68,16 +68,16 @@ const primaryItems: PaperNavItem[] = [
 const workbenchItems: PaperNavItem[] = [
   { id: 'views', label: 'Views', glyph: 'V', path: '/workspace/views', keywords: 'views saved filters shortcuts blocked due week review' },
   { id: 'notifications', label: 'Notifications', glyph: 'N', path: '/workspace/notifications', keywords: 'notifications updates mention assignment' },
-  { id: 'chat', label: 'Chat', glyph: 'C', path: '/workspace/automations/chat', flag: 'newAutomation', keywords: 'chat automation assistant board context' },
+  { id: 'chat', label: 'Chat', glyph: 'C', path: '/workspace/automations/chat', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: 'chat automation assistant board context' },
   { id: 'calendar', label: 'Calendar', glyph: 'D', path: '/workspace/calendar', keywords: 'calendar timeline planning due dates schedule deadlines' },
   { id: 'metrics', label: 'Metrics', glyph: 'M', path: '/workspace/metrics', keywords: 'metrics analytics throughput cycle time wip blocked dashboard' },
   { id: 'integrations', label: 'Integrations', glyph: 'X', path: '/workspace/integrations', keywords: 'integrations connectors inbound outbound webhook import' },
-  { id: 'activity', label: 'Activity', glyph: 'Y', path: '/workspace/activity', flag: 'newActivity', keywords: 'activity audit history events' },
-  { id: 'ops', label: 'Ops', glyph: 'O', path: '/workspace/ops/cli', flag: 'newOps', keywords: 'ops logs cli endpoints' },
+  { id: 'activity', label: 'Activity', glyph: 'Y', path: '/workspace/activity', flag: 'newActivity', workbenchBypassesFlag: true, keywords: 'activity audit history events' },
+  { id: 'ops', label: 'Ops', glyph: 'O', path: '/workspace/ops/cli', flag: 'newOps', workbenchBypassesFlag: true, keywords: 'ops logs cli endpoints' },
 ]
 
 const metaItems: PaperNavItem[] = [
-  { id: 'settings', label: 'Settings', glyph: 'S', path: '/workspace/settings/profile', flag: 'newAuth', keywords: 'settings profile password account' },
+  { id: 'settings', label: 'Settings', glyph: 'S', path: '/workspace/settings/profile', flag: 'newAuth', workbenchBypassesFlag: true, keywords: 'settings profile password account' },
   { id: 'api-keys', label: 'API Keys', glyph: 'K', path: '/workspace/settings/api-keys', keywords: 'api keys mcp tokens authentication' },
   { id: 'preferences', label: 'Preferences', glyph: 'P', path: '/workspace/settings/preferences', keywords: 'preferences notifications' },
   { id: 'shortcuts', label: 'Shortcuts', glyph: '?', path: '#shortcuts' },

@@ -154,6 +154,19 @@ describe('PaperSidebar', () => {
     expect(hrefs).toContain('/workspace/boards')
   })
 
+  it('keeps workbench bypass routes available when their feature flags are disabled', () => {
+    mockWorkspace.mode = 'workbench'
+    mockFeatureFlags.isEnabled = vi.fn(() => false)
+    const wrapper = mountSidebar()
+
+    const hrefs = wrapper.findAll('a.paper-sidebar__item').map((l) => l.attributes('href'))
+    expect(hrefs).toContain('/workspace/review')
+    expect(hrefs).toContain('/workspace/automations/chat')
+    expect(hrefs).toContain('/workspace/activity')
+    expect(hrefs).toContain('/workspace/ops/cli')
+    expect(hrefs).toContain('/workspace/settings/profile')
+  })
+
   it('calls paperThemeStore.toggleNight() when the theme toggle is clicked', async () => {
     const wrapper = mountSidebar()
     const toggle = wrapper.find('.paper-sidebar__theme-toggle')
