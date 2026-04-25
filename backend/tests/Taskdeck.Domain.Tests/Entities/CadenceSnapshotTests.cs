@@ -74,6 +74,37 @@ public class CadenceSnapshotTests
     }
 
     [Fact]
+    public void Empty_ReturnsSameInstance()
+    {
+        var a = CadenceSnapshot.Empty();
+        var b = CadenceSnapshot.Empty();
+
+        ReferenceEquals(a, b).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Constructor_NullBuckets_Throws()
+    {
+        var act = () => new CadenceSnapshot(null!, null, null, null);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Constructor_WrongBucketCount_Throws()
+    {
+        var buckets = Enumerable.Range(0, 12)
+            .Select(h => new CadenceBucket(h, 0))
+            .ToList()
+            .AsReadOnly();
+
+        var act = () => new CadenceSnapshot(buckets, null, null, null);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*exactly 24*");
+    }
+
+    [Fact]
     public void Constructor_SingleEvent_SetsAllFields()
     {
         var now = DateTimeOffset.UtcNow;
