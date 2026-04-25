@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
+import { isTriageTerminalStatus } from '../../types/capture'
 import PaperCaptureNib from './inbox/PaperCaptureNib.vue'
 import PaperCaptureComposer from './inbox/PaperCaptureComposer.vue'
 import PaperTriageTable from './inbox/PaperTriageTable.vue'
@@ -33,15 +34,12 @@ const {
   captureStore,
   items,
   activeBoardId,
-  selectedItemId,
   loadInbox,
-  triageSelected,
-  ignoreSelected,
 } = useInboxOrchestrator({
-  // Triage table doesn't use a virtual list; selecting a row is a one-shot
-  // open action, so we don't need scrollToIndex.
   scrollToIndex: () => undefined,
 })
+
+let stopTriagePolling: (() => void) | null = null
 
 function toggleVariant() {
   setVariant(variant.value === 'nib' ? 'composer' : 'nib')
@@ -133,13 +131,31 @@ function onComposerAttachments(_files: File[]) {
 }
 
 async function onTriageAccept(itemId: string) {
-  selectedItemId.value = itemId
-  await triageSelected()
+  if (stopTriagePolling) {
+    stopTriagePolling()
+    stopTriagePolling = null
+  }
+  try {
+    await captureStore.triageItem(itemId)
+    const latestStatus = captureStore.detailById[itemId]?.status
+    if (latestStatus !== undefined && isTriageTerminalStatus(latestStatus)) {
+      return
+    }
+    stopTriagePolling = captureStore.pollTriageCompletion(itemId)
+  } catch {
+    if (stopTriagePolling) {
+      stopTriagePolling()
+      stopTriagePolling = null
+    }
+  }
 }
 
 async function onTriageReject(itemId: string) {
-  selectedItemId.value = itemId
-  await ignoreSelected()
+  try {
+    await captureStore.ignoreItem(itemId)
+  } catch {
+    // Store handles toast + error state.
+  }
 }
 
 function onTriageOpen(_itemId: string) {
@@ -156,6 +172,10 @@ onUnmounted(() => {
   if (bleedTimer) {
     clearTimeout(bleedTimer)
     bleedTimer = null
+  }
+  if (stopTriagePolling) {
+    stopTriagePolling()
+    stopTriagePolling = null
   }
 })
 

@@ -10,6 +10,10 @@ const mockCaptureStore = reactive({
   actionBusyItemId: null as string | null,
   triagePollingItemId: null as string | null,
   createItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  triageItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  ignoreItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  pollTriageCompletion: vi.fn<(...args: unknown[]) => () => void>(),
+  detailById: {} as Record<string, { status: string } | undefined>,
 })
 
 const orchestratorState = {
@@ -18,8 +22,6 @@ const orchestratorState = {
   activeBoardId: ref<string | null>(null),
   selectedItemId: ref<string | null>(null),
   loadInbox: vi.fn<() => Promise<void>>(),
-  triageSelected: vi.fn<() => Promise<void>>(),
-  ignoreSelected: vi.fn<() => Promise<void>>(),
 }
 
 vi.mock('../../../composables/useInboxOrchestrator', () => ({
@@ -42,9 +44,11 @@ describe('PaperInboxView', () => {
     orchestratorState.activeBoardId.value = null
     orchestratorState.selectedItemId.value = null
     orchestratorState.loadInbox.mockResolvedValue(undefined)
-    orchestratorState.triageSelected.mockResolvedValue(undefined)
-    orchestratorState.ignoreSelected.mockResolvedValue(undefined)
     mockCaptureStore.createItem.mockResolvedValue({ id: 'created-1' })
+    mockCaptureStore.triageItem.mockResolvedValue({ status: 'Triaging', alreadyTriaging: false })
+    mockCaptureStore.ignoreItem.mockResolvedValue(undefined)
+    mockCaptureStore.pollTriageCompletion.mockReturnValue(() => undefined)
+    mockCaptureStore.detailById = {}
     mockCaptureStore.listError = null
     mockCaptureStore.actionBusyItemId = null
     mockCaptureStore.triagePollingItemId = null
@@ -318,5 +322,118 @@ describe('PaperInboxView', () => {
     await wrapper.find('.paper-triage__open').trigger('click')
 
     expect(orchestratorState.selectedItemId.value).toBe('polling-capture')
+  })
+
+  it('calls captureStore.triageItem by ID without mutating selectedItemId', async () => {
+    orchestratorState.selectedItemId.value = null
+    orchestratorState.items.value = [
+      {
+        id: 'capture-triage',
+        userId: 'u-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Triage me',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+      },
+    ] as CaptureItemSummary[]
+
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('[data-action="accept"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-triage')
+    expect(orchestratorState.selectedItemId.value).toBeNull()
+  })
+
+  it('calls captureStore.ignoreItem by ID without mutating selectedItemId', async () => {
+    orchestratorState.selectedItemId.value = null
+    orchestratorState.items.value = [
+      {
+        id: 'capture-reject',
+        userId: 'u-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Reject me',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+      },
+    ] as CaptureItemSummary[]
+
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('[data-action="reject"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.ignoreItem).toHaveBeenCalledWith('capture-reject')
+    expect(orchestratorState.selectedItemId.value).toBeNull()
+  })
+
+  it('starts triage polling when triageItem resolves with non-terminal status', async () => {
+    mockCaptureStore.triageItem.mockResolvedValue({ status: 'Triaging', alreadyTriaging: false })
+    orchestratorState.items.value = [
+      {
+        id: 'capture-poll',
+        userId: 'u-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Poll me',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+      },
+    ] as CaptureItemSummary[]
+
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('[data-action="accept"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.pollTriageCompletion).toHaveBeenCalledWith('capture-poll')
+  })
+
+  it('skips triage polling when detail shows terminal status', async () => {
+    mockCaptureStore.triageItem.mockResolvedValue({ status: 'Triaged', alreadyTriaging: false })
+    mockCaptureStore.detailById = { 'capture-done': { status: 'Triaged' } }
+    orchestratorState.items.value = [
+      {
+        id: 'capture-done',
+        userId: 'u-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Already done',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+      },
+    ] as CaptureItemSummary[]
+
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('[data-action="accept"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.pollTriageCompletion).not.toHaveBeenCalled()
+  })
+
+  it('preserves existing selectedItemId during triage accept', async () => {
+    orchestratorState.selectedItemId.value = 'other-item'
+    orchestratorState.items.value = [
+      {
+        id: 'capture-accept',
+        userId: 'u-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Accept me',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+      },
+    ] as CaptureItemSummary[]
+
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('[data-action="accept"]').trigger('click')
+    await flushPromises()
+
+    expect(orchestratorState.selectedItemId.value).toBe('other-item')
   })
 })
