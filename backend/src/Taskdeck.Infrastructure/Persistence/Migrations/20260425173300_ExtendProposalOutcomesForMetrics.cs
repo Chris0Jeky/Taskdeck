@@ -59,6 +59,17 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                 nullable: false,
                 defaultValue: 0);
 
+            // Backfill edit counts for legacy EditedThenApproved rows so they
+            // don't sit at 0/0 (which contradicts the "edited" semantics and
+            // would skew edit-rate analytics). We use 1 as a safe non-zero
+            // sentinel because exact legacy counts are not recoverable.
+            migrationBuilder.Sql("""
+                UPDATE ProposalOutcomes
+                SET EditedFieldCount = 1,
+                    FieldCount = 1
+                WHERE OutcomeType = 1
+                """);
+
             migrationBuilder.AddColumn<string>(
                 name: "ModelId",
                 table: "ProposalOutcomes",

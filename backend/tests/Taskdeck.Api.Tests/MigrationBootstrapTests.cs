@@ -177,6 +177,42 @@ public class MigrationBootstrapTests : IDisposable
         }
     }
 
+    [Fact]
+    public void ExtendProposalOutcomesForMetrics_backfills_edit_counts_for_legacy_edited_rows()
+    {
+        // Arrange — stop just before the metrics-extension migration, then seed rows
+        // in the legacy ProposalOutcomes shape.
+        _context.GetService<IMigrator>()
+            .Migrate("20260425105642_AddProposalRevisionsAndOutcomes");
+
+        var approvedId = Guid.NewGuid();
+        var editedId = Guid.NewGuid();
+        var rejectedId = Guid.NewGuid();
+        var ignoredId = Guid.NewGuid();
+
+        InsertLegacyProposalOutcome(approvedId, OutcomeType.Approved);
+        InsertLegacyProposalOutcome(editedId, OutcomeType.EditedThenApproved);
+        InsertLegacyProposalOutcome(rejectedId, OutcomeType.Rejected);
+        InsertLegacyProposalOutcome(ignoredId, OutcomeType.Ignored);
+
+        // Act — apply the migration that adds the edit-count columns and backfills them.
+        _context.GetService<IMigrator>()
+            .Migrate("20260425173300_ExtendProposalOutcomesForMetrics");
+
+        // Assert — EditedThenApproved rows get non-zero sentinel counts.
+        var (editedField, fieldCount) = GetEditCounts(editedId);
+        editedField.Should().Be(1, "legacy EditedThenApproved rows should have EditedFieldCount = 1");
+        fieldCount.Should().Be(1, "legacy EditedThenApproved rows should have FieldCount = 1");
+
+        // Assert — non-edited rows keep their default 0/0.
+        foreach (var id in new[] { approvedId, rejectedId, ignoredId })
+        {
+            var (ef, fc) = GetEditCounts(id);
+            ef.Should().Be(0, "non-edited legacy rows should keep EditedFieldCount = 0");
+            fc.Should().Be(0, "non-edited legacy rows should keep FieldCount = 0");
+        }
+    }
+
     private void InsertLegacyProposalOutcome(Guid id, OutcomeType outcomeType)
     {
         var proposalId = Guid.NewGuid();
@@ -219,6 +255,29 @@ public class MigrationBootstrapTests : IDisposable
             var value = cmd.ExecuteScalar();
             value.Should().NotBeNull();
             return Convert.ToInt32(value);
+        }
+        finally
+        {
+            _context.Database.CloseConnection();
+        }
+    }
+
+    private (int EditedFieldCount, int FieldCount) GetEditCounts(Guid id)
+    {
+        var connection = _context.Database.GetDbConnection();
+        _context.Database.OpenConnection();
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT EditedFieldCount, FieldCount FROM ProposalOutcomes WHERE Id = $id";
+            var parameter = cmd.CreateParameter();
+            parameter.ParameterName = "$id";
+            parameter.Value = id;
+            cmd.Parameters.Add(parameter);
+
+            using var reader = cmd.ExecuteReader();
+            reader.Read().Should().BeTrue();
+            return (reader.GetInt32(0), reader.GetInt32(1));
         }
         finally
         {
