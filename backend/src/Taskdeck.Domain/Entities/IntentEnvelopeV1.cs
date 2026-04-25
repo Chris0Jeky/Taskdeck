@@ -122,10 +122,11 @@ public class IntentEnvelopeV1 : Entity
             throw new DomainException(ErrorCodes.InvalidOperation,
                 $"Cannot add intent candidates when envelope is in status {Status}");
 
+        var candidate = new IntentCandidate(Id, label, confidence, rank, actionType);
+
         if (Status == EnvelopeStatus.Created)
             Status = EnvelopeStatus.Extracting;
 
-        var candidate = new IntentCandidate(Id, label, confidence, rank, actionType);
         _intentCandidates.Add(candidate);
         Touch();
         return candidate;
