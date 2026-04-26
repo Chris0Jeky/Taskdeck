@@ -1,8 +1,8 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-25
+Last Updated: 2026-04-26
 
-Review-first AI roadmap v4 second-wave delivery (RFAI-02 through RFAI-08 foundational slices), plus flaky CI test fix, after roadmap v4 adoption and first-wave delivery.
+Paper backend gap delivery (10 issues, `#1015`–`#1024`, PRs `#1031`–`#1040`), after review-first AI roadmap v4 second-wave delivery.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -22,6 +22,23 @@ Rebranding thesis (2026-02-23):
 - capture should be near-zero friction
 - automation should remain review-first and provenance-visible
 - product value is reducing maintenance overhead, not maximizing opaque autonomy
+
+Paper backend gap delivery (2026-04-26, PRs `#1031`--`#1040`, 10 issues `#1015`--`#1024`):
+- All 10 Paper backend gaps delivered with two rounds of adversarial review per PR; ~460 new backend tests; bot review findings (Gemini Code Assist + Codex connector) addressed on all PRs
+- **Today dossier backends** (4 endpoints on `TodayController`, required by PAPER-08 `#1004`):
+  - Cadence aggregation (`#1015`/`#1031`): `GET /api/today/cadence?date=` returns 24-hour activity buckets with first/peak/last action timestamps; `CadenceBucket` and `CadenceSnapshot` value objects with cached `Empty()` singleton; queries `IAuditLogRepository`; 26 tests
+  - Streak query (`#1016`/`#1032`): `GET /api/today/streak?days=90` returns 90-day streak with intensity buckets (quartile-based) and current/longest streak lengths; `StreakDay`/`StreakResult` value objects; server-side `GROUP BY` via `CountByDateAsync` (replaced 100k entity load after review); 61 tests
+  - Seal day action (`#1017`/`#1037`): `POST /api/today/seal` and `GET /api/today/seal?date=` for idempotent day-sealing with `DailySnapshot` entity; EF Core migration with unique index on `(UserId, Date)`; `UnitOfWork` unique constraint handler for concurrent seals; CancellationToken threaded through all layers after review; 28 tests
+  - Line for tomorrow (`#1018`/`#1035`): `GET /api/today/tomorrow-note?date=` and `PUT /api/today/tomorrow-note` for autosave-friendly upsert; `TomorrowNote` entity (500 char max); 204 NoContent for missing notes; concurrent upsert race-condition handling via `UnitOfWork`; 25 tests
+- **Review deep-dive backends** (6 endpoints on `AutomationProposalsController`, required by PAPER-06 `#1002`):
+  - Provenance rows (`#1019`/`#1039`): `GET /api/automation/proposals/{id}/provenance` returns `ProvenanceRowDto[]` with icon/key/value/weight; 26-entry icon map; weight bucketing from `ProvenanceField` confidence; FK migration added after review; `Math.Round` for confidence display; 41 tests
+  - Side-effect analysis (`#1020`/`#1033`): `GET /api/automation/proposals/{id}/side-effects` returns 7-category breakdown (Cards/Subtasks/Comments/Activity/Notifications/Webhooks/Calendar) with active/passive tone and risk-based reversibility window (6h default, 3h for Critical); review fixed target-type checks and webhook-without-operations logic; 66 tests
+  - Confidence breakdown (`#1021`/`#1036`): `GET /api/automation/proposals/{id}/confidence` returns 4-component weighted breakdown (Pattern match 0.30, Reach 0.20, Reversibility 0.35, Recency 0.15) with threshold and explanatory note; review fixed reach formula, promoted weights to static field, removed unused userId; 63 tests
+  - Conflict detection (`#1022`/`#1040`): `GET /api/automation/proposals/{id}/conflicts` returns tone-classified rows (Warn/Info/Ok) from 7 detection rules; review fixed P1 false-warning for create-card ops, added `GetPendingByOperationTargetAsync` for proper duplicate detection, entity caching, safe JSON parsing; 46 tests
+  - Card history ledger (`#1023`/`#1034`): `GET /api/automation/proposals/{id}/history` returns per-card touch history with serial/event/age/status; bounded at 200 entries/card and 500 total; review fixed duplicate dedup, JSON property parsing, GUID single-pass, `InvariantCulture` formatting; 42 tests
+  - Similar past decisions (`#1024`/`#1038`): `GET /api/automation/proposals/{id}/similar-past` returns 3 nearest-neighbour prior decisions with apply rate; board-scoped query (review fixed userId filter that excluded non-caller proposals); 200-proposal lookback limit; UTC week formatting; 50 tests
+- New EF Core migrations: `AddDailySnapshots`, `AddTomorrowNotes`, `AddProvenanceEntities`, `AddProposalProvenanceForeignKey`, `ExtendProposalOutcomesForMetrics`
+- New repository methods: `IAuditLogRepository.CountByDateAsync`, `IAutomationProposalRepository.GetTerminalByActionTypeAsync`, `IAutomationProposalRepository.GetPendingByOperationTargetAsync`
 
 Roadmap v4 second-wave delivery (2026-04-25, PRs `#989`--`#994` + `#995`):
 - RFAI-02 (`#974`/`#989`): `IntentEnvelopeV1` domain spine with `SourceBlock`/`SourceSpan`, `IntentCandidate`, `EvidenceLink`, `TaskdeckProposalBatch`, `IIntentEnvelopeFactory` application interface, `IChatClient` adapter spike, handwritten `proposal-batch.v1.schema.json`; 117 tests; adversarial review fixed partial-write status transition bug, span length consistency, evidence fabrication prevention, nullable schema fields
