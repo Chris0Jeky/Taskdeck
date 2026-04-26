@@ -243,8 +243,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
         foreach (var cardId in cardTargetIds)
         {
-            var comments = await _unitOfWork.CardComments.GetByCardIdAsync(cardId, cancellationToken);
-            var commentCount = comments.Count();
+            var commentCount = await _unitOfWork.CardComments.CountByCardIdAsync(cardId, cancellationToken);
             if (commentCount > 0)
             {
                 rows.Add(new ConflictRow(

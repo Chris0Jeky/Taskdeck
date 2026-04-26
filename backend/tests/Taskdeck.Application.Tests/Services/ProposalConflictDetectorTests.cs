@@ -261,8 +261,8 @@ public class ProposalConflictDetectorTests
             .ReturnsAsync(card);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment>());
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
 
         // Another pending proposal for the same card -- must be set up AFTER other mocks
         // because SetupEmptySecondaryChecks would override with It.IsAny<string>()
@@ -432,9 +432,8 @@ public class ProposalConflictDetectorTests
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
 
-        var comment = new CardComment(cardId, _boardId, _userId, "Some comment");
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment> { comment });
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
 
         SetupNoDuplicateProposal(cardId);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
@@ -458,8 +457,8 @@ public class ProposalConflictDetectorTests
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
 
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment>());
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
 
         SetupNoDuplicateProposal(cardId);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
@@ -492,8 +491,8 @@ public class ProposalConflictDetectorTests
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
 
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment>());
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
         SetupNoDuplicateProposal(cardId);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
@@ -516,8 +515,8 @@ public class ProposalConflictDetectorTests
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
 
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment>());
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
         SetupNoDuplicateProposal(cardId);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
@@ -545,8 +544,8 @@ public class ProposalConflictDetectorTests
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
 
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment>());
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
         SetupNoDuplicateProposal(cardId);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
@@ -601,9 +600,8 @@ public class ProposalConflictDetectorTests
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
 
-        var comment = new CardComment(cardId, _boardId, _userId, "test");
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment> { comment });
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
         SetupNoDuplicateProposal(cardId);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
@@ -637,8 +635,8 @@ public class ProposalConflictDetectorTests
             .ReturnsAsync(card);
 
         // Has comments
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment> { new CardComment(cardId, _boardId, _userId, "test") });
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
 
         // Has webhooks
         var webhook = new OutboundWebhookSubscription(
@@ -729,8 +727,8 @@ public class ProposalConflictDetectorTests
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
 
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment>());
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
         SetupNoDuplicateProposal(cardId);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
@@ -803,8 +801,8 @@ public class ProposalConflictDetectorTests
             .ReturnsAsync(proposal);
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(card);
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment>());
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
         SetupNoDuplicateProposal(cardId);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
@@ -882,8 +880,8 @@ public class ProposalConflictDetectorTests
     {
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
-        _commentRepoMock.Setup(r => r.GetByCardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<CardComment>());
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
 
         if (specificCardId.HasValue)
         {
