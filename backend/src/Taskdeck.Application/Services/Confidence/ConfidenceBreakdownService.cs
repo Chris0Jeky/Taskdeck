@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -60,13 +61,14 @@ public sealed class ConfidenceBreakdownService : IConfidenceBreakdownService
     /// Component weights for the overall score computation (must sum to 1.0).
     /// Static to avoid allocation on every call.
     /// </summary>
-    private static readonly Dictionary<string, double> ComponentWeights = new()
-    {
-        [ComponentKeys.PatternMatch] = 0.30,
-        [ComponentKeys.Reach] = 0.20,
-        [ComponentKeys.Reversibility] = 0.35,
-        [ComponentKeys.Recency] = 0.15
-    };
+    private static readonly IReadOnlyDictionary<string, double> ComponentWeights =
+        new ReadOnlyDictionary<string, double>(new Dictionary<string, double>
+        {
+            [ComponentKeys.PatternMatch] = 0.30,
+            [ComponentKeys.Reach] = 0.20,
+            [ComponentKeys.Reversibility] = 0.35,
+            [ComponentKeys.Recency] = 0.15
+        });
 
     private readonly IUnitOfWork _unitOfWork;
 
