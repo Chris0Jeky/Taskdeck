@@ -80,7 +80,14 @@ async function addColumn(page: Page, columnName: string) {
   const columnNameInput = page.getByPlaceholder('Column name')
   await expect(columnNameInput).toBeVisible()
   await columnNameInput.fill(columnName)
+  const createColumnResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && /\/api\/boards\/[a-f0-9-]+\/columns$/i.test(response.url())
+    && response.ok())
   await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await createColumnResponse
+  // Wait for the create dialog to close so the DOM settles to exactly one heading
+  await expect(columnNameInput).toBeHidden()
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
 }
 

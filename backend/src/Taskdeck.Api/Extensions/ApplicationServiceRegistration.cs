@@ -49,6 +49,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAutomationProposalService, AutomationProposalService>();
         services.AddScoped<ISideEffectAnalyzer, SideEffectAnalyzer>();
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
+        services.AddScoped<ISimilarDecisionService, SimilarDecisionService>();
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
         services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
