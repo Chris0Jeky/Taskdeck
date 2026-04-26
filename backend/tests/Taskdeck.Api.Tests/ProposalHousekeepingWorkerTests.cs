@@ -185,6 +185,11 @@ public class ProposalHousekeepingWorkerTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(string actionType, Guid? boardId, Guid userId, int limit = 100, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

@@ -50,6 +50,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ICardHistoryService, CardHistoryService>();
         services.AddScoped<ISideEffectAnalyzer, SideEffectAnalyzer>();
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
+        services.AddScoped<ISimilarDecisionService, SimilarDecisionService>();
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
         services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();

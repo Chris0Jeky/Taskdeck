@@ -26,6 +26,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationExecutorService _executorService;
+    private readonly ISimilarDecisionService _similarDecisionService;
     private readonly BoardAuthorizationService _authorizationService;
     private readonly ICardHistoryService _cardHistoryService;
     private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
@@ -33,6 +34,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
         IAutomationExecutorService executorService,
+        ISimilarDecisionService similarDecisionService,
         BoardAuthorizationService authorizationService,
         ICardHistoryService cardHistoryService,
         ISideEffectAnalyzer sideEffectAnalyzer,
@@ -40,6 +42,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     {
         _proposalService = proposalService;
         _executorService = executorService;
+        _similarDecisionService = similarDecisionService;
         _authorizationService = authorizationService;
         _cardHistoryService = cardHistoryService;
         _sideEffectAnalyzer = sideEffectAnalyzer;
@@ -272,6 +275,19 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     /// </summary>
     [HttpGet("{id}/history")]
     public async Task<IActionResult> GetProposalHistory(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _cardHistoryService.GetCardHistoryForProposalAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Gets the side-effect analysis for a proposal, including the 7-category breakdown
     /// and reversibility posture.
     /// </summary>
@@ -285,7 +301,6 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
-        var result = await _cardHistoryService.GetCardHistoryForProposalAsync(id, cancellationToken);
         var result = await _sideEffectAnalyzer.AnalyzeAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
@@ -305,6 +320,24 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
         var result = await _proposalService.GetProposalDiffAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(new { diff = result.Value }) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Gets similar past decisions for a proposal, including the latest 3 decisions
+    /// with the same action class and an aggregate apply rate.
+    /// </summary>
+    [HttpGet("{id}/similar-past")]
+    public async Task<IActionResult> GetSimilarPast(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _similarDecisionService.GetSimilarPastAsync(id, callerUserId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     private async Task<(ProposalDto? Proposal, IActionResult? ErrorResult)> AuthorizeProposalAsync(
