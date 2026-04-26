@@ -21,6 +21,8 @@ public sealed class SideEffectRow : IEquatable<SideEffectRow>
             throw new ArgumentException("Side-effect key cannot be empty.", nameof(key));
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("Side-effect value cannot be empty.", nameof(value));
+        if (!Enum.IsDefined(tone))
+            throw new ArgumentOutOfRangeException(nameof(tone), tone, "Unrecognized SideEffectTone value.");
 
         Key = key;
         Value = value;

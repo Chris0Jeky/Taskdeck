@@ -28,7 +28,6 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
 
     public async Task<Result<ProposalSideEffectsDto>> AnalyzeAsync(
         Guid proposalId,
-        Guid userId,
         CancellationToken cancellationToken = default)
     {
         var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId, cancellationToken);

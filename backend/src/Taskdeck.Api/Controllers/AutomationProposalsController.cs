@@ -278,7 +278,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
-        var result = await _sideEffectAnalyzer.AnalyzeAsync(id, callerUserId, cancellationToken);
+        var result = await _sideEffectAnalyzer.AnalyzeAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 

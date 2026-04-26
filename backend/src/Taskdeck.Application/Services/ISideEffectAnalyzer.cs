@@ -10,7 +10,7 @@ namespace Taskdeck.Application.Services;
 public interface ISideEffectAnalyzer
 {
     /// <summary>
-    /// Analyzes the side effects of the specified proposal for the given user.
+    /// Analyzes the side effects of the specified proposal.
     /// </summary>
-    Task<Result<ProposalSideEffectsDto>> AnalyzeAsync(Guid proposalId, Guid userId, CancellationToken cancellationToken = default);
+    Task<Result<ProposalSideEffectsDto>> AnalyzeAsync(Guid proposalId, CancellationToken cancellationToken = default);
 }

@@ -61,7 +61,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), default))
             .ReturnsAsync((AutomationProposal?)null);
 
-        var result = await _analyzer.AnalyzeAsync(Guid.NewGuid(), Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(Guid.NewGuid());
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be("NotFound");
@@ -74,7 +74,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Rows.Should().HaveCount(7);
@@ -87,7 +87,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         var keys = result.Value.Rows.Select(r => r.Key).ToList();
@@ -101,7 +101,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         result.IsSuccess.Should().BeTrue();
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
@@ -115,7 +115,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
         cardsRow.Tone.Should().Be("active");
@@ -128,7 +128,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
         cardsRow.Tone.Should().Be("active");
@@ -141,7 +141,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
         cardsRow.Tone.Should().Be("active");
@@ -155,7 +155,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
         cardsRow.Tone.Should().Be("active");
@@ -169,7 +169,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var subtasksRow = result.Value.Rows.First(r => r.Key == "Subtasks");
         subtasksRow.Tone.Should().Be("passive");
@@ -182,7 +182,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var commentsRow = result.Value.Rows.First(r => r.Key == "Comments");
         commentsRow.Tone.Should().Be("passive");
@@ -195,7 +195,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var activityRow = result.Value.Rows.First(r => r.Key == "Activity log");
         activityRow.Tone.Should().Be("active");
@@ -208,7 +208,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var activityRow = result.Value.Rows.First(r => r.Key == "Activity log");
         activityRow.Tone.Should().Be("passive");
@@ -221,7 +221,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var notifRow = result.Value.Rows.First(r => r.Key == "Notifications");
         notifRow.Tone.Should().Be("active");
@@ -234,7 +234,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var notifRow = result.Value.Rows.First(r => r.Key == "Notifications");
         notifRow.Tone.Should().Be("passive");
@@ -252,7 +252,7 @@ public class SideEffectAnalyzerTests
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(boardId, default))
             .ReturnsAsync(new List<OutboundWebhookSubscription> { subscription });
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var webhookRow = result.Value.Rows.First(r => r.Key == "Webhooks");
         webhookRow.Tone.Should().Be("active");
@@ -269,7 +269,7 @@ public class SideEffectAnalyzerTests
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(boardId, default))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var webhookRow = result.Value.Rows.First(r => r.Key == "Webhooks");
         webhookRow.Tone.Should().Be("passive");
@@ -282,7 +282,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var webhookRow = result.Value.Rows.First(r => r.Key == "Webhooks");
         webhookRow.Tone.Should().Be("passive");
@@ -295,7 +295,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var calendarRow = result.Value.Rows.First(r => r.Key == "Calendar");
         calendarRow.Tone.Should().Be("passive");
@@ -309,7 +309,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
         // Should be active (column mutation) but description should mention columns, not card mutations
@@ -324,7 +324,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var cardsRow = result.Value.Rows.First(r => r.Key == "Cards");
         cardsRow.Tone.Should().Be("active");
@@ -344,7 +344,7 @@ public class SideEffectAnalyzerTests
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(boardId, default))
             .ReturnsAsync(new List<OutboundWebhookSubscription> { subscription });
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         var webhookRow = result.Value.Rows.First(r => r.Key == "Webhooks");
         webhookRow.Tone.Should().Be("passive");
@@ -362,7 +362,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         result.Value.Reversibility.WindowMs.Should().Be(Reversibility.DefaultWindowMs);
     }
@@ -374,7 +374,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         result.Value.Reversibility.WindowMs.Should().Be(Reversibility.DefaultWindowMs);
     }
@@ -386,7 +386,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         result.Value.Reversibility.WindowMs.Should().Be(Reversibility.DefaultWindowMs);
     }
@@ -398,7 +398,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         result.Value.Reversibility.WindowMs.Should().Be(Reversibility.DefaultWindowMs / 2);
     }
@@ -410,7 +410,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         result.Value.Reversibility.Summary.Should().Contain("no operations");
         result.Value.Reversibility.WindowMs.Should().Be(Reversibility.DefaultWindowMs);
@@ -423,7 +423,7 @@ public class SideEffectAnalyzerTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
             .ReturnsAsync(proposal);
 
-        var result = await _analyzer.AnalyzeAsync(proposal.Id, Guid.NewGuid());
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
         result.Value.Reversibility.Summary.Should().Contain("manual intervention");
         result.Value.Reversibility.Description.Should().Contain("Critical-risk");
