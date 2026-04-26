@@ -47,6 +47,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<HistoryService>();
         services.AddScoped<IHistoryService>(sp => sp.GetRequiredService<HistoryService>());
         services.AddScoped<IAutomationProposalService, AutomationProposalService>();
+        services.AddScoped<ICardHistoryService, CardHistoryService>();
         services.AddScoped<ISideEffectAnalyzer, SideEffectAnalyzer>();
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
         services.AddScoped<ISimilarDecisionService, SimilarDecisionService>();
