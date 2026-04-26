@@ -251,6 +251,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         }
 
         var proposalIds = await query
+            .AsNoTracking()
             .OrderByDescending(p => p.DecidedAt)
             .ThenByDescending(p => p.UpdatedAt)
             .Take(boundedLimit)
@@ -261,6 +262,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             return Array.Empty<AutomationProposal>();
 
         var proposals = await _dbSet
+            .AsNoTracking()
             .Include(p => p.Operations)
             .Where(p => proposalIds.Contains(p.Id))
             .ToListAsync(cancellationToken);
