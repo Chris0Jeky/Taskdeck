@@ -279,17 +279,10 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
                 .ToList();
         }
 
-        // Non-SQLite: use EF LINQ projection with server-side GROUP BY.
-        var results = await _context.AuditLogs
-            .AsNoTracking()
-            .Where(al => al.UserId == userId && al.Timestamp >= from && al.Timestamp <= to)
-            .GroupBy(al => al.Timestamp.Date)
-            .Select(g => new { Date = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
-
-        return results
-            .Select(r => new DailyAuditCount(DateOnly.FromDateTime(r.Date), r.Count))
-            .ToList();
+        throw new NotSupportedException(
+            "Only SQLite is currently supported for CountByDateAsync. " +
+            "The non-SQLite LINQ path using .GroupBy(al => al.Timestamp.Date) " +
+            "cannot be translated by EF Core and would crash at runtime.");
     }
 
     /// <summary>

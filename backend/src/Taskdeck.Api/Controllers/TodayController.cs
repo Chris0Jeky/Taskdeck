@@ -9,7 +9,7 @@ using Taskdeck.Application.Services;
 namespace Taskdeck.Api.Controllers;
 
 /// <summary>
-/// Today view endpoints: streak data, dossier, and daily summaries.
+/// Today-view endpoints: streak data, cadence aggregation, and daily dossier data.
 /// </summary>
 [ApiController]
 [Authorize]
@@ -18,13 +18,16 @@ namespace Taskdeck.Api.Controllers;
 public class TodayController : AuthenticatedControllerBase
 {
     private readonly IStreakService _streakService;
+    private readonly ICadenceService _cadenceService;
 
     public TodayController(
         IStreakService streakService,
+        ICadenceService cadenceService,
         IUserContext userContext)
         : base(userContext)
     {
         _streakService = streakService;
+        _cadenceService = cadenceService;
     }
 
     /// <summary>
@@ -58,6 +61,44 @@ public class TodayController : AuthenticatedControllerBase
             streakResult.CurrentStreakLength,
             streakResult.LongestStreakLength,
             streakResult.Days.Count);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Get the per-hour cadence snapshot for the authenticated user on the specified date.
+    /// Returns 24 hourly buckets with event counts plus first/peak/last action timestamps.
+    /// </summary>
+    /// <param name="date">Date to aggregate (ISO 8601). Defaults to today (UTC).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Cadence snapshot for the day.</returns>
+    /// <response code="200">Cadence snapshot returned successfully.</response>
+    /// <response code="400">Invalid date parameter.</response>
+    /// <response code="401">Authentication required.</response>
+    [HttpGet("cadence")]
+    [ProducesResponseType(typeof(CadenceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetCadence(
+        [FromQuery] DateTimeOffset? date,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var targetDate = date ?? DateTimeOffset.UtcNow;
+
+        var result = await _cadenceService.GetDailyCadenceAsync(userId, targetDate, cancellationToken);
+
+        if (!result.IsSuccess)
+            return result.ToErrorActionResult();
+
+        var snapshot = result.Value;
+        var response = new CadenceResponse(
+            Buckets: snapshot.Buckets.Select(b => new CadenceBucketDto(b.Hour, b.EventCount)).ToList(),
+            FirstActionAt: snapshot.FirstActionAt,
+            PeakHour: snapshot.PeakHour,
+            LastActionAt: snapshot.LastActionAt);
 
         return Ok(response);
     }

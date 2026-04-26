@@ -56,6 +56,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IBoardContextBuilder, BoardContextBuilder>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<ILogQueryService, LogQueryService>();
+        services.AddScoped<ICadenceService>(sp =>
+            new CadenceService(sp.GetRequiredService<IUnitOfWork>().AuditLogs));
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IKnowledgeService, KnowledgeService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
