@@ -281,6 +281,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public Task<AutomationProposal?> GetLatestByOperationTargetAsync(string targetType, string targetId, string actionType, ProposalSourceType sourceType, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(string actionType, Guid? boardId, Guid userId, int limit = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class ThrowingProposalRepository : IAutomationProposalRepository
@@ -306,6 +307,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public Task<AutomationProposal?> GetLatestByOperationTargetAsync(string targetType, string targetId, string actionType, ProposalSourceType sourceType, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(string actionType, Guid? boardId, Guid userId, int limit = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

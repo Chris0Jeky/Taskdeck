@@ -590,6 +590,8 @@ public class WorkerResilienceTests
             => throw new NotSupportedException();
         public Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(string actionType, Guid? boardId, Guid userId, int limit = 100, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class FakeUnitOfWorkWithLlmQueue : IUnitOfWork
