@@ -90,7 +90,7 @@ public class CardHistoryService : ICardHistoryService
         foreach (var cardId in affectedCardIds)
         {
             var relatedProposal = await _unitOfWork.AutomationProposals
-                .GetLatestByOperationTargetAsync("Card", cardId.ToString(), cancellationToken);
+                .GetLatestByOperationTargetAsync("card", cardId.ToString(), cancellationToken);
 
             if (relatedProposal != null && seenProposalIds.Add(relatedProposal.Id))
             {
