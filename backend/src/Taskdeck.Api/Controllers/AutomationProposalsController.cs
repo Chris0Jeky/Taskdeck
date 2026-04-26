@@ -28,18 +28,21 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly IAutomationExecutorService _executorService;
     private readonly BoardAuthorizationService _authorizationService;
     private readonly ICardHistoryService _cardHistoryService;
+    private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
         IAutomationExecutorService executorService,
         BoardAuthorizationService authorizationService,
         ICardHistoryService cardHistoryService,
+        ISideEffectAnalyzer sideEffectAnalyzer,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
         _executorService = executorService;
         _authorizationService = authorizationService;
         _cardHistoryService = cardHistoryService;
+        _sideEffectAnalyzer = sideEffectAnalyzer;
     }
 
     /// <summary>
@@ -269,6 +272,11 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     /// </summary>
     [HttpGet("{id}/history")]
     public async Task<IActionResult> GetProposalHistory(Guid id, CancellationToken cancellationToken = default)
+    /// Gets the side-effect analysis for a proposal, including the 7-category breakdown
+    /// and reversibility posture.
+    /// </summary>
+    [HttpGet("{id}/side-effects")]
+    public async Task<IActionResult> GetProposalSideEffects(Guid id, CancellationToken cancellationToken = default)
     {
         if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
             return errorResult!;
@@ -278,6 +286,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
             return auth.ErrorResult;
 
         var result = await _cardHistoryService.GetCardHistoryForProposalAsync(id, cancellationToken);
+        var result = await _sideEffectAnalyzer.AnalyzeAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
