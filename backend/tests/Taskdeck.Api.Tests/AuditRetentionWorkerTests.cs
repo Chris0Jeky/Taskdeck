@@ -159,6 +159,11 @@ public class AuditRetentionWorkerTests
             int limit = 100, CancellationToken cancellationToken = default)
             => Task.FromResult<IEnumerable<AuditLog>>(Array.Empty<AuditLog>());
 
+        public Task<IReadOnlyList<DailyAuditCount>> CountByDateAsync(
+            DateTimeOffset from, DateTimeOffset to,
+            Guid userId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DailyAuditCount>>(Array.Empty<DailyAuditCount>());
+
         public Task<AuditLog?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult<AuditLog?>(null);
 
