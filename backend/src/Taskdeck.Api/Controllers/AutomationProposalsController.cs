@@ -26,20 +26,26 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationExecutorService _executorService;
+    private readonly ISimilarDecisionService _similarDecisionService;
     private readonly BoardAuthorizationService _authorizationService;
     private readonly IProvenanceQueryService _provenanceQueryService;
+    private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
         IAutomationExecutorService executorService,
+        ISimilarDecisionService similarDecisionService,
         BoardAuthorizationService authorizationService,
         IProvenanceQueryService provenanceQueryService,
+        ISideEffectAnalyzer sideEffectAnalyzer,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
         _executorService = executorService;
+        _similarDecisionService = similarDecisionService;
         _authorizationService = authorizationService;
         _provenanceQueryService = provenanceQueryService;
+        _sideEffectAnalyzer = sideEffectAnalyzer;
     }
 
     /// <summary>
@@ -265,6 +271,24 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Gets the side-effect analysis for a proposal, including the 7-category breakdown
+    /// and reversibility posture.
+    /// </summary>
+    [HttpGet("{id}/side-effects")]
+    public async Task<IActionResult> GetProposalSideEffects(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _sideEffectAnalyzer.AnalyzeAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Gets a diff preview for a proposal showing what changes will be made.
     /// </summary>
     [HttpGet("{id}/diff")]
@@ -296,6 +320,24 @@ public class AutomationProposalsController : AuthenticatedControllerBase
             return auth.ErrorResult;
 
         var result = await _provenanceQueryService.GetProvenanceRowsAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Gets similar past decisions for a proposal, including the latest 3 decisions
+    /// with the same action class and an aggregate apply rate.
+    /// </summary>
+    [HttpGet("{id}/similar-past")]
+    public async Task<IActionResult> GetSimilarPast(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _similarDecisionService.GetSimilarPastAsync(id, callerUserId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
