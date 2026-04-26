@@ -50,19 +50,13 @@ public class SimilarDecisionService : ISimilarDecisionService
             return Result.Success(ToDto(SimilarPastResult.Empty));
         }
 
-        // Query past proposals with the same action class in terminal states
-        // First try board-scoped, then fall back to user-scoped
+        // Query past proposals with the same action class in terminal states,
+        // always scoped to the proposal's board to prevent cross-board title leakage.
+        // No cross-board fallback: if the board has no history, return empty rather
+        // than surfacing proposal titles from other boards.
         var pastProposals = (await _unitOfWork.AutomationProposals
             .GetTerminalByActionTypeAsync(actionType, proposal.BoardId, userId, LookbackLimit, cancellationToken))
             ?? Array.Empty<AutomationProposal>();
-
-        if (pastProposals.Count == 0 && proposal.BoardId.HasValue)
-        {
-            // Board doesn't have enough history -- fall back to user-scoped query
-            pastProposals = (await _unitOfWork.AutomationProposals
-                .GetTerminalByActionTypeAsync(actionType, boardId: null, userId, LookbackLimit, cancellationToken))
-                ?? Array.Empty<AutomationProposal>();
-        }
 
         // Exclude the current proposal itself from the results
         var filtered = pastProposals

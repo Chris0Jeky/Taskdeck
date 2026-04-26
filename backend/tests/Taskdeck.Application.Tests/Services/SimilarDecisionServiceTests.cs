@@ -182,25 +182,23 @@ public class SimilarDecisionServiceTests
     }
 
     [Fact]
-    public async Task GetSimilarPastAsync_ShouldFallBackToUserScope_WhenBoardHasNoHistory()
+    public async Task GetSimilarPastAsync_ShouldReturnEmpty_WhenBoardHasNoHistory()
     {
         var proposal = CreateProposalWithOperation("move", "card");
-        var userScopedPast = CreateTerminalProposal(ProposalStatus.Applied, "move", "card", boardId: Guid.NewGuid());
 
         _proposalRepo.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
         // Board-scoped query returns empty
         _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("move", _boardId, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AutomationProposal>());
-        // User-scoped query returns results
-        _proposalRepo.Setup(r => r.GetTerminalByActionTypeAsync("move", null, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { userScopedPast });
 
         var result = await _service.GetSimilarPastAsync(proposal.Id, _userId);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Decisions.Should().HaveCount(1);
-        _proposalRepo.Verify(r => r.GetTerminalByActionTypeAsync("move", null, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        result.Value.Decisions.Should().BeEmpty();
+        result.Value.ApplyRate.Should().Be(0.0);
+        // Should never fall back to cross-board user-scoped query
+        _proposalRepo.Verify(r => r.GetTerminalByActionTypeAsync("move", null, _userId, It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
