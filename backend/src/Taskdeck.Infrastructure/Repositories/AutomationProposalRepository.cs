@@ -210,6 +210,69 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .ToListAsync(cancellationToken);
     }
 
+    private static readonly ProposalStatus[] TerminalStatuses =
+    [
+        ProposalStatus.Applied,
+        ProposalStatus.Rejected,
+    ];
+
+    public async Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(
+        string actionType,
+        Guid? boardId,
+        Guid userId,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(actionType))
+            return Array.Empty<AutomationProposal>();
+
+        var boundedLimit = limit <= 0 ? DefaultLimit : limit;
+
+        // Find proposal IDs whose operations match the action type
+        var matchingProposalIds = _context.AutomationProposalOperations
+            .Where(op => op.ActionType == actionType)
+            .Select(op => op.ProposalId)
+            .Distinct();
+
+        var query = _dbSet
+            .Where(p => matchingProposalIds.Contains(p.Id))
+            .Where(p => TerminalStatuses.Contains(p.Status));
+
+        if (boardId.HasValue)
+        {
+            // Board-scoped: show all decisions for this board regardless of who created them,
+            // so reviewers see the board's base rate for this action type.
+            query = query.Where(p => p.BoardId == boardId.Value);
+        }
+        else
+        {
+            // User-scoped fallback: only show the caller's own decisions.
+            query = query.Where(p => p.RequestedByUserId == userId);
+        }
+
+        var proposalIds = await query
+            .AsNoTracking()
+            .OrderByDescending(p => p.DecidedAt)
+            .ThenByDescending(p => p.UpdatedAt)
+            .Take(boundedLimit)
+            .Select(p => p.Id)
+            .ToListAsync(cancellationToken);
+
+        if (proposalIds.Count == 0)
+            return Array.Empty<AutomationProposal>();
+
+        var proposals = await _dbSet
+            .AsNoTracking()
+            .Include(p => p.Operations)
+            .Where(p => proposalIds.Contains(p.Id))
+            .ToListAsync(cancellationToken);
+
+        return proposals
+            .OrderByDescending(p => p.DecidedAt)
+            .ThenByDescending(p => p.UpdatedAt)
+            .ToList();
+    }
+
     private async Task<IReadOnlyList<AutomationProposal>> GetLimitedWithOperationsAsync(
         IQueryable<AutomationProposal> baseQuery,
         int limit,

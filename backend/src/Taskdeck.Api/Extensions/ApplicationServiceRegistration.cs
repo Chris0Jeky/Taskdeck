@@ -47,7 +47,9 @@ public static class ApplicationServiceRegistration
         services.AddScoped<HistoryService>();
         services.AddScoped<IHistoryService>(sp => sp.GetRequiredService<HistoryService>());
         services.AddScoped<IAutomationProposalService, AutomationProposalService>();
+        services.AddScoped<ISideEffectAnalyzer, SideEffectAnalyzer>();
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
+        services.AddScoped<ISimilarDecisionService, SimilarDecisionService>();
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
         services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
@@ -76,6 +78,7 @@ public static class ApplicationServiceRegistration
             new BoardMetricsService(
                 sp.GetRequiredService<IUnitOfWork>(),
                 sp.GetRequiredService<IAuthorizationService>()));
+        services.AddScoped<IStreakService, StreakService>();
         services.AddScoped<ApiKeyService>();
         services.AddScoped<IForecastingService>(sp =>
             new ForecastingService(

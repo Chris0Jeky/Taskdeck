@@ -3,6 +3,12 @@ using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.Interfaces;
 
+/// <summary>
+/// Lightweight projection record for per-day audit entry counts.
+/// Used by <see cref="IAuditLogRepository.CountByDateAsync"/> to avoid loading full entities.
+/// </summary>
+public sealed record DailyAuditCount(DateOnly Date, int Count);
+
 public interface IAuditLogRepository : IRepository<AuditLog>
 {
     Task<IEnumerable<AuditLog>> GetByEntityAsync(string entityType, Guid entityId, int limit = 100, CancellationToken cancellationToken = default);
@@ -16,6 +22,21 @@ public interface IAuditLogRepository : IRepository<AuditLog>
         string? source = null,
         string? level = null,
         int limit = 100,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns per-day entry counts for a user within a time range.
+    /// Uses a server-side GROUP BY projection to avoid loading full entities into memory.
+    /// </summary>
+    /// <param name="from">Start of the time range (inclusive).</param>
+    /// <param name="to">End of the time range (inclusive).</param>
+    /// <param name="userId">The user whose entries to count.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A list of (Date, Count) pairs for days with at least one entry.</returns>
+    Task<IReadOnlyList<DailyAuditCount>> CountByDateAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        Guid userId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
