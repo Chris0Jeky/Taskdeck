@@ -155,10 +155,11 @@ public class ProvenanceQueryService : IProvenanceQueryService
     /// </summary>
     internal static string MapWeight(ProvenanceKind kind, double confidence)
     {
-        if (kind == ProvenanceKind.Inferred)
-            return "inferred";
-
-        // Extractive: confidence determines primary vs contextual.
-        return confidence >= 0.7 ? "primary" : "contextual";
+        return kind switch
+        {
+            ProvenanceKind.Inferred => "inferred",
+            ProvenanceKind.Extractive => confidence >= 0.7 ? "primary" : "contextual",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unrecognized ProvenanceKind")
+        };
     }
 }
