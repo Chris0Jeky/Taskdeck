@@ -28,6 +28,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly IAutomationExecutorService _executorService;
     private readonly ISimilarDecisionService _similarDecisionService;
     private readonly BoardAuthorizationService _authorizationService;
+    private readonly ICardHistoryService _cardHistoryService;
     private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
 
     public AutomationProposalsController(
@@ -35,6 +36,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         IAutomationExecutorService executorService,
         ISimilarDecisionService similarDecisionService,
         BoardAuthorizationService authorizationService,
+        ICardHistoryService cardHistoryService,
         ISideEffectAnalyzer sideEffectAnalyzer,
         IUserContext userContext) : base(userContext)
     {
@@ -42,6 +44,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         _executorService = executorService;
         _similarDecisionService = similarDecisionService;
         _authorizationService = authorizationService;
+        _cardHistoryService = cardHistoryService;
         _sideEffectAnalyzer = sideEffectAnalyzer;
     }
 
@@ -265,6 +268,23 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         return result.IsSuccess
             ? Ok(new { dismissed = result.Value })
             : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Gets the card history ledger for a proposal, showing all touches on affected cards.
+    /// </summary>
+    [HttpGet("{id}/history")]
+    public async Task<IActionResult> GetProposalHistory(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _cardHistoryService.GetCardHistoryForProposalAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     /// <summary>
