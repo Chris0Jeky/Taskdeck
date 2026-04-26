@@ -27,16 +27,19 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationExecutorService _executorService;
     private readonly BoardAuthorizationService _authorizationService;
+    private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
         IAutomationExecutorService executorService,
         BoardAuthorizationService authorizationService,
+        ISideEffectAnalyzer sideEffectAnalyzer,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
         _executorService = executorService;
         _authorizationService = authorizationService;
+        _sideEffectAnalyzer = sideEffectAnalyzer;
     }
 
     /// <summary>
@@ -259,6 +262,24 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         return result.IsSuccess
             ? Ok(new { dismissed = result.Value })
             : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Gets the side-effect analysis for a proposal, including the 7-category breakdown
+    /// and reversibility posture.
+    /// </summary>
+    [HttpGet("{id}/side-effects")]
+    public async Task<IActionResult> GetProposalSideEffects(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _sideEffectAnalyzer.AnalyzeAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     /// <summary>
