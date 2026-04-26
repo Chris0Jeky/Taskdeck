@@ -4,11 +4,12 @@ using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Controllers;
 
 /// <summary>
-/// Today-view endpoints: cadence aggregation and daily dossier data.
+/// Today-view endpoints: streak data, cadence aggregation, and daily dossier data.
 /// </summary>
 [ApiController]
 [Authorize]
@@ -16,14 +17,52 @@ namespace Taskdeck.Api.Controllers;
 [Produces("application/json")]
 public class TodayController : AuthenticatedControllerBase
 {
+    private readonly IStreakService _streakService;
     private readonly ICadenceService _cadenceService;
 
     public TodayController(
+        IStreakService streakService,
         ICadenceService cadenceService,
         IUserContext userContext)
         : base(userContext)
     {
+        _streakService = streakService;
         _cadenceService = cadenceService;
+    }
+
+    /// <summary>
+    /// Get streak data (daily activity intensity and sealed status) for the authenticated user.
+    /// </summary>
+    /// <param name="days">Number of days to include (1-365, default 90).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Streak data with daily intensity buckets and streak lengths.</returns>
+    /// <response code="200">Streak data returned successfully.</response>
+    /// <response code="400">Invalid days parameter.</response>
+    /// <response code="401">Authentication required.</response>
+    [HttpGet("streak")]
+    [ProducesResponseType(typeof(StreakResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetStreak(
+        [FromQuery] int days = 90,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _streakService.GetStreakAsync(userId, days, cancellationToken);
+
+        if (!result.IsSuccess)
+            return result.ToErrorActionResult();
+
+        var streakResult = result.Value;
+        var response = new StreakResponse(
+            streakResult.Days.Select(d => new StreakDayResponse(d.Date, d.IsSealed, d.IntensityBucket)).ToList(),
+            streakResult.CurrentStreakLength,
+            streakResult.LongestStreakLength,
+            streakResult.Days.Count);
+
+        return Ok(response);
     }
 
     /// <summary>
