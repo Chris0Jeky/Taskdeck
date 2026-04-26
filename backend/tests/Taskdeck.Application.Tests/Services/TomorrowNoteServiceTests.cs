@@ -82,6 +82,16 @@ public class TomorrowNoteServiceTests
     }
 
     [Fact]
+    public async Task SaveNoteAsync_DefaultDate_ReturnsValidationError()
+    {
+        var result = await _service.SaveNoteAsync(ValidUserId, default, "text");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Date");
+    }
+
+    [Fact]
     public async Task SaveNoteAsync_NullText_ReturnsValidationError()
     {
         var result = await _service.SaveNoteAsync(ValidUserId, ValidDate, null!);
@@ -133,6 +143,38 @@ public class TomorrowNoteServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Text.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region SaveNoteAsync — race-condition recovery
+
+    [Fact]
+    public async Task SaveNoteAsync_RaceConditionConflict_RefetchesAndUpdatesWinner()
+    {
+        // Simulate: first GetByUserAndDateAsync returns null (no existing note),
+        // second call (re-fetch after save) returns a different note (the race winner).
+        var winnerNote = new TomorrowNote(ValidUserId, ValidDate, "winner text");
+        var callCount = 0;
+
+        _repositoryMock
+            .Setup(r => r.GetByUserAndDateAsync(ValidUserId, ValidDate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callCount++;
+                return callCount == 1 ? null : winnerNote;
+            });
+
+        var result = await _service.SaveNoteAsync(ValidUserId, ValidDate, "loser text that should win via last-writer-wins");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(winnerNote.Id);
+        result.Value.Text.Should().Be("loser text that should win via last-writer-wins");
+
+        _repositoryMock.Verify(
+            r => r.UpdateAsync(winnerNote, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     #endregion
