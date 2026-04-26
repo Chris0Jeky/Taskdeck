@@ -121,6 +121,37 @@ public class DailySealServiceTests
         result.IsSuccess.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task SealDayAsync_ConcurrentRace_ReturnsWasAlreadySealed_WhenEntityDetached()
+    {
+        // Simulate a concurrent seal race: our snapshot is new, but after SaveChanges
+        // the conflict resolver detached it. Re-fetch returns the winner's snapshot.
+        var userId = Guid.NewGuid();
+        var date = DateOnly.FromDateTime(DateTime.UtcNow);
+        var winnerSealedAt = DateTimeOffset.UtcNow.AddSeconds(-2);
+        var winnerSnapshot = new DailySnapshot(userId, date, winnerSealedAt);
+        winnerSnapshot.Seal(winnerSealedAt);
+
+        var callCount = 0;
+        _snapshotRepoMock
+            .Setup(r => r.GetByUserAndDateAsync(userId, date, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callCount++;
+                // First call (before save): no existing snapshot
+                if (callCount == 1)
+                    return null;
+                // Second call (re-fetch after save): return the winner's snapshot
+                return winnerSnapshot;
+            });
+
+        var result = await _service.SealDayAsync(userId, date);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.WasAlreadySealed.Should().BeTrue();
+        result.Value.SealedAt.Should().Be(winnerSealedAt);
+    }
+
     #endregion
 
     #region GetSealStatusAsync

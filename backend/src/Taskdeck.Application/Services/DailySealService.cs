@@ -42,6 +42,15 @@ public class DailySealService : IDailySealService
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        // Re-fetch to ensure accurate response after potential concurrent seal resolution.
+        // If TryResolveDuplicateDailySnapshotConflicts detached our entity, the persisted
+        // snapshot will have a different Id — meaning another request won the race.
+        var persisted = await _unitOfWork.DailySnapshots.GetByUserAndDateAsync(userId, date, cancellationToken);
+        if (persisted != null && persisted.Id != snapshot.Id)
+        {
+            return Result.Success(new DailySealResponse(persisted.SealedAt!.Value, WasAlreadySealed: true));
+        }
+
         return Result.Success(new DailySealResponse(snapshot.SealedAt!.Value, wasAlreadySealed));
     }
 
