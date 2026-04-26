@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-25
+Last Updated: 2026-04-26
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -98,6 +98,11 @@ Manual-only checks (non-automatable in generic local script):
    - Bug fixed (`#681`/`#691`): feature flags for shipped surfaces now default to `true`.
 5. Open `/workspace/today`.
    - Expected: agenda shows review/triage/overdue/due-today/blocked summary cards and the onboarding loop block.
+   - **Today dossier API spot checks** (Paper backend gap `#1015`–`#1018`, PRs `#1031`/`#1032`/`#1037`/`#1035`):
+     - `GET /api/today/cadence?date=2026-04-26` → 200 with 24 hourly buckets (all zero if no activity).
+     - `GET /api/today/streak?days=90` → 200 with `days[]`, `currentStreakLength`, `longestStreakLength`, `intensityBuckets`.
+     - `POST /api/today/seal` with `{"date":"2026-04-26"}` → 200 with `sealedAt`; repeat → 200 with `wasAlreadySealed: true`.
+     - `PUT /api/today/tomorrow-note` with `{"date":"2026-04-26","text":"test"}` → 200; `GET /api/today/tomorrow-note?date=2026-04-26` → 200 with text; `GET` for missing date → 204 NoContent.
 5. Start `Start Useful Board` from `Home` or `Today`, pick a starter shape, and create a board.
    - Expected: board opens immediately; when a starter pack applies successfully, the starter workflow is present, and when it fails, the board still opens with a warning.
 6. Dismiss onboarding from `Home` or `Today`, refresh, then replay it.
@@ -231,6 +236,13 @@ Manual-only checks (non-automatable in generic local script):
 11. Verify applied proposals are hidden by default; use clear/dismiss action to manage them.
 12. Verify expired proposal handling in Review:
     - Expected: expired proposals show distinct "Expired" status badge — not "Approved, ready to apply".
+13. **Review deep-dive API spot checks** (Paper backend gap `#1019`–`#1024`, PRs `#1039`/`#1033`/`#1036`/`#1040`/`#1034`/`#1038`):
+    - `GET /api/automation/proposals/{id}/provenance` → 200 with `ProvenanceRowDto[]` (icon/key/value/weight); empty `[]` if no provenance data.
+    - `GET /api/automation/proposals/{id}/side-effects` → 200 with 7 categories (Cards/Subtasks/Comments/Activity/Notifications/Webhooks/Calendar), each with tone and description; reversibility window object.
+    - `GET /api/automation/proposals/{id}/confidence` → 200 with 4-component breakdown (Pattern match/Reach/Reversibility/Recency), overall score, threshold, note.
+    - `GET /api/automation/proposals/{id}/conflicts` → 200 with conflict rows (tone: Warn/Info/Ok) from 7 detection rules; sorted Warn→Info→Ok.
+    - `GET /api/automation/proposals/{id}/history` → 200 with per-card touch history (serial/event/age/status); bounded at 500 total entries.
+    - `GET /api/automation/proposals/{id}/similar-past` → 200 with up to 3 nearest-neighbour prior decisions and apply rate.
     - Expected: expired proposals have a Dismiss button and explanatory notice.
     - Expected: dismissing an expired proposal removes it from the review list.
     - Expected: Apply/Approve buttons are not shown for expired proposals.
