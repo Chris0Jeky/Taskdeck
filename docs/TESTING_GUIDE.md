@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-25
+Last Updated: 2026-04-26
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,25 +10,24 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-25)
+## Current Verified Totals (2026-04-26)
 
-- Backend: **5,060 passing** (0 failing, 2 skipped; 5,062 total) -- verified 2026-04-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main`
-  - Domain: 962 passed
-  - Application: 2,367 passed
+- Backend: **~5,520 passing** (estimated; 5,060 at last recertification + ~460 new tests from Paper backend gap wave PRs `#1031`–`#1040`)
+  - Domain: ~1,120 passed (962 + ~158 new domain tests)
+  - Application: ~2,670 passed (2,367 + ~302 new application tests)
   - API integration: 1,621 passed (0 failed, 2 skipped; 1,623 total)
   - CLI contract: 82 passed
   - Architecture boundaries: 8 passed
   - Integration (Testcontainers): 20 passed
 - Frontend unit: **2,805 passing** across 214+ test files -- verified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main`
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
-- Combined automated total: **7,865+ passing** (backend 5,060 + frontend unit 2,805 + E2E)
+- Combined automated total: **~8,325+ passing** (backend ~5,520 + frontend unit 2,805 + E2E)
 
 Verification note:
-- backend total of 5,060 passing (0 failing, 2 skipped; 5,062 total) recertified 2026-04-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` (PR `#987`)
-- frontend total of 2,805 passing across 214+ test files recertified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main` (PR `#987`)
-- 5 previously-failing Api.Tests (3 CorsApiTests, 1 McpTelemetryMiddlewareTests, 1 SecurityHeadersApiTests) now pass
-- prior recertification: backend 4,979 (2026-04-23), frontend 2,607 (2026-04-23) at commit `97d4856c`
-- growth since last recertification: backend +81 tests, frontend +198 tests
+- backend total of ~5,520 is estimated pending recertification after Paper backend gap PRs merge; ~460 new tests verified individually per PR via CI
+- Paper backend gap wave (2026-04-26, PRs `#1031`–`#1040`): ~460 new tests across 10 issues; each PR CI-verified independently
+- prior recertification: backend 5,060 (2026-04-25), frontend 2,805 (2026-04-25) at PR `#987`
+- growth since last recertification: backend +~460 tests (Paper backend gaps), frontend unchanged
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
@@ -55,6 +54,131 @@ npx vitest --run
 $code = $LASTEXITCODE
 Pop-Location
 if ($code -ne 0) { exit $code }
+```
+
+## Paper Backend Gap Testing (2026-04-26, PRs `#1031`–`#1040`)
+
+The Paper backend gap wave (PRs `#1031`–`#1040`) added ~460 new backend tests across 10 issues. Each PR received two rounds of adversarial review; the second round found and fixed issues including a P1 false-warning bug, a 100k entity memory risk, a board-scoping error, missing FK enforcement, and CancellationToken threading gaps.
+
+### Cadence Aggregation Tests (`#1015`/`#1031`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/CadenceSnapshotTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/CadenceServiceTests.cs` — **26 tests** covering:
+- CadenceBucket hour validation (0-23), event count non-negative, equality semantics
+- CadenceSnapshot: 24-bucket invariant, null guard, cached `Empty()` singleton, first/peak/last action computation
+- CadenceService: empty day, single event, full day aggregation, peak hour ties, midnight boundary, date normalization
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Cadence"
+```
+
+### Streak Query Tests (`#1016`/`#1032`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/StreakDayTests.cs`, `StreakResultTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/StreakServiceTests.cs` — **61 tests** covering:
+- StreakDay: intensity bucket validation (0-4), DateOnly handling, sealed flag
+- StreakResult: current/longest streak invariant (current cannot exceed longest), empty days
+- StreakService: empty history, single day, continuous streak, gap in streak, gap at end, intensity quartile bucketing, day count boundaries (1, 90, 365), server-side `CountByDateAsync` aggregate query
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Streak"
+```
+
+### Seal Day Tests (`#1017`/`#1037`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/DailySnapshotTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/DailySealServiceTests.cs` — **28 tests** covering:
+- DailySnapshot: construction, seal idempotency (second seal is no-op preserving original timestamp), future date rejection, IsSealed property, empty userId rejection
+- DailySealService: seal new day, seal existing unsealed, seal already-sealed (idempotent), validation errors, status checks for missing/sealed/unsealed snapshots, CancellationToken propagation
+- UnitOfWork: DailySnapshot unique constraint violation recovery (concurrent seal race condition)
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Seal or FullyQualifiedName~DailySnapshot"
+```
+
+### Tomorrow Note Tests (`#1018`/`#1035`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/TomorrowNoteTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/TomorrowNoteServiceTests.cs` — **25 tests** covering:
+- TomorrowNote: constructor validation, text max length (500 chars), date handling, UpdateText behavior and timestamp
+- TomorrowNoteService: get existing/missing note, save new/update existing (upsert), empty userId rejection, null text handling, max length boundary
+- UnitOfWork: TomorrowNote unique constraint violation recovery (concurrent upsert race condition)
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~TomorrowNote"
+```
+
+### Provenance Query Tests (`#1019`/`#1039`)
+
+`backend/tests/Taskdeck.Application.Tests/Services/ProvenanceQueryServiceTests.cs` — **41 tests** covering:
+- Icon map: 26-entry case-insensitive map with fallback default icon
+- Weight bucketing: extractive >= 0.7 confidence → "primary", < 0.7 → "contextual", inferred → "inferred"
+- Human-readable value strings with quote snippet truncation, `Math.Round` for confidence display
+- Empty provenance (returns empty list, not error), missing proposal, authorization
+- FK enforcement via `AddProposalProvenanceForeignKey` migration
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ProvenanceQuery"
+```
+
+### Side-Effect Analysis Tests (`#1020`/`#1033`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/SideEffectTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/SideEffectAnalyzerTests.cs` — **66 tests** covering:
+- SideEffectRow: value object creation, tone enum, equality/hash contract
+- Reversibility: default 6h window (21,600,000ms), summary/description
+- SideEffectAnalyzer: 7-category tone classification (Cards, Subtasks, Comments, Activity, Notifications, Webhooks, Calendar), target-type-aware card mutation detection, column mutation inclusion, webhook conditional on operations existing, risk-based reversibility (Critical → 3h)
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~SideEffect"
+```
+
+### Confidence Breakdown Tests (`#1021`/`#1036`)
+
+`backend/tests/Taskdeck.Domain.Tests/Confidence/ConfidenceComponentTests.cs`, `ConfidenceBreakdownTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/Confidence/ConfidenceBreakdownServiceTests.cs` — **63 tests** covering:
+- ConfidenceComponent: value range [0..1], NaN/Infinity rejection, key validation
+- ConfidenceBreakdown: overall/threshold range, MeetsThreshold computed property, defensive component list copy
+- ConfidenceBreakdownService: 4-component weighted computation (Pattern match, Reach, Reversibility, Recency), reach formula `2.0 / (2.0 + log2(n))`, risk-level reversibility scoring, recency from expiry window, threshold note generation, static weight map
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ConfidenceBreakdown"
+```
+
+### Conflict Detection Tests (`#1022`/`#1040`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/ConflictRowTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/ProposalConflictDetectorTests.cs` — **46 tests** covering:
+- ConflictRow: tone enum, value object creation, equality
+- ProposalConflictDetector: 7 detection rules — stale data (excludes create-card ops), missing target card, WIP limit, duplicate pending proposals (all pending, not just latest), high/critical risk, outbound webhooks, active comments, multi-op on same card, positive signals (column capacity, fresh data)
+- Entity caching (each card/column fetched at most once), safe JSON parsing with ValueKind checks, tone-sorted output (Warn → Info → Ok)
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ConflictRow or FullyQualifiedName~ConflictDetector"
+```
+
+### Card History Tests (`#1023`/`#1034`)
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/CardHistoryRowTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/CardHistoryServiceTests.cs` — **42 tests** covering:
+- CardHistoryRow: serial formatting, status enum, validation, equality
+- CardHistoryService: single/multi-card history, serial numbering, age formatting (same day, yesterday, this week, older) with `InvariantCulture`, status classification (pending/applied/past), proposal deduplication via `HashSet<Guid>`, bounded output (200/card, 500 total), proper JSON property parsing for update events
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~CardHistory"
+```
+
+### Similar Past Decisions Tests (`#1024`/`#1038`)
+
+`backend/tests/Taskdeck.Domain.Tests/SimilarPast/SimilarPastDecisionTests.cs`, `SimilarPastResultTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/SimilarDecisionServiceTests.cs` — **50 tests** covering:
+- SimilarPastDecision: value object validation, title truncation (200 chars), verdict enum
+- SimilarPastResult: apply rate computation, division-by-zero safety, negative input rejection
+- SimilarDecisionService: board-scoped action-class matching (review fixed userId filter), user-scoped fallback, top-3 limiting with full-population apply rate, self-exclusion, serial/date formatting (ISO week with 2-digit year), 200-proposal lookback limit, SARGable `OrderByDescending(DecidedAt)` ordering
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~SimilarPast or FullyQualifiedName~SimilarDecision"
 ```
 
 ## Roadmap v4 Second-Wave Testing (2026-04-25, PRs `#989`–`#994`)
