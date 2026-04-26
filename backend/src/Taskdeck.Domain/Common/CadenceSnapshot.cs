@@ -54,6 +54,9 @@ public sealed record CadenceSnapshot
                 $"Buckets must contain exactly {RequiredBucketCount} entries, got {buckets.Count}.",
                 nameof(buckets));
 
+        if (peakHour.HasValue && (peakHour.Value < 0 || peakHour.Value > 23))
+            throw new ArgumentOutOfRangeException(nameof(peakHour), peakHour, "PeakHour must be between 0 and 23.");
+
         Buckets = buckets;
         FirstActionAt = firstActionAt;
         PeakHour = peakHour;

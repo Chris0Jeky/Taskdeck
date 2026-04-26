@@ -143,6 +143,23 @@ public class CadenceSnapshotTests
         snapshot.LastActionAt.Should().Be(last);
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(24)]
+    [InlineData(100)]
+    public void Constructor_InvalidPeakHour_Throws(int peakHour)
+    {
+        var buckets = Enumerable.Range(0, 24)
+            .Select(h => new CadenceBucket(h, 0))
+            .ToList()
+            .AsReadOnly();
+
+        var act = () => new CadenceSnapshot(buckets, null, peakHour, null);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("peakHour");
+    }
+
     [Fact]
     public void Constructor_MidnightBoundary_HandlesHourZero()
     {
