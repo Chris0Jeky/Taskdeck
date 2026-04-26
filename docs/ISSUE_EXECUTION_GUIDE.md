@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-04-26
+Last Updated: 2026-04-25
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose

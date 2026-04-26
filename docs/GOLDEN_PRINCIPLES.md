@@ -1,6 +1,6 @@
 # Taskdeck Golden Principles
 
-Last Updated: 2026-04-26
+Last Updated: 2026-04-25
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
