@@ -5,6 +5,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -15,6 +16,7 @@ public class AutomationProposalServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IAutomationProposalRepository> _proposalRepoMock;
     private readonly Mock<INotificationService> _notificationServiceMock;
+    private readonly Mock<IProposalProvenanceRepository> _provenanceRepoMock;
     private readonly AutomationProposalService _service;
 
     public AutomationProposalServiceTests()
@@ -22,13 +24,17 @@ public class AutomationProposalServiceTests
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _proposalRepoMock = new Mock<IAutomationProposalRepository>();
         _notificationServiceMock = new Mock<INotificationService>();
+        _provenanceRepoMock = new Mock<IProposalProvenanceRepository>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
 
-        _service = new AutomationProposalService(_unitOfWorkMock.Object, _notificationServiceMock.Object);
+        _service = new AutomationProposalService(
+            _unitOfWorkMock.Object,
+            _notificationServiceMock.Object,
+            _provenanceRepoMock.Object);
     }
 
     #region CreateProposalAsync Tests
@@ -56,6 +62,52 @@ public class AutomationProposalServiceTests
         result.Value.Status.Should().Be(ProposalStatus.PendingReview);
         result.Value.RiskLevel.Should().Be(RiskLevel.Low);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateProposalAsync_ShouldPersistBaselineProvenance()
+    {
+        // Arrange
+        var operations = new List<CreateProposalOperationDto>
+        {
+            new(0, "create", "card", "{\"title\":\"Test\"}", "key1")
+        };
+
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create captured task",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations: operations,
+            ProvenanceModelId: "gpt-4.1-mini",
+            ProvenanceTotalTokens: 123);
+
+        _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
+            .ReturnsAsync((AutomationProposal p, CancellationToken ct) => p);
+
+        ProposalProvenance? capturedProvenance = null;
+        _provenanceRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ProposalProvenance>(), default))
+            .Callback<ProposalProvenance, CancellationToken>((p, _) => capturedProvenance = p)
+            .ReturnsAsync((ProposalProvenance p, CancellationToken _) => p);
+
+        // Act
+        var result = await _service.CreateProposalAsync(dto);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        capturedProvenance.Should().NotBeNull();
+        capturedProvenance!.ProposalId.Should().Be(result.Value.Id);
+        capturedProvenance.CorrelationId.Should().Be(dto.CorrelationId);
+        capturedProvenance.ModelId.Should().Be("gpt-4.1-mini");
+        capturedProvenance.TotalTokens.Should().Be(123);
+        capturedProvenance.Fields.Should().Contain(f =>
+            f.FieldName == "Summary" &&
+            f.Kind == ProvenanceKind.Inferred);
+        capturedProvenance.Fields.Should().Contain(f =>
+            f.FieldName == "Operation 1: create card" &&
+            f.Kind == ProvenanceKind.Inferred);
     }
 
     [Fact]
