@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Taskdeck.Application.Interfaces;
@@ -9,6 +10,8 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public class UnitOfWork : IUnitOfWork
 {
+    private const int MaxSqliteWriteLockRetries = 5;
+
     private readonly TaskdeckDbContext _context;
     private IDbContextTransaction? _transaction;
 
@@ -123,27 +126,36 @@ public class UnitOfWork : IUnitOfWork
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        try
+        var resolvedRecoverableUniqueConflict = false;
+
+        for (var attempt = 0; ; attempt++)
         {
-            return await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            throw new DomainException(
-                ErrorCodes.Conflict,
-                "Record was updated by another session. Refresh and retry your action.",
-                ex);
-        }
-        catch (DbUpdateException ex) when (IsProposalRevisionUniqueViolation(ex))
-        {
-            throw new DomainException(
-                ErrorCodes.Conflict,
-                "Proposal revision was created by another session. Refresh and retry your edit.",
-                ex);
-        }
-        catch (DbUpdateException ex) when (TryResolveRecoverableUniqueConflicts(ex))
-        {
-            return await _context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                return await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                throw new DomainException(
+                    ErrorCodes.Conflict,
+                    "Record was updated by another session. Refresh and retry your action.",
+                    ex);
+            }
+            catch (DbUpdateException ex) when (IsProposalRevisionUniqueViolation(ex))
+            {
+                throw new DomainException(
+                    ErrorCodes.Conflict,
+                    "Proposal revision was created by another session. Refresh and retry your edit.",
+                    ex);
+            }
+            catch (DbUpdateException ex) when (!resolvedRecoverableUniqueConflict && TryResolveRecoverableUniqueConflicts(ex))
+            {
+                resolvedRecoverableUniqueConflict = true;
+            }
+            catch (DbUpdateException ex) when (IsTransientSqliteWriteLock(ex) && attempt < MaxSqliteWriteLockRetries)
+            {
+                await Task.Delay(GetSqliteWriteLockRetryDelay(attempt), cancellationToken);
+            }
         }
     }
 
@@ -363,5 +375,31 @@ public class UnitOfWork : IUnitOfWork
             || exception.InnerException.Message.Contains(
                 "IX_DailySnapshots_UserId_Date",
                 StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsTransientSqliteWriteLock(DbUpdateException exception)
+    {
+        for (var current = exception.InnerException; current is not null; current = current.InnerException)
+        {
+            if (current is SqliteException sqliteException
+                && (sqliteException.SqliteErrorCode == 5 || sqliteException.SqliteErrorCode == 6))
+            {
+                return true;
+            }
+
+            if (current.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)
+                || current.Message.Contains("database table is locked", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static TimeSpan GetSqliteWriteLockRetryDelay(int attempt)
+    {
+        var multiplier = attempt + 1;
+        return TimeSpan.FromMilliseconds(25 * multiplier * multiplier);
     }
 }
