@@ -45,7 +45,8 @@ public class UnitOfWork : IUnitOfWork
         IIntegrationConnectorRepository integrationConnectors,
         IConnectorEventRepository connectorEvents,
         IConnectorCredentialRepository connectorCredentials,
-        IProposalRevisionRepository proposalRevisions)
+        IProposalRevisionRepository proposalRevisions,
+        ITomorrowNoteRepository tomorrowNotes)
     {
         _context = context;
         Boards = boards;
@@ -80,6 +81,7 @@ public class UnitOfWork : IUnitOfWork
         ConnectorEvents = connectorEvents;
         ConnectorCredentials = connectorCredentials;
         ProposalRevisions = proposalRevisions;
+        TomorrowNotes = tomorrowNotes;
     }
 
     public IBoardRepository Boards { get; }
@@ -114,6 +116,7 @@ public class UnitOfWork : IUnitOfWork
     public IConnectorEventRepository ConnectorEvents { get; }
     public IConnectorCredentialRepository ConnectorCredentials { get; }
     public IProposalRevisionRepository ProposalRevisions { get; }
+    public ITomorrowNoteRepository TomorrowNotes { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -170,8 +173,9 @@ public class UnitOfWork : IUnitOfWork
     {
         var resolvedNotificationConflict = TryResolveDuplicateNotificationDeduplicationConflicts(exception);
         var resolvedUserPreferenceConflict = TryResolveDuplicateUserPreferenceConflicts(exception);
+        var resolvedTomorrowNoteConflict = TryResolveDuplicateTomorrowNoteConflicts(exception);
 
-        return resolvedNotificationConflict || resolvedUserPreferenceConflict;
+        return resolvedNotificationConflict || resolvedUserPreferenceConflict || resolvedTomorrowNoteConflict;
     }
 
     private bool TryResolveDuplicateNotificationDeduplicationConflicts(DbUpdateException exception)
@@ -254,6 +258,48 @@ public class UnitOfWork : IUnitOfWork
             StringComparison.OrdinalIgnoreCase)
             || exception.InnerException.Message.Contains(
                 "IX_UserPreferences_UserId",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool TryResolveDuplicateTomorrowNoteConflicts(DbUpdateException exception)
+    {
+        if (!IsTomorrowNoteUniqueViolation(exception))
+            return false;
+
+        var duplicateNoteFound = false;
+        var pendingNotes = _context.ChangeTracker
+            .Entries<TomorrowNote>()
+            .Where(entry => entry.State == EntityState.Added)
+            .ToList();
+
+        foreach (var pendingNote in pendingNotes)
+        {
+            var duplicateExists = _context.TomorrowNotes
+                .AsNoTracking()
+                .Any(note =>
+                    note.UserId == pendingNote.Entity.UserId
+                    && note.Date == pendingNote.Entity.Date);
+
+            if (!duplicateExists)
+                continue;
+
+            pendingNote.State = EntityState.Detached;
+            duplicateNoteFound = true;
+        }
+
+        return duplicateNoteFound;
+    }
+
+    private static bool IsTomorrowNoteUniqueViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is null)
+            return false;
+
+        return exception.InnerException.Message.Contains(
+            "TomorrowNotes.UserId, TomorrowNotes.Date",
+            StringComparison.OrdinalIgnoreCase)
+            || exception.InnerException.Message.Contains(
+                "IX_TomorrowNotes_UserId_Date",
                 StringComparison.OrdinalIgnoreCase);
     }
 
