@@ -255,7 +255,6 @@ async function main() {
   }, selectedApiBaseUrl)
 
   const pwArgs = [
-    'playwright',
     'test',
     'tests/e2e/stakeholder-demo.spec.ts',
     '--output',
@@ -271,8 +270,15 @@ async function main() {
     pwArgs.push('--headed')
   }
 
-  const command = process.platform === 'win32' ? process.env.ComSpec || 'cmd.exe' : 'npx'
-  const commandArgs = process.platform === 'win32' ? ['/d', '/s', '/c', 'npx', ...pwArgs] : pwArgs
+  const playwrightCliPath = path.join(webRoot, 'node_modules', '@playwright', 'test', 'cli.js')
+  try {
+    await fs.access(playwrightCliPath)
+  } catch {
+    throw new Error('Playwright CLI not found. Run npm install in frontend/taskdeck-web before starting the demo director.')
+  }
+
+  const command = process.execPath
+  const commandArgs = [playwrightCliPath, ...pwArgs]
 
   const startedAt = new Date().toISOString()
   const playwrightResult = spawnSync(command, commandArgs, {
@@ -283,7 +289,7 @@ async function main() {
   })
 
   if (playwrightResult.error) {
-    throw new Error(`Failed to launch Playwright via npx: ${String(playwrightResult.error.message || playwrightResult.error)}`)
+    throw new Error(`Failed to launch Playwright: ${String(playwrightResult.error.message || playwrightResult.error)}`)
   }
 
   const playwrightLog = `${playwrightResult.stdout || ''}${playwrightResult.stderr || ''}`
