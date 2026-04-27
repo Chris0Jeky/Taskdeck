@@ -5,6 +5,7 @@ using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Services.Confidence;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -28,6 +29,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly IAutomationExecutorService _executorService;
     private readonly ISimilarDecisionService _similarDecisionService;
     private readonly BoardAuthorizationService _authorizationService;
+    private readonly IConfidenceBreakdownService _confidenceBreakdownService;
     private readonly ICardHistoryService _cardHistoryService;
     private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
 
@@ -36,6 +38,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         IAutomationExecutorService executorService,
         ISimilarDecisionService similarDecisionService,
         BoardAuthorizationService authorizationService,
+        IConfidenceBreakdownService confidenceBreakdownService,
         ICardHistoryService cardHistoryService,
         ISideEffectAnalyzer sideEffectAnalyzer,
         IUserContext userContext) : base(userContext)
@@ -44,6 +47,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         _executorService = executorService;
         _similarDecisionService = similarDecisionService;
         _authorizationService = authorizationService;
+        _confidenceBreakdownService = confidenceBreakdownService;
         _cardHistoryService = cardHistoryService;
         _sideEffectAnalyzer = sideEffectAnalyzer;
     }
@@ -320,6 +324,23 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
         var result = await _proposalService.GetProposalDiffAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(new { diff = result.Value }) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Gets the multi-component confidence breakdown for a proposal.
+    /// </summary>
+    [HttpGet("{id}/confidence")]
+    public async Task<IActionResult> GetProposalConfidence(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _confidenceBreakdownService.GetBreakdownAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     /// <summary>
