@@ -313,6 +313,82 @@ public class ProposalConflictDetectorTests
         result.Value.Should().NotContain(r => r.Key == "wip-limit");
     }
 
+    [Fact]
+    public async Task DetectConflictsAsync_CreateIntoMissingColumn_ReturnsMissingTargetColumnWarning()
+    {
+        var columnId = Guid.NewGuid();
+        var proposal = CreateProposal(_userId, _boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "column", "{}", Guid.NewGuid().ToString(), columnId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(columnId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Column?)null);
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription>());
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain(r =>
+            r.Tone == ConflictTone.Warn
+            && r.Key == "missing-target-column");
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_MoveOutAndIntoSameColumn_UsesNetProjectedWip()
+    {
+        var targetColumnId = Guid.NewGuid();
+        var otherColumnId = Guid.NewGuid();
+        var sourceColumnId = Guid.NewGuid();
+        var leavingCardId = Guid.NewGuid();
+        var enteringCardId = Guid.NewGuid();
+
+        var proposal = CreateProposal(_userId, _boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "move",
+            "card",
+            $"{{\"targetColumnId\":\"{otherColumnId}\"}}",
+            Guid.NewGuid().ToString(),
+            leavingCardId.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            1,
+            "move",
+            "card",
+            $"{{\"targetColumnId\":\"{targetColumnId}\"}}",
+            Guid.NewGuid().ToString(),
+            enteringCardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var targetColumn = new Column(_boardId, "In Progress", 1, wipLimit: 5);
+        AddCardsToColumn(targetColumn, 5);
+        var otherColumn = new Column(_boardId, "Done", 2, wipLimit: 10);
+
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumnId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(targetColumn);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(otherColumnId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(otherColumn);
+
+        _cardRepoMock.Setup(r => r.GetByIdAsync(leavingCardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Card(leavingCardId, _boardId, targetColumnId, "Leaving"));
+        _cardRepoMock.Setup(r => r.GetByIdAsync(enteringCardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Card(enteringCardId, _boardId, sourceColumnId, "Entering"));
+        SetupEmptySecondaryChecks(proposal);
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotContain(r =>
+            r.Key == "wip-limit"
+            && r.Value.Contains("In Progress", StringComparison.Ordinal));
+    }
+
     #endregion
 
     #region Warn: Duplicate Pending Proposals

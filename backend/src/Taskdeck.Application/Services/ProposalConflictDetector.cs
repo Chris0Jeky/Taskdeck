@@ -45,13 +45,13 @@ public class ProposalConflictDetector : IProposalConflictDetector
         // Entity caches to avoid redundant DB lookups across sub-methods
         var cardCache = new Dictionary<Guid, Card?>();
         var columnCache = new Dictionary<Guid, Column?>();
-        var projectedColumnAdditions = await GetProjectedColumnAdditionCountsAsync(
+        var projectedColumnChanges = await GetProjectedColumnChangesAsync(
             proposal, cardCache, cancellationToken);
 
         // Check each condition and collect rows
         await CheckStaleDataAsync(proposal, rows, flaggedCardIds, cardCache, cancellationToken);
         await CheckWipLimitAsync(proposal, rows, flaggedColumnIds, columnCache,
-            projectedColumnAdditions, cancellationToken);
+            projectedColumnChanges, cancellationToken);
         await CheckDuplicatePendingProposalsAsync(proposal, rows, cancellationToken);
         CheckHighRiskOperations(proposal, rows);
         await CheckOutboundWebhooksAsync(proposal, rows, cancellationToken);
@@ -67,7 +67,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         {
             // Add positive signals when applicable
             await AddPositiveSignalsAsync(proposal, rows, flaggedCardIds, flaggedColumnIds,
-                cardCache, columnCache, projectedColumnAdditions, cancellationToken);
+                cardCache, columnCache, projectedColumnChanges, cancellationToken);
         }
 
         // Sort: Warn first, then Info, then Ok
@@ -146,17 +146,32 @@ public class ProposalConflictDetector : IProposalConflictDetector
         List<ConflictRow> rows,
         HashSet<Guid> flaggedColumnIds,
         Dictionary<Guid, Column?> columnCache,
-        IReadOnlyDictionary<Guid, int> projectedColumnAdditions,
+        IReadOnlyDictionary<Guid, ColumnProjection> projectedColumnChanges,
         CancellationToken cancellationToken)
     {
-        if (projectedColumnAdditions.Count == 0) return;
+        if (projectedColumnChanges.Count == 0) return;
 
-        foreach (var (columnId, additionCount) in projectedColumnAdditions)
+        foreach (var (columnId, projection) in projectedColumnChanges)
         {
             var column = await GetOrFetchColumnAsync(columnId, columnCache, cancellationToken);
-            if (column is null) continue;
+            if (column is null)
+            {
+                if (projection.ReceivesCards)
+                {
+                    flaggedColumnIds.Add(columnId);
+                    rows.Add(new ConflictRow(
+                        ConflictTone.Warn,
+                        "missing-target-column",
+                        $"Target column {columnId:N} no longer exists"));
+                }
 
-            var projectedCount = column.Cards.Count + additionCount;
+                continue;
+            }
+
+            if (!projection.ReceivesCards)
+                continue;
+
+            var projectedCount = column.Cards.Count + projection.Delta;
             if (column.WipLimit.HasValue && projectedCount > column.WipLimit.Value)
             {
                 flaggedColumnIds.Add(columnId);
@@ -299,18 +314,19 @@ public class ProposalConflictDetector : IProposalConflictDetector
         HashSet<Guid> flaggedColumnIds,
         Dictionary<Guid, Card?> cardCache,
         Dictionary<Guid, Column?> columnCache,
-        IReadOnlyDictionary<Guid, int> projectedColumnAdditions,
+        IReadOnlyDictionary<Guid, ColumnProjection> projectedColumnChanges,
         CancellationToken cancellationToken)
     {
         // Ok: target column has capacity (only if we didn't already warn about WIP for this column)
-        foreach (var (columnId, additionCount) in projectedColumnAdditions)
+        foreach (var (columnId, projection) in projectedColumnChanges)
         {
+            if (!projection.ReceivesCards) continue;
             if (flaggedColumnIds.Contains(columnId)) continue;
 
             var column = await GetOrFetchColumnAsync(columnId, columnCache, cancellationToken);
             if (column is null) continue;
 
-            var projectedCount = column.Cards.Count + additionCount;
+            var projectedCount = column.Cards.Count + projection.Delta;
             if (column.WipLimit.HasValue && projectedCount <= column.WipLimit.Value)
             {
                 rows.Add(new ConflictRow(
@@ -355,15 +371,15 @@ public class ProposalConflictDetector : IProposalConflictDetector
     }
 
     /// <summary>
-    /// Counts cards each proposal operation would add to a target column.
+    /// Projects card count deltas per column for create/move operations.
     /// Existing cards moved within their current column do not increase projected WIP.
     /// </summary>
-    private async Task<IReadOnlyDictionary<Guid, int>> GetProjectedColumnAdditionCountsAsync(
+    private async Task<IReadOnlyDictionary<Guid, ColumnProjection>> GetProjectedColumnChangesAsync(
         AutomationProposal proposal,
         Dictionary<Guid, Card?> cardCache,
         CancellationToken cancellationToken)
     {
-        var additions = new Dictionary<Guid, int>();
+        var changes = new Dictionary<Guid, ColumnProjection>();
 
         foreach (var op in proposal.Operations)
         {
@@ -374,6 +390,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
             if (!targetColumnId.HasValue)
                 continue;
 
+            var sourceColumnId = (Guid?)null;
             if (op.ActionType.Equals("move", StringComparison.OrdinalIgnoreCase)
                 && op.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)
                 && Guid.TryParse(op.TargetId, out var movedCardId))
@@ -381,12 +398,29 @@ public class ProposalConflictDetector : IProposalConflictDetector
                 var card = await GetOrFetchCardAsync(movedCardId, cardCache, cancellationToken);
                 if (card?.ColumnId == targetColumnId.Value)
                     continue;
+
+                sourceColumnId = card?.ColumnId;
             }
 
-            additions[targetColumnId.Value] = additions.GetValueOrDefault(targetColumnId.Value) + 1;
+            if (sourceColumnId.HasValue)
+                AddColumnProjectionDelta(changes, sourceColumnId.Value, delta: -1, receivesCards: false);
+
+            AddColumnProjectionDelta(changes, targetColumnId.Value, delta: 1, receivesCards: true);
         }
 
-        return additions;
+        return changes;
+    }
+
+    private static void AddColumnProjectionDelta(
+        Dictionary<Guid, ColumnProjection> changes,
+        Guid columnId,
+        int delta,
+        bool receivesCards)
+    {
+        var existing = changes.GetValueOrDefault(columnId);
+        changes[columnId] = new ColumnProjection(
+            existing.Delta + delta,
+            existing.ReceivesCards || receivesCards);
     }
 
     /// <summary>
@@ -441,6 +475,8 @@ public class ProposalConflictDetector : IProposalConflictDetector
         return operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase)
             || operation.ActionType.Equals("move", StringComparison.OrdinalIgnoreCase);
     }
+
+    private readonly record struct ColumnProjection(int Delta, bool ReceivesCards);
 
     private static IReadOnlyList<string> GetWebhookEventTypes(AutomationProposal proposal)
     {
