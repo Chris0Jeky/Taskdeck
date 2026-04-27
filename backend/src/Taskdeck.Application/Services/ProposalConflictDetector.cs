@@ -45,10 +45,13 @@ public class ProposalConflictDetector : IProposalConflictDetector
         // Entity caches to avoid redundant DB lookups across sub-methods
         var cardCache = new Dictionary<Guid, Card?>();
         var columnCache = new Dictionary<Guid, Column?>();
+        var projectedColumnAdditions = await GetProjectedColumnAdditionCountsAsync(
+            proposal, cardCache, cancellationToken);
 
         // Check each condition and collect rows
         await CheckStaleDataAsync(proposal, rows, flaggedCardIds, cardCache, cancellationToken);
-        await CheckWipLimitAsync(proposal, rows, flaggedColumnIds, columnCache, cancellationToken);
+        await CheckWipLimitAsync(proposal, rows, flaggedColumnIds, columnCache,
+            projectedColumnAdditions, cancellationToken);
         await CheckDuplicatePendingProposalsAsync(proposal, rows, cancellationToken);
         CheckHighRiskOperations(proposal, rows);
         await CheckOutboundWebhooksAsync(proposal, rows, cancellationToken);
@@ -64,7 +67,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         {
             // Add positive signals when applicable
             await AddPositiveSignalsAsync(proposal, rows, flaggedCardIds, flaggedColumnIds,
-                cardCache, columnCache, cancellationToken);
+                cardCache, columnCache, projectedColumnAdditions, cancellationToken);
         }
 
         // Sort: Warn first, then Info, then Ok
@@ -143,23 +146,24 @@ public class ProposalConflictDetector : IProposalConflictDetector
         List<ConflictRow> rows,
         HashSet<Guid> flaggedColumnIds,
         Dictionary<Guid, Column?> columnCache,
+        IReadOnlyDictionary<Guid, int> projectedColumnAdditions,
         CancellationToken cancellationToken)
     {
-        var targetColumnIds = GetTargetColumnIds(proposal);
-        if (targetColumnIds.Count == 0) return;
+        if (projectedColumnAdditions.Count == 0) return;
 
-        foreach (var columnId in targetColumnIds)
+        foreach (var (columnId, additionCount) in projectedColumnAdditions)
         {
             var column = await GetOrFetchColumnAsync(columnId, columnCache, cancellationToken);
             if (column is null) continue;
 
-            if (column.WipLimit.HasValue && column.Cards.Count >= column.WipLimit.Value)
+            var projectedCount = column.Cards.Count + additionCount;
+            if (column.WipLimit.HasValue && projectedCount > column.WipLimit.Value)
             {
                 flaggedColumnIds.Add(columnId);
                 rows.Add(new ConflictRow(
                     ConflictTone.Warn,
                     "wip-limit",
-                    $"Column \"{column.Name}\" is at WIP limit ({column.Cards.Count}/{column.WipLimit.Value})"));
+                    $"Column \"{column.Name}\" would exceed WIP limit ({projectedCount}/{column.WipLimit.Value})"));
             }
         }
     }
@@ -295,23 +299,24 @@ public class ProposalConflictDetector : IProposalConflictDetector
         HashSet<Guid> flaggedColumnIds,
         Dictionary<Guid, Card?> cardCache,
         Dictionary<Guid, Column?> columnCache,
+        IReadOnlyDictionary<Guid, int> projectedColumnAdditions,
         CancellationToken cancellationToken)
     {
         // Ok: target column has capacity (only if we didn't already warn about WIP for this column)
-        var targetColumnIds = GetTargetColumnIds(proposal);
-        foreach (var columnId in targetColumnIds)
+        foreach (var (columnId, additionCount) in projectedColumnAdditions)
         {
             if (flaggedColumnIds.Contains(columnId)) continue;
 
             var column = await GetOrFetchColumnAsync(columnId, columnCache, cancellationToken);
             if (column is null) continue;
 
-            if (column.WipLimit.HasValue)
+            var projectedCount = column.Cards.Count + additionCount;
+            if (column.WipLimit.HasValue && projectedCount <= column.WipLimit.Value)
             {
                 rows.Add(new ConflictRow(
                     ConflictTone.Ok,
                     "capacity",
-                    $"Column \"{column.Name}\" has capacity ({column.Cards.Count}/{column.WipLimit.Value})"));
+                    $"Column \"{column.Name}\" has projected capacity ({projectedCount}/{column.WipLimit.Value})"));
             }
         }
 
@@ -350,58 +355,85 @@ public class ProposalConflictDetector : IProposalConflictDetector
     }
 
     /// <summary>
-    /// Extracts target column IDs from operations that move or create into a column.
-    /// Checks TargetType before Parameters so column-targeted operations with no
-    /// parameters are still detected. Parses JSON parameters for "columnId" or
-    /// "targetColumnId" fields when present.
+    /// Counts cards each proposal operation would add to a target column.
+    /// Existing cards moved within their current column do not increase projected WIP.
     /// </summary>
-    private static List<Guid> GetTargetColumnIds(AutomationProposal proposal)
+    private async Task<IReadOnlyDictionary<Guid, int>> GetProjectedColumnAdditionCountsAsync(
+        AutomationProposal proposal,
+        Dictionary<Guid, Card?> cardCache,
+        CancellationToken cancellationToken)
     {
-        var columnIds = new HashSet<Guid>();
+        var additions = new Dictionary<Guid, int>();
 
         foreach (var op in proposal.Operations)
         {
             if (!AddsCardToColumn(op))
                 continue;
 
-            // Target columns for column-targeted card movement/creation operations.
-            if (op.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrEmpty(op.TargetId)
-                && Guid.TryParse(op.TargetId, out var colTargetId))
-            {
-                columnIds.Add(colTargetId);
+            var targetColumnId = TryGetTargetColumnId(op);
+            if (!targetColumnId.HasValue)
                 continue;
-            }
 
-            if (string.IsNullOrWhiteSpace(op.Parameters)) continue;
-
-            // Parse parameters JSON for columnId / targetColumnId fields
-            try
+            if (op.ActionType.Equals("move", StringComparison.OrdinalIgnoreCase)
+                && op.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)
+                && Guid.TryParse(op.TargetId, out var movedCardId))
             {
-                using var doc = System.Text.Json.JsonDocument.Parse(op.Parameters);
-                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                var card = await GetOrFetchCardAsync(movedCardId, cardCache, cancellationToken);
+                if (card?.ColumnId == targetColumnId.Value)
                     continue;
+            }
 
-                if (doc.RootElement.TryGetProperty("columnId", out var colProp)
-                    && colProp.ValueKind == System.Text.Json.JsonValueKind.String
-                    && Guid.TryParse(colProp.GetString(), out var columnId))
-                {
-                    columnIds.Add(columnId);
-                }
-                else if (doc.RootElement.TryGetProperty("targetColumnId", out var targetColProp)
-                         && targetColProp.ValueKind == System.Text.Json.JsonValueKind.String
-                         && Guid.TryParse(targetColProp.GetString(), out var targetColumnId))
-                {
-                    columnIds.Add(targetColumnId);
-                }
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                // Malformed JSON in parameters -- skip silently
-            }
+            additions[targetColumnId.Value] = additions.GetValueOrDefault(targetColumnId.Value) + 1;
         }
 
-        return columnIds.ToList();
+        return additions;
+    }
+
+    /// <summary>
+    /// Extracts a target column ID from an operation that moves or creates into a column.
+    /// Checks TargetType before Parameters so column-targeted operations with no
+    /// parameters are still detected. Parses JSON parameters for "columnId" or
+    /// "targetColumnId" fields when present.
+    /// </summary>
+    private static Guid? TryGetTargetColumnId(AutomationProposalOperation op)
+    {
+        // Target columns for column-targeted card movement/creation operations.
+        if (op.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(op.TargetId)
+            && Guid.TryParse(op.TargetId, out var colTargetId))
+        {
+            return colTargetId;
+        }
+
+        if (string.IsNullOrWhiteSpace(op.Parameters)) return null;
+
+        // Parse parameters JSON for columnId / targetColumnId fields
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(op.Parameters);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return null;
+
+            if (doc.RootElement.TryGetProperty("columnId", out var colProp)
+                && colProp.ValueKind == System.Text.Json.JsonValueKind.String
+                && Guid.TryParse(colProp.GetString(), out var columnId))
+            {
+                return columnId;
+            }
+
+            if (doc.RootElement.TryGetProperty("targetColumnId", out var targetColProp)
+                && targetColProp.ValueKind == System.Text.Json.JsonValueKind.String
+                && Guid.TryParse(targetColProp.GetString(), out var targetColumnId))
+            {
+                return targetColumnId;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Malformed JSON in parameters -- skip silently
+        }
+
+        return null;
     }
 
     private static bool AddsCardToColumn(AutomationProposalOperation operation)

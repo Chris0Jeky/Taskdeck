@@ -260,6 +260,59 @@ public class ProposalConflictDetectorTests
         result.Value.Should().NotContain(r => r.Key == "wip-limit");
     }
 
+    [Fact]
+    public async Task DetectConflictsAsync_ProjectedCreatesExceedWipLimit_ReturnsWipWarning()
+    {
+        var columnId = Guid.NewGuid();
+        var proposal = CreateProposal(_userId, _boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "column", "{}", Guid.NewGuid().ToString(), columnId.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 1, "create", "column", "{}", Guid.NewGuid().ToString(), columnId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var column = new Column(_boardId, "In Progress", 1, wipLimit: 5);
+        AddCardsToColumn(column, 4);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(columnId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription>());
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain(r =>
+            r.Tone == ConflictTone.Warn
+            && r.Key == "wip-limit"
+            && r.Value.Contains("(6/5)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_MoveWithinSameColumn_DoesNotIncreaseProjectedWip()
+    {
+        var columnId = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+        var card = new Card(cardId, _boardId, columnId, "Same column move");
+        var proposal = CreateProposalWithMoveOp(_userId, _boardId, cardId, columnId);
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var column = new Column(_boardId, "In Progress", 1, wipLimit: 1);
+        AddCardsToColumn(column, 1);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(columnId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        SetupEmptySecondaryChecks(proposal, cardId);
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotContain(r => r.Key == "wip-limit");
+    }
+
     #endregion
 
     #region Warn: Duplicate Pending Proposals
