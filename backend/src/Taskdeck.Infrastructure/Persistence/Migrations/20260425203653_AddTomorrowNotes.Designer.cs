@@ -2,17 +2,20 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace Taskdeck.Infrastructure.Migrations
+namespace Taskdeck.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260425203653_AddTomorrowNotes")]
+    partial class AddTomorrowNotes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.26");
@@ -1712,42 +1715,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("ProposalOutcomes", (string)null);
                 });
 
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalProvenance", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CorrelationId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ModelId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("ProposalId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("TotalTokens")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .IsConcurrencyToken()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProposalId")
-                        .IsUnique();
-
-                    b.ToTable("ProposalProvenances", (string)null);
-                });
-
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalRevision", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1790,85 +1757,6 @@ namespace Taskdeck.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("ProposalRevisions", (string)null);
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceEvidenceLink", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Label")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("ProvenanceFieldId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourceId")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourceType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("SpanEnd")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("SpanStart")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .IsConcurrencyToken()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProvenanceFieldId");
-
-                    b.ToTable("ProvenanceEvidenceLinks", (string)null);
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceField", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<double>("Confidence")
-                        .HasColumnType("REAL");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ExtractiveQuote")
-                        .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FieldName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("ProposalProvenanceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .IsConcurrencyToken()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProposalProvenanceId");
-
-                    b.ToTable("ProvenanceFields", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.TomorrowNote", b =>
@@ -2336,15 +2224,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Proposal");
                 });
 
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalProvenance", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.AutomationProposal", null)
-                        .WithOne()
-                        .HasForeignKey("Taskdeck.Domain.Entities.ProposalProvenance", "ProposalId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalRevision", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.AutomationProposal", "Proposal")
@@ -2354,24 +2233,6 @@ namespace Taskdeck.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Proposal");
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceEvidenceLink", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.ProvenanceField", null)
-                        .WithMany("EvidenceLinks")
-                        .HasForeignKey("ProvenanceFieldId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceField", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.ProposalProvenance", null)
-                        .WithMany("Fields")
-                        .HasForeignKey("ProposalProvenanceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.UserPreference", b =>
@@ -2440,16 +2301,6 @@ namespace Taskdeck.Infrastructure.Migrations
             modelBuilder.Entity("Taskdeck.Domain.Entities.Label", b =>
                 {
                     b.Navigation("CardLabels");
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalProvenance", b =>
-                {
-                    b.Navigation("Fields");
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceField", b =>
-                {
-                    b.Navigation("EvidenceLinks");
                 });
 #pragma warning restore 612, 618
         }
