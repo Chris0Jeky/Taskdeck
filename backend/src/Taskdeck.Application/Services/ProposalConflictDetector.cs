@@ -379,6 +379,9 @@ public class ProposalConflictDetector : IProposalConflictDetector
             try
             {
                 using var doc = System.Text.Json.JsonDocument.Parse(op.Parameters);
+                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                    continue;
+
                 if (doc.RootElement.TryGetProperty("columnId", out var colProp)
                     && colProp.ValueKind == System.Text.Json.JsonValueKind.String
                     && Guid.TryParse(colProp.GetString(), out var columnId))
@@ -427,8 +430,8 @@ public class ProposalConflictDetector : IProposalConflictDetector
         {
             "create" or "add" => "created",
             "move" => "moved",
-            "delete" or "remove" or "archive" => "deleted",
-            "update" or "set" or "rename" or "reorder" or "assign" or "attach" or "block" or "unblock" or "restore" or "unarchive" => "updated",
+            "delete" or "remove" => "deleted",
+            "archive" or "update" or "set" or "rename" or "reorder" or "assign" or "attach" or "block" or "unblock" or "restore" or "unarchive" => "updated",
             _ => null
         };
 

@@ -452,6 +452,32 @@ public class ProposalConflictDetectorTests
     }
 
     [Fact]
+    public async Task DetectConflictsAsync_ArchiveCardMatchesUpdatedWebhookFilter()
+    {
+        var cardId = Guid.NewGuid();
+        var card = CreateCard(cardId);
+        var proposal = CreateProposalWithCardOp(_userId, _boardId, cardId, "archive");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        SetupNoDuplicateProposal(cardId);
+
+        var webhook = new OutboundWebhookSubscription(
+            _boardId, _userId, "https://example.com/hook", "secret123", ["card.updated"]);
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription> { webhook });
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain(r => r.Tone == ConflictTone.Info && r.Key == "webhooks");
+    }
+
+    [Fact]
     public async Task DetectConflictsAsync_NoOperationsWithActiveWebhooks_NoWebhookInfo()
     {
         var proposal = CreateProposal(_userId, _boardId);
@@ -886,6 +912,30 @@ public class ProposalConflictDetectorTests
         // columnId is a number, not a string -- should not throw InvalidOperationException
         proposal.AddOperation(new AutomationProposalOperation(
             proposal.Id, 0, "move", "card", "{\"columnId\": 12345}", Guid.NewGuid().ToString(), cardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        _commentRepoMock.Setup(r => r.CountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        SetupNoDuplicateProposal(cardId);
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription>());
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_NonObjectParametersJson_DoesNotThrow()
+    {
+        var cardId = Guid.NewGuid();
+        var card = CreateCard(cardId);
+        var proposal = CreateProposal(_userId, _boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "move", "card", "[]", Guid.NewGuid().ToString(), cardId.ToString()));
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
