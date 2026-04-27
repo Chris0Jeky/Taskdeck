@@ -29,6 +29,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly IAutomationExecutorService _executorService;
     private readonly ISimilarDecisionService _similarDecisionService;
     private readonly BoardAuthorizationService _authorizationService;
+    private readonly IProvenanceQueryService _provenanceQueryService;
     private readonly IConfidenceBreakdownService _confidenceBreakdownService;
     private readonly ICardHistoryService _cardHistoryService;
     private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
@@ -38,6 +39,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         IAutomationExecutorService executorService,
         ISimilarDecisionService similarDecisionService,
         BoardAuthorizationService authorizationService,
+        IProvenanceQueryService provenanceQueryService,
         IConfidenceBreakdownService confidenceBreakdownService,
         ICardHistoryService cardHistoryService,
         ISideEffectAnalyzer sideEffectAnalyzer,
@@ -47,6 +49,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         _executorService = executorService;
         _similarDecisionService = similarDecisionService;
         _authorizationService = authorizationService;
+        _provenanceQueryService = provenanceQueryService;
         _confidenceBreakdownService = confidenceBreakdownService;
         _cardHistoryService = cardHistoryService;
         _sideEffectAnalyzer = sideEffectAnalyzer;
@@ -324,6 +327,24 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
         var result = await _proposalService.GetProposalDiffAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(new { diff = result.Value }) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Gets the provenance rows for a proposal, describing the sources read,
+    /// excluded, or inferred during proposal generation.
+    /// </summary>
+    [HttpGet("{id}/provenance")]
+    public async Task<IActionResult> GetProposalProvenance(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _provenanceQueryService.GetProvenanceRowsAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     /// <summary>

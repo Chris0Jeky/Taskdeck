@@ -3,6 +3,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -35,13 +36,16 @@ public class AutomationProposalService : IAutomationProposalService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationService _notificationService;
+    private readonly IProposalProvenanceRepository? _provenanceRepository;
 
     public AutomationProposalService(
         IUnitOfWork unitOfWork,
-        INotificationService? notificationService = null)
+        INotificationService? notificationService = null,
+        IProposalProvenanceRepository? provenanceRepository = null)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
+        _provenanceRepository = provenanceRepository;
     }
 
     public async Task<Result<ProposalDto>> CreateProposalAsync(CreateProposalDto dto, CancellationToken cancellationToken = default)
@@ -79,6 +83,12 @@ public class AutomationProposalService : IAutomationProposalService
                 }
             }
 
+            if (_provenanceRepository is not null)
+            {
+                var provenance = BuildCreationProvenance(proposal, dto);
+                await _provenanceRepository.AddAsync(provenance, cancellationToken);
+            }
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Success(MapToDto(proposal));
@@ -87,6 +97,61 @@ public class AutomationProposalService : IAutomationProposalService
         {
             return Result.Failure<ProposalDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    private static ProposalProvenance BuildCreationProvenance(AutomationProposal proposal, CreateProposalDto dto)
+    {
+        var provenance = new ProposalProvenance(
+            proposal.Id,
+            proposal.CorrelationId,
+            ResolveProvenanceModelId(dto),
+            Math.Max(0, dto.ProvenanceTotalTokens));
+
+        provenance.AddField(new ProvenanceField(
+            "Summary",
+            ProvenanceKind.Inferred,
+            0.8,
+            provenance.Id));
+
+        var orderedOperations = proposal.Operations
+            .OrderBy(operation => operation.Sequence)
+            .ToList();
+
+        for (var i = 0; i < orderedOperations.Count; i++)
+        {
+            var operation = orderedOperations[i];
+            provenance.AddField(new ProvenanceField(
+                TruncateProvenanceFieldName($"Operation {i + 1}: {operation.ActionType} {operation.TargetType}"),
+                ProvenanceKind.Inferred,
+                0.75,
+                provenance.Id));
+        }
+
+        return provenance;
+    }
+
+    private static string ResolveProvenanceModelId(CreateProposalDto dto)
+    {
+        if (!string.IsNullOrWhiteSpace(dto.ProvenanceModelId))
+            return TruncateProvenanceModelId(dto.ProvenanceModelId.Trim());
+
+        return dto.SourceType switch
+        {
+            ProposalSourceType.Chat => "chat-tools",
+            ProposalSourceType.Manual => "manual",
+            ProposalSourceType.Queue => "queue",
+            _ => "unknown"
+        };
+    }
+
+    private static string TruncateProvenanceFieldName(string fieldName)
+    {
+        return fieldName.Length <= 100 ? fieldName : fieldName[..100];
+    }
+
+    private static string TruncateProvenanceModelId(string modelId)
+    {
+        return modelId.Length <= 100 ? modelId : modelId[..100];
     }
 
     public async Task<Result<ProposalDto>> GetProposalByIdAsync(Guid id, CancellationToken cancellationToken = default)

@@ -75,6 +75,7 @@ public static class DependencyInjection
         services.AddScoped<IFtsKnowledgeSearchService>(sp =>
             sp.GetRequiredService<Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>());
         services.AddScoped<IProposalRevisionRepository, ProposalRevisionRepository>();
+        services.AddScoped<IProposalProvenanceRepository, ProposalProvenanceRepository>();
         services.AddScoped<IDailySnapshotRepository, DailySnapshotRepository>();
         services.AddScoped<ITomorrowNoteRepository, TomorrowNoteRepository>();
 
