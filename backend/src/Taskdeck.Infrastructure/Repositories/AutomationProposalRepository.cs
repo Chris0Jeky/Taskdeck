@@ -209,11 +209,29 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         if (string.IsNullOrWhiteSpace(targetType) || string.IsNullOrWhiteSpace(targetId))
             return Array.Empty<AutomationProposal>();
 
-        var proposalIds = await _context.AutomationProposalOperations
-            .Where(op => op.TargetType == targetType && op.TargetId == targetId)
+        var normalizedTargetType = targetType.Trim().ToLowerInvariant();
+        var targetIsGuid = Guid.TryParse(targetId, out var normalizedTargetGuid);
+        var now = DateTime.UtcNow;
+
+        var candidateOperations = await _context.AutomationProposalOperations
+            .Join(
+                _dbSet.Where(p => p.Status == ProposalStatus.PendingReview && p.ExpiresAt > now),
+                operation => operation.ProposalId,
+                proposal => proposal.Id,
+                (operation, proposal) => new
+                {
+                    operation.ProposalId,
+                    operation.TargetType,
+                    operation.TargetId
+                })
+            .Where(op => op.TargetType.ToLower() == normalizedTargetType && op.TargetId != null)
+            .ToListAsync(cancellationToken);
+
+        var proposalIds = candidateOperations
+            .Where(op => TargetIdMatches(op.TargetId!, targetId, targetIsGuid, normalizedTargetGuid))
             .Select(op => op.ProposalId)
             .Distinct()
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         if (proposalIds.Count == 0)
             return Array.Empty<AutomationProposal>();
@@ -222,6 +240,14 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .Include(p => p.Operations)
             .Where(p => proposalIds.Contains(p.Id) && p.Status == ProposalStatus.PendingReview)
             .ToListAsync(cancellationToken);
+    }
+
+    private static bool TargetIdMatches(string storedTargetId, string requestedTargetId, bool requestedTargetIsGuid, Guid requestedTargetGuid)
+    {
+        if (requestedTargetIsGuid && Guid.TryParse(storedTargetId, out var storedTargetGuid))
+            return storedTargetGuid == requestedTargetGuid;
+
+        return string.Equals(storedTargetId, requestedTargetId, StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)

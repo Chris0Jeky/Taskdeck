@@ -390,6 +390,41 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         results.Should().NotContain(p => p.Id == proposal.Id);
     }
 
+    [Fact]
+    public async Task GetPendingByOperationTargetAsync_NormalizesGuidAndTargetType_ExcludesExpired()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User($"ap-target-user-{Guid.NewGuid():N}", $"ap-target-{Guid.NewGuid():N}@example.com", "hash");
+        db.Users.Add(user);
+
+        var targetId = Guid.NewGuid();
+        var pending = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Pending target", RiskLevel.Low,
+            $"corr-pending-target-{Guid.NewGuid():N}");
+        pending.AddOperation(new AutomationProposalOperation(
+            pending.Id, 0, "update", "Card", "{\"title\":\"Updated\"}",
+            $"key-pending-{Guid.NewGuid():N}", targetId: targetId.ToString("B")));
+
+        var expired = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Expired target", RiskLevel.Low,
+            $"corr-expired-target-{Guid.NewGuid():N}");
+        expired.AddOperation(new AutomationProposalOperation(
+            expired.Id, 0, "update", "card", "{\"title\":\"Expired\"}",
+            $"key-expired-{Guid.NewGuid():N}", targetId: targetId.ToString("D").ToUpperInvariant()));
+        SetExpiresAt(expired, DateTime.UtcNow.AddMinutes(-1));
+
+        db.AutomationProposals.AddRange(pending, expired);
+        await db.SaveChangesAsync();
+
+        var results = await repo.GetPendingByOperationTargetAsync(" CARD ", targetId.ToString("N").ToUpperInvariant());
+
+        results.Should().ContainSingle(p => p.Id == pending.Id);
+        results.Should().NotContain(p => p.Id == expired.Id);
+    }
+
     private static void SetExpiresAt(AutomationProposal proposal, DateTime expiresAt)
     {
         typeof(AutomationProposal)

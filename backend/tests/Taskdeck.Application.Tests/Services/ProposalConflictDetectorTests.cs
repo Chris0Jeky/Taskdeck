@@ -39,6 +39,8 @@ public class ProposalConflictDetectorTests
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.CardComments).Returns(_commentRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.OutboundWebhookSubscriptions).Returns(_webhookRepoMock.Object);
+        _authServiceMock.Setup(a => a.CanReadBoardAsync(_userId, It.IsAny<Guid>()))
+            .ReturnsAsync(Result.Success(true));
 
         _detector = new ProposalConflictDetector(
             _unitOfWorkMock.Object,
@@ -70,6 +72,21 @@ public class ProposalConflictDetectorTests
         var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
 
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_OwnerWithoutCurrentBoardAccess_ReturnsForbidden()
+    {
+        var proposal = CreateProposal(_userId, _boardId);
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _authServiceMock.Setup(a => a.CanReadBoardAsync(_userId, _boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
     }
 
     [Fact]
@@ -302,6 +319,32 @@ public class ProposalConflictDetectorTests
         result.Value.Should().NotContain(r => r.Key == "duplicate-proposal");
     }
 
+    [Fact]
+    public async Task DetectConflictsAsync_CreateCardWithPreAssignedId_ChecksDuplicateProposals()
+    {
+        var cardId = Guid.NewGuid();
+        var proposal = CreateProposal(_userId, _boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", "{}", Guid.NewGuid().ToString(), cardId.ToString()));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription>());
+
+        var otherProposal = CreateProposal(_userId, _boardId);
+        _proposalRepoMock.Setup(r => r.GetPendingByOperationTargetAsync(
+                "card", cardId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AutomationProposal> { otherProposal });
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain(r => r.Tone == ConflictTone.Warn && r.Key == "duplicate-proposal");
+        result.Value.Should().NotContain(r => r.Key == "missing-target");
+        result.Value.Should().NotContain(r => r.Key == "stale-data");
+    }
+
     #endregion
 
     #region Warn: High Risk
@@ -370,6 +413,48 @@ public class ProposalConflictDetectorTests
     public async Task DetectConflictsAsync_ActiveWebhooks_ReturnsWebhookInfo()
     {
         var proposal = CreateProposal(_userId, _boardId);
+        var columnId = Guid.NewGuid();
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "column", "{}", Guid.NewGuid().ToString(), columnId.ToString()));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var webhook = new OutboundWebhookSubscription(
+            _boardId, _userId, "https://example.com/hook", "secret123", ["column.updated"]);
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription> { webhook });
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain(r => r.Tone == ConflictTone.Info && r.Key == "webhooks");
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_NonMatchingWebhooks_NoWebhookInfo()
+    {
+        var proposal = CreateProposal(_userId, _boardId);
+        var columnId = Guid.NewGuid();
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "column", "{}", Guid.NewGuid().ToString(), columnId.ToString()));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var webhook = new OutboundWebhookSubscription(
+            _boardId, _userId, "https://example.com/hook", "secret123", ["card.created"]);
+        _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OutboundWebhookSubscription> { webhook });
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotContain(r => r.Key == "webhooks");
+    }
+
+    [Fact]
+    public async Task DetectConflictsAsync_NoOperationsWithActiveWebhooks_NoWebhookInfo()
+    {
+        var proposal = CreateProposal(_userId, _boardId);
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
 
@@ -381,7 +466,7 @@ public class ProposalConflictDetectorTests
         var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Contain(r => r.Tone == ConflictTone.Info && r.Key == "webhooks");
+        result.Value.Should().NotContain(r => r.Key == "webhooks");
     }
 
     [Fact]
@@ -750,6 +835,7 @@ public class ProposalConflictDetectorTests
             .ReturnsAsync(proposal);
         _webhookRepoMock.Setup(r => r.GetActiveByBoardAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<OutboundWebhookSubscription>());
+        SetupNoDuplicateProposal(cardId);
 
         // Card does NOT exist yet (create operation) -- should NOT produce missing-target warning
         _cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
@@ -763,7 +849,7 @@ public class ProposalConflictDetectorTests
     }
 
     [Fact]
-    public async Task DetectConflictsAsync_ColumnTargetWithNoParameters_StillDetected()
+    public async Task DetectConflictsAsync_ColumnOnlyOperation_DoesNotRunWipCapacityChecks()
     {
         var columnId = Guid.NewGuid();
         var proposal = CreateProposal(_userId, _boardId, riskLevel: RiskLevel.High);
@@ -783,8 +869,12 @@ public class ProposalConflictDetectorTests
         var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
 
         result.IsSuccess.Should().BeTrue();
-        // Column should be detected and produce a capacity Ok signal
-        result.Value.Should().Contain(r => r.Key == "capacity");
+        result.Value.Should().Contain(r => r.Key == "high-risk");
+        result.Value.Should().NotContain(r => r.Key == "capacity");
+        result.Value.Should().NotContain(r => r.Key == "wip-limit");
+        _columnRepoMock.Verify(
+            r => r.GetByIdWithCardsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

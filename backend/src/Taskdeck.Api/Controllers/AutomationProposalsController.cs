@@ -282,6 +282,10 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
             return errorResult!;
 
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
         var result = await _conflictDetector.DetectConflictsAsync(id, callerUserId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }

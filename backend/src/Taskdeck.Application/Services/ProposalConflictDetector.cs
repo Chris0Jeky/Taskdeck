@@ -32,7 +32,8 @@ public class ProposalConflictDetector : IProposalConflictDetector
         if (proposal is null)
             return Result.Failure<IReadOnlyList<ConflictRowDto>>(ErrorCodes.NotFound, "Proposal not found");
 
-        // Authorization: user must own the proposal or have board read access
+        // Authorization: board-scoped proposals require current board read access,
+        // even for the original proposal owner, matching controller-level read paths.
         var authResult = await AuthorizeAccessAsync(proposal, userId, cancellationToken);
         if (!authResult.IsSuccess)
             return Result.Failure<IReadOnlyList<ConflictRowDto>>(authResult.ErrorCode, authResult.ErrorMessage);
@@ -80,19 +81,18 @@ public class ProposalConflictDetector : IProposalConflictDetector
         Guid userId,
         CancellationToken cancellationToken)
     {
-        // Owner always has access
-        if (proposal.RequestedByUserId == userId)
-            return Result.Success();
-
-        // If board-scoped, check board read access
         if (proposal.BoardId.HasValue)
         {
             var canRead = await _authorizationService.CanReadBoardAsync(userId, proposal.BoardId.Value);
             if (canRead.IsSuccess && canRead.Value)
                 return Result.Success();
+
+            return Result.Failure(ErrorCodes.Forbidden, "You do not have permission to view conflicts for this proposal");
         }
 
-        return Result.Failure(ErrorCodes.Forbidden, "You do not have permission to view conflicts for this proposal");
+        return proposal.RequestedByUserId == userId
+            ? Result.Success()
+            : Result.Failure(ErrorCodes.Forbidden, "You do not have permission to view conflicts for this proposal");
     }
 
     /// <summary>
@@ -107,7 +107,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         Dictionary<Guid, Card?> cardCache,
         CancellationToken cancellationToken)
     {
-        var cardTargetIds = GetDistinctCardTargetIds(proposal);
+        var cardTargetIds = GetDistinctCardTargetIds(proposal, includeCreate: false);
         if (cardTargetIds.Count == 0) return;
 
         foreach (var cardId in cardTargetIds)
@@ -173,13 +173,13 @@ public class ProposalConflictDetector : IProposalConflictDetector
         List<ConflictRow> rows,
         CancellationToken cancellationToken)
     {
-        var cardTargetIds = GetDistinctCardTargetIds(proposal);
+        var cardTargetIds = GetDistinctCardTargetIds(proposal, includeCreate: true);
         if (cardTargetIds.Count == 0) return;
 
         foreach (var cardId in cardTargetIds)
         {
             var pendingProposals = await _unitOfWork.AutomationProposals
-                .GetPendingByOperationTargetAsync("card", cardId.ToString(), cancellationToken);
+                .GetPendingByOperationTargetAsync("card", cardId.ToString("D"), cancellationToken);
 
             var hasDuplicate = pendingProposals.Any(p => p.Id != proposal.Id);
             if (hasDuplicate)
@@ -218,15 +218,21 @@ public class ProposalConflictDetector : IProposalConflictDetector
     {
         if (!proposal.BoardId.HasValue) return;
 
+        var eventTypes = GetWebhookEventTypes(proposal);
+        if (eventTypes.Count == 0) return;
+
         var webhooks = await _unitOfWork.OutboundWebhookSubscriptions
             .GetActiveByBoardAsync(proposal.BoardId.Value, cancellationToken);
 
-        if (webhooks.Count > 0)
+        var matchingWebhookCount = webhooks
+            .Count(webhook => eventTypes.Any(webhook.MatchesEvent));
+
+        if (matchingWebhookCount > 0)
         {
             rows.Add(new ConflictRow(
                 ConflictTone.Info,
                 "webhooks",
-                $"This proposal will trigger {webhooks.Count} outbound webhook(s)"));
+                $"This proposal will trigger {matchingWebhookCount} outbound webhook(s)"));
         }
     }
 
@@ -238,7 +244,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         List<ConflictRow> rows,
         CancellationToken cancellationToken)
     {
-        var cardTargetIds = GetDistinctCardTargetIds(proposal);
+        var cardTargetIds = GetDistinctCardTargetIds(proposal, includeCreate: false);
         if (cardTargetIds.Count == 0) return;
 
         foreach (var cardId in cardTargetIds)
@@ -310,7 +316,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         }
 
         // Ok: card data is fresh (only for cards we didn't already flag as stale/missing)
-        var cardTargetIds = GetDistinctCardTargetIds(proposal);
+        var cardTargetIds = GetDistinctCardTargetIds(proposal, includeCreate: false);
         foreach (var cardId in cardTargetIds)
         {
             if (flaggedCardIds.Contains(cardId)) continue;
@@ -331,11 +337,11 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Excludes create operations since those cards don't exist yet and would
     /// produce false stale/missing warnings.
     /// </summary>
-    private static List<Guid> GetDistinctCardTargetIds(AutomationProposal proposal)
+    private static List<Guid> GetDistinctCardTargetIds(AutomationProposal proposal, bool includeCreate)
     {
         return proposal.Operations
             .Where(op => op.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)
-                         && !op.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase)
+                         && (includeCreate || !op.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
                          && !string.IsNullOrEmpty(op.TargetId)
                          && Guid.TryParse(op.TargetId, out _))
             .Select(op => Guid.Parse(op.TargetId!))
@@ -355,8 +361,10 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
         foreach (var op in proposal.Operations)
         {
-            // Target columns for column-targeted operations (checked first so that
-            // parameterless column operations are not skipped)
+            if (!AddsCardToColumn(op))
+                continue;
+
+            // Target columns for column-targeted card movement/creation operations.
             if (op.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrEmpty(op.TargetId)
                 && Guid.TryParse(op.TargetId, out var colTargetId))
@@ -391,6 +399,40 @@ public class ProposalConflictDetector : IProposalConflictDetector
         }
 
         return columnIds.ToList();
+    }
+
+    private static bool AddsCardToColumn(AutomationProposalOperation operation)
+    {
+        return operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase)
+            || operation.ActionType.Equals("move", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyList<string> GetWebhookEventTypes(AutomationProposal proposal)
+    {
+        return proposal.Operations
+            .Select(ToWebhookEventType)
+            .Where(eventType => eventType is not null)
+            .Distinct(StringComparer.Ordinal)
+            .Select(eventType => eventType!)
+            .ToList();
+    }
+
+    private static string? ToWebhookEventType(AutomationProposalOperation operation)
+    {
+        if (string.IsNullOrWhiteSpace(operation.TargetType) || string.IsNullOrWhiteSpace(operation.ActionType))
+            return null;
+
+        var entityType = operation.TargetType.Trim().ToLowerInvariant();
+        var eventOperation = operation.ActionType.Trim().ToLowerInvariant() switch
+        {
+            "create" or "add" => "created",
+            "move" => "moved",
+            "delete" or "remove" or "archive" => "deleted",
+            "update" or "set" or "rename" or "reorder" or "assign" or "attach" or "block" or "unblock" or "restore" or "unarchive" => "updated",
+            _ => null
+        };
+
+        return eventOperation is null ? null : $"{entityType}.{eventOperation}";
     }
 
     /// <summary>
