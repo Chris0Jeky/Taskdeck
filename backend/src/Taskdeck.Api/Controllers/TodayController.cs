@@ -9,7 +9,7 @@ using Taskdeck.Application.Services;
 namespace Taskdeck.Api.Controllers;
 
 /// <summary>
-/// Today-view endpoints: streak data, cadence aggregation, and daily dossier data.
+/// Today-view endpoints: streak data, cadence aggregation, daily dossier data, tomorrow notes, and day-seal operations.
 /// </summary>
 [ApiController]
 [Authorize]
@@ -19,17 +19,20 @@ public class TodayController : AuthenticatedControllerBase
 {
     private readonly IStreakService _streakService;
     private readonly ICadenceService _cadenceService;
+    private readonly IDailySealService _dailySealService;
     private readonly ITomorrowNoteService _tomorrowNoteService;
 
     public TodayController(
         IStreakService streakService,
         ICadenceService cadenceService,
+        IDailySealService dailySealService,
         ITomorrowNoteService tomorrowNoteService,
         IUserContext userContext)
         : base(userContext)
     {
         _streakService = streakService;
         _cadenceService = cadenceService;
+        _dailySealService = dailySealService;
         _tomorrowNoteService = tomorrowNoteService;
     }
 
@@ -106,6 +109,26 @@ public class TodayController : AuthenticatedControllerBase
         return Ok(response);
     }
 
+    [HttpPost("seal")]
+    public async Task<IActionResult> SealDay([FromBody] SealDayRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _dailySealService.SealDayAsync(userId, request.Date, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    [HttpGet("seal")]
+    public async Task<IActionResult> GetSealStatus([FromQuery] DateOnly date, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _dailySealService.GetSealStatusAsync(userId, date, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
     /// <summary>
     /// Gets the tomorrow note for the given date.
     /// The note was written the previous day and is displayed on the specified date's morning open.
@@ -153,3 +176,5 @@ public class TodayController : AuthenticatedControllerBase
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 }
+
+public sealed record SealDayRequest(DateOnly Date);

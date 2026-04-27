@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Taskdeck.Application.Interfaces;
@@ -9,6 +10,8 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public class UnitOfWork : IUnitOfWork
 {
+    private const int MaxSqliteWriteLockRetries = 5;
+
     private readonly TaskdeckDbContext _context;
     private IDbContextTransaction? _transaction;
 
@@ -46,6 +49,7 @@ public class UnitOfWork : IUnitOfWork
         IConnectorEventRepository connectorEvents,
         IConnectorCredentialRepository connectorCredentials,
         IProposalRevisionRepository proposalRevisions,
+        IDailySnapshotRepository dailySnapshots,
         ITomorrowNoteRepository tomorrowNotes)
     {
         _context = context;
@@ -81,6 +85,7 @@ public class UnitOfWork : IUnitOfWork
         ConnectorEvents = connectorEvents;
         ConnectorCredentials = connectorCredentials;
         ProposalRevisions = proposalRevisions;
+        DailySnapshots = dailySnapshots;
         TomorrowNotes = tomorrowNotes;
     }
 
@@ -116,31 +121,41 @@ public class UnitOfWork : IUnitOfWork
     public IConnectorEventRepository ConnectorEvents { get; }
     public IConnectorCredentialRepository ConnectorCredentials { get; }
     public IProposalRevisionRepository ProposalRevisions { get; }
+    public IDailySnapshotRepository DailySnapshots { get; }
     public ITomorrowNoteRepository TomorrowNotes { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        try
+        var resolvedRecoverableUniqueConflict = false;
+
+        for (var attempt = 0; ; attempt++)
         {
-            return await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            throw new DomainException(
-                ErrorCodes.Conflict,
-                "Record was updated by another session. Refresh and retry your action.",
-                ex);
-        }
-        catch (DbUpdateException ex) when (IsProposalRevisionUniqueViolation(ex))
-        {
-            throw new DomainException(
-                ErrorCodes.Conflict,
-                "Proposal revision was created by another session. Refresh and retry your edit.",
-                ex);
-        }
-        catch (DbUpdateException ex) when (TryResolveRecoverableUniqueConflicts(ex))
-        {
-            return await _context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                return await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                throw new DomainException(
+                    ErrorCodes.Conflict,
+                    "Record was updated by another session. Refresh and retry your action.",
+                    ex);
+            }
+            catch (DbUpdateException ex) when (IsProposalRevisionUniqueViolation(ex))
+            {
+                throw new DomainException(
+                    ErrorCodes.Conflict,
+                    "Proposal revision was created by another session. Refresh and retry your edit.",
+                    ex);
+            }
+            catch (DbUpdateException ex) when (!resolvedRecoverableUniqueConflict && TryResolveRecoverableUniqueConflicts(ex))
+            {
+                resolvedRecoverableUniqueConflict = true;
+            }
+            catch (DbUpdateException ex) when (IsTransientSqliteWriteLock(ex) && attempt < MaxSqliteWriteLockRetries)
+            {
+                await Task.Delay(GetSqliteWriteLockRetryDelay(attempt), cancellationToken);
+            }
         }
     }
 
@@ -173,9 +188,13 @@ public class UnitOfWork : IUnitOfWork
     {
         var resolvedNotificationConflict = TryResolveDuplicateNotificationDeduplicationConflicts(exception);
         var resolvedUserPreferenceConflict = TryResolveDuplicateUserPreferenceConflicts(exception);
+        var resolvedDailySnapshotConflict = TryResolveDuplicateDailySnapshotConflicts(exception);
         var resolvedTomorrowNoteConflict = TryResolveDuplicateTomorrowNoteConflicts(exception);
 
-        return resolvedNotificationConflict || resolvedUserPreferenceConflict || resolvedTomorrowNoteConflict;
+        return resolvedNotificationConflict
+            || resolvedUserPreferenceConflict
+            || resolvedDailySnapshotConflict
+            || resolvedTomorrowNoteConflict;
     }
 
     private bool TryResolveDuplicateNotificationDeduplicationConflicts(DbUpdateException exception)
@@ -314,5 +333,73 @@ public class UnitOfWork : IUnitOfWork
             || exception.InnerException.Message.Contains(
                 "IX_ProposalRevisions_ProposalId_RevisionNumber",
                 StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool TryResolveDuplicateDailySnapshotConflicts(DbUpdateException exception)
+    {
+        if (!IsDailySnapshotUniqueViolation(exception))
+            return false;
+
+        var duplicateSnapshotFound = false;
+        var pendingSnapshots = _context.ChangeTracker
+            .Entries<DailySnapshot>()
+            .Where(entry => entry.State == EntityState.Added)
+            .ToList();
+
+        foreach (var pendingSnapshot in pendingSnapshots)
+        {
+            var duplicateExists = _context.DailySnapshots
+                .AsNoTracking()
+                .Any(ds =>
+                    ds.UserId == pendingSnapshot.Entity.UserId
+                    && ds.Date == pendingSnapshot.Entity.Date);
+
+            if (!duplicateExists)
+                continue;
+
+            pendingSnapshot.State = EntityState.Detached;
+            duplicateSnapshotFound = true;
+        }
+
+        return duplicateSnapshotFound;
+    }
+
+    private static bool IsDailySnapshotUniqueViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is null)
+            return false;
+
+        return exception.InnerException.Message.Contains(
+            "DailySnapshots.UserId, DailySnapshots.Date",
+            StringComparison.OrdinalIgnoreCase)
+            || exception.InnerException.Message.Contains(
+                "IX_DailySnapshots_UserId_Date",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsTransientSqliteWriteLock(DbUpdateException exception)
+    {
+        for (var current = exception.InnerException; current is not null; current = current.InnerException)
+        {
+            if (current is SqliteException sqliteException
+                && (sqliteException.SqliteErrorCode == 5 || sqliteException.SqliteErrorCode == 6))
+            {
+                return true;
+            }
+
+            if (current.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)
+                || current.Message.Contains("database table is locked", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static TimeSpan GetSqliteWriteLockRetryDelay(int attempt)
+    {
+        var multiplier = attempt + 1;
+        return TimeSpan.FromMilliseconds(25 * multiplier * multiplier);
     }
 }

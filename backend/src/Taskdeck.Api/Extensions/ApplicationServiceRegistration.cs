@@ -4,6 +4,7 @@ using Taskdeck.Api.Services;
 using Taskdeck.Application.Connectors;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Services.Confidence;
 using Taskdeck.Application.Services.Tools;
 using Taskdeck.Domain.Agents;
 
@@ -48,6 +49,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IHistoryService>(sp => sp.GetRequiredService<HistoryService>());
         services.AddScoped<IAutomationProposalService, AutomationProposalService>();
         services.AddScoped<IProvenanceQueryService, ProvenanceQueryService>();
+        services.AddScoped<IConfidenceBreakdownService, ConfidenceBreakdownService>();
         services.AddScoped<ICardHistoryService, CardHistoryService>();
         services.AddScoped<ISideEffectAnalyzer, SideEffectAnalyzer>();
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
@@ -124,6 +126,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IToolExecutor, ProposeUpdateCardExecutor>();
         services.AddScoped<IToolExecutor, ProposeBulkMoveExecutor>();
         services.AddScoped<IToolExecutor, ProposeCreateColumnExecutor>();
+
+        services.AddScoped<IDailySealService, DailySealService>();
 
         services.AddScoped<ToolExecutorRegistry>(sp =>
             new ToolExecutorRegistry(sp.GetServices<IToolExecutor>()));

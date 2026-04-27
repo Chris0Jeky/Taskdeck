@@ -50,6 +50,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<ProposalProvenance> ProposalProvenances => Set<ProposalProvenance>();
     public DbSet<ProvenanceField> ProvenanceFields => Set<ProvenanceField>();
     public DbSet<ProvenanceEvidenceLink> ProvenanceEvidenceLinks => Set<ProvenanceEvidenceLink>();
+    public DbSet<DailySnapshot> DailySnapshots => Set<DailySnapshot>();
     public DbSet<TomorrowNote> TomorrowNotes => Set<TomorrowNote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

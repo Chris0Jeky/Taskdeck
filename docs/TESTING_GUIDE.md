@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-26
+Last Updated: 2026-04-27
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,9 +10,9 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-26)
+## Current Verified Totals (2026-04-27)
 
-- Backend: **~5,520 passing** (estimated; 5,060 at last recertification + ~460 new tests from Paper backend gap wave PRs `#1031`–`#1040`)
+- Backend: **~5,462 passing** (estimated; 5,060 at last recertification + ~402 new tests from Paper backend gap wave PRs `#1031`–`#1039`; `#1040` remains pending)
   - Domain: ~1,120 passed (962 + ~158 new domain tests)
   - Application: ~2,670 passed (2,367 + ~302 new application tests)
   - API integration: 1,621 passed (0 failed, 2 skipped; 1,623 total)
@@ -21,13 +21,13 @@ Companion Active Docs:
   - Integration (Testcontainers): 20 passed
 - Frontend unit: **2,805 passing** across 214+ test files -- verified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main`
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
-- Combined automated total: **~8,325+ passing** (backend ~5,520 + frontend unit 2,805 + E2E)
+- Combined automated total: **~8,267+ passing** (backend ~5,462 + frontend unit 2,805 + E2E)
 
 Verification note:
-- backend total of ~5,520 is estimated pending recertification after Paper backend gap PRs merge; ~460 new tests verified individually per PR via CI
-- Paper backend gap wave (2026-04-26, PRs `#1031`–`#1040`): ~460 new tests across 10 issues; each PR CI-verified independently
+- backend total of ~5,462 is estimated pending recertification after Paper backend gap PRs merge; ~402 new tests verified individually per delivered/merge-ready PR via CI
+- Paper backend gap wave (2026-04-27, PRs `#1031`–`#1039`; `#1040` pending): ~402 new tests across 9 delivered/merge-ready issues; each delivered PR CI-verified independently
 - prior recertification: backend 5,060 (2026-04-25), frontend 2,805 (2026-04-25) at PR `#987`
-- growth since last recertification: backend +~460 tests (Paper backend gaps), frontend unchanged
+- growth since last recertification: backend +~402 tests (Paper backend gaps through `#1039`), frontend unchanged
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
@@ -56,9 +56,9 @@ Pop-Location
 if ($code -ne 0) { exit $code }
 ```
 
-## Paper Backend Gap Testing (2026-04-26, PRs `#1031`–`#1040`)
+## Paper Backend Gap Testing (2026-04-27, PRs `#1031`–`#1039`; `#1040` pending)
 
-The Paper backend gap wave (PRs `#1031`–`#1040`) added ~460 new backend tests across 10 issues. Each PR received two rounds of adversarial review; the second round found and fixed issues including a P1 false-warning bug, a 100k entity memory risk, a board-scoping error, missing FK enforcement, and CancellationToken threading gaps.
+The Paper backend gap wave through PR `#1039` added ~402 new backend tests across 9 delivered/merge-ready issues. Each delivered PR received two rounds of adversarial review; the second round found and fixed issues including a 100k entity memory risk, a board-scoping error, missing FK enforcement, and CancellationToken threading gaps. Conflict detection (`#1022`/`#1040`) remains pending and is intentionally excluded from delivered totals here.
 
 ### Cadence Aggregation Tests (`#1015`/`#1031`)
 
@@ -146,7 +146,9 @@ Run:
 dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ConfidenceBreakdown"
 ```
 
-### Conflict Detection Tests (`#1022`/`#1040`)
+### Pending Conflict Detection Tests (`#1022`/`#1040`)
+
+Status: pending/open; listed here as the expected verification path once `#1040` is reconciled.
 
 `backend/tests/Taskdeck.Domain.Tests/Entities/ConflictRowTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/ProposalConflictDetectorTests.cs` — **46 tests** covering:
 - ConflictRow: tone enum, value object creation, equality
