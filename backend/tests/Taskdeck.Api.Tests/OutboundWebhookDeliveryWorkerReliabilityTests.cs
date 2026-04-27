@@ -649,6 +649,7 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
         public IConnectorEventRepository ConnectorEvents => null!;
         public IConnectorCredentialRepository ConnectorCredentials => null!;
         public IProposalRevisionRepository ProposalRevisions => null!;
+        public IDailySnapshotRepository DailySnapshots => null!;
         public ITomorrowNoteRepository TomorrowNotes => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
