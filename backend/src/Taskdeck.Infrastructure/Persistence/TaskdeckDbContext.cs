@@ -48,6 +48,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<ProposalRevision> ProposalRevisions => Set<ProposalRevision>();
     public DbSet<ProposalOutcome> ProposalOutcomes => Set<ProposalOutcome>();
     public DbSet<DailySnapshot> DailySnapshots => Set<DailySnapshot>();
+    public DbSet<TomorrowNote> TomorrowNotes => Set<TomorrowNote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

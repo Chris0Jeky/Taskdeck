@@ -628,6 +628,7 @@ public class WorkerResilienceTests
         public IConnectorCredentialRepository ConnectorCredentials => null!;
         public IProposalRevisionRepository ProposalRevisions => null!;
         public IDailySnapshotRepository DailySnapshots => null!;
+        public ITomorrowNoteRepository TomorrowNotes => null!;
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -670,6 +671,7 @@ public class WorkerResilienceTests
         public IConnectorCredentialRepository ConnectorCredentials => null!;
         public IProposalRevisionRepository ProposalRevisions => null!;
         public IDailySnapshotRepository DailySnapshots => null!;
+        public ITomorrowNoteRepository TomorrowNotes => null!;
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
