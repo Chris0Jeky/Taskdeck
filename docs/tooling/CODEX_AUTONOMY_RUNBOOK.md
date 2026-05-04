@@ -8,6 +8,8 @@ Scope: How Codex should execute high-autonomy Taskdeck work such as "take care o
 
 Codex may automate coordination, worktree setup, implementation, testing, PR creation, review, CI recovery, and docs reconciliation. It must not silently defer work, silently skip tests, merge PRs, change repo settings/secrets/protections, or bypass Taskdeck's review-first automation safety.
 
+Spawned subagents are optional execution machinery, not a default assumption. Use them without asking for extra permission when they are efficient or effective for safely parallelizable work with clear ownership and a coordinator-owned synthesis path. When subagents are unavailable or do not fit the work, use normal local execution, explicit git worktrees, or separate agent sessions as appropriate and state what actually happened.
+
 ## Request Routing
 
 Use these skills:
@@ -26,7 +28,7 @@ Use these skills:
 
 At the start of a high-autonomy session:
 
-1. Read `AGENTS.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/GITHUB_PROJECT_AUTOMATION.md`, and `docs/TESTING_GUIDE.md`.
+1. Read `AGENTS.md`, `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/GITHUB_PROJECT_AUTOMATION.md`, and `docs/TESTING_GUIDE.md`.
 2. Run `powershell -File scripts/check-git-env.ps1`.
 3. Confirm branch and worktree state:
    - `git branch --show-current`

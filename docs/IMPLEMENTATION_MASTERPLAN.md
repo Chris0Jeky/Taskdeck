@@ -55,6 +55,7 @@ Latest tooling addition (2026-04-25):
 - Repo-local Codex skills added for issue batch orchestration, isolated issue workers, PR review loops, and CI/conflict recovery.
 - PowerShell git/worktree guard scripts and GitHub helper scripts added for Windows-safe batch execution.
 - Follow-up hardening added `scripts/github/Sync-TaskdeckProjectPriority.ps1` for Project v2 priority audit/sync and fixed `reusable-gitleaks.yml` summary indentation so the reusable workflow can create jobs instead of failing at YAML parse time.
+- Follow-up agent-ops alignment added Codex and Claude routing indexes (`.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/skills/README.md`, `.claude/README.md`, `.claude/skills/README.md`), Claude high-autonomy skills, proactive Codex subagent usage guidance, and a `.mcp.json` mirror of the stable Docker MCP gateway bundle.
 
 Latest roadmap adoption (2026-04-25):
 - `taskdeck-12-week-roadmap-v4.md` was reconciled into active planning as tracker `#972` with dependency-ordered child issues `#973`--`#984`.

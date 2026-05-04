@@ -101,7 +101,7 @@ For Codex issue batches, use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` plus the h
 1. Use `docker` MCP for container/image lifecycle inspection.
 2. Use shell `docker compose` commands for canonical repo workflows and script parity.
 3. `docker` MCP in this repo is backed by Docker Desktop's `docker mcp gateway run` path, so Docker Desktop must be running.
-4. Project default Docker MCP gateway servers are in `.codex/config.toml` under `[mcp_servers.docker]`.
+4. Project default Docker MCP gateway servers are in `.codex/config.toml` under `[mcp_servers.docker]` and mirrored for Claude-compatible project MCP loading in `.mcp.json`.
 
 ---
 
