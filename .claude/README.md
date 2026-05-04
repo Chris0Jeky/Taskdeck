@@ -4,9 +4,9 @@ This `.claude/` layer contains Claude Code settings and skills for Taskdeck. It 
 
 ## Start Here
 
-1. Read [CLAUDE.md](../CLAUDE.md).
-2. Read [AGENTS.md](../AGENTS.md).
-3. Read [../docs/STATUS.md](../docs/STATUS.md).
+1. Read [../docs/STATUS.md](../docs/STATUS.md).
+2. Read [CLAUDE.md](../CLAUDE.md).
+3. Read [AGENTS.md](../AGENTS.md).
 4. Read [../docs/IMPLEMENTATION_MASTERPLAN.md](../docs/IMPLEMENTATION_MASTERPLAN.md).
 5. Pick the matching skill from [skills/README.md](./skills/README.md).
 

@@ -9,8 +9,8 @@ Coordinate many issues without losing review quality, docs sync, or follow-up ac
 
 ## Read first
 
-1. `AGENTS.md`
-2. `docs/STATUS.md`
+1. `docs/STATUS.md`
+2. `AGENTS.md`
 3. `docs/IMPLEMENTATION_MASTERPLAN.md`
 4. `docs/ISSUE_EXECUTION_GUIDE.md`
 5. `docs/GITHUB_PROJECT_AUTOMATION.md`

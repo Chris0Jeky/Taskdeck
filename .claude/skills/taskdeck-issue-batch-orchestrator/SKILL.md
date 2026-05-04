@@ -9,13 +9,13 @@ Use this skill for Claude Code batch work. It mirrors the Codex workflow in `.co
 
 ## Read First
 
-1. `CLAUDE.md`
-2. `AGENTS.md`
-3. `docs/STATUS.md`
+1. `docs/STATUS.md`
+2. `CLAUDE.md`
+3. `AGENTS.md`
 4. `docs/IMPLEMENTATION_MASTERPLAN.md`
 5. `docs/ISSUE_EXECUTION_GUIDE.md`
 6. `docs/GITHUB_PROJECT_AUTOMATION.md`
-7. `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`
+7. `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` for shared batch discipline; substitute Claude entrypoints for Codex-specific preflight.
 8. `docs/WORKTREE_AGENT_PROTOCOL.md` when using Claude worktree agents
 
 ## Coordinator Responsibilities

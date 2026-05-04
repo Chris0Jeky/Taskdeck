@@ -9,11 +9,12 @@ Use this skill when a PR is blocked by CI, review/bot comments, conflicts, stale
 
 ## Read First
 
-1. `CLAUDE.md`
-2. `AGENTS.md`
-3. PR body, checks, comments, review threads, and linked issue
-4. `docs/TESTING_GUIDE.md`
-5. `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`
+1. `docs/STATUS.md`
+2. `CLAUDE.md`
+3. `AGENTS.md`
+4. PR body, checks, comments, review threads, and linked issue
+5. `docs/TESTING_GUIDE.md`
+6. `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` for shared recovery discipline; substitute Claude entrypoints for Codex-specific preflight.
 
 ## Triage Sequence
 

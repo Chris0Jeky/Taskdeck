@@ -6,16 +6,16 @@ This `.codex/` layer is the Codex-facing control plane for Taskdeck. It routes a
 
 ## Start Here
 
-1. Read [AGENTS.md](../AGENTS.md).
-2. Read [memories/00_ACTIVE.md](./memories/00_ACTIVE.md).
-3. Read [docs/STATUS.md](../docs/STATUS.md).
+1. Read [docs/STATUS.md](../docs/STATUS.md).
+2. Read [AGENTS.md](../AGENTS.md).
+3. Read [memories/00_ACTIVE.md](./memories/00_ACTIVE.md).
 4. Read [docs/IMPLEMENTATION_MASTERPLAN.md](../docs/IMPLEMENTATION_MASTERPLAN.md).
 5. Pick the matching repo skill from [skills/README.md](./skills/README.md).
 
 ## Current Routing
 
-- Active gate and read order: [memories/00_ACTIVE.md](./memories/00_ACTIVE.md).
 - Taskdeck current state: [../docs/STATUS.md](../docs/STATUS.md).
+- Codex-local active gate after canonical docs: [memories/00_ACTIVE.md](./memories/00_ACTIVE.md).
 - Roadmap and sequencing: [../docs/IMPLEMENTATION_MASTERPLAN.md](../docs/IMPLEMENTATION_MASTERPLAN.md).
 - Dependency-aware issue order: [../docs/ISSUE_EXECUTION_GUIDE.md](../docs/ISSUE_EXECUTION_GUIDE.md).
 - High-autonomy Codex workflow: [../docs/tooling/CODEX_AUTONOMY_RUNBOOK.md](../docs/tooling/CODEX_AUTONOMY_RUNBOOK.md).

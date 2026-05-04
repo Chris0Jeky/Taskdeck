@@ -25,9 +25,10 @@ Claude Code skills live here and mirror the Taskdeck workflows exposed to Codex 
 
 ## Usage Pattern
 
-1. Read `CLAUDE.md`, `AGENTS.md`, and `docs/STATUS.md`.
-2. Choose the smallest matching skill set.
-3. Use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` for high-autonomy batch discipline even when the executing agent is Claude.
-4. Use `docs/WORKTREE_AGENT_PROTOCOL.md` for Claude worktree isolation.
-5. Report commands run, test results, docs updated, and unresolved risks.
+1. Read `docs/STATUS.md`.
+2. Read `CLAUDE.md` and `AGENTS.md`.
+3. Choose the smallest matching skill set.
+4. Use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` for shared high-autonomy batch discipline, substituting Claude entrypoints for Codex-specific preflight.
+5. Use `docs/WORKTREE_AGENT_PROTOCOL.md` for Claude worktree isolation.
+6. Report commands run, test results, docs updated, and unresolved risks.
 

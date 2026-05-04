@@ -11,9 +11,9 @@ Use this skill when assigned one issue or task in an isolated worktree.
 
 Read:
 
-1. `CLAUDE.md`
-2. `AGENTS.md`
-3. `docs/STATUS.md`
+1. `docs/STATUS.md`
+2. `CLAUDE.md`
+3. `AGENTS.md`
 4. the issue body and acceptance criteria
 5. the domain skill matching the files you own
 

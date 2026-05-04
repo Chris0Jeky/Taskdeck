@@ -9,9 +9,9 @@ Implement the smallest backend slice that fits the existing layering and contrac
 
 ## Read first
 
-1. `CLAUDE.md`
-2. `AGENTS.md`
-3. `docs/STATUS.md`
+1. `docs/STATUS.md`
+2. `CLAUDE.md`
+3. `AGENTS.md`
 4. `docs/GOLDEN_PRINCIPLES.md`
 5. `docs/TESTING_GUIDE.md`
 

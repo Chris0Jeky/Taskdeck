@@ -28,7 +28,7 @@ Use these skills:
 
 At the start of a high-autonomy session:
 
-1. Read `AGENTS.md`, `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/GITHUB_PROJECT_AUTOMATION.md`, and `docs/TESTING_GUIDE.md`.
+1. Read `docs/STATUS.md`, `AGENTS.md`, `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/GITHUB_PROJECT_AUTOMATION.md`, and `docs/TESTING_GUIDE.md`.
 2. Run `powershell -File scripts/check-git-env.ps1`.
 3. Confirm branch and worktree state:
    - `git branch --show-current`

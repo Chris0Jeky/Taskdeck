@@ -9,9 +9,9 @@ Review like a maintainer: find bugs, risks, missing tests, and docs drift before
 
 ## Read first
 
-1. `AGENTS.md`
-2. `docs/GOLDEN_PRINCIPLES.md`
-3. `docs/STATUS.md`
+1. `docs/STATUS.md`
+2. `AGENTS.md`
+3. `docs/GOLDEN_PRINCIPLES.md`
 4. The linked issue and PR body
 5. The PR diff
 

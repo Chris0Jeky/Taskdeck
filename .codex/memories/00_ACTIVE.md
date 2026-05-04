@@ -25,16 +25,16 @@ As of the active docs, Taskdeck is in review-first AI and Paper backend gap deli
 
 ## Required Read Order
 
-1. `AGENTS.md`
-2. `.codex/README.md`
-3. `docs/STATUS.md`
+1. `docs/STATUS.md`
+2. `AGENTS.md`
+3. `.codex/README.md`
 4. `docs/IMPLEMENTATION_MASTERPLAN.md`
 5. `docs/GOLDEN_PRINCIPLES.md`
 6. `docs/ISSUE_EXECUTION_GUIDE.md` when selecting or executing issues
 7. the matching `.codex/skills/*/SKILL.md`
 8. feature, testing, MCP, or project-automation docs relevant to the task
 
-For Claude Code, use `.claude/README.md` and `CLAUDE.md` in the same read sequence.
+For Claude Code, read `docs/STATUS.md` first, then use `.claude/README.md` and `CLAUDE.md` for Claude-specific routing.
 
 ## Agent Coordination Rules
 

@@ -9,8 +9,8 @@ Establish current Taskdeck truth before editing code or docs.
 
 ## Read first
 
-1. `AGENTS.md`
-2. `docs/STATUS.md`
+1. `docs/STATUS.md`
+2. `AGENTS.md`
 3. `docs/IMPLEMENTATION_MASTERPLAN.md`
 4. `docs/GOLDEN_PRINCIPLES.md`
 5. `docs/ISSUE_EXECUTION_GUIDE.md`

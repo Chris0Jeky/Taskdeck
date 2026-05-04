@@ -9,9 +9,9 @@ Finish the work completely: verify what changed, update the right docs, and repo
 
 ## Read first
 
-1. `AGENTS.md`
-2. `docs/TESTING_GUIDE.md`
-3. `docs/STATUS.md`
+1. `docs/STATUS.md`
+2. `AGENTS.md`
+3. `docs/TESTING_GUIDE.md`
 4. `docs/IMPLEMENTATION_MASTERPLAN.md`
 
 Read when relevant:

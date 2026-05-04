@@ -24,9 +24,10 @@ Repo-local Codex skills live here and supplement `AGENTS.md`. Use the smallest s
 
 ## Usage Pattern
 
-1. Read `AGENTS.md` and `.codex/memories/00_ACTIVE.md`.
-2. Choose the skill matching the request.
-3. Read that skill's `SKILL.md`.
-4. Pair it with active docs and the relevant feature or testing guide.
-5. Keep changes narrow, verify locally, and update canonical docs only when project reality changed.
+1. Read `docs/STATUS.md`.
+2. Read `AGENTS.md` and `.codex/memories/00_ACTIVE.md`.
+3. Choose the skill matching the request.
+4. Read that skill's `SKILL.md`.
+5. Pair it with active docs and the relevant feature or testing guide.
+6. Keep changes narrow, verify locally, and update canonical docs only when project reality changed.
 

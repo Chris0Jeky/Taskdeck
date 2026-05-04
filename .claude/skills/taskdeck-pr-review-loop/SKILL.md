@@ -9,11 +9,12 @@ Use this skill for PR self-review, fresh adversarial review, and review-comment 
 
 ## Read First
 
-1. `CLAUDE.md`
-2. `AGENTS.md`
-3. PR title/body/diff/commits
-4. linked issue and acceptance criteria
-5. relevant docs: `docs/STATUS.md`, `docs/TESTING_GUIDE.md`, feature docs
+1. `docs/STATUS.md`
+2. `CLAUDE.md`
+3. `AGENTS.md`
+4. PR title/body/diff/commits
+5. linked issue and acceptance criteria
+6. relevant docs: `docs/TESTING_GUIDE.md`, feature docs
 
 ## Review Stance
 
