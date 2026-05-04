@@ -1,6 +1,6 @@
 # Active Taskdeck Agent Context
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 This file is the Codex active-gate pointer for Taskdeck. It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
