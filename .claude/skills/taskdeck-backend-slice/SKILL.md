@@ -56,7 +56,7 @@ Do not move logic outward just to make a controller easier to write.
 
 ## Multi-agent split
 
-If the task is broad, split by non-overlapping ownership:
+If the task is broad and the user authorized subagents, delegation, or parallel work, split by non-overlapping ownership:
 
 - implementation in one layer or feature family
 - API contract or regression tests
