@@ -52,7 +52,7 @@ Write a short plan covering:
 
 ## Multi-agent split
 
-If work spans concerns, split by ownership:
+If subagents are efficient or effective, split by ownership:
 
 - backend implementation agent
 - frontend implementation agent

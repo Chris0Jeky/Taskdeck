@@ -1,0 +1,40 @@
+# Codex Workspace Control Plane
+
+This `.codex/` layer is the Codex-facing control plane for Taskdeck. It routes agents to the active project truth, local skills, MCP configuration, and high-autonomy workflows without making `.codex` a second product roadmap.
+
+`docs/STATUS.md` remains the source of truth for current shipped reality. `docs/IMPLEMENTATION_MASTERPLAN.md` remains the source of truth for roadmap sequencing and delivery history.
+
+## Start Here
+
+1. Read [AGENTS.md](../AGENTS.md).
+2. Read [memories/00_ACTIVE.md](./memories/00_ACTIVE.md).
+3. Read [docs/STATUS.md](../docs/STATUS.md).
+4. Read [docs/IMPLEMENTATION_MASTERPLAN.md](../docs/IMPLEMENTATION_MASTERPLAN.md).
+5. Pick the matching repo skill from [skills/README.md](./skills/README.md).
+
+## Current Routing
+
+- Active gate and read order: [memories/00_ACTIVE.md](./memories/00_ACTIVE.md).
+- Taskdeck current state: [../docs/STATUS.md](../docs/STATUS.md).
+- Roadmap and sequencing: [../docs/IMPLEMENTATION_MASTERPLAN.md](../docs/IMPLEMENTATION_MASTERPLAN.md).
+- Dependency-aware issue order: [../docs/ISSUE_EXECUTION_GUIDE.md](../docs/ISSUE_EXECUTION_GUIDE.md).
+- High-autonomy Codex workflow: [../docs/tooling/CODEX_AUTONOMY_RUNBOOK.md](../docs/tooling/CODEX_AUTONOMY_RUNBOOK.md).
+- MCP/tooling rules: [../docs/MCP_TOOLING_GUIDE.md](../docs/MCP_TOOLING_GUIDE.md).
+
+## Canonical Vs Local
+
+- Canonical project docs: `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/TESTING_GUIDE.md`, `docs/MANUAL_TEST_CHECKLIST.md`, and `docs/GOLDEN_PRINCIPLES.md`.
+- Codex-local routing: `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/config.toml`, and `.codex/skills/*`.
+- Claude-local routing: `.claude/README.md`, `.claude/settings.json`, and `.claude/skills/*`.
+- Historical or research material: `docs/archive/` and `docs/InReview/`; use only when active docs point there or the task explicitly asks for reconciliation.
+
+## Development Loop
+
+1. Confirm active Taskdeck state in `docs/STATUS.md`.
+2. Check git state and run `powershell -File scripts/check-git-env.ps1` before multi-file or branch work.
+3. Create a scoped branch or worktree for non-trivial implementation.
+4. Keep ownership narrow and choose the relevant Taskdeck skill.
+5. Run targeted checks first, then broaden based on blast radius.
+6. Update canonical docs only when shipped reality, roadmap sequencing, testing expectations, or operator workflow changed.
+7. Open a PR by default for issue-scoped implementation, then perform self-review before handoff.
+
