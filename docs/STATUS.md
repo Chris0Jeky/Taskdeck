@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-27
+Last Updated: 2026-05-05
 
 Paper backend gap delivery (9 of 10 issues, `#1015`–`#1024`, PRs `#1031`–`#1039`; `#1040` remains pending), after review-first AI roadmap v4 second-wave delivery.
 <br>
