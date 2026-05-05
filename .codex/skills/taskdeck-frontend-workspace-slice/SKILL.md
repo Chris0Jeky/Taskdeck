@@ -47,7 +47,7 @@ If the task changes capture, proposal review, provenance, or explicit board hand
 
 ## Multi-agent split
 
-Good parallel splits:
+If subagents are efficient or effective, good parallel splits are:
 
 - route or component implementation
 - store or API adjustments

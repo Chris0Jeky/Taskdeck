@@ -8,9 +8,13 @@
       "command": "npx",
       "args": ["-y", "@executeautomation/playwright-mcp-server"]
     },
+    "chromeDevTools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
     "docker": {
       "command": "docker",
-      "args": ["mcp", "gateway", "run", "--servers", "docker,docker-docs,filesystem,SQLite", "--transport", "stdio"]
+      "args": ["mcp", "gateway", "run", "--servers", "docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform", "--transport", "stdio"]
     }
   }
 }

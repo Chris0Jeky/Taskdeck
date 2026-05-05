@@ -9,10 +9,11 @@ Use Taskdeck's demo and regression tooling as evidence, not as a substitute for 
 
 ## Read first
 
-1. `docs/TESTING_GUIDE.md`
-2. `docs/START_HERE.md`
-3. `docs/product/DEMO_PLAYBOOK.md`
-4. `docs/product/SCENARIOS.md`
+1. `docs/STATUS.md`
+2. `docs/TESTING_GUIDE.md`
+3. `docs/START_HERE.md`
+4. `docs/product/DEMO_PLAYBOOK.md`
+5. `docs/product/SCENARIOS.md`
 
 ## Evidence ladder
 
