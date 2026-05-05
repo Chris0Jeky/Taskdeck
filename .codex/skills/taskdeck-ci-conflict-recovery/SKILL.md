@@ -9,10 +9,11 @@ Recover PRs by identifying the failing lane, fixing the root cause, and reportin
 
 ## Read first
 
-1. `AGENTS.md`
-2. `docs/TESTING_GUIDE.md`
-3. `docs/GITHUB_PROJECT_AUTOMATION.md` if status/project fields may change
-4. PR checks, logs, comments, and review threads
+1. `docs/STATUS.md`
+2. `AGENTS.md`
+3. `docs/TESTING_GUIDE.md`
+4. `docs/GITHUB_PROJECT_AUTOMATION.md` if status/project fields may change
+5. PR checks, logs, comments, and review threads
 
 ## Triage order
 

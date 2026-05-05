@@ -77,7 +77,9 @@ public record CreateProposalDto(
     Guid? BoardId = null,
     string? SourceReferenceId = null,
     int ExpiryMinutes = 1440,
-    List<CreateProposalOperationDto>? Operations = null
+    List<CreateProposalOperationDto>? Operations = null,
+    string? ProvenanceModelId = null,
+    int ProvenanceTotalTokens = 0
 );
 
 public record CreateProposalOperationDto(

@@ -8,6 +8,8 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - Use `docs/IMPLEMENTATION_MASTERPLAN.md` for roadmap context.
 - Use `docs/GOLDEN_PRINCIPLES.md` for stable repository invariants and guardrails.
 - Use `docs/ISSUE_EXECUTION_GUIDE.md` for dependency-aware issue execution order.
+- For Codex routing, read `.codex/README.md` and `.codex/memories/00_ACTIVE.md`.
+- For Claude Code routing, read `.claude/README.md` and `CLAUDE.md`.
 - For test operations, see `docs/TESTING_GUIDE.md`.
 - Precedence when instructions conflict: `docs/STATUS.md` > this file > subfolder `AGENTS.md`.
 
@@ -25,11 +27,12 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
   - if MCP is unavailable, failing, or lacks required capability, use shell/CLI fallback and state that fallback briefly in handoff notes.
 
 ## Multi-Agent / Parallel Execution (required)
-- Use spawned agents aggressively when the Codex runtime exposes them and work can be split safely.
-- If spawned agents are unavailable in the current runtime, use explicit git worktrees plus separate Codex sessions or GitHub coding-agent tasks; do not claim subagent execution unless it actually happened.
+- When the Codex runtime exposes spawned subagents, use them without asking for extra permission when they are efficient or effective for safely parallelizable work.
+- Split only when work can be separated by clear ownership and can proceed without blocking the coordinator's immediate next step.
+- If spawned agents are unavailable, use explicit git worktrees plus separate Codex/Claude sessions or GitHub coding-agent tasks; do not claim subagent execution unless it actually happened.
 - Split ownership by file/module/concern so concurrent work does not overlap.
 - Keep one coordinator responsible for issue selection, synthesis, conflict resolution, docs rehydration, project status/priority sync, and final verification.
-- Do not serialize independent exploration, implementation, review, or verification when safe parallel execution is possible.
+- Do not delegate final synthesis, ownership decisions, or broad vague cleanup.
 - For batch issue execution, PR review loops, CI recovery, and docs reconciliation, follow `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`.
 
 ## Project Operations Automation (required)
@@ -45,7 +48,8 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
   - this `AGENTS.md` (only if contributor behavior expectations changed)
 
 ## Local skill packs
-- Repo-local Codex skills live under `.codex/skills/` and supplement `AGENTS.md`; they do not override it.
+- Repo-local Codex skills live under `.codex/skills/` and supplement `AGENTS.md`; they do not override it. Start with `.codex/skills/README.md`.
+- Repo-local Claude Code skills live under `.claude/skills/` and mirror the same Taskdeck workflows for Claude sessions. Start with `.claude/skills/README.md`.
 - Use `.codex/skills/taskdeck-issue-batch-orchestrator` when asked to take care of many issues, pick issues, coordinate worktrees/subagents, open PRs, run review loops, or reconcile a high-autonomy batch.
 - Use `.codex/skills/taskdeck-worktree-issue-worker` when implementing a single assigned issue in an isolated worktree.
 - Use `.codex/skills/taskdeck-pr-review-loop` when reviewing PRs, spinning fresh adversarial reviewers, posting findings, or addressing review/bot comments.
@@ -82,7 +86,8 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ### Small Mainline Exception
 - If a change is very small and low-risk (especially minor docs wording/checklist updates), do not automatically create a branch/PR.
-- Prompt the user first and offer to let the user apply the change directly on `main`.
+- If the user already asked for the change directly, it may be applied on the current branch after checking git status and keeping the diff narrow.
+- If the user did not clearly ask for the change, prompt first and offer to let the user apply it directly on `main`.
 - Only proceed with branch/PR flow for these tiny changes when the user explicitly asks for it.
 
 ## Definition of Done (non-negotiable)

@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-04-26
+Last Updated: 2026-05-05
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -41,20 +41,21 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 
 Delivered in the latest cycle:
 
-Paper backend gap delivery (2026-04-26, PRs `#1031`--`#1040`, 10 issues `#1015`--`#1024`):
-- 10 backend endpoints delivered for the Paper UI surfaces (PAPER-08 Today dossier + PAPER-06 Review deep-dive), closing all `paper-*-backend-gap-*` issues
+Paper backend gap delivery (2026-05-05, PRs `#1031`--`#1040`, 10 of 10 issues `#1015`--`#1024`):
+- 10 backend endpoints delivered or merge-ready for the Paper UI surfaces (PAPER-08 Today dossier + PAPER-06 Review deep-dive), with the conflict-detection endpoint reconciled in `#1040`
 - Today dossier: cadence aggregation (`#1015`/`#1031`), 90-day streak query (`#1016`/`#1032`), seal-day action with EF migration (`#1017`/`#1037`), line-for-tomorrow autosave (`#1018`/`#1035`)
-- Review deep-dive: provenance rows with FK migration (`#1019`/`#1039`), 7-category side-effect analysis (`#1020`/`#1033`), 4-component confidence breakdown (`#1021`/`#1036`), conflict detection with 7 rules (`#1022`/`#1040`), card history ledger (`#1023`/`#1034`), similar past decisions with apply rate (`#1024`/`#1038`)
-- ~460 new backend tests across domain, application, and API layers
-- Two rounds of adversarial review per PR; Gemini Code Assist and Codex connector bot findings addressed on all 10 PRs
-- Key review fixes: 100k entity memory risk replaced with server-side GROUP BY (`#1032`), P1 false-warning for create-card ops (`#1040`), board-scoped similar-decision query (`#1038`), UnitOfWork unique constraint handlers for DailySnapshot/TomorrowNote (`#1037`/`#1035`), CancellationToken threading, reach formula correction (`#1036`), FK enforcement for provenance (`#1039`), entity caching in conflict detector (`#1040`)
-- New shared infrastructure: `TodayController`, `DailySnapshot` entity + repository, `TomorrowNote` entity + repository, `CountByDateAsync` aggregate audit query, `GetTerminalByActionTypeAsync` and `GetPendingByOperationTargetAsync` proposal repository methods
+- Review deep-dive: provenance rows with FK migration (`#1019`/`#1039`), 7-category side-effect analysis (`#1020`/`#1033`), 4-component confidence breakdown (`#1021`/`#1036`), conflict detection with tone-classified rows and projected WIP checks (`#1022`/`#1040`), card history ledger (`#1023`/`#1034`), similar past decisions with apply rate (`#1024`/`#1038`)
+- ~480 new backend tests across domain, application, and API layers in the delivered/merge-ready set
+- Two rounds of adversarial review per delivered PR; Gemini Code Assist and Codex connector bot findings addressed on delivered PRs
+- Key review fixes: 100k entity memory risk replaced with server-side GROUP BY (`#1032`), board-scoped similar-decision query (`#1038`), UnitOfWork unique constraint handlers for DailySnapshot/TomorrowNote (`#1037`/`#1035`), CancellationToken threading, reach formula correction (`#1036`), FK enforcement for provenance (`#1039`), conflict-detector create-card false positives, JSON ValueKind guards, projected WIP accounting, missing-column detection, webhook event mapping, and soft-deleted comment counts (`#1040`)
+- New shared infrastructure: `TodayController`, `DailySnapshot` entity + repository, `TomorrowNote` entity + repository, `CountByDateAsync` aggregate audit query, `GetTerminalByActionTypeAsync` and `GetPendingByOperationTargetAsync` proposal repository methods, `CountByCardIdAsync` card-comment aggregate query
 
 Latest tooling addition (2026-04-25):
 - Codex high-autonomy workflow hardening delivered: `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` now defines issue batch orchestration, worktree workers, PR review loops, CI/comment/conflict recovery, no-silent-deferral rules, and docs rehydration.
 - Repo-local Codex skills added for issue batch orchestration, isolated issue workers, PR review loops, and CI/conflict recovery.
 - PowerShell git/worktree guard scripts and GitHub helper scripts added for Windows-safe batch execution.
 - Follow-up hardening added `scripts/github/Sync-TaskdeckProjectPriority.ps1` for Project v2 priority audit/sync and fixed `reusable-gitleaks.yml` summary indentation so the reusable workflow can create jobs instead of failing at YAML parse time.
+- Follow-up agent-ops alignment added Codex and Claude routing indexes (`.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/skills/README.md`, `.claude/README.md`, `.claude/skills/README.md`), Claude high-autonomy skills, proactive Codex subagent usage guidance, and a `.mcp.json` mirror of the stable Docker MCP gateway bundle.
 
 Latest roadmap adoption (2026-04-25):
 - `taskdeck-12-week-roadmap-v4.md` was reconciled into active planning as tracker `#972` with dependency-ordered child issues `#973`--`#984`.

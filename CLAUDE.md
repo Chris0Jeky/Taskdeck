@@ -12,6 +12,8 @@ A local-first execution workspace for developers. Core thesis: near-zero-frictio
 2. `docs/IMPLEMENTATION_MASTERPLAN.md` -- delivery history, planned work, roadmap sequencing, and strategic intentions
 3. `docs/GOLDEN_PRINCIPLES.md` -- stable invariants and guardrails
 4. `AGENTS.md` -- full contributor protocol, definition of done, output expectations
+5. `.claude/README.md` -- Claude Code workspace routing, local skills, and worktree expectations
+6. `.codex/README.md` and `.codex/memories/00_ACTIVE.md` -- Codex control-plane alignment when comparing or sharing workflows
 
 Precedence when instructions conflict: `docs/STATUS.md` > `AGENTS.md` > this file.
 
@@ -105,6 +107,8 @@ Mock provider is default. OpenAI and Gemini supported behind config gates. See `
 - Keep diffs small and scoped; avoid large mixed refactors.
 - After edits: run required checks and report results.
 - For product-facing slices, ensure scope aligns with the thesis (reduce maintenance overhead/capture friction, preserve review-first trust).
+- Use `.claude/skills/README.md` to pick a local Claude skill for broad, issue, PR-review, CI-recovery, backend, frontend, capture/review, demo, or verification work.
+- Use spawned subagents or Claude worktree agents only when the user explicitly asks for delegation/parallel work or the task prompt grants that authority. Keep one coordinator responsible for final synthesis and verification.
 
 ## Definition of Done
 

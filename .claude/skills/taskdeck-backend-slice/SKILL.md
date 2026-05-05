@@ -9,9 +9,9 @@ Implement the smallest backend slice that fits the existing layering and contrac
 
 ## Read first
 
-1. `CLAUDE.md`
-2. `AGENTS.md`
-3. `docs/STATUS.md`
+1. `docs/STATUS.md`
+2. `CLAUDE.md`
+3. `AGENTS.md`
 4. `docs/GOLDEN_PRINCIPLES.md`
 5. `docs/TESTING_GUIDE.md`
 
@@ -56,7 +56,7 @@ Do not move logic outward just to make a controller easier to write.
 
 ## Multi-agent split
 
-If the task is broad, split by non-overlapping ownership:
+If the task is broad and the user authorized subagents, delegation, or parallel work, split by non-overlapping ownership:
 
 - implementation in one layer or feature family
 - API contract or regression tests

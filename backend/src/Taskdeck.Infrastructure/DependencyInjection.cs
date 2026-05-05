@@ -75,6 +75,9 @@ public static class DependencyInjection
         services.AddScoped<IFtsKnowledgeSearchService>(sp =>
             sp.GetRequiredService<Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>());
         services.AddScoped<IProposalRevisionRepository, ProposalRevisionRepository>();
+        services.AddScoped<IProposalProvenanceRepository, ProposalProvenanceRepository>();
+        services.AddScoped<IDailySnapshotRepository, DailySnapshotRepository>();
+        services.AddScoped<ITomorrowNoteRepository, TomorrowNoteRepository>();
 
         // Vector index is local; hash-based in-memory embeddings are development/test
         // oriented and stay disabled unless explicitly opted in.
