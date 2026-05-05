@@ -27,6 +27,14 @@ public class CardCommentRepository : Repository<CardComment>, ICardCommentReposi
             .ToList();
     }
 
+    public async Task<int> CountByCardIdAsync(
+        Guid cardId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .CountAsync(comment => comment.CardId == cardId && !comment.IsDeleted, cancellationToken);
+    }
+
     public async Task<CardComment?> GetByIdWithMentionsAsync(
         Guid id,
         CancellationToken cancellationToken = default)

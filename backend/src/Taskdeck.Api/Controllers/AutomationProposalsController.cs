@@ -29,6 +29,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly IAutomationExecutorService _executorService;
     private readonly ISimilarDecisionService _similarDecisionService;
     private readonly BoardAuthorizationService _authorizationService;
+    private readonly IProposalConflictDetector _conflictDetector;
     private readonly IProvenanceQueryService _provenanceQueryService;
     private readonly IConfidenceBreakdownService _confidenceBreakdownService;
     private readonly ICardHistoryService _cardHistoryService;
@@ -39,6 +40,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         IAutomationExecutorService executorService,
         ISimilarDecisionService similarDecisionService,
         BoardAuthorizationService authorizationService,
+        IProposalConflictDetector conflictDetector,
         IProvenanceQueryService provenanceQueryService,
         IConfidenceBreakdownService confidenceBreakdownService,
         ICardHistoryService cardHistoryService,
@@ -49,6 +51,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         _executorService = executorService;
         _similarDecisionService = similarDecisionService;
         _authorizationService = authorizationService;
+        _conflictDetector = conflictDetector;
         _provenanceQueryService = provenanceQueryService;
         _confidenceBreakdownService = confidenceBreakdownService;
         _cardHistoryService = cardHistoryService;
@@ -278,6 +281,23 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Gets tone-classified conflict/warning/status rows for a proposal.
+    /// </summary>
+    [HttpGet("{id}/conflicts")]
+    public async Task<IActionResult> GetProposalConflicts(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _conflictDetector.DetectConflictsAsync(id, callerUserId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Gets the card history ledger for a proposal, showing all touches on affected cards.
     /// </summary>
     [HttpGet("{id}/history")]
@@ -311,7 +331,6 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         var result = await _sideEffectAnalyzer.AnalyzeAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
-
     /// <summary>
     /// Gets a diff preview for a proposal showing what changes will be made.
     /// </summary>

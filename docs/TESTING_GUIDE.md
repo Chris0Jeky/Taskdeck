@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-27
+Last Updated: 2026-05-05
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,24 +10,24 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-27)
+## Current Verified Totals (2026-05-05)
 
-- Backend: **~5,462 passing** (estimated; 5,060 at last recertification + ~402 new tests from Paper backend gap wave PRs `#1031`–`#1039`; `#1040` remains pending)
-  - Domain: ~1,120 passed (962 + ~158 new domain tests)
-  - Application: ~2,670 passed (2,367 + ~302 new application tests)
-  - API integration: 1,621 passed (0 failed, 2 skipped; 1,623 total)
+- Backend: **6,336 passing** (0 failed, 6 skipped; 6,342 total) -- verified 2026-05-05 via `dotnet test backend/Taskdeck.sln -c Release -m:1` after reconciling Paper backend gap PR `#1040`
+  - Domain: 1,609 passed
+  - Application: 3,004 passed
+  - API integration: 1,605 passed (0 failed, 2 skipped; 1,607 total)
   - CLI contract: 82 passed
-  - Architecture boundaries: 8 passed
+  - Architecture boundaries: 16 passed (0 failed, 4 skipped; 20 total)
   - Integration (Testcontainers): 20 passed
 - Frontend unit: **2,805 passing** across 214+ test files -- verified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main`
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
-- Combined automated total: **~8,267+ passing** (backend ~5,462 + frontend unit 2,805 + E2E)
+- Combined automated total: **~9,141+ passing** (backend 6,336 + frontend unit 2,805 + E2E)
 
 Verification note:
-- backend total of ~5,462 is estimated pending recertification after Paper backend gap PRs merge; ~402 new tests verified individually per delivered/merge-ready PR via CI
-- Paper backend gap wave (2026-04-27, PRs `#1031`–`#1039`; `#1040` pending): ~402 new tests across 9 delivered/merge-ready issues; each delivered PR CI-verified independently
+- backend total of 6,336 is recertified after Paper backend gap PR `#1040` was reconciled with current `main`
+- Paper backend gap wave (2026-05-05, PRs `#1031`–`#1040`): ~480 new tests across 10 delivered/merge-ready issues; each delivered PR CI-verified independently, with `#1040` also locally verified after conflict recovery
 - prior recertification: backend 5,060 (2026-04-25), frontend 2,805 (2026-04-25) at PR `#987`
-- growth since last recertification: backend +~402 tests (Paper backend gaps through `#1039`), frontend unchanged
+- growth since last recertification: backend +1,276 passing tests, frontend unchanged
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
@@ -56,9 +56,9 @@ Pop-Location
 if ($code -ne 0) { exit $code }
 ```
 
-## Paper Backend Gap Testing (2026-04-27, PRs `#1031`–`#1039`; `#1040` pending)
+## Paper Backend Gap Testing (2026-05-05, PRs `#1031`–`#1040`)
 
-The Paper backend gap wave through PR `#1039` added ~402 new backend tests across 9 delivered/merge-ready issues. Each delivered PR received two rounds of adversarial review; the second round found and fixed issues including a 100k entity memory risk, a board-scoping error, missing FK enforcement, and CancellationToken threading gaps. Conflict detection (`#1022`/`#1040`) remains pending and is intentionally excluded from delivered totals here.
+The Paper backend gap wave through PR `#1040` added ~480 new backend tests across 10 delivered/merge-ready issues. Each delivered PR received adversarial review; later review rounds found and fixed issues including a 100k entity memory risk, a board-scoping error, missing FK enforcement, CancellationToken threading gaps, projected WIP false negatives, JSON parsing 500s, and conflict-detector false positives.
 
 ### Cadence Aggregation Tests (`#1015`/`#1031`)
 
@@ -146,18 +146,20 @@ Run:
 dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ConfidenceBreakdown"
 ```
 
-### Pending Conflict Detection Tests (`#1022`/`#1040`)
+### Conflict Detection Tests (`#1022`/`#1040`)
 
-Status: pending/open; listed here as the expected verification path once `#1040` is reconciled.
+Status: reconciled and locally verified after merge-conflict recovery.
 
-`backend/tests/Taskdeck.Domain.Tests/Entities/ConflictRowTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/ProposalConflictDetectorTests.cs` — **46 tests** covering:
+`backend/tests/Taskdeck.Domain.Tests/Entities/ConflictRowTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/ProposalConflictDetectorTests.cs`, `backend/tests/Taskdeck.Api.Tests/AutomationProposalRepositoryIntegrationTests.cs`, `backend/tests/Taskdeck.Api.Tests/CardCommentRepositoryIntegrationTests.cs` — **78 tests** covering:
 - ConflictRow: tone enum, value object creation, equality
 - ProposalConflictDetector: 7 detection rules — stale data (excludes create-card ops), missing target card, WIP limit, duplicate pending proposals (all pending, not just latest), high/critical risk, outbound webhooks, active comments, multi-op on same card, positive signals (column capacity, fresh data)
-- Entity caching (each card/column fetched at most once), safe JSON parsing with ValueKind checks, tone-sorted output (Warn → Info → Ok)
+- Entity caching (each card/column fetched at most once), safe JSON parsing with ValueKind checks, projected WIP accounting including departures, missing target columns, soft-deleted comment exclusion, repository aggregate methods, tone-sorted output (Warn → Info → Ok)
 
 Run:
 ```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ConflictRow or FullyQualifiedName~ConflictDetector"
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release --filter "FullyQualifiedName~ConflictRow"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~ProposalConflictDetector"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~AutomationProposalRepositoryIntegrationTests|FullyQualifiedName~CardCommentRepositoryIntegrationTests"
 ```
 
 ### Card History Tests (`#1023`/`#1034`)

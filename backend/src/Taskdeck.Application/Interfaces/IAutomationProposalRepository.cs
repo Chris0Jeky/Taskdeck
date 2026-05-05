@@ -20,6 +20,7 @@ public interface IAutomationProposalRepository : IRepository<AutomationProposal>
         string actionType,
         ProposalSourceType sourceType,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -2,7 +2,7 @@
 
 Last Updated: 2026-05-05
 
-Paper backend gap delivery (9 of 10 issues, `#1015`–`#1024`, PRs `#1031`–`#1039`; `#1040` remains pending), after review-first AI roadmap v4 second-wave delivery.
+Paper backend gap delivery (10 of 10 issues, `#1015`–`#1024`, PRs `#1031`–`#1040`), after review-first AI roadmap v4 second-wave delivery.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -23,8 +23,8 @@ Rebranding thesis (2026-02-23):
 - automation should remain review-first and provenance-visible
 - product value is reducing maintenance overhead, not maximizing opaque autonomy
 
-Paper backend gap delivery (2026-04-27, PRs `#1031`--`#1039`, 9 of 10 issues `#1015`--`#1024`; `#1040` pending):
-- 9 Paper backend gaps delivered or merge-ready with two rounds of adversarial review per PR; ~402 new backend tests across the delivered set; bot review findings (Gemini Code Assist + Codex connector) addressed on delivered PRs
+Paper backend gap delivery (2026-05-05, PRs `#1031`--`#1040`, 10 of 10 issues `#1015`--`#1024`):
+- 10 Paper backend gaps delivered or merge-ready with two rounds of adversarial review per PR; ~480 new backend tests across the delivered set; bot review findings (Gemini Code Assist + Codex connector) addressed on delivered PRs
 - **Today dossier backends** (4 endpoints on `TodayController`, required by PAPER-08 `#1004`):
   - Cadence aggregation (`#1015`/`#1031`): `GET /api/today/cadence?date=` returns 24-hour activity buckets with first/peak/last action timestamps; `CadenceBucket` and `CadenceSnapshot` value objects with cached `Empty()` singleton; queries `IAuditLogRepository`; 26 tests
   - Streak query (`#1016`/`#1032`): `GET /api/today/streak?days=90` returns 90-day streak with intensity buckets (quartile-based) and current/longest streak lengths; `StreakDay`/`StreakResult` value objects; server-side `GROUP BY` via `CountByDateAsync` (replaced 100k entity load after review); 61 tests
@@ -34,11 +34,11 @@ Paper backend gap delivery (2026-04-27, PRs `#1031`--`#1039`, 9 of 10 issues `#1
   - Provenance rows (`#1019`/`#1039`): `GET /api/automation/proposals/{id}/provenance` returns `ProvenanceRowDto[]` with icon/key/value/weight; 26-entry icon map; weight bucketing from `ProvenanceField` confidence; FK migration added after review; `Math.Round` for confidence display; 41 tests
   - Side-effect analysis (`#1020`/`#1033`): `GET /api/automation/proposals/{id}/side-effects` returns 7-category breakdown (Cards/Subtasks/Comments/Activity/Notifications/Webhooks/Calendar) with active/passive tone and risk-based reversibility window (6h default, 3h for Critical); review fixed target-type checks and webhook-without-operations logic; 66 tests
   - Confidence breakdown (`#1021`/`#1036`): `GET /api/automation/proposals/{id}/confidence` returns 4-component weighted breakdown (Pattern match 0.30, Reach 0.20, Reversibility 0.35, Recency 0.15) with threshold and explanatory note; review fixed reach formula, promoted weights to static field, removed unused userId; 63 tests
-  - Conflict detection (`#1022`/`#1040`): pending/open; leave this PR out of merge-readiness claims until it is reconciled and merged
+  - Conflict detection (`#1022`/`#1040`): `GET /api/automation/proposals/{id}/conflicts` returns tone-classified Warn/Info/Ok rows for stale data, missing targets, projected WIP overflow, duplicate pending proposals, high-risk operations, outbound webhooks, active comments, multi-op card conflicts, and positive capacity/fresh-data signals; review fixed create-card false positives, JSON ValueKind guards, projected WIP accounting, missing-column detection, webhook event mapping, soft-deleted comment counts, and entity caching; 78 tests
   - Card history ledger (`#1023`/`#1034`): `GET /api/automation/proposals/{id}/history` returns per-card touch history with serial/event/age/status; bounded at 200 entries/card and 500 total; review fixed duplicate dedup, JSON property parsing, GUID single-pass, `InvariantCulture` formatting; 42 tests
   - Similar past decisions (`#1024`/`#1038`): `GET /api/automation/proposals/{id}/similar-past` returns 3 nearest-neighbour prior decisions with apply rate; board-scoped query (review fixed userId filter that excluded non-caller proposals); 200-proposal lookback limit; UTC week formatting; 50 tests
 - New EF Core migrations: `AddDailySnapshots`, `AddTomorrowNotes`, `AddProvenanceEntities`, `AddProposalProvenanceForeignKey`, `ExtendProposalOutcomesForMetrics`
-- New repository methods: `IAuditLogRepository.CountByDateAsync`, `IAutomationProposalRepository.GetTerminalByActionTypeAsync`
+- New repository methods: `IAuditLogRepository.CountByDateAsync`, `IAutomationProposalRepository.GetTerminalByActionTypeAsync`, `IAutomationProposalRepository.GetPendingByOperationTargetAsync`, `ICardCommentRepository.CountByCardIdAsync`
 
 Roadmap v4 second-wave delivery (2026-04-25, PRs `#989`--`#994` + `#995`):
 - RFAI-02 (`#974`/`#989`): `IntentEnvelopeV1` domain spine with `SourceBlock`/`SourceSpan`, `IntentCandidate`, `EvidenceLink`, `TaskdeckProposalBatch`, `IIntentEnvelopeFactory` application interface, `IChatClient` adapter spike, handwritten `proposal-batch.v1.schema.json`; 117 tests; adversarial review fixed partial-write status transition bug, span length consistency, evidence fabrication prevention, nullable schema fields
