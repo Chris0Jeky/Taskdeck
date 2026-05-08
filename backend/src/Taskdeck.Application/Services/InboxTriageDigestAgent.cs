@@ -18,7 +18,8 @@ public record InboxDigestResultDto(
 
 /// <summary>
 /// Scheduled bounded agent that coalesces pending inbox items into a single
-/// digest proposal. Runs behind the Agent:InboxTriageDigest:Enabled feature flag.
+/// digest proposal. Callers must check the Agent:InboxTriageDigest:Enabled
+/// configuration key before invoking — this agent does not enforce the flag itself.
 /// Creates only proposals — never directly mutates boards (GP-06).
 /// Records an inspectable trace via AgentRuntime (GP-09).
 /// </summary>

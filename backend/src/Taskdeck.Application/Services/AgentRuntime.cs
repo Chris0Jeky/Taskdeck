@@ -190,16 +190,16 @@ public sealed class AgentRuntime
             await _unitOfWork.SaveChangesAsync(CancellationToken.None);
             sw.Stop();
             AgentTelemetry.RecordRunCancelled(triggerType, profile.TemplateKey);
-            return Result.Success(MapToDto(run));
+            return Result.Failure<AgentRunDto>(ErrorCodes.InvalidOperation, "Run cancelled by user.");
         }
         catch (EgressViolationException egressEx)
         {
             run.MarkFailed($"Egress violation: {egressEx.Violation.AttemptedHost} — {egressEx.Violation.Reason}");
             await _unitOfWork.SaveChangesAsync(CancellationToken.None);
             sw.Stop();
-            AgentTelemetry.RecordEgressViolation(egressEx.Violation.AttemptedHost, "unknown");
+            AgentTelemetry.RecordEgressViolation("blocked", egressEx.Violation.ViolationType.ToString());
             AgentTelemetry.RecordRunFailed(triggerType, profile.TemplateKey);
-            return Result.Success(MapToDto(run));
+            return Result.Failure<AgentRunDto>(ErrorCodes.Forbidden, $"Egress violation: {egressEx.Violation.Reason}");
         }
         catch (Exception ex)
         {
@@ -207,7 +207,7 @@ public sealed class AgentRuntime
             await _unitOfWork.SaveChangesAsync(CancellationToken.None);
             sw.Stop();
             AgentTelemetry.RecordRunFailed(triggerType, profile.TemplateKey);
-            return Result.Success(MapToDto(run));
+            return Result.Failure<AgentRunDto>(ErrorCodes.UnexpectedError, $"Run failed: {ex.Message}");
         }
     }
 

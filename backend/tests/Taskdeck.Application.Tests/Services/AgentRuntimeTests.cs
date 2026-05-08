@@ -6,6 +6,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Domain.Agents;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -226,8 +227,8 @@ public class AgentRuntimeTests
             },
             cancellationToken: cts.Token);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Status.Should().Be(AgentRunStatus.Cancelled);
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
     }
 
     [Fact]
@@ -250,9 +251,9 @@ public class AgentRuntimeTests
                 throw new EgressViolationException(violation);
             });
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Status.Should().Be(AgentRunStatus.Failed);
-        result.Value.FailureReason.Should().Contain("Egress violation");
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("Egress violation");
     }
 
     [Fact]

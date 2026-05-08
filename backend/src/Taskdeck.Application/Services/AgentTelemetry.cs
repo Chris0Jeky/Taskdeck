@@ -105,7 +105,7 @@ public static class AgentTelemetry
             new KeyValuePair<string, object?>("template_key", templateKey));
     }
 
-    /// <summary>Records an egress violation. Tags: host, payloadCategory (both system-defined).</summary>
+    /// <summary>Records an egress violation. Tags: host (sentinel, not raw), violationType.</summary>
     public static void RecordEgressViolation(string host, string payloadCategory)
     {
         EgressViolations.Add(1,
