@@ -113,6 +113,13 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAgentPolicyEvaluator, AgentPolicyEvaluator>();
         services.AddScoped<InboxTriageAssistant>();
 
+        // Agent runtime hardening: policy, runtime, MCP hash service, digest agent, egress
+        services.AddSingleton(sp => new AgentPolicy(sp.GetRequiredService<ITaskdeckToolRegistry>()));
+        services.AddScoped<AgentRuntime>();
+        services.AddScoped<McpToolDefinitionHashService>();
+        services.AddScoped<InboxTriageDigestAgent>();
+        services.AddSingleton<IEgressRegistry, EgressRegistry>();
+
         // Tool-calling infrastructure (read tools)
         services.AddScoped<IToolExecutor, ListBoardColumnsExecutor>();
         services.AddScoped<IToolExecutor, ListCardsInColumnExecutor>();
