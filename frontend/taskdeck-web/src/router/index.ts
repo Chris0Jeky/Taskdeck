@@ -322,7 +322,7 @@ const router = createRouter({
       path: '/workspace/dev-tools',
       name: 'workspace-dev-tools',
       component: DevToolsView,
-      meta: { requiresShell: true, requiresFlag: 'devTools' },
+      meta: { requiresShell: true, requiresFlag: 'devTools', breadcrumb: 'Dev Tools' },
     },
   ],
 })

@@ -210,8 +210,8 @@ describe('AppShell — paper variant routing', () => {
       .find((l) => l.text().includes('Shortcuts'))
     expect(shortcutsLink).toBeDefined()
     await shortcutsLink?.trigger('click')
-    // The keyboard help state should now be true (the overlay becomes visible)
-    // We verify this indirectly: pressing ? would toggle it, but clicking Shortcuts always opens it
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.paper-shortcuts-overlay').exists()).toBe(true)
   })
 
   it('wires the Paper sidebar logout to session store', async () => {
