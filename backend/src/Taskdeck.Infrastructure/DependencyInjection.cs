@@ -98,6 +98,10 @@ public static class DependencyInjection
         services.AddScoped<IKnowledgeSearchService>(sp =>
             sp.GetRequiredService<Taskdeck.Infrastructure.Services.FallbackSemanticSearchService>());
 
+        // Hybrid retrieval (RRF fusion) and duplicate detection
+        services.AddScoped<IHybridRetrievalService, Taskdeck.Application.Services.HybridRetrievalService>();
+        services.AddScoped<IDuplicateDetectionService, Taskdeck.Application.Services.DuplicateDetectionService>();
+
         // Provenance services
         services.AddSingleton<IFuzzyTextMatcher, Taskdeck.Application.Services.FuzzyTextMatcher>();
         services.AddSingleton<IDeterministicPreExtractor, Taskdeck.Infrastructure.Services.DeterministicPreExtractor>();
