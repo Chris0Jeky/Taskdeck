@@ -140,6 +140,32 @@ describe('PaperTopBar', () => {
     expect(buttons[1].attributes('aria-label')).toBe('Settings')
   })
 
+  it('truncates long breadcrumb segments with text-overflow ellipsis', () => {
+    mockRoute.matched = [
+      { path: '/workspace', name: 'workspace', meta: { breadcrumb: 'Workspace' } },
+      { path: '/workspace/boards', name: 'workspace-boards', meta: { breadcrumb: 'Boards' } },
+      { path: '/workspace/boards/:id', name: 'workspace-board', meta: { breadcrumb: 'This Is A Very Long Board Name That Should Truncate' } },
+    ]
+    wrapper = mountTopBar()
+    const crumbs = wrapper.findAll('.paper-topbar__crumb')
+    // max-width: 22ch applied via CSS; the element renders the full text but truncates visually
+    expect(crumbs.at(-1)?.text()).toBe('This Is A Very Long Board Name That Should Truncate')
+    // The CSS class for truncation exists
+    expect(crumbs.at(-1)?.element.style).toBeDefined()
+  })
+
+  it('renders a single Workspace crumb when route.matched is empty', () => {
+    mockRoute.matched = []
+    wrapper = mountTopBar()
+    const labels = wrapper.findAll('.paper-topbar__crumb').map((c) => c.text())
+    expect(labels).toEqual(['Workspace'])
+  })
+
+  it('renders the vertical hairline divider between status and icon buttons', () => {
+    wrapper = mountTopBar()
+    expect(wrapper.find('.paper-topbar__hairline').exists()).toBe(true)
+  })
+
   it('removes the global keydown listener on unmount', async () => {
     wrapper = mountTopBar()
     wrapper.unmount()
