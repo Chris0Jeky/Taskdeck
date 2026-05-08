@@ -12,7 +12,6 @@ namespace Taskdeck.Application.Tests.Services;
 public class HybridRetrievalServiceTests
 {
     private readonly Mock<IFtsKnowledgeSearchService> _ftsMock;
-    private readonly Mock<ISemanticSearchService> _semanticMock;
     private readonly Mock<IEmbeddingGenerator> _embeddingMock;
     private readonly Mock<IVectorIndex> _vectorMock;
     private readonly Mock<IKnowledgeDocumentRepository> _docRepoMock;
@@ -25,7 +24,6 @@ public class HybridRetrievalServiceTests
     public HybridRetrievalServiceTests()
     {
         _ftsMock = new Mock<IFtsKnowledgeSearchService>();
-        _semanticMock = new Mock<ISemanticSearchService>();
         _embeddingMock = new Mock<IEmbeddingGenerator>();
         _vectorMock = new Mock<IVectorIndex>();
         _docRepoMock = new Mock<IKnowledgeDocumentRepository>();
@@ -33,7 +31,6 @@ public class HybridRetrievalServiceTests
 
         _sut = new HybridRetrievalService(
             _ftsMock.Object,
-            _semanticMock.Object,
             _embeddingMock.Object,
             _vectorMock.Object,
             _docRepoMock.Object,
@@ -353,6 +350,25 @@ public class HybridRetrievalServiceTests
             () => _sut.SearchAsync("query", _userId));
     }
 
+    [Fact]
+    public async Task SearchAsync_HybridAndFtsBothFail_ReturnsEmpty()
+    {
+        _embeddingMock.Setup(g => g.IsAvailable).Returns(true);
+        _embeddingMock
+            .Setup(g => g.GenerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("embedding crashed"));
+        _ftsMock
+            .Setup(f => f.SearchAsync(
+                It.IsAny<string>(), _userId, null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("FTS also crashed"));
+
+        var results = await _sut.SearchAsync("query", _userId);
+
+        results.Should().BeEmpty();
+        _logger.Entries.Should().Contain(e =>
+            e.Level == Microsoft.Extensions.Logging.LogLevel.Warning);
+    }
+
     #endregion
 
     #region Access control and filtering
@@ -594,9 +610,11 @@ public class HybridRetrievalServiceTests
     public void BuildEvidenceLinks_ConvertsRetrievalResults()
     {
         var docId = Guid.NewGuid();
+        // Realistic RRF score: rank 1 in both lists = 2/(60+1) ≈ 0.0328
+        var rrfScore = 2.0 / (HybridRetrievalService.RrfK + 1);
         var results = new List<RetrievalResultDto>
         {
-            CreateResult("Test Doc", docId, 0.85, RetrievalSource.Hybrid)
+            CreateResult("Test Doc", docId, rrfScore, RetrievalSource.Hybrid)
         };
 
         var evidence = _sut.BuildEvidenceLinks(results);
@@ -605,7 +623,7 @@ public class HybridRetrievalServiceTests
         evidence[0].SourceId.Should().Be(docId);
         evidence[0].SourceType.Should().Be("knowledge_document");
         evidence[0].Label.Should().Be("Test Doc");
-        evidence[0].Relevance.Should().BeApproximately(0.85, 0.01);
+        evidence[0].Relevance.Should().BeApproximately(1.0, 0.01);
         evidence[0].Rationale.Should().Contain("hybrid");
     }
 

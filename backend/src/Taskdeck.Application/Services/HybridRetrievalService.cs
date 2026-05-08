@@ -27,7 +27,6 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
     private const int OverFetchMultiplier = 3;
 
     private readonly IFtsKnowledgeSearchService _ftsService;
-    private readonly ISemanticSearchService _semanticSearchService;
     private readonly IEmbeddingGenerator _embeddingGenerator;
     private readonly IVectorIndex _vectorIndex;
     private readonly IKnowledgeDocumentRepository _documentRepository;
@@ -35,14 +34,12 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
 
     public HybridRetrievalService(
         IFtsKnowledgeSearchService ftsService,
-        ISemanticSearchService semanticSearchService,
         IEmbeddingGenerator embeddingGenerator,
         IVectorIndex vectorIndex,
         IKnowledgeDocumentRepository documentRepository,
         ILogger<HybridRetrievalService> logger)
     {
         _ftsService = ftsService;
-        _semanticSearchService = semanticSearchService;
         _embeddingGenerator = embeddingGenerator;
         _vectorIndex = vectorIndex;
         _documentRepository = documentRepository;
@@ -85,7 +82,8 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
             _logger.LogWarning(
                 "Hybrid search failed, falling back to FTS-only: {Error}",
                 ex.Message);
-            return await FtsOnlySearchAsync(query, userId, boardId, overFetchLimit, limit, cancellationToken);
+            var fallback = await SafeFtsSearchAsync(query, userId, boardId, overFetchLimit, cancellationToken);
+            return fallback.Take(limit).ToList();
         }
     }
 
@@ -97,8 +95,11 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
         var evidence = new List<RetrievalEvidenceDto>(retrievalResults.Count);
         foreach (var result in retrievalResults)
         {
-            // Normalize score to [0.0, 1.0] for relevance
-            var relevance = Math.Clamp(result.Score, 0.0, 1.0);
+            // RRF scores are ~0.03 at best (2/(k+1)), so scale to [0,1] for meaningful relevance
+            var maxRrf = 2.0 / (RrfK + 1);
+            var relevance = result.Source == RetrievalSource.Hybrid
+                ? Math.Clamp(result.Score / maxRrf, 0.0, 1.0)
+                : Math.Clamp(result.Score, 0.0, 1.0);
 
             var sourceType = "knowledge_document";
             var rationale = result.Source switch
