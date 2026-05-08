@@ -225,6 +225,38 @@ describe('PaperSidebar', () => {
     expect(exposed.availableNavItems.some((item) => item.path.startsWith('#'))).toBe(false)
   })
 
+  it('renders the inbox badge with the · prefix when inboxBadgeCount > 0', () => {
+    mockWorkspace.inboxBadgeCount = 5
+    const wrapper = mountSidebar()
+    const badges = wrapper.findAll('.paper-sidebar__badge')
+    const inboxBadge = badges.find((b) => b.text().includes('5'))
+    expect(inboxBadge?.text()).toMatch(/·\s*5/)
+    expect(inboxBadge?.attributes('aria-label')).toBe('Inbox: 5 pending')
+  })
+
+  it('renders sidebar groups with data-group attributes for styling hooks', () => {
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-group="primary"]').exists()).toBe(true)
+    expect(wrapper.find('[data-group="workbench"]').exists()).toBe(true)
+    expect(wrapper.find('[data-group="meta"]').exists()).toBe(true)
+  })
+
+  it('renders mono glyphs for sidebar items', () => {
+    const wrapper = mountSidebar()
+    const glyphs = wrapper.findAll('.paper-sidebar__glyph')
+    // Glyphs are single-letter mono characters
+    expect(glyphs.length).toBeGreaterThan(0)
+    expect(glyphs[0].text()).toHaveLength(1)
+  })
+
+  it('applies muted styling to meta group items', () => {
+    const wrapper = mountSidebar()
+    const metaGroup = wrapper.find('[data-group="meta"]')
+    expect(metaGroup.classes()).toContain('paper-sidebar__group--muted')
+    const metaItems = metaGroup.findAll('.paper-sidebar__item--muted')
+    expect(metaItems.length).toBeGreaterThan(0)
+  })
+
   it('exposes and closes the mobile menu controls', async () => {
     const wrapper = mountSidebar()
     const exposed = wrapper.vm as unknown as {
