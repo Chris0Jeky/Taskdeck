@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-05-05
+Last Updated: 2026-05-08
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -40,6 +40,16 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+RFAI-09 agent runtime hardening (2026-05-08, `#981`/`#1051`):
+- `AgentRuntime.RunAsync` single entrypoint with step/token/concurrent-run quotas, tool-bundle allowlists, and inspectable policy decisions
+- `AgentPolicy` fail-closed validator permanently excluding `approve_proposal` and 6 direct board mutation tools (GP-06)
+- `EgressEnvelopeHandler` DelegatingHandler enforcing the egress envelope with redirect validation
+- `AgentTelemetry` content-free OTel instrumentation (GP-10)
+- MCP tool hash-pinning with SHA-256 and auto-revocation on definition change
+- `InboxTriageDigestAgent` first scheduled bounded agent behind feature flag
+- 74 new tests; full suite passes (6,410 tests, 0 failures)
+- New EF Core migration: `AddMcpToolHashes`
 
 Paper backend gap delivery (2026-05-05, PRs `#1031`--`#1040`, 10 of 10 issues `#1015`--`#1024`):
 - 10 backend endpoints delivered or merge-ready for the Paper UI surfaces (PAPER-08 Today dossier + PAPER-06 Review deep-dive), with the conflict-detection endpoint reconciled in `#1040`

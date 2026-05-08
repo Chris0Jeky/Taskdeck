@@ -1,8 +1,8 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-05-05
+Last Updated: 2026-05-08
 
-Paper backend gap delivery (10 of 10 issues, `#1015`–`#1024`, PRs `#1031`–`#1040`), after review-first AI roadmap v4 second-wave delivery.
+RFAI-09 agent runtime hardening (`#981`/`#1051`), after paper backend gap delivery (10 of 10 issues, `#1015`–`#1024`, PRs `#1031`–`#1040`).
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -22,6 +22,15 @@ Rebranding thesis (2026-02-23):
 - capture should be near-zero friction
 - automation should remain review-first and provenance-visible
 - product value is reducing maintenance overhead, not maximizing opaque autonomy
+
+RFAI-09 agent runtime hardening (2026-05-08, `#981`/`#1051`):
+- `AgentRuntime.RunAsync` single entrypoint with step/token/concurrent-run quotas, tool-bundle allowlists (permanently excludes `approve_proposal` and direct board mutation tools), and inspectable policy decisions recorded as first event on every run
+- `EgressEnvelopeHandler` DelegatingHandler enforcing the egress envelope at HTTP level; blocks unknown hosts and validates redirect targets; test verifies `https://attacker.example` fails with `EgressViolation`
+- `AgentTelemetry` content-free OTel instrumentation with `ActivitySource` and `Meter` for runs/steps/proposals/denials/violations/quotas; no user content in any metric or trace tag (GP-10)
+- MCP tool hash-pinning: `McpToolHash` domain entity, `McpToolDefinitionHashService` SHA-256 hashing, `IMcpToolHashRepository`, EF Core migration `AddMcpToolHashes` with unique index on `(UserId, ToolName)`; definition changes auto-revoke approval
+- `InboxTriageDigestAgent` first scheduled bounded agent (behind `Agent:InboxTriageDigest:Enabled` feature flag); creates only proposals (GP-06), records full inspectable trace (GP-09)
+- `AgentPolicy` fail-closed tool-bundle validator with permanent exclusion list covering 7 direct-mutation tools
+- 74 new tests across Domain and Application layers
 
 Paper backend gap delivery (2026-05-05, PRs `#1031`--`#1040`, 10 of 10 issues `#1015`--`#1024`):
 - 10 Paper backend gaps delivered or merge-ready with two rounds of adversarial review per PR; ~480 new backend tests across the delivered set; bot review findings (Gemini Code Assist + Codex connector) addressed on delivered PRs
@@ -51,7 +60,7 @@ Roadmap v4 second-wave delivery (2026-04-25, PRs `#989`--`#994` + `#995`):
 
 Current constraints are mostly hardening and consistency:
 - `taskdeck-12-week-roadmap-v4.md` has been promoted from research input into the active near-horizon planning spine via tracker `#972` and child issues `#973`--`#984`. The accepted framing is: automation-originated board writes must stay proposal-first, manual board UI writes stay direct and auditable as user-manual activity, and outbound data flow must be guarded separately through the EgressEnvelope/disclosure/MCP-hash/telemetry controls.
-- Roadmap v4 execution progress: RFAI-01 through RFAI-06 and RFAI-08 foundational slices are now delivered (7 of 12 issues); remaining: RFAI-07 (hybrid retrieval), RFAI-09 (agent runtime), RFAI-10 (PWA share-target), RFAI-11 (ambient channel), RFAI-12 (learning loop UI + beta gate).
+- Roadmap v4 execution progress: RFAI-01 through RFAI-06, RFAI-08, and RFAI-09 foundational slices are now delivered (8 of 12 issues); remaining: RFAI-07 (hybrid retrieval), RFAI-10 (PWA share-target), RFAI-11 (ambient channel), RFAI-12 (learning loop UI + beta gate).
 - Codex and Claude high-autonomy issue execution now have first-class local guidance: `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/skills/README.md`, `.claude/README.md`, `.claude/skills/README.md`, `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`, generalized worktree protocol, PowerShell git/worktree guards, GitHub helper scripts, Project v2 priority audit/sync support, and dedicated skills for batch orchestration, worktree issue workers, PR review loops, and CI/conflict recovery. A reusable Gitleaks workflow syntax issue in the summary heredoc has been corrected after the workflow began failing before job creation.
 - ~~**security bug discovered 2026-04-03**: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `ChangePassword` now derives userId exclusively from JWT claims; `[Authorize]` enforced; `UserId` removed from request body; `AuthController` inherits `AuthenticatedControllerBase`; 5 integration tests proving the fix
 - security and identity behavior is converging but still not uniform across all controller families
