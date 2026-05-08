@@ -33,16 +33,13 @@ public sealed class AgentRuntime
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly AgentPolicy _agentPolicy;
-    private readonly IAgentPolicyEvaluator _policyEvaluator;
 
     public AgentRuntime(
         IUnitOfWork unitOfWork,
-        AgentPolicy agentPolicy,
-        IAgentPolicyEvaluator policyEvaluator)
+        AgentPolicy agentPolicy)
     {
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _agentPolicy = agentPolicy ?? throw new ArgumentNullException(nameof(agentPolicy));
-        _policyEvaluator = policyEvaluator ?? throw new ArgumentNullException(nameof(policyEvaluator));
     }
 
     /// <summary>
@@ -133,6 +130,18 @@ public sealed class AgentRuntime
                 run.IncrementSteps();
                 if (stepResult.TokensUsed > 0)
                     run.AddTokenUsage(stepResult.TokensUsed);
+
+                // Enforce token quota
+                if (run.TokensUsed >= maxTokens)
+                {
+                    run.TransitionTo(AgentRunStatus.Completed, $"Token quota exhausted ({run.TokensUsed}/{maxTokens}).");
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                    sw.Stop();
+                    AgentTelemetry.RecordQuotaExceeded("tokens", profile.TemplateKey);
+                    AgentTelemetry.RecordRunCompleted(triggerType, profile.TemplateKey,
+                        sw.Elapsed.TotalMilliseconds, run.StepsExecuted, run.TokensUsed);
+                    return Result.Success(MapToDto(run));
+                }
 
                 AgentTelemetry.RecordStep(stepResult.EventType);
 

@@ -182,6 +182,15 @@ public class EgressEnvelopeHandlerTests
         violation.ToString().Should().Contain("evil.com");
     }
 
+    [Fact]
+    public void CreateHttpClient_ReturnsNonNullClient()
+    {
+        var registry = CreateRegistry("api.openai.com");
+        using var client = EgressEnvelopeHandler.CreateHttpClient(registry, "test");
+
+        client.Should().NotBeNull();
+    }
+
     // --- Test Helpers ---
 
     private sealed class StubHandler : HttpMessageHandler

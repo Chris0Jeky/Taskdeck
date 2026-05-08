@@ -7,6 +7,11 @@ namespace Taskdeck.Application.Services;
 /// DelegatingHandler that enforces the egress envelope — any HTTP request to a
 /// host not in the EgressRegistry is blocked with an EgressViolationException.
 /// Also validates redirect targets to prevent open-redirect SSRF chains.
+/// <para>
+/// IMPORTANT: The inner HttpClientHandler MUST have AllowAutoRedirect = false so
+/// that redirects surface as 3xx responses to this handler. Use
+/// <see cref="CreateHttpClient"/> to get a correctly-configured client.
+/// </para>
 /// </summary>
 public sealed class EgressEnvelopeHandler : DelegatingHandler
 {
@@ -29,6 +34,18 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _sourceComponent = sourceComponent;
+    }
+
+    /// <summary>
+    /// Creates an HttpClient with automatic redirects disabled so that this handler
+    /// can validate every redirect target against the egress registry. This prevents
+    /// SSRF bypass via open-redirect chains.
+    /// </summary>
+    public static HttpClient CreateHttpClient(IEgressRegistry registry, string? sourceComponent = null)
+    {
+        var innerHandler = new HttpClientHandler { AllowAutoRedirect = false };
+        var egressHandler = new EgressEnvelopeHandler(registry, sourceComponent) { InnerHandler = innerHandler };
+        return new HttpClient(egressHandler);
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(

@@ -370,6 +370,7 @@ public class RoadmapInvariantTests
             "DependencyInjection",
             "LlmProviderRegistration",
             "GitHubConnectorProvider",     // typed-client for GitHub API health check
+            "EgressEnvelopeHandler",       // factory method creates HttpClient with AllowAutoRedirect=false
             "Program",
         };
 

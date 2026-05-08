@@ -15,7 +15,6 @@ public class AgentRuntimeTests
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAgentProfileRepository> _profileRepo = new();
     private readonly Mock<IAgentRunRepository> _runRepo = new();
-    private readonly Mock<IAgentPolicyEvaluator> _policyEvaluator = new();
     private readonly TaskdeckToolRegistry _toolRegistry = new();
     private readonly AgentPolicy _agentPolicy;
     private readonly AgentRuntime _runtime;
@@ -36,8 +35,7 @@ public class AgentRuntimeTests
 
         _runtime = new AgentRuntime(
             _unitOfWork.Object,
-            _agentPolicy,
-            _policyEvaluator.Object);
+            _agentPolicy);
     }
 
     private AgentProfile CreateProfile(bool enabled = true, string? policyJson = null)
@@ -280,6 +278,33 @@ public class AgentRuntimeTests
         result.IsSuccess.Should().BeTrue();
         eventsRecorded.Should().HaveCountGreaterOrEqualTo(2); // policy + step
         eventsRecorded[0].EventType.Should().Be("policy.validated");
+    }
+
+    [Fact]
+    public async Task RunAsync_TokenQuotaExhausted_CompletesWithQuotaMessage()
+    {
+        var profile = CreateProfile();
+        _profileRepo.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _runRepo.Setup(r => r.GetActiveByUserIdAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Empty<AgentRun>());
+
+        var stepCount = 0;
+        var result = await _runtime.RunAsync(
+            profile.Id, _userId, "run with tokens",
+            new[] { "inbox.triage" },
+            (run, step, ct) =>
+            {
+                stepCount++;
+                return Task.FromResult(new AgentStepResult("step.working", TokensUsed: 600));
+            },
+            maxSteps: 100,
+            maxTokens: 1000);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(AgentRunStatus.Completed);
+        result.Value.Summary.Should().Contain("Token quota exhausted");
+        stepCount.Should().Be(2); // 600 + 600 = 1200 >= 1000, stops after step 2
     }
 
     [Fact]
