@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import PaperSidebar from '../../../components/paper/PaperSidebar.vue'
 import type { FeatureFlags } from '../../../types/feature-flags'
+import type { ViewportMode } from '../../../composables/useViewportMode'
 
 const mockRoute = reactive({
   path: '/workspace/home',
@@ -25,6 +26,8 @@ const mockPaperTheme = reactive({
   toggleNight: vi.fn(),
 })
 
+const mockViewportMode = ref<ViewportMode>('desktop')
+
 vi.mock('vue-router', () => ({
   useRoute: () => mockRoute,
 }))
@@ -39,6 +42,10 @@ vi.mock('../../../store/featureFlagStore', () => ({
 
 vi.mock('../../../store/paperThemeStore', () => ({
   usePaperThemeStore: () => mockPaperTheme,
+}))
+
+vi.mock('../../../composables/useViewportMode', () => ({
+  useViewportMode: () => ({ mode: mockViewportMode }),
 }))
 
 function mountSidebar() {
@@ -64,6 +71,7 @@ describe('PaperSidebar', () => {
     mockFeatureFlags.isEnabled = vi.fn(() => true)
     mockPaperTheme.mode = 'paper'
     mockPaperTheme.activeClass = 'paper'
+    mockViewportMode.value = 'desktop'
   })
 
   it('renders the brand and Precision Mode eyebrow with the active accent', () => {
@@ -275,5 +283,57 @@ describe('PaperSidebar', () => {
     await boardsLink?.trigger('click')
 
     expect(exposed.mobileOpen).toBe(false)
+  })
+
+  it('renders bottom-bar variant with H/T/R/I glyphs on phone', () => {
+    mockViewportMode.value = 'phone'
+    const wrapper = mountSidebar()
+
+    expect(wrapper.find('[data-paper-bottombar]').exists()).toBe(true)
+    expect(wrapper.find('.paper-sidebar--rail').exists()).toBe(false)
+
+    const glyphs = wrapper.findAll('.paper-bottombar__glyph').map((g) => g.text())
+    expect(glyphs).toEqual(['H', 'T', 'R', 'I'])
+
+    const tabs = wrapper.findAll('.paper-bottombar__tab')
+    expect(tabs).toHaveLength(4)
+  })
+
+  it('renders bottom-bar with ember accent on the active route', () => {
+    mockViewportMode.value = 'phone'
+    mockRoute.path = '/workspace/review'
+    const wrapper = mountSidebar()
+
+    const reviewTab = wrapper.findAll('.paper-bottombar__tab')
+      .find((t) => t.attributes('href') === '/workspace/review')
+    expect(reviewTab?.classes()).toContain('paper-bottombar__tab--active')
+
+    const homeTab = wrapper.findAll('.paper-bottombar__tab')
+      .find((t) => t.attributes('href') === '/workspace/home')
+    expect(homeTab?.classes()).not.toContain('paper-bottombar__tab--active')
+  })
+
+  it('renders icon-only rail on tablet', () => {
+    mockViewportMode.value = 'tablet'
+    const wrapper = mountSidebar()
+
+    expect(wrapper.find('[data-paper-rail]').exists()).toBe(true)
+    expect(wrapper.find('[data-paper-bottombar]').exists()).toBe(false)
+    expect(wrapper.find('.paper-sidebar--rail').exists()).toBe(true)
+
+    expect(wrapper.findAll('.paper-sidebar__label')).toHaveLength(0)
+
+    const glyphs = wrapper.findAll('.paper-sidebar__glyph')
+    expect(glyphs.length).toBeGreaterThan(0)
+  })
+
+  it('renders rail active-route ember accent on tablet', () => {
+    mockViewportMode.value = 'tablet'
+    mockRoute.path = '/workspace/boards'
+    const wrapper = mountSidebar()
+
+    const boardsLink = wrapper.findAll('a.paper-sidebar__item')
+      .find((l) => l.attributes('href') === '/workspace/boards')
+    expect(boardsLink?.classes()).toContain('paper-sidebar__item--active')
   })
 })

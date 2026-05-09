@@ -76,6 +76,12 @@ vi.mock('../../store/paperThemeStore', () => ({
   usePaperThemeStore: () => mockPaperTheme,
 }))
 
+vi.mock('../../composables/useViewportMode', async () => {
+  const { ref, readonly } = await import('vue')
+  const mode = ref('desktop')
+  return { useViewportMode: () => ({ mode: readonly(mode) }) }
+})
+
 function mountShell() {
   return mount(AppShell, {
     global: {
