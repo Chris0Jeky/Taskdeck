@@ -135,7 +135,7 @@ public class AgentPolicyTests
     }
 
     [Fact]
-    public void ValidateToolBundle_EmptyProfileAllowlist_AllowsAll()
+    public void ValidateToolBundle_EmptyProfileAllowlist_DeniesAll_FailClosed()
     {
         var policy = CreatePolicy(
             ("inbox.triage", ToolRiskLevel.Medium),
@@ -145,7 +145,7 @@ public class AgentPolicyTests
             new[] { "inbox.triage", "board.read" }, new List<string>());
 
         decisions.Should().HaveCount(2);
-        decisions.Should().AllSatisfy(d => d.Allowed.Should().BeTrue());
+        decisions.Should().AllSatisfy(d => d.Allowed.Should().BeFalse());
     }
 
     [Fact]

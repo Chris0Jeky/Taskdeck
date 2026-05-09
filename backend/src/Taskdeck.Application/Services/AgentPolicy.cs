@@ -79,8 +79,8 @@ public sealed class AgentPolicy
                 continue;
             }
 
-            // Check profile-level allowlist if specified
-            if (profileAllowlist is { Count: > 0 } &&
+            // Check profile-level allowlist if specified (fail-closed: empty allowlist denies all)
+            if (profileAllowlist is not null &&
                 !profileAllowlist.Any(a => string.Equals(a, toolKey, StringComparison.OrdinalIgnoreCase)))
             {
                 decisions.Add(new ToolBundleDecision(toolKey, false,

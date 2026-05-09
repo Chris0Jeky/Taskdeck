@@ -80,9 +80,8 @@ public sealed class InboxTriageDigestAgent
                 $"Maximum of {MaxDigestsPerDay} inbox digests per 24 hours.");
         }
 
-        // Gather pending inbox items
-        var pendingItems = (await _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken))
-            .Where(r => r.Status == RequestStatus.Pending)
+        // Gather pending inbox items (use status-filtered query to avoid loading all items in memory)
+        var pendingItems = (await _unitOfWork.LlmQueue.GetByUserAndStatusAsync(userId, RequestStatus.Pending, cancellationToken))
             .OrderBy(r => r.CreatedAt)
             .Take(MaxItemsPerDigest)
             .ToList();
@@ -181,7 +180,7 @@ public sealed class InboxTriageDigestAgent
             triggerType: triggerType,
             boardId: boardId,
             maxSteps: 1,
-            maxTokens: 0,
+            maxTokens: 4096,
             cancellationToken: cancellationToken);
 
         if (!runtimeResult.IsSuccess)

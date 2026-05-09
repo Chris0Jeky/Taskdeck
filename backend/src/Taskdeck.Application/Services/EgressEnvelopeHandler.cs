@@ -25,6 +25,9 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
         _sourceComponent = sourceComponent;
     }
 
+    /// <summary>Maximum number of redirects to follow manually.</summary>
+    private const int MaxRedirects = 10;
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
@@ -32,19 +35,76 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
         ArgumentNullException.ThrowIfNull(request);
 
         // Validate the request host against the egress registry
-        var host = request.RequestUri?.Host;
+        ValidateHost(request.RequestUri);
+
+        // IMPORTANT: The HttpClient MUST be configured with AllowAutoRedirect = false
+        // so that this handler sees 3xx responses and can validate redirect targets
+        // against the egress allowlist. If auto-redirect is enabled, the handler only
+        // sees the final response and the redirect check becomes ineffective.
+
+        var response = await base.SendAsync(request, cancellationToken);
+
+        // Manually follow redirects, validating each target against the egress envelope
+        var redirectCount = 0;
+        while (IsRedirect(response) && response.Headers.Location is { } redirectUri && redirectCount < MaxRedirects)
+        {
+            redirectCount++;
+
+            var resolvedRedirectUri = redirectUri.IsAbsoluteUri
+                ? redirectUri
+                : new Uri(request.RequestUri!, redirectUri);
+
+            var redirectHost = resolvedRedirectUri.Host;
+
+            if (string.IsNullOrWhiteSpace(redirectHost) || !_egressRegistry.IsHostAllowed(redirectHost))
+            {
+                var violation = new EgressViolation(
+                    attemptedHost: redirectHost ?? "(empty)",
+                    requestUri: resolvedRedirectUri.ToString(),
+                    violationType: EgressViolationType.RedirectToUnknownHost,
+                    reason: $"Redirect to host '{redirectHost}' is not in the egress envelope. Redirect blocked.",
+                    sourceComponent: _sourceComponent);
+
+                _logger?.LogError(
+                    "EgressViolation: redirect to '{Host}' not in egress envelope. OriginalURI={OriginalUri}, RedirectURI={RedirectUri}, Source={Source}",
+                    redirectHost, request.RequestUri, resolvedRedirectUri, _sourceComponent);
+
+                throw new EgressViolationException(violation);
+            }
+
+            // Follow the redirect: create a new request preserving the method for 307/308
+            var redirectRequest = new HttpRequestMessage
+            {
+                RequestUri = resolvedRedirectUri,
+                Version = request.Version,
+            };
+
+            // 307 and 308 preserve the method; others use GET
+            var statusCode = (int)response.StatusCode;
+            redirectRequest.Method = statusCode is 307 or 308 ? request.Method : HttpMethod.Get;
+
+            response.Dispose();
+            response = await base.SendAsync(redirectRequest, cancellationToken);
+        }
+
+        return response;
+    }
+
+    private void ValidateHost(Uri? requestUri)
+    {
+        var host = requestUri?.Host;
         if (string.IsNullOrWhiteSpace(host))
         {
             var violation = new EgressViolation(
                 attemptedHost: "(empty)",
-                requestUri: request.RequestUri?.ToString() ?? "(null)",
+                requestUri: requestUri?.ToString() ?? "(null)",
                 violationType: EgressViolationType.UnknownHost,
                 reason: "Request has no host specified.",
                 sourceComponent: _sourceComponent);
 
             _logger?.LogError(
                 "EgressViolation: request with no host. URI={Uri}, Source={Source}",
-                request.RequestUri, _sourceComponent);
+                requestUri, _sourceComponent);
 
             throw new EgressViolationException(violation);
         }
@@ -53,45 +113,17 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
         {
             var violation = new EgressViolation(
                 attemptedHost: host,
-                requestUri: request.RequestUri!.ToString(),
+                requestUri: requestUri!.ToString(),
                 violationType: EgressViolationType.UnknownHost,
                 reason: $"Host '{host}' is not in the egress envelope. Request blocked.",
                 sourceComponent: _sourceComponent);
 
             _logger?.LogError(
                 "EgressViolation: host '{Host}' not in egress envelope. URI={Uri}, Source={Source}",
-                host, request.RequestUri, _sourceComponent);
+                host, requestUri, _sourceComponent);
 
             throw new EgressViolationException(violation);
         }
-
-        var response = await base.SendAsync(request, cancellationToken);
-
-        // Check redirect targets — block redirects to out-of-envelope hosts
-        if (IsRedirect(response) && response.Headers.Location is { } redirectUri)
-        {
-            var redirectHost = redirectUri.IsAbsoluteUri
-                ? redirectUri.Host
-                : request.RequestUri?.Host;
-
-            if (!string.IsNullOrWhiteSpace(redirectHost) && !_egressRegistry.IsHostAllowed(redirectHost))
-            {
-                var violation = new EgressViolation(
-                    attemptedHost: redirectHost,
-                    requestUri: redirectUri.ToString(),
-                    violationType: EgressViolationType.RedirectToUnknownHost,
-                    reason: $"Redirect to host '{redirectHost}' is not in the egress envelope. Redirect blocked.",
-                    sourceComponent: _sourceComponent);
-
-                _logger?.LogError(
-                    "EgressViolation: redirect to '{Host}' not in egress envelope. OriginalURI={OriginalUri}, RedirectURI={RedirectUri}, Source={Source}",
-                    redirectHost, request.RequestUri, redirectUri, _sourceComponent);
-
-                throw new EgressViolationException(violation);
-            }
-        }
-
-        return response;
     }
 
     private static bool IsRedirect(HttpResponseMessage response)

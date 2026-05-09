@@ -74,7 +74,7 @@ public class EgressEnvelopeHandlerTests
     public async Task SendAsync_RedirectToUnknownHost_ThrowsEgressViolation()
     {
         var registry = CreateRegistry("trusted.example.com");
-        var inner = new RedirectHandler("https://evil.example.com/callback");
+        var inner = new SingleRedirectHandler("https://evil.example.com/callback");
         var handler = new EgressEnvelopeHandler(registry, sourceComponent: "test")
         {
             InnerHandler = inner
@@ -91,10 +91,10 @@ public class EgressEnvelopeHandlerTests
     }
 
     [Fact]
-    public async Task SendAsync_RedirectToAllowedHost_Succeeds()
+    public async Task SendAsync_RedirectToAllowedHost_FollowsRedirect()
     {
         var registry = CreateRegistry("trusted.example.com", "also-trusted.example.com");
-        var inner = new RedirectHandler("https://also-trusted.example.com/continue");
+        var inner = new SingleRedirectHandler("https://also-trusted.example.com/continue");
         var handler = new EgressEnvelopeHandler(registry)
         {
             InnerHandler = inner
@@ -104,7 +104,8 @@ public class EgressEnvelopeHandlerTests
         var request = new HttpRequestMessage(HttpMethod.Get, "https://trusted.example.com/start");
         var response = await invoker.SendAsync(request, CancellationToken.None);
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Redirect);
+        // Handler follows the redirect and returns the final OK response
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
     }
 
     [Fact]
@@ -205,6 +206,32 @@ public class EgressEnvelopeHandlerTests
             var response = new HttpResponseMessage(System.Net.HttpStatusCode.Redirect);
             response.Headers.Location = new Uri(_redirectUri);
             return Task.FromResult(response);
+        }
+    }
+
+    /// <summary>
+    /// Returns a redirect on the first call, then OK on subsequent calls.
+    /// Used with the manual redirect-following logic in EgressEnvelopeHandler.
+    /// </summary>
+    private sealed class SingleRedirectHandler : HttpMessageHandler
+    {
+        private readonly string _redirectUri;
+        private bool _redirected;
+
+        public SingleRedirectHandler(string redirectUri) => _redirectUri = redirectUri;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (!_redirected)
+            {
+                _redirected = true;
+                var response = new HttpResponseMessage(System.Net.HttpStatusCode.Redirect);
+                response.Headers.Location = new Uri(_redirectUri);
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         }
     }
 }

@@ -32,7 +32,7 @@ public sealed class McpToolDefinitionHashService
     /// </summary>
     public static string ComputeDefinitionHash(string name, string description, string inputSchema)
     {
-        var combined = $"{name}\n{description}\n{inputSchema}";
+        var combined = $"N:{name.Length}:{name}|D:{description.Length}:{description}|S:{inputSchema.Length}:{inputSchema}";
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(combined));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }

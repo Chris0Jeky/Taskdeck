@@ -301,7 +301,9 @@ public sealed class AgentRuntime
             return new List<string>();
         }
 
-        return null;
+        // Fail-closed: policy JSON is present but has no allowedTools array —
+        // treat as empty allowlist (deny all) rather than null (skip enforcement)
+        return new List<string>();
     }
 
     private static AgentRunDto MapToDto(AgentRun run)
