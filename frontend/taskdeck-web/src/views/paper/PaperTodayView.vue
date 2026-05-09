@@ -37,6 +37,10 @@ const lineForTomorrowStorageKey = computed(() => {
 
 async function onSeal() {
   const result = await sealDay()
+  if (!result.sealed) {
+    toast.error('Failed to seal the day. Please try again.')
+    return
+  }
   if (result.alreadySealed) {
     toast.info('Day is already sealed.')
     return
