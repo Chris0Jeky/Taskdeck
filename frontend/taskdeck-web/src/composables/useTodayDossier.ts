@@ -328,14 +328,23 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   })
 
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingAutosaveText: string | null = null
   const AUTOSAVE_DEBOUNCE_MS = 800
+
+  function flushAutosave() {
+    if (pendingAutosaveText !== null) {
+      const dateStr = formatLocalDossierDate(now.value)
+      todayApi.saveTomorrowNote(dateStr, pendingAutosaveText).catch(() => {})
+      pendingAutosaveText = null
+    }
+  }
 
   function saveLineForTomorrow(text: string) {
     liveLineForTomorrow.value = text
+    pendingAutosaveText = text
     if (autosaveTimer) clearTimeout(autosaveTimer)
     autosaveTimer = setTimeout(() => {
-      const dateStr = formatLocalDossierDate(now.value)
-      todayApi.saveTomorrowNote(dateStr, text).catch(() => {})
+      flushAutosave()
     }, AUTOSAVE_DEBOUNCE_MS)
   }
 
@@ -343,10 +352,14 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     if (autosaveTimer) {
       clearTimeout(autosaveTimer)
       autosaveTimer = null
+      flushAutosave()
     }
   })
 
+  let fetchGeneration = 0
+
   async function fetchLiveData() {
+    const gen = ++fetchGeneration
     const dateStr = formatLocalDossierDate(now.value)
 
     const results = await Promise.allSettled([
@@ -355,6 +368,8 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
       todayApi.getSealStatus(dateStr),
       todayApi.getTomorrowNote(dateStr),
     ])
+
+    if (gen !== fetchGeneration) return
 
     if (results[0].status === 'fulfilled') {
       liveCadence.value = mapCadenceResponse(results[0].value)
@@ -389,8 +404,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
       sealed.value = true
       return { sealed: true, alreadySealed: response.wasAlreadySealed }
     } catch {
-      sealed.value = true
-      return { sealed: true, alreadySealed: false }
+      return { sealed: false, alreadySealed: false }
     }
   }
 
