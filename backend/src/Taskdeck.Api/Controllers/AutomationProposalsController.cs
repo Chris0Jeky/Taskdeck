@@ -34,6 +34,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly IConfidenceBreakdownService _confidenceBreakdownService;
     private readonly ICardHistoryService _cardHistoryService;
     private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
+    private readonly IProposalRevisionService _revisionService;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
@@ -45,6 +46,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         IConfidenceBreakdownService confidenceBreakdownService,
         ICardHistoryService cardHistoryService,
         ISideEffectAnalyzer sideEffectAnalyzer,
+        IProposalRevisionService revisionService,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
@@ -56,6 +58,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         _confidenceBreakdownService = confidenceBreakdownService;
         _cardHistoryService = cardHistoryService;
         _sideEffectAnalyzer = sideEffectAnalyzer;
+        _revisionService = revisionService;
     }
 
     /// <summary>
@@ -399,6 +402,68 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
         var result = await _similarDecisionService.GetSimilarPastAsync(id, callerUserId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    [HttpPost("{proposalId}/revisions")]
+    public async Task<IActionResult> CreateRevision(
+        Guid proposalId,
+        [FromBody] CreateRevisionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(proposalId, callerUserId, requireWriteAccess: true, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var dto = new CreateProposalRevisionDto(
+            proposalId,
+            callerUserId,
+            request.RevisedPayload,
+            request.Reason);
+
+        var result = await _revisionService.CreateRevisionAsync(dto, cancellationToken);
+        return result.IsSuccess
+            ? CreatedAtAction(nameof(GetLatestRevision), new { proposalId }, result.Value)
+            : result.ToErrorActionResult();
+    }
+
+    [HttpGet("{proposalId}/revisions")]
+    public async Task<IActionResult> GetRevisions(
+        Guid proposalId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(proposalId, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _revisionService.GetRevisionsForProposalAsync(proposalId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    [HttpGet("{proposalId}/revisions/latest")]
+    public async Task<IActionResult> GetLatestRevision(
+        Guid proposalId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(proposalId, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _revisionService.GetLatestRevisionAsync(proposalId, cancellationToken);
+        if (!result.IsSuccess)
+            return result.ToErrorActionResult();
+
+        return result.Value is not null
+            ? Ok(result.Value)
+            : NotFound(new ApiErrorResponse(ErrorCodes.NotFound, "No revisions exist for this proposal"));
     }
 
     private async Task<(ProposalDto? Proposal, IActionResult? ErrorResult)> AuthorizeProposalAsync(
