@@ -24,9 +24,10 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
         revisions.length > 0
           ? revisions.reduce((a, b) => (a.revisionNumber > b.revisionNumber ? a : b))
           : null
-    } catch {
+    } catch (e: unknown) {
       revisionCount.value = 0
       latestRevision.value = null
+      toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
     }
   }
 

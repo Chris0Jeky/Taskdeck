@@ -491,6 +491,14 @@ function onReject() {
 function onRequestEdit() {
   const p = activeProposal.value
   if (!p) return
+  if (normalizeProposalStatus(p.status) !== 'PendingReview' || isProposalExpired(p)) {
+    toast.info('This proposal can no longer be edited.')
+    return
+  }
+  if ((p.operations?.length ?? 0) > 1) {
+    toast.info('Editing multi-operation proposals is not yet supported.')
+    return
+  }
   startRevisionEditing()
 }
 
