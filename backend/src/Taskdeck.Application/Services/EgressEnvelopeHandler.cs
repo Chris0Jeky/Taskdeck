@@ -42,6 +42,18 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
         // against the egress allowlist. If auto-redirect is enabled, the handler only
         // sees the final response and the redirect check becomes ineffective.
 
+        // Buffer request content before the first send so it can be replayed on 307/308 redirects.
+        // After SendAsync, the original content stream may be consumed and non-seekable.
+        byte[]? bufferedContent = null;
+        string? contentType = null;
+        if (request.Content is not null)
+        {
+            bufferedContent = await request.Content.ReadAsByteArrayAsync(cancellationToken);
+            contentType = request.Content.Headers.ContentType?.ToString();
+        }
+
+        var originalHost = request.RequestUri?.Host;
+
         var response = await base.SendAsync(request, cancellationToken);
 
         // Manually follow redirects, validating each target against the egress envelope
@@ -81,12 +93,24 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
                 Method = statusCode is 307 or 308 ? request.Method : HttpMethod.Get,
             };
 
-            // 307/308 require preserving the original headers and body
+            // 307/308 require preserving the original body and safe headers
             if (statusCode is 307 or 308)
             {
-                redirectRequest.Content = request.Content;
+                if (bufferedContent is not null)
+                {
+                    var newContent = new ByteArrayContent(bufferedContent);
+                    if (contentType is not null)
+                        newContent.Headers.TryAddWithoutValidation("Content-Type", contentType);
+                    redirectRequest.Content = newContent;
+                }
+
+                var isCrossHost = !string.Equals(originalHost, resolvedRedirectUri.Host, StringComparison.OrdinalIgnoreCase);
                 foreach (var header in request.Headers)
                 {
+                    if (string.Equals(header.Key, "Host", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (isCrossHost && string.Equals(header.Key, "Authorization", StringComparison.OrdinalIgnoreCase))
+                        continue;
                     redirectRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
                 }
             }

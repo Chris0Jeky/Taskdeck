@@ -184,7 +184,7 @@ public class EgressEnvelopeHandlerTests
     }
 
     [Fact]
-    public async Task SendAsync_307Redirect_PreservesHeadersAndContent()
+    public async Task SendAsync_307Redirect_PreservesContentAndSafeHeaders()
     {
         var registry = CreateRegistry("trusted.example.com", "redirect-target.example.com");
         var inner = new SingleRedirectHandler(
@@ -206,7 +206,57 @@ public class EgressEnvelopeHandlerTests
         inner.LastReceivedRequest.Should().NotBeNull();
         inner.LastReceivedRequest!.Method.Should().Be(HttpMethod.Post);
         inner.LastReceivedRequest.Content.Should().NotBeNull();
+        var body = await inner.LastReceivedRequest.Content!.ReadAsStringAsync();
+        body.Should().Be("{\"key\":\"value\"}");
         inner.LastReceivedRequest.Headers.Contains("X-Custom").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SendAsync_307CrossHostRedirect_StripsAuthorizationHeader()
+    {
+        var registry = CreateRegistry("origin.example.com", "other.example.com");
+        var inner = new SingleRedirectHandler(
+            "https://other.example.com/continue",
+            System.Net.HttpStatusCode.TemporaryRedirect);
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://origin.example.com/api");
+        request.Content = new StringContent("data");
+        request.Headers.Add("Authorization", "Bearer secret-token");
+        request.Headers.Add("X-Safe", "kept");
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        inner.LastReceivedRequest!.Headers.Contains("Authorization").Should().BeFalse();
+        inner.LastReceivedRequest.Headers.Contains("X-Safe").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SendAsync_307SameHostRedirect_PreservesAuthorizationHeader()
+    {
+        var registry = CreateRegistry("same.example.com");
+        var inner = new SingleRedirectHandler(
+            "https://same.example.com/other-path",
+            System.Net.HttpStatusCode.TemporaryRedirect);
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://same.example.com/api");
+        request.Content = new StringContent("data");
+        request.Headers.Add("Authorization", "Bearer keep-this");
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        inner.LastReceivedRequest!.Headers.Contains("Authorization").Should().BeTrue();
     }
 
     // --- Test Helpers ---
