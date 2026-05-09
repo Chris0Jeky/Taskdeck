@@ -94,6 +94,11 @@ public static class ApplicationServiceRegistration
                 sp.GetRequiredService<IBoardMetricsService>()));
         services.AddScoped<AgentProfileService>();
         services.AddScoped<AgentRunService>();
+        services.AddScoped<AgentPolicy>();
+        services.AddScoped<AgentRuntime>();
+        services.AddScoped<McpToolDefinitionHashService>();
+        services.AddScoped<InboxTriageDigestAgent>();
+        services.AddSingleton<IEgressRegistry, EgressRegistry>();
         services.AddScoped<SignalRBoardRealtimeNotifier>();
         services.AddScoped<WebhookBoardMutationNotifier>();
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();

@@ -36,6 +36,7 @@ public interface IUnitOfWork
     IProposalRevisionRepository ProposalRevisions { get; }
     IDailySnapshotRepository DailySnapshots { get; }
     ITomorrowNoteRepository TomorrowNotes { get; }
+    IMcpToolHashRepository McpToolHashes { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
