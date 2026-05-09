@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
+import { useViewportMode } from '../../composables/useViewportMode'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
@@ -55,7 +56,15 @@ const route = useRoute()
 const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
+const { mode: viewportMode } = useViewportMode()
 const mobileOpen = ref(false)
+
+const phoneNavItems = [
+  { id: 'home', glyph: 'H', label: 'Home', path: '/workspace/home' },
+  { id: 'today', glyph: 'T', label: 'Today', path: '/workspace/today' },
+  { id: 'review', glyph: 'R', label: 'Review', path: '/workspace/review' },
+  { id: 'inbox', glyph: 'I', label: 'Inbox', path: '/workspace/inbox' },
+] as const
 
 const primaryItems: PaperNavItem[] = [
   { id: 'home', label: 'Home', glyph: 'H', path: '/workspace/home', keywords: 'home start summary workspace' },
@@ -192,124 +201,239 @@ defineExpose({
   mobileOpen,
   toggleMobileMenu,
   closeMobileMenu,
+  viewportMode,
 })
 </script>
 
 <template>
-  <div
-    v-if="mobileOpen"
-    class="paper-sidebar-overlay"
-    aria-hidden="true"
-    @click="closeMobileMenu"
-  />
+  <!-- Phone: bottom tab bar -->
   <nav
-    class="paper-sidebar"
-    :class="{ 'paper-sidebar--mobile-open': mobileOpen }"
+    v-if="viewportMode === 'phone'"
+    class="paper-bottombar"
     role="navigation"
     aria-label="Workspace navigation"
     data-paper-sidebar
+    data-paper-bottombar
   >
-    <div class="paper-sidebar__header">
-      <div class="paper-sidebar__brand">Taskdeck</div>
-      <div class="tk-eyebrow paper-sidebar__eyebrow">
-        Precision Mode <span class="paper-sidebar__eyebrow-active">&middot; active</span>
-      </div>
-    </div>
-
-    <button type="button" class="paper-sidebar__workspace" aria-label="Switch workspace">
-      <span class="paper-sidebar__workspace-glyph">{{ workspaceInitial }}</span>
-      <span class="paper-sidebar__workspace-name">{{ workspaceName }}</span>
-      <PaperIcon name="chevronDown" />
-    </button>
-
-    <div class="paper-sidebar__group" data-group="primary">
-      <div class="tk-eyebrow paper-sidebar__group-label">Primary loop</div>
-      <ul class="paper-sidebar__list">
-        <li v-for="item in visiblePrimary" :key="item.id">
-          <router-link
-            :to="item.path"
-            class="paper-sidebar__item"
-            :class="{ 'paper-sidebar__item--active': isActive(item) }"
-            :aria-current="isActive(item) ? 'page' : undefined"
-            @click="closeMobileMenu"
-          >
-            <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
-            <span class="paper-sidebar__label">{{ item.label }}</span>
-            <span
-              v-if="badgeFor(item) > 0"
-              class="paper-sidebar__badge"
-              :aria-label="`${item.label}: ${badgeFor(item)} pending`"
-            >&middot; {{ badgeFor(item) }}</span>
-          </router-link>
-        </li>
-      </ul>
-    </div>
-
-    <div class="paper-sidebar__group" data-group="workbench">
-      <div class="tk-eyebrow paper-sidebar__group-label">Workbench tools</div>
-      <ul class="paper-sidebar__list">
-        <li v-for="item in visibleWorkbench" :key="item.id">
-          <router-link
-            :to="item.path"
-            class="paper-sidebar__item"
-            :class="{ 'paper-sidebar__item--active': isActive(item) }"
-            :aria-current="isActive(item) ? 'page' : undefined"
-            @click="closeMobileMenu"
-          >
-            <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
-            <span class="paper-sidebar__label">{{ item.label }}</span>
-          </router-link>
-        </li>
-      </ul>
-    </div>
-
-    <div class="paper-sidebar__spacer" />
-
-    <div class="paper-sidebar__group paper-sidebar__group--muted" data-group="meta">
-      <ul class="paper-sidebar__list">
-        <li v-for="item in visibleMeta" :key="item.id">
-          <router-link
-            v-if="!item.path.startsWith('#')"
-            :to="item.path"
-            class="paper-sidebar__item paper-sidebar__item--muted"
-            :class="{ 'paper-sidebar__item--active': isActive(item) }"
-            :aria-current="isActive(item) ? 'page' : undefined"
-            @click="closeMobileMenu"
-          >
-            <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
-            <span class="paper-sidebar__label">{{ item.label }}</span>
-          </router-link>
-          <a
-            v-else
-            href="#"
-            class="paper-sidebar__item paper-sidebar__item--muted"
-            @click="handleMetaClick(item, $event)"
-          >
-            <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
-            <span class="paper-sidebar__label">{{ item.label }}</span>
-          </a>
-        </li>
-      </ul>
-    </div>
-
-    <div class="paper-sidebar__footer">
-      <div class="paper-sidebar__footer-status">
-        <PaperStatusPill kind="live">SYSTEM LIVE</PaperStatusPill>
-        <span class="paper-sidebar__version">{{ version }}</span>
-      </div>
-      <button
-        type="button"
-        class="paper-sidebar__theme-toggle"
-        :aria-label="themeToggleLabel"
-        @click="handleThemeToggle"
-      >
-        <PaperIcon :name="themeIcon" :label="themeToggleLabel" />
-      </button>
-    </div>
+    <router-link
+      v-for="item in phoneNavItems"
+      :key="item.id"
+      :to="item.path"
+      class="paper-bottombar__tab"
+      :class="{ 'paper-bottombar__tab--active': isActive(item as unknown as PaperNavItem) }"
+      :aria-current="isActive(item as unknown as PaperNavItem) ? 'page' : undefined"
+      :aria-label="item.label"
+    >
+      <span class="paper-bottombar__glyph">{{ item.glyph }}</span>
+    </router-link>
   </nav>
+
+  <!-- Tablet: 60px icon-only rail -->
+  <template v-else-if="viewportMode === 'tablet'">
+    <nav
+      class="paper-sidebar paper-sidebar--rail"
+      role="navigation"
+      aria-label="Workspace navigation"
+      data-paper-sidebar
+      data-paper-rail
+    >
+      <div class="paper-sidebar__header">
+        <div class="paper-sidebar__brand">Td</div>
+      </div>
+
+      <div class="paper-sidebar__group" data-group="primary">
+        <ul class="paper-sidebar__list">
+          <li v-for="item in visiblePrimary" :key="item.id">
+            <router-link
+              :to="item.path"
+              class="paper-sidebar__item"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="item.label"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+            </router-link>
+          </li>
+        </ul>
+      </div>
+
+      <div class="paper-sidebar__group" data-group="workbench">
+        <ul class="paper-sidebar__list">
+          <li v-for="item in visibleWorkbench" :key="item.id">
+            <router-link
+              :to="item.path"
+              class="paper-sidebar__item"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="item.label"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+            </router-link>
+          </li>
+        </ul>
+      </div>
+
+      <div class="paper-sidebar__spacer" />
+
+      <div class="paper-sidebar__group paper-sidebar__group--muted" data-group="meta">
+        <ul class="paper-sidebar__list">
+          <li v-for="item in visibleMeta" :key="item.id">
+            <router-link
+              v-if="!item.path.startsWith('#')"
+              :to="item.path"
+              class="paper-sidebar__item paper-sidebar__item--muted"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="item.label"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+            </router-link>
+            <a
+              v-else
+              href="#"
+              class="paper-sidebar__item paper-sidebar__item--muted"
+              :aria-label="item.label"
+              @click="handleMetaClick(item, $event)"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="paper-sidebar__footer">
+        <button
+          type="button"
+          class="paper-sidebar__theme-toggle"
+          :aria-label="themeToggleLabel"
+          @click="handleThemeToggle"
+        >
+          <PaperIcon :name="themeIcon" :label="themeToggleLabel" />
+        </button>
+      </div>
+    </nav>
+  </template>
+
+  <!-- Desktop: full sidebar -->
+  <template v-else>
+    <div
+      v-if="mobileOpen"
+      class="paper-sidebar-overlay"
+      aria-hidden="true"
+      @click="closeMobileMenu"
+    />
+    <nav
+      class="paper-sidebar"
+      :class="{ 'paper-sidebar--mobile-open': mobileOpen }"
+      role="navigation"
+      aria-label="Workspace navigation"
+      data-paper-sidebar
+    >
+      <div class="paper-sidebar__header">
+        <div class="paper-sidebar__brand">Taskdeck</div>
+        <div class="tk-eyebrow paper-sidebar__eyebrow">
+          Precision Mode <span class="paper-sidebar__eyebrow-active">&middot; active</span>
+        </div>
+      </div>
+
+      <button type="button" class="paper-sidebar__workspace" aria-label="Switch workspace">
+        <span class="paper-sidebar__workspace-glyph">{{ workspaceInitial }}</span>
+        <span class="paper-sidebar__workspace-name">{{ workspaceName }}</span>
+        <PaperIcon name="chevronDown" />
+      </button>
+
+      <div class="paper-sidebar__group" data-group="primary">
+        <div class="tk-eyebrow paper-sidebar__group-label">Primary loop</div>
+        <ul class="paper-sidebar__list">
+          <li v-for="item in visiblePrimary" :key="item.id">
+            <router-link
+              :to="item.path"
+              class="paper-sidebar__item"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              @click="closeMobileMenu"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__label">{{ item.label }}</span>
+              <span
+                v-if="badgeFor(item) > 0"
+                class="paper-sidebar__badge"
+                :aria-label="`${item.label}: ${badgeFor(item)} pending`"
+              >&middot; {{ badgeFor(item) }}</span>
+            </router-link>
+          </li>
+        </ul>
+      </div>
+
+      <div class="paper-sidebar__group" data-group="workbench">
+        <div class="tk-eyebrow paper-sidebar__group-label">Workbench tools</div>
+        <ul class="paper-sidebar__list">
+          <li v-for="item in visibleWorkbench" :key="item.id">
+            <router-link
+              :to="item.path"
+              class="paper-sidebar__item"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              @click="closeMobileMenu"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__label">{{ item.label }}</span>
+            </router-link>
+          </li>
+        </ul>
+      </div>
+
+      <div class="paper-sidebar__spacer" />
+
+      <div class="paper-sidebar__group paper-sidebar__group--muted" data-group="meta">
+        <ul class="paper-sidebar__list">
+          <li v-for="item in visibleMeta" :key="item.id">
+            <router-link
+              v-if="!item.path.startsWith('#')"
+              :to="item.path"
+              class="paper-sidebar__item paper-sidebar__item--muted"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              @click="closeMobileMenu"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__label">{{ item.label }}</span>
+            </router-link>
+            <a
+              v-else
+              href="#"
+              class="paper-sidebar__item paper-sidebar__item--muted"
+              @click="handleMetaClick(item, $event)"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__label">{{ item.label }}</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="paper-sidebar__footer">
+        <div class="paper-sidebar__footer-status">
+          <PaperStatusPill kind="live">SYSTEM LIVE</PaperStatusPill>
+          <span class="paper-sidebar__version">{{ version }}</span>
+        </div>
+        <button
+          type="button"
+          class="paper-sidebar__theme-toggle"
+          :aria-label="themeToggleLabel"
+          @click="handleThemeToggle"
+        >
+          <PaperIcon :name="themeIcon" :label="themeToggleLabel" />
+        </button>
+      </div>
+    </nav>
+  </template>
 </template>
 
 <style scoped>
+/* =========================================================
+   Desktop: full sidebar
+   ========================================================= */
 .paper-sidebar {
   width: 232px;
   flex: none;
@@ -542,6 +666,100 @@ defineExpose({
 @media (prefers-reduced-motion: reduce) {
   .paper-sidebar {
     transition: none;
+  }
+}
+
+/* =========================================================
+   Tablet: 60px icon-only rail
+   ========================================================= */
+.paper-sidebar--rail {
+  width: 60px;
+  padding: 16px 0 12px;
+  align-items: center;
+}
+
+.paper-sidebar--rail .paper-sidebar__header {
+  padding: 0 0 14px;
+  text-align: center;
+}
+
+.paper-sidebar--rail .paper-sidebar__item {
+  justify-content: center;
+  padding: 6px 0;
+  height: 36px;
+  width: 36px;
+  border-left: none;
+  border-radius: var(--r-2);
+}
+
+.paper-sidebar--rail .paper-sidebar__item:hover {
+  background: var(--ember-bloom);
+}
+
+.paper-sidebar--rail .paper-sidebar__item--active {
+  background: var(--ember-bloom);
+  border-left: none;
+}
+
+.paper-sidebar--rail .paper-sidebar__item--active .paper-sidebar__glyph {
+  color: var(--ember);
+}
+
+.paper-sidebar--rail .paper-sidebar__glyph {
+  width: auto;
+  font-size: 12px;
+}
+
+.paper-sidebar--rail .paper-sidebar__footer {
+  margin: 4px 0 0;
+  padding: 8px 0 0;
+  justify-content: center;
+}
+
+/* =========================================================
+   Phone: bottom tab bar
+   ========================================================= */
+.paper-bottombar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 56px;
+  padding-bottom: var(--paper-safe-bottom, env(safe-area-inset-bottom, 0px));
+  background: var(--paper-card);
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+}
+
+.paper-bottombar__tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  text-decoration: none;
+  color: var(--mute);
+  transition: color var(--d-quick, 140ms) var(--ease-paper, ease);
+}
+
+.paper-bottombar__tab--active {
+  color: var(--ember);
+}
+
+.paper-bottombar__glyph {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paper-bottombar__tab {
+    transition: opacity 200ms ease;
   }
 }
 </style>
