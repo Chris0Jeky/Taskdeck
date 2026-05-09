@@ -35,8 +35,8 @@ const lineForTomorrowStorageKey = computed(() => {
   return `td.paper.line-for-tomorrow:${userPart}:${dayPart}`
 })
 
-function onSeal() {
-  const result = sealDay()
+async function onSeal() {
+  const result = await sealDay()
   if (result.alreadySealed) {
     toast.info('Day is already sealed.')
     return
