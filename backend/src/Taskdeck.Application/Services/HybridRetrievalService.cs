@@ -235,11 +235,13 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
             var ftsResults = await _ftsService.SearchAsync(
                 query, userId, boardId, limit, cancellationToken);
 
+            // FTS5 rank is negative BM25 (more negative = more relevant).
+            // Negate so higher = better, consistent with vector and RRF scores.
             return ftsResults.Select(r => new RetrievalResultDto(
                 DocumentId: r.DocumentId,
                 Title: r.Title,
                 Snippet: r.Snippet,
-                Score: r.Rank,
+                Score: -r.Rank,
                 BoardId: r.BoardId,
                 Source: RetrievalSource.Fts,
                 Tags: r.Tags,
@@ -363,11 +365,12 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
         var ftsResults = await _ftsService.SearchAsync(
             query, userId, boardId, overFetchLimit, cancellationToken);
 
+        // Negate FTS5 rank so higher = better, consistent with other score sources
         return ftsResults.Select(r => new RetrievalResultDto(
             DocumentId: r.DocumentId,
             Title: r.Title,
             Snippet: r.Snippet,
-            Score: r.Rank,
+            Score: -r.Rank,
             BoardId: r.BoardId,
             Source: RetrievalSource.Fts,
             Tags: r.Tags,
