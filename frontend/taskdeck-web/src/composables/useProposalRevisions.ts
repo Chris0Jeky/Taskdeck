@@ -15,16 +15,20 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
   const saving = ref(false)
   const revisionCount = ref(0)
   const latestRevision = ref<ProposalRevision | null>(null)
+  let loadGeneration = 0
 
   async function loadRevisionState(proposalId: string) {
+    const gen = ++loadGeneration
     try {
       const revisions = await proposalRevisionsApi.getRevisions(proposalId)
+      if (gen !== loadGeneration) return
       revisionCount.value = revisions.length
       latestRevision.value =
         revisions.length > 0
           ? revisions.reduce((a, b) => (a.revisionNumber > b.revisionNumber ? a : b))
           : null
     } catch (e: unknown) {
+      if (gen !== loadGeneration) return
       revisionCount.value = 0
       latestRevision.value = null
       toast.error(getErrorDisplay(e, 'Failed to load revision history').message)

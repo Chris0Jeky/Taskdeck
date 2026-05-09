@@ -149,4 +149,36 @@ describe('useProposalRevisions', () => {
 
     expect(editing.value).toBe(false)
   })
+
+  it('discards stale load responses when proposal switches quickly', async () => {
+    const staleRevisions = [makeRevision({ proposalId: 'p-1', revisionNumber: 1 })]
+    const freshRevisions = [
+      makeRevision({ proposalId: 'p-2', revisionNumber: 1 }),
+      makeRevision({ proposalId: 'p-2', revisionNumber: 2 }),
+    ]
+
+    let resolveStale!: (v: typeof staleRevisions) => void
+    vi.mocked(proposalRevisionsApi.getRevisions)
+      .mockImplementationOnce(() => new Promise((r) => { resolveStale = r }))
+      .mockResolvedValueOnce(freshRevisions)
+
+    const proposal = ref<ApiProposal | null>(null)
+    const { revisionCount, latestRevision } = useProposalRevisions(proposal)
+
+    proposal.value = makeProposal({ id: 'p-1' })
+    await nextTick()
+
+    proposal.value = makeProposal({ id: 'p-2' })
+    await nextTick()
+
+    await vi.waitFor(() => {
+      expect(revisionCount.value).toBe(2)
+    })
+
+    resolveStale(staleRevisions)
+    await nextTick()
+
+    expect(revisionCount.value).toBe(2)
+    expect(latestRevision.value?.proposalId).toBe('p-2')
+  })
 })
