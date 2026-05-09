@@ -375,11 +375,11 @@ function openCaptureBoard() {
   .paper-board-view__inner {
     padding: 16px;
   }
-  .paper-board-view__lanes {
+  .paper-board-view__lanes:not(.paper-board-view__lanes--snap) {
     flex-direction: column;
     overflow-x: visible;
   }
-  .paper-board-view__lane {
+  .paper-board-view__lanes:not(.paper-board-view__lanes--snap) .paper-board-view__lane {
     display: block;
   }
 }
