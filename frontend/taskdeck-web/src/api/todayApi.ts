@@ -66,9 +66,7 @@ export const todayApi = {
   },
 
   async getTomorrowNote(date: string): Promise<TomorrowNoteApiResponse | null> {
-    const response = await http.get<TomorrowNoteApiResponse>(`/today/tomorrow-note?date=${encodeURIComponent(date)}`, {
-      validateStatus: (status: number) => (status >= 200 && status < 300) || status === 204,
-    })
+    const response = await http.get<TomorrowNoteApiResponse>(`/today/tomorrow-note?date=${encodeURIComponent(date)}`)
     if (response.status === 204) return null
     return response.data
   },

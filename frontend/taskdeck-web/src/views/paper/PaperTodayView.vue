@@ -24,7 +24,7 @@ import TodayLineForTomorrow from './today/TodayLineForTomorrow.vue'
  * `TodayView.vue` shell delegates to this component when `paperThemeStore
  * .isOn`.
  */
-const { dossier, sealed, sealDay } = useTodayDossier()
+const { dossier, sealed, sealDay, saveLineForTomorrow } = useTodayDossier()
 const session = useSessionStore()
 const toast = useToastStore()
 
@@ -136,6 +136,7 @@ function onPinCarryOver(serials: string[]) {
           <TodayLineForTomorrow
             :initial="dossier.lineForTomorrow"
             :storage-key="lineForTomorrowStorageKey"
+            @save="saveLineForTomorrow"
           />
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { todayApi, type CadenceApiResponse, type StreakApiResponse } from '../api/todayApi'
+import { logError } from '../utils/errorReporting'
 import type { TodaySummary } from '../types/workspace'
 
 export type DossierLedgerWho = 'you' | 'haiku' | 'system'
@@ -334,7 +335,9 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   function flushAutosave() {
     if (pendingAutosaveText !== null) {
       const dateStr = formatLocalDossierDate(now.value)
-      todayApi.saveTomorrowNote(dateStr, pendingAutosaveText).catch(() => {})
+      todayApi.saveTomorrowNote(dateStr, pendingAutosaveText).catch((err) => {
+        logError('Tomorrow note autosave failed', { message: (err as Error)?.message })
+      })
       pendingAutosaveText = null
     }
   }
@@ -380,8 +383,8 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     if (results[2].status === 'fulfilled') {
       sealed.value = results[2].value.isSealed
     }
-    if (results[3].status === 'fulfilled' && results[3].value !== null) {
-      liveLineForTomorrow.value = results[3].value.text
+    if (results[3].status === 'fulfilled') {
+      liveLineForTomorrow.value = results[3].value?.text ?? ''
     }
   }
 
@@ -393,11 +396,17 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     fetchLiveData()
   }, { immediate: true })
 
+  let sealingInProgress = false
+
   async function sealDay(): Promise<{ sealed: boolean; alreadySealed: boolean }> {
     if (sealed.value) {
       return { sealed: true, alreadySealed: true }
     }
+    if (sealingInProgress) {
+      return { sealed: false, alreadySealed: false }
+    }
 
+    sealingInProgress = true
     try {
       const dateStr = formatLocalDossierDate(now.value)
       const response = await todayApi.sealDay(dateStr)
@@ -405,6 +414,8 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
       return { sealed: true, alreadySealed: response.wasAlreadySealed }
     } catch {
       return { sealed: false, alreadySealed: false }
+    } finally {
+      sealingInProgress = false
     }
   }
 

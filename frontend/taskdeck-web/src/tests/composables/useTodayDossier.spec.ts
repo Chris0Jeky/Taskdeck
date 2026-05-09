@@ -190,7 +190,7 @@ describe('useTodayDossier', () => {
     expect(todayApi.sealDay).toHaveBeenCalledTimes(1)
   })
 
-  it('returns null lineForTomorrow when API returns 204', async () => {
+  it('returns empty lineForTomorrow when API returns 204 (no note)', async () => {
     vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
     vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
     vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
@@ -201,7 +201,7 @@ describe('useTodayDossier', () => {
       expect(todayApi.getTomorrowNote).toHaveBeenCalled()
     })
 
-    expect(dossier.value.lineForTomorrow).toContain('AA contrast audit')
+    expect(dossier.value.lineForTomorrow).toBe('')
   })
 
   it('re-fetches data when now changes', async () => {
