@@ -15,6 +15,8 @@ declare module 'vue-router' {
     requiresShell?: boolean
     automationSurface?: string
     requiresFlag?: keyof FeatureFlags
+    /** Human-readable breadcrumb label for the Paper TopBar. */
+    breadcrumb?: string
   }
 }
 
@@ -96,26 +98,26 @@ const router = createRouter({
       path: '/workspace/home',
       name: 'workspace-home',
       component: HomeView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Home' },
     },
     {
       path: '/workspace/today',
       name: 'workspace-today',
       component: TodayView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Today' },
     },
     {
       path: '/workspace/boards',
       name: 'workspace-boards',
       component: BoardsListView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Boards' },
     },
     {
       path: '/workspace/boards/:id',
       name: 'workspace-board',
       component: BoardView,
       props: true,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Board' },
     },
 
     // Activity routes
@@ -123,25 +125,25 @@ const router = createRouter({
       path: '/workspace/activity',
       name: 'workspace-activity',
       component: ActivityView,
-      meta: { requiresShell: true, requiresFlag: 'newActivity' },
+      meta: { requiresShell: true, requiresFlag: 'newActivity', breadcrumb: 'Activity' },
     },
     {
       path: '/workspace/activity/board/:boardId',
       name: 'workspace-activity-board',
       component: ActivityView,
-      meta: { requiresShell: true, requiresFlag: 'newActivity' },
+      meta: { requiresShell: true, requiresFlag: 'newActivity', breadcrumb: 'Activity' },
     },
     {
       path: '/workspace/activity/entity/:entityType/:entityId',
       name: 'workspace-activity-entity',
       component: ActivityView,
-      meta: { requiresShell: true, requiresFlag: 'newActivity' },
+      meta: { requiresShell: true, requiresFlag: 'newActivity', breadcrumb: 'Activity' },
     },
     {
       path: '/workspace/activity/user',
       name: 'workspace-activity-user',
       component: ActivityView,
-      meta: { requiresShell: true, requiresFlag: 'newActivity' },
+      meta: { requiresShell: true, requiresFlag: 'newActivity', breadcrumb: 'Activity' },
     },
     {
       path: '/workspace/activity/user/:userId',
@@ -153,7 +155,7 @@ const router = createRouter({
       path: '/workspace/metrics',
       name: 'workspace-metrics',
       component: MetricsView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Metrics' },
     },
 
     // Integrations route
@@ -161,7 +163,7 @@ const router = createRouter({
       path: '/workspace/integrations',
       name: 'workspace-integrations',
       component: IntegrationsView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Integrations' },
     },
 
     // Calendar/timeline planning route
@@ -169,7 +171,7 @@ const router = createRouter({
       path: '/workspace/calendar',
       name: 'workspace-calendar',
       component: CalendarView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Calendar' },
     },
 
     // Automation routes
@@ -185,13 +187,13 @@ const router = createRouter({
       path: '/workspace/automations/queue',
       name: 'workspace-automations-queue',
       component: AutomationQueueView,
-      meta: { requiresShell: true, automationSurface: 'queue', requiresFlag: 'newAutomation' },
+      meta: { requiresShell: true, automationSurface: 'queue', requiresFlag: 'newAutomation', breadcrumb: 'Queue' },
     },
     {
       path: '/workspace/review',
       name: 'workspace-review',
       component: ReviewView,
-      meta: { requiresShell: true, automationSurface: 'review', requiresFlag: 'newAutomation' },
+      meta: { requiresShell: true, automationSurface: 'review', requiresFlag: 'newAutomation', breadcrumb: 'Review' },
     },
     {
       path: '/workspace/automations/proposals',
@@ -205,7 +207,7 @@ const router = createRouter({
       path: '/workspace/automations/chat',
       name: 'workspace-automations-chat',
       component: AutomationChatView,
-      meta: { requiresShell: true, requiresFlag: 'newAutomation' },
+      meta: { requiresShell: true, requiresFlag: 'newAutomation', breadcrumb: 'Chat' },
     },
 
     // Ops routes
@@ -213,19 +215,19 @@ const router = createRouter({
       path: '/workspace/ops/cli',
       name: 'workspace-ops-cli',
       component: OpsConsoleView,
-      meta: { requiresShell: true, requiresFlag: 'newOps' },
+      meta: { requiresShell: true, requiresFlag: 'newOps', breadcrumb: 'Ops' },
     },
     {
       path: '/workspace/ops/endpoints',
       name: 'workspace-ops-endpoints',
       component: OpsConsoleView,
-      meta: { requiresShell: true, requiresFlag: 'newOps' },
+      meta: { requiresShell: true, requiresFlag: 'newOps', breadcrumb: 'Endpoints' },
     },
     {
       path: '/workspace/ops/logs',
       name: 'workspace-ops-logs',
       component: OpsConsoleView,
-      meta: { requiresShell: true, requiresFlag: 'newOps' },
+      meta: { requiresShell: true, requiresFlag: 'newOps', breadcrumb: 'Logs' },
     },
 
     // Settings routes
@@ -233,7 +235,7 @@ const router = createRouter({
       path: '/workspace/settings/profile',
       name: 'workspace-settings-profile',
       component: ProfileSettingsView,
-      meta: { requiresShell: true, requiresFlag: 'newAuth' },
+      meta: { requiresShell: true, requiresFlag: 'newAuth', breadcrumb: 'Profile' },
     },
     {
       path: '/workspace/settings/access/:boardId?',
@@ -242,25 +244,25 @@ const router = createRouter({
       props: (route) => ({
         boardId: typeof route.params.boardId === 'string' ? route.params.boardId : null,
       }),
-      meta: { requiresShell: true, requiresFlag: 'newAccess' },
+      meta: { requiresShell: true, requiresFlag: 'newAccess', breadcrumb: 'Access' },
     },
     {
       path: '/workspace/settings/export-import',
       name: 'workspace-settings-export-import',
       component: ExportImportView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Export & Import' },
     },
     {
       path: '/workspace/settings/preferences',
       name: 'workspace-settings-preferences',
       component: NotificationPreferencesView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Preferences' },
     },
     {
       path: '/workspace/settings/api-keys',
       name: 'workspace-settings-api-keys',
       component: ApiKeySettingsView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'API Keys' },
     },
 
     // Archive route
@@ -268,31 +270,31 @@ const router = createRouter({
       path: '/workspace/archive',
       name: 'workspace-archive',
       component: ArchiveView,
-      meta: { requiresShell: true, requiresFlag: 'newArchive' },
+      meta: { requiresShell: true, requiresFlag: 'newArchive', breadcrumb: 'Archive' },
     },
     {
       path: '/workspace/views',
       name: 'workspace-views',
       component: SavedViewsView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Views' },
     },
     {
       path: '/workspace/views/:viewId',
       name: 'workspace-views-detail',
       component: SavedViewsView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Views' },
     },
     {
       path: '/workspace/inbox',
       name: 'workspace-inbox',
       component: InboxView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Inbox' },
     },
     {
       path: '/workspace/notifications',
       name: 'workspace-notifications',
       component: NotificationInboxView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Notifications' },
     },
 
     // Agent surfaces (visible in agent workspace mode)
@@ -300,19 +302,19 @@ const router = createRouter({
       path: '/workspace/agents',
       name: 'workspace-agents',
       component: AgentsView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Agents' },
     },
     {
       path: '/workspace/agents/:agentId/runs',
       name: 'workspace-agent-runs',
       component: AgentRunsView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Runs' },
     },
     {
       path: '/workspace/agents/:agentId/runs/:runId',
       name: 'workspace-agent-run-detail',
       component: AgentRunDetailView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, breadcrumb: 'Run Detail' },
     },
 
     // Internal dev tooling (trace replay + scenario editor)
@@ -320,7 +322,7 @@ const router = createRouter({
       path: '/workspace/dev-tools',
       name: 'workspace-dev-tools',
       component: DevToolsView,
-      meta: { requiresShell: true, requiresFlag: 'devTools' },
+      meta: { requiresShell: true, requiresFlag: 'devTools', breadcrumb: 'Dev Tools' },
     },
   ],
 })

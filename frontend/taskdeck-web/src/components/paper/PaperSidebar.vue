@@ -538,4 +538,10 @@ defineExpose({
     min-height: 44px;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .paper-sidebar {
+    transition: none;
+  }
+}
 </style>

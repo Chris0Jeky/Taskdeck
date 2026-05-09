@@ -337,4 +337,34 @@ onUnmounted(() => {
     overflow-x: hidden; /* mobile safeguard — prevents horizontal scroll from wide content */
   }
 }
+
+/* ─── Paper mode overrides ─── */
+.td-shell--paper {
+  background: var(--paper);
+}
+
+.td-shell--paper .td-content {
+  background: var(--paper);
+}
+
+@media (max-width: 640px) {
+  .td-shell--paper .td-mobile-topbar {
+    background: var(--paper-2);
+    border-bottom-color: var(--line);
+  }
+
+  .td-shell--paper .td-mobile-topbar__hamburger {
+    color: var(--ink);
+  }
+
+  .td-shell--paper .td-mobile-topbar__hamburger:hover {
+    background: var(--paper-card);
+  }
+
+  .td-shell--paper .td-mobile-topbar__title {
+    font-family: var(--serif);
+    font-weight: 500;
+    color: var(--ink-deep);
+  }
+}
 </style>
