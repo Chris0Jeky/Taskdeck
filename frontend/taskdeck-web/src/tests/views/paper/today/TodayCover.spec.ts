@@ -1,9 +1,28 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { setActivePinia, createPinia } from 'pinia'
 import TodayCover from '../../../../views/paper/today/TodayCover.vue'
 import { formatDossierSerial } from '../../../../composables/useTodayDossier'
 
+vi.mock('../../../../api/todayApi', () => ({
+  todayApi: {
+    getCadence: vi.fn().mockRejectedValue(new Error('stub')),
+    getStreak: vi.fn().mockRejectedValue(new Error('stub')),
+    getSealStatus: vi.fn().mockRejectedValue(new Error('stub')),
+    getTomorrowNote: vi.fn().mockRejectedValue(new Error('stub')),
+    sealDay: vi.fn().mockResolvedValue({ sealedAt: new Date().toISOString(), wasAlreadySealed: false }),
+  },
+}))
+
+vi.mock('../../../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => ({ todaySummary: null }),
+}))
+
 describe('TodayCover', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('renders the dossier serial in D-YYYY-MM-DD-NNN format', () => {
     const date = new Date('2026-04-25T10:00:00Z')
     const serial = formatDossierSerial(date)
@@ -61,19 +80,12 @@ describe('TodayCover', () => {
     expect(wrapper.emitted('seal')).toHaveLength(1)
   })
 
-  it('seal click while already sealed is a parent-level no-op (idempotent contract)', () => {
-    // Verifies the contract by exercising the composable's sealDay() —
-    // which is what PaperTodayView calls.  Second invocation reports
-    // alreadySealed: true so the toast can become "already sealed".
-    vi.resetModules()
-    return import('../../../../composables/useTodayDossier').then(async ({ useTodayDossier }) => {
-      const { setActivePinia, createPinia } = await import('pinia')
-      setActivePinia(createPinia())
-      const { sealDay } = useTodayDossier()
-      const first = sealDay()
-      const second = sealDay()
-      expect(first.alreadySealed).toBe(false)
-      expect(second.alreadySealed).toBe(true)
-    })
+  it('seal click while already sealed is a parent-level no-op (idempotent contract)', async () => {
+    const { useTodayDossier } = await import('../../../../composables/useTodayDossier')
+    const { sealDay } = useTodayDossier()
+    const first = await sealDay()
+    const second = await sealDay()
+    expect(first.alreadySealed).toBe(false)
+    expect(second.alreadySealed).toBe(true)
   })
 })

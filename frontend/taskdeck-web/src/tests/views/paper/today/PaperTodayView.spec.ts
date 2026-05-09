@@ -11,6 +11,17 @@ const mockSessionStore = {
   userId: 'user-1' as string | null,
 }
 
+vi.mock('../../../../api/todayApi', () => ({
+  todayApi: {
+    getCadence: vi.fn().mockRejectedValue(new Error('stub')),
+    getStreak: vi.fn().mockRejectedValue(new Error('stub')),
+    getSealStatus: vi.fn().mockRejectedValue(new Error('stub')),
+    getTomorrowNote: vi.fn().mockRejectedValue(new Error('stub')),
+    sealDay: vi.fn().mockResolvedValue({ sealedAt: new Date().toISOString(), wasAlreadySealed: false }),
+    saveTomorrowNote: vi.fn().mockResolvedValue({ id: '1', date: '2026-01-01', text: '', updatedAt: '', createdAt: '' }),
+  },
+}))
+
 vi.mock('../../../../store/workspaceStore', () => ({
   useWorkspaceStore: () => mockWorkspaceStore,
 }))
