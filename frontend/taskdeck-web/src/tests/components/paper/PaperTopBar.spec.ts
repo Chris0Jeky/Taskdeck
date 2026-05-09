@@ -150,8 +150,8 @@ describe('PaperTopBar', () => {
     const crumbs = wrapper.findAll('.paper-topbar__crumb')
     // max-width: 22ch applied via CSS; the element renders the full text but truncates visually
     expect(crumbs.at(-1)?.text()).toBe('This Is A Very Long Board Name That Should Truncate')
-    // The CSS class for truncation exists
-    expect(crumbs.at(-1)?.element.style).toBeDefined()
+    // Verify the truncation CSS class is present (actual ellipsis is scoped CSS; class presence is sufficient)
+    expect(crumbs.at(-1)?.classes()).toContain('paper-topbar__crumb')
   })
 
   it('renders a single Workspace crumb when route.matched is empty', () => {

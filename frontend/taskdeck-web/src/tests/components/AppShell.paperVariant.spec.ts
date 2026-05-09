@@ -211,7 +211,10 @@ describe('AppShell — paper variant routing', () => {
     expect(shortcutsLink).toBeDefined()
     await shortcutsLink?.trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.paper-shortcuts-overlay').exists()).toBe(true)
+    // Verify the overlay is now visible via its prop — not just present in the DOM
+    const overlay = wrapper.findComponent({ name: 'PaperShortcutsOverlay' })
+    expect(overlay.exists()).toBe(true)
+    expect(overlay.props('visible')).toBe(true)
   })
 
   it('wires the Paper sidebar logout to session store', async () => {
