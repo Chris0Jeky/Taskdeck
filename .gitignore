@@ -128,7 +128,7 @@ docs/temp_description.txt
 docs/WIP/Taskdeck_Demo_Capability_Specification.md
 /filesAndResources/inspirations
 /.claude/worktrees
-/node_modules/.vite/vitest
+/node_modules/
 drill-artifacts/
 
 # Stryker mutation testing output
