@@ -383,4 +383,10 @@ function openCaptureBoard() {
     display: block;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .paper-board-view__lanes--snap {
+    scroll-snap-type: none;
+  }
+}
 </style>

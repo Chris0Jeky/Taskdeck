@@ -59,12 +59,14 @@ const paperTheme = usePaperThemeStore()
 const { mode: viewportMode } = useViewportMode()
 const mobileOpen = ref(false)
 
-const phoneNavItems: PaperNavItemBase[] = [
-  { id: 'home', glyph: 'H', label: 'Home', path: '/workspace/home' },
-  { id: 'today', glyph: 'T', label: 'Today', path: '/workspace/today' },
-  { id: 'review', glyph: 'R', label: 'Review', path: '/workspace/review' },
-  { id: 'inbox', glyph: 'I', label: 'Inbox', path: '/workspace/inbox' },
+const phoneNavItemCandidates: PaperNavItem[] = [
+  { id: 'home', glyph: 'H', label: 'Home', path: '/workspace/home', keywords: '' },
+  { id: 'today', glyph: 'T', label: 'Today', path: '/workspace/today', keywords: '' },
+  { id: 'review', glyph: 'R', label: 'Review', path: '/workspace/review', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: '' },
+  { id: 'inbox', glyph: 'I', label: 'Inbox', path: '/workspace/inbox', keywords: '' },
 ]
+const phoneNavItems = computed<PaperNavItemBase[]>(() => phoneNavItemCandidates.filter(isAvailable))
+const phoneMoreOpen = ref(false)
 
 const primaryItems: PaperNavItem[] = [
   { id: 'home', label: 'Home', glyph: 'H', path: '/workspace/home', keywords: 'home start summary workspace' },
@@ -206,27 +208,76 @@ defineExpose({
 </script>
 
 <template>
-  <!-- Phone: bottom tab bar -->
-  <nav
-    v-if="viewportMode === 'phone'"
-    class="paper-bottombar"
-    role="navigation"
-    aria-label="Workspace navigation"
-    data-paper-sidebar
-    data-paper-bottombar
-  >
-    <router-link
-      v-for="item in phoneNavItems"
-      :key="item.id"
-      :to="item.path"
-      class="paper-bottombar__tab"
-      :class="{ 'paper-bottombar__tab--active': isActive(item) }"
-      :aria-current="isActive(item) ? 'page' : undefined"
-      :aria-label="item.label"
+  <!-- Phone: bottom tab bar + More drawer for meta navigation -->
+  <template v-if="viewportMode === 'phone'">
+    <nav
+      class="paper-bottombar"
+      role="navigation"
+      aria-label="Workspace navigation"
+      data-paper-sidebar
+      data-paper-bottombar
     >
-      <span class="paper-bottombar__glyph">{{ item.glyph }}</span>
-    </router-link>
-  </nav>
+      <router-link
+        v-for="item in phoneNavItems"
+        :key="item.id"
+        :to="item.path"
+        class="paper-bottombar__tab"
+        :class="{ 'paper-bottombar__tab--active': isActive(item) }"
+        :aria-current="isActive(item) ? 'page' : undefined"
+        :aria-label="item.label"
+      >
+        <span class="paper-bottombar__glyph">{{ item.glyph }}</span>
+      </router-link>
+      <button
+        class="paper-bottombar__tab"
+        :class="{ 'paper-bottombar__tab--active': phoneMoreOpen }"
+        aria-label="More"
+        @click="phoneMoreOpen = !phoneMoreOpen"
+      >
+        <span class="paper-bottombar__glyph paper-bottombar__glyph--more">…</span>
+      </button>
+    </nav>
+
+    <div v-if="phoneMoreOpen" class="paper-sidebar-overlay" @click="phoneMoreOpen = false" />
+    <nav
+      v-if="phoneMoreOpen"
+      class="paper-sidebar paper-sidebar--phone-drawer"
+      role="navigation"
+      aria-label="More navigation"
+    >
+      <div class="paper-sidebar__group" data-group="workbench">
+        <div class="paper-sidebar__group-label">Workbench</div>
+        <ul class="paper-sidebar__list">
+          <li v-for="item in visibleWorkbench" :key="item.id">
+            <router-link
+              :to="item.path"
+              class="paper-sidebar__item"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              @click="phoneMoreOpen = false"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__label">{{ item.label }}</span>
+            </router-link>
+          </li>
+        </ul>
+      </div>
+      <div class="paper-sidebar__group paper-sidebar__group--muted" data-group="meta">
+        <ul class="paper-sidebar__list">
+          <li v-for="item in visibleMeta" :key="item.id">
+            <component
+              :is="item.path.startsWith('#') ? 'button' : 'router-link'"
+              v-bind="item.path.startsWith('#') ? {} : { to: item.path }"
+              class="paper-sidebar__item"
+              @click="item.id === 'logout' ? (emit('logout'), phoneMoreOpen = false) : item.id === 'shortcuts' ? (emit('open-shortcuts'), phoneMoreOpen = false) : (phoneMoreOpen = false)"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__label">{{ item.label }}</span>
+            </component>
+          </li>
+        </ul>
+      </div>
+    </nav>
+  </template>
 
   <!-- Tablet: 60px icon-only rail -->
   <template v-else-if="viewportMode === 'tablet'">
@@ -635,7 +686,7 @@ defineExpose({
 }
 
 @media (max-width: 640px) {
-  .paper-sidebar {
+  .paper-sidebar:not(.paper-sidebar--rail):not(.paper-sidebar--phone-drawer) {
     position: fixed;
     top: 0;
     left: 0;
@@ -761,5 +812,26 @@ defineExpose({
   .paper-bottombar__tab {
     transition: none;
   }
+}
+
+.paper-bottombar__glyph--more {
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+
+/* Phone: slide-up drawer for workbench/meta items */
+.paper-sidebar--phone-drawer {
+  position: fixed;
+  bottom: calc(56px + var(--paper-safe-bottom, env(safe-area-inset-bottom, 0px)));
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: auto;
+  max-height: 60vh;
+  overflow-y: auto;
+  z-index: 50;
+  border-top: 1px solid var(--line);
+  border-radius: 12px 12px 0 0;
+  padding: 12px 0 8px;
 }
 </style>

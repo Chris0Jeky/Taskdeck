@@ -293,10 +293,10 @@ describe('PaperSidebar', () => {
     expect(wrapper.find('.paper-sidebar--rail').exists()).toBe(false)
 
     const glyphs = wrapper.findAll('.paper-bottombar__glyph').map((g) => g.text())
-    expect(glyphs).toEqual(['H', 'T', 'R', 'I'])
+    expect(glyphs).toEqual(['H', 'T', 'R', 'I', '…'])
 
     const tabs = wrapper.findAll('.paper-bottombar__tab')
-    expect(tabs).toHaveLength(4)
+    expect(tabs).toHaveLength(5)
   })
 
   it('renders bottom-bar with ember accent on the active route', () => {
