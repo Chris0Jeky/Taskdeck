@@ -40,7 +40,7 @@ Read the full diff with `gh pr diff <number>`. Analyze for:
 
 ## Step 3: Check existing PR comments
 
-Read ALL comments on the PR with `gh api repos/{owner}/{repo}/pulls/{number}/comments` and `gh pr view <number> --comments`.
+Read ALL comments on the PR with `gh api repos/{owner}/{repo}/pulls/{number}/comments`, `gh api repos/{owner}/{repo}/issues/{number}/comments`, and `gh pr view <number> --comments`.
 Check for:
 - Bot comments (Dependabot, CodeQL, CI bots) — address any actionable findings
 - Previous review comments not yet resolved

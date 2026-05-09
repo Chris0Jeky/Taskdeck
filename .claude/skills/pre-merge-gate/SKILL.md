@@ -25,6 +25,7 @@ If mergeable is "CONFLICTING", stop and report — do not auto-resolve.
 Read ALL comments on the PR:
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/comments
+gh api repos/{owner}/{repo}/issues/{number}/comments
 gh pr view $ARGUMENTS --comments
 ```
 
@@ -38,8 +39,7 @@ Run ALL of these:
 ```bash
 dotnet build backend/Taskdeck.sln -c Release
 dotnet test backend/Taskdeck.sln -c Release -m:1
-cd frontend/taskdeck-web && npm run build
-cd frontend/taskdeck-web && npx vitest --run --reporter=verbose
+cd frontend/taskdeck-web && npm run build && npx vitest --run --reporter=verbose
 ```
 
 Report any failures immediately — do not proceed to merge.
