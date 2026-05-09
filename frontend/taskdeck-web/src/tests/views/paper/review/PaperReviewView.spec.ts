@@ -47,6 +47,14 @@ vi.mock('../../../../store/sessionStore', () => ({
   useSessionStore: () => mocks.sessionState,
 }))
 
+vi.mock('../../../../api/proposalRevisionsApi', () => ({
+  proposalRevisionsApi: {
+    createRevision: vi.fn(),
+    getRevisions: vi.fn().mockResolvedValue([]),
+    getLatestRevision: vi.fn().mockResolvedValue(null),
+  },
+}))
+
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   const now = new Date().toISOString()
   return {
@@ -400,16 +408,15 @@ describe('PaperReviewView', () => {
     )
   })
 
-  it('surfaces feedback when request edit is invoked before backend support exists', async () => {
+  it('opens the revision editor when request edit is clicked', async () => {
     const wrapper = await mountView([makeProposal()])
+
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
 
     await wrapper.find('[data-testid="decision-edit"]').trigger('click')
     await flushPromises()
 
-    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
-    expect(mocks.infoToast).toHaveBeenCalledWith(
-      'Request edit is not wired yet; no proposal changes were sent.',
-    )
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
   })
 
   it('surfaces feedback when provenance toggle is invoked before collapsible mode exists', async () => {
