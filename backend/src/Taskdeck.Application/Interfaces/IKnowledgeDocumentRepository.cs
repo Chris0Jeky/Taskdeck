@@ -4,6 +4,10 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface IKnowledgeDocumentRepository : IRepository<KnowledgeDocument>
 {
+    Task<IReadOnlyList<KnowledgeDocument>> GetByIdsAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default);
+
     Task<IEnumerable<KnowledgeDocument>> GetByUserIdAsync(
         Guid userId,
         Guid? boardId = null,

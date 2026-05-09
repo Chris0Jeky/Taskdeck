@@ -1,3 +1,4 @@
+using System.Reflection;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -14,32 +15,60 @@ public class DuplicateDetectionServiceTests
     private readonly Mock<IEmbeddingGenerator> _embeddingMock;
     private readonly Mock<IVectorIndex> _vectorMock;
     private readonly Mock<IKnowledgeDocumentRepository> _docRepoMock;
+    private readonly Mock<IFtsKnowledgeSearchService> _ftsMock;
     private readonly InMemoryLogger<DuplicateDetectionService> _logger;
     private readonly DuplicateDetectionService _sut;
 
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _boardId = Guid.NewGuid();
 
+    /// <summary>
+    /// Documents registered via <see cref="RegisterDocWithId"/> for batch-fetch mock.
+    /// </summary>
+    private readonly Dictionary<Guid, KnowledgeDocument> _registeredDocs = new();
+
     public DuplicateDetectionServiceTests()
     {
         _embeddingMock = new Mock<IEmbeddingGenerator>();
         _vectorMock = new Mock<IVectorIndex>();
         _docRepoMock = new Mock<IKnowledgeDocumentRepository>();
+        _ftsMock = new Mock<IFtsKnowledgeSearchService>();
         _logger = new InMemoryLogger<DuplicateDetectionService>();
+
+        // Default setup: GetByIdsAsync returns matching registered documents
+        _docRepoMock
+            .Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<Guid> ids, CancellationToken _) =>
+                ids.Where(id => _registeredDocs.ContainsKey(id))
+                   .Select(id => _registeredDocs[id])
+                   .ToList());
 
         _sut = new DuplicateDetectionService(
             _embeddingMock.Object,
             _vectorMock.Object,
             _docRepoMock.Object,
+            _ftsMock.Object,
             _logger);
     }
 
-    #region Embedding unavailable
+    private void RegisterDocWithId(Guid docId, KnowledgeDocument doc)
+    {
+        var idProp = typeof(KnowledgeDocument).BaseType!
+            .GetProperty("Id", BindingFlags.Public | BindingFlags.Instance)!;
+        idProp.SetValue(doc, docId);
+        _registeredDocs[docId] = doc;
+    }
+
+    #region Embedding unavailable -- FTS title fallback
 
     [Fact]
-    public async Task DetectAsync_EmbeddingUnavailable_ReturnsNoDuplicate()
+    public async Task DetectAsync_EmbeddingUnavailable_NoFtsMatches_ReturnsNoDuplicate()
     {
         _embeddingMock.Setup(g => g.IsAvailable).Returns(false);
+        _ftsMock
+            .Setup(f => f.SearchAsync(
+                It.IsAny<string>(), _userId, null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Empty<KnowledgeSearchResultDto>());
 
         var result = await _sut.DetectAsync("content", "title", _userId);
 
@@ -47,6 +76,52 @@ public class DuplicateDetectionServiceTests
         result.SimilarityScore.Should().Be(0.0);
         result.MatchedDocumentId.Should().BeNull();
         result.ReviewCue.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DetectAsync_EmbeddingUnavailable_ExactTitleMatch_FlagsDuplicate()
+    {
+        _embeddingMock.Setup(g => g.IsAvailable).Returns(false);
+
+        var existingDocId = Guid.NewGuid();
+        _ftsMock
+            .Setup(f => f.SearchAsync(
+                It.IsAny<string>(), _userId, null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<KnowledgeSearchResultDto>
+            {
+                new(DocumentId: existingDocId, Title: "My Document Title", Snippet: "snippet",
+                    Rank: 1.0, BoardId: null, SourceType: KnowledgeSourceType.Manual,
+                    Tags: null, CreatedAt: DateTimeOffset.UtcNow)
+            });
+
+        var result = await _sut.DetectAsync("content", "My Document Title", _userId);
+
+        result.IsProbableDuplicate.Should().BeTrue(
+            "exact title match should flag as probable duplicate via FTS fallback");
+        result.SimilarityScore.Should().Be(1.0);
+        result.MatchedDocumentId.Should().Be(existingDocId);
+    }
+
+    [Fact]
+    public async Task DetectAsync_EmbeddingUnavailable_DissimilarTitle_ReturnsNoDuplicate()
+    {
+        _embeddingMock.Setup(g => g.IsAvailable).Returns(false);
+
+        var existingDocId = Guid.NewGuid();
+        _ftsMock
+            .Setup(f => f.SearchAsync(
+                It.IsAny<string>(), _userId, null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<KnowledgeSearchResultDto>
+            {
+                new(DocumentId: existingDocId, Title: "Completely Different Title", Snippet: "snippet",
+                    Rank: 1.0, BoardId: null, SourceType: KnowledgeSourceType.Manual,
+                    Tags: null, CreatedAt: DateTimeOffset.UtcNow)
+            });
+
+        var result = await _sut.DetectAsync("content", "My Document Title", _userId);
+
+        result.IsProbableDuplicate.Should().BeFalse(
+            "dissimilar titles should not flag as duplicate");
     }
 
     #endregion
@@ -133,9 +208,7 @@ public class DuplicateDetectionServiceTests
 
         var existingDoc = new KnowledgeDocument(
             _userId, "Existing Doc", "Very similar content", KnowledgeSourceType.Manual);
-        _docRepoMock
-            .Setup(r => r.GetByIdAsync(existingDocId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingDoc);
+        RegisterDocWithId(existingDocId, existingDoc);
 
         var result = await _sut.DetectAsync("new content", "title", _userId);
 
@@ -179,9 +252,7 @@ public class DuplicateDetectionServiceTests
 
         var existingDoc = new KnowledgeDocument(
             _userId, "Similar Doc", "Somewhat similar", KnowledgeSourceType.Manual);
-        _docRepoMock
-            .Setup(r => r.GetByIdAsync(existingDocId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingDoc);
+        RegisterDocWithId(existingDocId, existingDoc);
 
         var result = await _sut.DetectAsync("new content", "title", _userId);
 
@@ -224,9 +295,7 @@ public class DuplicateDetectionServiceTests
 
         var existingDoc = new KnowledgeDocument(
             _userId, "Different Doc", "Different content", KnowledgeSourceType.Manual);
-        _docRepoMock
-            .Setup(r => r.GetByIdAsync(existingDocId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingDoc);
+        RegisterDocWithId(existingDocId, existingDoc);
 
         var result = await _sut.DetectAsync("new content", "title", _userId);
 
@@ -276,9 +345,7 @@ public class DuplicateDetectionServiceTests
 
         var otherDoc = new KnowledgeDocument(
             _userId, "Other", "Content", KnowledgeSourceType.Manual);
-        _docRepoMock
-            .Setup(r => r.GetByIdAsync(otherDocId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(otherDoc);
+        RegisterDocWithId(otherDocId, otherDoc);
 
         var result = await _sut.DetectAsync(
             "content", "title", _userId, excludeDocumentId: selfDocId);
@@ -320,9 +387,7 @@ public class DuplicateDetectionServiceTests
         var archivedDoc = new KnowledgeDocument(
             _userId, "Archived", "Content", KnowledgeSourceType.Manual);
         archivedDoc.Archive();
-        _docRepoMock
-            .Setup(r => r.GetByIdAsync(archivedDocId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(archivedDoc);
+        RegisterDocWithId(archivedDocId, archivedDoc);
 
         var result = await _sut.DetectAsync("content", "title", _userId);
 
@@ -359,9 +424,7 @@ public class DuplicateDetectionServiceTests
 
         var otherDoc = new KnowledgeDocument(
             otherUserId, "Other's Doc", "Content", KnowledgeSourceType.Manual);
-        _docRepoMock
-            .Setup(r => r.GetByIdAsync(otherUserDocId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(otherDoc);
+        RegisterDocWithId(otherUserDocId, otherDoc);
 
         var result = await _sut.DetectAsync("content", "title", _userId);
 

@@ -1,3 +1,4 @@
+using System.Reflection;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -21,6 +22,12 @@ public class HybridRetrievalServiceTests
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _boardId = Guid.NewGuid();
 
+    /// <summary>
+    /// Documents registered via <see cref="SetupDocument"/> for batch-fetch mock.
+    /// Keyed by the docId passed to SetupDocument.
+    /// </summary>
+    private readonly Dictionary<Guid, KnowledgeDocument> _registeredDocs = new();
+
     public HybridRetrievalServiceTests()
     {
         _ftsMock = new Mock<IFtsKnowledgeSearchService>();
@@ -28,6 +35,14 @@ public class HybridRetrievalServiceTests
         _vectorMock = new Mock<IVectorIndex>();
         _docRepoMock = new Mock<IKnowledgeDocumentRepository>();
         _logger = new InMemoryLogger<HybridRetrievalService>();
+
+        // Default setup: GetByIdsAsync returns matching registered documents
+        _docRepoMock
+            .Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<Guid> ids, CancellationToken _) =>
+                ids.Where(id => _registeredDocs.ContainsKey(id))
+                   .Select(id => _registeredDocs[id])
+                   .ToList());
 
         _sut = new HybridRetrievalService(
             _ftsMock.Object,
@@ -442,9 +457,7 @@ public class HybridRetrievalServiceTests
         var archivedDoc = new KnowledgeDocument(
             _userId, "Archived", "Content", KnowledgeSourceType.Manual);
         archivedDoc.Archive();
-        _docRepoMock
-            .Setup(r => r.GetByIdAsync(archivedDocId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(archivedDoc);
+        RegisterDocWithId(archivedDocId, archivedDoc);
 
         var results = await _sut.SearchAsync("query", _userId);
 
@@ -486,9 +499,7 @@ public class HybridRetrievalServiceTests
 
         var otherDoc = new KnowledgeDocument(
             otherUserId, "Other User", "Content", KnowledgeSourceType.Manual);
-        _docRepoMock
-            .Setup(r => r.GetByIdAsync(otherUserDocId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(otherDoc);
+        RegisterDocWithId(otherUserDocId, otherDoc);
 
         var results = await _sut.SearchAsync("query", _userId);
 
@@ -654,7 +665,7 @@ public class HybridRetrievalServiceTests
     }
 
     [Fact]
-    public void BuildEvidenceLinks_ClampsRelevance()
+    public void BuildEvidenceLinks_NormalizesRelevanceViaMinMax()
     {
         var results = new List<RetrievalResultDto>
         {
@@ -664,8 +675,42 @@ public class HybridRetrievalServiceTests
 
         var evidence = _sut.BuildEvidenceLinks(results);
 
+        // Min-max normalization: highest score maps to 1.0, lowest to 0.0
+        evidence[0].Relevance.Should().BeApproximately(1.0, 1e-9);
+        evidence[1].Relevance.Should().BeApproximately(0.0, 1e-9);
+    }
+
+    [Fact]
+    public void BuildEvidenceLinks_AllSameScore_ReturnsEqualRelevance()
+    {
+        var results = new List<RetrievalResultDto>
+        {
+            CreateResult("A", Guid.NewGuid(), 0.5, RetrievalSource.Fts),
+            CreateResult("B", Guid.NewGuid(), 0.5, RetrievalSource.Fts)
+        };
+
+        var evidence = _sut.BuildEvidenceLinks(results);
+
+        // When all scores are identical, scoreRange is 0, so all should be 1.0
         evidence[0].Relevance.Should().Be(1.0);
-        evidence[1].Relevance.Should().Be(0.0);
+        evidence[1].Relevance.Should().Be(1.0);
+    }
+
+    [Fact]
+    public void BuildEvidenceLinks_MinMaxNormalization_SpreadsMidValues()
+    {
+        var results = new List<RetrievalResultDto>
+        {
+            CreateResult("Best", Guid.NewGuid(), 0.03, RetrievalSource.Hybrid),
+            CreateResult("Mid", Guid.NewGuid(), 0.02, RetrievalSource.Hybrid),
+            CreateResult("Worst", Guid.NewGuid(), 0.01, RetrievalSource.Hybrid)
+        };
+
+        var evidence = _sut.BuildEvidenceLinks(results);
+
+        evidence[0].Relevance.Should().BeApproximately(1.0, 1e-9);
+        evidence[1].Relevance.Should().BeApproximately(0.5, 1e-9);
+        evidence[2].Relevance.Should().BeApproximately(0.0, 1e-9);
     }
 
     [Fact]
@@ -736,9 +781,21 @@ public class HybridRetrievalServiceTests
     {
         var doc = new KnowledgeDocument(
             _userId, title, content, KnowledgeSourceType.Manual);
-        _docRepoMock
-            .Setup(r => r.GetByIdAsync(docId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(doc);
+        RegisterDocWithId(docId, doc);
+    }
+
+    /// <summary>
+    /// Registers a document with a specific ID for the batch-fetch mock.
+    /// Used by SetupDocument and directly for special cases (archived, other-user).
+    /// </summary>
+    private void RegisterDocWithId(Guid docId, KnowledgeDocument doc)
+    {
+        // Set the entity Id to match the expected docId (Entity.Id has protected setter)
+        var idProp = typeof(KnowledgeDocument).BaseType!
+            .GetProperty("Id", BindingFlags.Public | BindingFlags.Instance)!;
+        idProp.SetValue(doc, docId);
+
+        _registeredDocs[docId] = doc;
     }
 
     private static KnowledgeSearchResultDto CreateFtsResult(

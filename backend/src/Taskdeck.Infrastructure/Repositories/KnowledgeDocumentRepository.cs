@@ -11,6 +11,19 @@ public class KnowledgeDocumentRepository : Repository<KnowledgeDocument>, IKnowl
     {
     }
 
+    public async Task<IReadOnlyList<KnowledgeDocument>> GetByIdsAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        var idList = ids.ToList();
+        if (idList.Count == 0)
+            return Array.Empty<KnowledgeDocument>();
+
+        return await _dbSet
+            .Where(d => idList.Contains(d.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<KnowledgeDocument>> GetByUserIdAsync(
         Guid userId,
         Guid? boardId = null,

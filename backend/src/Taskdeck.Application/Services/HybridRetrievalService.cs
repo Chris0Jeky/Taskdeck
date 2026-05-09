@@ -92,14 +92,22 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
     {
         ArgumentNullException.ThrowIfNull(retrievalResults);
 
+        if (retrievalResults.Count == 0)
+            return Array.Empty<RetrievalEvidenceDto>();
+
+        // Min-max normalization: different score sources (RRF ~0.01, BM25 >1, cosine 0-1)
+        // have incompatible ranges. Normalize relative to the current result set so
+        // all relevance values are meaningful within [0, 1].
+        var maxScore = retrievalResults.Max(r => r.Score);
+        var minScore = retrievalResults.Min(r => r.Score);
+        var scoreRange = maxScore - minScore;
+
         var evidence = new List<RetrievalEvidenceDto>(retrievalResults.Count);
         foreach (var result in retrievalResults)
         {
-            // RRF scores are ~0.03 at best (2/(k+1)), so scale to [0,1] for meaningful relevance
-            var maxRrf = 2.0 / (RrfK + 1);
-            var relevance = result.Source == RetrievalSource.Hybrid
-                ? Math.Clamp(result.Score / maxRrf, 0.0, 1.0)
-                : Math.Clamp(result.Score, 0.0, 1.0);
+            var relevance = scoreRange > 1e-9
+                ? (result.Score - minScore) / scoreRange
+                : 1.0; // All results have the same score; treat as equally relevant
 
             var sourceType = "knowledge_document";
             var rationale = result.Source switch
@@ -274,14 +282,12 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
                 filter: filter,
                 cancellationToken: cancellationToken);
 
-            // Hydrate vector results with document data
-            var results = new List<RetrievalResultDto>();
+            // Extract unique document IDs from vector results for batch hydration
+            var docIdScores = new List<(Guid DocId, double Score)>();
             var seenDocIds = new HashSet<Guid>();
 
             foreach (var vr in vectorResults)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
                 if (vr.Metadata is null)
                     continue;
 
@@ -293,8 +299,26 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
                 if (!seenDocIds.Add(docId))
                     continue; // Dedup by document
 
-                var doc = await _documentRepository.GetByIdAsync(docId, cancellationToken);
-                if (doc is null || doc.IsArchived || doc.UserId != userId)
+                docIdScores.Add((docId, vr.Score));
+            }
+
+            if (docIdScores.Count == 0)
+                return Array.Empty<RetrievalResultDto>();
+
+            // Batch fetch all candidate documents in a single query (avoids N+1)
+            var documents = await _documentRepository.GetByIdsAsync(
+                docIdScores.Select(d => d.DocId), cancellationToken);
+            var documentLookup = documents.ToDictionary(d => d.Id);
+
+            var results = new List<RetrievalResultDto>();
+            foreach (var (docId, score) in docIdScores)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!documentLookup.TryGetValue(docId, out var doc))
+                    continue;
+
+                if (doc.IsArchived || doc.UserId != userId)
                     continue;
 
                 if (boardId.HasValue && doc.BoardId != boardId)
@@ -308,7 +332,7 @@ public sealed class HybridRetrievalService : IHybridRetrievalService
                     DocumentId: docId,
                     Title: doc.Title,
                     Snippet: snippet,
-                    Score: vr.Score,
+                    Score: score,
                     BoardId: doc.BoardId,
                     Source: RetrievalSource.Vector,
                     Tags: doc.Tags,
