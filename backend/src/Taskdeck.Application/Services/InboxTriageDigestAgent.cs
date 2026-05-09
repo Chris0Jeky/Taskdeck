@@ -65,11 +65,9 @@ public sealed class InboxTriageDigestAgent
         if (boardId == Guid.Empty)
             return Result.Failure<InboxDigestResultDto>(ErrorCodes.ValidationError, "Board ID is required.");
 
-        // Check daily quota
-        var recentRuns = await _unitOfWork.AgentRuns.GetByAgentProfileIdAsync(agentProfileId, MaxDigestsPerDay + 1, cancellationToken);
-        var todayRuns = recentRuns.Count(r =>
-            r.TriggerType == triggerType &&
-            r.StartedAt >= DateTimeOffset.UtcNow.AddHours(-24));
+        // Check daily quota across all trigger types and profiles for this user
+        var todayRuns = await _unitOfWork.AgentRuns.CountRecentByUserIdAsync(
+            userId, DateTimeOffset.UtcNow.AddHours(-24), cancellationToken);
 
         if (todayRuns >= MaxDigestsPerDay)
         {

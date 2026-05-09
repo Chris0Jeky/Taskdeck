@@ -73,15 +73,23 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
             }
 
             // Follow the redirect: create a new request preserving the method for 307/308
+            var statusCode = (int)response.StatusCode;
             var redirectRequest = new HttpRequestMessage
             {
                 RequestUri = resolvedRedirectUri,
                 Version = request.Version,
+                Method = statusCode is 307 or 308 ? request.Method : HttpMethod.Get,
             };
 
-            // 307 and 308 preserve the method; others use GET
-            var statusCode = (int)response.StatusCode;
-            redirectRequest.Method = statusCode is 307 or 308 ? request.Method : HttpMethod.Get;
+            // 307/308 require preserving the original headers and body
+            if (statusCode is 307 or 308)
+            {
+                redirectRequest.Content = request.Content;
+                foreach (var header in request.Headers)
+                {
+                    redirectRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+            }
 
             response.Dispose();
             response = await base.SendAsync(redirectRequest, cancellationToken);

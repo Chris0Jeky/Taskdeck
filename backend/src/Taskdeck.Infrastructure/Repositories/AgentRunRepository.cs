@@ -46,8 +46,15 @@ public class AgentRunRepository : Repository<AgentRun>, IAgentRunRepository
             .Where(ar => ar.UserId == userId
                 && ar.Status != AgentRunStatus.Completed
                 && ar.Status != AgentRunStatus.Failed
-                && ar.Status != AgentRunStatus.Cancelled)
+                && ar.Status != AgentRunStatus.Cancelled
+                && ar.Status != AgentRunStatus.ProposalCreated)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountRecentByUserIdAsync(Guid userId, DateTimeOffset since, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .CountAsync(ar => ar.UserId == userId && ar.StartedAt >= since, cancellationToken);
     }
 
     public async Task AddEventAsync(AgentRunEvent agentRunEvent, CancellationToken cancellationToken = default)

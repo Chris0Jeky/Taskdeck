@@ -2,6 +2,8 @@
 # Pre-commit hook: runs backend build and frontend typecheck
 # based on which file types are staged.
 
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
 STAGED=$(git diff --cached --name-only 2>/dev/null)
 HAS_CS=false
 HAS_VUE=false
