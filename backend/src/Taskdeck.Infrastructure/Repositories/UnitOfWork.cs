@@ -50,7 +50,8 @@ public class UnitOfWork : IUnitOfWork
         IConnectorCredentialRepository connectorCredentials,
         IProposalRevisionRepository proposalRevisions,
         IDailySnapshotRepository dailySnapshots,
-        ITomorrowNoteRepository tomorrowNotes)
+        ITomorrowNoteRepository tomorrowNotes,
+        IMcpToolHashRepository mcpToolHashes)
     {
         _context = context;
         Boards = boards;
@@ -87,6 +88,7 @@ public class UnitOfWork : IUnitOfWork
         ProposalRevisions = proposalRevisions;
         DailySnapshots = dailySnapshots;
         TomorrowNotes = tomorrowNotes;
+        McpToolHashes = mcpToolHashes;
     }
 
     public IBoardRepository Boards { get; }
@@ -123,6 +125,7 @@ public class UnitOfWork : IUnitOfWork
     public IProposalRevisionRepository ProposalRevisions { get; }
     public IDailySnapshotRepository DailySnapshots { get; }
     public ITomorrowNoteRepository TomorrowNotes { get; }
+    public IMcpToolHashRepository McpToolHashes { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

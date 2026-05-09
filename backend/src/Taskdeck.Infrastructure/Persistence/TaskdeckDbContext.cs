@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Taskdeck.Domain.Agents;
 using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Infrastructure.Persistence;
@@ -52,6 +53,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<ProvenanceEvidenceLink> ProvenanceEvidenceLinks => Set<ProvenanceEvidenceLink>();
     public DbSet<DailySnapshot> DailySnapshots => Set<DailySnapshot>();
     public DbSet<TomorrowNote> TomorrowNotes => Set<TomorrowNote>();
+    public DbSet<McpToolHash> McpToolHashes => Set<McpToolHash>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

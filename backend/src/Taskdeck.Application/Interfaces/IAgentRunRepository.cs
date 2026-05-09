@@ -6,4 +6,6 @@ public interface IAgentRunRepository : IRepository<AgentRun>
 {
     Task<IEnumerable<AgentRun>> GetByAgentProfileIdAsync(Guid agentProfileId, int limit = 100, CancellationToken cancellationToken = default);
     Task<AgentRun?> GetByIdWithEventsAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AgentRun>> GetActiveByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task AddEventAsync(AgentRunEvent agentRunEvent, CancellationToken cancellationToken = default);
 }

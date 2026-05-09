@@ -39,4 +39,19 @@ public class AgentRunRepository : Repository<AgentRun>, IAgentRunRepository
             .Include(ar => ar.Events)
             .FirstOrDefaultAsync(ar => ar.Id == id, cancellationToken);
     }
+
+    public async Task<IEnumerable<AgentRun>> GetActiveByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .Where(ar => ar.UserId == userId
+                && ar.Status != AgentRunStatus.Completed
+                && ar.Status != AgentRunStatus.Failed
+                && ar.Status != AgentRunStatus.Cancelled)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddEventAsync(AgentRunEvent agentRunEvent, CancellationToken cancellationToken = default)
+    {
+        await _context.Set<AgentRunEvent>().AddAsync(agentRunEvent, cancellationToken);
+    }
 }

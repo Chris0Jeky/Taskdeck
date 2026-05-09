@@ -354,6 +354,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public IProposalRevisionRepository ProposalRevisions => null!;
         public IDailySnapshotRepository DailySnapshots => null!;
         public ITomorrowNoteRepository TomorrowNotes => null!;
+        public IMcpToolHashRepository McpToolHashes => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
