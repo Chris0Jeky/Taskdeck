@@ -21,15 +21,15 @@ import PaperStatusPill from './PaperStatusPill.vue'
  * via `paperThemeStore.toggleNight()`.
  */
 
-type PaperNavItem = {
+type PaperNavItemBase = {
   id: string
   label: string
   glyph: string
-  /** router-link `to` path */
   path: string
-  /** badge counter source (workspace store) */
+}
+
+type PaperNavItem = PaperNavItemBase & {
   badgeKey?: 'inbox' | 'review'
-  /** Hide if this feature flag exists and is disabled. */
   flag?: keyof FeatureFlags
   workbenchBypassesFlag?: boolean
   keywords?: string
@@ -59,12 +59,12 @@ const paperTheme = usePaperThemeStore()
 const { mode: viewportMode } = useViewportMode()
 const mobileOpen = ref(false)
 
-const phoneNavItems = [
+const phoneNavItems: PaperNavItemBase[] = [
   { id: 'home', glyph: 'H', label: 'Home', path: '/workspace/home' },
   { id: 'today', glyph: 'T', label: 'Today', path: '/workspace/today' },
   { id: 'review', glyph: 'R', label: 'Review', path: '/workspace/review' },
   { id: 'inbox', glyph: 'I', label: 'Inbox', path: '/workspace/inbox' },
-] as const
+]
 
 const primaryItems: PaperNavItem[] = [
   { id: 'home', label: 'Home', glyph: 'H', path: '/workspace/home', keywords: 'home start summary workspace' },
@@ -127,7 +127,7 @@ function badgeFor(item: PaperNavItem): number {
   return 0
 }
 
-function isActive(item: PaperNavItem): boolean {
+function isActive(item: PaperNavItemBase): boolean {
   if (item.path.startsWith('#')) return false
   if (item.path === '/workspace/home') return route.path === item.path
   if (item.path === '/workspace/review') {
@@ -220,8 +220,8 @@ defineExpose({
       :key="item.id"
       :to="item.path"
       class="paper-bottombar__tab"
-      :class="{ 'paper-bottombar__tab--active': isActive(item as unknown as PaperNavItem) }"
-      :aria-current="isActive(item as unknown as PaperNavItem) ? 'page' : undefined"
+      :class="{ 'paper-bottombar__tab--active': isActive(item) }"
+      :aria-current="isActive(item) ? 'page' : undefined"
       :aria-label="item.label"
     >
       <span class="paper-bottombar__glyph">{{ item.glyph }}</span>
@@ -759,7 +759,7 @@ defineExpose({
 
 @media (prefers-reduced-motion: reduce) {
   .paper-bottombar__tab {
-    transition: opacity 200ms ease;
+    transition: none;
   }
 }
 </style>
