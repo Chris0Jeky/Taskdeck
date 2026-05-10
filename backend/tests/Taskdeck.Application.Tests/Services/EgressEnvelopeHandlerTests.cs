@@ -198,6 +198,9 @@ public class EgressEnvelopeHandlerTests
 
         var request = new HttpRequestMessage(HttpMethod.Post, "https://trusted.example.com/api");
         request.Content = new StringContent("{\"key\":\"value\"}");
+        request.Content.Headers.ContentEncoding.Add("gzip");
+        request.Content.Headers.ContentLanguage.Add("en-US");
+        request.Content.Headers.Add("X-Content-Signature", "sig-123");
         request.Headers.Add("X-Custom", "preserved");
 
         var response = await invoker.SendAsync(request, CancellationToken.None);
@@ -208,11 +211,14 @@ public class EgressEnvelopeHandlerTests
         inner.LastReceivedRequest.Content.Should().NotBeNull();
         var body = await inner.LastReceivedRequest.Content!.ReadAsStringAsync();
         body.Should().Be("{\"key\":\"value\"}");
+        inner.LastReceivedRequest.Content.Headers.ContentEncoding.Should().Contain("gzip");
+        inner.LastReceivedRequest.Content.Headers.ContentLanguage.Should().Contain("en-US");
+        inner.LastReceivedRequest.Content.Headers.GetValues("X-Content-Signature").Should().Contain("sig-123");
         inner.LastReceivedRequest.Headers.Contains("X-Custom").Should().BeTrue();
     }
 
     [Fact]
-    public async Task SendAsync_307CrossHostRedirect_StripsAuthorizationHeader()
+    public async Task SendAsync_307CrossHostRedirect_StripsCredentialHeaders()
     {
         var registry = CreateRegistry("origin.example.com", "other.example.com");
         var inner = new SingleRedirectHandler(
@@ -227,13 +233,25 @@ public class EgressEnvelopeHandlerTests
         var request = new HttpRequestMessage(HttpMethod.Post, "https://origin.example.com/api");
         request.Content = new StringContent("data");
         request.Headers.Add("Authorization", "Bearer secret-token");
+        request.Headers.Add("Proxy-Authorization", "Basic proxy-secret");
+        request.Headers.Add("Cookie", "session=secret");
+        request.Headers.Add("x-goog-api-key", "gemini-secret");
+        request.Headers.Add("X-Api-Key", "api-secret");
+        request.Headers.Add("X-Provider-Token", "provider-token");
         request.Headers.Add("X-Safe", "kept");
+        request.Headers.Accept.ParseAdd("application/json");
 
         var response = await invoker.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         inner.LastReceivedRequest!.Headers.Contains("Authorization").Should().BeFalse();
+        inner.LastReceivedRequest.Headers.Contains("Proxy-Authorization").Should().BeFalse();
+        inner.LastReceivedRequest.Headers.Contains("Cookie").Should().BeFalse();
+        inner.LastReceivedRequest.Headers.Contains("x-goog-api-key").Should().BeFalse();
+        inner.LastReceivedRequest.Headers.Contains("X-Api-Key").Should().BeFalse();
+        inner.LastReceivedRequest.Headers.Contains("X-Provider-Token").Should().BeFalse();
         inner.LastReceivedRequest.Headers.Contains("X-Safe").Should().BeTrue();
+        inner.LastReceivedRequest.Headers.Accept.Should().Contain(h => h.MediaType == "application/json");
     }
 
     [Fact]
@@ -257,6 +275,168 @@ public class EgressEnvelopeHandlerTests
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         inner.LastReceivedRequest!.Headers.Contains("Authorization").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SendAsync_307SameHostDifferentScheme_StripsAuthorizationHeader()
+    {
+        var registry = CreateRegistry("same.example.com");
+        var inner = new SingleRedirectHandler(
+            "http://same.example.com/other-path",
+            System.Net.HttpStatusCode.TemporaryRedirect);
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://same.example.com/api");
+        request.Content = new StringContent("data");
+        request.Headers.Add("Authorization", "Bearer strip-this");
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        inner.LastReceivedRequest!.Headers.Contains("Authorization").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SendAsync_307SameHostDifferentPort_StripsAuthorizationHeader()
+    {
+        var registry = CreateRegistry("same.example.com");
+        var inner = new SingleRedirectHandler(
+            "https://same.example.com:8443/other-path",
+            System.Net.HttpStatusCode.TemporaryRedirect);
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://same.example.com/api");
+        request.Content = new StringContent("data");
+        request.Headers.Add("Authorization", "Bearer strip-this");
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        inner.LastReceivedRequest!.Headers.Contains("Authorization").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SendAsync_302Then307Redirect_PreservesCurrentGetMethod()
+    {
+        var registry = CreateRegistry("origin.example.com", "origin.example.com");
+        var inner = new SequenceRedirectHandler(
+            (System.Net.HttpStatusCode.Found, "https://origin.example.com/step-two"),
+            (System.Net.HttpStatusCode.TemporaryRedirect, "https://origin.example.com/final"));
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://origin.example.com/start")
+        {
+            Content = new StringContent("payload")
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        inner.ReceivedMethods.Should().Equal(HttpMethod.Post, HttpMethod.Get, HttpMethod.Get);
+    }
+
+    [Fact]
+    public async Task SendAsync_RelativeRedirectAfterAbsoluteHop_ResolvesAgainstCurrentUri()
+    {
+        var registry = CreateRegistry("origin.example.com", "second.example.com");
+        var inner = new SequenceRedirectHandler(
+            (System.Net.HttpStatusCode.Found, "https://second.example.com/step-two"),
+            (System.Net.HttpStatusCode.Found, "/final"));
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://origin.example.com/start");
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        inner.ReceivedUris.Should().Equal(
+            new Uri("https://origin.example.com/start"),
+            new Uri("https://second.example.com/step-two"),
+            new Uri("https://second.example.com/final"));
+    }
+
+    [Fact]
+    public async Task SendAsync_UnknownLengthContentWithoutRedirect_DoesNotBufferContent()
+    {
+        var registry = CreateRegistry("origin.example.com");
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = new StubHandler()
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://origin.example.com/api")
+        {
+            Content = new StreamContent(new ThrowOnReadStream())
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task SendAsync_307RedirectWithUnknownLengthContent_FailsClosed()
+    {
+        var registry = CreateRegistry("origin.example.com");
+        var inner = new SingleRedirectHandler(
+            "https://origin.example.com/continue",
+            System.Net.HttpStatusCode.TemporaryRedirect);
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://origin.example.com/api")
+        {
+            Content = new StreamContent(new ThrowOnReadStream())
+        };
+
+        var act = async () => await invoker.SendAsync(request, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Cannot replay request content*");
+    }
+
+    [Fact]
+    public async Task SendAsync_307RedirectWithOversizedContent_FailsClosedWithoutBuffering()
+    {
+        var registry = CreateRegistry("origin.example.com");
+        var inner = new SingleRedirectHandler(
+            "https://origin.example.com/continue",
+            System.Net.HttpStatusCode.TemporaryRedirect);
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://origin.example.com/api")
+        {
+            Content = new ByteArrayContent(new byte[EgressEnvelopeHandler.MaxRedirectReplayContentBytes + 1])
+        };
+
+        var act = async () => await invoker.SendAsync(request, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Cannot replay request content*");
     }
 
     // --- Test Helpers ---
@@ -319,5 +499,62 @@ public class EgressEnvelopeHandlerTests
 
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         }
+    }
+
+    private sealed class SequenceRedirectHandler : HttpMessageHandler
+    {
+        private readonly Queue<(System.Net.HttpStatusCode StatusCode, string Location)> _redirects;
+
+        public List<HttpMethod> ReceivedMethods { get; } = new();
+        public List<Uri?> ReceivedUris { get; } = new();
+
+        public SequenceRedirectHandler(params (System.Net.HttpStatusCode StatusCode, string Location)[] redirects)
+        {
+            _redirects = new Queue<(System.Net.HttpStatusCode StatusCode, string Location)>(redirects);
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            ReceivedMethods.Add(request.Method);
+            ReceivedUris.Add(request.RequestUri);
+            if (_redirects.TryDequeue(out var redirect))
+            {
+                var response = new HttpResponseMessage(redirect.StatusCode);
+                response.Headers.Location = new Uri(redirect.Location, UriKind.RelativeOrAbsolute);
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+        }
+    }
+
+    private sealed class ThrowOnReadStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+            => throw new InvalidOperationException("Stream should not be read by the egress handler.");
+
+        public override long Seek(long offset, SeekOrigin origin)
+            => throw new NotSupportedException();
+
+        public override void SetLength(long value)
+            => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count)
+            => throw new NotSupportedException();
     }
 }
