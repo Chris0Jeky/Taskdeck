@@ -215,6 +215,39 @@ describe('useTodayDossier', () => {
     expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'latest draft')
   })
 
+  it('does not let slow tomorrow-note hydration overwrite a newer local edit', async () => {
+    vi.useFakeTimers()
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.saveTomorrowNote).mockResolvedValue(tomorrowNoteResponse)
+
+    let resolveHydration!: (value: TomorrowNoteApiResponse) => void
+    vi.mocked(todayApi.getTomorrowNote).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveHydration = resolve
+      }),
+    )
+
+    const { dossier, saveLineForTomorrow } = await importAndCreate()
+    await vi.waitFor(() => {
+      expect(todayApi.getTomorrowNote).toHaveBeenCalled()
+    })
+
+    const save = saveLineForTomorrow('Fresh local edit', '2026-01-15')
+    resolveHydration({ ...tomorrowNoteResponse, text: 'Older server note' })
+
+    await vi.waitFor(() => {
+      expect(dossier.value.lineForTomorrow).toBe('Fresh local edit')
+    })
+
+    await vi.advanceTimersByTimeAsync(850)
+    await save
+
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'Fresh local edit')
+    expect(dossier.value.lineForTomorrow).toBe('Fresh local edit')
+  })
+
   it('sealDay calls POST /today/seal and returns sealed status', async () => {
     vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
     vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))

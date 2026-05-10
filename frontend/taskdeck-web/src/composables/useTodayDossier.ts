@@ -335,6 +335,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   })
 
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
+  let tomorrowNoteMutationGeneration = 0
   let pendingAutosave: {
     text: string
     dateStr: string
@@ -358,6 +359,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   }
 
   function saveLineForTomorrow(text: string, dateStr = formatLocalDossierDate(now.value)): Promise<void> {
+    tomorrowNoteMutationGeneration += 1
     liveLineForTomorrow.value = text
     if (pendingAutosave) {
       pendingAutosave.reject(new Error('Superseded by newer tomorrow note autosave'))
@@ -385,6 +387,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   async function fetchLiveData() {
     const gen = ++fetchGeneration
     const dateStr = formatLocalDossierDate(now.value)
+    const tomorrowNoteMutationGenerationAtFetch = tomorrowNoteMutationGeneration
 
     const results = await Promise.allSettled([
       todayApi.getCadence(dateStr),
@@ -404,10 +407,12 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     if (results[2].status === 'fulfilled') {
       sealed.value = results[2].value.isSealed
     }
-    if (results[3].status === 'fulfilled') {
-      liveLineForTomorrow.value = results[3].value?.text ?? ''
-    } else {
-      liveLineForTomorrow.value = ''
+    if (tomorrowNoteMutationGenerationAtFetch === tomorrowNoteMutationGeneration) {
+      if (results[3].status === 'fulfilled') {
+        liveLineForTomorrow.value = results[3].value?.text ?? ''
+      } else {
+        liveLineForTomorrow.value = ''
+      }
     }
   }
 
@@ -415,6 +420,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     liveCadence.value = null
     liveStreak.value = null
     liveLineForTomorrow.value = ''
+    tomorrowNoteMutationGeneration += 1
     sealed.value = false
     fetchLiveData()
   }, { immediate: true })
