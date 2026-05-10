@@ -189,8 +189,10 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
                 $"Request content exceeds the {MaxRedirectReplayContentBytes} byte redirect replay limit.");
         }
 
+        var originalContent = request.Content;
         var replayContent = new ReplayableContent(content, headers);
         request.Content = CreateReplayContent(replayContent);
+        originalContent.Dispose();
         return replayContent;
     }
 

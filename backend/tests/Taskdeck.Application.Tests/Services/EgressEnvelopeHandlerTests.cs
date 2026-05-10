@@ -1,3 +1,4 @@
+using System.Net;
 using FluentAssertions;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Agents;
@@ -392,6 +393,29 @@ public class EgressEnvelopeHandlerTests
     }
 
     [Fact]
+    public async Task SendAsync_BufferedReplayContent_DisposesOriginalContent()
+    {
+        var registry = CreateRegistry("origin.example.com");
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = new StubHandler()
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+        var originalContent = new TrackingContent("payload");
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://origin.example.com/api")
+        {
+            Content = originalContent
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        originalContent.Disposed.Should().BeTrue();
+        request.Content.Should().NotBeSameAs(originalContent);
+    }
+
+    [Fact]
     public async Task SendAsync_307RedirectWithUnknownLengthContent_FailsClosed()
     {
         var registry = CreateRegistry("origin.example.com");
@@ -556,5 +580,33 @@ public class EgressEnvelopeHandlerTests
 
         public override void Write(byte[] buffer, int offset, int count)
             => throw new NotSupportedException();
+    }
+
+    private sealed class TrackingContent : HttpContent
+    {
+        private readonly byte[] _content;
+
+        public TrackingContent(string content)
+        {
+            _content = System.Text.Encoding.UTF8.GetBytes(content);
+            Headers.ContentLength = _content.Length;
+        }
+
+        public bool Disposed { get; private set; }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            => stream.WriteAsync(_content, 0, _content.Length);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = _content.Length;
+            return true;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
     }
 }
