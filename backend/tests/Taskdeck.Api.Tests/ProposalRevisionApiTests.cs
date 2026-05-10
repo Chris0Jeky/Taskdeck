@@ -74,6 +74,24 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateRevision_WithInvalidRevisedPayloadJson_ShouldReturnValidationError()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-create-invalid-json");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "rev-create-invalid-json-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = "{\"operations\":[", reason = "malformed edit" });
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+    }
+
+    [Fact]
     public async Task GetRevisions_Empty_ShouldReturnEmptyList()
     {
         var client = _factory.CreateClient();

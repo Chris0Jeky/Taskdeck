@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   getProposalDiff: vi.fn(),
   dismissProposals: vi.fn(),
   getBoards: vi.fn(),
+  createRevision: vi.fn(),
+  getRevisions: vi.fn(),
+  getLatestRevision: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
   infoToast: vi.fn(),
@@ -49,9 +52,9 @@ vi.mock('../../../../store/sessionStore', () => ({
 
 vi.mock('../../../../api/proposalRevisionsApi', () => ({
   proposalRevisionsApi: {
-    createRevision: vi.fn(),
-    getRevisions: vi.fn().mockResolvedValue([]),
-    getLatestRevision: vi.fn().mockResolvedValue(null),
+    createRevision: mocks.createRevision,
+    getRevisions: mocks.getRevisions,
+    getLatestRevision: mocks.getLatestRevision,
   },
 }))
 
@@ -120,6 +123,8 @@ describe('PaperReviewView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.sessionState.userId = 'u-1'
+    mocks.getRevisions.mockResolvedValue([])
+    mocks.getLatestRevision.mockResolvedValue(null)
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -417,6 +422,63 @@ describe('PaperReviewView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+  })
+
+  it('opens revision editing for multi-operation proposals with all operations present', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        operations: [
+          {
+            id: 'op-1',
+            proposalId: 'proposal-001',
+            sequence: 2,
+            actionType: 'MoveCard',
+            targetType: 'Card',
+            targetId: 'card-1',
+            parameters: '{"columnId":"done"}',
+            idempotencyKey: 'k-2',
+            expectedVersion: 7,
+          },
+          {
+            id: 'op-2',
+            proposalId: 'proposal-001',
+            sequence: 1,
+            actionType: 'CreateCard',
+            targetType: 'Card',
+            targetId: null,
+            parameters: '{"title":"Draft"}',
+            idempotencyKey: 'k-1',
+            expectedVersion: null,
+          },
+        ],
+      }),
+    ])
+
+    await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+
+    const operationsField = wrapper.get('[data-testid="revision-field-operations"]')
+    const value = JSON.parse((operationsField.element as HTMLTextAreaElement).value)
+
+    expect(value).toHaveLength(2)
+    expect(value.map((operation: { sequence: number }) => operation.sequence)).toEqual([1, 2])
+  })
+
+  it('disables apply and reject while a revision edit is open', async () => {
+    const wrapper = await mountView([makeProposal()])
+
+    await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="decision-reject"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+    await wrapper.get('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
   })
 
   it('surfaces feedback when provenance toggle is invoked before collapsible mode exists', async () => {

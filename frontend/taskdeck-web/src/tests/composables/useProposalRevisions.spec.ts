@@ -150,6 +150,56 @@ describe('useProposalRevisions', () => {
     expect(editing.value).toBe(false)
   })
 
+  it('clears revision state immediately when proposal changes', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions)
+      .mockResolvedValueOnce([makeRevision()])
+      .mockImplementationOnce(() => new Promise(() => undefined))
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const { editing, revisionCount, latestRevision, startEditing } = useProposalRevisions(proposal)
+
+    await vi.waitFor(() => {
+      expect(revisionCount.value).toBe(1)
+    })
+
+    startEditing()
+    proposal.value = makeProposal({ id: 'p-2' })
+    await nextTick()
+
+    expect(editing.value).toBe(false)
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+  })
+
+  it('ignores stale save responses after switching proposals', async () => {
+    let resolveSave!: (revision: ProposalRevision) => void
+    vi.mocked(proposalRevisionsApi.createRevision).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveSave = resolve
+      }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const { saving, revisionCount, latestRevision, startEditing, saveRevision } =
+      useProposalRevisions(proposal)
+
+    startEditing()
+    const savePromise = saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
+    await nextTick()
+
+    expect(saving.value).toBe(true)
+
+    proposal.value = makeProposal({ id: 'p-2' })
+    await nextTick()
+
+    expect(saving.value).toBe(false)
+
+    resolveSave(makeRevision({ proposalId: 'p-1' }))
+    await savePromise
+
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+  })
+
   it('discards stale load responses when proposal switches quickly', async () => {
     const staleRevisions = [makeRevision({ proposalId: 'p-1', revisionNumber: 1 })]
     const freshRevisions = [

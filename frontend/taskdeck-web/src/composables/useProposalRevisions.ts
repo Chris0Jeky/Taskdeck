@@ -16,19 +16,20 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
   const revisionCount = ref(0)
   const latestRevision = ref<ProposalRevision | null>(null)
   let loadGeneration = 0
+  let saveGeneration = 0
 
   async function loadRevisionState(proposalId: string) {
     const gen = ++loadGeneration
     try {
       const revisions = await proposalRevisionsApi.getRevisions(proposalId)
-      if (gen !== loadGeneration) return
+      if (gen !== loadGeneration || activeProposal.value?.id !== proposalId) return
       revisionCount.value = revisions.length
       latestRevision.value =
         revisions.length > 0
           ? revisions.reduce((a, b) => (a.revisionNumber > b.revisionNumber ? a : b))
           : null
     } catch (e: unknown) {
-      if (gen !== loadGeneration) return
+      if (gen !== loadGeneration || activeProposal.value?.id !== proposalId) return
       revisionCount.value = 0
       latestRevision.value = null
       toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
@@ -38,12 +39,14 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
   watch(
     () => activeProposal.value?.id,
     (id) => {
+      loadGeneration += 1
+      saveGeneration += 1
       editing.value = false
+      saving.value = false
+      revisionCount.value = 0
+      latestRevision.value = null
       if (id) {
         void loadRevisionState(id)
-      } else {
-        revisionCount.value = 0
-        latestRevision.value = null
       }
     },
     { immediate: true },
@@ -62,17 +65,23 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
     const proposal = activeProposal.value
     if (!proposal) return
 
+    const proposalId = proposal.id
+    const gen = ++saveGeneration
     try {
       saving.value = true
-      const revision = await proposalRevisionsApi.createRevision(proposal.id, payload)
+      const revision = await proposalRevisionsApi.createRevision(proposalId, payload)
+      if (gen !== saveGeneration || activeProposal.value?.id !== proposalId) return
       latestRevision.value = revision
       revisionCount.value += 1
       editing.value = false
       toast.success('Revision saved')
     } catch (e: unknown) {
+      if (gen !== saveGeneration || activeProposal.value?.id !== proposalId) return
       toast.error(getErrorDisplay(e, 'Failed to save revision').message)
     } finally {
-      saving.value = false
+      if (gen === saveGeneration && activeProposal.value?.id === proposalId) {
+        saving.value = false
+      }
     }
   }
 

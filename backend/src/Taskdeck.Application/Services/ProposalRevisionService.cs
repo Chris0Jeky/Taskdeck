@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -29,6 +30,11 @@ public class ProposalRevisionService : IProposalRevisionService
                 return Result.Failure<ProposalRevisionDto>(
                     ErrorCodes.InvalidOperation,
                     $"Cannot create revision for proposal in status {proposal.Status}");
+
+            if (!IsValidJson(dto.RevisedPayload))
+                return Result.Failure<ProposalRevisionDto>(
+                    ErrorCodes.ValidationError,
+                    "RevisedPayload must be valid JSON");
 
             var nextRevisionNumber = await _unitOfWork.ProposalRevisions
                 .GetNextRevisionNumberAsync(dto.ProposalId, cancellationToken);
@@ -97,5 +103,18 @@ public class ProposalRevisionService : IProposalRevisionService
             revision.RevisedAt,
             revision.Reason,
             revision.CreatedAt);
+    }
+
+    private static bool IsValidJson(string payload)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(payload);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 }

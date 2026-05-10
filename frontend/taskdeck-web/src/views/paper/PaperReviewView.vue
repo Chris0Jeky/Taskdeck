@@ -172,8 +172,19 @@ const editablePayload = computed(() => {
   if (latestRevision.value) return latestRevision.value.revisedPayload
   const ops = p.operations ?? []
   if (ops.length === 0) return '{}'
-  const firstOp = ops[0]
-  return firstOp.parameters ?? '{}'
+  return JSON.stringify({
+    operations: [...ops]
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((operation) => ({
+        sequence: operation.sequence,
+        actionType: operation.actionType,
+        targetType: operation.targetType,
+        targetId: operation.targetId,
+        parameters: operation.parameters,
+        idempotencyKey: operation.idempotencyKey,
+        expectedVersion: operation.expectedVersion,
+      })),
+  })
 })
 
 // --- Queue rail data ---------------------------------------------------
@@ -452,7 +463,8 @@ const whyNowBody = computed(() => {
 
 // --- Action wiring -----------------------------------------------------
 
-const busy = computed(() => proposalActionBusyId.value !== null)
+const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
+const busy = computed(() => proposalActionBusyId.value !== null || revisionBusy.value)
 
 function isApplyActionable(proposal: ApiProposal): boolean {
   const status = normalizeProposalStatus(proposal.status)
@@ -466,6 +478,10 @@ function isRejectActionable(proposal: ApiProposal): boolean {
 function onApply() {
   const p = activeProposal.value
   if (!p) return
+  if (revisionBusy.value) {
+    toast.info('Save or cancel the revision before applying this proposal.')
+    return
+  }
   if (!isApplyActionable(p)) {
     toast.info('This proposal is no longer actionable. Refresh review to see current status.')
     return
@@ -481,6 +497,10 @@ function onApply() {
 function onReject() {
   const p = activeProposal.value
   if (!p) return
+  if (revisionBusy.value) {
+    toast.info('Save or cancel the revision before rejecting this proposal.')
+    return
+  }
   if (!isRejectActionable(p)) {
     toast.info('This proposal can no longer be rejected. Refresh review to see current status.')
     return
@@ -491,12 +511,9 @@ function onReject() {
 function onRequestEdit() {
   const p = activeProposal.value
   if (!p) return
+  if (revisionSaving.value) return
   if (normalizeProposalStatus(p.status) !== 'PendingReview' || isProposalExpired(p)) {
     toast.info('This proposal can no longer be edited.')
-    return
-  }
-  if ((p.operations?.length ?? 0) > 1) {
-    toast.info('Editing multi-operation proposals is not yet supported.')
     return
   }
   startRevisionEditing()

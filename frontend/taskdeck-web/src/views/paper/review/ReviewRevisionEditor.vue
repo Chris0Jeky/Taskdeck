@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 
@@ -16,25 +16,29 @@ const emit = defineEmits<{
 interface EditableField {
   key: string
   value: string
+  valueKind: 'string' | 'json'
 }
 
 const fields = ref<EditableField[]>([])
 const reason = ref('')
 const parseError = ref(false)
 
-onMounted(() => {
+function parsePayload() {
   try {
     const parsed = JSON.parse(props.operationsPayload) as Record<string, unknown>
     fields.value = Object.entries(parsed).map(([key, value]) => ({
       key,
       value: typeof value === 'string' ? value : JSON.stringify(value),
+      valueKind: typeof value === 'string' ? 'string' : 'json',
     }))
     parseError.value = false
   } catch {
-    fields.value = [{ key: 'payload', value: props.operationsPayload }]
+    fields.value = [{ key: 'payload', value: props.operationsPayload, valueKind: 'string' }]
     parseError.value = true
   }
-})
+}
+
+watch(() => props.operationsPayload, parsePayload, { immediate: true })
 
 const canSave = computed(() => {
   return reason.value.trim().length > 0 && !props.saving
@@ -49,6 +53,11 @@ function onSave() {
   } else {
     const obj: Record<string, unknown> = {}
     for (const field of fields.value) {
+      if (field.valueKind === 'string') {
+        obj[field.key] = field.value
+        continue
+      }
+
       try {
         obj[field.key] = JSON.parse(field.value) as unknown
       } catch {
