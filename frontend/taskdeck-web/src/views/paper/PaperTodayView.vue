@@ -34,6 +34,7 @@ const lineForTomorrowStorageKey = computed(() => {
   const dayPart = formatLocalDossierDate(dossier.value.date)
   return `td.paper.line-for-tomorrow:${userPart}:${dayPart}`
 })
+const lineForTomorrowSaveDate = computed(() => formatLocalDossierDate(dossier.value.date))
 
 async function onSeal() {
   const result = await sealDay()
@@ -140,7 +141,9 @@ function onPinCarryOver(serials: string[]) {
           <TodayLineForTomorrow
             :initial="dossier.lineForTomorrow"
             :storage-key="lineForTomorrowStorageKey"
-            @save="saveLineForTomorrow"
+            :save-date="lineForTomorrowSaveDate"
+            :save="saveLineForTomorrow"
+            :use-stored-draft="false"
           />
         </div>
       </div>

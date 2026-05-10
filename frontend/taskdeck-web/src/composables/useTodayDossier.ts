@@ -105,10 +105,10 @@ function formatLocalDossierDateParts(date: Date): { yyyy: string; mm: string; dd
   }
 }
 
-function formatTime(iso: string | null): string {
+function formatUtcTime(iso: string | null): string {
   if (!iso) return '--:--'
   const d = new Date(iso)
-  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+  return `${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}`
 }
 
 function mapCadenceResponse(response: CadenceApiResponse): DossierCadence {
@@ -119,20 +119,20 @@ function mapCadenceResponse(response: CadenceApiResponse): DossierCadence {
 
   const peakHourIndex = response.peakHour ?? 0
 
-  const firstTime = formatTime(response.firstActionAt)
-  const lastTime = formatTime(response.lastActionAt)
+  const firstTime = formatUtcTime(response.firstActionAt)
+  const lastTime = formatUtcTime(response.lastActionAt)
 
   const peakEvents = weights[peakHourIndex] ?? 0
   const peakAction = response.peakHour != null
-    ? `${peakHourIndex.toString().padStart(2, '0')}:00 — ${(peakHourIndex + 1).toString().padStart(2, '0')}:00 · ${peakEvents} events`
+    ? `${peakHourIndex.toString().padStart(2, '0')}:00-${((peakHourIndex + 1) % 24).toString().padStart(2, '0')}:00 UTC · ${peakEvents} events`
     : 'no peak'
 
   return {
     weights,
     peakHourIndex,
-    firstAction: `${firstTime} · first action`,
+    firstAction: `${firstTime} UTC · first action`,
     peakAction,
-    lastAction: `${lastTime} · last action`,
+    lastAction: `${lastTime} UTC · last action`,
   }
 }
 
@@ -314,7 +314,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   const sealed = ref(false)
   const liveCadence = ref<DossierCadence | null>(null)
   const liveStreak = ref<DossierStreak | null>(null)
-  const liveLineForTomorrow = ref<string | null>(null)
+  const liveLineForTomorrow = ref('')
 
   const stubDossier = computed<DossierData>(() => buildStubDossier(now.value, workspace.todaySummary))
 
@@ -324,38 +324,53 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
       ...base,
       cadence: liveCadence.value ?? base.cadence,
       streak: liveStreak.value ?? base.streak,
-      lineForTomorrow: liveLineForTomorrow.value ?? base.lineForTomorrow,
+      lineForTomorrow: liveLineForTomorrow.value,
     }
   })
 
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
-  let pendingAutosaveText: string | null = null
+  let pendingAutosave: {
+    text: string
+    dateStr: string
+    resolve: () => void
+    reject: (error: unknown) => void
+  } | null = null
   const AUTOSAVE_DEBOUNCE_MS = 800
 
-  function flushAutosave() {
-    if (pendingAutosaveText !== null) {
-      const dateStr = formatLocalDossierDate(now.value)
-      todayApi.saveTomorrowNote(dateStr, pendingAutosaveText).catch((err) => {
-        logError('Tomorrow note autosave failed', { message: (err as Error)?.message })
-      })
-      pendingAutosaveText = null
+  async function flushAutosave() {
+    const pending = pendingAutosave
+    if (!pending) return
+
+    pendingAutosave = null
+    try {
+      await todayApi.saveTomorrowNote(pending.dateStr, pending.text)
+      pending.resolve()
+    } catch (err) {
+      logError('Tomorrow note autosave failed', { message: (err as Error)?.message })
+      pending.reject(err)
     }
   }
 
-  function saveLineForTomorrow(text: string) {
+  function saveLineForTomorrow(text: string, dateStr = formatLocalDossierDate(now.value)): Promise<void> {
     liveLineForTomorrow.value = text
-    pendingAutosaveText = text
+    if (pendingAutosave) {
+      pendingAutosave.resolve()
+    }
     if (autosaveTimer) clearTimeout(autosaveTimer)
-    autosaveTimer = setTimeout(() => {
-      flushAutosave()
-    }, AUTOSAVE_DEBOUNCE_MS)
+    return new Promise((resolve, reject) => {
+      pendingAutosave = { text, dateStr, resolve, reject }
+      autosaveTimer = setTimeout(() => {
+        autosaveTimer = null
+        void flushAutosave()
+      }, AUTOSAVE_DEBOUNCE_MS)
+    })
   }
 
   onScopeDispose(() => {
     if (autosaveTimer) {
       clearTimeout(autosaveTimer)
       autosaveTimer = null
-      flushAutosave()
+      void flushAutosave()
     }
   })
 
@@ -385,13 +400,15 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     }
     if (results[3].status === 'fulfilled') {
       liveLineForTomorrow.value = results[3].value?.text ?? ''
+    } else {
+      liveLineForTomorrow.value = ''
     }
   }
 
   watch(now, () => {
     liveCadence.value = null
     liveStreak.value = null
-    liveLineForTomorrow.value = null
+    liveLineForTomorrow.value = ''
     sealed.value = false
     fetchLiveData()
   }, { immediate: true })

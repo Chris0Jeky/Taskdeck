@@ -14,11 +14,17 @@ const props = withDefaults(
     initial?: string
     storageKey?: string
     debounceMs?: number
+    useStoredDraft?: boolean
+    saveDate?: string
+    save?: (value: string, saveDate?: string) => void | Promise<void>
   }>(),
   {
     initial: '',
     storageKey: 'td.paper.line-for-tomorrow',
     debounceMs: 500,
+    useStoredDraft: true,
+    saveDate: undefined,
+    save: undefined,
   },
 )
 
@@ -27,6 +33,7 @@ const emit = defineEmits<{
 }>()
 
 function readStored(): string {
+  if (!props.useStoredDraft) return props.initial
   if (typeof window === 'undefined') return props.initial
   try {
     const raw = window.localStorage.getItem(props.storageKey)
@@ -42,17 +49,27 @@ const status = ref<'idle' | 'saving' | 'saved' | 'error'>('saved')
 
 let timer: ReturnType<typeof setTimeout> | null = null
 let suppressNextSave = false
+let pendingSaveDate: string | undefined
 
-function flush() {
-  if (typeof window === 'undefined') return
+async function flush() {
+  if (props.useStoredDraft) {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(props.storageKey, text.value)
+    } catch {
+      status.value = 'error'
+      return
+    }
+  }
   try {
-    window.localStorage.setItem(props.storageKey, text.value)
+    if (props.save) {
+      await props.save(text.value, pendingSaveDate)
+    }
+    status.value = 'saved'
+    emit('save', text.value)
   } catch {
     status.value = 'error'
-    return
   }
-  status.value = 'saved'
-  emit('save', text.value)
 }
 
 watch(text, () => {
@@ -61,12 +78,16 @@ watch(text, () => {
     return
   }
   status.value = 'saving'
+  pendingSaveDate = props.saveDate
   if (timer) clearTimeout(timer)
-  timer = setTimeout(flush, props.debounceMs)
+  timer = setTimeout(() => {
+    timer = null
+    void flush()
+  }, props.debounceMs)
 })
 
 watch(
-  () => [props.storageKey, props.initial] as const,
+  () => [props.storageKey, props.initial, props.useStoredDraft] as const,
   () => {
     if (timer) {
       clearTimeout(timer)
@@ -84,7 +105,7 @@ onBeforeUnmount(() => {
     clearTimeout(timer)
     // Flush pending writes before the component goes away — otherwise
     // a quick remount loses the in-flight edit.
-    flush()
+    void flush()
   }
 })
 </script>

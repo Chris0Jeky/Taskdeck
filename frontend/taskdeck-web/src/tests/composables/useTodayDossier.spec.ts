@@ -62,6 +62,7 @@ describe('useTodayDossier', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -87,6 +88,10 @@ describe('useTodayDossier', () => {
     expect(dossier.value.cadence.weights[14]).toBe(5)
     expect(dossier.value.cadence.weights[0]).toBe(0)
     expect(dossier.value.cadence.peakHourIndex).toBe(14)
+    expect(dossier.value.cadence.firstAction).toContain('09:12 UTC')
+    expect(dossier.value.cadence.peakAction).toContain('14:00-15:00 UTC')
+    expect(dossier.value.cadence.peakAction).toContain('5 events')
+    expect(dossier.value.cadence.lastAction).toContain('17:30 UTC')
   })
 
   it('fetches live streak and maps to DossierStreak', async () => {
@@ -134,7 +139,7 @@ describe('useTodayDossier', () => {
     expect(dossier.value.lineForTomorrow).toBe('Review the AA contrast audit')
   })
 
-  it('falls back to stub data when all API calls fail', async () => {
+  it('falls back to stub metrics but not fabricated tomorrow-note text when all API calls fail', async () => {
     vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('network'))
     vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('network'))
     vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('network'))
@@ -148,7 +153,45 @@ describe('useTodayDossier', () => {
     expect(dossier.value.serial).toMatch(/^D-\d{4}-\d{2}-\d{2}-\d{3}$/)
     expect(dossier.value.cadence.peakHourIndex).toBe(13)
     expect(dossier.value.streak.cells).toHaveLength(90)
-    expect(dossier.value.lineForTomorrow).toContain('AA contrast audit')
+    expect(dossier.value.lineForTomorrow).toBe('')
+  })
+
+  it('autosaves tomorrow note to the date captured at edit time', async () => {
+    vi.useFakeTimers()
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+    vi.mocked(todayApi.saveTomorrowNote).mockResolvedValue(tomorrowNoteResponse)
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const nowRef = ref(new Date('2026-01-15T23:59:59'))
+    const { saveLineForTomorrow } = useTodayDossier({ now: nowRef })
+
+    const save = saveLineForTomorrow('Finish handoff', '2026-01-15')
+    nowRef.value = new Date('2026-01-16T00:00:01')
+
+    await vi.advanceTimersByTimeAsync(850)
+    await save
+
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'Finish handoff')
+  })
+
+  it('rejects autosave promise when the backend save fails', async () => {
+    vi.useFakeTimers()
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+    vi.mocked(todayApi.saveTomorrowNote).mockRejectedValue(new Error('offline'))
+
+    const { saveLineForTomorrow } = await importAndCreate()
+    const save = saveLineForTomorrow('Draft')
+    const assertion = expect(save).rejects.toThrow('offline')
+
+    await vi.advanceTimersByTimeAsync(850)
+
+    await assertion
   })
 
   it('sealDay calls POST /today/seal and returns sealed status', async () => {
