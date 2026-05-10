@@ -280,6 +280,12 @@ export interface UseTodayDossierOptions {
   now?: Ref<Date> | Date
 }
 
+export interface SealDayResult {
+  sealed: boolean
+  alreadySealed: boolean
+  inProgress?: boolean
+}
+
 export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   const workspace = useWorkspaceStore()
   const fixedNow = options.now instanceof Date ? options.now : null
@@ -354,7 +360,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   function saveLineForTomorrow(text: string, dateStr = formatLocalDossierDate(now.value)): Promise<void> {
     liveLineForTomorrow.value = text
     if (pendingAutosave) {
-      pendingAutosave.resolve()
+      pendingAutosave.reject(new Error('Superseded by newer tomorrow note autosave'))
     }
     if (autosaveTimer) clearTimeout(autosaveTimer)
     return new Promise((resolve, reject) => {
@@ -415,12 +421,12 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
 
   let sealingInProgress = false
 
-  async function sealDay(): Promise<{ sealed: boolean; alreadySealed: boolean }> {
+  async function sealDay(): Promise<SealDayResult> {
     if (sealed.value) {
       return { sealed: true, alreadySealed: true }
     }
     if (sealingInProgress) {
-      return { sealed: false, alreadySealed: false }
+      return { sealed: false, alreadySealed: false, inProgress: true }
     }
 
     sealingInProgress = true

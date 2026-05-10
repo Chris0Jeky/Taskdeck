@@ -115,6 +115,30 @@ describe('TodayLineForTomorrow', () => {
     expect(input.element.value).toBe('new backend note')
   })
 
+  it('preserves typed text when async backend initial value arrives', async () => {
+    const save = vi.fn().mockResolvedValue(undefined)
+    const wrapper = mount(TodayLineForTomorrow, {
+      props: {
+        storageKey: KEY,
+        debounceMs: 100,
+        initial: '',
+        useStoredDraft: false,
+        save,
+      },
+    })
+    const input = wrapper.find<HTMLTextAreaElement>('[data-testid="line-for-tomorrow-input"]')
+
+    await input.setValue('typed before fetch')
+    await wrapper.setProps({ initial: 'late backend value' })
+    await wrapper.vm.$nextTick()
+
+    expect(input.element.value).toBe('typed before fetch')
+
+    await vi.advanceTimersByTimeAsync(150)
+
+    expect(save).toHaveBeenCalledWith('typed before fetch', undefined)
+  })
+
   it('keeps saving status until backend save succeeds', async () => {
     const save = vi.fn().mockResolvedValue(undefined)
     const wrapper = mount(TodayLineForTomorrow, {
@@ -137,6 +161,38 @@ describe('TodayLineForTomorrow', () => {
     expect(save).toHaveBeenCalledWith('backend text', '2026-01-15')
     expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Saved')
     expect(wrapper.emitted('save')?.[0]).toEqual(['backend text'])
+  })
+
+  it('does not mark a superseded save failure as the latest status', async () => {
+    let rejectFirst!: (error: unknown) => void
+    const save = vi.fn()
+      .mockImplementationOnce(() => new Promise<void>((_, reject) => {
+        rejectFirst = reject
+      }))
+      .mockImplementationOnce(() => {
+        rejectFirst(new Error('superseded'))
+        return Promise.resolve()
+      })
+    const wrapper = mount(TodayLineForTomorrow, {
+      props: {
+        storageKey: KEY,
+        debounceMs: 100,
+        initial: '',
+        useStoredDraft: false,
+        save,
+      },
+    })
+    const input = wrapper.find<HTMLTextAreaElement>('[data-testid="line-for-tomorrow-input"]')
+
+    await input.setValue('first')
+    await vi.advanceTimersByTimeAsync(150)
+    await input.setValue('second')
+    await vi.advanceTimersByTimeAsync(150)
+    await wrapper.vm.$nextTick()
+
+    expect(save).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Saved')
+    expect(wrapper.emitted('save')).toEqual([['second']])
   })
 
   it('shows unavailable state when backend save fails', async () => {

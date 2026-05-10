@@ -194,6 +194,27 @@ describe('useTodayDossier', () => {
     await assertion
   })
 
+  it('rejects superseded autosaves without writing the older text', async () => {
+    vi.useFakeTimers()
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+    vi.mocked(todayApi.saveTomorrowNote).mockResolvedValue(tomorrowNoteResponse)
+
+    const { saveLineForTomorrow } = await importAndCreate()
+    const first = saveLineForTomorrow('older draft', '2026-01-15')
+    const firstAssertion = expect(first).rejects.toThrow('Superseded')
+    const second = saveLineForTomorrow('latest draft', '2026-01-15')
+
+    await firstAssertion
+    await vi.advanceTimersByTimeAsync(850)
+    await second
+
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledTimes(1)
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'latest draft')
+  })
+
   it('sealDay calls POST /today/seal and returns sealed status', async () => {
     vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
     vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
@@ -230,6 +251,32 @@ describe('useTodayDossier', () => {
     await sealDay()
     const second = await sealDay()
     expect(second.alreadySealed).toBe(true)
+    expect(todayApi.sealDay).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks duplicate seal calls as in progress without a failure state', async () => {
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockResolvedValue(sealStatusResponse)
+    vi.mocked(todayApi.getTomorrowNote).mockRejectedValue(new Error('skip'))
+    let resolveSeal!: (value: { sealedAt: string; wasAlreadySealed: boolean }) => void
+    vi.mocked(todayApi.sealDay).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveSeal = resolve
+      }),
+    )
+
+    const { sealDay } = await importAndCreate()
+    await vi.waitFor(() => {
+      expect(todayApi.getSealStatus).toHaveBeenCalled()
+    })
+
+    const first = sealDay()
+    const second = await sealDay()
+    resolveSeal({ sealedAt: '2026-01-15T18:00:00Z', wasAlreadySealed: false })
+
+    await expect(first).resolves.toEqual({ sealed: true, alreadySealed: false })
+    expect(second).toEqual({ sealed: false, alreadySealed: false, inProgress: true })
     expect(todayApi.sealDay).toHaveBeenCalledTimes(1)
   })
 

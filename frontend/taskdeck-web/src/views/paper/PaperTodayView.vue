@@ -38,6 +38,9 @@ const lineForTomorrowSaveDate = computed(() => formatLocalDossierDate(dossier.va
 
 async function onSeal() {
   const result = await sealDay()
+  if (result.inProgress) {
+    return
+  }
   if (!result.sealed) {
     toast.error('Failed to seal the day. Please try again.')
     return
