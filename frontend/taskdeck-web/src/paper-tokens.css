@@ -463,9 +463,9 @@
    - `--paper-safe-bottom` exposes `env(safe-area-inset-bottom, 0px)` for
      phone bottom-bar spacing in `PaperSidebar` and matching AppShell content
      padding. Do not remove without checking those surfaces.
-   - `--paper-density` flips to `compact` ≤1024px and is intended for
-     leaf surfaces (e.g. card / row paddings) to opt into a tighter
-     spacing variant in follow-up patches. Currently unconsumed.
+   - `--paper-density` flips to `compact` ≤1024px and is reserved for
+     leaf surfaces (e.g. card / row paddings) to opt into tighter spacing
+     in follow-up patches.
    ========================================================= */
 .paper, .paper-night {
   --paper-safe-bottom: env(safe-area-inset-bottom, 0px);
