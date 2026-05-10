@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
+import { readFileSync } from 'node:fs'
 import AppShell from '../../components/shell/AppShell.vue'
 
 const mockRouter = {
@@ -55,6 +56,10 @@ const mockPaperTheme = reactive({
   disable: vi.fn(),
 })
 
+const mockViewportMode = vi.hoisted(() => ({
+  value: 'desktop' as 'desktop' | 'tablet' | 'phone',
+}))
+
 vi.mock('vue-router', () => ({
   useRouter: () => mockRouter,
   useRoute: () => mockRoute,
@@ -77,9 +82,8 @@ vi.mock('../../store/paperThemeStore', () => ({
 }))
 
 vi.mock('../../composables/useViewportMode', async () => {
-  const { ref, readonly } = await import('vue')
-  const mode = ref('desktop')
-  return { useViewportMode: () => ({ mode: readonly(mode) }) }
+  const { computed } = await import('vue')
+  return { useViewportMode: () => ({ mode: computed(() => mockViewportMode.value) }) }
 })
 
 function mountShell() {
@@ -108,6 +112,7 @@ describe('AppShell — paper variant routing', () => {
     mockPaperTheme.activeClass = null
     mockWorkspace.mode = 'guided'
     mockRoute.path = '/workspace/home'
+    mockViewportMode.value = 'desktop'
   })
 
   afterEach(() => {
@@ -183,6 +188,43 @@ describe('AppShell — paper variant routing', () => {
     await hamburger.trigger('click')
 
     expect(wrapper.find('.paper-sidebar--mobile-open').exists()).toBe(true)
+  })
+
+  it('hides the legacy mobile hamburger in Paper phone mode', () => {
+    mockPaperTheme.mode = 'paper'
+    mockPaperTheme.isOn = true
+    mockPaperTheme.activeClass = 'paper'
+    mockViewportMode.value = 'phone'
+
+    wrapper = mountShell()
+
+    expect(wrapper.find('.td-mobile-topbar').exists()).toBe(false)
+    expect(wrapper.find('.td-mobile-topbar__hamburger').exists()).toBe(false)
+    expect(wrapper.find('.td-shell').classes()).toContain('td-shell--paper-phone')
+    expect(wrapper.find('[data-paper-bottombar]').exists()).toBe(true)
+  })
+
+  it('hides the legacy mobile hamburger in Paper tablet mode', () => {
+    mockPaperTheme.mode = 'paper'
+    mockPaperTheme.isOn = true
+    mockPaperTheme.activeClass = 'paper'
+    mockViewportMode.value = 'tablet'
+
+    wrapper = mountShell()
+
+    expect(wrapper.find('.td-mobile-topbar').exists()).toBe(false)
+    expect(wrapper.find('.td-mobile-topbar__hamburger').exists()).toBe(false)
+    expect(wrapper.find('[data-paper-rail]').exists()).toBe(true)
+  })
+
+  it('keeps Paper phone content padded above the fixed bottom bar', () => {
+    const source = readFileSync(
+      'src/components/shell/AppShell.vue',
+      'utf8',
+    )
+
+    expect(source).toContain('.td-shell--paper-phone .td-content')
+    expect(source).toContain('56px + var(--paper-safe-bottom')
   })
 
   it('does not render both sidebars simultaneously when toggling paper mode', () => {

@@ -58,6 +58,8 @@ const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
 const { mode: viewportMode } = useViewportMode()
 const mobileOpen = ref(false)
+const phoneMoreOpen = ref(false)
+const phoneMoreDrawerId = 'paper-phone-more-drawer'
 
 const phoneNavItemCandidates: PaperNavItem[] = [
   { id: 'home', glyph: 'H', label: 'Home', path: '/workspace/home', keywords: '' },
@@ -66,7 +68,6 @@ const phoneNavItemCandidates: PaperNavItem[] = [
   { id: 'inbox', glyph: 'I', label: 'Inbox', path: '/workspace/inbox', keywords: '' },
 ]
 const phoneNavItems = computed<PaperNavItemBase[]>(() => phoneNavItemCandidates.filter(isAvailable))
-const phoneMoreOpen = ref(false)
 
 const primaryItems: PaperNavItem[] = [
   { id: 'home', label: 'Home', glyph: 'H', path: '/workspace/home', keywords: 'home start summary workspace' },
@@ -174,7 +175,32 @@ function closeMobileMenu() {
 }
 
 function toggleMobileMenu() {
+  if (viewportMode.value === 'phone') {
+    togglePhoneMore()
+    return
+  }
+
   mobileOpen.value = !mobileOpen.value
+}
+
+function closePhoneMore() {
+  phoneMoreOpen.value = false
+}
+
+function togglePhoneMore() {
+  phoneMoreOpen.value = !phoneMoreOpen.value
+}
+
+function handlePhoneMetaClick(item: PaperNavItem, event: MouseEvent) {
+  if (!item.path.startsWith('#')) {
+    closePhoneMore()
+    return
+  }
+
+  event.preventDefault()
+  closePhoneMore()
+  if (item.id === 'logout') emit('logout')
+  else if (item.id === 'shortcuts') emit('open-shortcuts')
 }
 
 watch(mobileOpen, (isOpen, _, onCleanup) => {
@@ -189,8 +215,24 @@ watch(mobileOpen, (isOpen, _, onCleanup) => {
   })
 })
 
+watch(phoneMoreOpen, (isOpen, _, onCleanup) => {
+  if (!isOpen) return
+
+  document.body.style.overflow = 'hidden'
+  const unregisterEscape = registerEscapeHandler(closePhoneMore)
+
+  onCleanup(() => {
+    document.body.style.overflow = ''
+    unregisterEscape()
+  })
+})
+
+watch(() => route.path, () => {
+  closePhoneMore()
+})
+
 onUnmounted(() => {
-  if (mobileOpen.value) {
+  if (mobileOpen.value || phoneMoreOpen.value) {
     document.body.style.overflow = ''
   }
 })
@@ -201,8 +243,11 @@ defineExpose({
   visibleWorkbench,
   visibleMeta,
   mobileOpen,
+  phoneMoreOpen,
   toggleMobileMenu,
   closeMobileMenu,
+  togglePhoneMore,
+  closePhoneMore,
   viewportMode,
 })
 </script>
@@ -229,21 +274,31 @@ defineExpose({
         <span class="paper-bottombar__glyph">{{ item.glyph }}</span>
       </router-link>
       <button
+        type="button"
         class="paper-bottombar__tab"
         :class="{ 'paper-bottombar__tab--active': phoneMoreOpen }"
         aria-label="More"
-        @click="phoneMoreOpen = !phoneMoreOpen"
+        :aria-expanded="phoneMoreOpen ? 'true' : 'false'"
+        :aria-controls="phoneMoreDrawerId"
+        @click="togglePhoneMore"
       >
         <span class="paper-bottombar__glyph paper-bottombar__glyph--more">…</span>
       </button>
     </nav>
 
-    <div v-if="phoneMoreOpen" class="paper-sidebar-overlay" @click="phoneMoreOpen = false" />
+    <div
+      v-if="phoneMoreOpen"
+      class="paper-sidebar-overlay"
+      aria-hidden="true"
+      @click="closePhoneMore"
+    />
     <nav
       v-if="phoneMoreOpen"
+      :id="phoneMoreDrawerId"
       class="paper-sidebar paper-sidebar--phone-drawer"
       role="navigation"
       aria-label="More navigation"
+      data-paper-phone-drawer
     >
       <div class="paper-sidebar__group" data-group="workbench">
         <div class="paper-sidebar__group-label">Workbench</div>
@@ -253,7 +308,7 @@ defineExpose({
               :to="item.path"
               class="paper-sidebar__item"
               :class="{ 'paper-sidebar__item--active': isActive(item) }"
-              @click="phoneMoreOpen = false"
+              @click="closePhoneMore"
             >
               <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
@@ -264,15 +319,26 @@ defineExpose({
       <div class="paper-sidebar__group paper-sidebar__group--muted" data-group="meta">
         <ul class="paper-sidebar__list">
           <li v-for="item in visibleMeta" :key="item.id">
-            <component
-              :is="item.path.startsWith('#') ? 'button' : 'router-link'"
-              v-bind="item.path.startsWith('#') ? {} : { to: item.path }"
+            <router-link
+              v-if="!item.path.startsWith('#')"
+              :to="item.path"
               class="paper-sidebar__item"
-              @click="item.id === 'logout' ? (emit('logout'), phoneMoreOpen = false) : item.id === 'shortcuts' ? (emit('open-shortcuts'), phoneMoreOpen = false) : (phoneMoreOpen = false)"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              @click="closePhoneMore"
             >
               <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
-            </component>
+            </router-link>
+            <button
+              v-else
+              type="button"
+              class="paper-sidebar__item"
+              @click="handlePhoneMetaClick(item, $event)"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__label">{{ item.label }}</span>
+            </button>
           </li>
         </ul>
       </div>
@@ -592,10 +658,13 @@ defineExpose({
   font-size: 12.5px;
   font-weight: 400;
   font-family: var(--sans);
+  width: 100%;
+  border: 0;
   border-left: 2px solid transparent;
   background: transparent;
   position: relative;
   cursor: pointer;
+  text-align: left;
 }
 
 .paper-sidebar__item:hover {

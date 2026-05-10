@@ -54,7 +54,7 @@ function mountSidebar() {
       stubs: {
         RouterLink: {
           props: ['to'],
-          template: '<a :href="to" :class="$attrs.class" :aria-current="$attrs[`aria-current`]"><slot /></a>',
+          template: '<a :href="to" v-bind="$attrs"><slot /></a>',
         },
       },
     },
@@ -72,6 +72,7 @@ describe('PaperSidebar', () => {
     mockPaperTheme.mode = 'paper'
     mockPaperTheme.activeClass = 'paper'
     mockViewportMode.value = 'desktop'
+    document.body.style.overflow = ''
   })
 
   it('renders the brand and Precision Mode eyebrow with the active accent', () => {
@@ -311,6 +312,62 @@ describe('PaperSidebar', () => {
     const homeTab = wrapper.findAll('.paper-bottombar__tab')
       .find((t) => t.attributes('href') === '/workspace/home')
     expect(homeTab?.classes()).not.toContain('paper-bottombar__tab--active')
+  })
+
+  it('opens the phone More drawer with ARIA state and closes it with Escape', async () => {
+    mockViewportMode.value = 'phone'
+    const wrapper = mountSidebar()
+    const moreButton = wrapper.get('button[aria-label="More"]')
+
+    expect(moreButton.attributes('aria-expanded')).toBe('false')
+    expect(moreButton.attributes('aria-controls')).toBe('paper-phone-more-drawer')
+
+    await moreButton.trigger('click')
+
+    expect(moreButton.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-paper-phone-drawer]').exists()).toBe(true)
+    expect(wrapper.find('#paper-phone-more-drawer').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Settings')
+    expect(wrapper.text()).toContain('Logout')
+    expect(document.body.style.overflow).toBe('hidden')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-paper-phone-drawer]').exists()).toBe(false)
+    expect(moreButton.attributes('aria-expanded')).toBe('false')
+    expect(document.body.style.overflow).toBe('')
+  })
+
+  it('closes the phone More drawer after route changes and pseudo-actions', async () => {
+    mockViewportMode.value = 'phone'
+    const wrapper = mountSidebar()
+    const moreButton = wrapper.get('button[aria-label="More"]')
+
+    await moreButton.trigger('click')
+    mockRoute.path = '/workspace/settings/profile'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-paper-phone-drawer]').exists()).toBe(false)
+
+    await moreButton.trigger('click')
+    const shortcutsButton = wrapper.findAll('button.paper-sidebar__item')
+      .find((button) => button.text().includes('Shortcuts'))
+    await shortcutsButton?.trigger('click')
+
+    expect(wrapper.emitted('open-shortcuts')).toHaveLength(1)
+    expect(wrapper.find('[data-paper-phone-drawer]').exists()).toBe(false)
+  })
+
+  it('keeps feature-flagged phone tabs hidden when unavailable', () => {
+    mockViewportMode.value = 'phone'
+    mockFeatureFlags.isEnabled = vi.fn((flag: keyof FeatureFlags) => flag !== 'newAutomation')
+
+    const wrapper = mountSidebar()
+    const hrefs = wrapper.findAll('.paper-bottombar__tab').map((tab) => tab.attributes('href'))
+
+    expect(hrefs).not.toContain('/workspace/review')
+    expect(hrefs).toContain('/workspace/home')
   })
 
   it('renders icon-only rail on tablet', () => {
