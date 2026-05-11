@@ -13,6 +13,14 @@ Repo-local Codex skills live here and supplement `AGENTS.md`. Use the smallest s
 | `taskdeck-ci-conflict-recovery` | failing CI, stale branches, conflicts, blocked PRs | CI logs, `scripts/github/Inspect-TaskdeckPrs.ps1` |
 | `taskdeck-verification-doc-sync` | final checks, docs sync decisions, handoff summary | `docs/TESTING_GUIDE.md`, active docs |
 
+## Agentic Operating Skills
+
+| Skill | Use it for | Pair with |
+| --- | --- | --- |
+| `taskdeck-question-batch` | deciding whether to ask, assume, or proceed on ambiguous work | `docs/agentic/QUESTION_PROTOCOL.md` |
+| `taskdeck-failure-capture` | classifying failed tools, tests, CI, docs checks, and workarounds | `docs/agentic/FAILURE_LEDGER.md` |
+| `taskdeck-interface-map` | maintaining agent-facing maps for complex seams and context traps | `autodoc/AGENT_INDEX.md` |
+
 ## Domain Skills
 
 | Skill | Use it for |
@@ -28,6 +36,7 @@ Repo-local Codex skills live here and supplement `AGENTS.md`. Use the smallest s
 2. Read `AGENTS.md` and `.codex/memories/00_ACTIVE.md`.
 3. Choose the skill matching the request.
 4. Read that skill's `SKILL.md`.
-5. Pair it with active docs and the relevant feature or testing guide.
-6. Keep changes narrow, verify locally, and update canonical docs only when project reality changed.
+5. Pair it with active docs, `autodoc/AGENT_INDEX.md`, and the relevant feature or testing guide.
+6. Use `docs/agentic/QUESTION_PROTOCOL.md` for blockers and `docs/agentic/FAILURE_LEDGER.md` for unresolved failures.
+7. Keep changes narrow, verify locally, and update canonical docs only when project reality changed.
 

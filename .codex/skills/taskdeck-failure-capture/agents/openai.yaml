@@ -1,0 +1,4 @@
+interface:
+  display_name: "Taskdeck Failure Capture"
+  short_description: "Record Taskdeck failures and workarounds"
+  default_prompt: "Use $taskdeck-failure-capture to classify failed tools, tests, CI, docs checks, and workarounds before handoff."

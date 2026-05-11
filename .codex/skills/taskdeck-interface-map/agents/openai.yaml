@@ -1,0 +1,4 @@
+interface:
+  display_name: "Taskdeck Interface Map"
+  short_description: "Maintain Taskdeck agent interface maps"
+  default_prompt: "Use $taskdeck-interface-map to add or update Taskdeck agent-facing interface maps for complex seams."

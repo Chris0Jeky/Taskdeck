@@ -1,0 +1,4 @@
+interface:
+  display_name: "Taskdeck Question Batch"
+  short_description: "Batch blocker questions for Taskdeck work"
+  default_prompt: "Use $taskdeck-question-batch to decide whether to ask, assume, or proceed on this Taskdeck task."
