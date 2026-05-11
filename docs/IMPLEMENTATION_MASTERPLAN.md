@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-05-05
+Last Updated: 2026-05-11
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -50,7 +50,14 @@ Paper backend gap delivery (2026-05-05, PRs `#1031`--`#1040`, 10 of 10 issues `#
 - Key review fixes: 100k entity memory risk replaced with server-side GROUP BY (`#1032`), board-scoped similar-decision query (`#1038`), UnitOfWork unique constraint handlers for DailySnapshot/TomorrowNote (`#1037`/`#1035`), CancellationToken threading, reach formula correction (`#1036`), FK enforcement for provenance (`#1039`), conflict-detector create-card false positives, JSON ValueKind guards, projected WIP accounting, missing-column detection, webhook event mapping, and soft-deleted comment counts (`#1040`)
 - New shared infrastructure: `TodayController`, `DailySnapshot` entity + repository, `TomorrowNote` entity + repository, `CountByDateAsync` aggregate audit query, `GetTerminalByActionTypeAsync` and `GetPendingByOperationTargetAsync` proposal repository methods, `CountByCardIdAsync` card-comment aggregate query
 
-Latest tooling addition (2026-04-25):
+Latest tooling addition (2026-05-11):
+- Agentic operating layer expansion added `docs/agentic/QUESTION_PROTOCOL.md`, `docs/agentic/FAILURE_LEDGER.md`, `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`, and `docs/agentic/SKILL_REGISTRY.md` so blocker questions, failed tools/checks, and guide updates are explicit artifacts instead of ad hoc chat memory.
+- `autodoc/AGENT_INDEX.md` now provides a low-context seam map, context traps, and verification hints for Taskdeck agents.
+- Codex and Claude skill mirrors now include `taskdeck-question-batch`, `taskdeck-failure-capture`, and `taskdeck-interface-map`.
+- Claude project settings now call deterministic hook scripts under `scripts/agent_hooks/` for dangerous shell-command checks and failed-tool ledger capture.
+- Codex/Claude tool parity is now documented in `docs/agentic/AGENT_TOOL_PARITY.md`, and Claude `.mcp.json` mirrors the shared MCP baseline for OpenAI docs, GitHub, Context7, Playwright, Chrome DevTools, and Docker gateway access.
+
+Previous tooling addition (2026-04-25):
 - Codex high-autonomy workflow hardening delivered: `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` now defines issue batch orchestration, worktree workers, PR review loops, CI/comment/conflict recovery, no-silent-deferral rules, and docs rehydration.
 - Repo-local Codex skills added for issue batch orchestration, isolated issue workers, PR review loops, and CI/conflict recovery.
 - PowerShell git/worktree guard scripts and GitHub helper scripts added for Windows-safe batch execution.

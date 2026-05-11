@@ -14,6 +14,8 @@ A local-first execution workspace for developers. Core thesis: near-zero-frictio
 4. `AGENTS.md` -- full contributor protocol, definition of done, output expectations
 5. `.claude/README.md` -- Claude Code workspace routing, local skills, and worktree expectations
 6. `.codex/README.md` and `.codex/memories/00_ACTIVE.md` -- Codex control-plane alignment when comparing or sharing workflows
+7. `autodoc/AGENT_INDEX.md` -- fast agent seam map
+8. `docs/agentic/QUESTION_PROTOCOL.md` and `docs/agentic/FAILURE_LEDGER.md` -- blockers, assumptions, failures, and workarounds
 
 Precedence when instructions conflict: `docs/STATUS.md` > `AGENTS.md` > this file.
 
@@ -108,6 +110,8 @@ Mock provider is default. OpenAI and Gemini supported behind config gates. See `
 - After edits: run required checks and report results.
 - For product-facing slices, ensure scope aligns with the thesis (reduce maintenance overhead/capture friction, preserve review-first trust).
 - Use `.claude/skills/README.md` to pick a local Claude skill for broad, issue, PR-review, CI-recovery, backend, frontend, capture/review, demo, or verification work.
+- Use `docs/agentic/QUESTION_PROTOCOL.md` before asking; batch true blockers and proceed with explicit assumptions for reversible choices.
+- Use `docs/agentic/FAILURE_LEDGER.md` for unresolved command/tool/test/CI failures and promote recurring lessons through `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`.
 - Use spawned subagents or Claude worktree agents only when the user explicitly asks for delegation/parallel work or the task prompt grants that authority. Keep one coordinator responsible for final synthesis and verification.
 
 ## Definition of Done
@@ -152,6 +156,8 @@ ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template 
 - `docs/TESTING_GUIDE.md` -- test operations reference
 - `docs/ISSUE_EXECUTION_GUIDE.md` -- dependency-aware issue execution order
 - `docs/MCP_TOOLING_GUIDE.md` -- MCP tool selection rules
+- `autodoc/AGENT_INDEX.md` -- fast agent seam map and context traps
+- `docs/agentic/` -- question, failure, guide-update, and skill-registry protocols
 - `docs/platform/CONFIGURATION_REFERENCE.md` -- appsettings/env var/Docker Compose reference for every backend setting
 - `docs/platform/EF_MIGRATION_WORKFLOW.md` -- EF Core migration operations and best practices
 - `AGENTS.md` -- full contributor protocol

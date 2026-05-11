@@ -16,6 +16,8 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 ## MCP tools (agent tooling)
 - See `docs/MCP_TOOLING_GUIDE.md` for tool selection rules and safe usage.
 - For high-autonomy Codex issue/PR/CI batches, see `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`.
+- For low-context agent orientation, use `autodoc/AGENT_INDEX.md`.
+- For blocker questions, unresolved failures, guide updates, and skill routing, use `docs/agentic/`.
 - MCP-first default: when an MCP tool can perform a task, use MCP before shell/CLI alternatives.
 - Prefer MCP tools over guessing:
     - OpenAI/Codex/API docs -> openaiDeveloperDocs MCP
@@ -60,10 +62,15 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - Use `.codex/skills/taskdeck-capture-review-loop` when capture, inbox, proposal review, execute flow, provenance, or board handoff semantics are involved.
 - Use `.codex/skills/taskdeck-demo-regression` when a task needs the right evidence path, seeded demo state, Playwright proof, or stakeholder-facing walkthrough validation.
 - Use `.codex/skills/taskdeck-verification-doc-sync` at the end of implementation to choose the right checks, update only the right docs, and prepare the required Taskdeck handoff summary.
+- Use `.codex/skills/taskdeck-question-batch` when ambiguity needs a blocker/assumption decision instead of context-expensive question loops.
+- Use `.codex/skills/taskdeck-failure-capture` when failed tools, tests, CI, MCP, docs checks, or workarounds must be classified and surfaced.
+- Use `.codex/skills/taskdeck-interface-map` when adding, splitting, or documenting complex seams that should be findable through `autodoc/AGENT_INDEX.md`.
 
 ## Work protocol (required)
 - Before edits: write a short plan (files, approach, risks, tests).
 - Keep diffs small and scoped; avoid large mixed refactors.
+- Ask only for true blockers; otherwise proceed with explicit assumptions. Use `docs/agentic/QUESTION_PROTOCOL.md`.
+- Do not silently bury failed commands or tool workarounds. Use `docs/agentic/FAILURE_LEDGER.md` when unresolved failures matter for future agents or handoff confidence.
 - Prefer incremental execution with incremental, file-scoped commits when the work spans multiple files or concerns.
 - After edits: run required checks and report results.
 - If you cannot run checks, state exactly why and what you would run.

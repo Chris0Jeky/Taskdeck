@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-05-05
+Last Updated: 2026-05-11
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -54,6 +54,32 @@ npx vitest --run
 $code = $LASTEXITCODE
 Pop-Location
 if ($code -ne 0) { exit $code }
+```
+
+## Agentic Operating Layer Smoke Checks
+
+For docs/skill/hook-only agentic changes, use targeted checks rather than the full product suite unless product runtime files changed:
+
+```powershell
+Get-Content -Raw .mcp.json | ConvertFrom-Json | Out-Null
+Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
+python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-question-batch
+python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-failure-capture
+python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-interface-map
+python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-question-batch
+python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-failure-capture
+python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-interface-map
+python scripts\agent_hooks\render_failure_ledger.py
+node scripts\check-docs-governance.mjs
+node scripts\check-golden-principles.mjs
+```
+
+When MCP availability itself is part of the change, also run the active runtime's MCP listing/auth command if available. Do not claim remote MCP connectivity unless the current session actually verified it.
+
+When `.claude/settings.json` changes outside the agentic smoke path, also parse it with PowerShell:
+
+```powershell
+Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
 ```
 
 ## Paper Backend Gap Testing (2026-05-05, PRs `#1031`–`#1040`)

@@ -42,7 +42,7 @@ Stable reference material belongs in topical subfolders.
   - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
   - current roadmap input: root `taskdeck-12-week-roadmap-v4.md`, reconciled through tracker `#972`
 - Contributor or agent:
-  - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `GOLDEN_PRINCIPLES.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `MCP_TOOLING_GUIDE.md`
+  - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `GOLDEN_PRINCIPLES.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `MCP_TOOLING_GUIDE.md` -> `../autodoc/AGENT_INDEX.md` -> `agentic/SKILL_REGISTRY.md`
 - Demo operator:
   - `START_HERE.md` -> `product/DEMO_PLAYBOOK.md` -> `product/SAUL_DEMO_REHEARSAL_CONTRACT.md` -> `product/SCENARIOS.md` -> `product/DOGFOODING_GUIDE.md`
 
@@ -62,6 +62,8 @@ Stable reference material belongs in topical subfolders.
   - Codex-friendly task catalog: self-contained, token-efficient task prompts for lightweight agents. Organized by tier (frontend-api, frontend-composables, frontend-stores, backend-domain, backend-services). Each `.md` is a standalone prompt with source paths, pattern files, test cases, and verify commands. Tracked as `TST-CODEX-*` issues (`#415`-`#429`).
 - `tooling/`
   - MCP operations, harness or tooling guidance, and deferred tooling backlog.
+- `agentic/`
+  - Shared agent question, failure, guide-update, tool-parity, and skill-registry protocols. This is a contributor/agent operating layer, not product truth.
 - `analysis/`
   - Dated reconciliation notes, audits, and planning snapshots. Non-authoritative unless promoted.
   - includes `analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md` for ongoing promotion of `docs/InReview/MVP_EXPANSION/` into canonical docs and backlog guidance.
@@ -76,6 +78,8 @@ Stable reference material belongs in topical subfolders.
   - Historical and superseded docs. Non-authoritative by default.
 - `WIP/`
   - External or unpromoted working material that has not yet been reconciled.
+- `../autodoc/`
+  - Agent-facing seam maps and context-trap indexes. These maps are pointers over the codebase, not canonical status docs.
 
 ## Working Notes
 

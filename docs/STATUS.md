@@ -1,8 +1,8 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-05-05
+Last Updated: 2026-05-11
 
-Paper backend gap delivery (10 of 10 issues, `#1015`–`#1024`, PRs `#1031`–`#1040`), after review-first AI roadmap v4 second-wave delivery.
+Agentic operating layer expansion after Paper backend gap delivery (10 of 10 issues, `#1015`–`#1024`, PRs `#1031`–`#1040`) and review-first AI roadmap v4 second-wave delivery.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -22,6 +22,13 @@ Rebranding thesis (2026-02-23):
 - capture should be near-zero friction
 - automation should remain review-first and provenance-visible
 - product value is reducing maintenance overhead, not maximizing opaque autonomy
+
+Agentic operating layer expansion (2026-05-11):
+- Taskdeck now has a shared agentic protocol layer under `docs/agentic/` for blocker-question batching, failure/workaround capture, guide-update promotion rules, and skill routing.
+- `autodoc/AGENT_INDEX.md` is the fast agent seam map for low-context orientation, context traps, and verification hints; it is a pointer layer, not canonical product truth.
+- Codex and Claude skill mirrors now include `taskdeck-question-batch`, `taskdeck-failure-capture`, and `taskdeck-interface-map`.
+- Claude project hooks now route dangerous shell-command checks and failed-tool capture through `scripts/agent_hooks/`, while preserving existing Taskdeck-specific pre-commit and PR-review reminders.
+- Codex and Claude tool parity is explicit in `docs/agentic/AGENT_TOOL_PARITY.md`; Claude `.mcp.json` now mirrors the shared MCP baseline with OpenAI docs, GitHub, Context7, Playwright, Chrome DevTools, and Docker gateway access.
 
 Paper backend gap delivery (2026-05-05, PRs `#1031`--`#1040`, 10 of 10 issues `#1015`--`#1024`):
 - 10 Paper backend gaps delivered or merge-ready with two rounds of adversarial review per PR; ~480 new backend tests across the delivered set; bot review findings (Gemini Code Assist + Codex connector) addressed on delivered PRs
@@ -52,7 +59,7 @@ Roadmap v4 second-wave delivery (2026-04-25, PRs `#989`--`#994` + `#995`):
 Current constraints are mostly hardening and consistency:
 - `taskdeck-12-week-roadmap-v4.md` has been promoted from research input into the active near-horizon planning spine via tracker `#972` and child issues `#973`--`#984`. The accepted framing is: automation-originated board writes must stay proposal-first, manual board UI writes stay direct and auditable as user-manual activity, and outbound data flow must be guarded separately through the EgressEnvelope/disclosure/MCP-hash/telemetry controls.
 - Roadmap v4 execution progress: RFAI-01 through RFAI-06 and RFAI-08 foundational slices are now delivered (7 of 12 issues); remaining: RFAI-07 (hybrid retrieval), RFAI-09 (agent runtime), RFAI-10 (PWA share-target), RFAI-11 (ambient channel), RFAI-12 (learning loop UI + beta gate).
-- Codex and Claude high-autonomy issue execution now have first-class local guidance: `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/skills/README.md`, `.claude/README.md`, `.claude/skills/README.md`, `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`, generalized worktree protocol, PowerShell git/worktree guards, GitHub helper scripts, Project v2 priority audit/sync support, and dedicated skills for batch orchestration, worktree issue workers, PR review loops, and CI/conflict recovery. A reusable Gitleaks workflow syntax issue in the summary heredoc has been corrected after the workflow began failing before job creation.
+- Codex and Claude high-autonomy issue execution now have first-class local guidance: `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/skills/README.md`, `.claude/README.md`, `.claude/skills/README.md`, `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`, generalized worktree protocol, PowerShell git/worktree guards, GitHub helper scripts, Project v2 priority audit/sync support, and dedicated skills for batch orchestration, worktree issue workers, PR review loops, CI/conflict recovery, question batching, failure capture, and interface-map maintenance. A reusable Gitleaks workflow syntax issue in the summary heredoc has been corrected after the workflow began failing before job creation.
 - ~~**security bug discovered 2026-04-03**: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `ChangePassword` now derives userId exclusively from JWT claims; `[Authorize]` enforced; `UserId` removed from request body; `AuthController` inherits `AuthenticatedControllerBase`; 5 integration tests proving the fix
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
