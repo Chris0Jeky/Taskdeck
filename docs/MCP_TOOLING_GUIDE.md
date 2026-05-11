@@ -1,11 +1,12 @@
-# MCP Tooling Guide for Taskdeck Agents (Codex)
+# MCP Tooling Guide for Taskdeck Agents
 
-**Audience:** Codex CLI / IDE agents working in this repo (also referenced by Claude Code agents).  
+**Audience:** Codex CLI / IDE agents and Claude Code agents working in this repo.
 **Goal:** Make tool usage automatic and predictable.
 
 Operational companion:
 - `docs/tooling/MCP_OPERATIONS_RUNBOOK.md` (credential setup, verification, and recurring workflow)
 - `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` (Codex issue/PR/CI batch workflow)
+- `docs/agentic/AGENT_TOOL_PARITY.md` (Codex/Claude parity and native-tool selection)
 
 ---
 
@@ -16,6 +17,13 @@ Operational companion:
 - Use shell/CLI only when MCP is unavailable, failing, or does not support the required operation.
 - When falling back, note the reason briefly in the work summary.
 - For high-autonomy batches, report actual MCP/GitHub/subagent availability at session start because runtime availability can differ from `.codex/config.toml`.
+- For unresolved MCP/tool failures, classify the result with `docs/agentic/FAILURE_LEDGER.md` instead of silently switching tools.
+
+### 0.1) Codex and Claude configuration parity
+- Codex project MCP servers live in `.codex/config.toml`.
+- Claude project MCP servers live in `.mcp.json`, with project approval and `/mcp` authentication where required.
+- Keep the shared baseline aligned: `openaiDeveloperDocs`, `github`, `context7`, `playwright`, `chromeDevTools`, and the Docker MCP gateway.
+- Use each runtime's native mechanics: Codex configured agents/worktrees when policy allows; Claude skills/hooks/worktree sessions and MCP auth flow.
 
 ### 1) Prefer the right tool over guessing
 - OpenAI/Codex/OpenAI API questions -> `openaiDeveloperDocs` MCP
@@ -27,7 +35,7 @@ Operational companion:
 - Repo/PR/issue state and automation -> `github` MCP
 
 ### 2) Write actions are high risk
-GitHub MCP has write capability in this environment. Use write actions only when the task explicitly requires them.
+GitHub MCP may have write capability in this environment. Use write actions only when the task explicitly requires them and authentication has been verified in the active runtime.
 - Allowed writes: create/update issues, update PR title/body, add comments, set labels, link issues to PRs
 - Do not do: change repo settings, secrets, branch protections, webhooks, environments, workflows, or merge without green CI
 
@@ -39,7 +47,7 @@ When you use MCP tools, include:
 
 ---
 
-## Current MCP Status (as of 2026-02-20)
+## Current MCP Status (baseline carried forward; verify at session start)
 
 | Server | Status | Notes |
 |---|---:|---|
@@ -63,6 +71,10 @@ When you use MCP tools, include:
 | `ripgrep` | PARTIAL/FAIL | Server reachable; Windows path ops failing; use native `rg` |
 
 Treat `ripgrep` MCP as unavailable until fixed.
+
+Configuration note:
+- Claude `.mcp.json` mirrors the shared baseline and uses `cmd /c npx ...` for local `npx` MCP servers on native Windows.
+- Remote GitHub/OpenAI MCP availability still depends on active runtime authentication and should be checked before claiming tool-backed findings.
 
 ---
 
