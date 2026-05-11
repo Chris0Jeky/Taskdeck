@@ -30,6 +30,9 @@
       "Bash(npx playwright:*)",
       "Bash(npx vue-tsc:*)",
       "Bash(npx eslint:*)",
+      "Bash(python scripts/agent_hooks/pre_tool_use.py:*)",
+      "Bash(python scripts/agent_hooks/post_tool_failure.py:*)",
+      "Bash(python scripts/agent_hooks/render_failure_ledger.py:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
@@ -56,8 +59,15 @@
     "deny": [
       "Bash(git push --force:*)",
       "Bash(git push --force-with-lease:*)",
+      "Bash(git clean -fd:*)",
+      "Bash(git checkout --:*)",
       "Bash(rm -rf /:*)",
-      "Bash(git reset --hard:*)"
+      "Bash(rm -rf *:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(sudo *)",
+      "Bash(chmod -R 777 *)",
+      "Bash(curl * | sh*)",
+      "Bash(wget * | sh*)"
     ]
   },
   "hooks": {
@@ -67,7 +77,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r \".tool_input.command // empty\"); if echo \"$CMD\" | grep -qiE \"(git\\s+push\\s+--force|rm\\s+-rf\\s+/|DROP\\s+TABLE|DROP\\s+DATABASE)\"; then echo \"BLOCKED: Destructive command detected: $CMD\" >&2; exit 2; fi; exit 0'",
+            "command": "python scripts/agent_hooks/pre_tool_use.py",
             "timeout": 5
           }
         ]
@@ -115,6 +125,18 @@
             "if": "Bash(gh pr create*)",
             "command": "bash -c 'echo \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"PR created. MANDATORY: Run /adversarial-review on this PR now. Post findings as PR comment, fix ALL severities, push fixes, check bot comments, post follow-up.\\\"}}\"'",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/agent_hooks/post_tool_failure.py",
+            "timeout": 10
           }
         ]
       }
