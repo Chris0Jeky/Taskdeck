@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 # Pre-commit hook: runs backend build and frontend typecheck
 # based on which file types are staged.
+# When invoked as a Claude hook, stdin carries a JSON payload;
+# skip if the tool call is not a git-commit Bash invocation.
+
+STDIN_DATA=""
+if [ ! -t 0 ]; then
+  STDIN_DATA=$(cat)
+fi
+
+if [ -n "$STDIN_DATA" ]; then
+  TOOL_NAME=$(echo "$STDIN_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || true)
+  COMMAND=$(echo "$STDIN_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null || true)
+  if [ "$TOOL_NAME" != "Bash" ] || ! echo "$COMMAND" | grep -q '\bgit[[:space:]]\+commit\b'; then
+    exit 0
+  fi
+fi
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 

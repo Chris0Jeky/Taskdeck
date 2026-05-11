@@ -59,12 +59,15 @@ def main() -> int:
 
     tool_name = payload.get("tool_name", "unknown")
     tool_input = payload.get("tool_input", {}) or {}
+    raw_error = payload.get("error") or payload.get("stderr") or payload.get("message") or payload
+    if isinstance(raw_error, dict):
+        raw_error = raw_error.get("message") or raw_error
     entry = {
         "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
         "class": "unclassified",
         "surface": scrub(tool_name, 80),
         "command_or_target": scrub(tool_input.get("command") or tool_input.get("file_path") or tool_input, 500),
-        "failure": scrub(payload.get("error") or payload.get("stderr") or payload.get("message") or payload, 1000),
+        "failure": scrub(raw_error, 1000),
         "workaround": "",
         "future_fix": "classify and promote if recurring",
         "status": "open",
