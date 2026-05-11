@@ -76,6 +76,8 @@ node scripts\check-docs-governance.mjs
 node scripts\check-golden-principles.mjs
 ```
 
+The hook smoke test executes the configured `.claude/settings.json` command handlers with `CLAUDE_PROJECT_DIR` set, including Windows PowerShell hook commands, representative dangerous-command denials, failure-ledger redaction, and pre-commit no-op behavior.
+
 When MCP availability itself is part of the change, also run the active runtime's MCP listing/auth command if available. Do not claim remote MCP connectivity unless the current session actually verified it.
 
 When `.claude/settings.json` changes outside the agentic smoke path, also parse it with PowerShell:
