@@ -69,6 +69,8 @@ python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_valida
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-question-batch
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-failure-capture
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-interface-map
+Get-ChildItem scripts\agent_hooks -Filter *.py | ForEach-Object { python -m py_compile $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+python scripts\agent_hooks\smoke_test.py
 python scripts\agent_hooks\render_failure_ledger.py
 node scripts\check-docs-governance.mjs
 node scripts\check-golden-principles.mjs

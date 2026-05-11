@@ -31,8 +31,10 @@
       "Bash(npx vue-tsc:*)",
       "Bash(npx eslint:*)",
       "Bash(python scripts/agent_hooks/pre_tool_use.py:*)",
+      "Bash(python scripts/agent_hooks/post_tool_use.py:*)",
       "Bash(python scripts/agent_hooks/post_tool_failure.py:*)",
       "Bash(python scripts/agent_hooks/render_failure_ledger.py:*)",
+      "Bash(python scripts/agent_hooks/smoke_test.py:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
@@ -108,11 +110,11 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r \".tool_input.file_path // empty\"); if echo \"$FILE\" | grep -qE \"\\.(vue|ts)$\"; then if echo \"$FILE\" | grep -q \"frontend/taskdeck-web\"; then echo \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Vue/TS file edited: $FILE -- consider running typecheck if making multiple related edits.\\\"}}\"; fi; fi; exit 0'",
+            "command": "python scripts/agent_hooks/post_tool_use.py",
             "timeout": 5
           }
         ]
@@ -123,7 +125,7 @@
           {
             "type": "command",
             "if": "Bash(gh pr create*)",
-            "command": "bash -c 'echo \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"PR created. MANDATORY: Run /adversarial-review on this PR now. Post findings as PR comment, fix ALL severities, push fixes, check bot comments, post follow-up.\\\"}}\"'",
+            "command": "python scripts/agent_hooks/post_tool_use.py",
             "timeout": 5
           }
         ]
