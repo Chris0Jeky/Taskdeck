@@ -88,6 +88,8 @@ For EACH finding at EVERY severity level:
 
 Only skip a fix if it would cause worse problems. Explain that in the PR comment.
 
+If a finding is real but out of scope for this PR, seed a GitHub issue to track it. Never silently drop findings.
+
 ## Step 6: Push and verify
 
 ```bash
@@ -113,9 +115,11 @@ All findings addressed. CI status: [GREEN/PENDING/RED]
 ## Rules
 
 - **NEVER** pause between steps to ask "want me to continue?" or "should I fix these?"
-- **NEVER** skip MEDIUM or LOW findings by default
+- **NEVER** skip MEDIUM or LOW findings — there is no "non-blocking" category
 - All seven steps are one atomic operation
 - Use worktree isolation when fixing branches you didn't create
 - For multiple PRs: spawn parallel agents, each running the full pipeline independently
 - If a finding requires understanding the broader codebase, use the Explore agent first
-- Always check bot comments and address them alongside code findings
+- Always check bot comments, human review comments, and previous review threads — address anything unaddressed
+- Out-of-scope findings must be seeded as GitHub issues, never silently dropped
+- Tech debt from reviews must be zero: fix, track, or explicitly invalidate every finding

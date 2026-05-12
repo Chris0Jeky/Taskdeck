@@ -35,11 +35,11 @@ Prioritize actionable findings:
 - clean architecture violations (Domain referencing Infrastructure)
 - HTTP semantics violations (wrong status codes)
 
-Use severities: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. All accepted findings need a fix, invalidation evidence, or an explicit tracked follow-up.
+Use severities: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. All findings at every severity need a fix, invalidation evidence, or a tracked follow-up (GitHub issue). There is no "non-blocking" category — everything gets addressed. Out-of-scope findings must be seeded as issues, never silently dropped.
 
-## Bot Comment Check (MANDATORY)
+## PR Comment Check (MANDATORY)
 
-Before posting findings, check ALL existing PR comments:
+Before posting findings, check ALL existing PR comments (human reviews, bot comments, and previous review threads):
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/comments
@@ -52,9 +52,10 @@ Look for:
 - CodeQL / security scanning findings
 - CI bot failure messages
 - Previous adversarial review comments not yet resolved
+- Human review comments not yet addressed
 - Any automated tool output needing action
 
-Include bot findings in the review output under "### Bot Comments Addressed".
+Address everything unaddressed: fix it, reply with invalidation evidence, or seed a tracked GitHub issue. Include all comment findings in the review output under "### Existing Comments Addressed".
 
 ## Review Output
 
@@ -117,7 +118,10 @@ All findings addressed. CI status: [GREEN/PENDING/RED]
 ## Rules
 
 - NEVER pause between review, post, fix, push — it is one atomic operation
-- NEVER skip MEDIUM or LOW findings
-- Always check bot comments before posting findings
+- NEVER skip MEDIUM or LOW findings — there is no "non-blocking" category
+- Always check ALL existing PR comments (human, bot, previous reviews) before posting findings
+- Address every unaddressed comment: fix, invalidate with evidence, or seed a GitHub issue
+- Out-of-scope findings must be seeded as GitHub issues, never silently dropped
 - Always post a follow-up comment after fixes are pushed
 - Verify CI is green after pushing with `gh pr checks`
+- Tech debt from reviews must be zero

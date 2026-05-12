@@ -114,6 +114,16 @@ Mock provider is default. OpenAI and Gemini supported behind config gates. See `
 - Use `docs/agentic/FAILURE_LEDGER.md` for unresolved command/tool/test/CI failures and promote recurring lessons through `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`.
 - Use spawned subagents or Claude worktree agents only when the user explicitly asks for delegation/parallel work or the task prompt grants that authority. Keep one coordinator responsible for final synthesis and verification.
 
+## Review Policy
+
+Every code review — self-review, adversarial review, subagent review — follows these rules:
+
+1. **Post findings on the PR.** Unless the user explicitly says otherwise, when a review targets a PR, post a comment with all findings organized by severity.
+2. **Fix everything found.** Every finding at every severity (CRITICAL, HIGH, MEDIUM, LOW) must be addressed. No "non-blocking" dismissals. Do not skip lower-priority findings.
+3. **Out-of-scope findings get tracked.** If a finding is real but outside the PR's scope, seed a GitHub issue. Never silently drop it.
+4. **Inspect all existing PR comments.** Before posting findings, read ALL comments — human reviews, bot comments, previous review threads. Address anything unaddressed.
+5. **Post fix evidence.** After fixing findings, post a follow-up comment mapping each finding to its fix commit and verification.
+
 ## Definition of Done
 
 - Behavior changes ship with tests (unit/integration/E2E as appropriate).

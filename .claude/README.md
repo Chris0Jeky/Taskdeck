@@ -27,6 +27,10 @@ This `.claude/` layer contains Claude Code settings and skills for Taskdeck. It 
 - First command in a worktree worker should validate isolation with the repo guard script.
 - Keep one coordinator responsible for final synthesis, docs updates, and verification claims.
 
+## Review Policy
+
+Every review (self-review, adversarial, subagent) must follow `AGENTS.md` Review Policy: post findings on the PR, fix everything at every severity, check and address ALL existing PR comments (human, bot, previous reviews), and seed GitHub issues for out-of-scope findings. No "non-blocking" dismissals. Tech debt from reviews must be zero.
+
 ## Failure And Question Protocols
 
 - Use `docs/agentic/QUESTION_PROTOCOL.md` before asking context-expensive questions.

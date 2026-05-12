@@ -39,6 +39,10 @@ As of the active docs, Taskdeck is in review-first AI and Paper backend gap deli
 
 For Claude Code, read `docs/STATUS.md` first, then use `.claude/README.md` and `CLAUDE.md` for Claude-specific routing.
 
+## Review Policy
+
+Every review (self-review, adversarial, subagent) must: post findings on the PR as a comment, fix everything at every severity, check and address ALL existing PR comments (human, bot, previous reviews), and seed GitHub issues for out-of-scope findings. No "non-blocking" dismissals. See `AGENTS.md` Review Policy for full rules.
+
 ## Agent Coordination Rules
 
 - Use spawned subagents without asking for extra permission when they are efficient or effective for safely parallelizable work.

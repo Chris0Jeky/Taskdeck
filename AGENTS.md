@@ -97,6 +97,18 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - If the user did not clearly ask for the change, prompt first and offer to let the user apply it directly on `main`.
 - Only proceed with branch/PR flow for these tiny changes when the user explicitly asks for it.
 
+## Review Policy (non-negotiable)
+
+Every code review — self-review, adversarial review, subagent review — follows these rules:
+
+1. **Post findings on the PR.** Unless the user explicitly says otherwise, when a review targets a PR, post a comment with all findings organized by severity. This is the default, not optional.
+2. **Fix everything found.** Every finding at every severity (CRITICAL, HIGH, MEDIUM, LOW) must be addressed with a fix, commit, and verification. There is no "non-blocking" category that gets ignored. Do not skip lower-priority findings.
+3. **Out-of-scope findings get tracked, not buried.** If a finding is real but drifts outside the PR's scope, document it and seed a GitHub issue (or add to an existing tracking issue). Never silently drop it. Tech debt from reviews must be zero.
+4. **Inspect all existing PR comments.** Before posting findings, read ALL comments on the PR — human reviews, bot comments (Dependabot, CodeQL, CI bots), and previous adversarial review threads. Address anything unaddressed: fix it, reply with invalidation evidence, or seed a tracked follow-up.
+5. **Post fix evidence.** After fixing findings, post a follow-up comment mapping each finding to its fix commit and verification result.
+
+These rules apply equally to Claude and Codex agents, subagents, and worktree workers.
+
 ## Definition of Done (non-negotiable)
 - Behavior changes ship with tests (unit/integration/E2E as appropriate).
 - Handle error cases explicitly; do not swallow failures.
@@ -150,7 +162,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
   (commands run, screenshots for UI changes). Link related issues/tasks where applicable.
 - Keep PRs focused and small when possible; prefer follow-up PRs for refactors or additional cleanup.
 - PRs touching CI workflows (`.github/workflows/`), infrastructure (`deploy/`, `scripts/`), or project files (`*.csproj`) auto-trigger CI Extended. Ensure CI Extended is green before merging these PRs.
-- For issue execution unless the user explicitly says otherwise: open the PR after verification is complete, then perform a deliberate reviewer-style pass on the PR diff/comments before handoff.
+- For issue execution unless the user explicitly says otherwise: open the PR after verification is complete, then perform a deliberate reviewer-style pass on the PR diff/comments before handoff. Follow the Review Policy: post findings, fix everything, address all existing comments, and seed issues for out-of-scope items. Follow the Review Policy: post findings, fix everything, address all existing comments, and seed issues for out-of-scope items.
 
 ## Output expectations (after work)
 Provide:

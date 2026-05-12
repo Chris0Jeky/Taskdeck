@@ -29,8 +29,14 @@ gh api repos/{owner}/{repo}/issues/{number}/comments
 gh pr view $ARGUMENTS --comments
 ```
 
-Check for unaddressed bot findings (Dependabot, CodeQL, CI bots, previous adversarial reviews).
-If actionable bot comments exist, fix them before proceeding.
+Check for unaddressed findings from any source:
+- Human review comments not yet resolved
+- Dependabot alerts or suggestions
+- CodeQL / security scanning findings
+- CI bot failure messages
+- Previous adversarial review comments not yet resolved
+
+If actionable comments exist, fix them before proceeding.
 
 ## Step 3: Run local checks
 
@@ -90,6 +96,9 @@ Output a merge-readiness summary:
 ## Rules
 
 - Do NOT merge the PR — only validate and report readiness
-- Fix any self-review issues found (commit + push)
+- Fix ALL self-review issues found at every severity (commit + push) — no "non-blocking" dismissals
 - If CI is red, attempt to fix — only report "blocked" if the fix is non-trivial
-- Always check and address bot comments
+- Always check and address ALL PR comments (human reviews, bot comments, previous review threads)
+- Address every unaddressed comment: fix, invalidate with evidence, or seed a GitHub issue
+- Out-of-scope findings must be seeded as GitHub issues, never silently dropped
+- Post findings as a PR comment unless the user explicitly says otherwise
