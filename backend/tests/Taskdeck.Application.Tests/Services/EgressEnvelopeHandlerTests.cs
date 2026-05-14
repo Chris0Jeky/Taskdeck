@@ -463,6 +463,33 @@ public class EgressEnvelopeHandlerTests
             .WithMessage("*Cannot replay request content*");
     }
 
+    [Fact]
+    public async Task SendAsync_UnderReportedReplayContent_FailsBeforeBufferingPastLimit()
+    {
+        var registry = CreateRegistry("origin.example.com");
+        var inner = new CountingHandler();
+        var handler = new EgressEnvelopeHandler(registry)
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+        var content = new UnderReportedContent(
+            reportedLength: 1,
+            actualLength: EgressEnvelopeHandler.MaxRedirectReplayContentBytes + 1);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://origin.example.com/api")
+        {
+            Content = content
+        };
+
+        var act = async () => await invoker.SendAsync(request, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{EgressEnvelopeHandler.MaxRedirectReplayContentBytes} byte redirect replay limit*");
+        inner.InvocationCount.Should().Be(0);
+        content.WroteBeyondLimit.Should().BeFalse();
+    }
+
     // --- Test Helpers ---
 
     private sealed class StubHandler : HttpMessageHandler
@@ -521,6 +548,18 @@ public class EgressEnvelopeHandlerTests
                 return Task.FromResult(response);
             }
 
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+        }
+    }
+
+    private sealed class CountingHandler : HttpMessageHandler
+    {
+        public int InvocationCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            InvocationCount++;
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         }
     }
@@ -607,6 +646,36 @@ public class EgressEnvelopeHandlerTests
         {
             Disposed = true;
             base.Dispose(disposing);
+        }
+    }
+
+    private sealed class UnderReportedContent : HttpContent
+    {
+        private readonly long _actualLength;
+
+        public UnderReportedContent(long reportedLength, long actualLength)
+        {
+            _actualLength = actualLength;
+            Headers.ContentLength = reportedLength;
+        }
+
+        public bool WroteBeyondLimit { get; private set; }
+
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            var withinLimit = new byte[EgressEnvelopeHandler.MaxRedirectReplayContentBytes];
+            await stream.WriteAsync(withinLimit, 0, withinLimit.Length);
+
+            var extraLength = (int)(_actualLength - withinLimit.Length);
+            var extra = new byte[extraLength];
+            await stream.WriteAsync(extra, 0, extra.Length);
+            WroteBeyondLimit = true;
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = Headers.ContentLength ?? _actualLength;
+            return true;
         }
     }
 }

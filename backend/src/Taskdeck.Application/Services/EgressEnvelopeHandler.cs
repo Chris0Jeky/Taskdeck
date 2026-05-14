@@ -182,12 +182,7 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
             .Select(header => new KeyValuePair<string, string[]>(header.Key, header.Value.ToArray()))
             .ToArray();
 
-        var content = await request.Content.ReadAsByteArrayAsync(cancellationToken);
-        if (content.LongLength > MaxRedirectReplayContentBytes)
-        {
-            throw new InvalidOperationException(
-                $"Request content exceeds the {MaxRedirectReplayContentBytes} byte redirect replay limit.");
-        }
+        var content = await ReadBoundedContentAsync(request.Content, cancellationToken);
 
         var originalContent = request.Content;
         var replayContent = new ReplayableContent(content, headers);
@@ -205,6 +200,15 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
         }
 
         return content;
+    }
+
+    private static async Task<byte[]> ReadBoundedContentAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        using var replayBuffer = new BoundedReplayBuffer(MaxRedirectReplayContentBytes);
+        await content.CopyToAsync(replayBuffer, cancellationToken);
+        return replayBuffer.ToArray();
     }
 
     private static bool IsSameOrigin(Uri? left, Uri right)
@@ -228,6 +232,90 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
            || header.Contains("secret", StringComparison.OrdinalIgnoreCase);
 
     private sealed record ReplayableContent(byte[] Content, IReadOnlyList<KeyValuePair<string, string[]>> Headers);
+
+    private sealed class BoundedReplayBuffer : Stream
+    {
+        private readonly MemoryStream _inner = new();
+        private readonly long _limit;
+
+        public BoundedReplayBuffer(long limit)
+        {
+            _limit = limit;
+        }
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => _inner.Length;
+        public override long Position
+        {
+            get => _inner.Position;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() => _inner.Flush();
+
+        public override Task FlushAsync(CancellationToken cancellationToken)
+            => _inner.FlushAsync(cancellationToken);
+
+        public override int Read(byte[] buffer, int offset, int count)
+            => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin)
+            => throw new NotSupportedException();
+
+        public override void SetLength(long value)
+            => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            ThrowIfExceedsLimit(count);
+            _inner.Write(buffer, offset, count);
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            ThrowIfExceedsLimit(buffer.Length);
+            _inner.Write(buffer);
+        }
+
+        public override Task WriteAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            ThrowIfExceedsLimit(count);
+            return _inner.WriteAsync(buffer, offset, count, cancellationToken);
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfExceedsLimit(buffer.Length);
+            return _inner.WriteAsync(buffer, cancellationToken);
+        }
+
+        public byte[] ToArray() => _inner.ToArray();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _inner.Dispose();
+
+            base.Dispose(disposing);
+        }
+
+        private void ThrowIfExceedsLimit(int nextWriteBytes)
+        {
+            if (_inner.Length + nextWriteBytes > _limit)
+            {
+                throw new InvalidOperationException(
+                    $"Request content exceeds the {MaxRedirectReplayContentBytes} byte redirect replay limit.");
+            }
+        }
+    }
 }
 
 /// <summary>
