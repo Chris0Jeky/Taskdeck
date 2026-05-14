@@ -107,8 +107,22 @@ public class AutomationExecutorService : IAutomationExecutorService
             return Result.Failure(ErrorCodes.InvalidOperation, $"Cannot execute proposal in status {proposal.Status}");
         }
 
+        var effectiveProposalResult = await MaterializeEffectiveProposalAsync(proposal, cancellationToken);
+        if (!effectiveProposalResult.IsSuccess)
+        {
+            _logger?.LogWarning(
+                "Automation proposal execution rejected for proposal {ProposalId} after {DurationMs}ms because revised payload is invalid: {ErrorCode} {ErrorMessage}",
+                proposalId,
+                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+                effectiveProposalResult.ErrorCode,
+                effectiveProposalResult.ErrorMessage);
+            return Result.Failure(effectiveProposalResult.ErrorCode, effectiveProposalResult.ErrorMessage);
+        }
+
+        var effectiveProposal = effectiveProposalResult.Value;
+
         // Revalidate policy before execution
-        var policyResult = _policyEngine.ValidatePolicy(proposal);
+        var policyResult = _policyEngine.ValidatePolicy(effectiveProposal);
         if (!policyResult.IsSuccess)
         {
             _logger?.LogWarning(
@@ -122,9 +136,9 @@ public class AutomationExecutorService : IAutomationExecutorService
 
         // Revalidate permissions
         var permissionResult = await _policyEngine.ValidatePermissionsAsync(
-            proposal.RequestedByUserId,
-            proposal.BoardId,
-            proposal.Operations,
+            effectiveProposal.RequestedByUserId,
+            effectiveProposal.BoardId,
+            effectiveProposal.Operations,
             cancellationToken);
         if (!permissionResult.IsSuccess)
         {
@@ -142,7 +156,7 @@ public class AutomationExecutorService : IAutomationExecutorService
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             // Execute operations in sequence order
-            var orderedOperations = proposal.Operations.OrderBy(o => o.Sequence).ToList();
+            var orderedOperations = effectiveProposal.Operations.OrderBy(o => o.Sequence).ToList();
             var failedOperation = -1;
             var failedResult = Result.Success();
             var failureReason = "";
@@ -159,7 +173,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 }
 
                 // Create audit log for the operation
-                await _auditRecorder.RecordAsync(operation, proposal, cancellationToken);
+                await _auditRecorder.RecordAsync(operation, effectiveProposal, cancellationToken);
             }
 
             if (failedOperation >= 0)
@@ -189,7 +203,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 return Result.Failure(markResult.ErrorCode, markResult.ErrorMessage);
 
             var captureSyncResult = await SyncLinkedCaptureConversionAsync(
-                proposal with
+                effectiveProposal with
                 {
                     Status = ProposalStatus.Applied,
                     AppliedAt = DateTime.UtcNow
@@ -222,6 +236,28 @@ public class AutomationExecutorService : IAutomationExecutorService
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
             return Result.Failure(ErrorCodes.UnexpectedError, $"Failed to execute proposal: {ex.Message}");
         }
+    }
+
+    private async Task<Result<ProposalDto>> MaterializeEffectiveProposalAsync(
+        ProposalDto proposal,
+        CancellationToken cancellationToken)
+    {
+        var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(
+            proposal.Id,
+            cancellationToken);
+        if (latestRevision is null)
+            return Result.Success(proposal);
+
+        if (!ProposalRevisionPayload.TryParseOperations(
+                proposal.Id,
+                latestRevision.RevisedPayload,
+                out var revisedOperations,
+                out var errorMessage))
+        {
+            return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, errorMessage);
+        }
+
+        return Result.Success(proposal with { Operations = revisedOperations });
     }
 
     private async Task<Result> SyncLinkedCaptureConversionAsync(ProposalDto proposal, CancellationToken cancellationToken)

@@ -24,12 +24,12 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-create-happy");
-        var board = await ApiTestHarness.CreateBoardAsync(client, "rev-create-happy-board");
-        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id);
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-create-happy-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
 
         var response = await client.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/revisions",
-            new { revisedPayload = "{\"title\":\"Edited Card\"}", reason = "Adjusted title" });
+            new { revisedPayload = BuildRevisionPayload("Edited Card", board.Id, column.Id), reason = "Adjusted title" });
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var revision = await response.Content.ReadFromJsonAsync<ProposalRevisionDto>();
@@ -37,7 +37,7 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         revision!.ProposalId.Should().Be(proposal.Id);
         revision.RevisionNumber.Should().Be(1);
         revision.EditorUserId.Should().Be(user.UserId);
-        revision.RevisedPayload.Should().Be("{\"title\":\"Edited Card\"}");
+        revision.RevisedPayload.Should().Contain("Edited Card");
         revision.Reason.Should().Be("Adjusted title");
     }
 
@@ -49,7 +49,7 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var response = await client.PostAsJsonAsync(
             $"/api/automation/proposals/{Guid.NewGuid()}/revisions",
-            new { revisedPayload = "{}", reason = "test" });
+            new { revisedPayload = BuildRevisionPayload("Edited Card", Guid.NewGuid(), Guid.NewGuid()), reason = "test" });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var error = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -61,14 +61,14 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-create-conflict");
-        var board = await ApiTestHarness.CreateBoardAsync(client, "rev-create-conflict-board");
-        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id);
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-create-conflict-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
 
         await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
 
         var response = await client.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/revisions",
-            new { revisedPayload = "{}", reason = "too late" });
+            new { revisedPayload = BuildRevisionPayload("Edited Card", board.Id, column.Id), reason = "too late" });
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
@@ -78,8 +78,8 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-create-invalid-json");
-        var board = await ApiTestHarness.CreateBoardAsync(client, "rev-create-invalid-json-board");
-        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id);
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-create-invalid-json-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
 
         var response = await client.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/revisions",
@@ -92,12 +92,30 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateRevision_WithNonArrayOperations_ShouldReturnValidationError()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-create-invalid-shape");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-create-invalid-shape-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = "{\"operations\":\"not an array\"}", reason = "broken snapshot" });
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+    }
+
+    [Fact]
     public async Task GetRevisions_Empty_ShouldReturnEmptyList()
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-list-empty");
-        var board = await ApiTestHarness.CreateBoardAsync(client, "rev-list-empty-board");
-        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id);
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-list-empty-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
 
         var response = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/revisions");
 
@@ -112,15 +130,15 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-list-pop");
-        var board = await ApiTestHarness.CreateBoardAsync(client, "rev-list-pop-board");
-        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id);
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-list-pop-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
 
         await client.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/revisions",
-            new { revisedPayload = "{\"v\":1}", reason = "first edit" });
+            new { revisedPayload = BuildRevisionPayload("First Edit", board.Id, column.Id), reason = "first edit" });
         await client.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/revisions",
-            new { revisedPayload = "{\"v\":2}", reason = "second edit" });
+            new { revisedPayload = BuildRevisionPayload("Second Edit", board.Id, column.Id), reason = "second edit" });
 
         var response = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/revisions");
 
@@ -136,8 +154,8 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-latest-none");
-        var board = await ApiTestHarness.CreateBoardAsync(client, "rev-latest-none-board");
-        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id);
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-latest-none-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
 
         var response = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/revisions/latest");
 
@@ -149,23 +167,53 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-latest-exists");
-        var board = await ApiTestHarness.CreateBoardAsync(client, "rev-latest-exists-board");
-        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id);
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-latest-exists-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
 
         await client.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/revisions",
-            new { revisedPayload = "{\"v\":1}", reason = "first" });
+            new { revisedPayload = BuildRevisionPayload("First Edit", board.Id, column.Id), reason = "first" });
         await client.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/revisions",
-            new { revisedPayload = "{\"v\":2}", reason = "second" });
+            new { revisedPayload = BuildRevisionPayload("Second Edit", board.Id, column.Id), reason = "second" });
 
         var response = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/revisions/latest");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var revision = await response.Content.ReadFromJsonAsync<ProposalRevisionDto>();
         revision.Should().NotBeNull();
-        revision!.RevisedPayload.Should().Be("{\"v\":2}");
+        revision!.RevisedPayload.Should().Contain("Second Edit");
         revision.RevisionNumber.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_WithLatestRevision_ShouldApplyRevisedOperations()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-execute-latest");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-execute-latest-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Card");
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayload("Edited Card", board.Id, column.Id), reason = "Use edited title" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var cardsResponse = await client.GetAsync($"/api/boards/{board.Id}/cards");
+        cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
+
+        cards.Should().NotBeNull();
+        cards!.Should().ContainSingle(card => card.Title == "Edited Card");
+        cards.Should().NotContain(card => card.Title == "Original Card");
     }
 
     [Fact]
@@ -176,12 +224,12 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "rev-authz-owner");
         _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "rev-authz-outsider");
-        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "rev-authz-board");
-        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id);
+        var (board, column) = await CreateBoardWithColumnAsync(ownerClient, "rev-authz-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, column.Id);
 
         var response = await outsiderClient.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/revisions",
-            new { revisedPayload = "{}", reason = "unauthorized" });
+            new { revisedPayload = BuildRevisionPayload("Edited Card", board.Id, column.Id), reason = "unauthorized" });
 
         await ApiTestHarness.AssertForbiddenAsync(response);
     }
@@ -189,7 +237,9 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     private static async Task<ProposalDto> CreateTestProposalAsync(
         HttpClient client,
         Guid userId,
-        Guid boardId)
+        Guid boardId,
+        Guid columnId,
+        string title = "Test Card")
     {
         var createRequest = new CreateProposalDto(
             SourceType: ProposalSourceType.Chat,
@@ -202,14 +252,61 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
             {
                 new(
                     Sequence: 1,
-                    ActionType: "CreateCard",
-                    TargetType: "Card",
-                    Parameters: "{\"title\":\"Test Card\"}",
+                    ActionType: "create",
+                    TargetType: "card",
+                    Parameters: BuildCreateCardParameters(title, boardId, columnId),
                     IdempotencyKey: Guid.NewGuid().ToString())
             });
 
         var response = await client.PostAsJsonAsync("/api/automation/proposals", createRequest);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
+    }
+
+    private static async Task<(BoardDto Board, ColumnDto Column)> CreateBoardWithColumnAsync(
+        HttpClient client,
+        string stem)
+    {
+        var board = await ApiTestHarness.CreateBoardAsync(client, stem);
+        var columnResponse = await client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "To Do", 0, null));
+        columnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var column = await columnResponse.Content.ReadFromJsonAsync<ColumnDto>();
+        column.Should().NotBeNull();
+        return (board, column!);
+    }
+
+    private static string BuildRevisionPayload(string title, Guid boardId, Guid columnId)
+    {
+        var payload = new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 1,
+                    actionType = "create",
+                    targetType = "card",
+                    targetId = (string?)null,
+                    parameters = BuildCreateCardParameters(title, boardId, columnId),
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    expectedVersion = (string?)null
+                }
+            }
+        };
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    private static string BuildCreateCardParameters(string title, Guid boardId, Guid columnId)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            title,
+            boardId,
+            columnId
+        });
     }
 }

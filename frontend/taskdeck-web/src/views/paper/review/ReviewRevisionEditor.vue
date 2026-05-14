@@ -23,6 +23,23 @@ const fields = ref<EditableField[]>([])
 const reason = ref('')
 const parseError = ref(false)
 
+const jsonFieldErrors = computed(() => {
+  const errors: Record<string, string> = {}
+  for (const field of fields.value) {
+    if (field.valueKind !== 'json') continue
+
+    try {
+      JSON.parse(field.value)
+    } catch {
+      errors[field.key] = 'Enter valid JSON before saving.'
+    }
+  }
+
+  return errors
+})
+
+const hasJsonFieldErrors = computed(() => Object.keys(jsonFieldErrors.value).length > 0)
+
 function parsePayload() {
   try {
     const parsed = JSON.parse(props.operationsPayload) as Record<string, unknown>
@@ -41,7 +58,7 @@ function parsePayload() {
 watch(() => props.operationsPayload, parsePayload, { immediate: true })
 
 const canSave = computed(() => {
-  return reason.value.trim().length > 0 && !props.saving
+  return reason.value.trim().length > 0 && !props.saving && !hasJsonFieldErrors.value
 })
 
 function onSave() {
@@ -61,7 +78,7 @@ function onSave() {
       try {
         obj[field.key] = JSON.parse(field.value) as unknown
       } catch {
-        obj[field.key] = field.value
+        return
       }
     }
     revisedPayload = JSON.stringify(obj)
@@ -87,6 +104,13 @@ function onSave() {
           rows="2"
           :data-testid="`revision-field-${field.key}`"
         />
+        <p
+          v-if="jsonFieldErrors[field.key]"
+          class="revision-editor__error"
+          :data-testid="`revision-field-${field.key}-error`"
+        >
+          {{ jsonFieldErrors[field.key] }}
+        </p>
       </div>
     </div>
 
@@ -154,6 +178,11 @@ function onSave() {
   background: var(--paper);
   color: var(--text);
   resize: vertical;
+}
+.revision-editor__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--td-color-error);
 }
 .revision-editor__reason {
   margin-top: 12px;

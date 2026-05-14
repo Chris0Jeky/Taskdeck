@@ -31,10 +31,15 @@ public class ProposalRevisionService : IProposalRevisionService
                     ErrorCodes.InvalidOperation,
                     $"Cannot create revision for proposal in status {proposal.Status}");
 
-            if (!IsValidJson(dto.RevisedPayload))
+            var payloadValidation = ProposalRevisionPayload.TryParseOperations(
+                dto.ProposalId,
+                dto.RevisedPayload,
+                out _,
+                out var validationError);
+            if (!payloadValidation)
                 return Result.Failure<ProposalRevisionDto>(
                     ErrorCodes.ValidationError,
-                    "RevisedPayload must be valid JSON");
+                    validationError);
 
             var nextRevisionNumber = await _unitOfWork.ProposalRevisions
                 .GetNextRevisionNumberAsync(dto.ProposalId, cancellationToken);
@@ -105,12 +110,194 @@ public class ProposalRevisionService : IProposalRevisionService
             revision.CreatedAt);
     }
 
-    private static bool IsValidJson(string payload)
+}
+
+internal static class ProposalRevisionPayload
+{
+    public static bool TryParseOperations(
+        Guid proposalId,
+        string payload,
+        out List<ProposalOperationDto> operations,
+        out string errorMessage)
+    {
+        operations = new List<ProposalOperationDto>();
+        errorMessage = string.Empty;
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                errorMessage = "RevisedPayload must be a JSON object";
+                return false;
+            }
+
+            if (!document.RootElement.TryGetProperty("operations", out var operationsElement))
+            {
+                errorMessage = "RevisedPayload must contain an operations array";
+                return false;
+            }
+
+            if (operationsElement.ValueKind != JsonValueKind.Array)
+            {
+                errorMessage = "RevisedPayload operations must be an array";
+                return false;
+            }
+
+            foreach (var operationElement in operationsElement.EnumerateArray())
+            {
+                if (!TryParseOperation(proposalId, operationElement, out var operation, out errorMessage))
+                    return false;
+
+                operations.Add(operation);
+            }
+
+            if (operations.Count == 0)
+            {
+                errorMessage = "RevisedPayload operations must contain at least one operation";
+                return false;
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            errorMessage = "RevisedPayload must be valid JSON";
+            return false;
+        }
+    }
+
+    private static bool TryParseOperation(
+        Guid proposalId,
+        JsonElement operationElement,
+        out ProposalOperationDto operation,
+        out string errorMessage)
+    {
+        operation = default!;
+        errorMessage = string.Empty;
+
+        if (operationElement.ValueKind != JsonValueKind.Object)
+        {
+            errorMessage = "Each revised operation must be a JSON object";
+            return false;
+        }
+
+        if (!TryGetInt32(operationElement, "sequence", out var sequence, out errorMessage))
+            return false;
+
+        if (sequence < 0)
+        {
+            errorMessage = "Revised operation sequence must be non-negative";
+            return false;
+        }
+
+        if (!TryGetRequiredString(operationElement, "actionType", out var actionType, out errorMessage))
+            return false;
+
+        if (!TryGetRequiredString(operationElement, "targetType", out var targetType, out errorMessage))
+            return false;
+
+        if (!TryGetRequiredString(operationElement, "parameters", out var parameters, out errorMessage))
+            return false;
+
+        if (!IsValidJsonObject(parameters))
+        {
+            errorMessage = "Revised operation parameters must be a JSON object string";
+            return false;
+        }
+
+        if (!TryGetRequiredString(operationElement, "idempotencyKey", out var idempotencyKey, out errorMessage))
+            return false;
+
+        var operationId = TryGetOptionalGuid(operationElement, "id") ?? Guid.Empty;
+        var targetId = TryGetOptionalString(operationElement, "targetId");
+        var expectedVersion = TryGetOptionalString(operationElement, "expectedVersion");
+
+        operation = new ProposalOperationDto(
+            operationId,
+            proposalId,
+            sequence,
+            actionType,
+            targetType,
+            targetId,
+            parameters,
+            idempotencyKey,
+            expectedVersion);
+        return true;
+    }
+
+    private static bool TryGetInt32(
+        JsonElement element,
+        string propertyName,
+        out int value,
+        out string errorMessage)
+    {
+        value = default;
+        errorMessage = string.Empty;
+
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.Number ||
+            !property.TryGetInt32(out value))
+        {
+            errorMessage = $"Revised operation {propertyName} must be an integer";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryGetRequiredString(
+        JsonElement element,
+        string propertyName,
+        out string value,
+        out string errorMessage)
+    {
+        value = string.Empty;
+        errorMessage = string.Empty;
+
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.String)
+        {
+            errorMessage = $"Revised operation {propertyName} must be a string";
+            return false;
+        }
+
+        value = property.GetString()?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            errorMessage = $"Revised operation {propertyName} cannot be empty";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string? TryGetOptionalString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind == JsonValueKind.Null ||
+            property.ValueKind == JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+    }
+
+    private static Guid? TryGetOptionalGuid(JsonElement element, string propertyName)
+    {
+        var value = TryGetOptionalString(element, propertyName);
+        return Guid.TryParse(value, out var guid) ? guid : null;
+    }
+
+    private static bool IsValidJsonObject(string value)
     {
         try
         {
-            using var _ = JsonDocument.Parse(payload);
-            return true;
+            using var document = JsonDocument.Parse(value);
+            return document.RootElement.ValueKind == JsonValueKind.Object;
         }
         catch (JsonException)
         {

@@ -40,4 +40,18 @@ describe('ReviewRevisionEditor', () => {
     })
     expect(payload.reason).toBe('Clarify title')
   })
+
+  it('blocks save when an editable JSON field is invalid', async () => {
+    const wrapper = mountEditor('{"operations":[{"sequence":1,"actionType":"CreateCard"}]}')
+
+    await wrapper.get('[data-testid="revision-field-operations"]').setValue('not valid json')
+    await wrapper.get('[data-testid="revision-reason"]').setValue('Break operations')
+
+    expect(wrapper.get('[data-testid="revision-field-operations-error"]').text()).toContain('valid JSON')
+    expect(wrapper.get('[data-testid="revision-save"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="revision-save"]').trigger('click')
+
+    expect(wrapper.emitted('save')).toBeUndefined()
+  })
 })
