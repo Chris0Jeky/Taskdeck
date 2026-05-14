@@ -94,6 +94,24 @@ describe('useTodayDossier', () => {
     expect(dossier.value.cadence.lastAction).toContain('17:30 UTC')
   })
 
+  it('preserves a null cadence peak instead of highlighting midnight', async () => {
+    vi.mocked(todayApi.getCadence).mockResolvedValue({
+      ...cadenceResponse,
+      peakHour: null,
+    })
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockRejectedValue(new Error('skip'))
+
+    const { dossier } = await importAndCreate()
+    await vi.waitFor(() => {
+      expect(todayApi.getCadence).toHaveBeenCalled()
+    })
+
+    expect(dossier.value.cadence.peakHourIndex).toBeNull()
+    expect(dossier.value.cadence.peakAction).toBe('no peak')
+  })
+
   it('fetches live streak and maps to DossierStreak', async () => {
     vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
     vi.mocked(todayApi.getStreak).mockResolvedValue(streakResponse)
@@ -246,6 +264,54 @@ describe('useTodayDossier', () => {
 
     expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'Fresh local edit')
     expect(dossier.value.lineForTomorrow).toBe('Fresh local edit')
+  })
+
+  it('serializes in-flight tomorrow-note saves so older requests cannot finish after newer saves', async () => {
+    vi.useFakeTimers()
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+
+    let resolveFirst!: (value: TomorrowNoteApiResponse) => void
+    let resolveSecond!: (value: TomorrowNoteApiResponse) => void
+    vi.mocked(todayApi.saveTomorrowNote)
+      .mockImplementationOnce(() => new Promise<TomorrowNoteApiResponse>((resolve) => {
+        resolveFirst = resolve
+      }))
+      .mockImplementationOnce(() => new Promise<TomorrowNoteApiResponse>((resolve) => {
+        resolveSecond = resolve
+      }))
+
+    const { dossier, saveLineForTomorrow } = await importAndCreate()
+    await vi.waitFor(() => {
+      expect(todayApi.getTomorrowNote).toHaveBeenCalled()
+    })
+
+    const first = saveLineForTomorrow('older draft', '2026-01-15')
+    const firstAssertion = expect(first).rejects.toThrow('Superseded')
+    await vi.advanceTimersByTimeAsync(850)
+
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledTimes(1)
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'older draft')
+
+    const second = saveLineForTomorrow('latest draft', '2026-01-15')
+    await vi.advanceTimersByTimeAsync(850)
+
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledTimes(1)
+
+    resolveFirst({ ...tomorrowNoteResponse, text: 'older draft' })
+    await firstAssertion
+
+    await vi.waitFor(() => {
+      expect(todayApi.saveTomorrowNote).toHaveBeenCalledTimes(2)
+    })
+    expect(todayApi.saveTomorrowNote).toHaveBeenLastCalledWith('2026-01-15', 'latest draft')
+
+    resolveSecond({ ...tomorrowNoteResponse, text: 'latest draft' })
+    await second
+
+    expect(dossier.value.lineForTomorrow).toBe('latest draft')
   })
 
   it('sealDay calls POST /today/seal and returns sealed status', async () => {

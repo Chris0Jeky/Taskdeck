@@ -195,6 +195,39 @@ describe('TodayLineForTomorrow', () => {
     expect(wrapper.emitted('save')).toEqual([['second']])
   })
 
+  it('keeps saving when an in-flight save is superseded before the next debounce flush', async () => {
+    let rejectFirst!: (error: unknown) => void
+    const save = vi.fn()
+      .mockImplementationOnce(() => new Promise<void>((_, reject) => {
+        rejectFirst = reject
+      }))
+      .mockResolvedValue(undefined)
+    const wrapper = mount(TodayLineForTomorrow, {
+      props: {
+        storageKey: KEY,
+        debounceMs: 100,
+        initial: '',
+        useStoredDraft: false,
+        save,
+      },
+    })
+    const input = wrapper.find<HTMLTextAreaElement>('[data-testid="line-for-tomorrow-input"]')
+
+    await input.setValue('first')
+    await vi.advanceTimersByTimeAsync(150)
+    await input.setValue('second')
+    rejectFirst(new Error('Superseded by newer tomorrow note autosave'))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Saving')
+
+    await vi.advanceTimersByTimeAsync(150)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Saved')
+    expect(wrapper.emitted('save')).toEqual([['second']])
+  })
+
   it('shows unavailable state when backend save fails', async () => {
     const save = vi.fn().mockRejectedValue(new Error('offline'))
     const wrapper = mount(TodayLineForTomorrow, {

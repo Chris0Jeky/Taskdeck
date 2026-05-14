@@ -38,6 +38,7 @@ onBeforeUnmount(() => {
 })
 
 const max = computed(() => Math.max(1, ...props.cadence.weights))
+const peakHourIndex = computed(() => props.cadence.peakHourIndex)
 
 function barHeightPercent(weight: number): number {
   if (weight === 0) return 4
@@ -66,11 +67,11 @@ function barHeightPercent(weight: number): number {
           :height="(barHeightPercent(weight) / 100) * 64"
           :class="[
             'today-cadence__bar',
-            i === cadence.peakHourIndex ? 'today-cadence__bar--peak' : '',
+            peakHourIndex !== null && i === peakHourIndex ? 'today-cadence__bar--peak' : '',
             weight === 0 ? 'today-cadence__bar--idle' : '',
           ]"
           :data-hour="i"
-          :data-peak="i === cadence.peakHourIndex ? 'true' : null"
+          :data-peak="peakHourIndex !== null && i === peakHourIndex ? 'true' : null"
         />
       </g>
     </svg>

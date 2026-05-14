@@ -51,7 +51,7 @@ export interface DossierStatCard {
 
 export interface DossierCadence {
   weights: number[]
-  peakHourIndex: number
+  peakHourIndex: number | null
   firstAction: string
   peakAction: string
   lastAction: string
@@ -117,13 +117,13 @@ function mapCadenceResponse(response: CadenceApiResponse): DossierCadence {
     return bucket?.eventCount ?? 0
   })
 
-  const peakHourIndex = response.peakHour ?? 0
+  const peakHourIndex = response.peakHour
 
   const firstTime = formatUtcTime(response.firstActionAt)
   const lastTime = formatUtcTime(response.lastActionAt)
 
-  const peakEvents = weights[peakHourIndex] ?? 0
-  const peakAction = response.peakHour != null
+  const peakEvents = peakHourIndex != null ? (weights[peakHourIndex] ?? 0) : 0
+  const peakAction = peakHourIndex != null
     ? `${peakHourIndex.toString().padStart(2, '0')}:00-${((peakHourIndex + 1) % 24).toString().padStart(2, '0')}:00 UTC · ${peakEvents} events`
     : 'no peak'
 
@@ -336,37 +336,58 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
 
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
   let tomorrowNoteMutationGeneration = 0
-  let pendingAutosave: {
+  let tomorrowNoteSaveGeneration = 0
+  type TomorrowNoteAutosave = {
     text: string
     dateStr: string
+    saveGeneration: number
     resolve: () => void
     reject: (error: unknown) => void
-  } | null = null
+  }
+  let pendingAutosave: TomorrowNoteAutosave | null = null
+  let inflightAutosave: TomorrowNoteAutosave | null = null
   const AUTOSAVE_DEBOUNCE_MS = 800
+  const SUPERSEDED_AUTOSAVE_ERROR = 'Superseded by newer tomorrow note autosave'
 
   async function flushAutosave() {
+    if (inflightAutosave) return
     const pending = pendingAutosave
     if (!pending) return
 
     pendingAutosave = null
+    inflightAutosave = pending
     try {
       await todayApi.saveTomorrowNote(pending.dateStr, pending.text)
-      pending.resolve()
+      if (pending.saveGeneration === tomorrowNoteSaveGeneration) {
+        pending.resolve()
+      } else {
+        pending.reject(new Error(SUPERSEDED_AUTOSAVE_ERROR))
+      }
     } catch (err) {
-      logError('Tomorrow note autosave failed', { message: (err as Error)?.message })
-      pending.reject(err)
+      if (pending.saveGeneration === tomorrowNoteSaveGeneration) {
+        logError('Tomorrow note autosave failed', { message: (err as Error)?.message })
+        pending.reject(err)
+      } else {
+        pending.reject(new Error(SUPERSEDED_AUTOSAVE_ERROR))
+      }
+    } finally {
+      inflightAutosave = null
+      if (pendingAutosave && !autosaveTimer) {
+        void flushAutosave()
+      }
     }
   }
 
   function saveLineForTomorrow(text: string, dateStr = formatLocalDossierDate(now.value)): Promise<void> {
     tomorrowNoteMutationGeneration += 1
+    const saveGeneration = ++tomorrowNoteSaveGeneration
     liveLineForTomorrow.value = text
     if (pendingAutosave) {
-      pendingAutosave.reject(new Error('Superseded by newer tomorrow note autosave'))
+      pendingAutosave.reject(new Error(SUPERSEDED_AUTOSAVE_ERROR))
     }
     if (autosaveTimer) clearTimeout(autosaveTimer)
     return new Promise((resolve, reject) => {
-      pendingAutosave = { text, dateStr, resolve, reject }
+      pendingAutosave = { text, dateStr, saveGeneration, resolve, reject }
       autosaveTimer = setTimeout(() => {
         autosaveTimer = null
         void flushAutosave()

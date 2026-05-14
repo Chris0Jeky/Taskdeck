@@ -86,6 +86,7 @@ watch(text, () => {
   }
   status.value = 'saving'
   localEditPending = true
+  flushGeneration += 1
   pendingSaveDate = props.saveDate
   if (timer) clearTimeout(timer)
   timer = setTimeout(() => {
