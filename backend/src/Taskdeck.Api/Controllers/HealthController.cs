@@ -19,19 +19,22 @@ public class HealthController : ControllerBase
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly RedisBackplaneHealthCheck _redisHealthCheck;
     private readonly CircuitBreakerStateTracker _circuitBreakerTracker;
+    private readonly ILogger<HealthController> _logger;
 
     public HealthController(
         IServiceProvider serviceProvider,
         WorkerSettings workerSettings,
         WorkerHeartbeatRegistry workerHeartbeatRegistry,
         RedisBackplaneHealthCheck redisHealthCheck,
-        CircuitBreakerStateTracker circuitBreakerTracker)
+        CircuitBreakerStateTracker circuitBreakerTracker,
+        ILogger<HealthController> logger)
     {
         _serviceProvider = serviceProvider;
         _workerSettings = workerSettings;
         _workerHeartbeatRegistry = workerHeartbeatRegistry;
         _redisHealthCheck = redisHealthCheck;
         _circuitBreakerTracker = circuitBreakerTracker;
+        _logger = logger;
     }
 
     [HttpGet("live")]
@@ -64,7 +67,8 @@ public class HealthController : ControllerBase
         }
         catch (Exception ex)
         {
-            checks["database"] = new { status = "Unhealthy", error = ex.Message };
+            _logger.LogError(ex, "Health check: database connectivity failed");
+            checks["database"] = new { status = "Unhealthy", error = "Connection failed" };
             isReady = false;
         }
 
@@ -99,7 +103,8 @@ public class HealthController : ControllerBase
         }
         catch (Exception ex)
         {
-            checks["queue"] = new { status = "Unhealthy", error = ex.Message };
+            _logger.LogError(ex, "Health check: queue status query failed");
+            checks["queue"] = new { status = "Unhealthy", error = "Connection failed" };
             isReady = false;
         }
 
@@ -118,7 +123,8 @@ public class HealthController : ControllerBase
         }
         catch (Exception ex)
         {
-            checks["signalrBackplane"] = new RedisHealthStatus("Unhealthy", ex.Message);
+            _logger.LogError(ex, "Health check: SignalR backplane connectivity failed");
+            checks["signalrBackplane"] = new RedisHealthStatus("Unhealthy", "Connection failed");
             isReady = false;
         }
 
@@ -216,8 +222,7 @@ public class HealthController : ControllerBase
                 circuitChecks[name] = new
                 {
                     state = snapshot.State.ToString(),
-                    lastTransitionUtc = snapshot.LastTransitionUtc,
-                    lastFailureReason = snapshot.LastFailureReason
+                    lastTransitionUtc = snapshot.LastTransitionUtc
                 };
 
                 if (snapshot.State == CircuitState.Open)

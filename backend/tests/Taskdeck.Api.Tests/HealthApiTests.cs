@@ -53,6 +53,43 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Ready_ShouldNotLeakExceptionDetails()
+    {
+        var response = await _client.GetAsync("/health/ready");
+        (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            .Should()
+            .BeTrue();
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContainAny(
+            "Exception", "StackTrace", "at System.", "at Microsoft.",
+            "Data Source=", "Password=", "Server=");
+    }
+
+    [Fact]
+    public async Task Ready_ShouldNotExposeCircuitBreakerFailureReasons()
+    {
+        var response = await _client.GetAsync("/health/ready");
+        (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            .Should()
+            .BeTrue();
+
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        if (payload.TryGetProperty("checks", out var checks) &&
+            checks.TryGetProperty("circuitBreakers", out var cb) &&
+            cb.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in cb.EnumerateObject())
+            {
+                if (prop.Name == "_summary" || prop.Name == "status") continue;
+                if (prop.Value.ValueKind != JsonValueKind.Object) continue;
+                prop.Value.TryGetProperty("lastFailureReason", out _).Should().BeFalse(
+                    "circuit breaker entries must not expose failure reason details");
+            }
+        }
+    }
+
+    [Fact]
     public async Task Ready_ShouldExcludeCaptureBacklogFromAutomationQueueDepth()
     {
         await ApiTestHarness.AuthenticateAsync(_client, "health-capture-backlog");
