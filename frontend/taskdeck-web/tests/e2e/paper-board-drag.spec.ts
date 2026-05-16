@@ -138,13 +138,37 @@ test.describe('Paper board card drag', () => {
     await page.goto(`/workspace/boards/${boardId}`)
     await expect(page.locator('[data-testid="paper-board-lanes"]')).toBeVisible()
 
-    const card = page.locator('[data-card-id]').first()
-    await page.keyboard.press('Tab')
-    await card.focus()
+    const card = page
+      .locator('[data-card-id]')
+      .filter({ hasText: `Focus Card ${seed}` })
+      .first()
+    for (let i = 0; i < 40; i += 1) {
+      if (await card.evaluate((el) => document.activeElement === el)) break
+      await page.keyboard.press('Tab')
+    }
     await expect(card).toBeFocused()
 
-    const outline = await card.evaluate((el) => window.getComputedStyle(el).outline)
-    expect(outline).toContain('2px')
-    expect(outline).toContain('solid')
+    const focusStyle = await card.evaluate((el) => {
+      const style = window.getComputedStyle(el)
+      const paperRoot = el.closest('.paper') ?? document.documentElement
+      const ember = window.getComputedStyle(paperRoot).getPropertyValue('--ember').trim()
+      const probe = document.createElement('span')
+      probe.style.color = ember
+      document.body.appendChild(probe)
+      const expectedEmber = window.getComputedStyle(probe).color
+      probe.remove()
+
+      return {
+        outlineWidth: style.outlineWidth,
+        outlineStyle: style.outlineStyle,
+        outlineOffset: style.outlineOffset,
+        outlineColor: style.outlineColor,
+        expectedEmber,
+      }
+    })
+    expect(focusStyle.outlineWidth).toBe('2px')
+    expect(focusStyle.outlineStyle).toBe('solid')
+    expect(focusStyle.outlineOffset).toBe('1px')
+    expect(focusStyle.outlineColor).toBe(focusStyle.expectedEmber)
   })
 })
