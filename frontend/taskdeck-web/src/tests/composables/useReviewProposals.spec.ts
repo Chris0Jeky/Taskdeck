@@ -272,11 +272,11 @@ describe('useReviewProposals', () => {
   describe('openProposalFromHash', () => {
     it('scrolls to existing proposal that matches board filter', async () => {
       mockRoute.hash = '#proposal-p-exist'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-exist' })])
       const rp = useReviewProposals()
-      rp.proposals.value = [makeProposal({ id: 'p-exist' })] as any
-      rp.proposalsLoading.value = false
       await rp.loadProposals()
       expect(mockRouter.replace).not.toHaveBeenCalled()
+      expect(mockAutomationApi.getProposal).not.toHaveBeenCalled()
     })
 
     it('clears hash when existing proposal does not match board filter', async () => {
@@ -291,13 +291,14 @@ describe('useReviewProposals', () => {
       )
     })
 
-    it('fetches unknown proposal from API', async () => {
+    it('fetches unknown proposal from API and upserts it', async () => {
       mockRoute.hash = '#proposal-p-remote'
       mockAutomationApi.getProposals.mockResolvedValueOnce([])
       mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-remote' }))
       const rp = useReviewProposals()
       await rp.loadProposals()
       expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('p-remote')
+      expect(rp.proposals.value.find((p: any) => p.id === 'p-remote')).toBeDefined()
     })
 
     it('clears hash on 404 from API', async () => {
@@ -432,6 +433,29 @@ describe('useReviewProposals', () => {
       mockRoute.query = { boardId: 'board-A' }
       const rp = useReviewProposals()
       expect(rp.matchesActiveBoardFilter('board-B')).toBe(false)
+    })
+  })
+
+  describe('watchers', () => {
+    it('route hash watcher triggers openProposalFromHash', async () => {
+      mockRoute.hash = '#proposal-p-watch'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      mockAutomationApi.getProposal.mockClear()
+      // watchers[0] = watch(() => route.hash, ...) — first function-sourced watcher
+      mockRoute.hash = '#proposal-p-new'
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-new' }))
+      await watchers[0][1]()
+      expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('p-new')
+    })
+
+    it('activeBoardFilter watcher triggers loadProposals', async () => {
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockClear()
+      // watchers[1] = watch(() => activeBoardFilter.value, ...)
+      await watchers[1][1]()
+      expect(mockAutomationApi.getProposals).toHaveBeenCalled()
     })
   })
 })

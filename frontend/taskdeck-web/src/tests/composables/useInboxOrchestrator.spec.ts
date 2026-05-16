@@ -72,6 +72,7 @@ function createOrchestrator() {
 describe('useInboxOrchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    watchers = []
     mockCaptureStore.items = []
     mockCaptureStore.detailById = {}
     mockRoute.hash = ''
@@ -366,18 +367,29 @@ describe('useInboxOrchestrator', () => {
       mockCaptureStore.items = [{ id: '1' }]
       const orch = createOrchestrator()
       orch.activeItemIndex.value = 5
-      const itemsWatcher = watchers.find(([src]) => typeof src === 'object')
+      // watchers[0] = watch(items, ...) — first registered watcher
+      const itemsWatcher = watchers[0]
       expect(itemsWatcher).toBeDefined()
       mockCaptureStore.items = []
-      itemsWatcher![1]([], undefined, () => {})
+      itemsWatcher[1]([], undefined, () => {})
       expect(orch.activeItemIndex.value).toBe(0)
+    })
+
+    it('items watcher clamps activeItemIndex when items shrink', () => {
+      mockCaptureStore.items = [{ id: '1' }, { id: '2' }, { id: '3' }]
+      const orch = createOrchestrator()
+      orch.activeItemIndex.value = 4
+      const itemsWatcher = watchers[0]
+      itemsWatcher[1]([{ id: '1' }, { id: '2' }], undefined, () => {})
+      expect(orch.activeItemIndex.value).toBe(1)
     })
 
     it('selectedItemId watcher resets editing state', () => {
       const orch = createOrchestrator()
       orch.isEditingSuggestion.value = true
       orch.editedText.value = 'x'
-      const selectedWatcher = watchers[watchers.length - 1]
+      // watchers[4] = watch(selectedItemId, ...) — last registered watcher
+      const selectedWatcher = watchers[4]
       selectedWatcher[1]('new-id', undefined, () => {})
       expect(orch.isEditingSuggestion.value).toBe(false)
       expect(orch.editedText.value).toBe('')
