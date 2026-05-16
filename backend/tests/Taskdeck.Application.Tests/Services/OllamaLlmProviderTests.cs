@@ -538,6 +538,22 @@ public class OllamaLlmProviderTests
     }
 
     [Fact]
+    public void Evaluate_ShouldSelectMock_WhenDevelopmentOllamaLocalhostIsNotExplicitlyAllowed()
+    {
+        var settings = BuildPolicySettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "Ollama";
+        settings.Ollama!.AllowLocalhostEndpoints = false;
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("Ollama configuration is invalid");
+        result.Reason.Should().Contain("SSRF");
+    }
+
+    [Fact]
     public void Evaluate_ShouldSelectOllama_WhenProviderIsOllamaInProductionWithPublicUrl()
     {
         var settings = BuildPolicySettings();

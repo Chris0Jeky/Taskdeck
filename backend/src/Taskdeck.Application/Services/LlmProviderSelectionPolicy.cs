@@ -44,12 +44,13 @@ public static class LlmProviderSelectionPolicy
         }
 
         // In development with AllowLiveProvidersInDevelopment, permit localhost endpoints
-        // so developers can use local LLM gateways (Ollama, LM Studio, etc.).
-        var allowLocalhostEndpoints = IsDevelopmentLike(environmentName) && settings.AllowLiveProvidersInDevelopment;
+        // for live-provider gateways. Ollama also has an explicit localhost flag because
+        // its default BaseUrl is localhost and runtime validation enforces that opt-in.
+        var allowDevelopmentLocalhostEndpoints = IsDevelopmentLike(environmentName) && settings.AllowLiveProvidersInDevelopment;
 
         if (requestedProvider.Value == LlmProviderKind.OpenAi)
         {
-            if (!TryValidateOpenAiSettings(settings, out var validationError, allowLocalhostEndpoints))
+            if (!TryValidateOpenAiSettings(settings, out var validationError, allowDevelopmentLocalhostEndpoints))
             {
                 return new LlmProviderDecision(
                     LlmProviderKind.Mock,
@@ -63,7 +64,7 @@ public static class LlmProviderSelectionPolicy
 
         if (requestedProvider.Value == LlmProviderKind.Gemini)
         {
-            if (!TryValidateGeminiSettings(settings, out var geminiValidationError, allowLocalhostEndpoints))
+            if (!TryValidateGeminiSettings(settings, out var geminiValidationError, allowDevelopmentLocalhostEndpoints))
             {
                 return new LlmProviderDecision(
                     LlmProviderKind.Mock,
@@ -75,7 +76,11 @@ public static class LlmProviderSelectionPolicy
                 "Gemini provider selected.");
         }
 
-        if (!TryValidateOllamaSettings(settings, out var ollamaValidationError, allowLocalhostEndpoints))
+        var allowOllamaLocalhostEndpoints =
+            allowDevelopmentLocalhostEndpoints &&
+            settings.Ollama?.AllowLocalhostEndpoints == true;
+
+        if (!TryValidateOllamaSettings(settings, out var ollamaValidationError, allowOllamaLocalhostEndpoints))
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
