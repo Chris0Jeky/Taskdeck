@@ -17,10 +17,16 @@ vi.mock('../../composables/useOnlineStatus', () => ({
 }))
 
 const mockGetToken = vi.fn(() => 'valid-jwt-token')
+const mockGetSession = vi.fn(() => ({
+  userId: 'user-1',
+  username: 'testuser',
+  email: 'test@example.com',
+}))
 const mockIsTokenExpired = vi.fn(() => false)
 
 vi.mock('../../utils/tokenStorage', () => ({
   getToken: () => mockGetToken(),
+  getSession: () => mockGetSession(),
 }))
 
 vi.mock('../../utils/jwt', () => ({
@@ -59,6 +65,11 @@ describe('ShareTargetView', () => {
     mockCreateItem.mockClear()
     mockEnqueue.mockClear()
     mockGetToken.mockReturnValue('valid-jwt-token')
+    mockGetSession.mockReturnValue({
+      userId: 'user-1',
+      username: 'testuser',
+      email: 'test@example.com',
+    })
     mockIsTokenExpired.mockReturnValue(false)
     mockOnline.value = true
     setQuery()
@@ -119,13 +130,16 @@ describe('ShareTargetView', () => {
     await flushPromises()
 
     expect(mockCreateItem).not.toHaveBeenCalled()
-    expect(mockEnqueue).toHaveBeenCalledWith({
-      boardId: null,
-      text: 'Offline Title\n\nOffline text',
-      source: 'ShareTarget',
-      titleHint: 'Offline Title',
-      externalRef: null,
-    })
+    expect(mockEnqueue).toHaveBeenCalledWith(
+      {
+        boardId: null,
+        text: 'Offline Title\n\nOffline text',
+        source: 'ShareTarget',
+        titleHint: 'Offline Title',
+        externalRef: null,
+      },
+      'user-1',
+    )
   })
 
   it('falls back to queue when API call fails', async () => {
@@ -188,7 +202,10 @@ describe('ShareTargetView', () => {
     await flushPromises()
 
     expect(mockCreateItem).not.toHaveBeenCalled()
-    expect(mockEnqueue).toHaveBeenCalled()
+    expect(mockEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Title\n\nText' }),
+      'user-1',
+    )
     expect(wrapper.text()).toContain('Login required')
   })
 
