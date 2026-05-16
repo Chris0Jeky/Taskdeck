@@ -412,6 +412,7 @@ public class AuthenticationService : IAuthenticationService
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim("username", user.Username),
             new Claim("email", user.Email),
+            new Claim(ClaimTypes.Role, user.DefaultRole.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim(JwtRegisteredClaimNames.Iat,
                 new DateTimeOffset(now).ToUnixTimeSeconds().ToString(),

@@ -57,6 +57,28 @@ public static class ApiTestHarness
         return new TestUserContext(payload.User.Id, payload.Token, username, email);
     }
 
+    public static async Task<TestUserContext> AuthenticateAsAdminAsync(HttpClient client, string stem)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var username = $"{stem}_{suffix}";
+        var email = $"{stem}_{suffix}@example.com";
+        const string password = "password123";
+
+        var response = await client.PostAsJsonAsync(
+            "/api/auth/register",
+            new { Username = username, Email = email, Password = password, DefaultRole = 1 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadFromJsonAsync<AuthResultDto>();
+        payload.Should().NotBeNull();
+        payload!.Token.Should().NotBeNullOrWhiteSpace();
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload.Token);
+
+        return new TestUserContext(payload.User.Id, payload.Token, username, email);
+    }
+
     public static async Task<BoardDto> CreateBoardAsync(
         HttpClient client,
         string stem = "board",

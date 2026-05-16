@@ -11,7 +11,7 @@ using Taskdeck.Domain.Exceptions;
 namespace Taskdeck.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = "AdminOnly")]
 [Route("api/abuse")]
 public class AbuseContainmentController : AuthenticatedControllerBase
 {
