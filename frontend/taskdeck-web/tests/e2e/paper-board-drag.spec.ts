@@ -77,7 +77,7 @@ async function getAuditLog(
     { headers: { Authorization: `Bearer ${auth.token}` } },
   )
   await assertOk(response, 'Get audit log')
-  return await response.json() as Array<{ action: string; entityType: string; [key: string]: unknown }>
+  return await response.json() as Array<{ action: number; entityType: string; [key: string]: unknown }>
 }
 
 test.describe('Paper board card drag', () => {
@@ -89,7 +89,6 @@ test.describe('Paper board card drag', () => {
 
     const columns = await getColumns(request, auth, boardId)
     const backlogCol = columns.find((c) => c.name === 'Backlog')!
-    const doneCol = columns.find((c) => c.name === 'Done')!
 
     await addCardViaApi(request, auth, boardId, backlogCol.id, `Drag Target ${seed}`)
 
@@ -122,7 +121,7 @@ test.describe('Paper board card drag', () => {
 
     const audit = await getAuditLog(request, auth, boardId)
     const moveEntry = audit.find(
-      (e) => e.action === 'Moved' && e.entityType === 'Card',
+      (e) => e.action === 5 && e.entityType === 'card',
     )
     expect(moveEntry).toBeDefined()
   })
@@ -140,7 +139,8 @@ test.describe('Paper board card drag', () => {
     await expect(page.locator('[data-testid="paper-board-lanes"]')).toBeVisible()
 
     const card = page.locator('[data-card-id]').first()
-    await card.focus()
+    await page.keyboard.press('Tab')
+    await expect(card).toBeFocused()
 
     const outline = await card.evaluate((el) => window.getComputedStyle(el).outline)
     expect(outline).toContain('2px')
