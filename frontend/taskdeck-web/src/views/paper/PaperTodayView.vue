@@ -24,7 +24,7 @@ import TodayLineForTomorrow from './today/TodayLineForTomorrow.vue'
  * `TodayView.vue` shell delegates to this component when `paperThemeStore
  * .isOn`.
  */
-const { dossier, sealed, sealDay } = useTodayDossier()
+const { dossier, sealed, sealDay, saveLineForTomorrow } = useTodayDossier()
 const session = useSessionStore()
 const toast = useToastStore()
 
@@ -34,9 +34,17 @@ const lineForTomorrowStorageKey = computed(() => {
   const dayPart = formatLocalDossierDate(dossier.value.date)
   return `td.paper.line-for-tomorrow:${userPart}:${dayPart}`
 })
+const lineForTomorrowSaveDate = computed(() => formatLocalDossierDate(dossier.value.date))
 
-function onSeal() {
-  const result = sealDay()
+async function onSeal() {
+  const result = await sealDay()
+  if (result.inProgress) {
+    return
+  }
+  if (!result.sealed) {
+    toast.error('Failed to seal the day. Please try again.')
+    return
+  }
   if (result.alreadySealed) {
     toast.info('Day is already sealed.')
     return
@@ -136,6 +144,9 @@ function onPinCarryOver(serials: string[]) {
           <TodayLineForTomorrow
             :initial="dossier.lineForTomorrow"
             :storage-key="lineForTomorrowStorageKey"
+            :save-date="lineForTomorrowSaveDate"
+            :save="saveLineForTomorrow"
+            :use-stored-draft="false"
           />
         </div>
       </div>

@@ -1,19 +1,8 @@
-import { computed, onScopeDispose, ref, type Ref } from 'vue'
+import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { todayApi, type CadenceApiResponse, type StreakApiResponse } from '../api/todayApi'
+import { logError } from '../utils/errorReporting'
 import type { TodaySummary } from '../types/workspace'
-
-/**
- * useTodayDossier — composable that returns the data shape expected by
- * `PaperTodayView` and its 9 sub-sections.  Wherever the live workspace
- * `todaySummary` already provides a value (overdue cards, captures, etc.)
- * we surface it; everything else is mocked behind clearly-marked stubs so
- * the surface ships now and follow-up backend issues (#1015–#1018) can wire
- * real data later.
- *
- * Stubs are deterministic given the same `now` so tests can exercise the
- * shape without flake.  Components must continue to work with both stub
- * and real data — never branch on whether a section is mocked.
- */
 
 export type DossierLedgerWho = 'you' | 'haiku' | 'system'
 export type DossierLedgerTone = 'ember' | 'applied' | 'active' | 'passive' | 'mute'
@@ -53,9 +42,7 @@ export interface DossierCarryOverCard {
 
 export interface DossierStatCard {
   id: 'cards-moved' | 'proposals-applied' | 'captures-triaged' | 'longest-focus' | 'overdue'
-  /** Numeric (or formatted) value used for the big italic-serif number. */
   value: number | string
-  /** Whether `value` is a raw number that should run through Intl.NumberFormat. */
   numeric: boolean
   label: string
   sub: string
@@ -64,7 +51,7 @@ export interface DossierStatCard {
 
 export interface DossierCadence {
   weights: number[]
-  peakHourIndex: number
+  peakHourIndex: number | null
   firstAction: string
   peakAction: string
   lastAction: string
@@ -90,21 +77,15 @@ export interface DossierData {
   boards: DossierBoardLine[]
   carryOver: DossierCarryOverCard[]
   streak: DossierStreak
-  /** Initial value for the "line for tomorrow" text-area. */
   lineForTomorrow: string
 }
 
 const DOSSIER_NUMBER_RE = /D-\d{4}-\d{2}-\d{2}-\d{3}/
 
-/**
- * Format the dossier serial as `D-YYYY-MM-DD-NNN`.  `seq` defaults to 001;
- * a real backend should hand in the per-day sequence number.
- */
 export function formatDossierSerial(date: Date, seq = 1): string {
   const { yyyy, mm, dd } = formatLocalDossierDateParts(date)
   const nnn = seq.toString().padStart(3, '0')
   const serial = `D-${yyyy}-${mm}-${dd}-${nnn}`
-  // Light invariant — useful in dev, harmless in prod.
   if (!DOSSIER_NUMBER_RE.test(serial)) {
     throw new Error(`Invalid dossier serial: ${serial}`)
   }
@@ -124,7 +105,47 @@ function formatLocalDossierDateParts(date: Date): { yyyy: string; mm: string; dd
   }
 }
 
-/** Stub data the surface falls back to when the backend is silent. */
+function formatUtcTime(iso: string | null): string {
+  if (!iso) return '--:--'
+  const d = new Date(iso)
+  return `${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}`
+}
+
+function mapCadenceResponse(response: CadenceApiResponse): DossierCadence {
+  const weights = Array.from({ length: 24 }, (_, i) => {
+    const bucket = response.buckets.find((b) => b.hour === i)
+    return bucket?.eventCount ?? 0
+  })
+
+  const peakHourIndex = response.peakHour
+
+  const firstTime = formatUtcTime(response.firstActionAt)
+  const lastTime = formatUtcTime(response.lastActionAt)
+
+  const peakEvents = peakHourIndex != null ? (weights[peakHourIndex] ?? 0) : 0
+  const peakAction = peakHourIndex != null
+    ? `${peakHourIndex.toString().padStart(2, '0')}:00-${((peakHourIndex + 1) % 24).toString().padStart(2, '0')}:00 UTC · ${peakEvents} events`
+    : 'no peak'
+
+  return {
+    weights,
+    peakHourIndex,
+    firstAction: `${firstTime} UTC · first action`,
+    peakAction,
+    lastAction: `${lastTime} UTC · last action`,
+  }
+}
+
+function mapStreakResponse(response: StreakApiResponse): DossierStreak {
+  const cells = response.days.map((d) => d.intensityBucket)
+  return {
+    cells,
+    todayIndex: Math.max(0, cells.length - 1),
+    totalDays: response.currentStreakLength,
+    longestThisYear: response.longestStreakLength,
+  }
+}
+
 function buildStubDossier(now: Date, summary: TodaySummary | null): DossierData {
   const overdueCount = summary?.summary.overdueCards ?? 2
   const capturesTriaged = 11
@@ -223,11 +244,9 @@ function buildStubDossier(now: Date, summary: TodaySummary | null): DossierData 
     { serial: 'C-061', title: 'Reply: design system intro', age: '1d overdue', reason: 'snoozed yesterday' },
   ]
 
-  // 90 deterministic streak cells — last cell is "today".
   const cells = Array.from({ length: 90 }, (_, i) => {
     if (i === 89) return 4
     if (i === 73) return 0
-    // Deterministic pseudo-random based on index
     return ((i * 31) % 5)
   })
 
@@ -258,8 +277,13 @@ function buildStubDossier(now: Date, summary: TodaySummary | null): DossierData 
 }
 
 export interface UseTodayDossierOptions {
-  /** Override "now" for tests so dossier serial is deterministic. */
   now?: Ref<Date> | Date
+}
+
+export interface SealDayResult {
+  sealed: boolean
+  alreadySealed: boolean
+  inProgress?: boolean
 }
 
 export function useTodayDossier(options: UseTodayDossierOptions = {}) {
@@ -294,15 +318,161 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   })
 
   const sealed = ref(false)
+  let sealMutationGeneration = 0
+  const liveCadence = ref<DossierCadence | null>(null)
+  const liveStreak = ref<DossierStreak | null>(null)
+  const liveLineForTomorrow = ref('')
 
-  const dossier = computed<DossierData>(() => buildStubDossier(now.value, workspace.todaySummary))
+  const stubDossier = computed<DossierData>(() => buildStubDossier(now.value, workspace.todaySummary))
 
-  function sealDay(): { sealed: boolean; alreadySealed: boolean } {
+  const dossier = computed<DossierData>(() => {
+    const base = stubDossier.value
+    return {
+      ...base,
+      cadence: liveCadence.value ?? base.cadence,
+      streak: liveStreak.value ?? base.streak,
+      lineForTomorrow: liveLineForTomorrow.value,
+    }
+  })
+
+  let autosaveTimer: ReturnType<typeof setTimeout> | null = null
+  let tomorrowNoteMutationGeneration = 0
+  let tomorrowNoteSaveGeneration = 0
+  type TomorrowNoteAutosave = {
+    text: string
+    dateStr: string
+    saveGeneration: number
+    resolve: () => void
+    reject: (error: unknown) => void
+  }
+  let pendingAutosave: TomorrowNoteAutosave | null = null
+  let inflightAutosave: TomorrowNoteAutosave | null = null
+  const AUTOSAVE_DEBOUNCE_MS = 800
+  const SUPERSEDED_AUTOSAVE_ERROR = 'Superseded by newer tomorrow note autosave'
+
+  async function flushAutosave() {
+    if (inflightAutosave) return
+    const pending = pendingAutosave
+    if (!pending) return
+
+    pendingAutosave = null
+    inflightAutosave = pending
+    try {
+      await todayApi.saveTomorrowNote(pending.dateStr, pending.text)
+      if (pending.saveGeneration === tomorrowNoteSaveGeneration) {
+        pending.resolve()
+      } else {
+        pending.reject(new Error(SUPERSEDED_AUTOSAVE_ERROR))
+      }
+    } catch (err) {
+      if (pending.saveGeneration === tomorrowNoteSaveGeneration) {
+        logError('Tomorrow note autosave failed', { message: (err as Error)?.message })
+        pending.reject(err)
+      } else {
+        pending.reject(new Error(SUPERSEDED_AUTOSAVE_ERROR))
+      }
+    } finally {
+      inflightAutosave = null
+      if (pendingAutosave && !autosaveTimer) {
+        void flushAutosave()
+      }
+    }
+  }
+
+  function saveLineForTomorrow(text: string, dateStr = formatLocalDossierDate(now.value)): Promise<void> {
+    tomorrowNoteMutationGeneration += 1
+    const saveGeneration = ++tomorrowNoteSaveGeneration
+    liveLineForTomorrow.value = text
+    if (pendingAutosave) {
+      pendingAutosave.reject(new Error(SUPERSEDED_AUTOSAVE_ERROR))
+    }
+    if (autosaveTimer) clearTimeout(autosaveTimer)
+    return new Promise((resolve, reject) => {
+      pendingAutosave = { text, dateStr, saveGeneration, resolve, reject }
+      autosaveTimer = setTimeout(() => {
+        autosaveTimer = null
+        void flushAutosave()
+      }, AUTOSAVE_DEBOUNCE_MS)
+    })
+  }
+
+  onScopeDispose(() => {
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer)
+      autosaveTimer = null
+      void flushAutosave()
+    }
+  })
+
+  let fetchGeneration = 0
+
+  async function fetchLiveData() {
+    const gen = ++fetchGeneration
+    const dateStr = formatLocalDossierDate(now.value)
+    const tomorrowNoteMutationGenerationAtFetch = tomorrowNoteMutationGeneration
+    const sealMutationGenerationAtFetch = sealMutationGeneration
+
+    const results = await Promise.allSettled([
+      todayApi.getCadence(dateStr),
+      todayApi.getStreak(90),
+      todayApi.getSealStatus(dateStr),
+      todayApi.getTomorrowNote(dateStr),
+    ])
+
+    if (gen !== fetchGeneration) return
+
+    if (results[0].status === 'fulfilled') {
+      liveCadence.value = mapCadenceResponse(results[0].value)
+    }
+    if (results[1].status === 'fulfilled') {
+      liveStreak.value = mapStreakResponse(results[1].value)
+    }
+    if (sealMutationGenerationAtFetch === sealMutationGeneration) {
+      if (results[2].status === 'fulfilled') {
+        sealed.value = results[2].value.isSealed
+      }
+    }
+    if (tomorrowNoteMutationGenerationAtFetch === tomorrowNoteMutationGeneration) {
+      if (results[3].status === 'fulfilled') {
+        liveLineForTomorrow.value = results[3].value?.text ?? ''
+      } else {
+        liveLineForTomorrow.value = ''
+      }
+    }
+  }
+
+  watch(now, () => {
+    liveCadence.value = null
+    liveStreak.value = null
+    liveLineForTomorrow.value = ''
+    tomorrowNoteMutationGeneration += 1
+    sealMutationGeneration += 1
+    sealed.value = false
+    void fetchLiveData()
+  }, { immediate: true })
+
+  let sealingInProgress = false
+
+  async function sealDay(): Promise<SealDayResult> {
     if (sealed.value) {
       return { sealed: true, alreadySealed: true }
     }
-    sealed.value = true
-    return { sealed: true, alreadySealed: false }
+    if (sealingInProgress) {
+      return { sealed: false, alreadySealed: false, inProgress: true }
+    }
+
+    sealingInProgress = true
+    try {
+      const dateStr = formatLocalDossierDate(now.value)
+      const response = await todayApi.sealDay(dateStr)
+      sealMutationGeneration += 1
+      sealed.value = true
+      return { sealed: true, alreadySealed: response.wasAlreadySealed }
+    } catch {
+      return { sealed: false, alreadySealed: false }
+    } finally {
+      sealingInProgress = false
+    }
   }
 
   function resetSealForTesting() {
@@ -313,6 +483,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     dossier,
     sealed,
     sealDay,
+    saveLineForTomorrow,
     resetSealForTesting,
   }
 }

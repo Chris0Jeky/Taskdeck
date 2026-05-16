@@ -74,6 +74,22 @@ describe('TodayCadence', () => {
     expect(peak?.attributes('data-hour')).toBe('13')
   })
 
+  it('does not mark midnight as peak when cadence has no peak hour', () => {
+    const wrapper = mount(TodayCadence, {
+      props: {
+        cadence: {
+          ...CADENCE,
+          peakHourIndex: null,
+          peakAction: 'no peak',
+        },
+      },
+    })
+
+    const peaks = wrapper.findAll('rect.today-cadence__bar').filter(b => b.attributes('data-peak') === 'true')
+    expect(peaks).toHaveLength(0)
+    expect(wrapper.find('rect[data-hour="0"]').classes()).not.toContain('today-cadence__bar--peak')
+  })
+
   it('disables the ember pulse when prefers-reduced-motion is on', async () => {
     setReducedMotion(true)
     const wrapper = mount(TodayCadence, { props: { cadence: CADENCE } })
