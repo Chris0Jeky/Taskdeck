@@ -145,6 +145,23 @@ public class InsightsServiceTests
     }
 
     [Fact]
+    public async Task GetMetricsAsync_OnlyIgnoredOutcomes_ReturnsEmptyList()
+    {
+        var outcomes = new List<ProposalOutcome>
+        {
+            CreateOutcome(OutcomeType.Ignored, daysAgo: 1),
+            CreateOutcome(OutcomeType.Ignored, daysAgo: 5),
+        };
+
+        _repository.Setup(r => r.GetAllByUserIdAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(outcomes);
+
+        var metrics = await _sut.GetMetricsAsync(_userId, 30);
+
+        metrics.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetMetricsAsync_WithOutcomes_ReturnsBucketedMetrics()
     {
         var outcomes = new List<ProposalOutcome>
