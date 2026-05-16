@@ -73,7 +73,7 @@ export async function getAllPending(): Promise<QueuedCapture[]> {
     const request = tx.objectStore(STORE_NAME).getAll()
     request.onsuccess = () => {
       db.close()
-      resolve(request.result)
+      resolve([...request.result].sort((a, b) => a.queuedAt.localeCompare(b.queuedAt)))
     }
     request.onerror = () => {
       db.close()
