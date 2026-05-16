@@ -37,6 +37,10 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
   }
 
   function startListening(): boolean {
+    if (recognition || status.value === 'listening') {
+      return false
+    }
+
     if (!consentAcknowledged.value) {
       status.value = 'error'
       errorMessage.value = 'Consent required before starting voice capture.'
@@ -76,6 +80,7 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
       }
 
       recognition.onend = () => {
+        recognition = null
         if (status.value !== 'error') {
           status.value = 'idle'
         }
@@ -87,6 +92,7 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
       recognition.start()
       return true
     } catch (err) {
+      recognition = null
       status.value = 'error'
       errorMessage.value = err instanceof Error ? err.message : 'Failed to start'
       return false

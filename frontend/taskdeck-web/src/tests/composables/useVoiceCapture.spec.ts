@@ -89,6 +89,18 @@ describe('useVoiceCapture', () => {
     expect(instance.start).toHaveBeenCalled()
   })
 
+  it('does not start overlapping recognition sessions', () => {
+    const instance = installMockSpeechRecognition()
+
+    const { startListening, status } = useVoiceCapture()
+
+    expect(startListening()).toBe(true)
+    expect(startListening()).toBe(false)
+
+    expect(status.value).toBe('listening')
+    expect(instance.start).toHaveBeenCalledTimes(1)
+  })
+
   it('captures transcript from recognition result', () => {
     const instance = installMockSpeechRecognition()
 
@@ -140,6 +152,19 @@ describe('useVoiceCapture', () => {
     instance.onend!()
     expect(status.value).toBe('error')
     expect(errorMessage.value).toContain('not-allowed')
+  })
+
+  it('allows a new recognition session after the previous one ends', () => {
+    const instance = installMockSpeechRecognition()
+
+    const { startListening, status } = useVoiceCapture()
+
+    expect(startListening()).toBe(true)
+    instance.onend!()
+    expect(status.value).toBe('idle')
+    expect(startListening()).toBe(true)
+
+    expect(instance.start).toHaveBeenCalledTimes(2)
   })
 
   it('requires consent acknowledgment when requireConsent is true', () => {

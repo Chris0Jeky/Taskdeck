@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as https from 'node:https';
 import * as http from 'node:http';
+import { parseTaskdeckApiBaseUrl } from './apiUrl';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 65_536;
@@ -29,12 +30,13 @@ export class TaskdeckClient {
       throw new Error('No auth token configured. Run "Taskdeck: Set Authentication Token" first.');
     }
 
-    let url: URL;
+    let baseUrl: URL;
     try {
-      url = new URL('/api/capture/items', apiUrl);
+      baseUrl = parseTaskdeckApiBaseUrl(apiUrl);
     } catch {
       throw new Error(`Invalid API URL: "${apiUrl}". Run "Taskdeck: Set API URL" to fix.`);
     }
+    const url = new URL('/api/capture/items', baseUrl);
 
     const body = JSON.stringify(dto);
 

@@ -1,10 +1,30 @@
 import * as vscode from 'vscode';
-import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { buildCaptureText, type WorkspaceContext } from './contextFormatter';
 
 export type { WorkspaceContext } from './contextFormatter';
+
+interface GitRemote {
+  name: string;
+  fetchUrl?: string;
+  pushUrl?: string;
+}
+
+interface GitRepository {
+  rootUri: vscode.Uri;
+  state: {
+    remotes: GitRemote[];
+  };
+}
+
+interface GitApi {
+  repositories: GitRepository[];
+}
+
+interface GitExtension {
+  getAPI(version: number): GitApi;
+}
 
 export async function getWorkspaceContext(editor: vscode.TextEditor): Promise<WorkspaceContext> {
   const doc = editor.document;
@@ -20,7 +40,7 @@ export async function getWorkspaceContext(editor: vscode.TextEditor): Promise<Wo
     : `L${selection.start.line + 1}-L${selection.end.line + 1}`;
 
   const gitRemoteHash = workspaceFolder
-    ? getGitRemoteHash(workspaceFolder.uri.fsPath)
+    ? await getGitRemoteHash(workspaceFolder)
     : null;
 
   return {
@@ -42,20 +62,32 @@ function isLocalAbsolutePath(fsPath: string): boolean {
   return path.isAbsolute(fsPath);
 }
 
-function getGitRemoteHash(cwd: string): string | null {
-  if (!isLocalAbsolutePath(cwd)) return null;
+function normalizeFsPath(fsPath: string): string {
+  return process.platform === 'win32'
+    ? fsPath.toLowerCase()
+    : fsPath;
+}
+
+async function getGitRemoteHash(workspaceFolder: vscode.WorkspaceFolder): Promise<string | null> {
+  if (!isLocalAbsolutePath(workspaceFolder.uri.fsPath)) return null;
+
+  const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+  if (!gitExtension) return null;
 
   try {
-    const remote = execSync('git remote get-url origin', {
-      cwd,
-      encoding: 'utf-8',
-      timeout: 3000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
+    const extensionApi = gitExtension.isActive
+      ? gitExtension.exports
+      : await gitExtension.activate();
+    const api = extensionApi.getAPI(1);
+    const workspacePath = normalizeFsPath(workspaceFolder.uri.fsPath);
+    const repository = api.repositories.find((repo) => normalizeFsPath(repo.rootUri.fsPath) === workspacePath);
+    const remote = repository?.state.remotes.find((candidate) => candidate.name === 'origin')
+      ?? repository?.state.remotes[0];
+    const remoteUrl = (remote?.fetchUrl ?? remote?.pushUrl ?? '').trim();
 
-    if (!remote) return null;
+    if (!remoteUrl) return null;
 
-    return createHash('sha256').update(remote).digest('hex').slice(0, 12);
+    return createHash('sha256').update(remoteUrl).digest('hex').slice(0, 12);
   } catch {
     return null;
   }

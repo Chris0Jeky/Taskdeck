@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { TaskdeckClient } from './client';
 import { buildCaptureText, getWorkspaceContext } from './context';
+import { parseTaskdeckApiBaseUrl } from './apiUrl';
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 let client: TaskdeckClient;
@@ -115,16 +116,13 @@ async function setApiUrl(): Promise<void> {
   }
 
   try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      throw new Error('Unsupported protocol');
-    }
+    parseTaskdeckApiBaseUrl(value);
   } catch {
     vscode.window.showErrorMessage(`Invalid URL: "${value}". Please enter a valid HTTP(S) URL.`);
     return;
   }
 
-  await config.update('apiUrl', value, vscode.ConfigurationTarget.Global);
+  await config.update('apiUrl', value.trim(), vscode.ConfigurationTarget.Global);
   vscode.window.showInformationMessage(`API URL updated`);
 }
 
