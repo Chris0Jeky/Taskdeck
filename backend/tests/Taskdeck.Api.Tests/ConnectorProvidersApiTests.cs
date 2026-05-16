@@ -44,10 +44,11 @@ public class ConnectorProvidersApiTests : IClassFixture<TestWebApplicationFactor
         doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
         doc.RootElement.GetArrayLength().Should().BeGreaterOrEqualTo(1);
 
-        var firstProvider = doc.RootElement[0];
-        firstProvider.GetProperty("providerId").GetString().Should().Be("github");
-        firstProvider.GetProperty("displayName").GetString().Should().NotBeNullOrWhiteSpace();
-        firstProvider.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
+        var githubProvider = doc.RootElement.EnumerateArray()
+            .FirstOrDefault(p => p.GetProperty("providerId").GetString() == "github");
+        githubProvider.ValueKind.Should().NotBe(JsonValueKind.Undefined, "github provider should be present");
+        githubProvider.GetProperty("displayName").GetString().Should().NotBeNullOrWhiteSpace();
+        githubProvider.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -149,6 +150,22 @@ public class ConnectorProvidersApiTests : IClassFixture<TestWebApplicationFactor
     }
 
     [Fact]
+    public async Task StoreCredential_ShouldPassValidation_WhenLabelIsExactly100Chars()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "conn-cred-maxlabel");
+        var fakeConnectorId = Guid.NewGuid();
+        var maxLabel = new string('x', 100);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/connectors/{fakeConnectorId}/credentials",
+            new StoreConnectorCredentialDto(ConnectorAuthMethod.PersonalAccessToken, maxLabel, "ghp_test_value"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "validation passes for 100-char label; 404 because connector doesn't exist");
+    }
+
+    [Fact]
     public async Task StoreCredential_ShouldReturn400_WhenValueEmpty()
     {
         using var client = _factory.CreateClient();
@@ -181,6 +198,9 @@ public class ConnectorProvidersApiTests : IClassFixture<TestWebApplicationFactor
         doc.RootElement.GetProperty("label").GetString().Should().Be("My Token");
         doc.RootElement.GetProperty("hasCredential").GetBoolean().Should().BeTrue();
         doc.RootElement.GetProperty("authMethod").GetInt32().Should().Be((int)ConnectorAuthMethod.PersonalAccessToken);
+        doc.RootElement.TryGetProperty("value", out _).Should().BeFalse("credential value must never be returned");
+        doc.RootElement.TryGetProperty("encryptedValue", out _).Should().BeFalse("encrypted value must never be returned");
+        doc.RootElement.TryGetProperty("plaintextValue", out _).Should().BeFalse("plaintext must never be returned");
     }
 
     [Fact]

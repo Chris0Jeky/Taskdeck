@@ -61,6 +61,9 @@ describe('useAutomationChat', () => {
     vi.clearAllMocks()
     routeMocks.query = {}
     chatApiMocks.getMySessions.mockResolvedValue([])
+    chatApiMocks.getSession.mockResolvedValue(undefined)
+    chatApiMocks.createSession.mockResolvedValue(undefined)
+    chatApiMocks.sendMessage.mockResolvedValue(undefined)
     chatApiMocks.getHealth.mockResolvedValue({ status: 'healthy' })
     boardsApiMocks.getBoards.mockResolvedValue([])
   })
@@ -352,6 +355,7 @@ describe('useAutomationChat', () => {
 
       await vi.waitFor(() => {
         expect(chat.chatHealthLoadError.value).not.toBeNull()
+        expect(toastMocks.error).toHaveBeenCalled()
       })
     })
   })
