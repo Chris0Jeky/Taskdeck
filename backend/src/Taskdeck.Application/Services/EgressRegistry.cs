@@ -25,7 +25,7 @@ public sealed class EgressRegistry : IEgressRegistry
     {
     }
 
-    public EgressRegistry(IEnumerable<EgressEntry> entries)
+    internal EgressRegistry(IEnumerable<EgressEntry> entries)
     {
         ArgumentNullException.ThrowIfNull(entries);
 

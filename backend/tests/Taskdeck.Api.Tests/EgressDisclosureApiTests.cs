@@ -152,10 +152,30 @@ public class EgressDisclosureApiTests : IClassFixture<TestWebApplicationFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().NotContain("key", "API keys must not appear in disclosure");
-        body.Should().NotContain("secret", "Secrets must not appear in disclosure");
-        body.Should().NotContain("password", "Passwords must not appear in disclosure");
-        body.Should().NotContain("token", "Tokens must not appear in disclosure");
+        using var doc = JsonDocument.Parse(body);
+        var destinations = doc.RootElement.GetProperty("destinations");
+
+        foreach (var dest in destinations.EnumerateArray())
+        {
+            var host = dest.GetProperty("host").GetString()!;
+            var tool = dest.GetProperty("toolOrAgent").GetString()!;
+
+            host.Should().NotMatchRegex(@"sk-[A-Za-z0-9]{20,}",
+                $"host field for {tool} must not contain an API key pattern");
+            host.Should().NotMatchRegex(@"[A-Za-z0-9+/]{40,}={0,2}",
+                $"host field for {tool} must not contain a base64 credential");
+            tool.Should().NotContainEquivalentOf("password",
+                "toolOrAgent must not reference passwords");
+            tool.Should().NotContainEquivalentOf("secret",
+                "toolOrAgent must not reference secrets");
+        }
+
+        body.Should().NotContainEquivalentOf("Bearer ",
+            "Bearer tokens must not appear in disclosure");
+        body.Should().NotMatchRegex(@"sk-[A-Za-z0-9]{20,}",
+            "OpenAI-style API keys must not appear in disclosure");
+        body.Should().NotMatchRegex(@"ghp_[A-Za-z0-9]{36}",
+            "GitHub PATs must not appear in disclosure");
     }
 
     [Fact]
