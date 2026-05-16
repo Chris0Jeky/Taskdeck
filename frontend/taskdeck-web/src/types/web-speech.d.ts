@@ -46,6 +46,3 @@ interface Window {
   SpeechRecognition?: SpeechRecognitionConstructor
   webkitSpeechRecognition?: SpeechRecognitionConstructor
 }
-
-declare var SpeechRecognition: SpeechRecognitionConstructor | undefined
-declare var webkitSpeechRecognition: SpeechRecognitionConstructor | undefined
