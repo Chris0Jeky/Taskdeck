@@ -73,10 +73,20 @@ This file is the persistent memory and execution state for Claude Code's autonom
 
 ## Current Work
 
-### Active Branch: `tst/1070-mfa-409-conflict` (next)
+### Active Branch: `tst/1081-composable-coverage-part2` (R1 done, CI pending)
 
 ### In-Progress PRs:
 - PR #1075 (docs/cleanup-encoding-and-counts) — orchestration file, under review
+- PR #1084 (tst/1081-composable-coverage-part2) — 266 new tests, R1 complete, awaiting CI
+
+### Completed PRs (DO NOT MERGE — leave open):
+- PR #1076 tst/1070-mfa-409-conflict (R1+R2 done, CI green)
+- PR #1077 fix/paper-board-card-encoding-artifact
+- PR #1078 feat/982-pwa-share-target
+- PR #1079 feat/983-ambient-channel-hardening
+- PR #1080 feat/984-learning-loop-beta-gate (R1+R2 done, CI green)
+- PR #1082 tst/1081-composable-test-coverage (R1+R2 done, Ubuntu green)
+- PR #1083 paper/1001-board-kanban-surface (R1+R2 done)
 
 ### Stacked Branches: (none)
 
@@ -146,3 +156,16 @@ gh pr view <number> --json comments
 - Closed 5 stale issues (#975, #976, #977, #980, #1066)
 - All PROD-00 sub-issues confirmed closed
 - Next: commit docs work, then start on #1070, #1001
+
+### 2026-05-16 Session 2 (continued)
+- PR #1084 (tst/1081-composable-coverage-part2): 266 new tests total
+  - useInboxOrchestrator (41), useReviewProposals (39), useReviewKeymap (30)
+  - cardFilterStore (24), columnStore (12), cardStore (24), labelStore (17)
+  - boardCrudStore (28), cardCommentStore (17), boardStoreHelpers (13), boardUiStore (4)
+  - agentApi (8), integrationsApi (9)
+- Fixed CI lint failure (no-unused-vars in 3 test files)
+- R1 adversarial review: 3 HIGH, 5 MEDIUM, 4 LOW — all HIGH fixed
+- Frontend test count: 3,383 → 3,534
+- All stores, composables, and API modules now have test coverage
+- Remaining untested: inkBleedMotion.ts, useInkBleed.ts (animation utilities — low priority)
+- Next: await CI green, then assess next tier items from execution queue
