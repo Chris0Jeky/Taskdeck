@@ -343,7 +343,7 @@ describe('useInboxOrchestrator', () => {
 
   describe('lifecycle', () => {
     it('onMounted triggers loadInbox', async () => {
-      const orch = createOrchestrator()
+      createOrchestrator()
       expect(mountedCallback).not.toBeNull()
       await mountedCallback!()
       expect(mockCaptureStore.fetchItems).toHaveBeenCalled()

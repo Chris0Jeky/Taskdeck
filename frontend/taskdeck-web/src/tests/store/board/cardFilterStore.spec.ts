@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { ref } from 'vue'
 import { createCardFilterActions } from '../../../store/board/cardFilterStore'
 import type { Card } from '../../../types/board'

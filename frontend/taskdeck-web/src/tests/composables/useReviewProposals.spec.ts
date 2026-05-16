@@ -451,7 +451,7 @@ describe('useReviewProposals', () => {
     })
 
     it('activeBoardFilter watcher triggers loadProposals', async () => {
-      const rp = useReviewProposals()
+      useReviewProposals()
       mockAutomationApi.getProposals.mockClear()
       // watchers[1] = watch(() => activeBoardFilter.value, ...)
       await watchers[1][1]()
