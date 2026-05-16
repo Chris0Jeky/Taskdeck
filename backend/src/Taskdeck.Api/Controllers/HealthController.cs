@@ -222,8 +222,7 @@ public class HealthController : ControllerBase
                 circuitChecks[name] = new
                 {
                     state = snapshot.State.ToString(),
-                    lastTransitionUtc = snapshot.LastTransitionUtc,
-                    lastFailureReason = snapshot.LastFailureReason
+                    lastTransitionUtc = snapshot.LastTransitionUtc
                 };
 
                 if (snapshot.State == CircuitState.Open)

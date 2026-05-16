@@ -96,7 +96,7 @@ public sealed class RedisBackplaneHealthCheck : IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis backplane health check failed");
-            var result = new RedisHealthStatus("Unhealthy", ex.Message);
+            var result = new RedisHealthStatus("Unhealthy", "Connection failed");
             _cache = new CacheEntry(result, DateTimeOffset.UtcNow);
             return result;
         }
