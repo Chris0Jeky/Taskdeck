@@ -105,6 +105,34 @@ describe('cardCommentStore', () => {
       expect(state.loading.value).toBe(false)
     })
 
+    it('sorts a new earliest comment before existing comments', async () => {
+      const newComment = { id: 'cmt-earliest', createdAt: '2025-12-31T23:59:59Z' }
+      mockCardCommentsApi.createComment.mockResolvedValueOnce(newComment)
+      const { createCardComment } = createCardCommentActions(state as any, helpers as any)
+
+      await createCardComment('board-1', 'card-1', { content: 'first' } as any)
+
+      expect(state.cardCommentsByCardId.value['card-1'].map((comment) => comment.id)).toEqual([
+        'cmt-earliest',
+        'cmt-1',
+        'cmt-2',
+      ])
+    })
+
+    it('sorts a new latest comment after existing comments', async () => {
+      const newComment = { id: 'cmt-latest', createdAt: '2026-01-03T00:00:00Z' }
+      mockCardCommentsApi.createComment.mockResolvedValueOnce(newComment)
+      const { createCardComment } = createCardCommentActions(state as any, helpers as any)
+
+      await createCardComment('board-1', 'card-1', { content: 'last' } as any)
+
+      expect(state.cardCommentsByCardId.value['card-1'].map((comment) => comment.id)).toEqual([
+        'cmt-1',
+        'cmt-2',
+        'cmt-latest',
+      ])
+    })
+
     it('creates entry for card with no prior comments', async () => {
       const newComment = { id: 'cmt-first', createdAt: '2026-03-01T00:00:00Z' }
       mockCardCommentsApi.createComment.mockResolvedValueOnce(newComment)

@@ -73,7 +73,19 @@ This file is the persistent memory and execution state for Claude Code's autonom
 
 ## Current Work
 
-### Active Branch: `tst/1081-composable-coverage-part2` (R1 done, CI pending)
+### Active Branch: `tst/1081-composable-coverage-part2` (cleanup pass in progress)
+
+### Cleanup Snapshot (2026-05-16)
+- PR #1076 tst/1070-mfa-409-conflict: code/CI green; needs project priority hygiene before merge.
+- PR #1077 fix/paper-board-card-encoding-artifact: CI red; Windows API/config-lock and PaperReviewView test leakage need cleanup or supersession.
+- PR #1078 feat/982-pwa-share-target: privacy/queue/share findings fixed in `ae76fe56`; CI rerun pending.
+- PR #1079 feat/983-ambient-channel-hardening: CI and bot findings fixed in `5a689d9f`; CI rerun pending.
+- PR #1080 feat/984-learning-loop-beta-gate: bot findings and Windows test leak fixed through `f6c3fdfd`; CI rerun pending.
+- PR #1082 tst/1081-composable-test-coverage: CI red, overlaps #1084 on `useReviewKeymap.spec.ts`; likely needs supersession/rebase decision.
+- PR #1083 paper/1001-board-kanban-surface: CI red; needs Windows setup/test rerun plus acceptance-criteria test-strength review.
+- PR #1084 tst/1081-composable-coverage-part2: CI green at `077bf915`; follow-up fixes added for previously accepted review findings, local targeted tests green, push pending.
+
+User explicitly authorized merging PRs only after green CI/tests, bot comments addressed, every review finding fixed or tracked, and two adversarial review rounds. The older "Do NOT merge" parking instruction below no longer applies to this cleanup session.
 
 ### In-Progress PRs:
 - PR #1075 (docs/cleanup-encoding-and-counts) — orchestration file, under review

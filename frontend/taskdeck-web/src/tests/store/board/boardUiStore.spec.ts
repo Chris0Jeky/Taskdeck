@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { createBoardUiActions } from '../../../store/board/boardUiStore'
 
@@ -10,6 +10,10 @@ function createMockState() {
 }
 
 describe('boardUiStore', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   describe('setBoardPresenceMembers', () => {
     it('sets the members array', () => {
       const state = createMockState()

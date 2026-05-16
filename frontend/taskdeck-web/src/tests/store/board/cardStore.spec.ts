@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
 
-const { mockCardsApi } = vi.hoisted(() => ({
+const { mockCardsApi, mockGetErrorMessage } = vi.hoisted(() => ({
   mockCardsApi: {
     getCards: vi.fn(),
     createCard: vi.fn(),
@@ -10,6 +10,10 @@ const { mockCardsApi } = vi.hoisted(() => ({
     moveCard: vi.fn(),
     getCardProvenance: vi.fn(),
   },
+  mockGetErrorMessage: vi.fn((err: unknown, fallback: string) => {
+    const typed = err as { message?: string } | null
+    return typed?.message ?? fallback
+  }),
 }))
 
 vi.mock('../../../api/cardsApi', () => ({
@@ -17,10 +21,7 @@ vi.mock('../../../api/cardsApi', () => ({
 }))
 
 vi.mock('../../../utils/errorMessage', () => ({
-  getErrorMessage: (err: unknown, fallback: string) => {
-    const typed = err as { message?: string } | null
-    return typed?.message ?? fallback
-  },
+  getErrorMessage: mockGetErrorMessage,
 }))
 
 import { createCardActions } from '../../../store/board/cardStore'
@@ -266,6 +267,10 @@ describe('cardStore', () => {
       ).rejects.toThrow('Card was modified by another user')
 
       expect(helpers.isHttpConflict).toHaveBeenCalledWith(conflictError)
+      expect(mockGetErrorMessage).toHaveBeenCalledWith(
+        conflictError,
+        'Failed to update card',
+      )
       expect(helpers.toast.error).toHaveBeenCalledWith(
         'Card was modified by another user',
       )
@@ -367,6 +372,26 @@ describe('cardStore', () => {
         movedCard,
       )
       expect(helpers.toast.success).toHaveBeenCalledWith('Card moved successfully')
+      expect(state.loading.value).toBe(false)
+    })
+
+    it('sets loading to true while moving a card', async () => {
+      let loadingDuringCall = false
+      mockCardsApi.moveCard.mockImplementationOnce(async () => {
+        loadingDuringCall = state.loading.value
+        return {
+          id: 'card-1',
+          boardId: 'board-1',
+          columnId: 'col-2',
+          title: 'First',
+          position: 0,
+        }
+      })
+      const { moveCard } = createCardActions(state as any, helpers as any)
+
+      await moveCard('board-1', 'card-1', 'col-2', 0)
+
+      expect(loadingDuringCall).toBe(true)
       expect(state.loading.value).toBe(false)
     })
 

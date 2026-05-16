@@ -167,6 +167,23 @@ describe('boardCrudStore', () => {
       expect(mockBoardsApi.getBoards).toHaveBeenCalledWith(undefined, true)
     })
 
+    it('uses filtered fetches to reset the throttle window', async () => {
+      vi.useFakeTimers()
+      const freshBoards = [{ id: 'board-1', name: 'My Board' }]
+      mockBoardsApi.getBoards.mockResolvedValue(freshBoards)
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+
+      await fetchBoards()
+      vi.advanceTimersByTime(5001)
+      await fetchBoards('search term')
+      vi.advanceTimersByTime(1)
+      await fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, 'search term', false)
+    })
+
     it('uses demo data in demo mode', async () => {
       helpers = createMockHelpers({ isDemoMode: true })
       const demoBoards = [{ id: 'demo-1', name: 'Demo Board' }]

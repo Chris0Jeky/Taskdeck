@@ -117,6 +117,7 @@ describe('labelStore', () => {
       })
       const { createLabel } = createLabelActions(state as any, helpers as any)
       await expect(createLabel('board-1', { name: 'X' } as any)).rejects.toThrow('demo')
+      expect(helpers.guardDemoMutation).toHaveBeenCalled()
       expect(mockLabelsApi.createLabel).not.toHaveBeenCalled()
     })
 
@@ -173,6 +174,7 @@ describe('labelStore', () => {
       })
       const { updateLabel } = createLabelActions(state as any, helpers as any)
       await expect(updateLabel('board-1', 'lbl-1', {} as any)).rejects.toThrow('demo')
+      expect(helpers.guardDemoMutation).toHaveBeenCalled()
       expect(mockLabelsApi.updateLabel).not.toHaveBeenCalled()
     })
 
@@ -216,6 +218,7 @@ describe('labelStore', () => {
       })
       const { deleteLabel } = createLabelActions(state as any, helpers as any)
       await expect(deleteLabel('board-1', 'lbl-1')).rejects.toThrow('demo')
+      expect(helpers.guardDemoMutation).toHaveBeenCalled()
       expect(mockLabelsApi.deleteLabel).not.toHaveBeenCalled()
     })
 
