@@ -97,6 +97,15 @@ export default defineConfig({
         start_url: '/workspace/home',
         lang: 'en',
         categories: ['productivity', 'utilities'],
+        share_target: {
+          action: '/capture/share',
+          method: 'GET',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+          },
+        },
         icons: [
           {
             src: 'icons/icon-192.svg',
