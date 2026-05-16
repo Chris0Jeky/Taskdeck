@@ -44,4 +44,13 @@ public class ProposalOutcomeRepository : Repository<ProposalOutcome>, IProposalO
             .Take(boundedLimit)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<ProposalOutcome>> GetAllByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .AsNoTracking()
+            .Where(o => o.DecidedByUserId == userId)
+            .Take(MaxLimit)
+            .ToListAsync(cancellationToken);
+    }
 }
