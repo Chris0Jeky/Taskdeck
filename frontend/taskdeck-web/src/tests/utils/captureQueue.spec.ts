@@ -4,7 +4,9 @@ import {
   enqueueCapture,
   dequeueCapture,
   getAllPending,
+  getAllQueuedCaptures,
   incrementRetry,
+  markCaptureFailed,
   getPendingCount,
 } from '../../utils/captureQueue'
 import type { CreateCaptureItemDto } from '../../types/capture'
@@ -15,8 +17,8 @@ function makeDto(text = 'Test capture'): CreateCaptureItemDto {
 
 describe('captureQueue', () => {
   beforeEach(async () => {
-    const pending = await getAllPending()
-    for (const entry of pending) {
+    const queued = await getAllQueuedCaptures()
+    for (const entry of queued) {
       await dequeueCapture(entry.id)
     }
   })
@@ -37,7 +39,20 @@ describe('captureQueue', () => {
     expect(pending[0].dto.text).toBe('Hello from share')
     expect(pending[0].dto.source).toBe('ShareTarget')
     expect(pending[0].retryCount).toBe(0)
+    expect(pending[0].ownerUserId).toBeNull()
+    expect(pending[0].status).toBe('pending')
     expect(pending[0].queuedAt).toBeTruthy()
+  })
+
+  it('records the session owner for replay safety', async () => {
+    const id = await enqueueCapture(makeDto('Owned capture'), 'user-1')
+
+    const pending = await getAllPending()
+    expect(pending[0]).toMatchObject({
+      id,
+      ownerUserId: 'user-1',
+      status: 'pending',
+    })
   })
 
   it('dequeues a capture by id', async () => {
@@ -65,6 +80,24 @@ describe('captureQueue', () => {
 
     const pending = await getAllPending()
     expect(pending[0].retryCount).toBe(2)
+  })
+
+  it('marks a capture failed without deleting its recovery payload', async () => {
+    const id = await enqueueCapture(makeDto('Needs recovery'), 'user-1')
+
+    await markCaptureFailed(id, 'HTTP 400')
+
+    expect(await getAllPending()).toHaveLength(0)
+    expect(await getPendingCount()).toBe(0)
+    const queued = await getAllQueuedCaptures()
+    expect(queued).toHaveLength(1)
+    expect(queued[0]).toMatchObject({
+      id,
+      ownerUserId: 'user-1',
+      status: 'failed',
+      lastError: 'HTTP 400',
+    })
+    expect(queued[0].failedAt).toBeTruthy()
   })
 
   it('handles multiple captures in FIFO order', async () => {

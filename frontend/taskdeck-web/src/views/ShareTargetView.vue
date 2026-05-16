@@ -34,6 +34,10 @@ function buildCaptureText(title: string, text: string, url: string): string {
   return parts.join('\n\n') || ''
 }
 
+function getCurrentQueueOwnerUserId(): string | null {
+  return tokenStorage.getSession()?.userId ?? null
+}
+
 function hasValidSession(): boolean {
   const token = tokenStorage.getToken()
   if (!token) return false
@@ -42,7 +46,7 @@ function hasValidSession(): boolean {
 
 async function safeEnqueue(dto: CreateCaptureItemDto): Promise<boolean> {
   try {
-    await enqueueCapture(dto)
+    await enqueueCapture(dto, getCurrentQueueOwnerUserId())
     return true
   } catch {
     return false

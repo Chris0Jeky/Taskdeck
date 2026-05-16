@@ -1,5 +1,7 @@
 const TASKDECK_SHARE_CACHE = 'taskdeck-share-target'
 const TASKDECK_SHARE_REQUEST = '/capture/share-data'
+const TASKDECK_CAPTURE_SYNC_TAG = 'taskdeck-capture-sync'
+const TASKDECK_CAPTURE_SYNC_MESSAGE = 'taskdeck:capture-sync'
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
@@ -31,5 +33,22 @@ self.addEventListener('fetch', (event) => {
     )
 
     return Response.redirect('/capture/share?fromShareTarget=1', 303)
+  })())
+})
+
+self.addEventListener('sync', (event) => {
+  if (event.tag !== TASKDECK_CAPTURE_SYNC_TAG) {
+    return
+  }
+
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    })
+
+    for (const client of clients) {
+      client.postMessage({ type: TASKDECK_CAPTURE_SYNC_MESSAGE })
+    }
   })())
 })
