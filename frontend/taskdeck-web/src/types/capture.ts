@@ -36,6 +36,8 @@ export type CaptureSource =
   | 'TranscriptFile'
   | 'MarkdownImport'
   | 'WebClip'
+  | 'ShareTarget'
+  | 'BrowserExtension'
 
 export type CaptureSourceValue = CaptureSource | number
 
