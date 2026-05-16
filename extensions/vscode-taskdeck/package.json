@@ -1,0 +1,74 @@
+{
+  "name": "taskdeck-capture",
+  "displayName": "Taskdeck Capture",
+  "description": "Capture selected text and IDE context to Taskdeck inbox",
+  "version": "0.1.0",
+  "publisher": "taskdeck",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "taskdeck.captureSelection",
+        "title": "Taskdeck: Capture Selection"
+      },
+      {
+        "command": "taskdeck.captureFile",
+        "title": "Taskdeck: Capture Current File Context"
+      },
+      {
+        "command": "taskdeck.setApiUrl",
+        "title": "Taskdeck: Set API URL"
+      },
+      {
+        "command": "taskdeck.setToken",
+        "title": "Taskdeck: Set Authentication Token"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "taskdeck.captureSelection",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorHasSelection"
+      }
+    ],
+    "configuration": {
+      "title": "Taskdeck",
+      "properties": {
+        "taskdeck.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:5000",
+          "description": "Taskdeck API base URL"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "taskdeck.captureSelection",
+          "when": "editorHasSelection",
+          "group": "taskdeck"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}
