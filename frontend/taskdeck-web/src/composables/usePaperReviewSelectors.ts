@@ -1,23 +1,14 @@
-import { computed, type ComputedRef } from 'vue'
+import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { Proposal as ApiProposal } from '../types/automation'
-
-/**
- * usePaperReviewSelectors — extends `useReviewProposals` output with the
- * Paper deep-Review selectors (provenance, side-effects, confidence
- * breakdown, conflicts, history, similar past).
- *
- * Backend gaps: as of 2026-04 the API does not yet expose these fields on
- * `Proposal`. Until the backend lands the corresponding shape, we feed the
- * surface from a feature-flagged demo stub so the Paper deep-Review view is
- * complete and reviewable. Each gap has an open follow-up issue (see
- * `paper-review-backend-gap-*` and references to PAPER-06 / #1002).
- *
- * The flag `PAPER_REVIEW_DEMO_FILL` defaults to `true`. When the backend
- * starts returning real data on the proposal payload, switch the selector to
- * read from there and flip the flag off (or wire to `featureFlagStore`).
- */
-
-const PAPER_REVIEW_DEMO_FILL = true
+import { proposalDeepReviewApi } from '../api/proposalDeepReviewApi'
+import type {
+  ProvenanceRowDto,
+  ConfidenceBreakdownDto,
+  ProposalSideEffectsDto,
+  ConflictRowDto,
+  CardHistoryRowDto,
+  SimilarPastResultDto,
+} from '../api/proposalDeepReviewApi'
 
 export type ProvenanceWeight = 'primary' | 'contextual' | 'excluded' | 'inferred'
 
@@ -31,7 +22,6 @@ export interface ProvenanceRow {
 export interface SideEffectRow {
   key: string
   value: string
-  /** `active` rows are styled in serif italic with ember eyebrow. */
   tone: 'active' | 'passive'
 }
 
@@ -40,21 +30,15 @@ export interface SideEffects {
   reversibility: {
     summary: string
     description: string
-    /** Window in milliseconds for the undo timeline. Defaults to 6 h. */
     windowMs: number
-    /** When the apply happened (ms epoch). Pending proposals do not have a running undo window. */
     appliedAt: number | null
   }
 }
 
 export interface ConfidenceBreakdown {
-  /** Aggregate value used by the dial (0..1). */
   overall: number
-  /** Per-component bars; rendered in the right rail. */
   components: Array<{ key: string; value: number }>
-  /** Footer note explaining a low component, when present. */
   note?: string
-  /** Apply threshold from settings, used for the dial caption. */
   threshold: number
 }
 
@@ -85,151 +69,195 @@ export interface PaperReviewSelectors {
   conflicts: ComputedRef<ConflictRow[]>
   history: ComputedRef<HistoryRow[]>
   similarPast: ComputedRef<SimilarPastRow[]>
-  /** Aggregate apply rate of the similar-past list. */
   similarPastApplyRate: ComputedRef<{ applied: number; total: number; ratio: number }>
+  loading: ComputedRef<boolean>
 }
 
-const EMPTY_PROVENANCE: ProvenanceRow[] = []
-const EMPTY_CONFLICTS: ConflictRow[] = []
-const EMPTY_HISTORY: HistoryRow[] = []
-const EMPTY_SIMILAR: SimilarPastRow[] = []
-const EMPTY_SIDE_EFFECTS: SideEffects = {
-  rows: [],
-  reversibility: {
+const EMPTY_PROVENANCE: ProvenanceRow[] = Object.freeze([] as ProvenanceRow[]) as ProvenanceRow[]
+const EMPTY_CONFLICTS: ConflictRow[] = Object.freeze([] as ConflictRow[]) as ConflictRow[]
+const EMPTY_HISTORY: HistoryRow[] = Object.freeze([] as HistoryRow[]) as HistoryRow[]
+const EMPTY_SIMILAR: SimilarPastRow[] = Object.freeze([] as SimilarPastRow[]) as SimilarPastRow[]
+const EMPTY_SIDE_EFFECTS: SideEffects = Object.freeze({
+  rows: Object.freeze([] as SideEffectRow[]) as SideEffectRow[],
+  reversibility: Object.freeze({
     summary: '6 hours · single keystroke',
     description: 'Undo restores the prior state. Nothing is lost.',
     windowMs: 6 * 60 * 60 * 1000,
     appliedAt: null,
-  },
-}
-const EMPTY_CONFIDENCE: ConfidenceBreakdown = {
+  }) as SideEffects['reversibility'],
+}) as SideEffects
+const EMPTY_CONFIDENCE: ConfidenceBreakdown = Object.freeze({
   overall: 0,
-  components: [],
+  components: Object.freeze([] as ConfidenceBreakdown['components']) as ConfidenceBreakdown['components'],
   threshold: 0.7,
+}) as ConfidenceBreakdown
+
+const VALID_WEIGHTS = new Set<ProvenanceWeight>(['primary', 'contextual', 'excluded', 'inferred'])
+
+function mapProvenanceRow(dto: ProvenanceRowDto): ProvenanceRow {
+  const weight = dto.weight.toLowerCase() as ProvenanceWeight
+  return {
+    icon: dto.icon,
+    key: dto.key,
+    value: dto.value,
+    weight: VALID_WEIGHTS.has(weight) ? weight : 'contextual',
+  }
 }
 
-// TODO(#1002): Replace each demo block with backend-driven data once the
-// gap-* issues land. The shape is stable; only the source changes.
-const DEMO_PROVENANCE: ProvenanceRow[] = [
-  {
-    icon: '📄',
-    key: 'card body',
-    value: 'Card description · 178 words · last edited yesterday',
-    weight: 'primary',
-  },
-  {
-    icon: '🔗',
-    key: 'design-doc',
-    value: 'Dark Mode QA checklist · 5 items · attached last week',
-    weight: 'primary',
-  },
-  {
-    icon: '📜',
-    key: 'board activity · 7 entries',
-    value: 'Recent moves on this card and adjacent cards · last 14 days',
-    weight: 'contextual',
-  },
-  {
-    icon: '⊘',
-    key: 'not read',
-    value: 'Other boards · private cards · captures with different scope',
-    weight: 'excluded',
-  },
-  {
-    icon: '✦',
-    key: 'inferred',
-    value: 'Splitting threshold = 5+ subtasks OR >2 days estimated.',
-    weight: 'inferred',
-  },
-]
+function mapConflictTone(tone: string): 'warn' | 'info' | 'ok' {
+  switch (tone.toLowerCase()) {
+    case 'warn':
+      return 'warn'
+    case 'ok':
+      return 'ok'
+    default:
+      return 'info'
+  }
+}
 
-const DEMO_SIDE_EFFECT_ROWS: SideEffectRow[] = [
-  { key: 'Cards', value: '3 created · 1 archived (30 days)', tone: 'active' },
-  { key: 'Subtasks', value: '8 distributed · none lost · checkmarks preserved', tone: 'active' },
-  { key: 'Comments', value: 'Original 4 comments stay on the archived parent', tone: 'passive' },
-  { key: 'Activity log', value: "Single entry: 'applied #014'", tone: 'active' },
-  { key: 'Notifications', value: 'Author only · no team notify (solo board)', tone: 'passive' },
-  { key: 'Webhooks', value: 'None · no integrations active on this board', tone: 'passive' },
-  { key: 'Calendar', value: 'Untouched · due dates preserved or blank', tone: 'passive' },
-]
+function mapHistoryStatus(status: string): 'pending' | 'applied' | 'past' {
+  switch (status.toLowerCase()) {
+    case 'pending':
+      return 'pending'
+    case 'applied':
+      return 'applied'
+    default:
+      return 'past'
+  }
+}
 
-const DEMO_CONFLICTS: ConflictRow[] = [
-  {
-    tone: 'warn',
-    key: 'Stale assignment',
-    value: 'Assignee was last active 9 days ago. Confirm before applying or reassign.',
-  },
-  {
-    tone: 'info',
-    key: 'Linked capture is older',
-    value: 'Source capture is 2 days old. Still relevant?',
-  },
-  { tone: 'ok', key: 'No collisions', value: 'No other proposals touch this card right now.' },
-]
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v))
+}
 
-const DEMO_HISTORY: HistoryRow[] = [
-  { serial: '#014', event: 'haiku proposed split into 3', age: '11:42', status: 'pending' },
-  { serial: '#011', event: 'subtask checked · audit AA', age: '09:18', status: 'applied' },
-  { serial: '#009', event: "capture linked: 'Paper at Night QA'", age: 'yest 16:04', status: 'past' },
-  { serial: '#007', event: 'body rewritten', age: 'yest 14:22', status: 'past' },
-  { serial: '#003', event: 'label · theme added', age: 'Mon 11:00', status: 'past' },
-  { serial: '#001', event: 'card created', age: 'wk 17 Mon', status: 'past' },
-]
+function mapConfidence(dto: ConfidenceBreakdownDto): ConfidenceBreakdown {
+  return {
+    overall: clamp01(dto.overall),
+    components: dto.components.map((c) => ({ key: c.key, value: clamp01(c.value) })),
+    note: dto.note ?? undefined,
+    threshold: dto.threshold,
+  }
+}
 
-const DEMO_SIMILAR: SimilarPastRow[] = [
-  { serial: '#984', title: "Split 'Auth flow' → 4 cards", verdict: 'applied', date: 'wk 14' },
-  { serial: '#962', title: "Split 'Onboarding' → 3", verdict: 'rejected', date: 'wk 13' },
-  { serial: '#941', title: 'Merge dupes (C-082, C-083)', verdict: 'applied', date: 'wk 12' },
-]
+function mapSideEffects(dto: ProposalSideEffectsDto, appliedAt: number | null): SideEffects {
+  return {
+    rows: dto.rows.map((r) => ({ key: r.key, value: r.value, tone: r.tone })),
+    reversibility: {
+      summary: dto.reversibility.summary,
+      description: dto.reversibility.description,
+      windowMs: dto.reversibility.windowMs,
+      appliedAt,
+    },
+  }
+}
 
-const DEMO_CONFIDENCE: ConfidenceBreakdown = {
-  overall: 0.84,
-  components: [
-    { key: 'Pattern match', value: 0.92 },
-    { key: 'Reach', value: 0.88 },
-    { key: 'Reversibility', value: 0.99 },
-    { key: 'Recency · ctx', value: 0.61 },
-  ],
-  note: 'Lower-than-average on recency: source capture is 2 days old. Consider double-checking before apply.',
-  threshold: 0.7,
+function mapConflicts(dtos: ConflictRowDto[]): ConflictRow[] {
+  return dtos.map((d) => ({ tone: mapConflictTone(d.tone), key: d.key, value: d.value }))
+}
+
+function mapHistory(dtos: CardHistoryRowDto[]): HistoryRow[] {
+  return dtos.map((d) => ({
+    serial: d.serial,
+    event: d.event,
+    age: d.age,
+    status: mapHistoryStatus(d.status),
+  }))
+}
+
+function mapSimilarPast(dto: SimilarPastResultDto): SimilarPastRow[] {
+  return dto.decisions.map((d) => ({
+    serial: d.serial,
+    title: d.title,
+    verdict: d.verdict.toLowerCase() === 'applied' ? 'applied' : 'rejected',
+    date: d.date,
+  }))
 }
 
 export function usePaperReviewSelectors(
   activeProposal: ComputedRef<ApiProposal | null>,
 ): PaperReviewSelectors {
-  const useDemo = computed(() => PAPER_REVIEW_DEMO_FILL && activeProposal.value !== null)
+  const provenanceData: Ref<ProvenanceRow[]> = ref([])
+  const sideEffectsData: Ref<SideEffects> = ref(EMPTY_SIDE_EFFECTS)
+  const confidenceData: Ref<ConfidenceBreakdown> = ref(EMPTY_CONFIDENCE)
+  const conflictsData: Ref<ConflictRow[]> = ref([])
+  const historyData: Ref<HistoryRow[]> = ref([])
+  const similarPastData: Ref<SimilarPastRow[]> = ref([])
+  const isLoading = ref(false)
 
-  const provenance = computed<ProvenanceRow[]>(() =>
-    useDemo.value ? DEMO_PROVENANCE : EMPTY_PROVENANCE,
+  let fetchGeneration = 0
+  let abortController: AbortController | null = null
+
+  watch(
+    () => activeProposal.value?.id,
+    async (proposalId) => {
+      // Abort any in-flight requests from the previous watcher invocation
+      if (abortController) {
+        abortController.abort()
+        abortController = null
+      }
+
+      if (!proposalId) {
+        isLoading.value = false
+        provenanceData.value = EMPTY_PROVENANCE
+        sideEffectsData.value = EMPTY_SIDE_EFFECTS
+        confidenceData.value = EMPTY_CONFIDENCE
+        conflictsData.value = EMPTY_CONFLICTS
+        historyData.value = EMPTY_HISTORY
+        similarPastData.value = EMPTY_SIMILAR
+        return
+      }
+
+      const generation = ++fetchGeneration
+      const controller = new AbortController()
+      abortController = controller
+      const signal = controller.signal
+
+      const proposal = activeProposal.value
+      const appliedAt = proposal?.appliedAt ? new Date(proposal.appliedAt).getTime() : null
+
+      isLoading.value = true
+
+      const results = await Promise.allSettled([
+        proposalDeepReviewApi.getProvenance(proposalId, { signal }),
+        proposalDeepReviewApi.getConfidence(proposalId, { signal }),
+        proposalDeepReviewApi.getSideEffects(proposalId, { signal }),
+        proposalDeepReviewApi.getConflicts(proposalId, { signal }),
+        proposalDeepReviewApi.getHistory(proposalId, { signal }),
+        proposalDeepReviewApi.getSimilarPast(proposalId, { signal }),
+      ])
+
+      if (generation !== fetchGeneration) return
+
+      isLoading.value = false
+
+      const [prov, conf, side, confl, hist, sim] = results
+
+      provenanceData.value =
+        prov.status === 'fulfilled' ? prov.value.map(mapProvenanceRow) : EMPTY_PROVENANCE
+
+      confidenceData.value =
+        conf.status === 'fulfilled' ? mapConfidence(conf.value) : EMPTY_CONFIDENCE
+
+      sideEffectsData.value =
+        side.status === 'fulfilled' ? mapSideEffects(side.value, appliedAt) : EMPTY_SIDE_EFFECTS
+
+      conflictsData.value =
+        confl.status === 'fulfilled' ? mapConflicts(confl.value) : EMPTY_CONFLICTS
+
+      historyData.value = hist.status === 'fulfilled' ? mapHistory(hist.value) : EMPTY_HISTORY
+
+      similarPastData.value =
+        sim.status === 'fulfilled' ? mapSimilarPast(sim.value) : EMPTY_SIMILAR
+    },
+    { immediate: true },
   )
 
-  const sideEffects = computed<SideEffects>(() => {
-    if (!useDemo.value) return EMPTY_SIDE_EFFECTS
-    const proposal = activeProposal.value
-    const appliedAt = proposal?.appliedAt ? new Date(proposal.appliedAt).getTime() : null
-    return {
-      rows: DEMO_SIDE_EFFECT_ROWS,
-      reversibility: {
-        summary: '6 hours · single keystroke',
-        description:
-          'Undo restores all affected cards to their prior state with original body, subtasks, comments, and activity log. Nothing is lost.',
-        windowMs: 6 * 60 * 60 * 1000,
-        appliedAt,
-      },
-    }
-  })
-
-  const confidenceBreakdown = computed<ConfidenceBreakdown>(() =>
-    useDemo.value ? DEMO_CONFIDENCE : EMPTY_CONFIDENCE,
-  )
-
-  const conflicts = computed<ConflictRow[]>(() => (useDemo.value ? DEMO_CONFLICTS : EMPTY_CONFLICTS))
-
-  const history = computed<HistoryRow[]>(() => (useDemo.value ? DEMO_HISTORY : EMPTY_HISTORY))
-
-  const similarPast = computed<SimilarPastRow[]>(() =>
-    useDemo.value ? DEMO_SIMILAR : EMPTY_SIMILAR,
-  )
+  const provenance = computed<ProvenanceRow[]>(() => provenanceData.value)
+  const sideEffects = computed<SideEffects>(() => sideEffectsData.value)
+  const confidenceBreakdown = computed<ConfidenceBreakdown>(() => confidenceData.value)
+  const conflicts = computed<ConflictRow[]>(() => conflictsData.value)
+  const history = computed<HistoryRow[]>(() => historyData.value)
+  const similarPast = computed<SimilarPastRow[]>(() => similarPastData.value)
 
   const similarPastApplyRate = computed(() => {
     const rows = similarPast.value
@@ -237,6 +265,8 @@ export function usePaperReviewSelectors(
     const total = rows.length
     return { applied, total, ratio: total === 0 ? 0 : applied / total }
   })
+
+  const loading = computed(() => isLoading.value)
 
   return {
     provenance,
@@ -246,5 +276,6 @@ export function usePaperReviewSelectors(
     history,
     similarPast,
     similarPastApplyRate,
+    loading,
   }
 }
