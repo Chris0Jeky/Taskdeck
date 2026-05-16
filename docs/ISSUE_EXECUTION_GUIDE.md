@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-04-25
+Last Updated: 2026-05-16
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -436,13 +436,13 @@ Tracker:
 Dependency order:
 1. ~~`#973`~~ RFAI-01 safety invariants, IA cut, eval seed, and recertification (**delivered** PR `#986`)
 2. ~~`#974`~~ RFAI-02 IntentEnvelopeV1, IChatClient adapter, and schema spike (**delivered** PR `#989`)
-3. ~~`#975`~~ RFAI-03 proposal generator V1 with verified provenance and outcomes ledger (**delivered** foundational slice, PR `#993`)
-4. ~~`#976`~~ RFAI-04 typed ProposalCompiler and revision-backed edit-before-approve flow (**delivered** foundational slice, PR `#994`)
-5. ~~`#977`~~ RFAI-05 confidence pipeline and Review evidence section (**delivered** foundational slice, PR `#991`)
+3. ~~`#975`~~ RFAI-03 proposal generator V1 with verified provenance and outcomes ledger (**delivered** PRs `#993` + `#1071`)
+4. ~~`#976`~~ RFAI-04 typed ProposalCompiler and revision-backed edit-before-approve flow (**delivered** PRs `#994` + `#1058`)
+5. ~~`#977`~~ RFAI-05 confidence pipeline and Review evidence section (**delivered** PRs `#991` + `#1062`)
 6. ~~`#978`~~ RFAI-06 semantic memory vector index behind IVectorIndex (**delivered** PR `#990`)
-7. `#979` RFAI-07 hybrid retrieval, duplicate calibration, and memory-assisted generation (`Priority II`; depends on `#978`)
-8. ~~`#980`~~ RFAI-08 eval harness expansion, privacy analytics, and egress disclosure (**delivered** foundational slice, PR `#992`)
-9. `#981` RFAI-09 agent runtime hardening, MCP integrity, and scheduled Inbox Digest (`Priority II`; depends on `#976`, `#980`)
+7. ~~`#979`~~ RFAI-07 hybrid retrieval, duplicate calibration, and memory-assisted generation (**delivered** PR `#1050`)
+8. ~~`#980`~~ RFAI-08 eval harness expansion, privacy analytics, and egress disclosure (**delivered** PRs `#992` + `#1073` + `#1074`)
+9. ~~`#981`~~ RFAI-09 agent runtime hardening, MCP integrity, and scheduled Inbox Digest (**delivered** PR `#1052`)
 10. `#982` RFAI-10 PWA share-target quick capture and browser extension prototype (`Priority III`; depends on `#974`, `#980`)
 11. `#983` RFAI-11 ambient channel hardening decision and prototype (`Priority IV`; depends on `#982`; reuses `#219` for voice if selected)
 12. `#984` RFAI-12 learning loop UI, provenance drawer, Ollama flag, and beta gate (`Priority II`; depends on `#977`, `#980`, `#981`, `#983`)

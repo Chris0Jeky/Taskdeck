@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-05-11
+Last Updated: 2026-05-16
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,24 +10,24 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-05-05)
+## Current Verified Totals (2026-05-16)
 
-- Backend: **6,336 passing** (0 failed, 6 skipped; 6,342 total) -- verified 2026-05-05 via `dotnet test backend/Taskdeck.sln -c Release -m:1` after reconciling Paper backend gap PR `#1040`
-  - Domain: 1,609 passed
-  - Application: 3,004 passed
-  - API integration: 1,605 passed (0 failed, 2 skipped; 1,607 total)
+- Backend: **6,614 passing** (0 failed, 6 skipped; 6,620 total) -- verified 2026-05-16 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` after bulk merge of PRs `#1055`–`#1074`
+  - Domain: 1,626 passed
+  - Application: 3,185 passed
+  - API integration: 1,685 passed (0 failed, 2 skipped; 1,687 total)
   - CLI contract: 82 passed
   - Architecture boundaries: 16 passed (0 failed, 4 skipped; 20 total)
   - Integration (Testcontainers): 20 passed
-- Frontend unit: **2,805 passing** across 214+ test files -- verified 2026-04-25 via `npx vitest --run --reporter=verbose` on `main`
-- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
-- Combined automated total: **~9,141+ passing** (backend 6,336 + frontend unit 2,805 + E2E)
+- Frontend unit: **3,267 passing** -- verified 2026-05-16 post-bulk-merge (CI)
+- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing
+- Combined automated total: **~9,881+ passing** (backend 6,614 + frontend unit 3,267 + E2E)
 
 Verification note:
-- backend total of 6,336 is recertified after Paper backend gap PR `#1040` was reconciled with current `main`
-- Paper backend gap wave (2026-05-05, PRs `#1031`–`#1040`): ~480 new tests across 10 delivered/merge-ready issues; each delivered PR CI-verified independently, with `#1040` also locally verified after conflict recovery
-- prior recertification: backend 5,060 (2026-04-25), frontend 2,805 (2026-04-25) at PR `#987`
-- growth since last recertification: backend +1,276 passing tests, frontend unchanged
+- backend total of 6,614 is locally recertified after bulk merge of 15 PRs (`#1055`–`#1074`) on 2026-05-16
+- bulk merge wave (2026-05-16): security fixes (3 PRs), test coverage (2), RFAI features (5), PAPER frontend (2), dependency updates (3)
+- prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
+- growth since last recertification: backend +278 passing tests, frontend +462 passing tests
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
@@ -35,9 +35,9 @@ Tracker `#972` seeds the next review-first AI verification program. Delivered it
 
 - `#973`: (**delivered**, `#986`) twelve roadmap invariants covering automation-only mutation safety, proposal execution idempotency/version checks, outbound egress envelope coverage, disclosure registry coverage, MCP tool-definition hash pinning, telemetry content rejection, and proposal source-span integrity.
 - `#974`: (**delivered**, `#989`) schema/provider smoke coverage for `IntentEnvelopeV1`, `TaskdeckProposalBatch`, `IChatClient` adapter viability, and the `JsonSchemaExporter` vs handwritten-schema decision. 117 tests.
-- `#975`--`#977`: (**foundational slices delivered**, `#993`/`#994`/`#991`) golden proposal dataset checks for schema validity, extractive quote/span verification, inferred evidence-link resolution, field confidence scoring, and edit-before-approve paths. Provenance domain types + 139 tests, revision data model + 70 tests, confidence pipeline + 136 tests delivered. Full IProposalGenerator wiring and frontend Review evidence UI awaits follow-up.
-- `#978`--`#979`: (**`#978` delivered**, `#990`; `#979` pending) vector-search fallback tests, embedding backfill safety delivered (61 tests). Retrieval recall@10 and duplicate-detection calibration on labeled holdouts await `#979` (RFAI-07 hybrid retrieval).
-- `#980`: (**foundational slice delivered**, `#992`) TelemetryGuard fuzz rejection and egress registry completeness delivered (108 tests). `WireMock.Net` MITM egress test, `promptfoo` prompt regression, and frontend Where-your-data-goes page await follow-up.
+- `#975`--`#977`: (**delivered**, `#993`/`#994`/`#991` + `#1071`/`#1058`/`#1062`) golden proposal dataset checks, schema validity, extractive quote/span verification, inferred evidence-link resolution, field confidence scoring, and edit-before-approve paths. Full delivery: `IProposalGenerator`/`FieldVerifier`/`ProposalGeneratorV1` (`#1071`), revision endpoints + edit-before-approve flow (`#1058`), Paper Review deep-dive wired to backend APIs (`#1062`). Combined: provenance 139 + revision 70 + confidence 136 + generator/verifier/review wiring tests.
+- `#978`--`#979`: (**both delivered**, `#990`/`#1050`) vector-search fallback tests, embedding backfill safety (61 tests). RFAI-07 hybrid retrieval, duplicate calibration, and memory-assisted generation delivered in `#1050`.
+- `#980`: (**delivered**, `#992` + `#1073`/`#1074`) TelemetryGuard fuzz rejection, egress registry completeness (108 tests), egress disclosure API endpoint (`#1073`), privacy insights API for proposal outcome cohorts (`#1074`).
 - `#981`: agent runtime property tests proving no approve/direct-mutation tools, egress handler violation tests, MCP definition re-approval tests, and scheduled Inbox Digest quota/coalescing checks.
 - `#982`--`#983`: ambient capture provenance checks for PWA share target, browser extension prototype, and the selected voice or IDE channel.
 - `#984`: beta-gate recertification requiring all roadmap invariants, provenance verification targets, edit-before-approve, egress disclosure, optional Ollama safety, and current test totals.

@@ -193,12 +193,12 @@ An anomaly is any cost spike that exceeds 150% of the expected daily spend for a
 
 Deploy alongside the existing observability dashboard (see `docs/ops/OBSERVABILITY_BASELINE.md`).
 
-1. **Monthly spend by dimension** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â stacked bar chart, one bar per dimension per month.
-2. **Daily spend trend** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â line chart showing daily total spend with 70%/90% budget threshold lines.
-3. **LLM token consumption** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â line chart of daily token usage (input + output), broken down by provider (OpenAI, Gemini, Mock).
-4. **LLM cost per user (top 10)** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â horizontal bar chart of top token consumers.
-5. **Storage growth** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â line chart of database file size and S3 total object size over time.
-6. **Logging ingestion volume** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â line chart of daily log bytes ingested.
+1. **Monthly spend by dimension** — stacked bar chart, one bar per dimension per month.
+2. **Daily spend trend** — line chart showing daily total spend with 70%/90% budget threshold lines.
+3. **LLM token consumption** — line chart of daily token usage (input + output), broken down by provider (OpenAI, Gemini, Mock).
+4. **LLM cost per user (top 10)** — horizontal bar chart of top token consumers.
+5. **Storage growth** — line chart of database file size and S3 total object size over time.
+6. **Logging ingestion volume** — line chart of daily log bytes ingested.
 
 ### Implementation Path
 
