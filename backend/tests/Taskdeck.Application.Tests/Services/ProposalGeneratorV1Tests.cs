@@ -297,6 +297,32 @@ public class ProposalGeneratorV1Tests
         labelField.Confidence.Should().Be(0.0);
     }
 
+    [Fact]
+    public async Task GenerateAsync_NoEvidenceLinks_FallbackDoesNotInflateVerification()
+    {
+        IReadOnlyList<ProvenanceEvidenceLink>? capturedLinks = null;
+        _fieldVerifier.Setup(v => v.VerifyInferredField(
+                "ActionType", It.IsAny<IReadOnlyList<ProvenanceEvidenceLink>>(),
+                It.IsAny<IReadOnlyList<SourceBlock>>(), It.IsAny<double>()))
+            .Callback<string, IReadOnlyList<ProvenanceEvidenceLink>, IReadOnlyList<SourceBlock>, double>(
+                (_, links, __, ___) => capturedLinks = links)
+            .Returns(new FieldVerificationResult("ActionType", VerificationStatus.Failed, 0.85, 0.0, null,
+                "No evidence links"));
+
+        var envelope = CreateValidEnvelope();
+        var boardId = Guid.NewGuid();
+
+        var result = await _sut.GenerateAsync(envelope, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        capturedLinks.Should().NotBeNull();
+        capturedLinks.Should().BeEmpty("fallback link must not be passed to verification");
+        var actionField = result.Value.Proposals[0].Provenance.Fields
+            .First(f => f.FieldName == "ActionType");
+        actionField.Confidence.Should().Be(0.0);
+        actionField.EvidenceLinks.Should().HaveCount(1, "fallback link should still exist for provenance");
+    }
+
     private IntentEnvelopeV1 CreateValidEnvelope()
     {
         var userId = Guid.NewGuid();

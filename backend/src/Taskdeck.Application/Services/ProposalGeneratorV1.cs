@@ -194,12 +194,15 @@ public class ProposalGeneratorV1 : IProposalGenerator
             provenance.Id);
         provenance.AddField(actionTypeField);
 
-        var evidenceLinks = BuildEvidenceLinks(actionTypeField, intent, envelope);
+        var (realLinks, hasFallbackOnly) = BuildEvidenceLinks(actionTypeField, intent, envelope);
         var actionVerification = _fieldVerifier.VerifyInferredField(
-            "ActionType", evidenceLinks, envelope.SourceBlocks, intent.Confidence);
+            "ActionType", realLinks, envelope.SourceBlocks, intent.Confidence);
         verificationResults.Add(actionVerification);
 
         ApplyVerificationToField(actionTypeField, actionVerification);
+
+        if (hasFallbackOnly)
+            AddFallbackEvidenceLink(actionTypeField, envelope);
 
         AddPreExtractedFields(provenance, preExtracted, sourceText, verificationResults);
 
@@ -215,7 +218,7 @@ public class ProposalGeneratorV1 : IProposalGenerator
         }
     }
 
-    private static IReadOnlyList<ProvenanceEvidenceLink> BuildEvidenceLinks(
+    private static (IReadOnlyList<ProvenanceEvidenceLink> realLinks, bool hasFallbackOnly) BuildEvidenceLinks(
         ProvenanceField field,
         IntentCandidate intent,
         IntentEnvelopeV1 envelope)
@@ -246,19 +249,18 @@ public class ProposalGeneratorV1 : IProposalGenerator
             links.Add(provenanceLink);
         }
 
-        if (links.Count == 0 && envelope.SourceBlocks.Count > 0)
-        {
-            var firstBlock = envelope.SourceBlocks[0];
-            var fallbackLink = new ProvenanceEvidenceLink(
-                firstBlock.SourceType,
-                firstBlock.Id.ToString(),
-                field.Id,
-                label: "Inferred from source context");
-            field.AddEvidenceLink(fallbackLink);
-            links.Add(fallbackLink);
-        }
+        return (links, links.Count == 0 && envelope.SourceBlocks.Count > 0);
+    }
 
-        return links;
+    private static void AddFallbackEvidenceLink(ProvenanceField field, IntentEnvelopeV1 envelope)
+    {
+        var firstBlock = envelope.SourceBlocks[0];
+        var fallbackLink = new ProvenanceEvidenceLink(
+            firstBlock.SourceType,
+            firstBlock.Id.ToString(),
+            field.Id,
+            label: "Inferred from source context");
+        field.AddEvidenceLink(fallbackLink);
     }
 
     private void AddPreExtractedFields(
@@ -282,6 +284,7 @@ public class ProposalGeneratorV1 : IProposalGenerator
             var verification = _fieldVerifier.VerifyExtractiveField(
                 fieldName, entity.Text, sourceText, 1.0);
             verificationResults.Add(verification);
+            ApplyVerificationToField(field, verification);
         }
     }
 }
