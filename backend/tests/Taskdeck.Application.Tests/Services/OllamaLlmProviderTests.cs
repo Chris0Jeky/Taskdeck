@@ -702,7 +702,8 @@ public class OllamaLlmProviderTests
             {
                 BaseUrl = "http://localhost:11434",
                 Model = "llama3.2",
-                TimeoutSeconds = 120
+                TimeoutSeconds = 120,
+                AllowLocalhostEndpoints = true
             }
         };
     }

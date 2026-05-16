@@ -20,6 +20,7 @@ export function useCohortMetrics() {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const data = ref<CohortComparison | null>(null)
+  let requestSeq = 0
 
   const cohorts = computed(() => data.value?.cohorts ?? [])
 
@@ -45,6 +46,7 @@ export function useCohortMetrics() {
   })
 
   async function fetchCohortMetrics(days: number = 30): Promise<void> {
+    const seq = ++requestSeq
     loading.value = true
     error.value = null
 
@@ -56,11 +58,15 @@ export function useCohortMetrics() {
         '/automation/metrics/cohorts',
         { params: { from: from.toISOString(), to: new Date().toISOString() } },
       )
+      if (seq !== requestSeq) return
       data.value = response
     } catch (e: unknown) {
+      if (seq !== requestSeq) return
       error.value = e instanceof Error ? e.message : 'Failed to fetch cohort metrics'
     } finally {
-      loading.value = false
+      if (seq === requestSeq) {
+        loading.value = false
+      }
     }
   }
 

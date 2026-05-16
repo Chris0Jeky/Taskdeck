@@ -38,6 +38,7 @@ public class AutomationMetricsController : AuthenticatedControllerBase
         if ((toDate - fromDate).TotalDays > MaxRangeDays)
             return BadRequest(new { error = $"Date range must not exceed {MaxRangeDays} days." });
 
+        // TODO(RFAI-12): wire to ICohortMetricsService once learning-loop data layer ships
         var response = new CohortComparisonResponse
         {
             Cohorts = [],
