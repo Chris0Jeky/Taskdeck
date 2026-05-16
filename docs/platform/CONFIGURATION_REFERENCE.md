@@ -58,6 +58,7 @@ Source files used to build this reference:
   - [`ExportImport`](#exportimport)
   - [`FirstRun`](#firstrun)
   - [`DevelopmentSandbox`](#developmentsandbox)
+- [Connectors](#connectors)
 - [MCP server](#mcp-server)
 - [Logging](#logging)
 - [Environment variable overrides](#environment-variable-overrides)
@@ -530,6 +531,17 @@ sandbox is force-disabled outside the `Development` environment
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `DevelopmentSandbox:Enabled` | `bool` | `false` | Enables the local dev sandbox helpers. Ignored unless the app is in the Development environment. | No |
+
+## Connectors
+
+Connector credential encryption settings. The key is used to encrypt third-party
+integration credentials (e.g., GitHub tokens) at rest in the SQLite database.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Connectors:EncryptionKey` | `string` (base64) | unset | AES-256 key for encrypting connector credentials at rest. Generate with `openssl rand -base64 32`. In Production, the app **refuses to start** without this value. In Development, a deterministic fallback key is used. | Yes (Production) |
+
+Docker Compose variable: `TASKDECK_CONNECTORS_ENCRYPTION_KEY`
 
 ## MCP server
 

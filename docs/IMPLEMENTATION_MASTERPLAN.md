@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-05-11
+Last Updated: 2026-05-16
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -40,6 +40,19 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+Bulk merge wave (2026-05-16, PRs `#1055`--`#1074`, 15 PRs merged to main):
+- **Security fixes** (3 PRs, `#1055`/`#1067`/`#1068`): redirect handler hardening (buffer content, filter sensitive headers), SEC-31/SEC-32 (hardcoded key removal + RBAC on abuse endpoints), SEC-33 (health endpoint info disclosure suppression)
+- **Test coverage** (2 PRs, `#1069`/`#1072`): MFA/API Keys/Board Access controller integration tests, ConnectorProviders API + useAutomationChat composable tests
+- **RFAI-03** (`#1071`): `IProposalGenerator` interface, `FieldVerifier`, `ProposalGeneratorV1` with LLM-backed field extraction and verification
+- **RFAI-04** (`#1058`): `ProposalRevision` revision chain, edit-before-approve flow, `IProposalCompiler`, `CompilerValidationResult`, revision API endpoints
+- **RFAI-05** (`#1062`): Paper Review deep-dive wired to backend provenance/confidence/conflicts/history/similar-past APIs
+- **RFAI-08** (`#1073`/`#1074`): `EgressDisclosureController` with `IEgressRegistry`, `InsightsController` with bucketed privacy-preserving cohort analytics, `InsightsService`, 21 new tests
+- **PAPER-08** (`#1056`): Today dossier frontend wired to cadence/streak/seal/tomorrow-note backend APIs
+- **PAPER-11** (`#1057`): Narrow companions with sidebar variants + board snap scroll
+- **Dependencies** (3 PRs, `#1059`/`#1060`/`#1061`): actions/dependency-review-action 4→5, 11 npm updates, 4 NuGet updates
+- All 15 PRs had 2+ rounds of adversarial review with fix evidence; post-merge verification: 6,532 backend + 3,267 frontend tests passing
+- Roadmap RFAI progress: 8 of 12 delivered (RFAI-01 through RFAI-08); 4 remaining (RFAI-09 through RFAI-12)
 
 Paper backend gap delivery (2026-05-05, PRs `#1031`--`#1040`, 10 of 10 issues `#1015`--`#1024`):
 - 10 backend endpoints delivered or merge-ready for the Paper UI surfaces (PAPER-08 Today dossier + PAPER-06 Review deep-dive), with the conflict-detection endpoint reconciled in `#1040`
