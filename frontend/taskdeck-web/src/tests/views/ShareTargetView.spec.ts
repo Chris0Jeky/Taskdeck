@@ -3,8 +3,8 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import ShareTargetView from '../../views/ShareTargetView.vue'
 
-const routerMock = { push: vi.fn() }
-const routeQuery = reactive<Record<string, string>>({})
+const routerMock = { push: vi.fn(), replace: vi.fn() }
+const routeQuery = reactive<Record<string, string | string[]>>({})
 const mockOnline = ref(true)
 
 vi.mock('vue-router', () => ({
@@ -55,12 +55,14 @@ function setQuery(title = '', text = '', url = '') {
 describe('ShareTargetView', () => {
   beforeEach(() => {
     routerMock.push.mockClear()
+    routerMock.replace.mockClear()
     mockCreateItem.mockClear()
     mockEnqueue.mockClear()
     mockGetToken.mockReturnValue('valid-jwt-token')
     mockIsTokenExpired.mockReturnValue(false)
     mockOnline.value = true
     setQuery()
+    Reflect.deleteProperty(globalThis, 'caches')
   })
 
   it('sends shared content directly to capture API when online', async () => {
@@ -76,6 +78,38 @@ describe('ShareTargetView', () => {
       externalRef: 'https://example.com',
     })
     expect(mockEnqueue).not.toHaveBeenCalled()
+    expect(routerMock.replace).toHaveBeenCalledWith({ name: 'capture-share-target', query: {} })
+  })
+
+  it('loads POST share-target payload from service worker cache without putting content in the URL', async () => {
+    const cache = {
+      match: vi.fn(async () => new Response(JSON.stringify({
+        title: 'Posted Title',
+        text: 'Posted text',
+        url: 'https://example.com/private',
+      }))),
+      delete: vi.fn(async () => true),
+    }
+    Object.defineProperty(globalThis, 'caches', {
+      configurable: true,
+      value: {
+        open: vi.fn(async () => cache),
+      },
+    })
+
+    mount(ShareTargetView)
+    await flushPromises()
+
+    expect(mockCreateItem).toHaveBeenCalledWith({
+      boardId: null,
+      text: 'Posted Title\n\nPosted text\n\nhttps://example.com/private',
+      source: 'ShareTarget',
+      titleHint: 'Posted Title',
+      externalRef: 'https://example.com/private',
+    })
+    expect(cache.match).toHaveBeenCalledWith('/capture/share-data')
+    expect(cache.delete).toHaveBeenCalledWith('/capture/share-data')
+    expect(routerMock.replace).not.toHaveBeenCalled()
   })
 
   it('queues capture in IndexedDB when offline', async () => {

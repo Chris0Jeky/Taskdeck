@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import {
   enqueueCapture,
   dequeueCapture,
@@ -19,6 +19,10 @@ describe('captureQueue', () => {
     for (const entry of pending) {
       await dequeueCapture(entry.id)
     }
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('enqueues a capture and retrieves it', async () => {
@@ -64,16 +68,18 @@ describe('captureQueue', () => {
   })
 
   it('handles multiple captures in FIFO order', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-05-16T10:00:00Z'))
     await enqueueCapture(makeDto('First'))
+    vi.setSystemTime(new Date('2026-05-16T10:00:01Z'))
     await enqueueCapture(makeDto('Second'))
+    vi.setSystemTime(new Date('2026-05-16T10:00:02Z'))
     await enqueueCapture(makeDto('Third'))
 
     const pending = await getAllPending()
     expect(pending).toHaveLength(3)
     const texts = pending.map((p) => p.dto.text)
-    expect(texts).toContain('First')
-    expect(texts).toContain('Second')
-    expect(texts).toContain('Third')
+    expect(texts).toEqual(['First', 'Second', 'Third'])
   })
 
   it('dequeue is idempotent for missing ids', async () => {

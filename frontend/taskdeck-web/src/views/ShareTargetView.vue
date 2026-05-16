@@ -17,6 +17,14 @@ const status = ref<'processing' | 'success' | 'queued' | 'login-required' | 'err
 const sharedTitle = ref('')
 const sharedText = ref('')
 const sharedUrl = ref('')
+const SHARE_CACHE_NAME = 'taskdeck-share-target'
+const SHARE_CACHE_REQUEST = '/capture/share-data'
+
+interface SharedContent {
+  title: string
+  text: string
+  url: string
+}
 
 function buildCaptureText(title: string, text: string, url: string): string {
   const parts: string[] = []
@@ -41,10 +49,47 @@ async function safeEnqueue(dto: CreateCaptureItemDto): Promise<boolean> {
   }
 }
 
+function queryValue(value: unknown): string {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
+}
+
+async function consumePostedShareTarget(): Promise<SharedContent | null> {
+  if (typeof caches === 'undefined') return null
+
+  try {
+    const cache = await caches.open(SHARE_CACHE_NAME)
+    const response = await cache.match(SHARE_CACHE_REQUEST)
+    if (!response) return null
+
+    await cache.delete(SHARE_CACHE_REQUEST)
+    const payload = await response.json() as Partial<SharedContent>
+    return {
+      title: typeof payload.title === 'string' ? payload.title : '',
+      text: typeof payload.text === 'string' ? payload.text : '',
+      url: typeof payload.url === 'string' ? payload.url : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+async function resolveSharedContent(): Promise<SharedContent> {
+  const title = queryValue(route.query.title)
+  const text = queryValue(route.query.text)
+  const url = queryValue(route.query.url)
+
+  if (title || text || url) {
+    void router.replace({ name: 'capture-share-target', query: {} })
+    return { title, text, url }
+  }
+
+  const posted = await consumePostedShareTarget()
+  return posted ?? { title: '', text: '', url: '' }
+}
+
 onMounted(async () => {
-  const title = (route.query.title as string) || ''
-  const text = (route.query.text as string) || ''
-  const url = (route.query.url as string) || ''
+  const { title, text, url } = await resolveSharedContent()
 
   sharedTitle.value = title
   sharedText.value = text

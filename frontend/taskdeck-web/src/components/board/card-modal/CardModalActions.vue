@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useShareCard } from '../../../composables/useShareCard'
+import { logError } from '../../../utils/errorReporting'
 import type { Card } from '../../../types/board'
 
 const props = defineProps<{
@@ -15,8 +16,12 @@ defineEmits<{
 
 const { canShare, shareCard } = useShareCard()
 
-function handleShare() {
-  void shareCard(props.card)
+async function handleShare() {
+  try {
+    await shareCard(props.card)
+  } catch (error) {
+    logError('Card share failed:', error)
+  }
 }
 </script>
 

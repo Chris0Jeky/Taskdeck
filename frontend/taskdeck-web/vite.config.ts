@@ -21,6 +21,7 @@ export default defineConfig({
         enabled: false,
       },
       workbox: {
+        importScripts: ['share-target-handler.js'],
         // Precache app shell assets (JS, CSS, HTML, icons)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
         // Exclude manifest icons from glob — they are precached via the manifest config
@@ -99,7 +100,8 @@ export default defineConfig({
         categories: ['productivity', 'utilities'],
         share_target: {
           action: '/capture/share',
-          method: 'GET',
+          method: 'POST',
+          enctype: 'multipart/form-data',
           params: {
             title: 'title',
             text: 'text',

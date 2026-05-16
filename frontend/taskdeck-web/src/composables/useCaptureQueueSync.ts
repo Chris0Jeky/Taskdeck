@@ -35,7 +35,6 @@ export function useCaptureQueueSync() {
           logError('Capture queue: discarding entry after max retries', {
             id: entry.id,
             queuedAt: entry.queuedAt,
-            text: entry.dto.text.slice(0, 100),
           })
           await dequeueCapture(entry.id)
           pendingCount.value--
@@ -82,6 +81,7 @@ export function useCaptureQueueSync() {
 
   onMounted(() => {
     void refreshCount()
+    void registerBackgroundSync()
 
     onlineHandler = () => {
       if (isOnline.value) {
