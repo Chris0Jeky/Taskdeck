@@ -19,4 +19,9 @@ public interface IProposalOutcomeRepository : IRepository<ProposalOutcome>
     /// Gets outcomes filtered by decision type.
     /// </summary>
     Task<IReadOnlyList<ProposalOutcome>> GetByDecisionAsync(OutcomeDecision decision, int limit = 100, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets all outcomes for a user without server-side ordering (safe for SQLite).
+    /// </summary>
+    Task<IReadOnlyList<ProposalOutcome>> GetAllByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 }
