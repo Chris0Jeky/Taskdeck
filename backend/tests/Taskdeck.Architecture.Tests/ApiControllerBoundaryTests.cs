@@ -17,7 +17,8 @@ public class ApiControllerBoundaryTests
     {
         "AuthController",
         "HealthController",
-        "TelemetryController"
+        "TelemetryController",
+        "EgressDisclosureController"
     };
 
     [Fact]
