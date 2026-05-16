@@ -5,6 +5,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -66,7 +67,8 @@ public class UsersController : AuthenticatedControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserDto dto)
     {
-        var result = await _userService.CreateUserAsync(dto);
+        var sanitized = dto with { DefaultRole = UserRole.Editor };
+        var result = await _userService.CreateUserAsync(sanitized);
         return result.IsSuccess
             ? CreatedAtAction(nameof(GetUser), new { id = result.Value.Id }, result.Value)
             : result.ToErrorActionResult();
