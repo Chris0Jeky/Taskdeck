@@ -172,7 +172,8 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
         var circuitBreakers = payload.GetProperty("checks").GetProperty("circuitBreakers");
         circuitBreakers.TryGetProperty("OpenAI", out var openAi).Should().BeTrue();
         openAi.GetProperty("state").GetString().Should().Be("Open");
-        openAi.GetProperty("lastFailureReason").GetString().Should().Be("HTTP 500");
+        openAi.TryGetProperty("lastFailureReason", out _).Should().BeFalse(
+            "lastFailureReason must not be exposed to prevent info disclosure");
     }
 
     [Fact]
