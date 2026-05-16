@@ -103,6 +103,7 @@ public static class FirstRunBootstrapper
         // JWT secret generation runs unconditionally (including headless/CI)
         // so that no hardcoded secret is required in appsettings.Development.json.
         EnsureJwtSecret(builder.Configuration, logger);
+        EnsureConnectorEncryptionKey(builder.Configuration, logger);
 
         // Remaining first-run checks are for the self-hosted packaged
         // distribution only -- skip in Development and CI/headless.
@@ -147,6 +148,17 @@ public static class FirstRunBootstrapper
                 "Generate a strong secret with 'openssl rand -base64 48' and set it via the " +
                 "Jwt__SecretKey environment variable. The application cannot start without a " +
                 "real secret in Production.");
+        }
+
+        var connectorKey = builder.Configuration["Connectors:EncryptionKey"] ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(connectorKey))
+        {
+            throw new InvalidOperationException(
+                "SECURITY: The Connectors:EncryptionKey is not configured. " +
+                "Generate a base64-encoded 256-bit key with 'openssl rand -base64 32' and set it via the " +
+                "Connectors__EncryptionKey environment variable. The application cannot start without a " +
+                "real encryption key in Production.");
         }
 
         logger.LogInformation("Production secret validation passed.");
@@ -204,6 +216,44 @@ public static class FirstRunBootstrapper
                 "First-run: Could not persist JWT secret to {ConfigFile} ({Error}). " +
                 "A transient in-memory secret has been generated instead.",
                 LocalConfigPath, ex.Message);
+        }
+    }
+
+    private static void EnsureConnectorEncryptionKey(IConfiguration configuration, ILogger logger)
+    {
+        var configured = configuration["Connectors:EncryptionKey"] ?? string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return;
+        }
+
+        var generated = GenerateSecret();
+        try
+        {
+            PersistValue("Connectors", "EncryptionKey", generated);
+            if (configuration is IConfigurationRoot root)
+            {
+                root.Reload();
+            }
+
+            logger.LogInformation(
+                "First-run: Connector encryption key was not configured. A random key has been " +
+                "generated and saved to {ConfigFile}.", LocalConfigPath);
+        }
+        catch (IOException ex)
+        {
+            logger.LogWarning(
+                "First-run: Could not persist connector encryption key to {ConfigFile} ({Error}). " +
+                "A transient in-memory key has been generated instead.",
+                LocalConfigPath, ex.Message);
+        }
+
+        // Always set in-memory as a fallback: the file-based reload may not
+        // propagate through all configuration providers (e.g. in test harnesses).
+        if (string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]))
+        {
+            configuration["Connectors:EncryptionKey"] = generated;
         }
     }
 
