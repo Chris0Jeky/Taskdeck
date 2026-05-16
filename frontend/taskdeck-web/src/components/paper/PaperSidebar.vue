@@ -221,9 +221,14 @@ watch(phoneMoreOpen, (isOpen, _, onCleanup) => {
   document.body.style.overflow = 'hidden'
   const unregisterEscape = registerEscapeHandler(closePhoneMore)
 
+  // Trap focus: mark background content inert so keyboard cannot escape drawer
+  const mainContent = document.getElementById('td-main-content')
+  if (mainContent) mainContent.setAttribute('inert', '')
+
   onCleanup(() => {
     document.body.style.overflow = ''
     unregisterEscape()
+    if (mainContent) mainContent.removeAttribute('inert')
   })
 })
 
@@ -405,15 +410,15 @@ defineExpose({
             >
               <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
             </router-link>
-            <a
+            <button
               v-else
-              href="#"
+              type="button"
               class="paper-sidebar__item paper-sidebar__item--muted"
               :aria-label="item.label"
               @click="handleMetaClick(item, $event)"
             >
               <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
-            </a>
+            </button>
           </li>
         </ul>
       </div>
@@ -848,7 +853,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: space-around;
-  height: 56px;
+  min-height: 56px;
   padding-bottom: var(--paper-safe-bottom, env(safe-area-inset-bottom, 0px));
   background: var(--paper-card);
   border-top: 1px solid var(--line);
@@ -895,11 +900,13 @@ defineExpose({
   left: 0;
   right: 0;
   width: 100%;
+  min-height: 0;
   height: auto;
   max-height: 60vh;
   overflow-y: auto;
   z-index: 50;
   border-top: 1px solid var(--line);
+  border-right: none;
   border-radius: 12px 12px 0 0;
   padding: 12px 0 8px;
 }
