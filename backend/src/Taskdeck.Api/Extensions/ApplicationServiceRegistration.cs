@@ -98,7 +98,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<AgentRuntime>();
         services.AddScoped<McpToolDefinitionHashService>();
         services.AddScoped<InboxTriageDigestAgent>();
-        services.AddSingleton<IEgressRegistry, EgressRegistry>();
+        services.AddSingleton<IEgressRegistry>(new EgressRegistry());
         services.AddScoped<SignalRBoardRealtimeNotifier>();
         services.AddScoped<WebhookBoardMutationNotifier>();
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
