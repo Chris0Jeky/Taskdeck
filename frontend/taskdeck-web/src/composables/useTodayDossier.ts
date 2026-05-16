@@ -318,6 +318,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   })
 
   const sealed = ref(false)
+  let sealMutationGeneration = 0
   const liveCadence = ref<DossierCadence | null>(null)
   const liveStreak = ref<DossierStreak | null>(null)
   const liveLineForTomorrow = ref('')
@@ -409,6 +410,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     const gen = ++fetchGeneration
     const dateStr = formatLocalDossierDate(now.value)
     const tomorrowNoteMutationGenerationAtFetch = tomorrowNoteMutationGeneration
+    const sealMutationGenerationAtFetch = sealMutationGeneration
 
     const results = await Promise.allSettled([
       todayApi.getCadence(dateStr),
@@ -425,8 +427,10 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     if (results[1].status === 'fulfilled') {
       liveStreak.value = mapStreakResponse(results[1].value)
     }
-    if (results[2].status === 'fulfilled') {
-      sealed.value = results[2].value.isSealed
+    if (sealMutationGenerationAtFetch === sealMutationGeneration) {
+      if (results[2].status === 'fulfilled') {
+        sealed.value = results[2].value.isSealed
+      }
     }
     if (tomorrowNoteMutationGenerationAtFetch === tomorrowNoteMutationGeneration) {
       if (results[3].status === 'fulfilled') {
@@ -442,6 +446,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     liveStreak.value = null
     liveLineForTomorrow.value = ''
     tomorrowNoteMutationGeneration += 1
+    sealMutationGeneration += 1
     sealed.value = false
     void fetchLiveData()
   }, { immediate: true })
@@ -460,6 +465,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     try {
       const dateStr = formatLocalDossierDate(now.value)
       const response = await todayApi.sealDay(dateStr)
+      sealMutationGeneration += 1
       sealed.value = true
       return { sealed: true, alreadySealed: response.wasAlreadySealed }
     } catch {

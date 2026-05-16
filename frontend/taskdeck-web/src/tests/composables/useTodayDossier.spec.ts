@@ -393,6 +393,27 @@ describe('useTodayDossier', () => {
     expect(dossier.value.lineForTomorrow).toBe('')
   })
 
+  it('does not let stale getSealStatus overwrite a successful local seal', async () => {
+    let resolveSealStatus!: (value: SealStatusApiResponse) => void
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSealStatus = resolve }),
+    )
+    vi.mocked(todayApi.getTomorrowNote).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.sealDay).mockResolvedValue({ sealedAt: '2026-01-15T18:00:00Z', wasAlreadySealed: false })
+
+    const { sealDay, sealed } = await importAndCreate()
+
+    await sealDay()
+    expect(sealed.value).toBe(true)
+
+    resolveSealStatus({ date: '2026-01-15', isSealed: false, sealedAt: null })
+    await vi.waitFor(() => expect(true).toBe(true))
+
+    expect(sealed.value).toBe(true)
+  })
+
   it('re-fetches data when now changes', async () => {
     vi.mocked(todayApi.getCadence).mockResolvedValue(cadenceResponse)
     vi.mocked(todayApi.getStreak).mockResolvedValue(streakResponse)
