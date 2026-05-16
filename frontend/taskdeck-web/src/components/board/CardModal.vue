@@ -152,6 +152,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
 
         <CardModalActions
           :is-form-valid="isFormValid"
+          :card="card"
           @save="handleSave"
           @close="handleClose"
           @delete-click="handleDeleteClick"
