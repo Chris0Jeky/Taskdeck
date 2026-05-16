@@ -541,6 +541,17 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('surfaces feedback when the provenance report action is clicked', async () => {
+    const wrapper = await mountView([makeProposal()])
+
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await wrapper.vm.$nextTick()
+    const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
+    await reportButton.click()
+
+    expect(mocks.infoToast).toHaveBeenCalledWith('Report queued for this suggestion.')
+  })
+
   it('surfaces feedback when preview diff is invoked before visible diff UI exists', async () => {
     const wrapper = await mountView([makeProposal()])
 

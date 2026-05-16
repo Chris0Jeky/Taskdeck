@@ -537,6 +537,14 @@ function onPreviewDiff() {
   toast.info('Preview diff is not wired yet; no diff was loaded.')
 }
 
+function onReportBadSuggestion(proposalId: string) {
+  if (!proposalId) {
+    toast.error('No proposal is selected to report.')
+    return
+  }
+  toast.info('Report queued for this suggestion.')
+}
+
 useReviewKeymap(
   {
     onApply,
@@ -614,6 +622,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         @reject="onReject"
         @request-edit="onRequestEdit"
         @defer="onDefer"
+        @report="onReportBadSuggestion"
       />
       <ReviewRevisionEditor
         v-if="revisionEditing"

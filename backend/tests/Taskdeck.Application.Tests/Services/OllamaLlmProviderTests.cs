@@ -45,6 +45,19 @@ public class OllamaLlmProviderTests
     }
 
     [Fact]
+    public void TryParseResponse_ShouldSumPromptAndCompletionTokens_WhenBothCountsArePresent()
+    {
+        const string body = """
+            {"message":{"content":"Hello"},"done":true,"prompt_eval_count":7,"eval_count":11}
+            """;
+
+        var result = OllamaLlmProvider.TryParseResponse(body, out _, out var tokensUsed, out _);
+
+        result.Should().BeTrue();
+        tokensUsed.Should().Be(18);
+    }
+
+    [Fact]
     public void TryParseResponse_ShouldEstimateTokens_WhenNeitherEvalCountFieldIsPresent()
     {
         const string body = """

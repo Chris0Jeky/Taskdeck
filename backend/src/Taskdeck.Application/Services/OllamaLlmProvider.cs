@@ -279,13 +279,22 @@ public class OllamaLlmProvider : ILlmProvider
                 doneReason = doneReasonElement.GetString();
             }
 
-            if (root.TryGetProperty("eval_count", out var evalCount) &&
-                evalCount.TryGetInt32(out var parsedEval))
+            var parsedEval = 0;
+            var parsedPromptEval = 0;
+            var hasEvalCount = root.TryGetProperty("eval_count", out var evalCount) &&
+                evalCount.TryGetInt32(out parsedEval);
+            var hasPromptEvalCount = root.TryGetProperty("prompt_eval_count", out var promptEvalCount) &&
+                promptEvalCount.TryGetInt32(out parsedPromptEval);
+
+            if (hasEvalCount && hasPromptEvalCount)
+            {
+                tokensUsed = parsedEval + parsedPromptEval;
+            }
+            else if (hasEvalCount)
             {
                 tokensUsed = parsedEval;
             }
-            else if (root.TryGetProperty("prompt_eval_count", out var promptEvalCount) &&
-                     promptEvalCount.TryGetInt32(out var parsedPromptEval))
+            else if (hasPromptEvalCount)
             {
                 tokensUsed = parsedPromptEval;
             }
