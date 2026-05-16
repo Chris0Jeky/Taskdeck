@@ -467,6 +467,7 @@ public class CaptureRequestContractTests
     [InlineData(CaptureSource.Import)]
     [InlineData(CaptureSource.Voice)]
     [InlineData(CaptureSource.MeetingIntegration)]
+    [InlineData(CaptureSource.VsCodeExtension)]
     public void IsTranscriptSource_ShouldReturnFalse_ForNonTranscriptSources(CaptureSource source)
     {
         CaptureRequestContract.IsTranscriptSource(source).Should().BeFalse();

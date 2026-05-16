@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import * as path from 'node:path';
 
 export interface WorkspaceContext {
   relativePath: string | null;
@@ -55,7 +56,18 @@ export function buildCaptureText(selectedText: string | null, context: Workspace
   return parts.join('\n\n');
 }
 
+function isLocalAbsolutePath(fsPath: string): boolean {
+  if (process.platform === 'win32') {
+    // Reject UNC paths (\\server\share) to prevent NTLM credential relay
+    if (fsPath.startsWith('\\\\') || fsPath.startsWith('//')) return false;
+    return path.isAbsolute(fsPath);
+  }
+  return path.isAbsolute(fsPath);
+}
+
 function getGitRemoteHash(cwd: string): string | null {
+  if (!isLocalAbsolutePath(cwd)) return null;
+
   try {
     const remote = execSync('git remote get-url origin', {
       cwd,

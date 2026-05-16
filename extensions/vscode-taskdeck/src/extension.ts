@@ -2,10 +2,12 @@ import * as vscode from 'vscode';
 import { TaskdeckClient } from './client';
 import { buildCaptureText, getWorkspaceContext } from './context';
 
-let statusBarItem: vscode.StatusBarItem;
+let statusBarItem: vscode.StatusBarItem | undefined;
 let client: TaskdeckClient;
+let disposed = false;
 
 export function activate(extensionContext: vscode.ExtensionContext): void {
+  disposed = false;
   client = new TaskdeckClient(extensionContext);
 
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 50);
@@ -24,7 +26,13 @@ export function activate(extensionContext: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  statusBarItem?.dispose();
+  disposed = true;
+}
+
+function setStatusText(text: string): void {
+  if (!disposed && statusBarItem) {
+    statusBarItem.text = text;
+  }
 }
 
 async function captureSelection(): Promise<void> {
@@ -57,11 +65,16 @@ async function captureFileContext(): Promise<void> {
   const context = await getWorkspaceContext(editor);
   const captureText = buildCaptureText(null, context);
 
+  if (!captureText.trim()) {
+    vscode.window.showWarningMessage('No capturable context found for this file.');
+    return;
+  }
+
   await sendCapture(captureText, context.relativePath, context.gitRemoteHash);
 }
 
 async function sendCapture(text: string, titleHint: string | null, externalRef: string | null): Promise<void> {
-  statusBarItem.text = '$(sync~spin) Sending...';
+  setStatusText('$(sync~spin) Sending...');
 
   try {
     await client.createCapture({
@@ -71,15 +84,15 @@ async function sendCapture(text: string, titleHint: string | null, externalRef: 
       titleHint,
       externalRef,
     });
-    statusBarItem.text = '$(check) Sent';
+    setStatusText('$(check) Sent');
     vscode.window.showInformationMessage('Captured to Taskdeck inbox');
   } catch (err) {
-    statusBarItem.text = '$(error) Failed';
+    setStatusText('$(error) Failed');
     const message = err instanceof Error ? err.message : 'Unknown error';
     vscode.window.showErrorMessage(`Taskdeck capture failed: ${message}`);
   } finally {
     setTimeout(() => {
-      statusBarItem.text = '$(cloud-upload) Taskdeck';
+      setStatusText('$(cloud-upload) Taskdeck');
     }, 3000);
   }
 }
@@ -94,10 +107,22 @@ async function setApiUrl(): Promise<void> {
     placeHolder: 'http://localhost:5000',
   });
 
-  if (value !== undefined) {
-    await config.update('apiUrl', value, vscode.ConfigurationTarget.Global);
-    vscode.window.showInformationMessage(`API URL set to ${value}`);
+  if (value === undefined) return;
+
+  if (!value.trim()) {
+    vscode.window.showWarningMessage('API URL cannot be empty.');
+    return;
   }
+
+  try {
+    new URL(value);
+  } catch {
+    vscode.window.showErrorMessage(`Invalid URL: "${value}". Please enter a valid HTTP(S) URL.`);
+    return;
+  }
+
+  await config.update('apiUrl', value, vscode.ConfigurationTarget.Global);
+  vscode.window.showInformationMessage(`API URL updated`);
 }
 
 async function setToken(extensionContext: vscode.ExtensionContext): Promise<void> {
@@ -107,8 +132,13 @@ async function setToken(extensionContext: vscode.ExtensionContext): Promise<void
     placeHolder: 'eyJ...',
   });
 
-  if (value !== undefined) {
-    await extensionContext.secrets.store('taskdeck.token', value);
-    vscode.window.showInformationMessage('Token saved securely');
+  if (value === undefined) return;
+
+  if (!value.trim()) {
+    vscode.window.showWarningMessage('Token cannot be empty. Run the command again and paste your JWT.');
+    return;
   }
+
+  await extensionContext.secrets.store('taskdeck.token', value);
+  vscode.window.showInformationMessage('Token saved securely');
 }

@@ -35,8 +35,8 @@
     "keybindings": [
       {
         "command": "taskdeck.captureSelection",
-        "key": "ctrl+shift+t",
-        "mac": "cmd+shift+t",
+        "key": "ctrl+shift+alt+t",
+        "mac": "cmd+shift+alt+t",
         "when": "editorHasSelection"
       }
     ],
@@ -64,7 +64,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
-    "test": "node ./out/test/runTest.js"
+    "test": "npx tsc --noEmit && node -e \"require('./out/context.test.js')\""
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

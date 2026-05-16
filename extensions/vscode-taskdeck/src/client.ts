@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import * as https from 'node:https';
 import * as http from 'node:http';
 
+const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_RESPONSE_BYTES = 65_536;
+
 export interface CreateCaptureDto {
   boardId: string | null;
   text: string;
@@ -26,13 +29,20 @@ export class TaskdeckClient {
       throw new Error('No auth token configured. Run "Taskdeck: Set Authentication Token" first.');
     }
 
-    const url = new URL('/api/capture/items', apiUrl);
+    let url: URL;
+    try {
+      url = new URL('/api/capture/items', apiUrl);
+    } catch {
+      throw new Error(`Invalid API URL: "${apiUrl}". Run "Taskdeck: Set API URL" to fix.`);
+    }
+
     const body = JSON.stringify(dto);
 
     return new Promise<CaptureResponse>((resolve, reject) => {
       const transport = url.protocol === 'https:' ? https : http;
       const req = transport.request(url, {
         method: 'POST',
+        timeout: REQUEST_TIMEOUT_MS,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
@@ -40,7 +50,18 @@ export class TaskdeckClient {
         },
       }, (res) => {
         let data = '';
-        res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        let bytesReceived = 0;
+
+        res.on('data', (chunk: Buffer) => {
+          bytesReceived += chunk.length;
+          if (bytesReceived > MAX_RESPONSE_BYTES) {
+            res.destroy();
+            reject(new Error('Response too large'));
+            return;
+          }
+          data += chunk.toString();
+        });
+
         res.on('end', () => {
           if (res.statusCode === 401) {
             reject(new Error('Authentication failed. Update your token with "Taskdeck: Set Authentication Token".'));
@@ -58,6 +79,9 @@ export class TaskdeckClient {
         });
       });
 
+      req.on('timeout', () => {
+        req.destroy(new Error('Request timed out'));
+      });
       req.on('error', (err) => reject(new Error(`Network error: ${err.message}`)));
       req.write(body);
       req.end();

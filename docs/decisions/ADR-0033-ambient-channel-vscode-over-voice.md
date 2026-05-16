@@ -1,6 +1,6 @@
 # ADR-0033: Ambient Channel Hardening — VS Code Extension over Desktop Voice
 
-- **Status**: Accepted
+- **Status**: Proposed
 - **Date**: 2026-05-16
 - **Deciders**: Repository maintainers
 

@@ -127,4 +127,39 @@ describe('useVoiceCapture', () => {
     expect(status.value).toBe('idle')
     expect(instance.stop).toHaveBeenCalled()
   })
+
+  it('preserves error state when onend fires after onerror', () => {
+    const instance = installMockSpeechRecognition()
+
+    const { startListening, status, errorMessage } = useVoiceCapture()
+    startListening()
+
+    instance.onerror!({ error: 'not-allowed' })
+    expect(status.value).toBe('error')
+
+    instance.onend!()
+    expect(status.value).toBe('error')
+    expect(errorMessage.value).toContain('not-allowed')
+  })
+
+  it('requires consent acknowledgment when requireConsent is true', () => {
+    installMockSpeechRecognition()
+
+    const { startListening, status, errorMessage, consentAcknowledged, acknowledgeConsent } =
+      useVoiceCapture({ requireConsent: true })
+
+    expect(consentAcknowledged.value).toBe(false)
+
+    const result = startListening()
+    expect(result).toBe(false)
+    expect(status.value).toBe('error')
+    expect(errorMessage.value).toContain('Consent required')
+
+    acknowledgeConsent()
+    expect(consentAcknowledged.value).toBe(true)
+
+    const result2 = startListening()
+    expect(result2).toBe(true)
+    expect(status.value).toBe('listening')
+  })
 })
