@@ -79,6 +79,12 @@ vi.mock('../../composables/useErrorMapper', () => ({
 
 import { useReviewProposals } from '../../composables/useReviewProposals'
 
+function watcherForSourceText(fragment: string) {
+  const watcher = watchers.find(([source]) => typeof source === 'function' && source.toString().includes(fragment))
+  expect(watcher).toBeDefined()
+  return watcher!
+}
+
 function makeProposal(overrides: Partial<{
   id: string; status: string; sourceType: string; sourceReferenceId: string | null;
   boardId: string | null; createdAt: string; expiresAt: string;
@@ -443,18 +449,16 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       await rp.loadProposals()
       mockAutomationApi.getProposal.mockClear()
-      // watchers[0] = watch(() => route.hash, ...) — first function-sourced watcher
       mockRoute.hash = '#proposal-p-new'
       mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-new' }))
-      await watchers[0][1]()
+      await watcherForSourceText('route.hash')[1]()
       expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('p-new')
     })
 
     it('activeBoardFilter watcher triggers loadProposals', async () => {
       useReviewProposals()
       mockAutomationApi.getProposals.mockClear()
-      // watchers[1] = watch(() => activeBoardFilter.value, ...)
-      await watchers[1][1]()
+      await watcherForSourceText('activeBoardFilter.value')[1]()
       expect(mockAutomationApi.getProposals).toHaveBeenCalled()
     })
   })
