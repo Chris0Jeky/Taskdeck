@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useBoardDragDrop } from '../../composables/useBoardDragDrop'
+import { useViewportMode } from '../../composables/useViewportMode'
 import PaperBoardColumn from './PaperBoardColumn.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
 import CardModal from '../../components/board/CardModal.vue'
@@ -33,6 +34,7 @@ const props = withDefaults(
 const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
+const { mode: viewportMode } = useViewportMode()
 
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const selectedCard = ref<Card | null>(null)
@@ -230,6 +232,7 @@ function openCaptureBoard() {
       <div
         v-else
         class="paper-board-view__lanes"
+        :class="{ 'paper-board-view__lanes--snap': viewportMode === 'tablet' }"
         data-testid="paper-board-lanes"
       >
         <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- column drag/drop wrapper; group role + drag events drive existing reorder semantics -->
@@ -357,16 +360,33 @@ function openCaptureBoard() {
    * border in PaperBoardColumn. */
 }
 
+.paper-board-view__lanes--snap {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.paper-board-view__lanes--snap .paper-board-view__lane {
+  display: block;
+  scroll-snap-align: start;
+  flex: 0 0 280px;
+}
+
 @media (max-width: 640px) {
   .paper-board-view__inner {
     padding: 16px;
   }
-  .paper-board-view__lanes {
+  .paper-board-view__lanes:not(.paper-board-view__lanes--snap) {
     flex-direction: column;
     overflow-x: visible;
   }
-  .paper-board-view__lane {
+  .paper-board-view__lanes:not(.paper-board-view__lanes--snap) .paper-board-view__lane {
     display: block;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paper-board-view__lanes--snap {
+    scroll-snap-type: none;
   }
 }
 </style>

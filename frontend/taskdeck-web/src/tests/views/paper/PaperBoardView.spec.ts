@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick, reactive } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 import PaperBoardView from '../../../views/paper/PaperBoardView.vue'
 import PaperBoardColumn from '../../../views/paper/PaperBoardColumn.vue'
 import type { BoardDetail, Card, Column } from '../../../types/board'
+import type { ViewportMode } from '../../../composables/useViewportMode'
 
 const routerMock = { push: vi.fn() }
 const routeMock = reactive({ params: { id: 'board-1' } })
+const mockViewportMode = ref<ViewportMode>('desktop')
 
 function makeColumn(partial: Partial<Column> = {}): Column {
   return {
@@ -91,6 +93,10 @@ vi.mock('../../../store/boardStore', () => ({
   useBoardStore: () => mockBoardStore,
 }))
 
+vi.mock('../../../composables/useViewportMode', () => ({
+  useViewportMode: () => ({ mode: mockViewportMode }),
+}))
+
 function mountView(props: Record<string, unknown> = {}) {
   return mount(PaperBoardView, {
     attachTo: document.body,
@@ -124,6 +130,7 @@ describe('PaperBoardView', () => {
     mockBoardStore.cardsByColumn = cardsByColumn
     mockBoardStore.error = null
     mockBoardStore.loading = false
+    mockViewportMode.value = 'desktop'
   })
 
   afterEach(() => {
@@ -264,5 +271,19 @@ describe('PaperBoardView', () => {
     await flushPromises()
 
     expect(mockBoardStore.moveCard).toHaveBeenCalledWith('board-1', 'card-1', 'col-backlog', 1)
+  })
+
+  it('applies snap-scroll CSS class at tablet viewport', () => {
+    mockViewportMode.value = 'tablet'
+    const wrapper = mountView()
+    const lanes = wrapper.find('[data-testid="paper-board-lanes"]')
+    expect(lanes.classes()).toContain('paper-board-view__lanes--snap')
+  })
+
+  it('does not apply snap-scroll CSS class at desktop viewport', () => {
+    mockViewportMode.value = 'desktop'
+    const wrapper = mountView()
+    const lanes = wrapper.find('[data-testid="paper-board-lanes"]')
+    expect(lanes.classes()).not.toContain('paper-board-view__lanes--snap')
   })
 })

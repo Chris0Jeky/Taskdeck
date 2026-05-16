@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import PaperSidebar from '../../../components/paper/PaperSidebar.vue'
 import type { FeatureFlags } from '../../../types/feature-flags'
+import type { ViewportMode } from '../../../composables/useViewportMode'
 
 const mockRoute = reactive({
   path: '/workspace/home',
@@ -25,6 +26,8 @@ const mockPaperTheme = reactive({
   toggleNight: vi.fn(),
 })
 
+const mockViewportMode = ref<ViewportMode>('desktop')
+
 vi.mock('vue-router', () => ({
   useRoute: () => mockRoute,
 }))
@@ -41,13 +44,17 @@ vi.mock('../../../store/paperThemeStore', () => ({
   usePaperThemeStore: () => mockPaperTheme,
 }))
 
+vi.mock('../../../composables/useViewportMode', () => ({
+  useViewportMode: () => ({ mode: mockViewportMode }),
+}))
+
 function mountSidebar() {
   return mount(PaperSidebar, {
     global: {
       stubs: {
         RouterLink: {
           props: ['to'],
-          template: '<a :href="to" :class="$attrs.class" :aria-current="$attrs[`aria-current`]"><slot /></a>',
+          template: '<a :href="to" v-bind="$attrs"><slot /></a>',
         },
       },
     },
@@ -64,6 +71,8 @@ describe('PaperSidebar', () => {
     mockFeatureFlags.isEnabled = vi.fn(() => true)
     mockPaperTheme.mode = 'paper'
     mockPaperTheme.activeClass = 'paper'
+    mockViewportMode.value = 'desktop'
+    document.body.style.overflow = ''
   })
 
   it('renders the brand and Precision Mode eyebrow with the active accent', () => {
@@ -275,5 +284,113 @@ describe('PaperSidebar', () => {
     await boardsLink?.trigger('click')
 
     expect(exposed.mobileOpen).toBe(false)
+  })
+
+  it('renders bottom-bar variant with H/T/R/I glyphs on phone', () => {
+    mockViewportMode.value = 'phone'
+    const wrapper = mountSidebar()
+
+    expect(wrapper.find('[data-paper-bottombar]').exists()).toBe(true)
+    expect(wrapper.find('.paper-sidebar--rail').exists()).toBe(false)
+
+    const glyphs = wrapper.findAll('.paper-bottombar__glyph').map((g) => g.text())
+    expect(glyphs).toEqual(['H', 'T', 'R', 'I', '…'])
+
+    const tabs = wrapper.findAll('.paper-bottombar__tab')
+    expect(tabs).toHaveLength(5)
+  })
+
+  it('renders bottom-bar with ember accent on the active route', () => {
+    mockViewportMode.value = 'phone'
+    mockRoute.path = '/workspace/review'
+    const wrapper = mountSidebar()
+
+    const reviewTab = wrapper.findAll('.paper-bottombar__tab')
+      .find((t) => t.attributes('href') === '/workspace/review')
+    expect(reviewTab?.classes()).toContain('paper-bottombar__tab--active')
+
+    const homeTab = wrapper.findAll('.paper-bottombar__tab')
+      .find((t) => t.attributes('href') === '/workspace/home')
+    expect(homeTab?.classes()).not.toContain('paper-bottombar__tab--active')
+  })
+
+  it('opens the phone More drawer with ARIA state and closes it with Escape', async () => {
+    mockViewportMode.value = 'phone'
+    const wrapper = mountSidebar()
+    const moreButton = wrapper.get('button[aria-label="More"]')
+
+    expect(moreButton.attributes('aria-expanded')).toBe('false')
+    expect(moreButton.attributes('aria-controls')).toBe('paper-phone-more-drawer')
+
+    await moreButton.trigger('click')
+
+    expect(moreButton.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-paper-phone-drawer]').exists()).toBe(true)
+    expect(wrapper.find('#paper-phone-more-drawer').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Settings')
+    expect(wrapper.text()).toContain('Logout')
+    expect(document.body.style.overflow).toBe('hidden')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-paper-phone-drawer]').exists()).toBe(false)
+    expect(moreButton.attributes('aria-expanded')).toBe('false')
+    expect(document.body.style.overflow).toBe('')
+  })
+
+  it('closes the phone More drawer after route changes and pseudo-actions', async () => {
+    mockViewportMode.value = 'phone'
+    const wrapper = mountSidebar()
+    const moreButton = wrapper.get('button[aria-label="More"]')
+
+    await moreButton.trigger('click')
+    mockRoute.path = '/workspace/settings/profile'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-paper-phone-drawer]').exists()).toBe(false)
+
+    await moreButton.trigger('click')
+    const shortcutsButton = wrapper.findAll('button.paper-sidebar__item')
+      .find((button) => button.text().includes('Shortcuts'))
+    await shortcutsButton?.trigger('click')
+
+    expect(wrapper.emitted('open-shortcuts')).toHaveLength(1)
+    expect(wrapper.find('[data-paper-phone-drawer]').exists()).toBe(false)
+  })
+
+  it('keeps feature-flagged phone tabs hidden when unavailable', () => {
+    mockViewportMode.value = 'phone'
+    mockFeatureFlags.isEnabled = vi.fn((flag: keyof FeatureFlags) => flag !== 'newAutomation')
+
+    const wrapper = mountSidebar()
+    const hrefs = wrapper.findAll('.paper-bottombar__tab').map((tab) => tab.attributes('href'))
+
+    expect(hrefs).not.toContain('/workspace/review')
+    expect(hrefs).toContain('/workspace/home')
+  })
+
+  it('renders icon-only rail on tablet', () => {
+    mockViewportMode.value = 'tablet'
+    const wrapper = mountSidebar()
+
+    expect(wrapper.find('[data-paper-rail]').exists()).toBe(true)
+    expect(wrapper.find('[data-paper-bottombar]').exists()).toBe(false)
+    expect(wrapper.find('.paper-sidebar--rail').exists()).toBe(true)
+
+    expect(wrapper.findAll('.paper-sidebar__label')).toHaveLength(0)
+
+    const glyphs = wrapper.findAll('.paper-sidebar__glyph')
+    expect(glyphs.length).toBeGreaterThan(0)
+  })
+
+  it('renders rail active-route ember accent on tablet', () => {
+    mockViewportMode.value = 'tablet'
+    mockRoute.path = '/workspace/boards'
+    const wrapper = mountSidebar()
+
+    const boardsLink = wrapper.findAll('a.paper-sidebar__item')
+      .find((l) => l.attributes('href') === '/workspace/boards')
+    expect(boardsLink?.classes()).toContain('paper-sidebar__item--active')
   })
 })

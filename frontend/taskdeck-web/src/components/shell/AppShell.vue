@@ -5,6 +5,7 @@ import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
+import { useViewportMode } from '../../composables/useViewportMode'
 import CaptureModal from '../common/CaptureModal.vue'
 import OfflineBanner from './OfflineBanner.vue'
 import SwUpdatePrompt from './SwUpdatePrompt.vue'
@@ -35,8 +36,11 @@ const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
+const { mode: viewportMode } = useViewportMode()
 
 const sidebarRef = ref<SidebarRef | null>(null)
+const isPaperNarrow = computed(() => paperTheme.isOn && viewportMode.value !== 'desktop')
+const isPaperPhone = computed(() => paperTheme.isOn && viewportMode.value === 'phone')
 
 const showCommandPalette = ref(false)
 const showKeyboardHelp = ref(false)
@@ -185,7 +189,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="td-shell" :class="{ 'td-shell--paper': paperTheme.isOn }">
+  <div
+    class="td-shell"
+    :class="{
+      'td-shell--paper': paperTheme.isOn,
+      'td-shell--paper-phone': isPaperPhone,
+    }"
+  >
     <PaperSidebar
       v-if="paperTheme.isOn"
       ref="sidebarRef"
@@ -204,7 +214,7 @@ onUnmounted(() => {
     <div class="td-main-container">
       <OfflineBanner />
       <SwUpdatePrompt />
-      <div class="td-mobile-topbar">
+      <div v-if="!isPaperNarrow" class="td-mobile-topbar">
         <button
           class="td-mobile-topbar__hamburger"
           aria-label="Open navigation menu"
@@ -366,5 +376,11 @@ onUnmounted(() => {
     font-weight: 500;
     color: var(--ink-deep);
   }
+}
+
+.td-shell--paper-phone .td-content {
+  padding-bottom: calc(
+    var(--td-space-4) + 56px + var(--paper-safe-bottom, env(safe-area-inset-bottom, 0px))
+  );
 }
 </style>
