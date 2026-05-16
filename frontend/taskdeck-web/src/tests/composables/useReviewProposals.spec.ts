@@ -8,7 +8,6 @@ const {
   mockBoardsApi,
   mockToast,
 } = vi.hoisted(() => {
-  const _vi = { fn: (impl?: (...args: any[]) => any) => impl ? Object.assign(impl, { mockResolvedValueOnce: () => _vi.fn(), mockRejectedValueOnce: () => _vi.fn() }) : (() => {}) }
   return {
     watchers: [] as Array<[unknown, () => void]>,
     mockRouter: { push: vi.fn(), replace: vi.fn() },
@@ -70,11 +69,11 @@ vi.mock('../../utils/navigation', () => ({
   normalizeBoardIdQueryParam: (v: unknown) => v ?? null,
 }))
 
-vi.mock('../usePerformanceMark', () => ({
+vi.mock('../../composables/usePerformanceMark', () => ({
   usePerformanceMark: () => ({ start: vi.fn(), end: vi.fn() }),
 }))
 
-vi.mock('../useErrorMapper', () => ({
+vi.mock('../../composables/useErrorMapper', () => ({
   getErrorDisplay: (_e: unknown, fallback: string) => ({ message: fallback }),
 }))
 
@@ -112,6 +111,7 @@ describe('useReviewProposals', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -212,8 +212,9 @@ describe('useReviewProposals', () => {
         makeProposal({ id: '2', status: 'PendingReview' }),
         makeProposal({ id: '3', status: 'Failed' }),
         makeProposal({ id: '4', status: 'Expired' }),
+        makeProposal({ id: '5', status: 'Rejected' }),
       ] as any
-      expect(rp.dismissableProposalIds.value).toEqual(['1', '3', '4'])
+      expect(rp.dismissableProposalIds.value).toEqual(['1', '3', '4', '5'])
     })
   })
 
@@ -241,6 +242,12 @@ describe('useReviewProposals', () => {
       await rp.loadProposals()
       expect(mockToast.error).toHaveBeenCalled()
     })
+
+    it('sets proposalsLoading false after completion', async () => {
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.proposalsLoading.value).toBe(false)
+    })
   })
 
   describe('loadBoardOptions', () => {
@@ -253,11 +260,64 @@ describe('useReviewProposals', () => {
       expect(rp.loadingBoards.value).toBe(false)
     })
 
-    it('swallows errors silently', async () => {
+    it('swallows errors and resets loadingBoards', async () => {
       mockBoardsApi.getBoards.mockRejectedValueOnce(new Error('fail'))
       const rp = useReviewProposals()
       await expect(rp.loadBoardOptions()).resolves.toBeUndefined()
       expect(mockToast.error).not.toHaveBeenCalled()
+      expect(rp.loadingBoards.value).toBe(false)
+    })
+  })
+
+  describe('openProposalFromHash', () => {
+    it('scrolls to existing proposal that matches board filter', async () => {
+      mockRoute.hash = '#proposal-p-exist'
+      const rp = useReviewProposals()
+      rp.proposals.value = [makeProposal({ id: 'p-exist' })] as any
+      rp.proposalsLoading.value = false
+      await rp.loadProposals()
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+    })
+
+    it('clears hash when existing proposal does not match board filter', async () => {
+      mockRoute.query = { boardId: 'board-A' }
+      mockRoute.hash = '#proposal-p-other'
+      const mismatchedProposal = makeProposal({ id: 'p-other', boardId: 'board-B' })
+      mockAutomationApi.getProposals.mockResolvedValueOnce([mismatchedProposal])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(mockRouter.replace).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'workspace-review' }),
+      )
+    })
+
+    it('fetches unknown proposal from API', async () => {
+      mockRoute.hash = '#proposal-p-remote'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-remote' }))
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('p-remote')
+    })
+
+    it('clears hash on 404 from API', async () => {
+      mockRoute.hash = '#proposal-p-missing'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(mockRouter.replace).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'workspace-review' }),
+      )
+    })
+
+    it('shows toast on non-404 error', async () => {
+      mockRoute.hash = '#proposal-p-fail'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce(new Error('server error'))
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(mockToast.error).toHaveBeenCalled()
     })
   })
 
@@ -352,7 +412,6 @@ describe('useReviewProposals', () => {
       const afterStop = rp.nowMs.value
       vi.advanceTimersByTime(60_000)
       expect(rp.nowMs.value).toBe(afterStop)
-      vi.useRealTimers()
     })
   })
 

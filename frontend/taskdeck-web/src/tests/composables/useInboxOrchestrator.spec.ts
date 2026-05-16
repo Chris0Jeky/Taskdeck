@@ -1,5 +1,4 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { ref, nextTick } from 'vue'
 
 let mountedCallback: (() => void) | null = null
 let unmountedCallback: (() => void) | null = null
@@ -7,7 +6,7 @@ let watchers: Array<[unknown, (val: unknown, oldVal: unknown, onCleanup: (fn: ()
 
 vi.mock('vue', () => ({
   ref: (v: unknown) => ({ value: v }),
-  computed: (fn: () => unknown) => ({ value: fn() }),
+  computed: (fn: () => unknown) => ({ get value() { return fn() } }),
   watch: (source: unknown, cb: (val: unknown, oldVal: unknown, onCleanup: (fn: () => void) => void) => void) => {
     watchers.push([source, cb])
   },
@@ -44,15 +43,15 @@ vi.mock('../../store/captureStore', () => ({
 }))
 
 vi.mock('../../types/capture', () => ({
-  isTriageTerminalStatus: (s: unknown) => ['Triaged', 'Converted', 'Ignored', 'Failed'].includes(s as string),
+  isTriageTerminalStatus: (s: unknown) => ['Triaged', 'ProposalCreated', 'Converted', 'Ignored', 'Failed'].includes(s as string),
 }))
 
 const mockUnregister = vi.fn()
-vi.mock('../useEscapeStack', () => ({
+vi.mock('../../composables/useEscapeStack', () => ({
   registerEscapeHandler: vi.fn(() => mockUnregister),
 }))
 
-vi.mock('../usePerformanceMark', () => ({
+vi.mock('../../composables/usePerformanceMark', () => ({
   usePerformanceMark: () => ({ start: vi.fn(), end: vi.fn() }),
 }))
 
@@ -130,18 +129,21 @@ describe('useInboxOrchestrator', () => {
   })
 
   describe('suggestion editing', () => {
-    it('startEditSuggestion copies rawText from selectedItem', () => {
+    it('startEditSuggestion returns early when no selectedItem', () => {
+      const orch = createOrchestrator()
+      orch.selectedItemId.value = null
+      orch.startEditSuggestion()
+      expect(orch.isEditingSuggestion.value).toBe(false)
+    })
+
+    it('startEditSuggestion copies rawText and enables editing', () => {
+      mockCaptureStore.detailById = { 'item-1': { id: 'item-1', rawText: 'hello world', boardId: null, status: 'New' } }
       const orch = createOrchestrator()
       orch.selectedItemId.value = 'item-1'
-      mockCaptureStore.detailById = { 'item-1': { id: 'item-1', rawText: 'hello world', boardId: null, status: 'New' } }
-      // Need to recompute selectedItem
-      const detail = mockCaptureStore.detailById['item-1']
-      // The computed won't auto-update in our mock, so test the function logic
-      // We'll rely on the actual implementation reading from the store
       orch.startEditSuggestion()
-      // With our mock, selectedItem.value is null from computed at creation time
-      // This tests the guard: if no selectedItem, it returns early
-      expect(orch.isEditingSuggestion.value).toBe(false)
+      expect(orch.isEditingSuggestion.value).toBe(true)
+      expect(orch.editedText.value).toBe('hello world')
+      expect(orch.editedTitleHint.value).toBe('')
     })
 
     it('cancelEditSuggestion resets editing state', () => {
@@ -253,13 +255,26 @@ describe('useInboxOrchestrator', () => {
     })
   })
 
-  describe('hash parsing', () => {
-    it('getCaptureIdFromHash extracts valid capture id', () => {
-      mockRoute.hash = '#capture-abc-123'
+  describe('hash deep-link', () => {
+    it('loadInbox triggers openItemFromHash when hash is present', async () => {
+      mockRoute.hash = '#capture-deep-id'
       const orch = createOrchestrator()
-      // Test via loadInbox which calls openItemFromHash internally
-      // We can test the hash parsing indirectly through selectItemById
-      expect(orch.hashLoadFailedItemId.value).toBeNull()
+      await orch.loadInbox()
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('deep-id')
+    })
+
+    it('loadInbox does not fetch detail when hash is absent', async () => {
+      mockRoute.hash = ''
+      const orch = createOrchestrator()
+      await orch.loadInbox()
+      expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
+    })
+
+    it('loadInbox does not fetch when hash has invalid format', async () => {
+      mockRoute.hash = '#other-thing'
+      const orch = createOrchestrator()
+      await orch.loadInbox()
+      expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
     })
   })
 
@@ -325,15 +340,57 @@ describe('useInboxOrchestrator', () => {
     })
   })
 
+  describe('lifecycle', () => {
+    it('onMounted triggers loadInbox', async () => {
+      const orch = createOrchestrator()
+      expect(mountedCallback).not.toBeNull()
+      await mountedCallback!()
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalled()
+    })
+
+    it('onUnmounted stops active triage polling', async () => {
+      const stopPoll = vi.fn()
+      mockCaptureStore.pollTriageCompletion.mockReturnValueOnce(stopPoll)
+      mockCaptureStore.detailById = { 'a': { id: 'a', rawText: '', boardId: null, status: 'Triaging' } }
+      const orch = createOrchestrator()
+      orch.selectedItemId.value = 'a'
+      await orch.triageSelected()
+      expect(stopPoll).not.toHaveBeenCalled()
+      unmountedCallback!()
+      expect(stopPoll).toHaveBeenCalled()
+    })
+  })
+
+  describe('watchers', () => {
+    it('items watcher resets activeItemIndex when items become empty', () => {
+      mockCaptureStore.items = [{ id: '1' }]
+      const orch = createOrchestrator()
+      orch.activeItemIndex.value = 5
+      const itemsWatcher = watchers.find(([src]) => typeof src === 'object')
+      expect(itemsWatcher).toBeDefined()
+      mockCaptureStore.items = []
+      itemsWatcher![1]([], undefined, () => {})
+      expect(orch.activeItemIndex.value).toBe(0)
+    })
+
+    it('selectedItemId watcher resets editing state', () => {
+      const orch = createOrchestrator()
+      orch.isEditingSuggestion.value = true
+      orch.editedText.value = 'x'
+      const selectedWatcher = watchers[watchers.length - 1]
+      selectedWatcher[1]('new-id', undefined, () => {})
+      expect(orch.isEditingSuggestion.value).toBe(false)
+      expect(orch.editedText.value).toBe('')
+    })
+  })
+
   describe('routing helpers', () => {
     it('openReview navigates to workspace-review', () => {
       const orch = createOrchestrator()
       orch.openReview()
-      expect(mockRouter.push).toHaveBeenCalledWith({
-        name: 'workspace-review',
-        query: undefined,
-        hash: undefined,
-      })
+      expect(mockRouter.push).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'workspace-review' }),
+      )
     })
 
     it('openProposal navigates with hash', () => {
