@@ -16,6 +16,17 @@ vi.mock('../../composables/useOnlineStatus', () => ({
   useOnlineStatus: () => ({ isOnline: mockOnline }),
 }))
 
+const mockGetToken = vi.fn(() => 'valid-jwt-token')
+const mockIsTokenExpired = vi.fn(() => false)
+
+vi.mock('../../utils/tokenStorage', () => ({
+  getToken: () => mockGetToken(),
+}))
+
+vi.mock('../../utils/jwt', () => ({
+  isTokenExpired: () => mockIsTokenExpired(),
+}))
+
 const mockCreateItem = vi.fn(async () => ({
   id: 'capture-1',
   boardId: null,
@@ -46,6 +57,8 @@ describe('ShareTargetView', () => {
     routerMock.push.mockClear()
     mockCreateItem.mockClear()
     mockEnqueue.mockClear()
+    mockGetToken.mockReturnValue('valid-jwt-token')
+    mockIsTokenExpired.mockReturnValue(false)
     mockOnline.value = true
     setQuery()
   })
@@ -132,5 +145,37 @@ describe('ShareTargetView', () => {
         titleHint: null,
       }),
     )
+  })
+
+  it('shows login-required state when no valid session exists', async () => {
+    mockGetToken.mockReturnValue(null)
+    setQuery('Title', 'Text', '')
+    const wrapper = mount(ShareTargetView)
+    await flushPromises()
+
+    expect(mockCreateItem).not.toHaveBeenCalled()
+    expect(mockEnqueue).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Login required')
+  })
+
+  it('shows login-required when token is expired', async () => {
+    mockGetToken.mockReturnValue('expired-token')
+    mockIsTokenExpired.mockReturnValue(true)
+    setQuery('Title', '', 'https://example.com')
+    const wrapper = mount(ShareTargetView)
+    await flushPromises()
+
+    expect(mockCreateItem).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Login required')
+  })
+
+  it('navigates to login when Log In button is clicked in login-required state', async () => {
+    mockGetToken.mockReturnValue(null)
+    setQuery('Title', 'Text', '')
+    const wrapper = mount(ShareTargetView)
+    await flushPromises()
+
+    await wrapper.find('.share-target-view__btn--primary').trigger('click')
+    expect(routerMock.push).toHaveBeenCalledWith({ name: 'login' })
   })
 })

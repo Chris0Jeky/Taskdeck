@@ -76,7 +76,7 @@ const router = createRouter({
       meta: { public: true },
     },
 
-    // PWA share-target landing — receives POST from OS share API,
+    // PWA share-target landing — receives GET from OS share API,
     // queues capture offline or sends immediately. Public because
     // the OS launches this URL directly without auth context.
     {

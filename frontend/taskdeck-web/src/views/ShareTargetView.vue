@@ -4,6 +4,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
 import { enqueueCapture } from '../utils/captureQueue'
 import { useOnlineStatus } from '../composables/useOnlineStatus'
+import * as tokenStorage from '../utils/tokenStorage'
+import { isTokenExpired } from '../utils/jwt'
 import type { CreateCaptureItemDto } from '../types/capture'
 
 const router = useRouter()
@@ -11,7 +13,7 @@ const route = useRoute()
 const captureStore = useCaptureStore()
 const { isOnline } = useOnlineStatus()
 
-const status = ref<'processing' | 'success' | 'queued' | 'error'>('processing')
+const status = ref<'processing' | 'success' | 'queued' | 'login-required' | 'error'>('processing')
 const sharedTitle = ref('')
 const sharedText = ref('')
 const sharedUrl = ref('')
@@ -22,6 +24,21 @@ function buildCaptureText(title: string, text: string, url: string): string {
   if (text && text !== title) parts.push(text)
   if (url) parts.push(url)
   return parts.join('\n\n') || ''
+}
+
+function hasValidSession(): boolean {
+  const token = tokenStorage.getToken()
+  if (!token) return false
+  return !isTokenExpired(token)
+}
+
+async function safeEnqueue(dto: CreateCaptureItemDto): Promise<boolean> {
+  try {
+    await enqueueCapture(dto)
+    return true
+  } catch {
+    return false
+  }
 }
 
 onMounted(async () => {
@@ -48,22 +65,32 @@ onMounted(async () => {
     externalRef: url || null,
   }
 
+  if (!hasValidSession()) {
+    const queued = await safeEnqueue(dto)
+    status.value = queued ? 'login-required' : 'error'
+    return
+  }
+
   if (isOnline.value) {
     try {
       await captureStore.createItem(dto)
       status.value = 'success'
     } catch {
-      await enqueueCapture(dto)
-      status.value = 'queued'
+      const queued = await safeEnqueue(dto)
+      status.value = queued ? 'queued' : 'error'
     }
   } else {
-    await enqueueCapture(dto)
-    status.value = 'queued'
+    const queued = await safeEnqueue(dto)
+    status.value = queued ? 'queued' : 'error'
   }
 })
 
 function goToInbox() {
   void router.push({ name: 'workspace-inbox' })
+}
+
+function goToLogin() {
+  void router.push({ name: 'login' })
 }
 
 function close() {
@@ -90,13 +117,31 @@ function close() {
         <p class="share-target-view__detail">Will be sent when you're back online.</p>
       </div>
 
+      <div v-else-if="status === 'login-required'" class="share-target-view__status share-target-view__status--queued">
+        <p>Login required</p>
+        <p class="share-target-view__detail">Content saved locally. Log in to sync it to your inbox.</p>
+      </div>
+
       <div v-else class="share-target-view__status share-target-view__status--error">
         <p>Nothing to capture</p>
-        <p class="share-target-view__detail">The shared content was empty.</p>
+        <p class="share-target-view__detail">The shared content was empty or could not be saved.</p>
       </div>
 
       <div class="share-target-view__actions">
-        <button type="button" class="share-target-view__btn share-target-view__btn--primary" @click="goToInbox">
+        <button
+          v-if="status === 'login-required'"
+          type="button"
+          class="share-target-view__btn share-target-view__btn--primary"
+          @click="goToLogin"
+        >
+          Log In
+        </button>
+        <button
+          v-else
+          type="button"
+          class="share-target-view__btn share-target-view__btn--primary"
+          @click="goToInbox"
+        >
           Open Inbox
         </button>
         <button type="button" class="share-target-view__btn" @click="close">

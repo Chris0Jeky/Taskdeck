@@ -8,6 +8,8 @@ import { logError } from '../utils/errorReporting'
 const MAX_RETRIES = 5
 const SYNC_TAG = 'taskdeck-capture-sync'
 
+let replayInProgress = false
+
 export function useCaptureQueueSync() {
   const { isOnline } = useOnlineStatus()
   const pendingCount = ref(0)
@@ -15,7 +17,8 @@ export function useCaptureQueueSync() {
   let onlineHandler: (() => void) | null = null
 
   async function replayQueue(): Promise<number> {
-    if (syncing.value) return 0
+    if (replayInProgress) return 0
+    replayInProgress = true
     syncing.value = true
     let replayed = 0
 
@@ -29,6 +32,11 @@ export function useCaptureQueueSync() {
 
       for (const entry of pending) {
         if (entry.retryCount >= MAX_RETRIES) {
+          logError('Capture queue: discarding entry after max retries', {
+            id: entry.id,
+            queuedAt: entry.queuedAt,
+            text: entry.dto.text.slice(0, 100),
+          })
           await dequeueCapture(entry.id)
           pendingCount.value--
           continue
@@ -46,6 +54,7 @@ export function useCaptureQueueSync() {
     } catch (error) {
       logError('Capture queue replay failed:', error)
     } finally {
+      replayInProgress = false
       syncing.value = false
     }
 
