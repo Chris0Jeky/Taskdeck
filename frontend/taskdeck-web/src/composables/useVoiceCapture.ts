@@ -91,7 +91,9 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
       recognition.stop()
       recognition = null
     }
-    status.value = 'idle'
+    if (status.value !== 'error') {
+      status.value = 'idle'
+    }
   }
 
   onUnmounted(() => {

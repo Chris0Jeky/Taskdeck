@@ -64,7 +64,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
-    "test": "npx tsc --noEmit && node -e \"require('./out/context.test.js')\""
+    "test": "npx tsc -p ./ && node ./out/context.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

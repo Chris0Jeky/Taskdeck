@@ -52,6 +52,7 @@ export class TaskdeckClient {
         let data = '';
         let bytesReceived = 0;
 
+        res.on('error', () => {});
         res.on('data', (chunk: Buffer) => {
           bytesReceived += chunk.length;
           if (bytesReceived > MAX_RESPONSE_BYTES) {
