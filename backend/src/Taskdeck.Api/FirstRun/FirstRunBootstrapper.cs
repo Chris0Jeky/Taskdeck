@@ -103,7 +103,14 @@ public static class FirstRunBootstrapper
         // JWT secret generation runs unconditionally (including headless/CI)
         // so that no hardcoded secret is required in appsettings.Development.json.
         EnsureJwtSecret(builder.Configuration, logger);
-        EnsureConnectorEncryptionKey(builder.Configuration, logger);
+
+        // Connector key auto-generation is skipped in Production to avoid
+        // ephemeral keys that cause data loss on container restart.
+        // Production must supply a stable key; ValidateProductionSecrets enforces this.
+        if (!builder.Environment.IsProduction())
+        {
+            EnsureConnectorEncryptionKey(builder.Configuration, logger);
+        }
 
         // Remaining first-run checks are for the self-hosted packaged
         // distribution only -- skip in Development and CI/headless.

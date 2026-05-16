@@ -66,7 +66,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetActorStatus_ShouldReturnOk_ForAuthenticatedUser()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-status");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-status", _factory);
 
         var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/status");
 
@@ -84,7 +84,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetAuditTrail_ShouldReturnOk_ForAuthenticatedUser()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-audit");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-audit", _factory);
 
         var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/events");
 
@@ -99,7 +99,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetAuditTrail_InvalidLimit_ShouldReturn400()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-audit-invalid");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-audit-invalid", _factory);
 
         var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/events?limit=0");
 
@@ -111,7 +111,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetAuditTrail_LimitTooHigh_ShouldReturn400()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-audit-high");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-audit-high", _factory);
 
         var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/events?limit=999");
 
@@ -123,7 +123,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task Override_WithEmptyActorId_ShouldReturn400()
     {
         using var client = _factory.CreateClient();
-        await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-override-empty");
+        await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-override-empty", _factory);
 
         var response = await client.PostAsJsonAsync("/api/abuse/actors/override",
             new AbuseOverrideRequestDto(Guid.Empty, AbuseState.Restricted, "test reason"));
@@ -136,7 +136,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task Override_WithEmptyReason_ShouldReturn400()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-override-noreason");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-override-noreason", _factory);
 
         var response = await client.PostAsJsonAsync("/api/abuse/actors/override",
             new AbuseOverrideRequestDto(user.UserId, AbuseState.Restricted, ""));
@@ -149,7 +149,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task Override_ValidRequest_ShouldReturnOk()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-override-valid");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-override-valid", _factory);
 
         var response = await client.PostAsJsonAsync("/api/abuse/actors/override",
             new AbuseOverrideRequestDto(user.UserId, AbuseState.Restricted, "operator test override"));
@@ -164,7 +164,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task EvaluateActor_ShouldReturnOk_ForAuthenticatedUser()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-evaluate");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-evaluate", _factory);
 
         var response = await client.PostAsync($"/api/abuse/actors/{user.UserId}/evaluate", null);
 
