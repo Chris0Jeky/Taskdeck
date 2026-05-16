@@ -62,49 +62,59 @@ export interface SimilarPastResultDto {
   applyRate: number
 }
 
+export interface RequestOptions {
+  signal?: AbortSignal
+}
+
 function encodedId(id: string): string {
   return encodeURIComponent(id)
 }
 
 export const proposalDeepReviewApi = {
-  async getProvenance(proposalId: string): Promise<ProvenanceRowDto[]> {
+  async getProvenance(proposalId: string, options?: RequestOptions): Promise<ProvenanceRowDto[]> {
     const { data } = await http.get<ProvenanceRowDto[]>(
       `/automation/proposals/${encodedId(proposalId)}/provenance`,
+      { signal: options?.signal },
     )
     return data
   },
 
-  async getConfidence(proposalId: string): Promise<ConfidenceBreakdownDto> {
+  async getConfidence(proposalId: string, options?: RequestOptions): Promise<ConfidenceBreakdownDto> {
     const { data } = await http.get<ConfidenceBreakdownDto>(
       `/automation/proposals/${encodedId(proposalId)}/confidence`,
+      { signal: options?.signal },
     )
     return data
   },
 
-  async getSideEffects(proposalId: string): Promise<ProposalSideEffectsDto> {
+  async getSideEffects(proposalId: string, options?: RequestOptions): Promise<ProposalSideEffectsDto> {
     const { data } = await http.get<ProposalSideEffectsDto>(
       `/automation/proposals/${encodedId(proposalId)}/side-effects`,
+      { signal: options?.signal },
     )
     return data
   },
 
-  async getConflicts(proposalId: string): Promise<ConflictRowDto[]> {
+  async getConflicts(proposalId: string, options?: RequestOptions): Promise<ConflictRowDto[]> {
     const { data } = await http.get<ConflictRowDto[]>(
       `/automation/proposals/${encodedId(proposalId)}/conflicts`,
+      { signal: options?.signal },
     )
     return data
   },
 
-  async getHistory(proposalId: string): Promise<CardHistoryRowDto[]> {
+  async getHistory(proposalId: string, options?: RequestOptions): Promise<CardHistoryRowDto[]> {
     const { data } = await http.get<CardHistoryRowDto[]>(
       `/automation/proposals/${encodedId(proposalId)}/history`,
+      { signal: options?.signal },
     )
     return data
   },
 
-  async getSimilarPast(proposalId: string): Promise<SimilarPastResultDto> {
+  async getSimilarPast(proposalId: string, options?: RequestOptions): Promise<SimilarPastResultDto> {
     const { data } = await http.get<SimilarPastResultDto>(
       `/automation/proposals/${encodedId(proposalId)}/similar-past`,
+      { signal: options?.signal },
     )
     return data
   },
