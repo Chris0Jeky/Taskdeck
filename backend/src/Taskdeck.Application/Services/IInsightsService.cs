@@ -1,5 +1,3 @@
-using Taskdeck.Application.Services;
-
 namespace Taskdeck.Application.Services;
 
 public interface IInsightsService

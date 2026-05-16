@@ -50,6 +50,7 @@ public class ProposalOutcomeRepository : Repository<ProposalOutcome>, IProposalO
         return await _dbSet
             .AsNoTracking()
             .Where(o => o.DecidedByUserId == userId)
+            .Take(MaxLimit)
             .ToListAsync(cancellationToken);
     }
 }

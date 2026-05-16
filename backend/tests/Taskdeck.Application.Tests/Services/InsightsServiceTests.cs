@@ -112,6 +112,28 @@ public class InsightsServiceTests
     }
 
     [Fact]
+    public async Task GetProposalCohortAsync_IgnoredOutcomesExcludedFromCounts()
+    {
+        var outcomes = new List<ProposalOutcome>
+        {
+            CreateOutcome(OutcomeType.Approved, daysAgo: 1),
+            CreateOutcome(OutcomeType.Ignored, daysAgo: 2),
+            CreateOutcome(OutcomeType.Ignored, daysAgo: 3),
+            CreateOutcome(OutcomeType.Rejected, daysAgo: 4),
+        };
+
+        _repository.Setup(r => r.GetAllByUserIdAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(outcomes);
+
+        var cohort = await _sut.GetProposalCohortAsync(_userId, 30);
+
+        cohort.AcceptedCount.Should().Be(1);
+        cohort.RejectedCount.Should().Be(1);
+        cohort.EditedCount.Should().Be(0);
+        cohort.TotalCount.Should().Be(2, "Ignored outcomes should not contribute to TotalCount");
+    }
+
+    [Fact]
     public async Task GetMetricsAsync_EmptyOutcomes_ReturnsEmptyList()
     {
         _repository.Setup(r => r.GetAllByUserIdAsync(_userId, It.IsAny<CancellationToken>()))
@@ -198,7 +220,8 @@ public class InsightsServiceTests
 
     private static void SetDecidedAt(ProposalOutcome outcome, DateTimeOffset value)
     {
-        var prop = typeof(ProposalOutcome).GetProperty(nameof(ProposalOutcome.DecidedAt));
-        prop!.SetValue(outcome, value);
+        var prop = typeof(ProposalOutcome).GetProperty(nameof(ProposalOutcome.DecidedAt))
+            ?? throw new InvalidOperationException($"Property {nameof(ProposalOutcome.DecidedAt)} not found on {nameof(ProposalOutcome)}");
+        prop.SetValue(outcome, value);
     }
 }
