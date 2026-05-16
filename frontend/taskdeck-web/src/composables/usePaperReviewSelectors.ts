@@ -70,26 +70,27 @@ export interface PaperReviewSelectors {
   history: ComputedRef<HistoryRow[]>
   similarPast: ComputedRef<SimilarPastRow[]>
   similarPastApplyRate: ComputedRef<{ applied: number; total: number; ratio: number }>
+  loading: ComputedRef<boolean>
 }
 
-const EMPTY_PROVENANCE: ProvenanceRow[] = []
-const EMPTY_CONFLICTS: ConflictRow[] = []
-const EMPTY_HISTORY: HistoryRow[] = []
-const EMPTY_SIMILAR: SimilarPastRow[] = []
-const EMPTY_SIDE_EFFECTS: SideEffects = {
-  rows: [],
-  reversibility: {
+const EMPTY_PROVENANCE: ProvenanceRow[] = Object.freeze([] as ProvenanceRow[]) as ProvenanceRow[]
+const EMPTY_CONFLICTS: ConflictRow[] = Object.freeze([] as ConflictRow[]) as ConflictRow[]
+const EMPTY_HISTORY: HistoryRow[] = Object.freeze([] as HistoryRow[]) as HistoryRow[]
+const EMPTY_SIMILAR: SimilarPastRow[] = Object.freeze([] as SimilarPastRow[]) as SimilarPastRow[]
+const EMPTY_SIDE_EFFECTS: SideEffects = Object.freeze({
+  rows: Object.freeze([] as SideEffectRow[]) as SideEffectRow[],
+  reversibility: Object.freeze({
     summary: '6 hours · single keystroke',
     description: 'Undo restores the prior state. Nothing is lost.',
     windowMs: 6 * 60 * 60 * 1000,
     appliedAt: null,
-  },
-}
-const EMPTY_CONFIDENCE: ConfidenceBreakdown = {
+  }) as SideEffects['reversibility'],
+}) as SideEffects
+const EMPTY_CONFIDENCE: ConfidenceBreakdown = Object.freeze({
   overall: 0,
-  components: [],
+  components: Object.freeze([] as ConfidenceBreakdown['components']) as ConfidenceBreakdown['components'],
   threshold: 0.7,
-}
+}) as ConfidenceBreakdown
 
 const VALID_WEIGHTS = new Set<ProvenanceWeight>(['primary', 'contextual', 'excluded', 'inferred'])
 
@@ -125,10 +126,14 @@ function mapHistoryStatus(status: string): 'pending' | 'applied' | 'past' {
   }
 }
 
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v))
+}
+
 function mapConfidence(dto: ConfidenceBreakdownDto): ConfidenceBreakdown {
   return {
-    overall: dto.overall,
-    components: dto.components.map((c) => ({ key: c.key, value: c.value })),
+    overall: clamp01(dto.overall),
+    components: dto.components.map((c) => ({ key: c.key, value: clamp01(c.value) })),
     note: dto.note ?? undefined,
     threshold: dto.threshold,
   }
@@ -177,13 +182,22 @@ export function usePaperReviewSelectors(
   const conflictsData: Ref<ConflictRow[]> = ref([])
   const historyData: Ref<HistoryRow[]> = ref([])
   const similarPastData: Ref<SimilarPastRow[]> = ref([])
+  const isLoading = ref(false)
 
   let fetchGeneration = 0
+  let abortController: AbortController | null = null
 
   watch(
     () => activeProposal.value?.id,
     async (proposalId) => {
+      // Abort any in-flight requests from the previous watcher invocation
+      if (abortController) {
+        abortController.abort()
+        abortController = null
+      }
+
       if (!proposalId) {
+        isLoading.value = false
         provenanceData.value = EMPTY_PROVENANCE
         sideEffectsData.value = EMPTY_SIDE_EFFECTS
         confidenceData.value = EMPTY_CONFIDENCE
@@ -194,19 +208,27 @@ export function usePaperReviewSelectors(
       }
 
       const generation = ++fetchGeneration
+      const controller = new AbortController()
+      abortController = controller
+      const signal = controller.signal
+
       const proposal = activeProposal.value
       const appliedAt = proposal?.appliedAt ? new Date(proposal.appliedAt).getTime() : null
 
+      isLoading.value = true
+
       const results = await Promise.allSettled([
-        proposalDeepReviewApi.getProvenance(proposalId),
-        proposalDeepReviewApi.getConfidence(proposalId),
-        proposalDeepReviewApi.getSideEffects(proposalId),
-        proposalDeepReviewApi.getConflicts(proposalId),
-        proposalDeepReviewApi.getHistory(proposalId),
-        proposalDeepReviewApi.getSimilarPast(proposalId),
+        proposalDeepReviewApi.getProvenance(proposalId, { signal }),
+        proposalDeepReviewApi.getConfidence(proposalId, { signal }),
+        proposalDeepReviewApi.getSideEffects(proposalId, { signal }),
+        proposalDeepReviewApi.getConflicts(proposalId, { signal }),
+        proposalDeepReviewApi.getHistory(proposalId, { signal }),
+        proposalDeepReviewApi.getSimilarPast(proposalId, { signal }),
       ])
 
       if (generation !== fetchGeneration) return
+
+      isLoading.value = false
 
       const [prov, conf, side, confl, hist, sim] = results
 
@@ -244,6 +266,8 @@ export function usePaperReviewSelectors(
     return { applied, total, ratio: total === 0 ? 0 : applied / total }
   })
 
+  const loading = computed(() => isLoading.value)
+
   return {
     provenance,
     sideEffects,
@@ -252,5 +276,6 @@ export function usePaperReviewSelectors(
     history,
     similarPast,
     similarPastApplyRate,
+    loading,
   }
 }
