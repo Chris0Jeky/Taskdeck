@@ -19,7 +19,7 @@ describe('proposalDeepReviewApi', () => {
 
     const result = await proposalDeepReviewApi.getProvenance('p-1')
 
-    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/provenance')
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/provenance', { signal: undefined })
     expect(result).toEqual(rows)
   })
 
@@ -29,7 +29,7 @@ describe('proposalDeepReviewApi', () => {
 
     const result = await proposalDeepReviewApi.getConfidence('p-1')
 
-    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/confidence')
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/confidence', { signal: undefined })
     expect(result).toEqual(breakdown)
   })
 
@@ -39,7 +39,7 @@ describe('proposalDeepReviewApi', () => {
 
     const result = await proposalDeepReviewApi.getSideEffects('p-1')
 
-    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/side-effects')
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/side-effects', { signal: undefined })
     expect(result).toEqual(effects)
   })
 
@@ -49,7 +49,7 @@ describe('proposalDeepReviewApi', () => {
 
     const result = await proposalDeepReviewApi.getConflicts('p-1')
 
-    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/conflicts')
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/conflicts', { signal: undefined })
     expect(result).toEqual(conflicts)
   })
 
@@ -59,7 +59,7 @@ describe('proposalDeepReviewApi', () => {
 
     const result = await proposalDeepReviewApi.getHistory('p-1')
 
-    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/history')
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/history', { signal: undefined })
     expect(result).toEqual(history)
   })
 
@@ -69,7 +69,7 @@ describe('proposalDeepReviewApi', () => {
 
     const result = await proposalDeepReviewApi.getSimilarPast('p-1')
 
-    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/similar-past')
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/similar-past', { signal: undefined })
     expect(result).toEqual(similar)
   })
 
@@ -78,7 +78,7 @@ describe('proposalDeepReviewApi', () => {
 
     await proposalDeepReviewApi.getProvenance('id/with spaces')
 
-    expect(http.get).toHaveBeenCalledWith('/automation/proposals/id%2Fwith%20spaces/provenance')
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals/id%2Fwith%20spaces/provenance', { signal: undefined })
   })
 
   it('propagates HTTP errors', async () => {

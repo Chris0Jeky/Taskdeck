@@ -83,21 +83,17 @@ describe('usePaperReviewSelectors', () => {
     proposal.value = makeProposal()
     await nextTick()
     await vi.waitFor(() => {
-      expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledWith('p-1')
+      expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledWith('p-1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     })
 
-    expect(proposalDeepReviewApi.getConfidence).toHaveBeenCalledWith('p-1')
-    expect(proposalDeepReviewApi.getSideEffects).toHaveBeenCalledWith('p-1')
-    expect(proposalDeepReviewApi.getConflicts).toHaveBeenCalledWith('p-1')
-    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledWith('p-1')
-    expect(proposalDeepReviewApi.getSimilarPast).toHaveBeenCalledWith('p-1')
+    expect(proposalDeepReviewApi.getConfidence).toHaveBeenCalledWith('p-1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(proposalDeepReviewApi.getSideEffects).toHaveBeenCalledWith('p-1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(proposalDeepReviewApi.getConflicts).toHaveBeenCalledWith('p-1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledWith('p-1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(proposalDeepReviewApi.getSimilarPast).toHaveBeenCalledWith('p-1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('maps provenance weight to lowercase', async () => {
-    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
-      { icon: '📄', key: 'body', value: 'val', weight: 'Primary' },
-      { icon: '⊘', key: 'excl', value: 'val', weight: 'Excluded' },
-    ])
     mockAllEndpointsEmpty()
     vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
       { icon: '📄', key: 'body', value: 'val', weight: 'Primary' },
