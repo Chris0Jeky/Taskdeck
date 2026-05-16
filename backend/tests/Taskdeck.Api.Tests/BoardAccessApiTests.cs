@@ -84,10 +84,30 @@ public class BoardAccessApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GrantAccess_ShouldReturnForbiddenOrNotFound_ForNonOwner()
+    {
+        using var clientA = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(clientA, "access-grant-crossuser-a");
+        var board = await ApiTestHarness.CreateBoardAsync(clientA, "access-grant-cross");
+
+        using var clientB = _factory.CreateClient();
+        var userB = await ApiTestHarness.AuthenticateAsync(clientB, "access-grant-crossuser-b");
+
+        using var clientC = _factory.CreateClient();
+        var userC = await ApiTestHarness.AuthenticateAsync(clientC, "access-grant-crossuser-c");
+
+        var response = await clientB.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, userC.UserId, UserRole.Editor));
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task GrantAccess_ShouldReturnError_ForNonexistentBoard()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "access-grant-noboard");
+        await ApiTestHarness.AuthenticateAsync(client, "access-grant-noboard");
 
         var response = await client.PostAsJsonAsync(
             $"/api/boards/{Guid.NewGuid()}/access",
@@ -95,6 +115,39 @@ public class BoardAccessApiTests : IClassFixture<TestWebApplicationFactory>
 
         response.StatusCode.Should().BeOneOf(
             HttpStatusCode.NotFound, HttpStatusCode.Forbidden, HttpStatusCode.BadRequest);
+        await ApiTestHarness.AssertErrorContractAsync(response, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateAccess_ShouldReturnError_ForNonexistentAccess()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "access-update-notfound");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "access-update-err");
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/boards/{board.Id}/access/{Guid.NewGuid()}",
+            new UpdateAccessDto(UserRole.Viewer));
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.BadRequest);
+        await ApiTestHarness.AssertErrorContractAsync(response, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateAccess_ShouldReturnForbiddenOrNotFound_ForNonOwner()
+    {
+        using var clientA = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(clientA, "access-update-cross-a");
+        var board = await ApiTestHarness.CreateBoardAsync(clientA, "access-update-cross");
+
+        using var clientB = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(clientB, "access-update-cross-b");
+
+        var response = await clientB.PutAsJsonAsync(
+            $"/api/boards/{board.Id}/access/{Guid.NewGuid()}",
+            new UpdateAccessDto(UserRole.Viewer));
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -107,5 +160,6 @@ public class BoardAccessApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await client.DeleteAsync($"/api/boards/{board.Id}/access/{Guid.NewGuid()}");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.BadRequest);
+        await ApiTestHarness.AssertErrorContractAsync(response, response.StatusCode);
     }
 }

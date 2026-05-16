@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Taskdeck.Api.Controllers;
@@ -72,7 +71,7 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
 
         var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest(""));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
     }
 
     [Fact]
@@ -113,7 +112,7 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
 
         var response = await client.DeleteAsync($"/api/apikeys/{Guid.NewGuid()}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
     }
 
     [Fact]
