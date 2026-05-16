@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   INK_BLEED_PHASE_SCHEDULE,
   INK_BLEED_TOTAL_MS,
