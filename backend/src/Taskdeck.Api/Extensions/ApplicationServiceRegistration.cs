@@ -56,7 +56,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
         services.AddScoped<ISimilarDecisionService, SimilarDecisionService>();
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
-        services.AddScoped<IFieldVerifier, FieldVerifier>();
+        services.AddSingleton<IFieldVerifier, FieldVerifier>();
         services.AddScoped<IProposalGenerator, ProposalGeneratorV1>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
         services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();

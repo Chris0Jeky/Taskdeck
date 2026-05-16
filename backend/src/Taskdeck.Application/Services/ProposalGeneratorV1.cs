@@ -185,8 +185,7 @@ public class ProposalGeneratorV1 : IProposalGenerator
             "Label", intent.Label, sourceText, intent.Confidence);
         verificationResults.Add(labelVerification);
 
-        if (labelVerification.Status == VerificationStatus.Downgraded)
-            labelField.DowngradeConfidence(labelVerification.AdjustedConfidence);
+        ApplyVerificationToField(labelField, labelVerification);
 
         var actionTypeField = new ProvenanceField(
             "ActionType",
@@ -200,12 +199,20 @@ public class ProposalGeneratorV1 : IProposalGenerator
             "ActionType", evidenceLinks, envelope.SourceBlocks, intent.Confidence);
         verificationResults.Add(actionVerification);
 
-        if (actionVerification.Status == VerificationStatus.Downgraded)
-            actionTypeField.DowngradeConfidence(actionVerification.AdjustedConfidence);
+        ApplyVerificationToField(actionTypeField, actionVerification);
 
         AddPreExtractedFields(provenance, preExtracted, sourceText, verificationResults);
 
         return (provenance, verificationResults);
+    }
+
+    private static void ApplyVerificationToField(ProvenanceField field, FieldVerificationResult verification)
+    {
+        if (verification.Status is VerificationStatus.Downgraded or VerificationStatus.Failed
+            && verification.AdjustedConfidence < field.Confidence)
+        {
+            field.DowngradeConfidence(verification.AdjustedConfidence);
+        }
     }
 
     private static IReadOnlyList<ProvenanceEvidenceLink> BuildEvidenceLinks(
@@ -224,7 +231,9 @@ public class ProposalGeneratorV1 : IProposalGenerator
             if (sourceSpan == null)
                 continue;
 
-            var sourceBlock = envelope.SourceBlocks.First(b => b.Id == sourceSpan.SourceBlockId);
+            var sourceBlock = envelope.SourceBlocks.FirstOrDefault(b => b.Id == sourceSpan.SourceBlockId);
+            if (sourceBlock == null)
+                continue;
             var provenanceLink = new ProvenanceEvidenceLink(
                 sourceBlock.SourceType,
                 sourceBlock.Id.ToString(),
@@ -260,7 +269,8 @@ public class ProposalGeneratorV1 : IProposalGenerator
     {
         foreach (var entity in preExtracted.Take(10))
         {
-            var fieldName = $"PreExtracted:{entity.EntityType}";
+            var rawFieldName = $"PreExtracted:{entity.EntityType}";
+            var fieldName = rawFieldName.Length <= 100 ? rawFieldName : rawFieldName[..100];
             var field = new ProvenanceField(
                 fieldName,
                 ProvenanceKind.Extractive,

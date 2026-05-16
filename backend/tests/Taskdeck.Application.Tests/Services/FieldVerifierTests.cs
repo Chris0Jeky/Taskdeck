@@ -194,6 +194,7 @@ public class FieldVerifierTests
 
         result.Status.Should().Be(VerificationStatus.Failed);
         result.AdjustedConfidence.Should().Be(0.0);
+        result.SimilarityScore.Should().Be(0.0);
     }
 
     [Fact]

@@ -180,12 +180,19 @@ public class ProposalGeneratorV1Tests
     [Fact]
     public async Task GenerateAsync_DeleteIntent_ClassifiedAsHighRisk()
     {
+        AutomationProposal? capturedProposal = null;
+        _proposalRepo.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), It.IsAny<CancellationToken>()))
+            .Callback<AutomationProposal, CancellationToken>((p, _) => capturedProposal = p)
+            .ReturnsAsync((AutomationProposal p, CancellationToken _) => p);
+
         var envelope = CreateEnvelopeWithActionType("delete-card");
         var boardId = Guid.NewGuid();
 
         var result = await _sut.GenerateAsync(envelope, boardId);
 
         result.IsSuccess.Should().BeTrue();
+        capturedProposal.Should().NotBeNull();
+        capturedProposal!.RiskLevel.Should().Be(RiskLevel.High);
     }
 
     [Fact]
@@ -230,6 +237,29 @@ public class ProposalGeneratorV1Tests
     }
 
     [Fact]
+    public async Task GenerateAsync_PartialCancellation_ProducesPartialBatch()
+    {
+        var callCount = 0;
+        var cts = new CancellationTokenSource();
+        _proposalRepo.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), It.IsAny<CancellationToken>()))
+            .Callback<AutomationProposal, CancellationToken>((_, _) =>
+            {
+                callCount++;
+                if (callCount >= 1) cts.Cancel();
+            })
+            .ReturnsAsync((AutomationProposal p, CancellationToken _) => p);
+
+        var envelope = CreateEnvelopeWithMultipleIntents();
+        var boardId = Guid.NewGuid();
+
+        var result = await _sut.GenerateAsync(envelope, boardId, cts.Token);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Proposals.Should().HaveCount(1);
+        result.Value.Batch.Status.Should().Be(ProposalBatchStatus.Sealed);
+    }
+
+    [Fact]
     public async Task GenerateAsync_DowngradedVerification_AdjustsFieldConfidence()
     {
         _fieldVerifier.Setup(v => v.VerifyExtractiveField(
@@ -246,6 +276,25 @@ public class ProposalGeneratorV1Tests
         var labelField = result.Value.Proposals[0].Provenance.Fields
             .First(f => f.FieldName == "Label");
         labelField.Confidence.Should().Be(0.56);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_FailedVerification_ZerosFieldConfidence()
+    {
+        _fieldVerifier.Setup(v => v.VerifyExtractiveField(
+                "Label", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<double>()))
+            .Returns(new FieldVerificationResult("Label", VerificationStatus.Failed, 0.85, 0.0, 0.2,
+                "Quote not found"));
+
+        var envelope = CreateValidEnvelope();
+        var boardId = Guid.NewGuid();
+
+        var result = await _sut.GenerateAsync(envelope, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        var labelField = result.Value.Proposals[0].Provenance.Fields
+            .First(f => f.FieldName == "Label");
+        labelField.Confidence.Should().Be(0.0);
     }
 
     private IntentEnvelopeV1 CreateValidEnvelope()
