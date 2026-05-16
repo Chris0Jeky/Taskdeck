@@ -73,6 +73,30 @@ describe('useReviewKeymap', () => {
       expect(handlers.onToggleProvenance).toHaveBeenCalledOnce()
     })
 
+    it('Spacebar (legacy key value) triggers onPreviewDiff', () => {
+      const handlers: ReviewKeymapHandlers = { onPreviewDiff: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('Spacebar'))
+      expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
+    })
+
+    it('event.code Space fallback triggers onPreviewDiff', () => {
+      const handlers: ReviewKeymapHandlers = { onPreviewDiff: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown({
+        key: 'Unidentified',
+        code: 'Space',
+        isComposing: false,
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+        target: document.createElement('div'),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      } as unknown as KeyboardEvent)
+      expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
+    })
+
     it('unbound keys are ignored', () => {
       const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
       const { handleKeyDown } = useReviewKeymap(handlers)
@@ -128,6 +152,16 @@ describe('useReviewKeymap', () => {
       const event = makeKeyEvent('Enter')
       handleKeyDown(event)
       expect(event.preventDefault).not.toHaveBeenCalled()
+    })
+
+    it('does not fire when target is an interactive element (button)', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      const button = document.createElement('button')
+      document.body.appendChild(button)
+      handleKeyDown(makeKeyEvent('Enter', { target: button } as unknown as Partial<KeyboardEvent>))
+      expect(handlers.onApply).not.toHaveBeenCalled()
+      document.body.removeChild(button)
     })
   })
 

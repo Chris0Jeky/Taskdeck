@@ -1,10 +1,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
+let unmountCallback: (() => void) | null = null
+
 vi.mock('vue', () => ({
   ref: (val: unknown) => ({ value: val }),
   readonly: (r: unknown) => r,
-  onBeforeUnmount: vi.fn(),
+  onBeforeUnmount: (fn: () => void) => { unmountCallback = fn },
 }))
+
+const mockDetectReducedMotion = vi.fn(() => false)
 
 vi.mock('../../composables/inkBleedMotion', () => ({
   INK_BLEED_PHASE_SCHEDULE: [
@@ -16,7 +20,7 @@ vi.mock('../../composables/inkBleedMotion', () => ({
     { at: 4600, phase: 'dried' },
   ],
   INK_BLEED_TOTAL_MS: 4600,
-  detectInkBleedReducedMotion: () => false,
+  detectInkBleedReducedMotion: () => mockDetectReducedMotion(),
 }))
 
 import { useInkBleed } from '../../composables/useInkBleed'
@@ -141,5 +145,48 @@ describe('useInkBleed', () => {
     const id1 = start()
     const id2 = start()
     expect(id2).toBeGreaterThan(id1)
+  })
+
+  describe('reduced motion', () => {
+    beforeEach(() => {
+      mockDetectReducedMotion.mockReturnValue(true)
+    })
+
+    afterEach(() => {
+      mockDetectReducedMotion.mockReturnValue(false)
+    })
+
+    it('start() stays in dried phase and skips timers', () => {
+      const { start, phase } = useInkBleed()
+      start()
+      expect(phase.value).toBe('dried')
+
+      vi.advanceTimersByTime(5000)
+      expect(phase.value).toBe('dried')
+    })
+
+    it('finish() fires onDone immediately in reduced-motion mode', () => {
+      const onDone = vi.fn()
+      const { start, finish } = useInkBleed({ onDone })
+      const runId = start()
+
+      finish(runId)
+      expect(onDone).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('onBeforeUnmount cleanup', () => {
+    it('clears timers and prevents onDone after unmount', () => {
+      const onDone = vi.fn()
+      const { start, finish } = useInkBleed({ onDone })
+      const runId = start()
+
+      vi.advanceTimersByTime(1000)
+      unmountCallback?.()
+
+      finish(runId)
+      vi.advanceTimersByTime(5000)
+      expect(onDone).not.toHaveBeenCalled()
+    })
   })
 })

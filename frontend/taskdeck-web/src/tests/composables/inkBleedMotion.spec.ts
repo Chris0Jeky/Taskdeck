@@ -65,5 +65,23 @@ describe('inkBleedMotion', () => {
       expect(detectInkBleedReducedMotion()).toBe(true)
       globalThis.matchMedia = original
     })
+
+    it('returns false when matchMedia throws', () => {
+      const original = globalThis.matchMedia
+      globalThis.matchMedia = (() => {
+        throw new Error('matchMedia exploded')
+      }) as unknown as typeof matchMedia
+      expect(detectInkBleedReducedMotion()).toBe(false)
+      globalThis.matchMedia = original
+    })
+
+    it('passes the correct media query string', () => {
+      const original = globalThis.matchMedia
+      const spy = vi.fn(() => ({ matches: false }))
+      globalThis.matchMedia = spy as unknown as typeof matchMedia
+      detectInkBleedReducedMotion()
+      expect(spy).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)')
+      globalThis.matchMedia = original
+    })
   })
 })
