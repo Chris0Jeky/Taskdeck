@@ -38,7 +38,8 @@ public enum LlmRequestSourceSurface
 {
     Chat,
     Capture,
-    Worker
+    Worker,
+    VsCode
 }
 
 public record LlmRequestAttribution(
