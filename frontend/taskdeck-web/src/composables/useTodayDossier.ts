@@ -140,7 +140,7 @@ function mapStreakResponse(response: StreakApiResponse): DossierStreak {
   const cells = response.days.map((d) => d.intensityBucket)
   return {
     cells,
-    todayIndex: cells.length - 1,
+    todayIndex: Math.max(0, cells.length - 1),
     totalDays: response.currentStreakLength,
     longestThisYear: response.longestStreakLength,
   }
@@ -443,7 +443,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     liveLineForTomorrow.value = ''
     tomorrowNoteMutationGeneration += 1
     sealed.value = false
-    fetchLiveData()
+    void fetchLiveData()
   }, { immediate: true })
 
   let sealingInProgress = false
