@@ -168,6 +168,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
   newAutomation: 'Automation & Queue',
   newArchive: 'Archive & Export/Import',
   devTools: 'Dev Tools (Internal)',
+  ollama: 'Ollama Local LLM',
 }
 </script>
 

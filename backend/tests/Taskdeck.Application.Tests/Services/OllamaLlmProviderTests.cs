@@ -737,8 +737,96 @@ public class OllamaLlmProviderTests
             {
                 BaseUrl = "http://localhost:11434",
                 Model = "llama3.2",
-                TimeoutSeconds = 120
+                TimeoutSeconds = 120,
+                AllowLocalhostEndpoints = true
             }
         };
+    }
+
+    // -----------------------------------------------------------------------
+    // ProbeAsync
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProbeAsync_ShouldReturnHealthy_WhenOllamaRespondsSuccessfully()
+    {
+        var settings = BuildSettings();
+        var handler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"message":{"content":"OK"},"done":true,"eval_count":1,"done_reason":"stop"}""",
+                    Encoding.UTF8,
+                    "application/json")
+            });
+
+        var provider = new OllamaLlmProvider(
+            new HttpClient(handler),
+            settings,
+            NullLogger<OllamaLlmProvider>.Instance);
+
+        var health = await provider.ProbeAsync();
+
+        health.IsAvailable.Should().BeTrue();
+        health.ProviderName.Should().Be("Ollama");
+        health.Model.Should().Be("llama3.2");
+        health.IsProbed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProbeAsync_ShouldReturnUnhealthy_WhenOllamaReturnsError()
+    {
+        var settings = BuildSettings();
+        var handler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.InternalServerError));
+
+        var provider = new OllamaLlmProvider(
+            new HttpClient(handler),
+            settings,
+            NullLogger<OllamaLlmProvider>.Instance);
+
+        var health = await provider.ProbeAsync();
+
+        health.IsAvailable.Should().BeFalse();
+        health.ProviderName.Should().Be("Ollama");
+        health.IsProbed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProbeAsync_ShouldReturnUnhealthy_WhenSettingsAreInvalid()
+    {
+        var settings = BuildSettings();
+        settings.Ollama!.Model = "";
+
+        var provider = new OllamaLlmProvider(
+            new HttpClient(),
+            settings,
+            NullLogger<OllamaLlmProvider>.Instance);
+
+        var health = await provider.ProbeAsync();
+
+        health.IsAvailable.Should().BeFalse();
+        health.ProviderName.Should().Be("Ollama");
+        health.IsProbed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProbeAsync_ShouldReturnUnhealthy_WhenHttpThrows()
+    {
+        var settings = BuildSettings();
+        var handler = new StubHttpMessageHandler(_ =>
+            throw new HttpRequestException("Connection refused"));
+
+        var provider = new OllamaLlmProvider(
+            new HttpClient(handler),
+            settings,
+            NullLogger<OllamaLlmProvider>.Instance);
+
+        var health = await provider.ProbeAsync();
+
+        health.IsAvailable.Should().BeFalse();
+        health.ProviderName.Should().Be("Ollama");
+        health.IsProbed.Should().BeTrue();
+        health.ErrorMessage.Should().Contain("errored");
     }
 }

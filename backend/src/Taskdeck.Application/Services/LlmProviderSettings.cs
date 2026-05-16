@@ -67,4 +67,6 @@ public sealed class OllamaProviderSettings
 
     [Range(1, 600, ErrorMessage = "TimeoutSeconds must be between 1 and 600.")]
     public int TimeoutSeconds { get; set; } = 120;
+
+    public bool AllowLocalhostEndpoints { get; set; } = true;
 }

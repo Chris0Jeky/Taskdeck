@@ -606,6 +606,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         :fields="fields"
         :change-sub-title="changeSubTitle"
         :provenance="selectors.provenance.value"
+        :proposal-id="activeProposal?.id ?? ''"
         :side-effects="selectors.sideEffects.value"
         :conflicts="selectors.conflicts.value"
         :history="selectors.history.value"

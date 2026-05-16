@@ -48,6 +48,7 @@ const props = defineProps<{
   fields: FieldDiff[]
   changeSubTitle: string
   provenance: ProvenanceRow[]
+  proposalId: string
   sideEffects: SideEffects
   conflicts: ConflictRow[]
   history: HistoryRow[]
@@ -113,7 +114,7 @@ const dialSubline = computed(() =>
       :sub-title="changeSubTitle"
     />
 
-    <ReviewProvenance :rows="provenance" />
+    <ReviewProvenance :rows="provenance" :proposal-id="proposalId" />
     <ReviewSideEffects :data="sideEffects" />
     <ReviewConflicts :rows="conflicts" />
     <ReviewHistory :rows="history" />

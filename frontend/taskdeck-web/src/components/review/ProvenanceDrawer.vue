@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import type { ProvenanceRow, ProvenanceWeight } from '../../composables/usePaperReviewSelectors'
 
@@ -23,6 +23,7 @@ const props = defineProps<{
   rows: ProvenanceRow[]
   metadata: ProvenanceMetadata | null
   evidenceLinks: EvidenceLink[]
+  proposalId: string
 }>()
 
 const emit = defineEmits<{
@@ -33,6 +34,37 @@ const emit = defineEmits<{
 const drawerRef = ref<HTMLElement | null>(null)
 const copied = ref(false)
 let unregisterEscape: (() => void) | null = null
+let previouslyFocusedElement: HTMLElement | null = null
+
+function trapFocus(event: KeyboardEvent) {
+  if (event.key !== 'Tab' || !drawerRef.value) return
+
+  const focusableSelector =
+    'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+  const focusableElements = Array.from(
+    drawerRef.value.querySelectorAll<HTMLElement>(focusableSelector),
+  )
+
+  if (focusableElements.length === 0) {
+    event.preventDefault()
+    return
+  }
+
+  const first = focusableElements[0]!
+  const last = focusableElements[focusableElements.length - 1]!
+
+  if (event.shiftKey) {
+    if (document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    }
+  } else {
+    if (document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+}
 
 const groupedSources = computed(() => {
   const groups: Record<ProvenanceWeight, ProvenanceRow[]> = {
@@ -59,16 +91,25 @@ const provenanceJson = computed(() => {
   )
 })
 
-function copyJson() {
-  navigator.clipboard.writeText(provenanceJson.value)
-  copied.value = true
-  setTimeout(() => {
-    copied.value = false
-  }, 2000)
+const copyError = ref(false)
+
+async function copyJson() {
+  try {
+    await navigator.clipboard.writeText(provenanceJson.value)
+    copied.value = true
+    setTimeout(() => {
+      copied.value = false
+    }, 2000)
+  } catch {
+    copyError.value = true
+    setTimeout(() => {
+      copyError.value = false
+    }, 3000)
+  }
 }
 
 function reportBadSuggestion() {
-  emit('report', '')
+  emit('report', props.proposalId)
 }
 
 function weightLabel(weight: ProvenanceWeight): string {
@@ -99,13 +140,17 @@ function weightColor(weight: ProvenanceWeight): string {
 
 watch(
   () => props.open,
-  (isOpen) => {
+  async (isOpen) => {
     if (isOpen) {
+      previouslyFocusedElement = document.activeElement as HTMLElement | null
       unregisterEscape = registerEscapeHandler(() => emit('close'))
+      await nextTick()
       drawerRef.value?.focus()
     } else {
       unregisterEscape?.()
       unregisterEscape = null
+      previouslyFocusedElement?.focus()
+      previouslyFocusedElement = null
     }
   },
   { immediate: true },
@@ -113,6 +158,8 @@ watch(
 
 onUnmounted(() => {
   unregisterEscape?.()
+  previouslyFocusedElement?.focus()
+  previouslyFocusedElement = null
 })
 </script>
 
@@ -126,6 +173,7 @@ onUnmounted(() => {
         @click.self="emit('close')"
         @keydown.escape="emit('close')"
       >
+        <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
         <aside
           ref="drawerRef"
           class="prov-drawer"
@@ -133,6 +181,7 @@ onUnmounted(() => {
           aria-modal="true"
           aria-label="Provenance details"
           tabindex="-1"
+          @keydown="trapFocus"
         >
           <header class="prov-drawer__header">
             <h2 class="prov-drawer__title">Provenance</h2>
@@ -202,7 +251,7 @@ onUnmounted(() => {
 
           <footer class="prov-drawer__footer">
             <button class="prov-drawer__action prov-drawer__action--copy" @click="copyJson">
-              {{ copied ? 'Copied!' : 'Copy JSON' }}
+              {{ copyError ? 'Copy failed' : copied ? 'Copied!' : 'Copy JSON' }}
             </button>
             <button class="prov-drawer__action prov-drawer__action--report" @click="reportBadSuggestion">
               Report bad suggestion

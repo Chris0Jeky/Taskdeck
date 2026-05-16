@@ -5,7 +5,7 @@ import type { ProvenanceRow } from '../../../composables/usePaperReviewSelectors
 import type { ProvenanceMetadata, EvidenceLink } from '../../../components/review/ProvenanceDrawer.vue'
 
 vi.mock('../../../composables/useEscapeStack', () => ({
-  registerEscapeHandler: vi.fn((handler: () => void) => {
+  registerEscapeHandler: vi.fn((_handler: () => void) => {
     return () => {}
   }),
 }))
@@ -73,6 +73,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -87,6 +88,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -104,6 +106,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: sampleMetadata,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -123,6 +126,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -137,6 +141,7 @@ describe('ProvenanceDrawer', () => {
         rows: [primaryRow, contextualRow, inferredRow, excludedRow],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -157,6 +162,7 @@ describe('ProvenanceDrawer', () => {
         rows: [primaryRow],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -177,6 +183,7 @@ describe('ProvenanceDrawer', () => {
         rows: [primaryRow, inferredRow],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -200,6 +207,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: null,
         evidenceLinks: sampleEvidenceLinks,
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -222,6 +230,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -236,6 +245,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: null,
         evidenceLinks: sampleEvidenceLinks,
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -254,6 +264,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -271,6 +282,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -295,6 +307,7 @@ describe('ProvenanceDrawer', () => {
         rows: [primaryRow],
         metadata: sampleMetadata,
         evidenceLinks: sampleEvidenceLinks,
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -322,6 +335,7 @@ describe('ProvenanceDrawer', () => {
         rows: [],
         metadata: null,
         evidenceLinks: [],
+        proposalId: 'test-proposal-1',
       },
       attachTo: document.body,
     })
@@ -330,7 +344,7 @@ describe('ProvenanceDrawer', () => {
     await wrapper.vm.$nextTick()
     const emitted = wrapper.emitted('report')
     expect(emitted).toHaveLength(1)
-    expect(emitted![0]).toEqual([''])
+    expect(emitted![0]).toEqual(['test-proposal-1'])
     wrapper.unmount()
   })
 })

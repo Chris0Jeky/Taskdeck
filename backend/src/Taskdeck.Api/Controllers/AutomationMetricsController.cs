@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Dtos;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.Interfaces;
 
@@ -11,6 +12,8 @@ namespace Taskdeck.Api.Controllers;
 [Produces("application/json")]
 public class AutomationMetricsController : AuthenticatedControllerBase
 {
+    private const int MaxRangeDays = 365;
+
     public AutomationMetricsController(IUserContext userContext)
         : base(userContext)
     {
@@ -18,12 +21,22 @@ public class AutomationMetricsController : AuthenticatedControllerBase
 
     [HttpGet("cohorts")]
     [ProducesResponseType(typeof(CohortComparisonResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public IActionResult GetCohortMetrics(
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to)
     {
+        if (!TryGetCurrentUserId(out _, out var errorResult))
+            return errorResult!;
+
         var fromDate = from ?? DateTime.UtcNow.AddDays(-30);
         var toDate = to ?? DateTime.UtcNow;
+
+        if (fromDate >= toDate)
+            return BadRequest(new { error = "'from' must be earlier than 'to'." });
+
+        if ((toDate - fromDate).TotalDays > MaxRangeDays)
+            return BadRequest(new { error = $"Date range must not exceed {MaxRangeDays} days." });
 
         var response = new CohortComparisonResponse
         {
@@ -33,27 +46,4 @@ public class AutomationMetricsController : AuthenticatedControllerBase
 
         return Ok(response);
     }
-}
-
-public sealed class CohortComparisonResponse
-{
-    public required List<CohortMetricsDto> Cohorts { get; set; }
-    public required DateRangeDto DateRange { get; set; }
-}
-
-public sealed class CohortMetricsDto
-{
-    public required string CohortId { get; set; }
-    public required string PromptVersion { get; set; }
-    public int TotalProposals { get; set; }
-    public int Accepted { get; set; }
-    public int Edited { get; set; }
-    public int Rejected { get; set; }
-    public long AverageTimeToDecisionMs { get; set; }
-}
-
-public sealed class DateRangeDto
-{
-    public required string From { get; set; }
-    public required string To { get; set; }
 }

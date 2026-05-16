@@ -8,6 +8,7 @@ const props = defineProps<{
   rows: ProvenanceRow[]
   metadata?: ProvenanceMetadata | null
   evidenceLinks?: EvidenceLink[]
+  proposalId: string
 }>()
 
 const emit = defineEmits<{
@@ -65,6 +66,7 @@ function tone(weight: ProvenanceWeight): string {
       :rows="rows"
       :metadata="metadata ?? null"
       :evidence-links="evidenceLinks ?? []"
+      :proposal-id="proposalId"
       @close="drawerOpen = false"
       @report="emit('report', $event)"
     />
