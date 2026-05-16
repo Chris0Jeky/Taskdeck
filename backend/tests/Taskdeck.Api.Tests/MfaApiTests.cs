@@ -52,7 +52,7 @@ public class MfaApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetStatus_ShouldShowSetupNotAvailable_WhenMfaDisabled()
+    public async Task GetStatus_ShouldShowSetupNotAvailable_WhenServerPolicyDisablesMfaSetup()
     {
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "mfa-status-disabled");

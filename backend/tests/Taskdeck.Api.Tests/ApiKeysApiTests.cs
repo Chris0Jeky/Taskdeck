@@ -150,5 +150,10 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
         var revokeResponse = await clientB.DeleteAsync($"/api/apikeys/{createdKey!.Id}");
 
         revokeResponse.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.Forbidden);
+
+        var listAfterCrossRevoke = await clientA.GetAsync("/api/apikeys");
+        var keysAfterCrossRevoke = await listAfterCrossRevoke.Content.ReadFromJsonAsync<ListApiKeysResponse>();
+        keysAfterCrossRevoke!.Keys.Should().ContainSingle(k => k.Id == createdKey.Id);
+        keysAfterCrossRevoke.Keys[0].IsActive.Should().BeTrue();
     }
 }
