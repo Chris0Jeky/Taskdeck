@@ -1,33 +1,4 @@
-// Test the pure buildCaptureText function without importing vscode-dependent modules.
-// We re-implement the type and function inline to avoid the vscode import chain.
-
-interface WorkspaceContext {
-  relativePath: string | null;
-  language: string;
-  lineRange: string | null;
-  gitRemoteHash: string | null;
-}
-
-function buildCaptureText(selectedText: string | null, context: WorkspaceContext): string {
-  const parts: string[] = [];
-
-  if (context.relativePath) {
-    const location = context.lineRange
-      ? `${context.relativePath}:${context.lineRange}`
-      : context.relativePath;
-    parts.push(`[${context.language}] ${location}`);
-  }
-
-  if (selectedText) {
-    parts.push(selectedText);
-  }
-
-  if (context.gitRemoteHash) {
-    parts.push(`workspace: ${context.gitRemoteHash}`);
-  }
-
-  return parts.join('\n\n');
-}
+import { buildCaptureText, type WorkspaceContext } from './contextFormatter';
 
 function makeContext(overrides: Partial<WorkspaceContext> = {}): WorkspaceContext {
   return {

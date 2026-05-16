@@ -2,13 +2,9 @@ import * as vscode from 'vscode';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
+import { buildCaptureText, type WorkspaceContext } from './contextFormatter';
 
-export interface WorkspaceContext {
-  relativePath: string | null;
-  language: string;
-  lineRange: string | null;
-  gitRemoteHash: string | null;
-}
+export type { WorkspaceContext } from './contextFormatter';
 
 export async function getWorkspaceContext(editor: vscode.TextEditor): Promise<WorkspaceContext> {
   const doc = editor.document;
@@ -35,26 +31,7 @@ export async function getWorkspaceContext(editor: vscode.TextEditor): Promise<Wo
   };
 }
 
-export function buildCaptureText(selectedText: string | null, context: WorkspaceContext): string {
-  const parts: string[] = [];
-
-  if (context.relativePath) {
-    const location = context.lineRange
-      ? `${context.relativePath}:${context.lineRange}`
-      : context.relativePath;
-    parts.push(`[${context.language}] ${location}`);
-  }
-
-  if (selectedText) {
-    parts.push(selectedText);
-  }
-
-  if (context.gitRemoteHash) {
-    parts.push(`workspace: ${context.gitRemoteHash}`);
-  }
-
-  return parts.join('\n\n');
-}
+export { buildCaptureText };
 
 function isLocalAbsolutePath(fsPath: string): boolean {
   if (process.platform === 'win32') {

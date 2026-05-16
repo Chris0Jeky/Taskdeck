@@ -115,7 +115,10 @@ async function setApiUrl(): Promise<void> {
   }
 
   try {
-    new URL(value);
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Unsupported protocol');
+    }
   } catch {
     vscode.window.showErrorMessage(`Invalid URL: "${value}". Please enter a valid HTTP(S) URL.`);
     return;

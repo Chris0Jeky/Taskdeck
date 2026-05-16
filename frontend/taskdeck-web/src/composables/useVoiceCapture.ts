@@ -50,7 +50,14 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
     }
 
     try {
-      recognition = new SpeechRecognition()
+      const SpeechRecognitionCtor = window.SpeechRecognition
+      if (!SpeechRecognitionCtor) {
+        status.value = 'error'
+        errorMessage.value = unsupportedReason.value ?? 'Not supported'
+        return false
+      }
+
+      recognition = new SpeechRecognitionCtor()
       recognition.continuous = false
       recognition.interimResults = false
       recognition.lang = navigator.language || 'en-US'
