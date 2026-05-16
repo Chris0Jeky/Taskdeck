@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Enums;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -204,6 +206,22 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await _client.PostAsync($"/api/users/{otherUserId}/activate", null);
 
         await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task CreateUser_ShouldIgnoreElevatedDefaultRole()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var dto = new CreateUserDto($"escalate_{suffix}", $"escalate_{suffix}@example.com", "password123", UserRole.Owner);
+
+        var response = await _client.PostAsJsonAsync("/api/users", dto);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var user = await response.Content.ReadFromJsonAsync<UserDto>();
+        user.Should().NotBeNull();
+        user!.DefaultRole.Should().Be(UserRole.Editor, "server must sanitize client-supplied DefaultRole to Editor");
     }
 
     [Fact]
