@@ -195,6 +195,13 @@ public sealed class EgressRegistry : IEgressRegistry
                 PayloadCategory: "Page view events (no user content)",
                 ToolOrAgentName: "AnalyticsSettings",
                 Classification: EgressDataClassification.MetadataOnly),
+
+            // GitHub connector (issue sync, PR references)
+            new EgressEntry(
+                Host: "api.github.com",
+                PayloadCategory: "Repository metadata and issue content",
+                ToolOrAgentName: "GitHubConnectorProvider",
+                Classification: EgressDataClassification.UserContent),
         ];
     }
 }
