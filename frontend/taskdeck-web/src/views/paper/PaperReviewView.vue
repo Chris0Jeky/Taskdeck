@@ -6,11 +6,13 @@ import ReviewQueueRail, {
 } from './review/ReviewQueueRail.vue'
 import type { RecentlyAppliedRow } from './review/ReviewRecentApplied.vue'
 import ReviewMain from './review/ReviewMain.vue'
+import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
 import { useReviewProposals } from '../../composables/useReviewProposals'
 import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
+import { useProposalRevisions } from '../../composables/useProposalRevisions'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
 import { normalizeProposalSourceType, normalizeProposalStatus } from '../../utils/automation'
@@ -153,6 +155,37 @@ watch(
 )
 
 const selectors = usePaperReviewSelectors(activeProposal)
+
+const {
+  editing: revisionEditing,
+  saving: revisionSaving,
+  revisionCount,
+  latestRevision,
+  startEditing: startRevisionEditing,
+  cancelEditing: cancelRevisionEditing,
+  saveRevision,
+} = useProposalRevisions(activeProposal)
+
+const editablePayload = computed(() => {
+  const p = activeProposal.value
+  if (!p) return '{}'
+  if (latestRevision.value) return latestRevision.value.revisedPayload
+  const ops = p.operations ?? []
+  if (ops.length === 0) return '{}'
+  return JSON.stringify({
+    operations: [...ops]
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((operation) => ({
+        sequence: operation.sequence,
+        actionType: operation.actionType,
+        targetType: operation.targetType,
+        targetId: operation.targetId,
+        parameters: operation.parameters,
+        idempotencyKey: operation.idempotencyKey,
+        expectedVersion: operation.expectedVersion,
+      })),
+  })
+})
 
 // --- Queue rail data ---------------------------------------------------
 
@@ -430,7 +463,8 @@ const whyNowBody = computed(() => {
 
 // --- Action wiring -----------------------------------------------------
 
-const busy = computed(() => proposalActionBusyId.value !== null)
+const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
+const busy = computed(() => proposalActionBusyId.value !== null || revisionBusy.value)
 
 function isApplyActionable(proposal: ApiProposal): boolean {
   const status = normalizeProposalStatus(proposal.status)
@@ -444,6 +478,10 @@ function isRejectActionable(proposal: ApiProposal): boolean {
 function onApply() {
   const p = activeProposal.value
   if (!p) return
+  if (revisionBusy.value) {
+    toast.info('Save or cancel the revision before applying this proposal.')
+    return
+  }
   if (!isApplyActionable(p)) {
     toast.info('This proposal is no longer actionable. Refresh review to see current status.')
     return
@@ -459,6 +497,10 @@ function onApply() {
 function onReject() {
   const p = activeProposal.value
   if (!p) return
+  if (revisionBusy.value) {
+    toast.info('Save or cancel the revision before rejecting this proposal.')
+    return
+  }
   if (!isRejectActionable(p)) {
     toast.info('This proposal can no longer be rejected. Refresh review to see current status.')
     return
@@ -469,7 +511,12 @@ function onReject() {
 function onRequestEdit() {
   const p = activeProposal.value
   if (!p) return
-  toast.info('Request edit is not wired yet; no proposal changes were sent.')
+  if (revisionSaving.value) return
+  if (normalizeProposalStatus(p.status) !== 'PendingReview' || isProposalExpired(p)) {
+    toast.info('This proposal can no longer be edited.')
+    return
+  }
+  startRevisionEditing()
 }
 
 function onDefer() {
@@ -538,28 +585,43 @@ function onQueueFilterChange(filter: QueueFilter) {
       @select="selectProposal"
     />
 
-    <ReviewMain
-      v-if="activeProposal"
-      :serial="headerSerial"
-      :meta="headerMeta"
-      :title-parts="titleParts"
-      :lede="lede"
-      :decision-summary="decisionSummary"
-      :busy="busy"
-      :confidence="selectors.confidenceBreakdown.value"
-      :before="before"
-      :after="after"
-      :fields="fields"
-      :change-sub-title="changeSubTitle"
-      :provenance="selectors.provenance.value"
-      :side-effects="selectors.sideEffects.value"
-      :conflicts="selectors.conflicts.value"
-      :history="selectors.history.value"
-      @apply="onApply"
-      @reject="onReject"
-      @request-edit="onRequestEdit"
-      @defer="onDefer"
-    />
+    <div v-if="activeProposal" class="paper-review-deep__main-col">
+      <div
+        v-if="revisionCount > 0"
+        class="paper-review-deep__revision-badge"
+        data-testid="revision-badge"
+      >
+        {{ revisionCount }} {{ revisionCount === 1 ? 'revision' : 'revisions' }}
+      </div>
+      <ReviewMain
+        :serial="headerSerial"
+        :meta="headerMeta"
+        :title-parts="titleParts"
+        :lede="lede"
+        :decision-summary="decisionSummary"
+        :busy="busy"
+        :confidence="selectors.confidenceBreakdown.value"
+        :before="before"
+        :after="after"
+        :fields="fields"
+        :change-sub-title="changeSubTitle"
+        :provenance="selectors.provenance.value"
+        :side-effects="selectors.sideEffects.value"
+        :conflicts="selectors.conflicts.value"
+        :history="selectors.history.value"
+        @apply="onApply"
+        @reject="onReject"
+        @request-edit="onRequestEdit"
+        @defer="onDefer"
+      />
+      <ReviewRevisionEditor
+        v-if="revisionEditing"
+        :operations-payload="editablePayload"
+        :saving="revisionSaving"
+        @save="saveRevision"
+        @cancel="cancelRevisionEditing"
+      />
+    </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
       <template v-if="hasFilterEmptyState">
         <div class="tk-eyebrow">Queue · {{ awaitingCount }} awaiting</div>
@@ -602,6 +664,21 @@ function onQueueFilterChange(filter: QueueFilter) {
   background: var(--paper);
   height: 100%;
   font-family: var(--sans);
+}
+.paper-review-deep__main-col {
+  overflow: auto;
+  min-width: 0;
+}
+.paper-review-deep__revision-badge {
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ember, #c2410c);
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--line);
+  text-align: right;
 }
 .paper-review-deep__empty {
   padding: 80px 56px;

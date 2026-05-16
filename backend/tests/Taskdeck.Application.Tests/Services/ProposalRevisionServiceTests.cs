@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -32,7 +33,7 @@ public class ProposalRevisionServiceTests
         var dto = new CreateProposalRevisionDto(
             proposal.Id,
             Guid.NewGuid(),
-            """{"operations":[]}""",
+            BuildRevisionPayload(proposal.BoardId!.Value, Guid.NewGuid()),
             "Edited before approval");
 
         _proposals
@@ -66,5 +67,28 @@ public class ProposalRevisionServiceTests
             RiskLevel.Low,
             Guid.NewGuid().ToString("N"),
             Guid.NewGuid());
+    }
+
+    private static string BuildRevisionPayload(Guid boardId, Guid columnId)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 1,
+                    actionType = "create",
+                    targetType = "card",
+                    parameters = JsonSerializer.Serialize(new
+                    {
+                        title = "Edited Card",
+                        boardId,
+                        columnId
+                    }),
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
     }
 }

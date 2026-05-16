@@ -26,6 +26,7 @@ public class AutomationExecutorServiceTests
     private readonly Mock<IColumnRepository> _columnRepoMock;
     private readonly Mock<ICardRepository> _cardRepoMock;
     private readonly Mock<ILlmQueueRepository> _llmQueueRepoMock;
+    private readonly Mock<IProposalRevisionRepository> _proposalRevisionRepoMock;
     private readonly AutomationExecutorService _service;
 
     public AutomationExecutorServiceTests()
@@ -39,6 +40,7 @@ public class AutomationExecutorServiceTests
         _columnRepoMock = new Mock<IColumnRepository>();
         _cardRepoMock = new Mock<ICardRepository>();
         _llmQueueRepoMock = new Mock<ILlmQueueRepository>();
+        _proposalRevisionRepoMock = new Mock<IProposalRevisionRepository>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
@@ -46,6 +48,7 @@ public class AutomationExecutorServiceTests
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.LlmQueue).Returns(_llmQueueRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ProposalRevisions).Returns(_proposalRevisionRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BeginTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.RollbackTransactionAsync(default)).Returns(Task.CompletedTask);
