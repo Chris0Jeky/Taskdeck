@@ -407,7 +407,7 @@ public static class FirstRunBootstrapper
             File.WriteAllText(tempPath, payload);
             try
             {
-                File.Move(tempPath, path, overwrite: true);
+                ReplaceFileWithRetry(tempPath, path);
             }
             catch
             {
@@ -421,6 +421,26 @@ public static class FirstRunBootstrapper
             if (acquired)
             {
                 mutex.ReleaseMutex();
+            }
+        }
+    }
+
+    private static void ReplaceFileWithRetry(string tempPath, string path)
+    {
+        const int maxAttempts = 5;
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(tempPath, path, overwrite: true);
+                return;
+            }
+            catch (Exception ex) when (
+                attempt < maxAttempts &&
+                (ex is IOException || ex is UnauthorizedAccessException))
+            {
+                Thread.Sleep(TimeSpan.FromMilliseconds(25 * attempt));
             }
         }
     }
