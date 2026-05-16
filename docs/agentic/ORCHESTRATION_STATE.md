@@ -49,8 +49,8 @@ This file is the persistent memory and execution state for Claude Code's autonom
 - [x] Close stale issues (#975, #976, #977, #980, #1066) — DONE 2026-05-16
 - [x] Fix 156 encoding artifacts across 4 docs — DONE 2026-05-16
 - [x] Update test counts and RFAI progress in docs — DONE 2026-05-16
-- [ ] Close PROD-00 tracker (#881) — all sub-items closed
-- [ ] Commit docs cleanup work as a single PR
+- [x] Close PROD-00 tracker (#881) — all sub-items closed — DONE 2026-05-16
+- [x] Commit docs cleanup work as PR #1075 — DONE 2026-05-16
 
 ### Tier 1: Quick Wins
 - [ ] #1070 TST-63: MFA setup 409-Conflict test (small, isolated)
@@ -73,9 +73,10 @@ This file is the persistent memory and execution state for Claude Code's autonom
 
 ## Current Work
 
-### Active Branch: (none yet — docs cleanup needs committing)
+### Active Branch: `tst/1070-mfa-409-conflict` (next)
 
-### In-Progress PRs: (none)
+### In-Progress PRs:
+- PR #1075 (docs/cleanup-encoding-and-counts) — orchestration file, under review
 
 ### Stacked Branches: (none)
 
