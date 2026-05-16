@@ -66,7 +66,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetActorStatus_ShouldReturnOk_ForAuthenticatedUser()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-status");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-status", _factory);
 
         var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/status");
 
@@ -84,7 +84,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetAuditTrail_ShouldReturnOk_ForAuthenticatedUser()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-audit");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-audit", _factory);
 
         var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/events");
 
@@ -99,7 +99,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetAuditTrail_InvalidLimit_ShouldReturn400()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-audit-invalid");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-audit-invalid", _factory);
 
         var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/events?limit=0");
 
@@ -111,7 +111,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetAuditTrail_LimitTooHigh_ShouldReturn400()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-audit-high");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-audit-high", _factory);
 
         var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/events?limit=999");
 
@@ -123,7 +123,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task Override_WithEmptyActorId_ShouldReturn400()
     {
         using var client = _factory.CreateClient();
-        await ApiTestHarness.AuthenticateAsync(client, "abuse-override-empty");
+        await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-override-empty", _factory);
 
         var response = await client.PostAsJsonAsync("/api/abuse/actors/override",
             new AbuseOverrideRequestDto(Guid.Empty, AbuseState.Restricted, "test reason"));
@@ -136,7 +136,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task Override_WithEmptyReason_ShouldReturn400()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-override-noreason");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-override-noreason", _factory);
 
         var response = await client.PostAsJsonAsync("/api/abuse/actors/override",
             new AbuseOverrideRequestDto(user.UserId, AbuseState.Restricted, ""));
@@ -149,7 +149,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task Override_ValidRequest_ShouldReturnOk()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-override-valid");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-override-valid", _factory);
 
         var response = await client.PostAsJsonAsync("/api/abuse/actors/override",
             new AbuseOverrideRequestDto(user.UserId, AbuseState.Restricted, "operator test override"));
@@ -164,7 +164,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task EvaluateActor_ShouldReturnOk_ForAuthenticatedUser()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-evaluate");
+        var user = await ApiTestHarness.AuthenticateAsAdminAsync(client, "abuse-evaluate", _factory);
 
         var response = await client.PostAsync($"/api/abuse/actors/{user.UserId}/evaluate", null);
 
@@ -175,9 +175,37 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
         doc.RootElement.TryGetProperty("status", out _).Should().BeTrue();
     }
 
-    // NOTE: Cross-user isolation tests for abuse endpoints are intentionally omitted.
-    // The AbuseContainmentController currently allows any authenticated user to query
-    // any actorUserId status/events and override any actor state. This is a known
-    // design gap (missing operator-only RBAC) flagged by Gemini review. It should be
-    // addressed as a security fix, not papered over by tests that document broken behavior.
+    [Fact]
+    public async Task GetActorStatus_ShouldReturnForbidden_ForEditorUser()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-editor");
+
+        var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/status");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Override_ShouldReturnForbidden_ForEditorUser()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-editor-override");
+
+        var response = await client.PostAsJsonAsync("/api/abuse/actors/override",
+            new AbuseOverrideRequestDto(user.UserId, AbuseState.Restricted, "should be denied"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task EvaluateActor_ShouldReturnForbidden_ForEditorUser()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-editor-eval");
+
+        var response = await client.PostAsync($"/api/abuse/actors/{user.UserId}/evaluate", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 }

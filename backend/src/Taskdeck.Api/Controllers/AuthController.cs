@@ -96,7 +96,8 @@ public class AuthController : AuthenticatedControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Register([FromBody] CreateUserDto dto)
     {
-        var result = await _authService.RegisterAsync(dto);
+        var sanitized = dto with { DefaultRole = Taskdeck.Domain.Enums.UserRole.Editor };
+        var result = await _authService.RegisterAsync(sanitized);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 

@@ -322,6 +322,8 @@ var circuitBreakerSettings = builder.Services
     .Select(d => d.ImplementationInstance as CircuitBreakerSettings)
     .FirstOrDefault();
 builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings, oidcSettings, circuitBreakerTracker, circuitBreakerSettings);
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdminOnly", policy => policy.RequireRole("Owner", "Admin"));
 
 // Add OpenTelemetry observability
 builder.Services.AddTaskdeckObservability(observabilitySettings);

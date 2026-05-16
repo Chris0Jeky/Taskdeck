@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using FluentAssertions.Execution;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.DTOs;
 using Xunit.Sdk;
 
@@ -54,6 +55,52 @@ public static class ApiTestHarness
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload.Token);
 
+        return new TestUserContext(payload.User.Id, payload.Token, username, email);
+    }
+
+    public static async Task<TestUserContext> AuthenticateAsAdminAsync(
+        HttpClient client,
+        string stem,
+        Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program>? factory = null)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var username = $"{stem}_{suffix}";
+        var email = $"{stem}_{suffix}@example.com";
+        const string password = "password123";
+
+        // Register the user normally (gets Editor role from the controller)
+        var response = await client.PostAsJsonAsync(
+            "/api/auth/register",
+            new CreateUserDto(username, email, password));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadFromJsonAsync<AuthResultDto>();
+        payload.Should().NotBeNull();
+
+        // Promote to Admin via direct DB access, then re-login for a fresh token
+        if (factory != null)
+        {
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
+            var user = await db.Users.FindAsync(payload!.User.Id);
+            user!.UpdateDefaultRole(Taskdeck.Domain.Enums.UserRole.Admin);
+            await db.SaveChangesAsync();
+
+            // Re-login to get a token with the Admin role claim
+            var loginResponse = await client.PostAsJsonAsync(
+                "/api/auth/login",
+                new LoginDto(username, password));
+            loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>();
+            loginPayload.Should().NotBeNull();
+
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginPayload!.Token);
+            return new TestUserContext(loginPayload.User.Id, loginPayload.Token, username, email);
+        }
+
+        // Fallback when factory is not provided — token has Editor role
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload!.Token);
         return new TestUserContext(payload.User.Id, payload.Token, username, email);
     }
 
