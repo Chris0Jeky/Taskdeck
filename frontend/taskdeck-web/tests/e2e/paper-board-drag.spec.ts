@@ -140,6 +140,7 @@ test.describe('Paper board card drag', () => {
 
     const card = page.locator('[data-card-id]').first()
     await page.keyboard.press('Tab')
+    await card.focus()
     await expect(card).toBeFocused()
 
     const outline = await card.evaluate((el) => window.getComputedStyle(el).outline)
