@@ -77,7 +77,9 @@ describe('boardStoreHelpers', () => {
     it('throws DemoModeError and shows info toast when in demo mode', () => {
       mockIsDemoMode.value = true
       const helpers = createBoardHelpers(state as any)
-      expect(() => helpers.guardDemoMutation()).toThrow('Demo mode')
+      expect(() => helpers.guardDemoMutation()).toThrow(
+        expect.objectContaining({ name: 'DemoModeError', message: 'Demo mode' }),
+      )
       expect(mockToastStore.info).toHaveBeenCalledWith('This action is view-only in demo mode.')
     })
   })

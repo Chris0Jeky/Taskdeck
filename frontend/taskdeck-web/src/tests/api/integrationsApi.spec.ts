@@ -43,6 +43,9 @@ describe('integrationsApi', () => {
       expect(result[0].connectorType).toBe('WebhookInbound')
       expect(result[0].direction).toBe('Inbound')
       expect(result[0].status).toBe('Active')
+      expect(result[1].connectorType).toBe('MarkdownImport')
+      expect(result[1].direction).toBe('Context')
+      expect(result[1].status).toBe('Disabled')
     })
   })
 
@@ -53,7 +56,7 @@ describe('integrationsApi', () => {
           ...makeRawConnector(),
           recentEvents: [
             { id: 'ev1', eventType: 0 },
-            { id: 'ev2', eventType: 'MessageReceived' },
+            { id: 'ev2', eventType: 2 },
           ],
         },
       })
@@ -62,6 +65,8 @@ describe('integrationsApi', () => {
 
       expect(http.get).toHaveBeenCalledWith('/integrations/c1')
       expect(result.recentEvents).toHaveLength(2)
+      expect(result.recentEvents[0].eventType).toBe('Connected')
+      expect(result.recentEvents[1].eventType).toBe('DataReceived')
     })
 
     it('encodes special characters in id', async () => {

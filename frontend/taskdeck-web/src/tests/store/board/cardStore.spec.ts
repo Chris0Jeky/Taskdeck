@@ -358,8 +358,11 @@ describe('cardStore', () => {
 
       const result = await moveCard('board-1', 'card-1', 'col-2', 0)
 
+      expect(mockCardsApi.moveCard).toHaveBeenCalledWith('board-1', 'card-1', {
+        targetColumnId: 'col-2',
+        targetPosition: 0,
+      })
       expect(result).toEqual(movedCard)
-      // card-1 should be at end of array (pushed after splice)
       expect(state.currentBoardCards.value[state.currentBoardCards.value.length - 1]).toEqual(
         movedCard,
       )

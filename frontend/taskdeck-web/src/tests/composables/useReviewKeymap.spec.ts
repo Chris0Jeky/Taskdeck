@@ -78,31 +78,43 @@ describe('useReviewKeymap', () => {
     it('returns true for button', () => {
       const btn = document.createElement('button')
       document.body.appendChild(btn)
-      expect(isInteractiveTarget(btn)).toBe(true)
-      document.body.removeChild(btn)
+      try {
+        expect(isInteractiveTarget(btn)).toBe(true)
+      } finally {
+        document.body.removeChild(btn)
+      }
     })
 
     it('returns true for anchor with href', () => {
       const a = document.createElement('a')
       a.href = '#'
       document.body.appendChild(a)
-      expect(isInteractiveTarget(a)).toBe(true)
-      document.body.removeChild(a)
+      try {
+        expect(isInteractiveTarget(a)).toBe(true)
+      } finally {
+        document.body.removeChild(a)
+      }
     })
 
     it('returns true for role="button"', () => {
       const div = document.createElement('div')
       div.setAttribute('role', 'button')
       document.body.appendChild(div)
-      expect(isInteractiveTarget(div)).toBe(true)
-      document.body.removeChild(div)
+      try {
+        expect(isInteractiveTarget(div)).toBe(true)
+      } finally {
+        document.body.removeChild(div)
+      }
     })
 
     it('returns false for plain div', () => {
       const div = document.createElement('div')
       document.body.appendChild(div)
-      expect(isInteractiveTarget(div)).toBe(false)
-      document.body.removeChild(div)
+      try {
+        expect(isInteractiveTarget(div)).toBe(false)
+      } finally {
+        document.body.removeChild(div)
+      }
     })
 
     it('returns false for null', () => {

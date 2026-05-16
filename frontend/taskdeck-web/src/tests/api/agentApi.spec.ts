@@ -79,6 +79,14 @@ describe('agentApi', () => {
 
       expect(http.get).toHaveBeenCalledWith('/agents/a1/runs?limit=25')
     })
+
+    it('encodes special characters in agentId', async () => {
+      vi.mocked(http.get).mockResolvedValue({ data: [] })
+
+      await agentApi.listRuns('a/1')
+
+      expect(http.get).toHaveBeenCalledWith('/agents/a%2F1/runs?limit=100')
+    })
   })
 
   describe('getRunDetail', () => {
