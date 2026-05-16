@@ -68,6 +68,8 @@ public static class LlmProviderRegistration
             circuitBreakerTracker, "OpenAI", circuitBreakerSettings);
         var geminiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "Gemini", circuitBreakerSettings);
+        var ollamaCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
+            circuitBreakerTracker, "Ollama", circuitBreakerSettings);
 
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
@@ -118,6 +120,25 @@ public static class LlmProviderRegistration
             };
         })
         .AddPolicyHandler(geminiCircuitBreakerPolicy);
+        services.AddHttpClient<OllamaLlmProvider>((sp, client) =>
+        {
+            var settings = sp.GetRequiredService<LlmProviderSettings>();
+            var timeoutSeconds = settings.Ollama?.TimeoutSeconds > 0 ? settings.Ollama.TimeoutSeconds : 120;
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        })
+        .ConfigurePrimaryHttpMessageHandler(_ =>
+        {
+            return new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectCallback = (context, cancellationToken) =>
+                    OutboundWebhookConnectCallback.ConnectAsync(
+                        context,
+                        allowLocalhostEndpoints: allowLocalhostLlm,
+                        cancellationToken)
+            };
+        })
+        .AddPolicyHandler(ollamaCircuitBreakerPolicy);
 
         services.AddScoped<MockLlmProvider>();
         services.AddScoped<ILlmProvider>(sp =>
@@ -136,6 +157,7 @@ public static class LlmProviderRegistration
             {
                 LlmProviderKind.OpenAi => sp.GetRequiredService<OpenAiLlmProvider>(),
                 LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
+                LlmProviderKind.Ollama => sp.GetRequiredService<OllamaLlmProvider>(),
                 _ => sp.GetRequiredService<MockLlmProvider>()
             };
         });

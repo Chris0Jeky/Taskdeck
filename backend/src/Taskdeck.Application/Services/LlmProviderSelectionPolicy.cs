@@ -4,7 +4,8 @@ public enum LlmProviderKind
 {
     Mock = 0,
     OpenAi = 1,
-    Gemini = 2
+    Gemini = 2,
+    Ollama = 3
 }
 
 public sealed record LlmProviderDecision(LlmProviderKind ProviderKind, string Reason);
@@ -60,16 +61,30 @@ public static class LlmProviderSelectionPolicy
                 "OpenAI provider selected.");
         }
 
-        if (!TryValidateGeminiSettings(settings, out var geminiValidationError, allowLocalhostEndpoints))
+        if (requestedProvider.Value == LlmProviderKind.Gemini)
+        {
+            if (!TryValidateGeminiSettings(settings, out var geminiValidationError, allowLocalhostEndpoints))
+            {
+                return new LlmProviderDecision(
+                    LlmProviderKind.Mock,
+                    $"Gemini configuration is invalid: {geminiValidationError}");
+            }
+
+            return new LlmProviderDecision(
+                LlmProviderKind.Gemini,
+                "Gemini provider selected.");
+        }
+
+        if (!TryValidateOllamaSettings(settings, out var ollamaValidationError, allowLocalhostEndpoints))
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
-                $"Gemini configuration is invalid: {geminiValidationError}");
+                $"Ollama configuration is invalid: {ollamaValidationError}");
         }
 
         return new LlmProviderDecision(
-            LlmProviderKind.Gemini,
-            "Gemini provider selected.");
+            LlmProviderKind.Ollama,
+            "Ollama provider selected.");
     }
 
     public static bool TryValidateOpenAiSettings(
@@ -176,6 +191,49 @@ public static class LlmProviderSelectionPolicy
         return true;
     }
 
+    public static bool TryValidateOllamaSettings(
+        LlmProviderSettings settings,
+        out string error,
+        bool allowLocalhostEndpoints = false)
+    {
+        if (settings.Ollama is null)
+        {
+            error = "Ollama settings are required.";
+            return false;
+        }
+
+        var ollama = settings.Ollama;
+
+        if (string.IsNullOrWhiteSpace(ollama.Model))
+        {
+            error = "Model is required.";
+            return false;
+        }
+
+        if (!Uri.TryCreate(ollama.BaseUrl, UriKind.Absolute, out var baseUri) ||
+            (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
+        {
+            error = "BaseUrl must be an absolute HTTP(S) URI.";
+            return false;
+        }
+
+        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(ollama.BaseUrl, allowLocalhostEndpoints);
+        if (!ssrfResult.IsAllowed)
+        {
+            error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";
+            return false;
+        }
+
+        if (ollama.TimeoutSeconds <= 0)
+        {
+            error = "TimeoutSeconds must be greater than zero.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     private static LlmProviderKind? ResolveRequestedProviderKind(string? provider)
     {
         if (string.IsNullOrWhiteSpace(provider))
@@ -197,6 +255,11 @@ public static class LlmProviderSelectionPolicy
         if (normalized.Equals("Mock", StringComparison.OrdinalIgnoreCase))
         {
             return LlmProviderKind.Mock;
+        }
+
+        if (normalized.Equals("Ollama", StringComparison.OrdinalIgnoreCase))
+        {
+            return LlmProviderKind.Ollama;
         }
 
         return null;

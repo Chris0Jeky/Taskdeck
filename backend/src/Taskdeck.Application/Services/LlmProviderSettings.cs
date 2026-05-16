@@ -8,7 +8,7 @@ public sealed class LlmProviderSettings
     public bool AllowLiveProvidersInDevelopment { get; set; }
 
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(?i)(Mock|OpenAi|Gemini)$", ErrorMessage = "Llm Provider must be 'Mock', 'OpenAi', or 'Gemini' (case-insensitive).")]
+    [RegularExpression("^(?i)(Mock|OpenAi|Gemini|Ollama)$", ErrorMessage = "Llm Provider must be 'Mock', 'OpenAi', 'Gemini', or 'Ollama' (case-insensitive).")]
     public string Provider { get; set; } = "Mock";
 
     [Required]
@@ -16,6 +16,8 @@ public sealed class LlmProviderSettings
 
     [Required]
     public GeminiProviderSettings Gemini { get; set; } = new();
+
+    public OllamaProviderSettings Ollama { get; set; } = new();
 }
 
 public sealed class OpenAiProviderSettings
@@ -52,4 +54,17 @@ public sealed class GeminiProviderSettings
 
     [Range(1, 300, ErrorMessage = "TimeoutSeconds must be between 1 and 300.")]
     public int TimeoutSeconds { get; set; } = 30;
+}
+
+public sealed class OllamaProviderSettings
+{
+    [Required(AllowEmptyStrings = false)]
+    [Url]
+    public string BaseUrl { get; set; } = "http://localhost:11434";
+
+    [Required(AllowEmptyStrings = false)]
+    public string Model { get; set; } = "llama3.2";
+
+    [Range(1, 600, ErrorMessage = "TimeoutSeconds must be between 1 and 600.")]
+    public int TimeoutSeconds { get; set; } = 120;
 }
