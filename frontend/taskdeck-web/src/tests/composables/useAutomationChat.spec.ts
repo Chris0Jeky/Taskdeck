@@ -1,5 +1,4 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { ref } from 'vue'
 
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
