@@ -164,6 +164,28 @@ describe('CohortDashboard', () => {
     expect(rows[1].text()).toContain('v1.1.0')
   })
 
+  it('does not render visible bar segments for zero-rate buckets', async () => {
+    mockState.data.value = {
+      cohorts: [
+        buildCohort({
+          totalProposals: 10,
+          accepted: 10,
+          edited: 0,
+          rejected: 0,
+        }),
+      ],
+      dateRange: { from: '2026-04-16', to: '2026-05-16' },
+    }
+
+    const wrapper = mountDashboard()
+    await waitForUi()
+
+    const editBar = wrapper.find('.cohort-dashboard__bar--edit')
+    const rejectBar = wrapper.find('.cohort-dashboard__bar--reject')
+    expect(editBar.attributes('style')).toContain('width: 0%')
+    expect(rejectBar.attributes('style')).toContain('width: 0%')
+  })
+
   // 6. Best performing insight section
   it('shows the "Best performing" insight section when cohorts exist', async () => {
     mockState.data.value = {

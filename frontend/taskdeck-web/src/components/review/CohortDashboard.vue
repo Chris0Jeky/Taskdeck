@@ -29,6 +29,7 @@ function pct(value: number): string {
 }
 
 function barWidth(value: number): string {
+  if (value <= 0) return '0%'
   return `${Math.max(value * 100, 2)}%`
 }
 
@@ -315,7 +316,6 @@ onMounted(() => {
 
 .cohort-dashboard__bar {
   height: 100%;
-  min-width: 2px;
   transition: width 300ms ease;
 }
 
