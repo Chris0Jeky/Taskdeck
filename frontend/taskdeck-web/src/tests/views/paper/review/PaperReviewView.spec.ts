@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
   executeProposal: vi.fn(),
   getProposalDiff: vi.fn(),
   dismissProposals: vi.fn(),
+  getProvenance: vi.fn(),
+  getConfidence: vi.fn(),
+  getSideEffects: vi.fn(),
+  getConflicts: vi.fn(),
+  getHistory: vi.fn(),
+  getSimilarPast: vi.fn(),
   getBoards: vi.fn(),
   createRevision: vi.fn(),
   getRevisions: vi.fn(),
@@ -36,6 +42,17 @@ vi.mock('../../../../api/automationApi', () => ({
 
 vi.mock('../../../../api/boardsApi', () => ({
   boardsApi: { getBoards: mocks.getBoards },
+}))
+
+vi.mock('../../../../api/proposalDeepReviewApi', () => ({
+  proposalDeepReviewApi: {
+    getProvenance: mocks.getProvenance,
+    getConfidence: mocks.getConfidence,
+    getSideEffects: mocks.getSideEffects,
+    getConflicts: mocks.getConflicts,
+    getHistory: mocks.getHistory,
+    getSimilarPast: mocks.getSimilarPast,
+  },
 }))
 
 vi.mock('../../../../store/toastStore', () => ({
@@ -125,6 +142,25 @@ describe('PaperReviewView', () => {
     mocks.sessionState.userId = 'u-1'
     mocks.getRevisions.mockResolvedValue([])
     mocks.getLatestRevision.mockResolvedValue(null)
+    mocks.getProvenance.mockResolvedValue([])
+    mocks.getConfidence.mockResolvedValue({
+      overall: 0.84,
+      components: [],
+      note: null,
+      threshold: 0.7,
+      meetsThreshold: true,
+    })
+    mocks.getSideEffects.mockResolvedValue({
+      rows: [],
+      reversibility: {
+        summary: '6 hours',
+        description: 'Undo restores affected cards.',
+        windowMs: 6 * 60 * 60 * 1000,
+      },
+    })
+    mocks.getConflicts.mockResolvedValue([])
+    mocks.getHistory.mockResolvedValue([])
+    mocks.getSimilarPast.mockResolvedValue({ decisions: [], applyRate: 0 })
   })
   afterEach(() => {
     vi.restoreAllMocks()
