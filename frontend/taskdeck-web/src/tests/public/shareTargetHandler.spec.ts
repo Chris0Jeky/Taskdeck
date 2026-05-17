@@ -107,6 +107,17 @@ describe('share-target service worker handler', () => {
     expect(cachesOpen).not.toHaveBeenCalled()
   })
 
+  it('rejects POST attempts with missing fetch metadata and no same-origin signal', async () => {
+    const { fetchHandler, cachesOpen } = loadFetchHandler()
+    const event = makeEvent()
+
+    fetchHandler(event)
+    const response = await event.response
+
+    expect(response?.status).toBe(403)
+    expect(cachesOpen).not.toHaveBeenCalled()
+  })
+
   it('accepts OS share-target POSTs with browser fetch metadata', async () => {
     const { fetchHandler, cachesOpen, cachePut } = loadFetchHandler()
     const event = makeEvent({ 'Sec-Fetch-Site': 'none' })
@@ -122,6 +133,20 @@ describe('share-target service worker handler', () => {
       expect.objectContaining({
         status: 200,
       }),
+    )
+  })
+
+  it('accepts same-origin POSTs when fetch metadata is unavailable', async () => {
+    const { fetchHandler, cachePut } = loadFetchHandler()
+    const event = makeEvent({ Origin: 'https://taskdeck.test' })
+
+    fetchHandler(event)
+    const response = await event.response
+
+    expect(response?.status).toBe(303)
+    expect(cachePut).toHaveBeenCalledWith(
+      '/capture/share-data/share-id-1',
+      expect.any(TestResponse),
     )
   })
 

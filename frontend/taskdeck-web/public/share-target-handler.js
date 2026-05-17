@@ -49,7 +49,7 @@ function isTrustedShareTargetPost(request, url) {
 
   const fetchSite = request.headers.get('Sec-Fetch-Site')
   if (!fetchSite) {
-    return true
+    return origin === url.origin
   }
 
   return fetchSite === 'none' || fetchSite === 'same-origin' || fetchSite === 'same-site'
