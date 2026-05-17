@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
-import { buildCaptureText, type WorkspaceContext } from './contextFormatter';
+import { buildCaptureText, getSafeDocumentLabel, type WorkspaceContext } from './contextFormatter';
 
 export type { WorkspaceContext } from './contextFormatter';
 
@@ -30,9 +30,15 @@ export async function getWorkspaceContext(editor: vscode.TextEditor): Promise<Wo
   const doc = editor.document;
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(doc.uri);
 
-  const relativePath = workspaceFolder
-    ? vscode.workspace.asRelativePath(doc.uri, false)
-    : doc.fileName;
+  const relativePath = getSafeDocumentLabel({
+    workspaceRelativePath: workspaceFolder
+      ? vscode.workspace.asRelativePath(doc.uri, false)
+      : null,
+    isUntitled: doc.isUntitled,
+    fileName: doc.fileName,
+    uriScheme: doc.uri.scheme,
+    uriFsPath: doc.uri.fsPath,
+  });
 
   const selection = editor.selection;
   const lineRange = selection.isEmpty

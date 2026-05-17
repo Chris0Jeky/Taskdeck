@@ -1,4 +1,4 @@
-import { buildCaptureText, type WorkspaceContext } from './contextFormatter';
+import { buildCaptureText, getSafeDocumentLabel, type WorkspaceContext } from './contextFormatter';
 
 function makeContext(overrides: Partial<WorkspaceContext> = {}): WorkspaceContext {
   return {
@@ -71,6 +71,31 @@ console.log('buildCaptureText tests:');
   const result = buildCaptureText('selected', ctx);
   const sections = result.split('\n\n');
   assert(sections.length === 3, 'three sections separated by double newlines');
+}
+
+// Test: avoids absolute local paths outside a workspace
+{
+  const result = getSafeDocumentLabel({
+    workspaceRelativePath: null,
+    isUntitled: false,
+    fileName: 'C:\\Users\\alice\\Documents\\private-plan.ts',
+    uriScheme: 'file',
+    uriFsPath: 'C:\\Users\\alice\\Documents\\private-plan.ts',
+  });
+  assert(result === 'private-plan.ts', 'uses only basename for files outside a workspace');
+  assert(!String(result).includes('Users'), 'omits local directory names');
+}
+
+// Test: keeps workspace-relative labels when a workspace is available
+{
+  const result = getSafeDocumentLabel({
+    workspaceRelativePath: 'src/features/capture.ts',
+    isUntitled: false,
+    fileName: 'C:\\Users\\alice\\repo\\src\\features\\capture.ts',
+    uriScheme: 'file',
+    uriFsPath: 'C:\\Users\\alice\\repo\\src\\features\\capture.ts',
+  });
+  assert(result === 'src/features/capture.ts', 'keeps workspace-relative labels');
 }
 
 console.log(`\nResults: ${passed} passed, ${failed} failed`);

@@ -30,6 +30,11 @@ export function sourceLabel(source: CaptureSourceValue): string {
   if (source === 4 || source === 'Voice') return 'Voice'
   if (source === 5 || source === 'MeetingIntegration') return 'Meeting'
   if (source === 6 || source === 'TranscriptFile') return 'Transcript (File)'
+  if (source === 7 || source === 'MarkdownImport') return 'Markdown'
+  if (source === 8 || source === 'WebClip') return 'Web Clip'
+  if (source === 9 || source === 'ShareTarget') return 'Share Target'
+  if (source === 10 || source === 'BrowserExtension') return 'Browser Extension'
+  if (source === 11 || source === 'VsCodeExtension') return 'VS Code'
   return String(source)
 }
 
