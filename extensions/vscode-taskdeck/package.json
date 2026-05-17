@@ -11,7 +11,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -64,7 +66,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
-    "test": "npx tsc -p ./ && node ./out/context.test.js && node ./out/apiUrl.test.js"
+    "test": "npx tsc -p ./ && node ./out/context.test.js && node ./out/apiUrl.test.js && node ./out/manifest.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
