@@ -1,15 +1,23 @@
 import { describe, expect, it, vi } from 'vitest'
-import { isEditableTarget, isInteractiveTarget, useReviewKeymap } from '../../composables/useReviewKeymap'
+import {
+  isEditableTarget,
+  isInteractiveTarget,
+  useReviewKeymap,
+  type ReviewKeymapHandlers,
+} from '../../composables/useReviewKeymap'
 
 vi.mock('vue', () => ({
-  onMounted: vi.fn((cb) => cb()),
+  onMounted: (fn: () => void) => fn(),
   onBeforeUnmount: vi.fn(),
 }))
 
-function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
+function makeKeyEvent(
+  key: string,
+  overrides: Partial<KeyboardEvent> = {},
+): KeyboardEvent {
   return {
-    key: '',
-    code: '',
+    key,
+    code: key === ' ' ? 'Space' : `Key${key.toUpperCase()}`,
     isComposing: false,
     metaKey: false,
     ctrlKey: false,
@@ -22,240 +30,255 @@ function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
 }
 
 describe('useReviewKeymap', () => {
-  describe('isEditableTarget', () => {
-    it('returns true for textarea', () => {
-      expect(isEditableTarget(document.createElement('textarea'))).toBe(true)
+  describe('key bindings', () => {
+    it('Enter triggers onApply', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('Enter'))
+      expect(handlers.onApply).toHaveBeenCalledOnce()
     })
 
-    it('returns true for select', () => {
-      expect(isEditableTarget(document.createElement('select'))).toBe(true)
+    it('Backspace triggers onReject', () => {
+      const handlers: ReviewKeymapHandlers = { onReject: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('Backspace'))
+      expect(handlers.onReject).toHaveBeenCalledOnce()
     })
 
-    it('returns true for text input', () => {
-      const input = document.createElement('input')
-      input.type = 'text'
-      expect(isEditableTarget(input)).toBe(true)
+    it('Space triggers onPreviewDiff', () => {
+      const handlers: ReviewKeymapHandlers = { onPreviewDiff: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent(' '))
+      expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
     })
 
-    it('returns true for email input', () => {
-      const input = document.createElement('input')
-      input.type = 'email'
-      expect(isEditableTarget(input)).toBe(true)
+    it('Spacebar legacy key value triggers onPreviewDiff', () => {
+      const handlers: ReviewKeymapHandlers = { onPreviewDiff: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('Spacebar'))
+      expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
     })
 
-    it('returns false for checkbox input', () => {
-      const input = document.createElement('input')
-      input.type = 'checkbox'
-      expect(isEditableTarget(input)).toBe(false)
+    it('event.code Space fallback triggers onPreviewDiff', () => {
+      const handlers: ReviewKeymapHandlers = { onPreviewDiff: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('Unidentified', { code: 'Space' }))
+      expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
     })
 
-    it('returns true for contenteditable element', () => {
-      const div = document.createElement('div')
-      div.contentEditable = 'true'
-      expect(isEditableTarget(div)).toBe(true)
+    it('E triggers onRequestEdit', () => {
+      const handlers: ReviewKeymapHandlers = { onRequestEdit: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('e'))
+      expect(handlers.onRequestEdit).toHaveBeenCalledOnce()
     })
 
-    it('returns true for element with data-review-keymap="ignore"', () => {
-      const container = document.createElement('div')
-      container.setAttribute('data-review-keymap', 'ignore')
-      const child = document.createElement('span')
-      container.appendChild(child)
-      document.body.appendChild(container)
-      expect(isEditableTarget(child)).toBe(true)
-      document.body.removeChild(container)
+    it('uppercase E triggers onRequestEdit', () => {
+      const handlers: ReviewKeymapHandlers = { onRequestEdit: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('E'))
+      expect(handlers.onRequestEdit).toHaveBeenCalledOnce()
     })
 
-    it('returns false for plain div', () => {
-      expect(isEditableTarget(document.createElement('div'))).toBe(false)
+    it('D triggers onDefer', () => {
+      const handlers: ReviewKeymapHandlers = { onDefer: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('d'))
+      expect(handlers.onDefer).toHaveBeenCalledOnce()
     })
 
-    it('returns false for null', () => {
-      expect(isEditableTarget(null)).toBe(false)
-    })
-  })
-
-  describe('isInteractiveTarget', () => {
-    it('returns true for button', () => {
-      const btn = document.createElement('button')
-      document.body.appendChild(btn)
-      try {
-        expect(isInteractiveTarget(btn)).toBe(true)
-      } finally {
-        document.body.removeChild(btn)
-      }
+    it('P triggers onToggleProvenance', () => {
+      const handlers: ReviewKeymapHandlers = { onToggleProvenance: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('p'))
+      expect(handlers.onToggleProvenance).toHaveBeenCalledOnce()
     })
 
-    it('returns true for anchor with href', () => {
-      const a = document.createElement('a')
-      a.href = '#'
-      document.body.appendChild(a)
-      try {
-        expect(isInteractiveTarget(a)).toBe(true)
-      } finally {
-        document.body.removeChild(a)
-      }
-    })
-
-    it('returns true for role="button"', () => {
-      const div = document.createElement('div')
-      div.setAttribute('role', 'button')
-      document.body.appendChild(div)
-      try {
-        expect(isInteractiveTarget(div)).toBe(true)
-      } finally {
-        document.body.removeChild(div)
-      }
-    })
-
-    it('returns false for plain div', () => {
-      const div = document.createElement('div')
-      document.body.appendChild(div)
-      try {
-        expect(isInteractiveTarget(div)).toBe(false)
-      } finally {
-        document.body.removeChild(div)
-      }
-    })
-
-    it('returns false for null', () => {
-      expect(isInteractiveTarget(null)).toBe(false)
-    })
-  })
-
-  describe('key dispatch', () => {
-    it('Enter fires onApply', () => {
-      const onApply = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onApply })
-      const event = makeKeyEvent({ key: 'Enter' })
+    it('unbound keys are ignored', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      const event = makeKeyEvent('x')
       handleKeyDown(event)
-      expect(onApply).toHaveBeenCalledOnce()
-      expect(event.preventDefault).toHaveBeenCalled()
-    })
-
-    it('Backspace fires onReject', () => {
-      const onReject = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onReject })
-      handleKeyDown(makeKeyEvent({ key: 'Backspace' }))
-      expect(onReject).toHaveBeenCalledOnce()
-    })
-
-    it('Space fires onPreviewDiff', () => {
-      const onPreviewDiff = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onPreviewDiff })
-      handleKeyDown(makeKeyEvent({ key: ' ' }))
-      expect(onPreviewDiff).toHaveBeenCalledOnce()
-    })
-
-    it('Spacebar (legacy) fires onPreviewDiff', () => {
-      const onPreviewDiff = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onPreviewDiff })
-      handleKeyDown(makeKeyEvent({ key: 'Spacebar' }))
-      expect(onPreviewDiff).toHaveBeenCalledOnce()
-    })
-
-    it('code=Space fires onPreviewDiff', () => {
-      const onPreviewDiff = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onPreviewDiff })
-      handleKeyDown(makeKeyEvent({ key: 'Unidentified', code: 'Space' }))
-      expect(onPreviewDiff).toHaveBeenCalledOnce()
-    })
-
-    it('e fires onRequestEdit', () => {
-      const onRequestEdit = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onRequestEdit })
-      handleKeyDown(makeKeyEvent({ key: 'e' }))
-      expect(onRequestEdit).toHaveBeenCalledOnce()
-    })
-
-    it('E (uppercase) fires onRequestEdit', () => {
-      const onRequestEdit = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onRequestEdit })
-      handleKeyDown(makeKeyEvent({ key: 'E' }))
-      expect(onRequestEdit).toHaveBeenCalledOnce()
-    })
-
-    it('d fires onDefer', () => {
-      const onDefer = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onDefer })
-      handleKeyDown(makeKeyEvent({ key: 'd' }))
-      expect(onDefer).toHaveBeenCalledOnce()
-    })
-
-    it('p fires onToggleProvenance', () => {
-      const onToggleProvenance = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onToggleProvenance })
-      handleKeyDown(makeKeyEvent({ key: 'p' }))
-      expect(onToggleProvenance).toHaveBeenCalledOnce()
-    })
-
-    it('unrecognized key does nothing', () => {
-      const onApply = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onApply })
-      const event = makeKeyEvent({ key: 'x' })
-      handleKeyDown(event)
-      expect(onApply).not.toHaveBeenCalled()
+      expect(handlers.onApply).not.toHaveBeenCalled()
       expect(event.preventDefault).not.toHaveBeenCalled()
     })
   })
 
   describe('guards', () => {
     it('does not fire when enabled returns false', () => {
-      const onApply = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onApply }, { enabled: () => false })
-      handleKeyDown(makeKeyEvent({ key: 'Enter' }))
-      expect(onApply).not.toHaveBeenCalled()
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers, { enabled: () => false })
+      handleKeyDown(makeKeyEvent('Enter'))
+      expect(handlers.onApply).not.toHaveBeenCalled()
     })
 
-    it('does not fire when isComposing', () => {
-      const onApply = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onApply })
-      handleKeyDown(makeKeyEvent({ key: 'Enter', isComposing: true }))
-      expect(onApply).not.toHaveBeenCalled()
+    it('does not fire when isComposing is true', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('Enter', { isComposing: true }))
+      expect(handlers.onApply).not.toHaveBeenCalled()
     })
 
-    it('does not fire when target is editable', () => {
-      const onApply = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onApply })
-      handleKeyDown(makeKeyEvent({ key: 'Enter', target: document.createElement('textarea') }))
-      expect(onApply).not.toHaveBeenCalled()
+    it('does not fire when target is a text input', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      const input = document.createElement('input')
+      input.type = 'text'
+      handleKeyDown(makeKeyEvent('Enter', { target: input } as unknown as Partial<KeyboardEvent>))
+      expect(handlers.onApply).not.toHaveBeenCalled()
+    })
+
+    it('does not fire when target is a textarea', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('Enter', { target: document.createElement('textarea') } as unknown as Partial<KeyboardEvent>))
+      expect(handlers.onApply).not.toHaveBeenCalled()
     })
 
     it('does not fire when target is interactive', () => {
-      const onApply = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onApply })
-      const btn = document.createElement('button')
-      document.body.appendChild(btn)
-      handleKeyDown(makeKeyEvent({ key: 'Enter', target: btn }))
-      expect(onApply).not.toHaveBeenCalled()
-      document.body.removeChild(btn)
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      const button = document.createElement('button')
+      document.body.appendChild(button)
+      try {
+        handleKeyDown(makeKeyEvent('Enter', { target: button } as unknown as Partial<KeyboardEvent>))
+        expect(handlers.onApply).not.toHaveBeenCalled()
+      } finally {
+        document.body.removeChild(button)
+      }
     })
 
-    it('does not fire with meta key', () => {
-      const onApply = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onApply })
-      handleKeyDown(makeKeyEvent({ key: 'Enter', metaKey: true }))
-      expect(onApply).not.toHaveBeenCalled()
+    it('does not fire with modifier keys', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+
+      handleKeyDown(makeKeyEvent('Enter', { metaKey: true }))
+      handleKeyDown(makeKeyEvent('Enter', { ctrlKey: true }))
+      handleKeyDown(makeKeyEvent('Enter', { altKey: true }))
+
+      expect(handlers.onApply).not.toHaveBeenCalled()
     })
 
-    it('does not fire with ctrl key', () => {
-      const onApply = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onApply })
-      handleKeyDown(makeKeyEvent({ key: 'Enter', ctrlKey: true }))
-      expect(onApply).not.toHaveBeenCalled()
-    })
-
-    it('does not fire with alt key', () => {
-      const onApply = vi.fn()
-      const { handleKeyDown } = useReviewKeymap({ onApply })
-      handleKeyDown(makeKeyEvent({ key: 'Enter', altKey: true }))
-      expect(onApply).not.toHaveBeenCalled()
-    })
-
-    it('does not fire when handler is undefined', () => {
-      const { handleKeyDown } = useReviewKeymap({})
-      const event = makeKeyEvent({ key: 'Enter' })
+    it('does not fire when handler is not provided for the key', () => {
+      const handlers: ReviewKeymapHandlers = {}
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      const event = makeKeyEvent('Enter')
       handleKeyDown(event)
       expect(event.preventDefault).not.toHaveBeenCalled()
     })
+  })
+
+  describe('preventDefault', () => {
+    it('calls preventDefault and stopPropagation when handler fires', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      const event = makeKeyEvent('Enter')
+      handleKeyDown(event)
+      expect(event.preventDefault).toHaveBeenCalledOnce()
+      expect(event.stopPropagation).toHaveBeenCalledOnce()
+    })
+  })
+})
+
+describe('isEditableTarget', () => {
+  it('returns false for null', () => {
+    expect(isEditableTarget(null)).toBe(false)
+  })
+
+  it('returns true for textarea', () => {
+    expect(isEditableTarget(document.createElement('textarea'))).toBe(true)
+  })
+
+  it('returns true for select', () => {
+    expect(isEditableTarget(document.createElement('select'))).toBe(true)
+  })
+
+  it('returns true for text input', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    expect(isEditableTarget(input)).toBe(true)
+  })
+
+  it('returns true for email input', () => {
+    const input = document.createElement('input')
+    input.type = 'email'
+    expect(isEditableTarget(input)).toBe(true)
+  })
+
+  it('returns false for checkbox input', () => {
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    expect(isEditableTarget(input)).toBe(false)
+  })
+
+  it('returns true for contenteditable element', () => {
+    const div = document.createElement('div')
+    div.contentEditable = 'true'
+    expect(isEditableTarget(div)).toBe(true)
+  })
+
+  it('returns true for element with data-review-keymap ignore', () => {
+    const wrapper = document.createElement('div')
+    wrapper.setAttribute('data-review-keymap', 'ignore')
+    const child = document.createElement('span')
+    wrapper.appendChild(child)
+    document.body.appendChild(wrapper)
+    try {
+      expect(isEditableTarget(child)).toBe(true)
+    } finally {
+      document.body.removeChild(wrapper)
+    }
+  })
+
+  it('returns false for plain div', () => {
+    expect(isEditableTarget(document.createElement('div'))).toBe(false)
+  })
+})
+
+describe('isInteractiveTarget', () => {
+  it('returns false for null', () => {
+    expect(isInteractiveTarget(null)).toBe(false)
+  })
+
+  it('returns true for button', () => {
+    const button = document.createElement('button')
+    document.body.appendChild(button)
+    try {
+      expect(isInteractiveTarget(button)).toBe(true)
+    } finally {
+      document.body.removeChild(button)
+    }
+  })
+
+  it('returns true for anchor with href', () => {
+    const anchor = document.createElement('a')
+    anchor.href = '#'
+    document.body.appendChild(anchor)
+    try {
+      expect(isInteractiveTarget(anchor)).toBe(true)
+    } finally {
+      document.body.removeChild(anchor)
+    }
+  })
+
+  it('returns true for role button', () => {
+    const div = document.createElement('div')
+    div.setAttribute('role', 'button')
+    document.body.appendChild(div)
+    try {
+      expect(isInteractiveTarget(div)).toBe(true)
+    } finally {
+      document.body.removeChild(div)
+    }
+  })
+
+  it('returns false for plain div', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    try {
+      expect(isInteractiveTarget(div)).toBe(false)
+    } finally {
+      document.body.removeChild(div)
+    }
   })
 })
