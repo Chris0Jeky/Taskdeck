@@ -73,8 +73,7 @@ public static class LlmProviderRegistration
 
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
-        var allowLocalhostLlm = IsLocalhostLlmAllowed(services, configuration);
-        var allowOllamaLocalhostLlm = IsOllamaLocalhostLlmAllowed(services, configuration);
+        var localhostPolicy = ResolveLocalhostPolicy(services, configuration);
 
         services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
         {
@@ -94,7 +93,7 @@ public static class LlmProviderRegistration
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
-                        allowLocalhostEndpoints: allowOllamaLocalhostLlm,
+                        allowLocalhostEndpoints: localhostPolicy.AllowGeneralProviderLocalhost,
                         cancellationToken)
             };
         })
@@ -116,7 +115,7 @@ public static class LlmProviderRegistration
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
-                        allowLocalhostEndpoints: allowLocalhostLlm,
+                        allowLocalhostEndpoints: localhostPolicy.AllowGeneralProviderLocalhost,
                         cancellationToken)
             };
         })
@@ -135,7 +134,7 @@ public static class LlmProviderRegistration
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
-                        allowLocalhostEndpoints: allowLocalhostLlm,
+                        allowLocalhostEndpoints: localhostPolicy.AllowOllamaLocalhost,
                         cancellationToken)
             };
         })
@@ -210,6 +209,16 @@ public static class LlmProviderRegistration
     /// development-like environments when AllowLiveProvidersInDevelopment is enabled,
     /// enabling developers to use local LLM gateways (Ollama, LM Studio, etc.).
     /// </summary>
+    internal static LlmProviderLocalhostPolicy ResolveLocalhostPolicy(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var allowGeneralProviderLocalhost = IsLocalhostLlmAllowed(services, configuration);
+        return new LlmProviderLocalhostPolicy(
+            AllowGeneralProviderLocalhost: allowGeneralProviderLocalhost,
+            AllowOllamaLocalhost: IsOllamaLocalhostLlmAllowed(configuration, allowGeneralProviderLocalhost));
+    }
+
     private static bool IsLocalhostLlmAllowed(
         IServiceCollection services,
         IConfiguration configuration)
@@ -235,12 +244,16 @@ public static class LlmProviderRegistration
         return false;
     }
 
-    internal static bool IsOllamaLocalhostLlmAllowed(
-        IServiceCollection services,
-        IConfiguration configuration)
+    private static bool IsOllamaLocalhostLlmAllowed(
+        IConfiguration configuration,
+        bool allowGeneralProviderLocalhost)
     {
         var llmSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>();
         return llmSettings?.Ollama?.AllowLocalhostEndpoints == true &&
-               IsLocalhostLlmAllowed(services, configuration);
+               allowGeneralProviderLocalhost;
     }
 }
+
+internal readonly record struct LlmProviderLocalhostPolicy(
+    bool AllowGeneralProviderLocalhost,
+    bool AllowOllamaLocalhost);

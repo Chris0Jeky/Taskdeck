@@ -13,9 +13,11 @@ public class LlmProviderRegistrationTests
     [Theory]
     [InlineData("Development", true, true, true)]
     [InlineData("Development", true, false, false)]
+    [InlineData("Test", true, true, true)]
+    [InlineData("Testing", true, true, true)]
     [InlineData("Production", true, true, false)]
     [InlineData("Development", false, true, false)]
-    public void IsOllamaLocalhostLlmAllowed_RequiresDevelopmentLiveProvidersAndOllamaOptIn(
+    public void ResolveLocalhostPolicy_RequiresDevelopmentLiveProvidersAndOllamaOptIn(
         string environmentName,
         bool allowLiveProvidersInDevelopment,
         bool allowOllamaLocalhost,
@@ -31,9 +33,15 @@ public class LlmProviderRegistrationTests
             })
             .Build();
 
-        var result = LlmProviderRegistration.IsOllamaLocalhostLlmAllowed(services, configuration);
+        var result = LlmProviderRegistration.ResolveLocalhostPolicy(services, configuration);
 
-        result.Should().Be(expected);
+        var expectedGeneralProviderLocalhost = allowLiveProvidersInDevelopment &&
+            (environmentName.Equals("Development", StringComparison.OrdinalIgnoreCase) ||
+             environmentName.Equals("Test", StringComparison.OrdinalIgnoreCase) ||
+             environmentName.Equals("Testing", StringComparison.OrdinalIgnoreCase));
+
+        result.AllowGeneralProviderLocalhost.Should().Be(expectedGeneralProviderLocalhost);
+        result.AllowOllamaLocalhost.Should().Be(expected);
     }
 
     private sealed class TestWebHostEnvironment(string environmentName) : IWebHostEnvironment
