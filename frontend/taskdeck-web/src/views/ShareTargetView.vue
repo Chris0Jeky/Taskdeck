@@ -18,7 +18,7 @@ const sharedTitle = ref('')
 const sharedText = ref('')
 const sharedUrl = ref('')
 const SHARE_CACHE_NAME = 'taskdeck-share-target'
-const SHARE_CACHE_REQUEST = '/capture/share-data'
+const SHARE_CACHE_REQUEST_PREFIX = '/capture/share-data/'
 
 interface SharedContent {
   title: string
@@ -73,15 +73,27 @@ function queryValue(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+function hasLegacyQueryPayload(): boolean {
+  return !!(queryValue(route.query.title) || queryValue(route.query.text) || queryValue(route.query.url))
+}
+
+function getShareId(): string {
+  const shareId = queryValue(route.query.shareId)
+  return /^[A-Za-z0-9_-]+$/.test(shareId) ? shareId : ''
+}
+
 async function consumePostedShareTarget(): Promise<SharedContent | null> {
   if (typeof caches === 'undefined') return null
+  const shareId = getShareId()
+  if (!shareId) return null
 
   try {
     const cache = await caches.open(SHARE_CACHE_NAME)
-    const response = await cache.match(SHARE_CACHE_REQUEST)
+    const cacheRequest = `${SHARE_CACHE_REQUEST_PREFIX}${shareId}`
+    const response = await cache.match(cacheRequest)
     if (!response) return null
 
-    await cache.delete(SHARE_CACHE_REQUEST)
+    await cache.delete(cacheRequest)
     const payload = await response.json() as Partial<SharedContent>
     return {
       title: typeof payload.title === 'string' ? payload.title : '',
@@ -94,13 +106,9 @@ async function consumePostedShareTarget(): Promise<SharedContent | null> {
 }
 
 async function resolveSharedContent(): Promise<SharedContent> {
-  const title = queryValue(route.query.title)
-  const text = queryValue(route.query.text)
-  const url = queryValue(route.query.url)
-
-  if (title || text || url) {
+  if (hasLegacyQueryPayload()) {
     void router.replace({ name: 'capture-share-target', query: {} })
-    return { title, text, url }
+    return { title: '', text: '', url: '' }
   }
 
   const posted = await consumePostedShareTarget()

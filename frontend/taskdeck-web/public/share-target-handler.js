@@ -1,5 +1,5 @@
 const TASKDECK_SHARE_CACHE = 'taskdeck-share-target'
-const TASKDECK_SHARE_REQUEST = '/capture/share-data'
+const TASKDECK_SHARE_REQUEST_PREFIX = '/capture/share-data/'
 const TASKDECK_CAPTURE_SYNC_MESSAGE = 'taskdeck:capture-sync'
 
 self.addEventListener('fetch', (event) => {
@@ -21,8 +21,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     const cache = await caches.open(TASKDECK_SHARE_CACHE)
+    const shareId = createShareId()
     await cache.put(
-      TASKDECK_SHARE_REQUEST,
+      `${TASKDECK_SHARE_REQUEST_PREFIX}${shareId}`,
       new Response(JSON.stringify(payload), {
         headers: {
           'Content-Type': 'application/json',
@@ -31,7 +32,7 @@ self.addEventListener('fetch', (event) => {
       }),
     )
 
-    return Response.redirect('/capture/share?fromShareTarget=1', 303)
+    return Response.redirect(`/capture/share?fromShareTarget=1&shareId=${encodeURIComponent(shareId)}`, 303)
   })())
 })
 
@@ -52,4 +53,13 @@ async function notifyWindowClientsToReplayCaptureQueue() {
   for (const client of clients) {
     client.postMessage({ type: TASKDECK_CAPTURE_SYNC_MESSAGE })
   }
+}
+
+function createShareId() {
+  if (self.crypto?.randomUUID) {
+    return self.crypto.randomUUID()
+  }
+
+  const random = Math.random().toString(36).slice(2)
+  return `${Date.now().toString(36)}-${random}`
 }
