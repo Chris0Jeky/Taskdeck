@@ -2,10 +2,12 @@ import * as vscode from 'vscode';
 import { TaskdeckClient } from './client';
 import { buildCaptureText, getWorkspaceContext } from './context';
 import { parseTaskdeckApiBaseUrl } from './apiUrl';
+import { StatusResetGuard } from './statusReset';
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 let client: TaskdeckClient;
 let disposed = false;
+const statusResetGuard = new StatusResetGuard();
 
 export function activate(extensionContext: vscode.ExtensionContext): void {
   disposed = false;
@@ -75,6 +77,7 @@ async function captureFileContext(): Promise<void> {
 }
 
 async function sendCapture(text: string, titleHint: string | null, externalRef: string | null): Promise<void> {
+  const statusGeneration = statusResetGuard.nextGeneration();
   setStatusText('$(sync~spin) Sending...');
 
   try {
@@ -93,7 +96,9 @@ async function sendCapture(text: string, titleHint: string | null, externalRef: 
     vscode.window.showErrorMessage(`Taskdeck capture failed: ${message}`);
   } finally {
     setTimeout(() => {
-      setStatusText('$(cloud-upload) Taskdeck');
+      if (statusResetGuard.isCurrent(statusGeneration)) {
+        setStatusText('$(cloud-upload) Taskdeck');
+      }
     }, 3000);
   }
 }
