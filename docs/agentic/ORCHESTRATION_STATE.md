@@ -75,32 +75,25 @@ This file is the persistent memory and execution state for Claude Code's autonom
 
 ### Active Branch: `tst/1081-composable-coverage-part2` (cleanup pass in progress)
 
-### Cleanup Snapshot (2026-05-16)
-- PR #1076 tst/1070-mfa-409-conflict: code/CI green; needs project priority hygiene before merge.
-- PR #1077 fix/paper-board-card-encoding-artifact: CI red; Windows API/config-lock and PaperReviewView test leakage need cleanup or supersession.
-- PR #1078 feat/982-pwa-share-target: privacy/queue/share findings fixed in `ae76fe56`; CI rerun pending.
-- PR #1079 feat/983-ambient-channel-hardening: CI and bot findings fixed in `5a689d9f`; CI rerun pending.
-- PR #1080 feat/984-learning-loop-beta-gate: bot findings and Windows test leak fixed through `f6c3fdfd`; CI rerun pending.
-- PR #1082 tst/1081-composable-test-coverage: CI red, overlaps #1084 on `useReviewKeymap.spec.ts`; likely needs supersession/rebase decision.
-- PR #1083 paper/1001-board-kanban-surface: CI red; needs Windows setup/test rerun plus acceptance-criteria test-strength review.
-- PR #1084 tst/1081-composable-coverage-part2: CI green at `077bf915`; follow-up fixes added for previously accepted review findings, local targeted tests green, push pending.
+### Cleanup Snapshot (2026-05-17)
+- PR #1076 `tst/1070-mfa-409-conflict`: CI green; project priority sync completed; merge candidate after final gate audit.
+- PR #1077 `fix/paper-board-card-encoding-artifact`: CI green; final-diff adversarial review posted for `e6d920d9`; merge candidate after final gate audit.
+- PR #1078 `feat/982-pwa-share-target`: queue ownership, login-required queue claim, terminal-failure parking, and client replay plumbing fixed through `847e96f2`; CI and final review pending.
+- PR #1079 `feat/983-ambient-channel-hardening`: #1078 merged forward, VS Code Git/API URL hardening and voice overlap fixes pushed through `fe5b707a`; CI and final review pending.
+- PR #1080 `feat/984-learning-loop-beta-gate`: #1079 merged forward, Ollama localhost selection/runtime/connect policy aligned through `555c1fee`; CI and final review pending.
+- PR #1082 `tst/1081-composable-test-coverage`: CI green at last inspection; final current-head review pending; merge before #1084 to avoid `useReviewKeymap.spec.ts` overlap.
+- PR #1083 `paper/1001-board-kanban-surface`: CI green at last inspection; final current-head review pending.
+- PR #1084 `tst/1081-composable-coverage-part2`: watcher review findings fixed in `a1d3449a`; follow-up cleanup in progress for current review findings; CI pending.
 
-User explicitly authorized merging PRs only after green CI/tests, bot comments addressed, every review finding fixed or tracked, and two adversarial review rounds. The older "Do NOT merge" parking instruction below no longer applies to this cleanup session.
+User authorized merging PRs only after green CI/tests, bot comments addressed, every review finding fixed or tracked, and two adversarial review rounds over the current head.
 
-### In-Progress PRs:
-- PR #1075 (docs/cleanup-encoding-and-counts) — orchestration file, under review
-- PR #1084 (tst/1081-composable-coverage-part2) — 266 new tests, R1 complete, awaiting CI
-
-### Completed PRs (DO NOT MERGE — leave open):
-- PR #1076 tst/1070-mfa-409-conflict (R1+R2 done, CI green)
-- PR #1077 fix/paper-board-card-encoding-artifact
-- PR #1078 feat/982-pwa-share-target
-- PR #1079 feat/983-ambient-channel-hardening
-- PR #1080 feat/984-learning-loop-beta-gate (R1+R2 done, CI green)
-- PR #1082 tst/1081-composable-test-coverage (R1+R2 done, Ubuntu green)
-- PR #1083 paper/1001-board-kanban-surface (R1+R2 done)
-
-### Stacked Branches: (none)
+### Active PR Stack
+- #1078 -> `main`
+- #1079 -> #1078
+- #1080 -> #1079
+- #1082 -> `main`
+- #1083 -> `main`
+- #1084 -> `main`
 
 ## Dependency Graph
 
