@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Dtos;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -21,7 +23,7 @@ public class AutomationMetricsController : AuthenticatedControllerBase
 
     [HttpGet("cohorts")]
     [ProducesResponseType(typeof(CohortComparisonResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     public IActionResult GetCohortMetrics(
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to)
@@ -33,10 +35,14 @@ public class AutomationMetricsController : AuthenticatedControllerBase
         var toDate = to ?? DateTime.UtcNow;
 
         if (fromDate >= toDate)
-            return BadRequest(new { error = "'from' must be earlier than 'to'." });
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "'from' must be earlier than 'to'."));
 
         if ((toDate - fromDate).TotalDays > MaxRangeDays)
-            return BadRequest(new { error = $"Date range must not exceed {MaxRangeDays} days." });
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                $"Date range must not exceed {MaxRangeDays} days."));
 
         // TODO(RFAI-12): wire to ICohortMetricsService once learning-loop data layer ships
         var response = new CohortComparisonResponse

@@ -52,7 +52,10 @@ public class AutomationMetricsControllerTests : IClassFixture<TestWebApplication
         var response = await client.GetAsync(
             $"/api/automation/metrics/cohorts?from={Uri.EscapeDataString(from)}&to={Uri.EscapeDataString(to)}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
     }
 
     [Fact]
@@ -67,7 +70,10 @@ public class AutomationMetricsControllerTests : IClassFixture<TestWebApplication
         var response = await client.GetAsync(
             $"/api/automation/metrics/cohorts?from={Uri.EscapeDataString(from)}&to={Uri.EscapeDataString(to)}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
     }
 
     [Fact]
