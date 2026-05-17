@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -161,5 +163,25 @@ public class MfaApiWithSetupEnabledTests : IClassFixture<MfaEnabledWebApplicatio
         var response = await client.PostAsJsonAsync("/api/auth/mfa/confirm", new MfaVerifyRequest("000000"));
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Setup_ShouldReturnConflict_WhenMfaAlreadyEnabled()
+    {
+        using var client = _factory.CreateClient();
+        var userContext = await ApiTestHarness.AuthenticateAsync(client, "mfa-setup-conflict");
+
+        // Directly enable MFA on the user via DB to simulate a completed setup
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var user = await db.Users.FindAsync(userContext.UserId);
+            user!.EnableMfa();
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.PostAsync("/api/auth/mfa/setup", null);
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Conflict, "Conflict");
     }
 }
