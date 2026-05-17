@@ -13,6 +13,11 @@ export function parseTaskdeckApiBaseUrl(value: string): URL {
     throw new Error('Taskdeck API URL must not include embedded credentials.');
   }
 
+  const normalizedPath = parsed.pathname.replace(/\/+$/, '');
+  if (normalizedPath.length > 0) {
+    throw new Error('Taskdeck API URL must not include a path.');
+  }
+
   if (parsed.protocol === 'http:' && !isLoopbackHost(parsed.hostname)) {
     throw new Error('HTTP Taskdeck API URLs are only allowed for localhost or loopback addresses.');
   }

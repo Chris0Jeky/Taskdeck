@@ -11,3 +11,4 @@ assert.throws(() => parseTaskdeckApiBaseUrl('file:///tmp/taskdeck.sock'), /HTTP 
 assert.throws(() => parseTaskdeckApiBaseUrl('taskdeck://localhost'), /HTTP or HTTPS/i);
 assert.throws(() => parseTaskdeckApiBaseUrl('http://taskdeck.example'), /only allowed for localhost/i);
 assert.throws(() => parseTaskdeckApiBaseUrl('https://user:pass@taskdeck.example'), /embedded credentials/i);
+assert.throws(() => parseTaskdeckApiBaseUrl('https://taskdeck.example/taskdeck'), /must not include a path/i);
