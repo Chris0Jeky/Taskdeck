@@ -142,7 +142,7 @@ describe('ShareTargetView', () => {
     )
   })
 
-  it('falls back to queue when API call fails', async () => {
+  it('falls back to queue when API call fails transiently', async () => {
     mockCreateItem.mockRejectedValueOnce(new Error('Network Error'))
     setQuery('Retry Title', '', 'https://example.com')
     mount(ShareTargetView)
@@ -150,6 +150,17 @@ describe('ShareTargetView', () => {
 
     expect(mockCreateItem).toHaveBeenCalled()
     expect(mockEnqueue).toHaveBeenCalled()
+  })
+
+  it('does not queue permanent API failures', async () => {
+    mockCreateItem.mockRejectedValueOnce({ response: { status: 400 } })
+    setQuery('Invalid Title', '', '')
+    const wrapper = mount(ShareTargetView)
+    await flushPromises()
+
+    expect(mockCreateItem).toHaveBeenCalled()
+    expect(mockEnqueue).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Nothing to capture')
   })
 
   it('shows error state when no content is shared', async () => {

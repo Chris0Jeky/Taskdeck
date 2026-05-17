@@ -44,6 +44,21 @@ function hasValidSession(): boolean {
   return !isTokenExpired(token)
 }
 
+function getErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== 'object') return null
+  const response = (error as { response?: unknown }).response
+  if (!response || typeof response !== 'object') return null
+  const status = (response as { status?: unknown }).status
+  return typeof status === 'number' ? status : null
+}
+
+function isTransientCaptureError(error: unknown): boolean {
+  const status = getErrorStatus(error)
+  if (status === null) return true
+  if (status === 408 || status === 429) return true
+  return status >= 500 && status < 600 && status !== 501 && status !== 505
+}
+
 async function safeEnqueue(dto: CreateCaptureItemDto): Promise<boolean> {
   try {
     await enqueueCapture(dto, getCurrentQueueOwnerUserId())
@@ -124,7 +139,11 @@ onMounted(async () => {
     try {
       await captureStore.createItem(dto)
       status.value = 'success'
-    } catch {
+    } catch (error) {
+      if (!isTransientCaptureError(error)) {
+        status.value = 'error'
+        return
+      }
       const queued = await safeEnqueue(dto)
       status.value = queued ? 'queued' : 'error'
     }

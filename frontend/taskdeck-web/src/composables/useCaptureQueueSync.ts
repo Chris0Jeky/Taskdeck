@@ -7,7 +7,6 @@ import { useOnlineStatus } from './useOnlineStatus'
 import { logError, logWarn } from '../utils/errorReporting'
 
 const MAX_RETRIES = 5
-const SYNC_TAG = 'taskdeck-capture-sync'
 const SYNC_MESSAGE_TYPE = 'taskdeck:capture-sync'
 
 let replayInProgress = false
@@ -122,20 +121,6 @@ export function useCaptureQueueSync() {
     return replayed
   }
 
-  async function registerBackgroundSync(): Promise<boolean> {
-    if (!('serviceWorker' in navigator)) return false
-    try {
-      const reg = await navigator.serviceWorker.ready
-      if ('sync' in reg) {
-        await (reg as ServiceWorkerRegistration & { sync: { register(tag: string): Promise<void> } }).sync.register(SYNC_TAG)
-        return true
-      }
-    } catch {
-      // Background Sync not supported — fall back to online event replay
-    }
-    return false
-  }
-
   function requestServiceWorkerQueueReplay() {
     if (!('serviceWorker' in navigator)) return
     const controller = navigator.serviceWorker.controller
@@ -159,7 +144,6 @@ export function useCaptureQueueSync() {
 
   onMounted(() => {
     void refreshCount()
-    void registerBackgroundSync()
     registerServiceWorkerMessageReplay()
 
     onlineHandler = () => {
@@ -188,7 +172,6 @@ export function useCaptureQueueSync() {
     pendingCount,
     syncing,
     replayQueue,
-    registerBackgroundSync,
     refreshCount,
   }
 }
