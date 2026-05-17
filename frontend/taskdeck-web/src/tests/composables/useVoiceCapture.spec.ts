@@ -179,6 +179,23 @@ describe('useVoiceCapture', () => {
     expect(instance.stop).toHaveBeenCalled()
   })
 
+  it('accepts a final recognition result that arrives after stop before onend', () => {
+    const instance = installMockSpeechRecognition()
+
+    const { startListening, stopListening, transcript, status } = useVoiceCapture()
+    startListening()
+    stopListening()
+
+    instance.onresult!({
+      results: [
+        { 0: { transcript: 'final words after stop' }, isFinal: true, length: 1 },
+      ],
+    })
+
+    expect(status.value).toBe('idle')
+    expect(transcript.value).toBe('final words after stop')
+  })
+
   it('preserves error state when onend fires after onerror', () => {
     const instance = installMockSpeechRecognition()
 
@@ -223,6 +240,30 @@ describe('useVoiceCapture', () => {
 
     instance.instances[1].onend!()
     expect(status.value).toBe('idle')
+  })
+
+  it('ignores final results from a stopped session after a new session starts', () => {
+    const instance = installMockSpeechRecognition()
+
+    const { startListening, stopListening, transcript } = useVoiceCapture()
+
+    expect(startListening()).toBe(true)
+    const firstRecognition = instance.instances[0]
+    stopListening()
+    expect(startListening()).toBe(true)
+
+    firstRecognition.onresult!({
+      results: [
+        { 0: { transcript: 'stale stopped phrase' }, isFinal: true, length: 1 },
+      ],
+    })
+    instance.instances[1].onresult!({
+      results: [
+        { 0: { transcript: 'new phrase' }, isFinal: true, length: 1 },
+      ],
+    })
+
+    expect(transcript.value).toBe('new phrase')
   })
 
   it('requires consent acknowledgment when requireConsent is true', () => {

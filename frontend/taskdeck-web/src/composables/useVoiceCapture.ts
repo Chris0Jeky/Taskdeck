@@ -15,6 +15,7 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
   const errorMessage = ref('')
   const consentAcknowledged = ref(!options.requireConsent)
   let recognition: SpeechRecognition | null = null
+  let stoppingRecognition: SpeechRecognition | null = null
 
   const isSupported = computed(() => {
     if (typeof window === 'undefined') return false
@@ -63,12 +64,13 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
 
       const activeRecognition = new SpeechRecognitionCtor()
       recognition = activeRecognition
+      stoppingRecognition = null
       activeRecognition.continuous = false
       activeRecognition.interimResults = false
       activeRecognition.lang = navigator.language || 'en-US'
 
       activeRecognition.onresult = (event: SpeechRecognitionEvent) => {
-        if (recognition !== activeRecognition) return
+        if (recognition !== activeRecognition && !(stoppingRecognition === activeRecognition && !recognition)) return
         const result = event.results[event.results.length - 1]
         if (result.isFinal) {
           transcript.value = result[0].transcript
@@ -83,8 +85,13 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
       }
 
       activeRecognition.onend = () => {
-        if (recognition !== activeRecognition) return
-        recognition = null
+        if (recognition !== activeRecognition && stoppingRecognition !== activeRecognition) return
+        if (recognition === activeRecognition) {
+          recognition = null
+        }
+        if (stoppingRecognition === activeRecognition) {
+          stoppingRecognition = null
+        }
         if (status.value !== 'error') {
           status.value = 'idle'
         }
@@ -97,6 +104,7 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
       return true
     } catch (err) {
       recognition = null
+      stoppingRecognition = null
       status.value = 'error'
       errorMessage.value = err instanceof Error ? err.message : 'Failed to start'
       return false
@@ -105,6 +113,7 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
 
   function stopListening(): void {
     if (recognition) {
+      stoppingRecognition = recognition
       recognition.stop()
       recognition = null
     }
