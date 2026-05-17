@@ -1,6 +1,6 @@
 # Orchestration State
 
-Last Updated: 2026-05-16
+Last Updated: 2026-05-17
 Status: ACTIVE
 
 ## Purpose
@@ -27,7 +27,7 @@ This file is the persistent memory and execution state for Claude Code's autonom
 6. **Review Round 2**: Fresh adversarial review of the fixes. Post findings. Fix everything. Push.
 7. **Bot Check**: Read ALL PR comments (Gemini Code Assist, Dependabot, any bot). Address anything found.
 8. **Verify**: Run tests again post-fix. Confirm CI passes (check via `gh pr checks <PR#>`).
-9. **Do NOT merge** to main. Leave PR open.
+9. **Merge gate**: Leave PRs open unless the active user request explicitly authorizes merging after the normal review, bot-comment, test, and CI gates. Current cleanup session is merge-authorized after those gates.
 10. **Stack if needed**: If the next issue depends on this PR, branch from the PR branch.
 
 ### Parallel Subagent Protocol:
@@ -78,12 +78,12 @@ This file is the persistent memory and execution state for Claude Code's autonom
 ### Cleanup Snapshot (2026-05-17)
 - PR #1076 `tst/1070-mfa-409-conflict`: CI green; project priority sync completed; merge candidate after final gate audit.
 - PR #1077 `fix/paper-board-card-encoding-artifact`: CI green; final-diff adversarial review posted for `e6d920d9`; merge candidate after final gate audit.
-- PR #1078 `feat/982-pwa-share-target`: queue ownership, login-required queue claim, terminal-failure parking, and client replay plumbing fixed through `847e96f2`; CI and final review pending.
-- PR #1079 `feat/983-ambient-channel-hardening`: #1078 merged forward, VS Code Git/API URL hardening and voice overlap fixes pushed through `fe5b707a`; CI and final review pending.
-- PR #1080 `feat/984-learning-loop-beta-gate`: #1079 merged forward, Ollama localhost selection/runtime/connect policy aligned through `555c1fee`; CI and final review pending.
-- PR #1082 `tst/1081-composable-test-coverage`: CI green at last inspection; final current-head review pending; merge before #1084 to avoid `useReviewKeymap.spec.ts` overlap.
-- PR #1083 `paper/1001-board-kanban-surface`: CI green at last inspection; final current-head review pending.
-- PR #1084 `tst/1081-composable-coverage-part2`: watcher review findings fixed in `a1d3449a`; follow-up cleanup in progress for current review findings; CI pending.
+- PR #1078 `feat/982-pwa-share-target`: queue ownership, login-required queue claim, terminal-failure parking, client replay plumbing, transient-only queue fallback, and misleading Background Sync removal fixed through `7a2ca22b`; CI and final review pending.
+- PR #1079 `feat/983-ambient-channel-hardening`: #1078 merged forward, VS Code Git/API URL hardening, pathful API URL rejection, and voice overlap fixes pushed through `b7f67c47`; CI and final review pending.
+- PR #1080 `feat/984-learning-loop-beta-gate`: #1079 merged forward, Ollama localhost selection/runtime/connect policy aligned, and provider connect guards corrected through `ee9d1c98`; CI and final review pending.
+- PR #1082 `tst/1081-composable-test-coverage`: CI green at last inspection; current-head adversarial review clean; merge before #1084 to avoid `useReviewKeymap.spec.ts` overlap.
+- PR #1083 `paper/1001-board-kanban-surface`: CI green at last inspection; current-head adversarial review clean.
+- PR #1084 `tst/1081-composable-coverage-part2`: watcher review findings fixed in `a1d3449a`; merge-policy/date cleanup in progress after review findings; CI pending.
 
 User authorized merging PRs only after green CI/tests, bot comments addressed, every review finding fixed or tracked, and two adversarial review rounds over the current head.
 
