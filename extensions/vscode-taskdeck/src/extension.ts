@@ -88,10 +88,14 @@ async function sendCapture(text: string, titleHint: string | null, externalRef: 
       titleHint,
       externalRef,
     });
-    setStatusText('$(check) Sent');
+    if (statusResetGuard.isCurrent(statusGeneration)) {
+      setStatusText('$(check) Sent');
+    }
     vscode.window.showInformationMessage('Captured to Taskdeck inbox');
   } catch (err) {
-    setStatusText('$(error) Failed');
+    if (statusResetGuard.isCurrent(statusGeneration)) {
+      setStatusText('$(error) Failed');
+    }
     const message = err instanceof Error ? err.message : 'Unknown error';
     vscode.window.showErrorMessage(`Taskdeck capture failed: ${message}`);
   } finally {
