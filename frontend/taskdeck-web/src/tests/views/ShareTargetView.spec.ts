@@ -229,9 +229,27 @@ describe('ShareTargetView', () => {
     expect(mockCreateItem).not.toHaveBeenCalled()
     expect(mockEnqueue).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'Title\n\nText' }),
-      'user-1',
+      null,
     )
     expect(wrapper.text()).toContain('Login required')
+  })
+
+  it('queues login-required captures ownerless even when stale session metadata exists', async () => {
+    mockGetToken.mockReturnValue(null)
+    mockGetSession.mockReturnValue({
+      userId: 'stale-user',
+      username: 'stale',
+      email: 'stale@example.com',
+    })
+    mockPostedShare('Title', 'Text', '')
+    mount(ShareTargetView)
+    await flushPromises()
+
+    expect(mockCreateItem).not.toHaveBeenCalled()
+    expect(mockEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Title\n\nText' }),
+      null,
+    )
   })
 
   it('shows login-required when token is expired', async () => {

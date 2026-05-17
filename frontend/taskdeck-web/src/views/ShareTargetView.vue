@@ -34,14 +34,15 @@ function buildCaptureText(title: string, text: string, url: string): string {
   return parts.join('\n\n') || ''
 }
 
-function getCurrentQueueOwnerUserId(): string | null {
-  return tokenStorage.getSession()?.userId ?? null
-}
-
 function hasValidSession(): boolean {
   const token = tokenStorage.getToken()
   if (!token) return false
   return !isTokenExpired(token)
+}
+
+function getValidQueueOwnerUserId(): string | null {
+  if (!hasValidSession()) return null
+  return tokenStorage.getSession()?.userId ?? null
 }
 
 function getErrorStatus(error: unknown): number | null {
@@ -59,9 +60,9 @@ function isTransientCaptureError(error: unknown): boolean {
   return status >= 500 && status < 600 && status !== 501 && status !== 505
 }
 
-async function safeEnqueue(dto: CreateCaptureItemDto): Promise<boolean> {
+async function safeEnqueue(dto: CreateCaptureItemDto, ownerUserId: string | null): Promise<boolean> {
   try {
-    await enqueueCapture(dto, getCurrentQueueOwnerUserId())
+    await enqueueCapture(dto, ownerUserId)
     return true
   } catch {
     return false
@@ -138,10 +139,12 @@ onMounted(async () => {
   }
 
   if (!hasValidSession()) {
-    const queued = await safeEnqueue(dto)
+    const queued = await safeEnqueue(dto, null)
     status.value = queued ? 'login-required' : 'error'
     return
   }
+
+  const queueOwnerUserId = getValidQueueOwnerUserId()
 
   if (isOnline.value) {
     try {
@@ -152,11 +155,11 @@ onMounted(async () => {
         status.value = 'error'
         return
       }
-      const queued = await safeEnqueue(dto)
+      const queued = await safeEnqueue(dto, queueOwnerUserId)
       status.value = queued ? 'queued' : 'error'
     }
   } else {
-    const queued = await safeEnqueue(dto)
+    const queued = await safeEnqueue(dto, queueOwnerUserId)
     status.value = queued ? 'queued' : 'error'
   }
 })

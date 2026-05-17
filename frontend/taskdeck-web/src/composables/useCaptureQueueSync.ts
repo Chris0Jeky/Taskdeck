@@ -95,19 +95,34 @@ export function useCaptureQueueSync() {
           continue
         }
 
+        let remoteCreateSucceeded = false
         try {
           await captureStore.createItem(claimed.dto)
-          await dequeueCapture(claimed.id)
-          replayed++
-          pendingCount.value--
+          remoteCreateSucceeded = true
         } catch (error) {
           if (isTransientCaptureError(error)) {
             await incrementRetry(claimed.id)
-          } else {
-            await markCaptureFailed(claimed.id, describeCaptureError(error))
+            continue
+          }
+
+          await markCaptureFailed(claimed.id, describeCaptureError(error))
+          pendingCount.value--
+          continue
+        }
+
+        try {
+          await dequeueCapture(claimed.id)
+        } catch (error) {
+          logError('Capture queue dequeue failed after remote create:', error)
+          if (remoteCreateSucceeded) {
+            await markCaptureFailed(claimed.id, 'Remote create succeeded but local dequeue failed')
             pendingCount.value--
           }
+          continue
         }
+
+        replayed++
+        pendingCount.value--
       }
     } catch (error) {
       logError('Capture queue replay failed:', error)
