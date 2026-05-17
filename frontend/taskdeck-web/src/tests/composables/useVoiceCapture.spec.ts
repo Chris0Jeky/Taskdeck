@@ -1,27 +1,66 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { useVoiceCapture } from '../../composables/useVoiceCapture'
 
+interface MockRecognitionInstance {
+  start: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onresult: ((event: unknown) => void) | null
+  onerror: ((event: unknown) => void) | null
+  onend: (() => void) | null
+}
+
 function installMockSpeechRecognition() {
-  const instance = {
-    start: vi.fn(),
-    stop: vi.fn(),
-    continuous: false,
-    interimResults: false,
-    lang: '',
-    onresult: null as ((event: unknown) => void) | null,
-    onerror: null as ((event: unknown) => void) | null,
-    onend: null as (() => void) | null,
+  const instances: MockRecognitionInstance[] = []
+
+  function createInstance() {
+    return {
+      start: vi.fn(),
+      stop: vi.fn(),
+      continuous: false,
+      interimResults: false,
+      lang: '',
+      onresult: null as ((event: unknown) => void) | null,
+      onerror: null as ((event: unknown) => void) | null,
+      onend: null as (() => void) | null,
+    }
+  }
+
+  const fallback = createInstance()
+  const first = () => instances[0] ?? fallback
+  const api = {
+    instances,
+    get start() { return first().start },
+    get stop() { return first().stop },
+    get continuous() { return first().continuous },
+    get interimResults() { return first().interimResults },
+    get lang() { return first().lang },
+    get onresult() { return first().onresult },
+    get onerror() { return first().onerror },
+    get onend() { return first().onend },
   }
 
   class MockSpeechRecognition {
-    start = instance.start
-    stop = instance.stop
-    continuous = instance.continuous
-    interimResults = instance.interimResults
-    lang = instance.lang
-    set onresult(fn: ((event: unknown) => void) | null) { instance.onresult = fn }
-    set onerror(fn: ((event: unknown) => void) | null) { instance.onerror = fn }
-    set onend(fn: (() => void) | null) { instance.onend = fn }
+    private readonly instance: MockRecognitionInstance
+
+    constructor() {
+      this.instance = createInstance()
+      instances.push(this.instance)
+    }
+
+    start() { this.instance.start() }
+    stop() { this.instance.stop() }
+    get continuous() { return this.instance.continuous }
+    set continuous(value: boolean) { this.instance.continuous = value }
+    get interimResults() { return this.instance.interimResults }
+    set interimResults(value: boolean) { this.instance.interimResults = value }
+    get lang() { return this.instance.lang }
+    set lang(value: string) { this.instance.lang = value }
+    set onresult(fn: ((event: unknown) => void) | null) { this.instance.onresult = fn }
+    set onerror(fn: ((event: unknown) => void) | null) { this.instance.onerror = fn }
+    set onend(fn: (() => void) | null) { this.instance.onend = fn }
   }
 
   Object.defineProperty(window, 'SpeechRecognition', {
@@ -30,7 +69,7 @@ function installMockSpeechRecognition() {
     configurable: true,
   })
 
-  return instance
+  return api
 }
 
 function removeSpeechRecognition() {
@@ -164,7 +203,26 @@ describe('useVoiceCapture', () => {
     expect(status.value).toBe('idle')
     expect(startListening()).toBe(true)
 
-    expect(instance.start).toHaveBeenCalledTimes(2)
+    expect(instance.instances).toHaveLength(2)
+    expect(instance.instances[0].start).toHaveBeenCalledTimes(1)
+    expect(instance.instances[1].start).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores stale onend callbacks from a stopped previous session', () => {
+    const instance = installMockSpeechRecognition()
+
+    const { startListening, stopListening, status } = useVoiceCapture()
+
+    expect(startListening()).toBe(true)
+    const firstRecognition = instance.instances[0]
+    stopListening()
+    expect(startListening()).toBe(true)
+
+    firstRecognition.onend!()
+    expect(status.value).toBe('listening')
+
+    instance.instances[1].onend!()
+    expect(status.value).toBe('idle')
   })
 
   it('requires consent acknowledgment when requireConsent is true', () => {

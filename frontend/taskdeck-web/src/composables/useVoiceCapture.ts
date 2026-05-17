@@ -61,25 +61,29 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
         return false
       }
 
-      recognition = new SpeechRecognitionCtor()
-      recognition.continuous = false
-      recognition.interimResults = false
-      recognition.lang = navigator.language || 'en-US'
+      const activeRecognition = new SpeechRecognitionCtor()
+      recognition = activeRecognition
+      activeRecognition.continuous = false
+      activeRecognition.interimResults = false
+      activeRecognition.lang = navigator.language || 'en-US'
 
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
+      activeRecognition.onresult = (event: SpeechRecognitionEvent) => {
+        if (recognition !== activeRecognition) return
         const result = event.results[event.results.length - 1]
         if (result.isFinal) {
           transcript.value = result[0].transcript
         }
       }
 
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      activeRecognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        if (recognition !== activeRecognition) return
         status.value = 'error'
         errorMessage.value = `Speech recognition error: ${event.error}`
         recognition = null
       }
 
-      recognition.onend = () => {
+      activeRecognition.onend = () => {
+        if (recognition !== activeRecognition) return
         recognition = null
         if (status.value !== 'error') {
           status.value = 'idle'
@@ -89,7 +93,7 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
       transcript.value = ''
       errorMessage.value = ''
       status.value = 'listening'
-      recognition.start()
+      activeRecognition.start()
       return true
     } catch (err) {
       recognition = null

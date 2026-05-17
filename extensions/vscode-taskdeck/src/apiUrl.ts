@@ -27,9 +27,12 @@ export function parseTaskdeckApiBaseUrl(value: string): URL {
 
 function isLoopbackHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
+  const ipv4Parts = normalized.split('.');
+
   return normalized === 'localhost' ||
-    normalized === '127.0.0.1' ||
-    normalized.startsWith('127.') ||
+    (ipv4Parts.length === 4 &&
+      ipv4Parts.every((part) => /^\d+$/.test(part) && Number(part) >= 0 && Number(part) <= 255) &&
+      Number(ipv4Parts[0]) === 127) ||
     normalized === '[::1]' ||
     normalized === '::1';
 }

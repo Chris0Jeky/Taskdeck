@@ -140,6 +140,6 @@ async function setToken(extensionContext: vscode.ExtensionContext): Promise<void
     return;
   }
 
-  await extensionContext.secrets.store('taskdeck.token', value);
+  await extensionContext.secrets.store('taskdeck.token', value.trim());
   vscode.window.showInformationMessage('Token saved securely');
 }
