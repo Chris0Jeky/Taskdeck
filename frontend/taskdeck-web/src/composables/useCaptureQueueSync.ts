@@ -1,5 +1,13 @@
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getAllPending, dequeueCapture, incrementRetry, markCaptureFailed, assignCaptureOwner } from '../utils/captureQueue'
+import {
+  claimCaptureForReplay,
+  dequeueCapture,
+  getAllPending,
+  getPendingCountForOwner,
+  getPendingForOwner,
+  incrementRetry,
+  markCaptureFailed,
+} from '../utils/captureQueue'
 import type { QueuedCapture } from '../utils/captureQueue'
 import { useCaptureStore } from '../store/captureStore'
 import { useSessionStore } from '../store/sessionStore'
@@ -45,6 +53,14 @@ export function useCaptureQueueSync() {
   let onlineHandler: (() => void) | null = null
   let serviceWorkerMessageHandler: ((event: MessageEvent<unknown>) => void) | null = null
 
+  function getCurrentUserId(): string | null {
+    return useSessionStore().userId
+  }
+
+  async function refreshCount(): Promise<void> {
+    pendingCount.value = await getPendingCountForOwner(getCurrentUserId())
+  }
+
   async function replayQueue(): Promise<number> {
     if (replayInProgress) return 0
     replayInProgress = true
@@ -52,14 +68,12 @@ export function useCaptureQueueSync() {
     let replayed = 0
 
     try {
-      const pending = await getAllPending()
+      const captureStore = useCaptureStore()
+      const currentUserId = getCurrentUserId()
+      const pending = await getPendingForOwner(currentUserId)
       pendingCount.value = pending.length
 
-      if (pending.length === 0) return 0
-
-      const captureStore = useCaptureStore()
-      const sessionStore = useSessionStore()
-      const currentUserId = sessionStore.userId
+      if (!currentUserId || pending.length === 0) return 0
 
       for (const entry of pending) {
         if (entry.retryCount >= MAX_RETRIES) {
@@ -72,25 +86,9 @@ export function useCaptureQueueSync() {
           continue
         }
 
-        if (!entry.ownerUserId) {
-          if (!currentUserId) {
-            logWarn('Capture queue: waiting for login before replaying ownerless entry', {
-              id: entry.id,
-              queuedAt: entry.queuedAt,
-            })
-            continue
-          }
-
-          await assignCaptureOwner(entry.id, currentUserId)
-          entry.ownerUserId = currentUserId
-          logWarn('Capture queue: assigned owner to login-required entry', {
-            id: entry.id,
-            queuedAt: entry.queuedAt,
-          })
-        }
-
-        if (!currentUserId || entry.ownerUserId !== currentUserId) {
-          logWarn('Capture queue: skipping entry for a different session', {
+        const claimed = await claimCaptureForReplay(entry.id, currentUserId)
+        if (!claimed) {
+          logWarn('Capture queue: skipping entry claimed by another replay worker', {
             id: entry.id,
             queuedAt: entry.queuedAt,
           })
@@ -98,15 +96,15 @@ export function useCaptureQueueSync() {
         }
 
         try {
-          await captureStore.createItem(entry.dto)
-          await dequeueCapture(entry.id)
+          await captureStore.createItem(claimed.dto)
+          await dequeueCapture(claimed.id)
           replayed++
           pendingCount.value--
         } catch (error) {
           if (isTransientCaptureError(error)) {
-            await incrementRetry(entry.id)
+            await incrementRetry(claimed.id)
           } else {
-            await markCaptureFailed(entry.id, describeCaptureError(error))
+            await markCaptureFailed(claimed.id, describeCaptureError(error))
             pendingCount.value--
           }
         }
@@ -114,6 +112,11 @@ export function useCaptureQueueSync() {
     } catch (error) {
       logError('Capture queue replay failed:', error)
     } finally {
+      try {
+        await refreshCount()
+      } catch (error) {
+        logError('Capture queue count refresh failed:', error)
+      }
       replayInProgress = false
       syncing.value = false
     }
@@ -135,11 +138,6 @@ export function useCaptureQueueSync() {
       }
     }
     navigator.serviceWorker.addEventListener('message', serviceWorkerMessageHandler)
-  }
-
-  async function refreshCount(): Promise<void> {
-    const pending = await getAllPending()
-    pendingCount.value = pending.length
   }
 
   onMounted(() => {

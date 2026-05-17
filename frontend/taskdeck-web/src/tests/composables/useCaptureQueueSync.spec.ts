@@ -4,6 +4,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import {
+  claimCaptureForReplay,
   dequeueCapture,
   enqueueCapture,
   getAllPending,
@@ -78,6 +79,19 @@ describe('useCaptureQueueSync', () => {
     expect(await getAllPending()).toHaveLength(1)
   })
 
+  it('reports only captures visible to the active user', async () => {
+    await enqueueCapture(makeDto('Mine'), 'user-1')
+    await enqueueCapture(makeDto('Other user'), 'user-2')
+    await enqueueCapture(makeDto('Ownerless'))
+
+    const { sync } = mountSyncComposable()
+    await flushPromises()
+
+    await vi.waitFor(() => {
+      expect(sync.pendingCount.value).toBe(2)
+    })
+  })
+
   it('claims an ownerless login-required capture once a user session exists', async () => {
     await enqueueCapture(makeDto('Needs login'))
     const { sync } = mountSyncComposable()
@@ -136,6 +150,18 @@ describe('useCaptureQueueSync', () => {
     expect(pending[0].retryCount).toBe(1)
   })
 
+  it('does not replay a row already claimed by another tab', async () => {
+    const id = await enqueueCapture(makeDto('Already claimed'), 'user-1')
+    await claimCaptureForReplay(id, 'user-1')
+    const { sync } = mountSyncComposable()
+
+    const replayed = await sync.replayQueue()
+
+    expect(replayed).toBe(0)
+    expect(createItemMock).not.toHaveBeenCalled()
+    expect(await getAllPending()).toHaveLength(1)
+  })
+
   it('parks entries at the retry cap instead of discarding them', async () => {
     const id = await enqueueCapture(makeDto('Retry capped'), 'user-1')
     for (let i = 0; i < 5; i++) {
@@ -155,7 +181,7 @@ describe('useCaptureQueueSync', () => {
     })
   })
 
-  it('replays when the service worker forwards the background-sync event', async () => {
+  it('replays when the service worker forwards a client replay message', async () => {
     await enqueueCapture(makeDto('From sync event'), 'user-1')
     let messageHandler: ((event: MessageEvent<unknown>) => void) | null = null
     const serviceWorker = {

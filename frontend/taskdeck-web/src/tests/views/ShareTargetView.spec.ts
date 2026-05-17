@@ -58,6 +58,22 @@ function setQuery(title = '', text = '', url = '') {
   if (url) routeQuery.url = url
 }
 
+function mockPostedShare(title = '', text = '', url = '', shareId = 'share-1') {
+  Object.keys(routeQuery).forEach((k) => delete routeQuery[k])
+  routeQuery.shareId = shareId
+  const cache = {
+    match: vi.fn(async () => new Response(JSON.stringify({ title, text, url }))),
+    delete: vi.fn(async () => true),
+  }
+  Object.defineProperty(globalThis, 'caches', {
+    configurable: true,
+    value: {
+      open: vi.fn(async () => cache),
+    },
+  })
+  return cache
+}
+
 describe('ShareTargetView', () => {
   beforeEach(() => {
     routerMock.push.mockClear()
@@ -77,7 +93,7 @@ describe('ShareTargetView', () => {
   })
 
   it('sends shared content directly to capture API when online', async () => {
-    setQuery('Test Title', 'Some text', 'https://example.com')
+    mockPostedShare('Test Title', 'Some text', 'https://example.com')
     mount(ShareTargetView)
     await flushPromises()
 
@@ -89,24 +105,11 @@ describe('ShareTargetView', () => {
       externalRef: 'https://example.com',
     })
     expect(mockEnqueue).not.toHaveBeenCalled()
-    expect(routerMock.replace).toHaveBeenCalledWith({ name: 'capture-share-target', query: {} })
+    expect(routerMock.replace).not.toHaveBeenCalled()
   })
 
   it('loads POST share-target payload from service worker cache without putting content in the URL', async () => {
-    const cache = {
-      match: vi.fn(async () => new Response(JSON.stringify({
-        title: 'Posted Title',
-        text: 'Posted text',
-        url: 'https://example.com/private',
-      }))),
-      delete: vi.fn(async () => true),
-    }
-    Object.defineProperty(globalThis, 'caches', {
-      configurable: true,
-      value: {
-        open: vi.fn(async () => cache),
-      },
-    })
+    const cache = mockPostedShare('Posted Title', 'Posted text', 'https://example.com/private')
 
     mount(ShareTargetView)
     await flushPromises()
@@ -118,14 +121,25 @@ describe('ShareTargetView', () => {
       titleHint: 'Posted Title',
       externalRef: 'https://example.com/private',
     })
-    expect(cache.match).toHaveBeenCalledWith('/capture/share-data')
-    expect(cache.delete).toHaveBeenCalledWith('/capture/share-data')
+    expect(cache.match).toHaveBeenCalledWith('/capture/share-data/share-1')
+    expect(cache.delete).toHaveBeenCalledWith('/capture/share-data/share-1')
     expect(routerMock.replace).not.toHaveBeenCalled()
+  })
+
+  it('does not persist legacy query-string share payloads', async () => {
+    setQuery('Injected Title', 'Injected text', 'https://evil.example')
+    const wrapper = mount(ShareTargetView)
+    await flushPromises()
+
+    expect(mockCreateItem).not.toHaveBeenCalled()
+    expect(mockEnqueue).not.toHaveBeenCalled()
+    expect(routerMock.replace).toHaveBeenCalledWith({ name: 'capture-share-target', query: {} })
+    expect(wrapper.text()).toContain('Nothing to capture')
   })
 
   it('queues capture in IndexedDB when offline', async () => {
     mockOnline.value = false
-    setQuery('Offline Title', 'Offline text', '')
+    mockPostedShare('Offline Title', 'Offline text', '')
     mount(ShareTargetView)
     await flushPromises()
 
@@ -144,7 +158,7 @@ describe('ShareTargetView', () => {
 
   it('falls back to queue when API call fails transiently', async () => {
     mockCreateItem.mockRejectedValueOnce(new Error('Network Error'))
-    setQuery('Retry Title', '', 'https://example.com')
+    mockPostedShare('Retry Title', '', 'https://example.com')
     mount(ShareTargetView)
     await flushPromises()
 
@@ -154,7 +168,7 @@ describe('ShareTargetView', () => {
 
   it('does not queue permanent API failures', async () => {
     mockCreateItem.mockRejectedValueOnce({ response: { status: 400 } })
-    setQuery('Invalid Title', '', '')
+    mockPostedShare('Invalid Title', '', '')
     const wrapper = mount(ShareTargetView)
     await flushPromises()
 
@@ -174,7 +188,7 @@ describe('ShareTargetView', () => {
   })
 
   it('navigates to inbox when Open Inbox button is clicked', async () => {
-    setQuery('Title', 'Text', '')
+    mockPostedShare('Title', 'Text', '')
     const wrapper = mount(ShareTargetView)
     await flushPromises()
 
@@ -183,7 +197,7 @@ describe('ShareTargetView', () => {
   })
 
   it('deduplicates title from text when they are identical', async () => {
-    setQuery('Same content', 'Same content', '')
+    mockPostedShare('Same content', 'Same content', '')
     mount(ShareTargetView)
     await flushPromises()
 
@@ -193,7 +207,7 @@ describe('ShareTargetView', () => {
   })
 
   it('handles URL-only share', async () => {
-    setQuery('', '', 'https://example.com/article')
+    mockPostedShare('', '', 'https://example.com/article')
     mount(ShareTargetView)
     await flushPromises()
 
@@ -208,7 +222,7 @@ describe('ShareTargetView', () => {
 
   it('shows login-required state when no valid session exists', async () => {
     mockGetToken.mockReturnValue(null)
-    setQuery('Title', 'Text', '')
+    mockPostedShare('Title', 'Text', '')
     const wrapper = mount(ShareTargetView)
     await flushPromises()
 
@@ -223,7 +237,7 @@ describe('ShareTargetView', () => {
   it('shows login-required when token is expired', async () => {
     mockGetToken.mockReturnValue('expired-token')
     mockIsTokenExpired.mockReturnValue(true)
-    setQuery('Title', '', 'https://example.com')
+    mockPostedShare('Title', '', 'https://example.com')
     const wrapper = mount(ShareTargetView)
     await flushPromises()
 
@@ -233,7 +247,7 @@ describe('ShareTargetView', () => {
 
   it('navigates to login when Log In button is clicked in login-required state', async () => {
     mockGetToken.mockReturnValue(null)
-    setQuery('Title', 'Text', '')
+    mockPostedShare('Title', 'Text', '')
     const wrapper = mount(ShareTargetView)
     await flushPromises()
 

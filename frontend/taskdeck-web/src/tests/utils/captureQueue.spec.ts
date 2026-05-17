@@ -3,12 +3,14 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import {
   enqueueCapture,
   assignCaptureOwner,
+  claimCaptureForReplay,
   dequeueCapture,
   getAllPending,
   getAllQueuedCaptures,
   incrementRetry,
   markCaptureFailed,
   getPendingCount,
+  getPendingCountForOwner,
 } from '../../utils/captureQueue'
 import type { CreateCaptureItemDto } from '../../types/capture'
 
@@ -83,6 +85,17 @@ describe('captureQueue', () => {
     expect(pending[0].retryCount).toBe(2)
   })
 
+  it('counts only captures visible to the active owner', async () => {
+    await enqueueCapture(makeDto('Mine'), 'user-1')
+    await enqueueCapture(makeDto('Other'), 'user-2')
+    await enqueueCapture(makeDto('Ownerless'))
+
+    expect(await getPendingCount()).toBe(3)
+    expect(await getPendingCountForOwner('user-1')).toBe(2)
+    expect(await getPendingCountForOwner('user-2')).toBe(2)
+    expect(await getPendingCountForOwner(null)).toBe(0)
+  })
+
   it('marks a capture failed without deleting its recovery payload', async () => {
     const id = await enqueueCapture(makeDto('Needs recovery'), 'user-1')
 
@@ -113,6 +126,21 @@ describe('captureQueue', () => {
       ownerUserId: 'user-1',
       status: 'pending',
     })
+  })
+
+  it('atomically claims a capture for one replay worker', async () => {
+    const id = await enqueueCapture(makeDto('Claim once'))
+
+    const firstClaim = await claimCaptureForReplay(id, 'user-1')
+    const secondClaim = await claimCaptureForReplay(id, 'user-1')
+
+    expect(firstClaim).toMatchObject({
+      id,
+      ownerUserId: 'user-1',
+      status: 'pending',
+    })
+    expect(firstClaim?.syncClaimId).toBeTruthy()
+    expect(secondClaim).toBeNull()
   })
 
   it('handles multiple captures in FIFO order', async () => {
