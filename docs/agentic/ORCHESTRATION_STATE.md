@@ -1,66 +1,176 @@
-# Orchestration State — Autonomous Workflow
+# Orchestration State
 
-> **Read this file first after any context compaction or session restart.**
-> This file is the persistent memory for the autonomous end-to-end workflow.
+Last Updated: 2026-05-17
+Status: ACTIVE
 
-## Protocol
+## Purpose
 
-1. Pick the next item from the execution queue below.
-2. Create a feature branch from `main` (naming: `feat/`, `fix/`, `tst/`, `docs/`).
-3. Implement in small, focused commits.
-4. Push branch, create PR (do NOT merge to main).
-5. Run 2 rounds of adversarial review (R1 + R2), posting findings as PR comments.
-6. Fix ALL findings (every severity), push fixes.
-7. Check CI status and bot comments. Fix any failures.
-8. Update this file: move item to completed, log session activity.
-9. Move to next item.
+This file is the persistent memory and execution state for Claude Code's autonomous work loop. After context compaction, re-read this file FIRST to resume work. It tracks what's done, in-progress, next, and the full workflow protocol.
 
-## Active PRs (DO NOT MERGE)
+## How to Resume After Compaction
 
-| PR | Branch | Status | Notes |
-|----|--------|--------|-------|
-| #1075 | `docs/cleanup-encoding-and-counts` | R1+R2 done, CI re-running | Docs encoding fixes + test count updates |
-| #1076 | `tst/1070-mfa-409-conflict` | R1+R2 done, CI green | MFA 409 Conflict integration test |
-| #1077 | `fix/paper-board-card-encoding-artifact` | R1+R2 done, CI pending | PaperBoardCard drag handle mojibake fix |
-| #1078 | `feat/982-pwa-share-target` | R1+R2 done, CI green (windows-latest fail is pre-existing) | PWA share-target + offline queue + outbound share |
+1. Read this file completely
+2. Read `docs/STATUS.md` (first 40 lines for current state)
+3. Check `git status` and `git log --oneline -5` for in-flight work
+4. Check `gh pr list --state open --author Chris0Jeky` for active PRs
+5. Resume from the "Current Work" section below
 
-## Execution Queue (priority order)
+## Workflow Protocol
 
-### Ready to Start
-1. **#983 RFAI-11**: Ambient channel hardening decision and prototype (Priority IV, backend+frontend)
-2. **#655 MCP-04**: MCP production hardening (Priority IV, backend)
+### For Each Issue:
 
-### Blocked
-4. **#984 RFAI-12**: Learning loop UI + beta gate (Priority II, depends on #983)
+1. **Branch**: `git checkout -b <branch-name>` from latest `main` (or from a stacked base branch if dependent)
+2. **Implement**: Small, focused commits. One commit per logical unit.
+3. **Test**: Run `dotnet test backend/Taskdeck.sln -c Release -m:1` and/or `cd frontend/taskdeck-web && npx vitest --run`
+4. **PR**: Create with `gh pr create` linking the issue. Include Summary + Test Plan.
+5. **Review Round 1**: Use `adversarial-review` skill or manual review. Post ALL findings as a PR comment. Fix every finding (CRITICAL through LOW). Push fixes.
+6. **Review Round 2**: Fresh adversarial review of the fixes. Post findings. Fix everything. Push.
+7. **Bot Check**: Read ALL PR comments (Gemini Code Assist, Dependabot, any bot). Address anything found.
+8. **Verify**: Run tests again post-fix. Confirm CI passes (check via `gh pr checks <PR#>`).
+9. **Merge gate**: Leave PRs open unless the active user request explicitly authorizes merging after the normal review, bot-comment, test, and CI gates. Current cleanup session is merge-authorized after those gates.
+10. **Stack if needed**: If the next issue depends on this PR, branch from the PR branch.
 
-### Completed This Session
-- ✅ Docs cleanup: 156 encoding artifacts fixed, test counts updated, RFAI delivery status corrected
-- ✅ #1070 TST-63: MFA 409 Conflict test added and reviewed
-- ✅ #1077: PaperBoardCard encoding artifact fixed
-- ✅ #1001 PAPER-05: Verified already fully implemented (all components + tests exist)
-- ✅ #982 RFAI-10: PWA share-target + offline queue + outbound share + AppShell sync wiring (PR #1078, R1+R2 done)
+### Parallel Subagent Protocol:
 
-### Deferred / Out of Scope
-- #1001 PAPER-05: Already delivered, only missing a dedicated Playwright E2E drag test (covered by smoke tests)
-- GTM/BRAND/LEGAL/MOB/CLD/PKG trackers: Strategic, not code work
-- TST-CODEX-* issues: Reserved for Codex agent
+- Use `isolation: "worktree"` for parallel implementation work
+- One coordinator (this conversation) owns synthesis, docs, and state
+- Workers own implementation within their assigned scope
+- After workers finish, verify main checkout is clean
+
+### Docs Update Protocol:
+
+- Update this file after each PR or significant state change
+- Only update STATUS.md/MASTERPLAN after merges (don't update for open PRs)
+- Update TESTING_GUIDE.md when test counts change measurably
+
+## Execution Queue (Priority Order)
+
+### Tier 0: Housekeeping (do first)
+- [x] Close stale issues (#975, #976, #977, #980, #1066) — DONE 2026-05-16
+- [x] Fix 156 encoding artifacts across 4 docs — DONE 2026-05-16
+- [x] Update test counts and RFAI progress in docs — DONE 2026-05-16
+- [x] Close PROD-00 tracker (#881) — all sub-items closed — DONE 2026-05-16
+- [x] Commit docs cleanup work as PR #1075 — DONE 2026-05-16
+
+### Tier 1: Quick Wins
+- [ ] #1070 TST-63: MFA setup 409-Conflict test (small, isolated)
+
+### Tier 2: Feature Delivery
+- [ ] #1001 PAPER-05: Board/Kanban surface in Paper (frontend, clear spec)
+- [ ] #982 RFAI-10: PWA share-target quick capture (Priority III)
+- [ ] #983 RFAI-11: Ambient channel hardening decision (Priority IV)
+- [ ] #984 RFAI-12: Learning loop UI + beta gate (depends on #983)
+
+### Tier 3: Infrastructure & Hardening
+- [ ] #655 MCP-04: MCP production hardening
+- [ ] Audit pass: find and seed new issues from code/test gaps
+
+### Tier 4: Strategy & External (lower priority)
+- [ ] #546 GTM-02: Demo video
+- [ ] #550 BRAND-01: Domain/logo
+- [ ] #548 LEGAL-01: Privacy policy
+- [ ] #219 CAP-21: Voice capture (Priority IV)
+
+## Current Work
+
+### Active Branch: `tst/1081-composable-coverage-part2` (cleanup pass in progress)
+
+### Cleanup Snapshot (2026-05-17)
+- PR #1076 `tst/1070-mfa-409-conflict`: CI green; project priority sync completed; merge candidate after final gate audit.
+- PR #1077 `fix/paper-board-card-encoding-artifact`: CI green; final-diff adversarial review posted for `e6d920d9`; merge candidate after final gate audit.
+- PR #1078 `feat/982-pwa-share-target`: queue ownership, login-required queue claim, terminal-failure parking, client replay plumbing, transient-only queue fallback, and misleading Background Sync removal fixed through `7a2ca22b`; CI and final review pending.
+- PR #1079 `feat/983-ambient-channel-hardening`: #1078 merged forward, VS Code Git/API URL hardening, pathful API URL rejection, and voice overlap fixes pushed through `b7f67c47`; CI and final review pending.
+- PR #1080 `feat/984-learning-loop-beta-gate`: #1079 merged forward, Ollama localhost selection/runtime/connect policy aligned, and provider connect guards corrected through `ee9d1c98`; CI and final review pending.
+- PR #1082 `tst/1081-composable-test-coverage`: CI green at last inspection; current-head adversarial review clean; merge before #1084 to avoid `useReviewKeymap.spec.ts` overlap.
+- PR #1083 `paper/1001-board-kanban-surface`: CI green at last inspection; current-head adversarial review clean.
+- PR #1084 `tst/1081-composable-coverage-part2`: watcher review findings fixed in `a1d3449a`; merge-policy/date cleanup in progress after review findings; CI pending.
+
+User authorized merging PRs only after green CI/tests, bot comments addressed, every review finding fixed or tracked, and two adversarial review rounds over the current head.
+
+### Active PR Stack
+- #1078 -> `main`
+- #1079 -> #1078
+- #1080 -> #1079
+- #1082 -> `main`
+- #1083 -> `main`
+- #1084 -> `main`
+
+## Dependency Graph
+
+```
+#983 RFAI-11 (ambient channel)
+  └── #984 RFAI-12 (learning loop + beta gate) [also depends on #977✓, #980✓, #981✓]
+
+#1001 PAPER-05 (board surface) [blocked by PAPER-01✓, PAPER-02✓, PAPER-03✓]
+
+All others: independent
+```
+
+## Branch Naming Convention
+
+- `tst/1070-mfa-409-conflict`
+- `paper/1001-board-kanban-surface`
+- `rfai-10/982-pwa-share-target`
+- `rfai-11/983-ambient-channel`
+- `rfai-12/984-learning-loop-ui`
+- `docs/cleanup-encoding-and-counts`
+
+## Key Verification Commands
+
+```powershell
+# Backend tests
+dotnet test backend/Taskdeck.sln -c Release -m:1
+
+# Frontend tests
+cd frontend/taskdeck-web; npx vitest --run --reporter=verbose
+
+# Frontend typecheck
+cd frontend/taskdeck-web; npm run typecheck
+
+# Frontend build
+cd frontend/taskdeck-web; npm run build
+
+# Lint
+cd frontend/taskdeck-web; npm run lint
+
+# Single backend test class
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~MyClassName"
+
+# Check PR status
+gh pr checks <number>
+gh pr view <number> --json comments
+```
+
+## Review Checklist (for each round)
+
+- [ ] Read full diff (`gh pr diff <number>`)
+- [ ] Check for: security issues, logic errors, missing error handling, test gaps, naming issues, code quality
+- [ ] Post comment with severity-tagged findings (CRITICAL/HIGH/MEDIUM/LOW)
+- [ ] Fix ALL findings, push
+- [ ] Verify tests still pass
+- [ ] Check all existing PR comments (bots, humans)
 
 ## Session Log
 
-### 2026-05-16
-- Audited all PRs merged in last 24h
-- Fixed 156+ encoding artifacts across docs
-- Updated test counts (backend 6,614 / frontend 3,267)
-- Corrected RFAI delivery status (8→9 of 12 delivered)
-- Created PR #1075 (docs cleanup), #1076 (MFA test), #1077 (encoding fix)
-- Completed adversarial review (R1+R2) on all three PRs
-- Verified PAPER-05 is already fully implemented
-- Next: Start RFAI-10 (PWA share-target)
+### 2026-05-16 Session 1
+- Surveyed 15 PRs merged today (#1055-#1074)
+- Fixed 156 mojibake artifacts across IMPLEMENTATION_MASTERPLAN.md and 3 ops docs
+- Updated TESTING_GUIDE.md: backend 6,336→6,614 (locally verified), frontend 2,805→3,267
+- Fixed RFAI count: 8/12 → 9/12 (RFAI-09 was delivered in PR #1052 but undocumented)
+- Updated ISSUE_EXECUTION_GUIDE.md: marked RFAI-03/04/05/07/08/09 as delivered
+- Closed 5 stale issues (#975, #976, #977, #980, #1066)
+- All PROD-00 sub-issues confirmed closed
+- Next: commit docs work, then start on #1070, #1001
 
-## Key Context for Resume
-
-- The user's instruction: work end-to-end, do NOT merge PRs, leave open, build on them. If out of tasks, audit and seed more.
-- Use subagents for parallel work where possible.
-- 2 rounds of adversarial review per PR (post comments, fix ALL findings).
-- Check CI, bot comments, tests. Manual test if possible.
-- This file must be updated after each task completes.
+### 2026-05-16 Session 2 (continued)
+- PR #1084 (tst/1081-composable-coverage-part2): 266 new tests total
+  - useInboxOrchestrator (41), useReviewProposals (39), useReviewKeymap (30)
+  - cardFilterStore (24), columnStore (12), cardStore (24), labelStore (17)
+  - boardCrudStore (28), cardCommentStore (17), boardStoreHelpers (13), boardUiStore (4)
+  - agentApi (8), integrationsApi (9)
+- Fixed CI lint failure (no-unused-vars in 3 test files)
+- R1 adversarial review: 3 HIGH, 5 MEDIUM, 4 LOW — all HIGH fixed
+- Frontend test count: 3,383 → 3,534
+- All stores, composables, and API modules now have test coverage
+- Remaining untested: inkBleedMotion.ts, useInkBleed.ts (animation utilities — low priority)
+- Next: await CI green, then assess next tier items from execution queue

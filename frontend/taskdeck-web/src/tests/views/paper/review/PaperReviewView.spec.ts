@@ -75,6 +75,17 @@ vi.mock('../../../../api/proposalRevisionsApi', () => ({
   },
 }))
 
+vi.mock('../../../../api/proposalDeepReviewApi', () => ({
+  proposalDeepReviewApi: {
+    getProvenance: vi.fn().mockResolvedValue([]),
+    getConfidence: vi.fn().mockResolvedValue({ overall: 0.8, components: [], note: null, threshold: 0.5, meetsThreshold: true }),
+    getSideEffects: vi.fn().mockResolvedValue({ rows: [], reversibility: { summary: '', tone: 'safe' } }),
+    getConflicts: vi.fn().mockResolvedValue([]),
+    getHistory: vi.fn().mockResolvedValue([]),
+    getSimilarPast: vi.fn().mockResolvedValue({ decisions: [], applyRate: 0 }),
+  },
+}))
+
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   const now = new Date().toISOString()
   return {

@@ -179,7 +179,7 @@ function onDragHandleMouseDown() {
             @click.stop
             @mousedown="onDragHandleMouseDown"
           >
-            <span aria-hidden="true">â‹®â‹®</span>
+            <span aria-hidden="true">⋮⋮</span>
           </button>
         </span>
       </header>
