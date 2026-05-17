@@ -60,6 +60,11 @@ function isTransientCaptureError(error: unknown): boolean {
   return status >= 500 && status < 600 && status !== 501 && status !== 505
 }
 
+function isAuthenticationCaptureError(error: unknown): boolean {
+  const status = getErrorStatus(error)
+  return status === 401 || status === 403
+}
+
 async function safeEnqueue(dto: CreateCaptureItemDto, ownerUserId: string | null): Promise<boolean> {
   try {
     await enqueueCapture(dto, ownerUserId)
@@ -151,6 +156,12 @@ onMounted(async () => {
       await captureStore.createItem(dto)
       status.value = 'success'
     } catch (error) {
+      if (isAuthenticationCaptureError(error)) {
+        const queued = await safeEnqueue(dto, null)
+        status.value = queued ? 'login-required' : 'error'
+        return
+      }
+
       if (!isTransientCaptureError(error)) {
         status.value = 'error'
         return

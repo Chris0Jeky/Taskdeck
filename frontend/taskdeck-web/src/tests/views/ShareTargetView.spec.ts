@@ -177,6 +177,26 @@ describe('ShareTargetView', () => {
     expect(wrapper.text()).toContain('Nothing to capture')
   })
 
+  it('preserves shared content ownerless for re-auth when API rejects the current session', async () => {
+    mockCreateItem.mockRejectedValueOnce({ response: { status: 401 } })
+    mockPostedShare('Reauth Title', 'Needs login', 'https://example.com')
+    const wrapper = mount(ShareTargetView)
+    await flushPromises()
+
+    expect(mockCreateItem).toHaveBeenCalled()
+    expect(mockEnqueue).toHaveBeenCalledWith(
+      {
+        boardId: null,
+        text: 'Reauth Title\n\nNeeds login\n\nhttps://example.com',
+        source: 'ShareTarget',
+        titleHint: 'Reauth Title',
+        externalRef: 'https://example.com',
+      },
+      null,
+    )
+    expect(wrapper.text()).toContain('Login required')
+  })
+
   it('shows error state when no content is shared', async () => {
     setQuery('', '', '')
     const wrapper = mount(ShareTargetView)
