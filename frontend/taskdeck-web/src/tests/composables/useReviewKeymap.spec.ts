@@ -52,10 +52,31 @@ describe('useReviewKeymap', () => {
       expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
     })
 
+    it('Spacebar legacy key value triggers onPreviewDiff', () => {
+      const handlers: ReviewKeymapHandlers = { onPreviewDiff: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('Spacebar'))
+      expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
+    })
+
+    it('event.code Space fallback triggers onPreviewDiff', () => {
+      const handlers: ReviewKeymapHandlers = { onPreviewDiff: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('Unidentified', { code: 'Space' }))
+      expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
+    })
+
     it('E triggers onRequestEdit', () => {
       const handlers: ReviewKeymapHandlers = { onRequestEdit: vi.fn() }
       const { handleKeyDown } = useReviewKeymap(handlers)
       handleKeyDown(makeKeyEvent('e'))
+      expect(handlers.onRequestEdit).toHaveBeenCalledOnce()
+    })
+
+    it('uppercase E triggers onRequestEdit', () => {
+      const handlers: ReviewKeymapHandlers = { onRequestEdit: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+      handleKeyDown(makeKeyEvent('E'))
       expect(handlers.onRequestEdit).toHaveBeenCalledOnce()
     })
 
@@ -71,30 +92,6 @@ describe('useReviewKeymap', () => {
       const { handleKeyDown } = useReviewKeymap(handlers)
       handleKeyDown(makeKeyEvent('p'))
       expect(handlers.onToggleProvenance).toHaveBeenCalledOnce()
-    })
-
-    it('Spacebar (legacy key value) triggers onPreviewDiff', () => {
-      const handlers: ReviewKeymapHandlers = { onPreviewDiff: vi.fn() }
-      const { handleKeyDown } = useReviewKeymap(handlers)
-      handleKeyDown(makeKeyEvent('Spacebar'))
-      expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
-    })
-
-    it('event.code Space fallback triggers onPreviewDiff', () => {
-      const handlers: ReviewKeymapHandlers = { onPreviewDiff: vi.fn() }
-      const { handleKeyDown } = useReviewKeymap(handlers)
-      handleKeyDown({
-        key: 'Unidentified',
-        code: 'Space',
-        isComposing: false,
-        metaKey: false,
-        ctrlKey: false,
-        altKey: false,
-        target: document.createElement('div'),
-        preventDefault: vi.fn(),
-        stopPropagation: vi.fn(),
-      } as unknown as KeyboardEvent)
-      expect(handlers.onPreviewDiff).toHaveBeenCalledOnce()
     })
 
     it('unbound keys are ignored', () => {
@@ -115,10 +112,10 @@ describe('useReviewKeymap', () => {
       expect(handlers.onApply).not.toHaveBeenCalled()
     })
 
-    it('does not fire when isComposing is true (IME)', () => {
+    it('does not fire when isComposing is true', () => {
       const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
       const { handleKeyDown } = useReviewKeymap(handlers)
-      handleKeyDown(makeKeyEvent('Enter', { isComposing: true } as Partial<KeyboardEvent>))
+      handleKeyDown(makeKeyEvent('Enter', { isComposing: true }))
       expect(handlers.onApply).not.toHaveBeenCalled()
     })
 
@@ -134,15 +131,31 @@ describe('useReviewKeymap', () => {
     it('does not fire when target is a textarea', () => {
       const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
       const { handleKeyDown } = useReviewKeymap(handlers)
-      const textarea = document.createElement('textarea')
-      handleKeyDown(makeKeyEvent('Enter', { target: textarea } as unknown as Partial<KeyboardEvent>))
+      handleKeyDown(makeKeyEvent('Enter', { target: document.createElement('textarea') } as unknown as Partial<KeyboardEvent>))
       expect(handlers.onApply).not.toHaveBeenCalled()
     })
 
-    it('does not fire when modifier key is held', () => {
+    it('does not fire when target is interactive', () => {
       const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
       const { handleKeyDown } = useReviewKeymap(handlers)
-      handleKeyDown(makeKeyEvent('Enter', { ctrlKey: true } as Partial<KeyboardEvent>))
+      const button = document.createElement('button')
+      document.body.appendChild(button)
+      try {
+        handleKeyDown(makeKeyEvent('Enter', { target: button } as unknown as Partial<KeyboardEvent>))
+        expect(handlers.onApply).not.toHaveBeenCalled()
+      } finally {
+        document.body.removeChild(button)
+      }
+    })
+
+    it('does not fire with modifier keys', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers)
+
+      handleKeyDown(makeKeyEvent('Enter', { metaKey: true }))
+      handleKeyDown(makeKeyEvent('Enter', { ctrlKey: true }))
+      handleKeyDown(makeKeyEvent('Enter', { altKey: true }))
+
       expect(handlers.onApply).not.toHaveBeenCalled()
     })
 
@@ -152,16 +165,6 @@ describe('useReviewKeymap', () => {
       const event = makeKeyEvent('Enter')
       handleKeyDown(event)
       expect(event.preventDefault).not.toHaveBeenCalled()
-    })
-
-    it('does not fire when target is an interactive element (button)', () => {
-      const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
-      const { handleKeyDown } = useReviewKeymap(handlers)
-      const button = document.createElement('button')
-      document.body.appendChild(button)
-      handleKeyDown(makeKeyEvent('Enter', { target: button } as unknown as Partial<KeyboardEvent>))
-      expect(handlers.onApply).not.toHaveBeenCalled()
-      document.body.removeChild(button)
     })
   })
 
@@ -186,9 +189,19 @@ describe('isEditableTarget', () => {
     expect(isEditableTarget(document.createElement('textarea'))).toBe(true)
   })
 
+  it('returns true for select', () => {
+    expect(isEditableTarget(document.createElement('select'))).toBe(true)
+  })
+
   it('returns true for text input', () => {
     const input = document.createElement('input')
     input.type = 'text'
+    expect(isEditableTarget(input)).toBe(true)
+  })
+
+  it('returns true for email input', () => {
+    const input = document.createElement('input')
+    input.type = 'email'
     expect(isEditableTarget(input)).toBe(true)
   })
 
@@ -204,18 +217,21 @@ describe('isEditableTarget', () => {
     expect(isEditableTarget(div)).toBe(true)
   })
 
-  it('returns true for select element', () => {
-    expect(isEditableTarget(document.createElement('select'))).toBe(true)
-  })
-
-  it('returns true for element with data-review-keymap="ignore"', () => {
+  it('returns true for element with data-review-keymap ignore', () => {
     const wrapper = document.createElement('div')
     wrapper.setAttribute('data-review-keymap', 'ignore')
     const child = document.createElement('span')
     wrapper.appendChild(child)
     document.body.appendChild(wrapper)
-    expect(isEditableTarget(child)).toBe(true)
-    document.body.removeChild(wrapper)
+    try {
+      expect(isEditableTarget(child)).toBe(true)
+    } finally {
+      document.body.removeChild(wrapper)
+    }
+  })
+
+  it('returns false for plain div', () => {
+    expect(isEditableTarget(document.createElement('div'))).toBe(false)
   })
 })
 
@@ -225,26 +241,44 @@ describe('isInteractiveTarget', () => {
   })
 
   it('returns true for button', () => {
-    expect(isInteractiveTarget(document.createElement('button'))).toBe(true)
+    const button = document.createElement('button')
+    document.body.appendChild(button)
+    try {
+      expect(isInteractiveTarget(button)).toBe(true)
+    } finally {
+      document.body.removeChild(button)
+    }
   })
 
   it('returns true for anchor with href', () => {
-    const a = document.createElement('a')
-    a.href = '#'
-    document.body.appendChild(a)
-    expect(isInteractiveTarget(a)).toBe(true)
-    document.body.removeChild(a)
+    const anchor = document.createElement('a')
+    anchor.href = '#'
+    document.body.appendChild(anchor)
+    try {
+      expect(isInteractiveTarget(anchor)).toBe(true)
+    } finally {
+      document.body.removeChild(anchor)
+    }
   })
 
-  it('returns false for plain div', () => {
-    expect(isInteractiveTarget(document.createElement('div'))).toBe(false)
-  })
-
-  it('returns true for element with role="button"', () => {
+  it('returns true for role button', () => {
     const div = document.createElement('div')
     div.setAttribute('role', 'button')
     document.body.appendChild(div)
-    expect(isInteractiveTarget(div)).toBe(true)
-    document.body.removeChild(div)
+    try {
+      expect(isInteractiveTarget(div)).toBe(true)
+    } finally {
+      document.body.removeChild(div)
+    }
+  })
+
+  it('returns false for plain div', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    try {
+      expect(isInteractiveTarget(div)).toBe(false)
+    } finally {
+      document.body.removeChild(div)
+    }
   })
 })
