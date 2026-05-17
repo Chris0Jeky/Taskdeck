@@ -12,6 +12,11 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  if (!isTrustedShareTargetPost(event.request, url)) {
+    event.respondWith(new Response('Forbidden', { status: 403 }))
+    return
+  }
+
   event.respondWith((async () => {
     const form = await event.request.formData()
     const payload = {
@@ -35,6 +40,20 @@ self.addEventListener('fetch', (event) => {
     return Response.redirect(`/capture/share?fromShareTarget=1&shareId=${encodeURIComponent(shareId)}`, 303)
   })())
 })
+
+function isTrustedShareTargetPost(request, url) {
+  const origin = request.headers.get('Origin')
+  if (origin && origin !== url.origin) {
+    return false
+  }
+
+  const fetchSite = request.headers.get('Sec-Fetch-Site')
+  if (!fetchSite) {
+    return true
+  }
+
+  return fetchSite === 'none' || fetchSite === 'same-origin' || fetchSite === 'same-site'
+}
 
 self.addEventListener('message', (event) => {
   if (event.data?.type !== TASKDECK_CAPTURE_SYNC_MESSAGE) {
