@@ -13,5 +13,7 @@ public enum CaptureSource
     MeetingIntegration = 5,
     TranscriptFile = 6,
     MarkdownImport = 7,
-    WebClip = 8
+    WebClip = 8,
+    ShareTarget = 9,
+    BrowserExtension = 10
 }

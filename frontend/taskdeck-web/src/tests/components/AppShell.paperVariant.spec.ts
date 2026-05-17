@@ -86,6 +86,10 @@ vi.mock('../../composables/useViewportMode', async () => {
   return { useViewportMode: () => ({ mode: computed(() => mockViewportMode.value) }) }
 })
 
+vi.mock('../../composables/useCaptureQueueSync', () => ({
+  useCaptureQueueSync: () => ({ pendingCount: { value: 0 }, syncing: { value: 0 }, replayQueue: vi.fn(), registerBackgroundSync: vi.fn(), refreshCount: vi.fn() }),
+}))
+
 function mountShell() {
   return mount(AppShell, {
     global: {

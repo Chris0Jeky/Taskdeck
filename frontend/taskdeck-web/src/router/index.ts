@@ -48,6 +48,7 @@ const AgentRunsView = () => import('../views/AgentRunsView.vue')
 const AgentRunDetailView = () => import('../views/AgentRunDetailView.vue')
 const ApiKeySettingsView = () => import('../views/ApiKeySettingsView.vue')
 const PaperStyleGuideView = () => import('../views/PaperStyleGuideView.vue')
+const ShareTargetView = () => import('../views/ShareTargetView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -72,6 +73,16 @@ const router = createRouter({
       path: '/styleguide/paper',
       name: 'styleguide-paper',
       component: PaperStyleGuideView,
+      meta: { public: true },
+    },
+
+    // PWA share-target landing — receives GET from OS share API,
+    // queues capture offline or sends immediately. Public because
+    // the OS launches this URL directly without auth context.
+    {
+      path: '/capture/share',
+      name: 'capture-share-target',
+      component: ShareTargetView,
       meta: { public: true },
     },
 

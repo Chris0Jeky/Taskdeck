@@ -73,6 +73,10 @@ vi.mock('../../store/paperThemeStore', () => ({
   usePaperThemeStore: () => mockPaperTheme,
 }))
 
+vi.mock('../../composables/useCaptureQueueSync', () => ({
+  useCaptureQueueSync: () => ({ pendingCount: { value: 0 }, syncing: { value: false }, replayQueue: vi.fn(), registerBackgroundSync: vi.fn(), refreshCount: vi.fn() }),
+}))
+
 function mountShell() {
   return mount(AppShell, {
     global: {

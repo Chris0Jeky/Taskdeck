@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
+import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useViewportMode } from '../../composables/useViewportMode'
 import CaptureModal from '../common/CaptureModal.vue'
@@ -37,6 +38,8 @@ const session = useSessionStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
 const { mode: viewportMode } = useViewportMode()
+
+const { pendingCount: captureQueuePending, syncing: captureQueueSyncing } = useCaptureQueueSync()
 
 const sidebarRef = ref<SidebarRef | null>(null)
 const isPaperNarrow = computed(() => paperTheme.isOn && viewportMode.value !== 'desktop')
@@ -213,6 +216,22 @@ onUnmounted(() => {
 
     <div class="td-main-container">
       <OfflineBanner />
+      <Transition name="offline-banner">
+        <div
+          v-if="captureQueuePending > 0"
+          class="td-capture-queue-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="material-symbols-outlined td-capture-queue-banner__icon" aria-hidden="true">
+            {{ captureQueueSyncing ? 'sync' : 'pending' }}
+          </span>
+          <span class="td-capture-queue-banner__text">
+            {{ captureQueueSyncing ? 'Syncing' : captureQueuePending }}
+            {{ captureQueuePending === 1 ? 'capture' : 'captures' }} queued
+          </span>
+        </div>
+      </Transition>
       <SwUpdatePrompt />
       <div v-if="!isPaperNarrow" class="td-mobile-topbar">
         <button
@@ -300,6 +319,29 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: var(--td-space-8);
   background: var(--td-surface-base);
+}
+
+/* ─── Capture queue banner ─── */
+.td-capture-queue-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-3);
+  padding: var(--td-space-2) var(--td-space-4);
+  background: var(--td-color-info-light, #e8f4fd);
+  border-bottom: 1px solid var(--td-color-info, #64b5f6);
+  color: var(--td-color-info, #1565c0);
+  font-size: var(--td-font-sm);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.td-capture-queue-banner__icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.td-capture-queue-banner__text {
+  line-height: 1.4;
 }
 
 /* ─── Mobile top bar (hamburger) ─── */
