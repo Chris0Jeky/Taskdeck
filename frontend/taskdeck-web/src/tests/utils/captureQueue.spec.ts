@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto'
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import {
   enqueueCapture,
+  assignCaptureOwner,
   dequeueCapture,
   getAllPending,
   getAllQueuedCaptures,
@@ -98,6 +99,20 @@ describe('captureQueue', () => {
       lastError: 'HTTP 400',
     })
     expect(queued[0].failedAt).toBeTruthy()
+  })
+
+  it('assigns an owner to a pending ownerless capture', async () => {
+    const id = await enqueueCapture(makeDto('Login required capture'))
+
+    await assignCaptureOwner(id, 'user-1')
+
+    const pending = await getAllPending()
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({
+      id,
+      ownerUserId: 'user-1',
+      status: 'pending',
+    })
   })
 
   it('handles multiple captures in FIFO order', async () => {

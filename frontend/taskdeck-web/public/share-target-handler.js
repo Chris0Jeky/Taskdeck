@@ -41,14 +41,24 @@ self.addEventListener('sync', (event) => {
     return
   }
 
-  event.waitUntil((async () => {
-    const clients = await self.clients.matchAll({
-      type: 'window',
-      includeUncontrolled: true,
-    })
-
-    for (const client of clients) {
-      client.postMessage({ type: TASKDECK_CAPTURE_SYNC_MESSAGE })
-    }
-  })())
+  event.waitUntil(notifyWindowClientsToReplayCaptureQueue())
 })
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type !== TASKDECK_CAPTURE_SYNC_MESSAGE) {
+    return
+  }
+
+  event.waitUntil(notifyWindowClientsToReplayCaptureQueue())
+})
+
+async function notifyWindowClientsToReplayCaptureQueue() {
+  const clients = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  })
+
+  for (const client of clients) {
+    client.postMessage({ type: TASKDECK_CAPTURE_SYNC_MESSAGE })
+  }
+}

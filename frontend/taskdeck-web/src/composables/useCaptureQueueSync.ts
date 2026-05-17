@@ -1,5 +1,5 @@
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getAllPending, dequeueCapture, incrementRetry, markCaptureFailed } from '../utils/captureQueue'
+import { getAllPending, dequeueCapture, incrementRetry, markCaptureFailed, assignCaptureOwner } from '../utils/captureQueue'
 import type { QueuedCapture } from '../utils/captureQueue'
 import { useCaptureStore } from '../store/captureStore'
 import { useSessionStore } from '../store/sessionStore'
@@ -74,13 +74,20 @@ export function useCaptureQueueSync() {
         }
 
         if (!entry.ownerUserId) {
-          logWarn('Capture queue: parking entry without an owner', {
+          if (!currentUserId) {
+            logWarn('Capture queue: waiting for login before replaying ownerless entry', {
+              id: entry.id,
+              queuedAt: entry.queuedAt,
+            })
+            continue
+          }
+
+          await assignCaptureOwner(entry.id, currentUserId)
+          entry.ownerUserId = currentUserId
+          logWarn('Capture queue: assigned owner to login-required entry', {
             id: entry.id,
             queuedAt: entry.queuedAt,
           })
-          await markCaptureFailed(entry.id, 'Missing queue owner')
-          pendingCount.value--
-          continue
         }
 
         if (!currentUserId || entry.ownerUserId !== currentUserId) {
@@ -129,6 +136,12 @@ export function useCaptureQueueSync() {
     return false
   }
 
+  function requestServiceWorkerQueueReplay() {
+    if (!('serviceWorker' in navigator)) return
+    const controller = navigator.serviceWorker.controller
+    controller?.postMessage({ type: SYNC_MESSAGE_TYPE })
+  }
+
   function registerServiceWorkerMessageReplay() {
     if (!('serviceWorker' in navigator)) return
     serviceWorkerMessageHandler = (event: MessageEvent<unknown>) => {
@@ -152,6 +165,7 @@ export function useCaptureQueueSync() {
     onlineHandler = () => {
       if (isOnline.value) {
         void replayQueue()
+        requestServiceWorkerQueueReplay()
       }
     }
     window.addEventListener('online', onlineHandler)
