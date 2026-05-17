@@ -171,6 +171,31 @@ export async function markCaptureFailed(id: string, lastError: string): Promise<
   })
 }
 
+export async function assignCaptureOwner(id: string, ownerUserId: string): Promise<void> {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    const getReq = store.get(id)
+    getReq.onsuccess = () => {
+      const entry = getReq.result as QueuedCapture | undefined
+      if (entry && (entry.status ?? 'pending') === 'pending' && !entry.ownerUserId) {
+        entry.ownerUserId = ownerUserId
+        entry.status = 'pending'
+        store.put(entry)
+      }
+    }
+    tx.oncomplete = () => {
+      db.close()
+      resolve()
+    }
+    tx.onerror = () => {
+      db.close()
+      reject(tx.error)
+    }
+  })
+}
+
 export async function getPendingCount(): Promise<number> {
   const pending = await getAllPending()
   return pending.length

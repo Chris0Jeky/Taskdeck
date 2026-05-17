@@ -78,6 +78,34 @@ describe('useCaptureQueueSync', () => {
     expect(await getAllPending()).toHaveLength(1)
   })
 
+  it('claims an ownerless login-required capture once a user session exists', async () => {
+    await enqueueCapture(makeDto('Needs login'))
+    const { sync } = mountSyncComposable()
+
+    const replayed = await sync.replayQueue()
+
+    expect(replayed).toBe(1)
+    expect(createItemMock).toHaveBeenCalledWith(expect.objectContaining({ text: 'Needs login' }))
+    expect(await getAllPending()).toHaveLength(0)
+  })
+
+  it('keeps ownerless captures pending until a user session exists', async () => {
+    sessionMock.userId = null
+    await enqueueCapture(makeDto('Needs login'))
+    const { sync } = mountSyncComposable()
+
+    const replayed = await sync.replayQueue()
+
+    expect(replayed).toBe(0)
+    expect(createItemMock).not.toHaveBeenCalled()
+    const pending = await getAllPending()
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({
+      ownerUserId: null,
+      status: 'pending',
+    })
+  })
+
   it('parks non-transient failures without deleting the queued payload', async () => {
     createItemMock.mockRejectedValueOnce({ response: { status: 400 } })
     await enqueueCapture(makeDto('Invalid payload'), 'user-1')
@@ -132,6 +160,7 @@ describe('useCaptureQueueSync', () => {
     let messageHandler: ((event: MessageEvent<unknown>) => void) | null = null
     const serviceWorker = {
       ready: Promise.resolve({ sync: { register: vi.fn() } }),
+      controller: { postMessage: vi.fn() },
       addEventListener: vi.fn((_event: string, handler: (event: MessageEvent<unknown>) => void) => {
         messageHandler = handler
       }),
