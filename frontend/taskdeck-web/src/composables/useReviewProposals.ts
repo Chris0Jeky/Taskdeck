@@ -262,8 +262,12 @@ export function useReviewProposals() {
     return `/workspace/inbox${query}${hash}`
   }
 
+  function safeNavigate(to: Parameters<typeof router.push>[0]) {
+    router.push(to).catch(() => {})
+  }
+
   function openInbox() {
-    void router.push(inboxPath(activeBoardFilter.value))
+    safeNavigate(inboxPath(activeBoardFilter.value))
   }
 
   function proposalHref(proposal: ApiProposal): string {
@@ -282,26 +286,26 @@ export function useReviewProposals() {
   }
 
   function openRoute(path: string) {
-    void router.push(path)
+    safeNavigate(path)
   }
 
   function openBoard(boardId: string) {
-    void router.push(`/workspace/boards/${boardId}`)
+    safeNavigate(`/workspace/boards/${boardId}`)
   }
 
   function applyBoardFilter(boardId: string) {
     const trimmed = boardId.trim()
     boardFilterInput.value = ''
     if (trimmed) {
-      void router.push({ name: 'workspace-review', query: { boardId: trimmed } })
+      safeNavigate({ name: 'workspace-review', query: { boardId: trimmed } })
     } else {
-      void router.push({ name: 'workspace-review' })
+      safeNavigate({ name: 'workspace-review' })
     }
   }
 
   function clearBoardFilter() {
     boardFilterInput.value = ''
-    void router.push({ name: 'workspace-review' })
+    safeNavigate({ name: 'workspace-review' })
   }
 
   // --- Watchers ---
