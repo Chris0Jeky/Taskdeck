@@ -7,10 +7,11 @@ import { StatusResetGuard } from './statusReset';
 let statusBarItem: vscode.StatusBarItem | undefined;
 let client: TaskdeckClient;
 let disposed = false;
-const statusResetGuard = new StatusResetGuard();
+let statusResetGuard: StatusResetGuard;
 
 export function activate(extensionContext: vscode.ExtensionContext): void {
   disposed = false;
+  statusResetGuard = new StatusResetGuard();
   client = new TaskdeckClient(extensionContext);
 
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 50);
@@ -78,7 +79,9 @@ async function captureFileContext(): Promise<void> {
 
 async function sendCapture(text: string, titleHint: string | null, externalRef: string | null): Promise<void> {
   const statusGeneration = statusResetGuard.nextGeneration();
-  setStatusText('$(sync~spin) Sending...');
+  if (statusResetGuard.isCurrent(statusGeneration)) {
+    setStatusText('$(sync~spin) Sending...');
+  }
 
   try {
     await client.createCapture({
