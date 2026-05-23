@@ -1,8 +1,8 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-05-16
+Last Updated: 2026-05-23
 
-Bulk merge wave: 15 PRs merged to main (security, testing, features, dependencies). All adversarial-reviewed (2+ rounds), CI green, zero open PRs remaining.
+Post-merge follow-up wave: PRs `#1077`–`#1084` merged (RFAI-10 PWA share-target, PAPER-05 board kanban, composable test coverage, encoding fix). RFAI-10 and PAPER-05 now delivered. 2 open feature PRs (#1079 RFAI-11, #1080 RFAI-12) and 6 dependabot PRs awaiting triage.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -30,8 +30,16 @@ Bulk merge wave (2026-05-16, PRs `#1055`–`#1074`, 15 PRs, all with 2+ rounds o
 - **PAPER frontend** (2 PRs): Today dossier real backend API wiring (`#1056`, PAPER-08), narrow companions with sidebar variants + board snap scroll (`#1057`, PAPER-11)
 - **Dependency updates** (3 PRs): `actions/dependency-review-action` 4→5 (`#1059`), npm minor/patch group 11 updates (`#1060`), NuGet minor/patch group 4 updates (`#1061`)
 - Post-merge verification: 6,532 backend tests pass (0 failures), 3,267 frontend tests pass (0 failures), both builds clean
-- Roadmap v4 RFAI progress: RFAI-01 through RFAI-09 now fully delivered (9 of 12 issues); remaining: RFAI-10 (PWA share-target), RFAI-11 (ambient channel), RFAI-12 (learning loop UI + beta gate)
-- PAPER progress: PAPER-03 (shell), PAPER-08 (today dossier), PAPER-11 (narrow companions) now delivered; remaining: PAPER-05 (board/kanban surface)
+- Roadmap v4 RFAI progress: RFAI-01 through RFAI-10 now fully delivered (10 of 12 issues); remaining: RFAI-11 (ambient channel, PR `#1079` open), RFAI-12 (learning loop UI + beta gate, PR `#1080` open)
+- PAPER progress: PAPER-03 (shell), PAPER-05 (board/kanban surface), PAPER-08 (today dossier), PAPER-11 (narrow companions) now delivered; all PAPER issues closed
+
+Post-merge follow-up (2026-05-17, PRs `#1077`–`#1084`, 5 PRs merged after the bulk wave):
+- **RFAI-10** (`#982`/`#1078`): PWA share-target quick capture with offline queue, browser extension prototype, share captures preserved after auth rejection, ambiguous POST provenance fail-closed; issue closed
+- **PAPER-05** (`#1001`/`#1083`): Paper board card drag E2E test with audit-log assertion
+- **Bug fix** (`#1077`): Encoding artifact in PaperBoardCard drag handle
+- **Test coverage** (`#1082`, `#1084`): Composable unit tests for inkBleed, reviewKeymap, useInboxOrchestrator, useReviewProposals
+- Roadmap RFAI progress: 10 of 12 delivered; 2 remaining (RFAI-11 `#1079`, RFAI-12 `#1080`)
+- PAPER progress: all 4 PAPER issues now delivered (PAPER-03, PAPER-05, PAPER-08, PAPER-11)
 
 Agentic operating layer expansion (2026-05-11):
 - Taskdeck now has a shared agentic protocol layer under `docs/agentic/` for blocker-question batching, failure/workaround capture, guide-update promotion rules, and skill routing.
@@ -68,7 +76,7 @@ Roadmap v4 second-wave delivery (2026-04-25, PRs `#989`--`#994` + `#995`):
 
 Current constraints are mostly hardening and consistency:
 - `taskdeck-12-week-roadmap-v4.md` has been promoted from research input into the active near-horizon planning spine via tracker `#972` and child issues `#973`--`#984`. The accepted framing is: automation-originated board writes must stay proposal-first, manual board UI writes stay direct and auditable as user-manual activity, and outbound data flow must be guarded separately through the EgressEnvelope/disclosure/MCP-hash/telemetry controls.
-- Roadmap v4 execution progress: RFAI-01 through RFAI-09 now fully delivered (9 of 12 issues, including RFAI-07 hybrid retrieval merged in `#1050` and RFAI-09 agent runtime hardening merged in `#1052`); remaining: RFAI-10 (PWA share-target), RFAI-11 (ambient channel), RFAI-12 (learning loop UI + beta gate).
+- Roadmap v4 execution progress: RFAI-01 through RFAI-10 now fully delivered (10 of 12 issues); remaining: RFAI-11 (ambient channel, PR `#1079` open), RFAI-12 (learning loop UI + beta gate, PR `#1080` open, stacked on `#1079`).
 - Codex and Claude high-autonomy issue execution now have first-class local guidance: `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/skills/README.md`, `.claude/README.md`, `.claude/skills/README.md`, `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`, generalized worktree protocol, PowerShell git/worktree guards, GitHub helper scripts, Project v2 priority audit/sync support, and dedicated skills for batch orchestration, worktree issue workers, PR review loops, CI/conflict recovery, question batching, failure capture, and interface-map maintenance. A reusable Gitleaks workflow syntax issue in the summary heredoc has been corrected after the workflow began failing before job creation.
 - ~~**security bug discovered 2026-04-03**: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `ChangePassword` now derives userId exclusively from JWT claims; `[Authorize]` enforced; `UserId` removed from request body; `AuthController` inherits `AuthenticatedControllerBase`; 5 integration tests proving the fix
 - security and identity behavior is converging but still not uniform across all controller families
