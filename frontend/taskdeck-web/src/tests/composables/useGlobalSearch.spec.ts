@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { nextTick } from 'vue'
+import { effectScope, nextTick } from 'vue'
 import { useGlobalSearch } from '../../composables/useGlobalSearch'
 
 const mockSearchResult = {
@@ -284,5 +284,25 @@ describe('useGlobalSearch', () => {
     // Second call should have offset = 1 (number of cards from first result)
     const secondCall = mockSearch.mock.calls[1]
     expect(secondCall[2]).toEqual(expect.objectContaining({ offset: 1 }))
+  })
+
+  it('clears debounce timer and aborts in-flight request on scope disposal', async () => {
+    const scope = effectScope()
+    let search: ReturnType<typeof useGlobalSearch>
+
+    scope.run(() => {
+      search = useGlobalSearch(200)
+    })
+
+    mockSearch.mockImplementation(() => new Promise(() => {}))
+    search!.query.value = 'test query'
+    await nextTick()
+
+    scope.stop()
+
+    vi.advanceTimersByTime(300)
+    await nextTick()
+
+    expect(mockSearch).not.toHaveBeenCalled()
   })
 })
