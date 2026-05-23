@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { onScopeDispose, ref, watch } from 'vue'
 import { searchApi } from '../api/searchApi'
 import type { SearchBoardHit, SearchCardHit } from '../api/searchApi'
 
@@ -147,6 +147,17 @@ export function useGlobalSearch(debounceMs = 250) {
     debounceTimer = setTimeout(() => {
       void executeSearch(newQuery)
     }, debounceMs)
+  })
+
+  onScopeDispose(() => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
   })
 
   return {
