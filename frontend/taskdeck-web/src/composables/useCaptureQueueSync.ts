@@ -156,7 +156,7 @@ export function useCaptureQueueSync() {
   }
 
   onMounted(() => {
-    refreshCount().catch(() => {})
+    refreshCount().catch((err) => logWarn('Capture queue count refresh failed on mount:', err))
     registerServiceWorkerMessageReplay()
 
     onlineHandler = () => {
