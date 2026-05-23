@@ -146,3 +146,4 @@ StrykerOutput/
 stryker-tmp/
 frontend/*/reports/mutation/
 /.worktrees
+/extensions/vscode-taskdeck/node_modules
