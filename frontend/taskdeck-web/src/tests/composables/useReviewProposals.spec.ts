@@ -10,7 +10,7 @@ const {
 } = vi.hoisted(() => {
   return {
     watchers: [] as Array<[unknown, () => void]>,
-    mockRouter: { push: vi.fn(), replace: vi.fn() },
+    mockRouter: { push: vi.fn().mockResolvedValue(undefined), replace: vi.fn().mockResolvedValue(undefined) },
     mockRoute: { hash: '', query: {} as Record<string, string> },
     mockAutomationApi: {
       getProposals: vi.fn(() => Promise.resolve([])),
