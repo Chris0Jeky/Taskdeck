@@ -1,5 +1,3 @@
-import * as path from 'node:path';
-
 export interface WorkspaceContext {
   relativePath: string | null;
   language: string;
@@ -25,7 +23,8 @@ export function getSafeDocumentLabel(context: DocumentLabelContext): string | nu
 
   if (context.uriScheme === 'file') {
     const localPath = context.uriFsPath.trim() || context.fileName.trim();
-    const fileName = path.basename(localPath).trim();
+    const normalized = localPath.replace(/\\/g, '/');
+    const fileName = normalized.split('/').pop()?.trim() ?? '';
     return fileName || null;
   }
 
