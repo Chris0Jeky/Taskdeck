@@ -31,8 +31,8 @@ public class AutomationMetricsController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out _, out var errorResult))
             return errorResult!;
 
-        var fromDate = from ?? DateTime.UtcNow.AddDays(-30);
         var toDate = to ?? DateTime.UtcNow;
+        var fromDate = from ?? toDate.AddDays(-30);
 
         if (fromDate >= toDate)
             return BadRequest(new ApiErrorResponse(
