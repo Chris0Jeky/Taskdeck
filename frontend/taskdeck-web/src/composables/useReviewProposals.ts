@@ -1,4 +1,4 @@
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { boardsApi } from '../api/boardsApi'
@@ -47,6 +47,8 @@ export function useReviewProposals() {
       clockInterval = null
     }
   }
+
+  onScopeDispose(stopClock)
 
   const completedStatuses = new Set(['Applied', 'Rejected', 'Failed', 'Expired', 'Dismissed'])
 
