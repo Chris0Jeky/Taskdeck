@@ -1,4 +1,4 @@
-import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, onScopeDispose, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { Proposal as ApiProposal } from '../types/automation'
 import { proposalDeepReviewApi } from '../api/proposalDeepReviewApi'
 import type {
@@ -264,6 +264,13 @@ export function usePaperReviewSelectors(
     const applied = rows.filter((r) => r.verdict === 'applied').length
     const total = rows.length
     return { applied, total, ratio: total === 0 ? 0 : applied / total }
+  })
+
+  onScopeDispose(() => {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
   })
 
   const loading = computed(() => isLoading.value)
