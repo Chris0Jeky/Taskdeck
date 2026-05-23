@@ -3,6 +3,7 @@ import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
 import type { Card, CardCaptureProvenance, Label } from '../types/board'
 import type { CardComment } from '../types/comments'
+import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
 
 export interface UseCardModalOptions {
@@ -16,6 +17,7 @@ export interface UseCardModalOptions {
 export function useCardModal(options: UseCardModalOptions) {
   const boardStore = useBoardStore()
   const sessionStore = useSessionStore()
+  const toastStore = useToastStore()
 
   // Form state
   const title = ref('')
@@ -156,6 +158,7 @@ export function useCardModal(options: UseCardModalOptions) {
       options.onClose()
     } catch (error) {
       logError('Failed to update card:', error)
+      toastStore.show('Failed to save card changes. Please try again.', 'error')
     }
   }
 
