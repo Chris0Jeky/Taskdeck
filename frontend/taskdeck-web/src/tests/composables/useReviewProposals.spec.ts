@@ -7,6 +7,7 @@ const {
   mockAutomationApi,
   mockBoardsApi,
   mockToast,
+  mockOnScopeDispose,
 } = vi.hoisted(() => {
   return {
     watchers: [] as Array<[unknown, () => void]>,
@@ -20,6 +21,7 @@ const {
       getBoards: vi.fn(() => Promise.resolve([])),
     },
     mockToast: { error: vi.fn(), info: vi.fn() },
+    mockOnScopeDispose: vi.fn(),
   }
 })
 
@@ -28,7 +30,7 @@ vi.mock('vue', () => ({
   computed: (fn: () => unknown) => ({ get value() { return fn() } }),
   watch: (source: unknown, cb: () => void) => { watchers.push([source, cb]) },
   nextTick: vi.fn(() => Promise.resolve()),
-  onScopeDispose: vi.fn(),
+  onScopeDispose: mockOnScopeDispose,
 }))
 
 vi.mock('vue-router', () => ({
@@ -426,6 +428,20 @@ describe('useReviewProposals', () => {
       const afterStop = rp.nowMs.value
       vi.advanceTimersByTime(60_000)
       expect(rp.nowMs.value).toBe(afterStop)
+    })
+
+    it('registers stopClock via onScopeDispose', () => {
+      vi.useFakeTimers()
+      mockOnScopeDispose.mockClear()
+      const rp = useReviewProposals()
+      expect(mockOnScopeDispose).toHaveBeenCalledWith(expect.any(Function))
+
+      rp.startClock()
+      const registered = mockOnScopeDispose.mock.calls[0][0] as () => void
+      registered()
+      const afterDispose = rp.nowMs.value
+      vi.advanceTimersByTime(60_000)
+      expect(rp.nowMs.value).toBe(afterDispose)
     })
   })
 
