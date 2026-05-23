@@ -27,7 +27,7 @@ public class OllamaLlmProvider : ILlmProvider
             .LastOrDefault(m => string.Equals(m.Role, "User", StringComparison.OrdinalIgnoreCase))
             ?.Content ?? string.Empty;
 
-        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var validationError, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? true))
+        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var validationError, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? false))
         {
             _logger.LogWarning("Ollama provider configuration invalid: {Error}", validationError);
             return BuildFallbackResult(lastUserMessage, "Local provider configuration is invalid.", GetConfiguredModelOrDefault());
@@ -141,7 +141,7 @@ public class OllamaLlmProvider : ILlmProvider
 
     public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
     {
-        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var error, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? true))
+        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var error, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? false))
         {
             return Task.FromResult(new LlmHealthStatus(false, "Ollama", error, GetConfiguredModelOrDefault()));
         }
@@ -153,7 +153,7 @@ public class OllamaLlmProvider : ILlmProvider
     {
         var model = GetConfiguredModelOrDefault();
 
-        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var validationError, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? true))
+        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var validationError, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? false))
         {
             return new LlmHealthStatus(false, "Ollama", validationError, model, IsProbed: true);
         }
