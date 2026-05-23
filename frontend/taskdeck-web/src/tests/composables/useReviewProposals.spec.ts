@@ -28,11 +28,14 @@ vi.mock('vue', () => ({
   computed: (fn: () => unknown) => ({ get value() { return fn() } }),
   watch: (source: unknown, cb: () => void) => { watchers.push([source, cb]) },
   nextTick: vi.fn(() => Promise.resolve()),
+  onScopeDispose: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
   useRoute: () => mockRoute,
   useRouter: () => mockRouter,
+  isNavigationFailure: () => false,
+  NavigationFailureType: { aborted: 4, cancelled: 8, duplicated: 16 },
 }))
 
 vi.mock('../../api/automationApi', () => ({
@@ -75,6 +78,10 @@ vi.mock('../../composables/usePerformanceMark', () => ({
 
 vi.mock('../../composables/useErrorMapper', () => ({
   getErrorDisplay: (_e: unknown, fallback: string) => ({ message: fallback }),
+}))
+
+vi.mock('../../utils/errorReporting', () => ({
+  logError: vi.fn(),
 }))
 
 import { useReviewProposals } from '../../composables/useReviewProposals'

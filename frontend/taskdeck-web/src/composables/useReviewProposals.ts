@@ -1,5 +1,5 @@
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { boardsApi } from '../api/boardsApi'
 import type { ReviewSummaryCard } from '../components/review/ReviewSummaryCards.vue'
@@ -13,6 +13,7 @@ import { normalizeBoardIdQueryParam } from '../utils/navigation'
 import type { Proposal as ApiProposal } from '../types/automation'
 import type { Board } from '../types/board'
 import { getErrorDisplay } from './useErrorMapper'
+import { logError } from '../utils/errorReporting'
 import { usePerformanceMark } from './usePerformanceMark'
 
 export function useReviewProposals() {
@@ -182,6 +183,16 @@ export function useReviewProposals() {
     return candidate?.response?.status === 404
   }
 
+  async function safeReplace(to: Parameters<typeof router.replace>[0]) {
+    try {
+      await router.replace(to)
+    } catch (err) {
+      if (!isNavigationFailure(err, NavigationFailureType.duplicated | NavigationFailureType.cancelled | NavigationFailureType.aborted)) {
+        logError('Unexpected navigation failure:', err)
+      }
+    }
+  }
+
   async function openProposalFromHash() {
     if (proposalsLoading.value) return
     const proposalId = getProposalIdFromHash(route.hash)
@@ -190,7 +201,7 @@ export function useReviewProposals() {
     const currentProposal = proposals.value.find((p) => p.id === proposalId)
     if (currentProposal) {
       if (!matchesActiveBoardFilter(currentProposal.boardId)) {
-        await router.replace({ name: 'workspace-review', query: route.query })
+        await safeReplace({ name: 'workspace-review', query: route.query })
         return
       }
       await scrollToProposalFromHash()
@@ -201,7 +212,7 @@ export function useReviewProposals() {
       const fetchedProposal = await automationApi.getProposal(proposalId)
       if (getProposalIdFromHash(route.hash) !== proposalId) return
       if (!matchesActiveBoardFilter(fetchedProposal.boardId)) {
-        await router.replace({ name: 'workspace-review', query: route.query })
+        await safeReplace({ name: 'workspace-review', query: route.query })
         return
       }
       upsertProposal(fetchedProposal)
@@ -210,7 +221,7 @@ export function useReviewProposals() {
     } catch (e: unknown) {
       if (getProposalIdFromHash(route.hash) !== proposalId) return
       if (isHttpNotFound(e)) {
-        await router.replace({ name: 'workspace-review', query: route.query })
+        await safeReplace({ name: 'workspace-review', query: route.query })
         return
       }
       toast.error(getErrorDisplay(e, 'Failed to load proposal').message)
@@ -263,7 +274,11 @@ export function useReviewProposals() {
   }
 
   function safeNavigate(to: Parameters<typeof router.push>[0]) {
-    router.push(to).catch(() => {})
+    router.push(to).catch((err) => {
+      if (!isNavigationFailure(err, NavigationFailureType.duplicated | NavigationFailureType.cancelled | NavigationFailureType.aborted)) {
+        logError('Unexpected navigation failure:', err)
+      }
+    })
   }
 
   function openInbox() {
@@ -312,12 +327,12 @@ export function useReviewProposals() {
 
   watch(
     () => route.hash,
-    () => { void openProposalFromHash() },
+    () => { openProposalFromHash().catch(() => {}) },
   )
 
   watch(
     () => activeBoardFilter.value,
-    () => { void loadProposals() },
+    () => { loadProposals().catch(() => {}) },
   )
 
   return {
