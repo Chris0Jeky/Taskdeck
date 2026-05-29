@@ -50,6 +50,21 @@ describe('extractParseHint', () => {
     expect(extractParseHint(content)).toBeNull()
   })
 
+  it('de-duplicates repeated supportedPatterns so list keys stay unique', () => {
+    const payload = {
+      supportedPatterns: ['create card "title"', 'archive card {id}', 'create card "title"'],
+      exampleInstruction: 'create card "test"',
+      closestPattern: 'create card "title"',
+      detectedIntent: null,
+    }
+    const content = `Text[PARSE_HINT]${JSON.stringify(payload)}`
+
+    const result = extractParseHint(content)
+
+    expect(result).not.toBeNull()
+    expect(result!.hint.supportedPatterns).toEqual(['create card "title"', 'archive card {id}'])
+  })
+
   it('trims trailing whitespace from text before hint', () => {
     const payload = {
       supportedPatterns: ['create card "title"'],
