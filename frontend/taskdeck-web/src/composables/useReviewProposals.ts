@@ -36,6 +36,10 @@ export function useReviewProposals() {
   let clockInterval: ReturnType<typeof setInterval> | null = null
 
   function startClock() {
+    // Guard against double-start: a second call would overwrite clockInterval
+    // and permanently leak the first interval (neither stopClock nor
+    // onScopeDispose can clear a handle they no longer hold).
+    if (clockInterval !== null) return
     clockInterval = setInterval(() => {
       nowMs.value = Date.now()
     }, 60_000)

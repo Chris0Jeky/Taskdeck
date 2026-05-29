@@ -443,6 +443,24 @@ describe('useReviewProposals', () => {
       vi.advanceTimersByTime(60_000)
       expect(rp.nowMs.value).toBe(afterDispose)
     })
+
+    it('startClock is idempotent so a double call cannot leak an interval', () => {
+      vi.useFakeTimers()
+      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
+      const rp = useReviewProposals()
+
+      rp.startClock()
+      rp.startClock() // second call must be a no-op (guarded)
+      expect(setIntervalSpy).toHaveBeenCalledTimes(1)
+
+      // A single stopClock fully halts the clock — proving no orphaned interval.
+      rp.stopClock()
+      const afterStop = rp.nowMs.value
+      vi.advanceTimersByTime(120_000)
+      expect(rp.nowMs.value).toBe(afterStop)
+
+      setIntervalSpy.mockRestore()
+    })
   })
 
   describe('matchesActiveBoardFilter', () => {
