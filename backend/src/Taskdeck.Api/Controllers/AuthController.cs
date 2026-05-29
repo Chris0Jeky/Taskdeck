@@ -61,6 +61,7 @@ public class AuthController : AuthenticatedControllerBase
     /// <response code="401">Invalid credentials.</response>
     /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("login")]
+    [AllowAnonymous]
     [SuppressModelStateValidation]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
@@ -90,6 +91,7 @@ public class AuthController : AuthenticatedControllerBase
     /// <response code="400">Validation error (e.g., duplicate username/email).</response>
     /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("register")]
+    [AllowAnonymous]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
@@ -177,6 +179,7 @@ public class AuthController : AuthenticatedControllerBase
     /// derives the intent from authentication state to prevent user-controlled bypass.
     /// </summary>
     [HttpGet("github/login")]
+    [AllowAnonymous]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public IActionResult GitHubLogin([FromQuery] string? returnUrl = null)
     {
@@ -211,6 +214,7 @@ public class AuthController : AuthenticatedControllerBase
     /// Handles the GitHub OAuth callback, creates/links the user, and redirects with a JWT token.
     /// </summary>
     [HttpGet("github/callback")]
+    [AllowAnonymous]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public async Task<IActionResult> GitHubCallback([FromQuery] string? returnUrl = null)
     {
@@ -343,6 +347,7 @@ public class AuthController : AuthenticatedControllerBase
     /// JWT is re-issued fresh at exchange time -- never stored in the database.
     /// </summary>
     [HttpPost("github/exchange")]
+    [AllowAnonymous]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public async Task<IActionResult> ExchangeCode([FromBody] ExchangeCodeRequest request)
     {
@@ -504,6 +509,7 @@ public class AuthController : AuthenticatedControllerBase
     /// Returns available authentication providers on this instance.
     /// </summary>
     [HttpGet("providers")]
+    [AllowAnonymous]
     public IActionResult GetProviders()
     {
         var oidcProviders = _oidcSettings.ConfiguredProviders
@@ -521,6 +527,7 @@ public class AuthController : AuthenticatedControllerBase
     /// Initiates OIDC login flow for a named provider. Only available when the provider is configured.
     /// </summary>
     [HttpGet("oidc/{providerName}/login")]
+    [AllowAnonymous]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public IActionResult OidcLogin(string providerName, [FromQuery] string? returnUrl = null)
     {
@@ -547,6 +554,7 @@ public class AuthController : AuthenticatedControllerBase
     /// Handles the OIDC callback, creates/links the user, and redirects with a short-lived code.
     /// </summary>
     [HttpGet("oidc/{providerName}/callback")]
+    [AllowAnonymous]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public async Task<IActionResult> OidcCallback(string providerName, [FromQuery] string? returnUrl = null)
     {
@@ -628,6 +636,7 @@ public class AuthController : AuthenticatedControllerBase
     /// Reuses the same database-backed code store as GitHub OAuth.
     /// </summary>
     [HttpPost("oidc/exchange")]
+    [AllowAnonymous]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public async Task<IActionResult> OidcExchangeCode([FromBody] ExchangeCodeRequest request)
     {
