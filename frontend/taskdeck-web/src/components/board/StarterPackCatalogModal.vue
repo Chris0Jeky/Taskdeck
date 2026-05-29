@@ -80,9 +80,10 @@ useEscapeToClose(() => props.isOpen, handleClose)
           <button
             type="button"
             class="sp-close-btn transition-colors"
+            aria-label="Close starter packs"
             @click="handleClose"
           >
-            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
