@@ -2,7 +2,7 @@
 
 Last Updated: 2026-05-23
 
-Post-merge follow-up wave: PRs `#1077`–`#1084` merged (RFAI-10 PWA share-target, PAPER-05 board kanban, composable test coverage, encoding fix). RFAI-10 and PAPER-05 now delivered. 2 open feature PRs (#1079 RFAI-11, #1080 RFAI-12) and 6 dependabot PRs awaiting triage.
+Post-merge follow-up wave: PRs `#1076`–`#1078` and `#1082`–`#1084` merged (6 PRs: RFAI-10 PWA share-target, PAPER-05 board kanban, composable test coverage, encoding fix). RFAI-10 and PAPER-05 now delivered. 2 open feature PRs (#1079 RFAI-11, #1080 RFAI-12, both still open — not in the merged set above) and 6 dependabot PRs awaiting triage.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -33,7 +33,7 @@ Bulk merge wave (2026-05-16, PRs `#1055`–`#1074`, 15 PRs, all with 2+ rounds o
 - Roadmap v4 RFAI progress: RFAI-01 through RFAI-09 now fully delivered (9 of 12 issues); remaining: RFAI-10 (PWA share-target), RFAI-11 (ambient channel), RFAI-12 (learning loop UI + beta gate)
 - PAPER progress: PAPER-03 (shell), PAPER-08 (today dossier), PAPER-11 (narrow companions) now delivered; remaining: PAPER-05 (board/kanban surface)
 
-Post-merge follow-up (2026-05-17, PRs `#1076`–`#1084`, 6 PRs merged after the bulk wave):
+Post-merge follow-up (2026-05-17, PRs `#1076`–`#1078` and `#1082`–`#1084`, 6 PRs merged after the bulk wave; `#1079`/`#1080` remain open):
 - **RFAI-10** (`#982`/`#1078`): PWA share-target quick capture with offline queue, browser extension prototype, share captures preserved after auth rejection, ambiguous POST provenance fail-closed; issue closed
 - **PAPER-05** (`#1001`/`#1083`): Paper board card drag E2E test with audit-log assertion
 - **Bug fix** (`#1077`): Encoding artifact in PaperBoardCard drag handle
