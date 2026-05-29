@@ -48,6 +48,7 @@ const props = defineProps<{
   fields: FieldDiff[]
   changeSubTitle: string
   provenance: ProvenanceRow[]
+  proposalId: string
   sideEffects: SideEffects
   conflicts: ConflictRow[]
   history: HistoryRow[]
@@ -58,6 +59,7 @@ const emit = defineEmits<{
   (event: 'reject'): void
   (event: 'request-edit'): void
   (event: 'defer'): void
+  (event: 'report', proposalId: string): void
 }>()
 
 const dialSubline = computed(() =>
@@ -113,7 +115,7 @@ const dialSubline = computed(() =>
       :sub-title="changeSubTitle"
     />
 
-    <ReviewProvenance :rows="provenance" />
+    <ReviewProvenance :rows="provenance" :proposal-id="proposalId" @report="emit('report', $event)" />
     <ReviewSideEffects :data="sideEffects" />
     <ReviewConflicts :rows="conflicts" />
     <ReviewHistory :rows="history" />

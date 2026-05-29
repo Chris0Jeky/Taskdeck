@@ -175,6 +175,13 @@ public sealed class EgressRegistry : IEgressRegistry
                 ToolOrAgentName: "GeminiLlmProvider",
                 Classification: EgressDataClassification.UserContent),
 
+            // Ollama local LLM provider (localhost — no data leaves the machine)
+            new EgressEntry(
+                Host: "localhost",
+                PayloadCategory: "LLM prompt with board context and user input (local inference)",
+                ToolOrAgentName: "OllamaLlmProvider",
+                Classification: EgressDataClassification.UserContent),
+
             // Outbound webhooks (user-configured destinations)
             new EgressEntry(
                 Host: "*.webhook.site",

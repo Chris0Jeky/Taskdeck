@@ -4,7 +4,8 @@ public enum LlmProviderKind
 {
     Mock = 0,
     OpenAi = 1,
-    Gemini = 2
+    Gemini = 2,
+    Ollama = 3
 }
 
 public sealed record LlmProviderDecision(LlmProviderKind ProviderKind, string Reason);
@@ -43,12 +44,13 @@ public static class LlmProviderSelectionPolicy
         }
 
         // In development with AllowLiveProvidersInDevelopment, permit localhost endpoints
-        // so developers can use local LLM gateways (Ollama, LM Studio, etc.).
-        var allowLocalhostEndpoints = IsDevelopmentLike(environmentName) && settings.AllowLiveProvidersInDevelopment;
+        // for live-provider gateways. Ollama also has an explicit localhost flag because
+        // its default BaseUrl is localhost and runtime validation enforces that opt-in.
+        var allowDevelopmentLocalhostEndpoints = IsDevelopmentLike(environmentName) && settings.AllowLiveProvidersInDevelopment;
 
         if (requestedProvider.Value == LlmProviderKind.OpenAi)
         {
-            if (!TryValidateOpenAiSettings(settings, out var validationError, allowLocalhostEndpoints))
+            if (!TryValidateOpenAiSettings(settings, out var validationError, allowDevelopmentLocalhostEndpoints))
             {
                 return new LlmProviderDecision(
                     LlmProviderKind.Mock,
@@ -60,16 +62,34 @@ public static class LlmProviderSelectionPolicy
                 "OpenAI provider selected.");
         }
 
-        if (!TryValidateGeminiSettings(settings, out var geminiValidationError, allowLocalhostEndpoints))
+        if (requestedProvider.Value == LlmProviderKind.Gemini)
+        {
+            if (!TryValidateGeminiSettings(settings, out var geminiValidationError, allowDevelopmentLocalhostEndpoints))
+            {
+                return new LlmProviderDecision(
+                    LlmProviderKind.Mock,
+                    $"Gemini configuration is invalid: {geminiValidationError}");
+            }
+
+            return new LlmProviderDecision(
+                LlmProviderKind.Gemini,
+                "Gemini provider selected.");
+        }
+
+        var allowOllamaLocalhostEndpoints =
+            allowDevelopmentLocalhostEndpoints &&
+            settings.Ollama?.AllowLocalhostEndpoints == true;
+
+        if (!TryValidateOllamaSettings(settings, out var ollamaValidationError, allowOllamaLocalhostEndpoints))
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
-                $"Gemini configuration is invalid: {geminiValidationError}");
+                $"Ollama configuration is invalid: {ollamaValidationError}");
         }
 
         return new LlmProviderDecision(
-            LlmProviderKind.Gemini,
-            "Gemini provider selected.");
+            LlmProviderKind.Ollama,
+            "Ollama provider selected.");
     }
 
     public static bool TryValidateOpenAiSettings(
@@ -176,6 +196,49 @@ public static class LlmProviderSelectionPolicy
         return true;
     }
 
+    public static bool TryValidateOllamaSettings(
+        LlmProviderSettings settings,
+        out string error,
+        bool allowLocalhostEndpoints = false)
+    {
+        if (settings.Ollama is null)
+        {
+            error = "Ollama settings are required.";
+            return false;
+        }
+
+        var ollama = settings.Ollama;
+
+        if (string.IsNullOrWhiteSpace(ollama.Model))
+        {
+            error = "Model is required.";
+            return false;
+        }
+
+        if (!Uri.TryCreate(ollama.BaseUrl, UriKind.Absolute, out var baseUri) ||
+            (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
+        {
+            error = "BaseUrl must be an absolute HTTP(S) URI.";
+            return false;
+        }
+
+        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(ollama.BaseUrl, allowLocalhostEndpoints);
+        if (!ssrfResult.IsAllowed)
+        {
+            error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";
+            return false;
+        }
+
+        if (ollama.TimeoutSeconds <= 0)
+        {
+            error = "TimeoutSeconds must be greater than zero.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     private static LlmProviderKind? ResolveRequestedProviderKind(string? provider)
     {
         if (string.IsNullOrWhiteSpace(provider))
@@ -197,6 +260,11 @@ public static class LlmProviderSelectionPolicy
         if (normalized.Equals("Mock", StringComparison.OrdinalIgnoreCase))
         {
             return LlmProviderKind.Mock;
+        }
+
+        if (normalized.Equals("Ollama", StringComparison.OrdinalIgnoreCase))
+        {
+            return LlmProviderKind.Ollama;
         }
 
         return null;

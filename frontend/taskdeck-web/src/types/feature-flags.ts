@@ -7,6 +7,7 @@ export interface FeatureFlags {
   newAutomation: boolean
   newArchive: boolean
   devTools: boolean
+  ollama: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
@@ -22,4 +23,6 @@ export const defaultFeatureFlags: FeatureFlags = {
   newArchive: true,
   // Internal dev tooling stays behind a flag — not user-facing.
   devTools: false,
+  // Ollama local LLM provider — opt-in, requires local Ollama installation.
+  ollama: false,
 }

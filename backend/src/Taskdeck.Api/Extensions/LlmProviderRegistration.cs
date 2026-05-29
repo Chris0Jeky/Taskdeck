@@ -68,10 +68,12 @@ public static class LlmProviderRegistration
             circuitBreakerTracker, "OpenAI", circuitBreakerSettings);
         var geminiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "Gemini", circuitBreakerSettings);
+        var ollamaCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
+            circuitBreakerTracker, "Ollama", circuitBreakerSettings);
 
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
-        var allowLocalhostLlm = IsLocalhostLlmAllowed(services, configuration);
+        var localhostPolicy = ResolveLocalhostPolicy(services, configuration);
 
         services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
         {
@@ -91,7 +93,7 @@ public static class LlmProviderRegistration
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
-                        allowLocalhostEndpoints: allowLocalhostLlm,
+                        allowLocalhostEndpoints: localhostPolicy.AllowGeneralProviderLocalhost,
                         cancellationToken)
             };
         })
@@ -113,11 +115,30 @@ public static class LlmProviderRegistration
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
-                        allowLocalhostEndpoints: allowLocalhostLlm,
+                        allowLocalhostEndpoints: localhostPolicy.AllowGeneralProviderLocalhost,
                         cancellationToken)
             };
         })
         .AddPolicyHandler(geminiCircuitBreakerPolicy);
+        services.AddHttpClient<OllamaLlmProvider>((sp, client) =>
+        {
+            var settings = sp.GetRequiredService<LlmProviderSettings>();
+            var timeoutSeconds = settings.Ollama?.TimeoutSeconds > 0 ? settings.Ollama.TimeoutSeconds : 120;
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        })
+        .ConfigurePrimaryHttpMessageHandler(_ =>
+        {
+            return new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectCallback = (context, cancellationToken) =>
+                    OutboundWebhookConnectCallback.ConnectAsync(
+                        context,
+                        allowLocalhostEndpoints: localhostPolicy.AllowOllamaLocalhost,
+                        cancellationToken)
+            };
+        })
+        .AddPolicyHandler(ollamaCircuitBreakerPolicy);
 
         services.AddScoped<MockLlmProvider>();
         services.AddScoped<ILlmProvider>(sp =>
@@ -136,6 +157,7 @@ public static class LlmProviderRegistration
             {
                 LlmProviderKind.OpenAi => sp.GetRequiredService<OpenAiLlmProvider>(),
                 LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
+                LlmProviderKind.Ollama => sp.GetRequiredService<OllamaLlmProvider>(),
                 _ => sp.GetRequiredService<MockLlmProvider>()
             };
         });
@@ -187,6 +209,16 @@ public static class LlmProviderRegistration
     /// development-like environments when AllowLiveProvidersInDevelopment is enabled,
     /// enabling developers to use local LLM gateways (Ollama, LM Studio, etc.).
     /// </summary>
+    internal static LlmProviderLocalhostPolicy ResolveLocalhostPolicy(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var allowGeneralProviderLocalhost = IsLocalhostLlmAllowed(services, configuration);
+        return new LlmProviderLocalhostPolicy(
+            AllowGeneralProviderLocalhost: allowGeneralProviderLocalhost,
+            AllowOllamaLocalhost: IsOllamaLocalhostLlmAllowed(configuration, allowGeneralProviderLocalhost));
+    }
+
     private static bool IsLocalhostLlmAllowed(
         IServiceCollection services,
         IConfiguration configuration)
@@ -211,4 +243,17 @@ public static class LlmProviderRegistration
 
         return false;
     }
+
+    private static bool IsOllamaLocalhostLlmAllowed(
+        IConfiguration configuration,
+        bool allowGeneralProviderLocalhost)
+    {
+        var llmSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>();
+        return llmSettings?.Ollama?.AllowLocalhostEndpoints == true &&
+               allowGeneralProviderLocalhost;
+    }
 }
+
+internal readonly record struct LlmProviderLocalhostPolicy(
+    bool AllowGeneralProviderLocalhost,
+    bool AllowOllamaLocalhost);

@@ -41,6 +41,7 @@ const ReviewView = () => import('../views/ReviewView.vue')
 const DevToolsView = () => import('../views/DevToolsView.vue')
 const SavedViewsView = () => import('../views/SavedViewsView.vue')
 const MetricsView = () => import('../views/MetricsView.vue')
+const CohortDashboard = () => import('../components/review/CohortDashboard.vue')
 const CalendarView = () => import('../views/CalendarView.vue')
 const IntegrationsView = () => import('../views/IntegrationsView.vue')
 const AgentsView = () => import('../views/AgentsView.vue')
@@ -167,6 +168,12 @@ const router = createRouter({
       name: 'workspace-metrics',
       component: MetricsView,
       meta: { requiresShell: true, breadcrumb: 'Metrics' },
+    },
+    {
+      path: '/workspace/metrics/cohorts',
+      name: 'workspace-metrics-cohorts',
+      component: CohortDashboard,
+      meta: { requiresShell: true, requiresFlag: 'newAutomation', breadcrumb: 'Cohorts' },
     },
 
     // Integrations route

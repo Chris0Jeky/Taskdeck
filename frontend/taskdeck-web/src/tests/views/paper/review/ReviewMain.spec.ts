@@ -72,6 +72,7 @@ function mountMain(confidence: Partial<ConfidenceBreakdown> = {}) {
       fields,
       changeSubTitle: '3 changes',
       provenance,
+      proposalId: 'proposal-001',
       sideEffects,
       conflicts,
       history,
@@ -108,6 +109,17 @@ describe('ReviewMain', () => {
     expect(wrapper.emitted('reject')).toHaveLength(1)
     expect(wrapper.emitted('request-edit')).toHaveLength(1)
     expect(wrapper.emitted('defer')).toHaveLength(1)
+  })
+
+  it('forwards provenance report events with the active proposal id', async () => {
+    const wrapper = mountMain()
+
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await wrapper.vm.$nextTick()
+    const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
+    await reportButton.click()
+
+    expect(wrapper.emitted('report')).toEqual([['proposal-001']])
   })
 
   it('shows "Above your apply threshold" when confidence >= threshold', () => {

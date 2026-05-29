@@ -365,6 +365,7 @@ public class RoadmapInvariantTests
         {
             "OpenAiLlmProvider",
             "GeminiLlmProvider",
+            "OllamaLlmProvider",
             "OutboundWebhookDeliveryWorker",
             "WorkerRegistration",
             "DependencyInjection",

@@ -1,15 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import type { ProvenanceRow, ProvenanceWeight } from '../../../composables/usePaperReviewSelectors'
+import ProvenanceDrawer from '../../../components/review/ProvenanceDrawer.vue'
+import type { ProvenanceMetadata, EvidenceLink } from '../../../components/review/ProvenanceDrawer.vue'
 
-/**
- * ReviewProvenance — § II: 5-row table of what haiku read / didn't /
- * inferred. Each row gets a 32 px icon + 200 px italic key + flex value.
- * Data shape comes from `usePaperReviewSelectors`.
- */
-const props = defineProps<{ rows: ProvenanceRow[] }>()
+const props = defineProps<{
+  rows: ProvenanceRow[]
+  metadata?: ProvenanceMetadata | null
+  evidenceLinks?: EvidenceLink[]
+  proposalId: string
+}>()
+
+const emit = defineEmits<{
+  report: [proposalId: string]
+}>()
 
 const empty = computed(() => props.rows.length === 0)
+const drawerOpen = ref(false)
 
 function tone(weight: ProvenanceWeight): string {
   switch (weight) {
@@ -51,8 +58,18 @@ function tone(weight: ProvenanceWeight): string {
     </div>
     <p class="tk-meta paper-review-prov__footnote">
       Provider routing follows this workspace's AI settings and policy.
-      <a href="#" class="paper-review-prov__more">View full read-set →</a>
+      <a href="#" class="paper-review-prov__more" @click.prevent="drawerOpen = true">View full read-set →</a>
     </p>
+
+    <ProvenanceDrawer
+      :open="drawerOpen"
+      :rows="rows"
+      :metadata="metadata ?? null"
+      :evidence-links="evidenceLinks ?? []"
+      :proposal-id="proposalId"
+      @close="drawerOpen = false"
+      @report="emit('report', $event)"
+    />
   </section>
 </template>
 
