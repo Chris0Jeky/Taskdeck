@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-05-16
+Last Updated: 2026-05-29
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -40,6 +40,14 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+Continuous-cycle wave (2026-05-29, 18 PRs merged, backlog cleared to zero open PRs; 2 independent adversarial reviews per PR, all findings of every severity addressed including bot comments):
+- **RFAI roadmap complete (12 of 12)**: RFAI-11 (`#983`/`#1079`) ambient channel — VS Code extension + voice prototype (ADR-0033 ratified); RFAI-12 (`#984`/`#1080`) learning loop UI, Ollama provider, ProvenanceDrawer, cohort dashboard. Both heavily pre-reviewed; all Codex inline findings audited (one open item fixed on each: 1079 git-repo path-containment, 1080 already-clean).
+- **Composable hardening**: unhandled promise rejections (`#1093`/`#1095`), `onScopeDispose` cleanup + leak fixes (`#1094`/`#1104` — Review 2/2 added startClock double-start guard, fetch-generation invalidation on dispose, isDisposed finally guards, +3 tests), FilterPanel aria-labels + single-resolve label chips (`#1097`/`#1098`).
+- **Identity/authz hardening**: an audit confirmed all 42 API controllers are claims-first with zero bypass risk. `TelemetryController`/`EgressDisclosureController` migrated onto `AuthenticatedControllerBase` (`#1109`/`#1111`); a new `ApiControllerBoundaryTests` guard enforces per-action `[Authorize]`/`[AllowAnonymous]` on non-class-authorized controllers, with explicit attributes added to AuthController/HealthController (`#1110`/`#1116`).
+- **Dependency wave**: nuget/npm minor-patch groups, YamlDotNet 18, dotnet group (`#1101`/`#1103`/`#1102`/`#1105`/`#1115`) — **fixed a recurring EF Core 8/9 split** (dependabot bumped the core package to 9.x while Sqlite/Design stayed 8.x → ambiguous `ExecuteDeleteAsync`). FluentAssertions moved to the free **7.x** line (`#1088`) rather than paid v8. Durable dependabot `ignore` rules added for EF Core and FluentAssertions majors (`#1112`/`#1118`, ADR-0034) so neither churn recurs; documented in `docs/ops/DEPENDENCY_UPDATE_POLICY.md`.
+- **A11y + housekeeping**: stable v-for keys (`#1107`/`#1108`), decorative-SVG `aria-hidden` sweep with 5 icon-only-button accessible-name regressions caught by review and fixed (`#1099`/`#1120`), STATUS.md contradiction fix + cleanup (`#1092`/`#1119`), 112 stale stashes cleared.
+- Closed (not merged): `#1100`→recreated `#1105`, `#1113` (unwanted EF 9.x major), `#1106` (superseded), `#1117` (FluentAssertions v8 paid-license — declined).
 
 Bulk merge wave (2026-05-16, PRs `#1055`--`#1074`, 15 PRs merged to main):
 - **Security fixes** (3 PRs, `#1055`/`#1067`/`#1068`): redirect handler hardening (buffer content, filter sensitive headers), SEC-31/SEC-32 (hardcoded key removal + RBAC on abuse endpoints), SEC-33 (health endpoint info disclosure suppression)

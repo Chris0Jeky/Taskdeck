@@ -443,9 +443,11 @@ Dependency order:
 7. ~~`#979`~~ RFAI-07 hybrid retrieval, duplicate calibration, and memory-assisted generation (**delivered** PR `#1050`)
 8. ~~`#980`~~ RFAI-08 eval harness expansion, privacy analytics, and egress disclosure (**delivered** PRs `#992` + `#1073` + `#1074`)
 9. ~~`#981`~~ RFAI-09 agent runtime hardening, MCP integrity, and scheduled Inbox Digest (**delivered** PR `#1052`)
-10. `#982` RFAI-10 PWA share-target quick capture and browser extension prototype (`Priority III`; depends on `#974`, `#980`)
-11. `#983` RFAI-11 ambient channel hardening decision and prototype (`Priority IV`; depends on `#982`; reuses `#219` for voice if selected)
-12. `#984` RFAI-12 learning loop UI, provenance drawer, Ollama flag, and beta gate (`Priority II`; depends on `#977`, `#980`, `#981`, `#983`)
+10. ~~`#982`~~ RFAI-10 PWA share-target quick capture and browser extension prototype (**delivered** PR `#1078`)
+11. ~~`#983`~~ RFAI-11 ambient channel hardening decision and prototype (**delivered** PR `#1079`; ADR-0033 ratified — VS Code extension over desktop voice)
+12. ~~`#984`~~ RFAI-12 learning loop UI, provenance drawer, Ollama flag, and beta gate (**delivered** PR `#1080`)
+
+**RFAI roadmap complete (2026-05-29): all 12 of 12 issues (`#973`–`#984`) delivered.**
 
 Execution note:
 - The proposal gate applies to automation-originated writes, not manual board UI writes.
