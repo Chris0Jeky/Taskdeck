@@ -36,11 +36,11 @@ public class InsightsApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);
-        doc.RootElement.GetProperty("acceptedCount").GetInt32().Should().BeGreaterOrEqualTo(0);
-        doc.RootElement.GetProperty("editedCount").GetInt32().Should().BeGreaterOrEqualTo(0);
-        doc.RootElement.GetProperty("rejectedCount").GetInt32().Should().BeGreaterOrEqualTo(0);
-        doc.RootElement.GetProperty("totalCount").GetInt32().Should().BeGreaterOrEqualTo(0);
-        doc.RootElement.GetProperty("acceptanceRate").GetDouble().Should().BeGreaterOrEqualTo(0.0);
+        doc.RootElement.GetProperty("acceptedCount").GetInt32().Should().BeGreaterThanOrEqualTo(0);
+        doc.RootElement.GetProperty("editedCount").GetInt32().Should().BeGreaterThanOrEqualTo(0);
+        doc.RootElement.GetProperty("rejectedCount").GetInt32().Should().BeGreaterThanOrEqualTo(0);
+        doc.RootElement.GetProperty("totalCount").GetInt32().Should().BeGreaterThanOrEqualTo(0);
+        doc.RootElement.GetProperty("acceptanceRate").GetDouble().Should().BeGreaterThanOrEqualTo(0.0);
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public class InsightsApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);
-        doc.RootElement.GetProperty("totalCount").GetInt32().Should().BeGreaterOrEqualTo(0);
+        doc.RootElement.GetProperty("totalCount").GetInt32().Should().BeGreaterThanOrEqualTo(0);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public class InsightsApiTests : IClassFixture<TestWebApplicationFactory>
             metric.TryGetProperty("timePeriodDays", out _).Should().BeTrue();
             metric.TryGetProperty("promptVersion", out _).Should().BeTrue();
             metric.GetProperty("metricName").GetString().Should().NotBeNullOrWhiteSpace();
-            metric.GetProperty("bucketedCount").GetInt32().Should().BeGreaterOrEqualTo(0);
+            metric.GetProperty("bucketedCount").GetInt32().Should().BeGreaterThanOrEqualTo(0);
             metric.GetProperty("timePeriodDays").GetInt32().Should().BeGreaterThan(0);
             metric.GetProperty("promptVersion").GetString().Should().NotBeNullOrWhiteSpace();
         }

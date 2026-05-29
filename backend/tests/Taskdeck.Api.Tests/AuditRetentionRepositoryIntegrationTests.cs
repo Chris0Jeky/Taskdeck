@@ -46,7 +46,7 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
         var deleted = await repo.DeleteOldEntriesAsync(cutoff, batchSize: 1000);
 
-        deleted.Should().BeGreaterOrEqualTo(1);
+        deleted.Should().BeGreaterThanOrEqualTo(1);
 
         // The recent entry should still exist
         var remaining = await repo.GetByIdAsync(recentEntry.Id);
@@ -105,7 +105,7 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         // With batch size 2, it should still delete all 5 entries across multiple batches
         var deleted = await repo.DeleteOldEntriesAsync(cutoff, batchSize: 2);
 
-        deleted.Should().BeGreaterOrEqualTo(5);
+        deleted.Should().BeGreaterThanOrEqualTo(5);
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         var nonUtcCutoff = utcBase.ToOffset(TimeSpan.FromHours(-5));
         var deleted = await repo.DeleteOldEntriesAsync(nonUtcCutoff, batchSize: 1000);
 
-        deleted.Should().BeGreaterOrEqualTo(1,
+        deleted.Should().BeGreaterThanOrEqualTo(1,
             "entries older than the UTC-equivalent cutoff should be deleted regardless of the cutoff offset");
 
         // The recent entry (created just now) must survive

@@ -83,7 +83,7 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
 
         var result = (await repo.GetPendingAsync(limit: 2)).ToList();
 
-        result.Count.Should().BeLessOrEqualTo(2);
+        result.Count.Should().BeLessThanOrEqualTo(2);
     }
 
     [Fact]
@@ -249,8 +249,8 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         // Verify DESC ordering: newer should appear before older
         var newerIdx = resultA.FindIndex(r => r.Id == reqANewer.Id);
         var olderIdx = resultA.FindIndex(r => r.Id == reqAOlder.Id);
-        newerIdx.Should().BeGreaterOrEqualTo(0, "newer item should be in results");
-        olderIdx.Should().BeGreaterOrEqualTo(0, "older item should be in results");
+        newerIdx.Should().BeGreaterThanOrEqualTo(0, "newer item should be in results");
+        olderIdx.Should().BeGreaterThanOrEqualTo(0, "older item should be in results");
         newerIdx.Should().BeLessThan(olderIdx, "DESC: newer before older");
     }
 

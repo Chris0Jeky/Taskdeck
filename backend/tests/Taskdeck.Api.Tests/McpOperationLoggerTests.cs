@@ -200,7 +200,7 @@ public class McpOperationLoggerTests
         scope.Complete();
 
         // Should not throw, and should still log
-        _logger.Entries.Should().HaveCountGreaterOrEqualTo(2);
+        _logger.Entries.Should().HaveCountGreaterThanOrEqualTo(2);
     }
 
     [Fact]

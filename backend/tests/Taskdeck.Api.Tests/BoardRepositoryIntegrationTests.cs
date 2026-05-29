@@ -130,14 +130,14 @@ public class BoardRepositoryIntegrationTests : IClassFixture<TestWebApplicationF
         var result = await repo.GetByIdWithDetailsAsync(board.Id);
 
         result.Should().NotBeNull();
-        result!.Columns.Should().HaveCountGreaterOrEqualTo(1);
-        result.Labels.Should().HaveCountGreaterOrEqualTo(1);
+        result!.Columns.Should().HaveCountGreaterThanOrEqualTo(1);
+        result.Labels.Should().HaveCountGreaterThanOrEqualTo(1);
 
         var loadedColumn = result.Columns.First(c => c.Id == column.Id);
-        loadedColumn.Cards.Should().HaveCountGreaterOrEqualTo(1);
+        loadedColumn.Cards.Should().HaveCountGreaterThanOrEqualTo(1);
 
         var loadedCard = loadedColumn.Cards.First(c => c.Id == card.Id);
-        loadedCard.CardLabels.Should().HaveCountGreaterOrEqualTo(1);
+        loadedCard.CardLabels.Should().HaveCountGreaterThanOrEqualTo(1);
         loadedCard.CardLabels.First().Label.Should().NotBeNull();
     }
 
@@ -158,7 +158,7 @@ public class BoardRepositoryIntegrationTests : IClassFixture<TestWebApplicationF
         await db.SaveChangesAsync();
 
         var results = (await repo.GetRecentReadableByUserIdAsync(user.Id, limit: 2, includeArchived: false)).ToList();
-        results.Count.Should().BeLessOrEqualTo(2);
+        results.Count.Should().BeLessThanOrEqualTo(2);
     }
 
     [Fact]

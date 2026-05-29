@@ -256,8 +256,8 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
         var secondIdx = results.FindIndex(n => n.Id == second.Id);
 
         // Explicit assertions that items are present (not silently guarded)
-        firstIdx.Should().BeGreaterOrEqualTo(0, "first item should be in results");
-        secondIdx.Should().BeGreaterOrEqualTo(0, "second item should be in results");
+        firstIdx.Should().BeGreaterThanOrEqualTo(0, "first item should be in results");
+        secondIdx.Should().BeGreaterThanOrEqualTo(0, "second item should be in results");
         // DESC: second (newer) should appear before first (older)
         secondIdx.Should().BeLessThan(firstIdx, "DESC: newer before older");
     }
