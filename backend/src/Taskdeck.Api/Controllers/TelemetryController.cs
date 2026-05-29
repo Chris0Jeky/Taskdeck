@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Controllers;
@@ -11,7 +12,7 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Route("api/telemetry")]
 [Authorize]
-public class TelemetryController : ControllerBase
+public class TelemetryController : AuthenticatedControllerBase
 {
     private readonly ITelemetryEventService _telemetryEventService;
     private readonly SentrySettings _sentrySettings;
@@ -22,7 +23,9 @@ public class TelemetryController : ControllerBase
         ITelemetryEventService telemetryEventService,
         SentrySettings sentrySettings,
         AnalyticsSettings analyticsSettings,
-        TelemetrySettings telemetrySettings)
+        TelemetrySettings telemetrySettings,
+        IUserContext userContext)
+        : base(userContext)
     {
         _telemetryEventService = telemetryEventService;
         _sentrySettings = sentrySettings;
