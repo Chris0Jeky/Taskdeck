@@ -122,3 +122,13 @@ For each security advisory or Dependabot security PR:
 
 - Maintainers should review open Dependabot PRs at least weekly (aligned with the Monday generation schedule).
 - Stale Dependabot PRs older than 30 days should be investigated: either the update is blocked (needs an issue) or it was overlooked.
+
+## Pinned / version-capped dependencies
+
+Some dependencies are intentionally held below their latest major via `ignore`
+rules in `.github/dependabot.yml`. These must be removed deliberately (as a
+coordinated migration), not incidentally.
+
+| Package(s) | Cap | Reason | Remove when |
+|---|---|---|---|
+| `Microsoft.EntityFrameworkCore`, `.Sqlite`, `.Design` | major bumps blocked (stay on 8.x) | The project pins the runtime EF Core stack to 8.x (#760/#767). Dependabot otherwise bumps the core package to 9.x while the providers stay on 8.x, desyncing them and reintroducing an ambiguous `ExecuteDeleteAsync` compile break (#1102, #1106). | The runtime EF Core stack is migrated to 9.x+ together, in one PR. |
