@@ -34,6 +34,9 @@ export function extractParseHint(content: string): ParsedHintMessage | null {
     if (!hint.supportedPatterns || !Array.isArray(hint.supportedPatterns)) {
       return null
     }
+    // De-duplicate so the rendered list (keyed on the pattern string) can never
+    // emit duplicate Vue keys regardless of what an LLM-produced payload contains.
+    hint.supportedPatterns = [...new Set(hint.supportedPatterns)]
     return { textBeforeHint, hint }
   } catch {
     return null

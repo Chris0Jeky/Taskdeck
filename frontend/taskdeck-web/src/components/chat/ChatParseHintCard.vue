@@ -48,8 +48,8 @@ const emit = defineEmits<{
       aria-label="Supported instruction patterns"
     >
       <li
-        v-for="(pattern, index) in hint.hint.supportedPatterns"
-        :key="index"
+        v-for="pattern in hint.hint.supportedPatterns"
+        :key="pattern"
       >
         <code>{{ pattern }}</code>
       </li>

@@ -108,13 +108,13 @@ const categories: ShortcutCategory[] = [
               </h3>
               <div class="space-y-2 ml-3">
                 <div
-                  v-for="(shortcut, index) in category.shortcuts"
-                  :key="index"
+                  v-for="shortcut in category.shortcuts"
+                  :key="`${category.title}-${shortcut.description}`"
                   class="flex items-center justify-between py-2 px-3 rounded hover:bg-gray-50 transition-colors"
                 >
                   <span class="text-gray-700">{{ shortcut.description }}</span>
                   <div class="flex items-center gap-1">
-                    <template v-for="(key, keyIndex) in shortcut.keys" :key="keyIndex">
+                    <template v-for="(key, keyIndex) in shortcut.keys" :key="`${shortcut.description}-${keyIndex}-${key}`">
                       <kbd
                         class="px-2 py-1 text-sm font-semibold text-gray-800 bg-gray-100 border border-gray-300 rounded shadow-sm min-w-[2rem] text-center"
                       >
