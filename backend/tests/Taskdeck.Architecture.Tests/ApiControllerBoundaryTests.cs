@@ -15,10 +15,11 @@ public class ApiControllerBoundaryTests
 
     private static readonly HashSet<string> AllowedControllerBaseTypes = new(StringComparer.Ordinal)
     {
+        // AuthController uses per-method [Authorize] (mixed-auth: login/register are anonymous);
+        // HealthController is intentionally anonymous (liveness/readiness probes). Both legitimately
+        // sidestep class-level [Authorize] + the AuthenticatedControllerBase seam.
         "AuthController",
-        "HealthController",
-        "TelemetryController",
-        "EgressDisclosureController"
+        "HealthController"
     };
 
     [Fact]
