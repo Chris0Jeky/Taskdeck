@@ -149,26 +149,26 @@ export function useCaptureQueueSync() {
     if (!('serviceWorker' in navigator)) return
     serviceWorkerMessageHandler = (event: MessageEvent<unknown>) => {
       if (isCaptureSyncMessage(event)) {
-        void replayQueue()
+        replayQueue().catch(() => {})
       }
     }
     navigator.serviceWorker.addEventListener('message', serviceWorkerMessageHandler)
   }
 
   onMounted(() => {
-    void refreshCount()
+    refreshCount().catch((err) => logWarn('Capture queue count refresh failed on mount:', err))
     registerServiceWorkerMessageReplay()
 
     onlineHandler = () => {
       if (isOnline.value) {
-        void replayQueue()
+        replayQueue().catch(() => {})
         requestServiceWorkerQueueReplay()
       }
     }
     window.addEventListener('online', onlineHandler)
 
     if (isOnline.value) {
-      void replayQueue()
+      replayQueue().catch(() => {})
     }
   })
 

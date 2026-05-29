@@ -3,6 +3,7 @@ import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
 import type { Card, CardCaptureProvenance, Label } from '../types/board'
 import type { CardComment } from '../types/comments'
+import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
 
 export interface UseCardModalOptions {
@@ -16,6 +17,7 @@ export interface UseCardModalOptions {
 export function useCardModal(options: UseCardModalOptions) {
   const boardStore = useBoardStore()
   const sessionStore = useSessionStore()
+  const toast = useToastStore()
 
   // Form state
   const title = ref('')
@@ -85,7 +87,7 @@ export function useCardModal(options: UseCardModalOptions) {
       loadedCaptureProvenanceCardId.value = null
 
       if (options.getIsOpen()) {
-        void loadCaptureProvenance()
+        loadCaptureProvenance().catch(() => {})
       }
     }
   }, { immediate: true })
@@ -156,6 +158,7 @@ export function useCardModal(options: UseCardModalOptions) {
       options.onClose()
     } catch (error) {
       logError('Failed to update card:', error)
+      toast.error('Failed to save card changes. Please try again.')
     }
   }
 
@@ -178,6 +181,7 @@ export function useCardModal(options: UseCardModalOptions) {
       options.onClose()
     } catch (error) {
       logError('Failed to delete card:', error)
+      toast.error('Failed to delete card. Please try again.')
     } finally {
       isDeleting.value = false
     }
@@ -219,6 +223,7 @@ export function useCardModal(options: UseCardModalOptions) {
       }
     } catch (error) {
       logError('Failed to add comment:', error)
+      toast.error('Failed to add comment. Please try again.')
     }
   }
 
@@ -247,6 +252,7 @@ export function useCardModal(options: UseCardModalOptions) {
       handleCancelEditComment()
     } catch (error) {
       logError('Failed to update comment:', error)
+      toast.error('Failed to update comment. Please try again.')
     }
   }
 
@@ -263,6 +269,7 @@ export function useCardModal(options: UseCardModalOptions) {
       await boardStore.deleteCardComment(card.value.boardId, card.value.id, comment.id)
     } catch (error) {
       logError('Failed to delete comment:', error)
+      toast.error('Failed to delete comment. Please try again.')
     }
   }
 
