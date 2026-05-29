@@ -267,6 +267,11 @@ export function usePaperReviewSelectors(
   })
 
   onScopeDispose(() => {
+    // Invalidate the current generation so any in-flight Promise.allSettled
+    // continuation short-circuits at the `generation !== fetchGeneration`
+    // guard instead of writing reactive state after the scope is gone.
+    // (Promise.allSettled resolves even when its inner requests are aborted.)
+    fetchGeneration++
     if (abortController) {
       abortController.abort()
       abortController = null
