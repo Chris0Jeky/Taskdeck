@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, effectScope } from 'vue'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { proposalDeepReviewApi } from '../../api/proposalDeepReviewApi'
 import type { Proposal as ApiProposal } from '../../types/automation'
@@ -242,6 +242,54 @@ describe('usePaperReviewSelectors', () => {
     })
 
     expect(selectors.confidenceBreakdown.value.note).toBeUndefined()
+  })
+
+  it('aborts in-flight requests and discards their result on scope disposal', async () => {
+    let resolveProvenance: (v: never[]) => void
+    const pending = new Promise<never[]>((r) => { resolveProvenance = r })
+    let capturedSignal: AbortSignal | undefined
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockImplementation((_id, opts) => {
+      capturedSignal = opts?.signal
+      return pending
+    })
+    vi.mocked(proposalDeepReviewApi.getConfidence).mockResolvedValue({
+      overall: 0.5,
+      components: [],
+      note: null,
+      threshold: 0.7,
+      meetsThreshold: false,
+    })
+    vi.mocked(proposalDeepReviewApi.getSideEffects).mockResolvedValue({
+      rows: [],
+      reversibility: { summary: '6h', description: 'Safe', windowMs: 21600000 },
+    })
+    vi.mocked(proposalDeepReviewApi.getConflicts).mockResolvedValue([])
+    vi.mocked(proposalDeepReviewApi.getHistory).mockResolvedValue([])
+    vi.mocked(proposalDeepReviewApi.getSimilarPast).mockResolvedValue({ decisions: [], applyRate: 0 })
+
+    const scope = effectScope()
+    let selectors!: ReturnType<typeof usePaperReviewSelectors>
+    scope.run(() => {
+      const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+      const activeProposal = computed(() => proposal.value)
+      selectors = usePaperReviewSelectors(activeProposal)
+    })
+
+    await nextTick()
+    expect(capturedSignal?.aborted).toBe(false)
+
+    // Tear the scope down while the provenance request is still in flight.
+    scope.stop()
+    expect(capturedSignal?.aborted).toBe(true)
+
+    // Resolve the previously in-flight request after disposal; the generation
+    // guard must prevent any reactive write-back.
+    resolveProvenance!([{ icon: '📄', key: 'late', value: 'v', weight: 'primary' }] as never[])
+    await nextTick()
+    await nextTick()
+
+    expect(selectors.provenance.value.some((r) => r.key === 'late')).toBe(false)
+    expect(selectors.loading.value).toBe(true)
   })
 
   it('maps side effects with appliedAt from proposal', async () => {
