@@ -15,5 +15,6 @@ public enum CaptureSource
     MarkdownImport = 7,
     WebClip = 8,
     ShareTarget = 9,
-    BrowserExtension = 10
+    BrowserExtension = 10,
+    VsCodeExtension = 11
 }

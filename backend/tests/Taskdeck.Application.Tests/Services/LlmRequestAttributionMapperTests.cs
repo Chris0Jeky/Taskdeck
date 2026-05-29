@@ -58,4 +58,16 @@ public class LlmRequestAttributionMapperTests
 
         resolved.Should().Be(activity.TraceId.ToString());
     }
+
+    [Theory]
+    [InlineData(LlmRequestSourceSurface.Chat, "chat")]
+    [InlineData(LlmRequestSourceSurface.Capture, "capture")]
+    [InlineData(LlmRequestSourceSurface.Worker, "worker")]
+    [InlineData(LlmRequestSourceSurface.VsCode, "vscode")]
+    public void ResolveSourceSurface_ShouldSerializeToExpectedString(LlmRequestSourceSurface surface, string expected)
+    {
+        var resolved = LlmRequestAttributionMapper.ResolveSourceSurface(surface);
+
+        resolved.Should().Be(expected);
+    }
 }

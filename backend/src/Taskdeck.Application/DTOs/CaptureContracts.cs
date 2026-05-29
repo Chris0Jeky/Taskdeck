@@ -430,7 +430,8 @@ public static class CaptureRequestContract
     {
         return sourceSurface.Equals("chat", StringComparison.OrdinalIgnoreCase) ||
                sourceSurface.Equals("capture", StringComparison.OrdinalIgnoreCase) ||
-               sourceSurface.Equals("worker", StringComparison.OrdinalIgnoreCase);
+               sourceSurface.Equals("worker", StringComparison.OrdinalIgnoreCase) ||
+               sourceSurface.Equals("vscode", StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class CapturePayloadWireModel

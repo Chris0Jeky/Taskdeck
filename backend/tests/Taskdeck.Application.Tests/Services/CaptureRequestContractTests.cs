@@ -372,6 +372,32 @@ public class CaptureRequestContractTests
         result.ErrorMessage.Should().Contain("Unsupported capture attribution source surface");
     }
 
+    [Theory]
+    [InlineData("vscode")]
+    [InlineData("VsCode")]
+    [InlineData("VSCODE")]
+    public void ParsePayload_ShouldSucceed_WhenAttributionSourceSurfaceIsVsCode(string surface)
+    {
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "selected code from IDE",
+                          "source": "VsCodeExtension",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "sourceSurface": "{{surface}}"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: true);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provenance.Should().NotBeNull();
+        result.Value.Provenance!.SourceSurface.Should().Be(surface);
+        result.Value.Source.Should().Be(CaptureSource.VsCodeExtension);
+    }
+
     [Fact]
     public void WithProvenance_ShouldThrow_WhenCaptureItemIdIsEmpty()
     {
@@ -441,6 +467,7 @@ public class CaptureRequestContractTests
     [InlineData(CaptureSource.Import)]
     [InlineData(CaptureSource.Voice)]
     [InlineData(CaptureSource.MeetingIntegration)]
+    [InlineData(CaptureSource.VsCodeExtension)]
     public void IsTranscriptSource_ShouldReturnFalse_ForNonTranscriptSources(CaptureSource source)
     {
         CaptureRequestContract.IsTranscriptSource(source).Should().BeFalse();

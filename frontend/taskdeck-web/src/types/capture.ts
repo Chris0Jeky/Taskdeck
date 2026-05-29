@@ -38,6 +38,7 @@ export type CaptureSource =
   | 'WebClip'
   | 'ShareTarget'
   | 'BrowserExtension'
+  | 'VsCodeExtension'
 
 export type CaptureSourceValue = CaptureSource | number
 

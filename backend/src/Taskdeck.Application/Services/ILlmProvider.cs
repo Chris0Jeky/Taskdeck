@@ -34,11 +34,14 @@ public record ChatCompletionRequest(
 
 public record ChatCompletionMessage(string Role, string Content);
 
+// Serialised via ToString().ToLowerInvariant() — values must match IsSupportedSourceSurface allowlist.
+// VsCode (not VsCodeExtension) is intentional: serialises to "vscode" matching the source surface string.
 public enum LlmRequestSourceSurface
 {
     Chat,
     Capture,
-    Worker
+    Worker,
+    VsCode
 }
 
 public record LlmRequestAttribution(
