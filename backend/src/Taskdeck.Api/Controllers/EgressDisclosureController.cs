@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Controllers;
@@ -8,11 +9,12 @@ namespace Taskdeck.Api.Controllers;
 [Authorize]
 [Route("api/privacy/egress")]
 [Produces("application/json")]
-public class EgressDisclosureController : ControllerBase
+public class EgressDisclosureController : AuthenticatedControllerBase
 {
     private readonly IEgressRegistry _egressRegistry;
 
-    public EgressDisclosureController(IEgressRegistry egressRegistry)
+    public EgressDisclosureController(IEgressRegistry egressRegistry, IUserContext userContext)
+        : base(userContext)
     {
         _egressRegistry = egressRegistry;
     }
