@@ -123,13 +123,29 @@ public class ApiControllerBoundaryTests
                 continue;
             }
 
-            // Collect the contiguous attribute lines immediately preceding the method.
+            // Collect the attribute lines immediately preceding the method. Blank
+            // lines are tolerated (skipped) so an IDE-inserted gap between an
+            // attribute and the signature cannot truncate the block and let an
+            // action slip past the guard — mirroring HasAuthorizeAttributeOnClass.
             var attributeLines = new List<string>();
             var j = i - 1;
-            while (j >= 0 && lines[j].TrimStart().StartsWith("[", StringComparison.Ordinal))
+            while (j >= 0)
             {
-                attributeLines.Add(lines[j]);
-                j--;
+                var trimmed = lines[j].TrimStart();
+                if (trimmed.StartsWith("[", StringComparison.Ordinal))
+                {
+                    attributeLines.Add(lines[j]);
+                    j--;
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(trimmed))
+                {
+                    j--;
+                    continue;
+                }
+
+                break;
             }
 
             var block = string.Join("\n", attributeLines);
@@ -151,11 +167,13 @@ public class ApiControllerBoundaryTests
         RegexOptions.Compiled);
 
     private static readonly Regex HttpVerbAttributeRegex = new(
-        @"\[Http(Get|Post|Put|Delete|Patch|Head|Options)\b",
+        @"\[Http(Get|Post|Put|Delete|Patch|Head|Options)(?:Attribute)?\b",
         RegexOptions.Compiled);
 
+    // Accepts both the short and long attribute forms (e.g. [Authorize] and
+    // [AuthorizeAttribute]), matching AuthorizeAttributeTokenRegex's behavior.
     private static readonly Regex ExplicitAuthorizationRegex = new(
-        @"\[(Authorize|AllowAnonymous)\b",
+        @"\[(Authorize|AllowAnonymous)(?:Attribute)?\b",
         RegexOptions.Compiled);
 
     private static IEnumerable<string> GetControllerFiles()
