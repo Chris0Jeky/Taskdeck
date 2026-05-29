@@ -1,4 +1,4 @@
-import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, onScopeDispose, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { Proposal as ApiProposal } from '../types/automation'
 import { proposalDeepReviewApi } from '../api/proposalDeepReviewApi'
 import type {
@@ -264,6 +264,18 @@ export function usePaperReviewSelectors(
     const applied = rows.filter((r) => r.verdict === 'applied').length
     const total = rows.length
     return { applied, total, ratio: total === 0 ? 0 : applied / total }
+  })
+
+  onScopeDispose(() => {
+    // Invalidate the current generation so any in-flight Promise.allSettled
+    // continuation short-circuits at the `generation !== fetchGeneration`
+    // guard instead of writing reactive state after the scope is gone.
+    // (Promise.allSettled resolves even when its inner requests are aborted.)
+    fetchGeneration++
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
   })
 
   const loading = computed(() => isLoading.value)

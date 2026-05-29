@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { nextTick } from 'vue'
+import { effectScope, nextTick } from 'vue'
 import { useGlobalSearch } from '../../composables/useGlobalSearch'
 
 const mockSearchResult = {
@@ -284,5 +284,59 @@ describe('useGlobalSearch', () => {
     // Second call should have offset = 1 (number of cards from first result)
     const secondCall = mockSearch.mock.calls[1]
     expect(secondCall[2]).toEqual(expect.objectContaining({ offset: 1 }))
+  })
+
+  it('clears debounce timer and aborts in-flight request on scope disposal', async () => {
+    const scope = effectScope()
+    let search: ReturnType<typeof useGlobalSearch>
+
+    scope.run(() => {
+      search = useGlobalSearch(200)
+    })
+
+    mockSearch.mockImplementation(() => new Promise(() => {}))
+    search!.query.value = 'test query'
+    await nextTick()
+
+    scope.stop()
+
+    vi.advanceTimersByTime(300)
+    await nextTick()
+
+    expect(mockSearch).not.toHaveBeenCalled()
+  })
+
+  it('does not write reactive state in finally when disposed mid-search', async () => {
+    const scope = effectScope()
+    let search!: ReturnType<typeof useGlobalSearch>
+    scope.run(() => {
+      search = useGlobalSearch(200)
+    })
+
+    // Mirror the real API: reject with AbortError once the signal aborts.
+    mockSearch.mockImplementation(
+      (_q: string, signal?: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          )
+        }) as ReturnType<typeof searchApi.search>,
+    )
+
+    search.query.value = 'hello world'
+    await nextTick()
+    vi.advanceTimersByTime(300) // fire debounce -> executeSearch starts
+    await nextTick()
+    expect(search.loading.value).toBe(true)
+    expect(mockSearch).toHaveBeenCalledTimes(1)
+
+    scope.stop() // aborts the in-flight controller -> search rejects AbortError
+    await nextTick()
+    await nextTick()
+
+    // The guarded `finally` must not flip loading back, and no results land.
+    expect(search.loading.value).toBe(true)
+    expect(search.boards.value).toEqual([])
+    expect(search.cards.value).toEqual([])
   })
 })
