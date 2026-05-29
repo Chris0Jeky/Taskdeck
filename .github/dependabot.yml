@@ -26,6 +26,19 @@ updates:
           - minor
           - patch
     # Let major versions come as individual PRs for explicit review
+    ignore:
+      # The project intentionally pins Entity Framework Core to the 8.x line
+      # (see #760/#767). Dependabot repeatedly proposes EF Core 9.x for the main
+      # package while the Sqlite/Design providers stay on 8.x, which desyncs the
+      # providers and reintroduces the ambiguous ExecuteDeleteAsync break
+      # (fixed in #1102 and again in #1106). Block EF Core major bumps until the
+      # project deliberately migrates the whole EF stack together.
+      - dependency-name: "Microsoft.EntityFrameworkCore"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.EntityFrameworkCore.Sqlite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.EntityFrameworkCore.Design"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "deps(nuget)"
 
