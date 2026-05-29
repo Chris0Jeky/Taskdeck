@@ -12,6 +12,19 @@ namespace Taskdeck.Api.Controllers;
 /// Base controller for endpoints that require an authenticated user context.
 /// Provides a shared helper to extract and validate the current user's ID from JWT claims.
 /// </summary>
+/// <remarks>
+/// Authorization conventions (enforced by Taskdeck.Architecture.Tests.ApiControllerBoundaryTests):
+/// <list type="bullet">
+/// <item>Every user-facing controller derives from this base and declares a class-level
+/// <c>[Authorize]</c>; identity is resolved only from JWT claims via <see cref="TryGetCurrentUserId"/>,
+/// never from request input.</item>
+/// <item>Controllers without a class-level <c>[Authorize]</c> (only AuthController and HealthController)
+/// must mark every action explicitly with <c>[Authorize]</c> or <c>[AllowAnonymous]</c>.</item>
+/// <item>Board-scoped authorization is performed in the controller via
+/// <see cref="EnsureBoardPermissionAsync"/> as the preferred convention; services that re-check a
+/// board/user grant internally do so as defense in depth, not as a substitute.</item>
+/// </list>
+/// </remarks>
 public abstract class AuthenticatedControllerBase : ControllerBase
 {
     protected readonly IUserContext UserContext;
