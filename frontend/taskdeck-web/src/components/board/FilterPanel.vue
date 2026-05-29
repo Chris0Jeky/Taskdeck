@@ -57,6 +57,15 @@ const isLabelSelected = (labelId: string) => {
   return localFilters.value.labelIds.includes(labelId)
 }
 
+// Resolve active label IDs to display names once so the chip text and its
+// aria-label don't each run a separate `labels.find` per active filter.
+const activeLabelChips = computed(() =>
+  localFilters.value.labelIds.map((labelId) => ({
+    id: labelId,
+    name: props.labels.find((l) => l.id === labelId)?.name ?? 'label',
+  })),
+)
+
 const clearAllFilters = () => {
   localFilters.value = {
     searchText: '',
@@ -189,23 +198,23 @@ const hasActiveFilters = computed(() => {
         <span class="text-sm text-on-surface-variant">Active filters:</span>
         <span v-if="localFilters.searchText" class="inline-flex items-center gap-1 px-2 py-1 bg-primary/20 text-primary text-xs rounded">
           Search: "{{ localFilters.searchText }}"
-          <button @click="localFilters.searchText = ''; updateFilters()" class="hover:text-primary/70">&times;</button>
+          <button @click="localFilters.searchText = ''; updateFilters()" class="hover:text-primary/70" aria-label="Clear search filter">&times;</button>
         </span>
         <span v-if="localFilters.dueDateFilter !== 'all'" class="inline-flex items-center gap-1 px-2 py-1 bg-primary/20 text-primary text-xs rounded">
           {{ localFilters.dueDateFilter }}
-          <button @click="localFilters.dueDateFilter = 'all'; updateFilters()" class="hover:text-primary/70">&times;</button>
+          <button @click="localFilters.dueDateFilter = 'all'; updateFilters()" class="hover:text-primary/70" aria-label="Clear due date filter">&times;</button>
         </span>
         <span v-if="localFilters.showBlockedOnly" class="inline-flex items-center gap-1 px-2 py-1 bg-primary/20 text-primary text-xs rounded">
           Blocked only
-          <button @click="localFilters.showBlockedOnly = false; updateFilters()" class="hover:text-primary/70">&times;</button>
+          <button @click="localFilters.showBlockedOnly = false; updateFilters()" class="hover:text-primary/70" aria-label="Clear blocked filter">&times;</button>
         </span>
         <span
-          v-for="labelId in localFilters.labelIds"
-          :key="labelId"
+          v-for="chip in activeLabelChips"
+          :key="chip.id"
           class="inline-flex items-center gap-1 px-2 py-1 bg-primary/20 text-primary text-xs rounded"
         >
-          {{ labels.find(l => l.id === labelId)?.name }}
-          <button @click="toggleLabel(labelId)" class="hover:text-primary/70">&times;</button>
+          {{ chip.name }}
+          <button @click="toggleLabel(chip.id)" class="hover:text-primary/70" :aria-label="`Clear ${chip.name} filter`">&times;</button>
         </span>
       </div>
     </div>
