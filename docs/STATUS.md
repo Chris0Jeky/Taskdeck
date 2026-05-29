@@ -1,8 +1,13 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-05-23
+Last Updated: 2026-05-29
 
-Post-merge follow-up wave: PRs `#1076`–`#1078` and `#1082`–`#1084` merged (6 PRs: RFAI-10 PWA share-target, PAPER-05 board kanban, composable test coverage, encoding fix). RFAI-10 and PAPER-05 now delivered. 2 open feature PRs (#1079 RFAI-11, #1080 RFAI-12, both still open — not in the merged set above) and 6 dependabot PRs awaiting triage.
+Continuous-cycle wave (2026-05-29, 17 PRs merged, zero open PRs): cleared the entire open-PR backlog with two adversarial reviews per PR and all findings (all severities, including bot comments) addressed.
+- **RFAI roadmap complete**: RFAI-11 (`#983`/`#1079`, ambient channel — VS Code extension + voice prototype; final Codex finding fixed: git repo matched by document-path containment) and RFAI-12 (`#984`/`#1080`, learning loop UI, Ollama provider, ProvenanceDrawer, cohort dashboard) delivered. All 12 RFAI issues now shipped.
+- **Composable hardening**: unhandled promise rejections (`#1093`/`#1095`), cleanup/memory-leak fixes with `onScopeDispose` (`#1094`/`#1104`), FilterPanel aria-labels (`#1097`/`#1098`).
+- **Identity/authz hardening**: an audit confirmed all 42 API controllers are claims-first with zero bypass risk; migrated `TelemetryController`/`EgressDisclosureController` onto `AuthenticatedControllerBase` (`#1109`/`#1111`) and added architecture guards enforcing per-action `[Authorize]`/`[AllowAnonymous]` (`#1110`/`#1116`).
+- **Dependency wave**: nuget/npm minor-patch groups, YamlDotNet 18, and a dotnet group (EF8/9 split fixed) merged; FluentAssertions moved to the free **7.x** line (`#1088`) instead of paid v8; durable dependabot `ignore` rules added for EF Core and FluentAssertions majors (`#1112`, `#1118`) so those churns stop recurring.
+- **Housekeeping** (`#1092`): STATUS.md contradiction fixed; v-for key stability (`#1107`/`#1108`); 112 stale stashes cleared and stale branches pruned.
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -76,7 +81,7 @@ Roadmap v4 second-wave delivery (2026-04-25, PRs `#989`--`#994` + `#995`):
 
 Current constraints are mostly hardening and consistency:
 - `taskdeck-12-week-roadmap-v4.md` has been promoted from research input into the active near-horizon planning spine via tracker `#972` and child issues `#973`--`#984`. The accepted framing is: automation-originated board writes must stay proposal-first, manual board UI writes stay direct and auditable as user-manual activity, and outbound data flow must be guarded separately through the EgressEnvelope/disclosure/MCP-hash/telemetry controls.
-- Roadmap v4 execution progress: RFAI-01 through RFAI-10 now fully delivered (10 of 12 issues, RFAI-10 PWA share-target merged in `#1078`); remaining: RFAI-11 (ambient channel, PR `#1079` open), RFAI-12 (learning loop UI + beta gate, PR `#1080` open, stacked on `#1079`).
+- Roadmap v4 execution progress: **RFAI-01 through RFAI-12 fully delivered (12 of 12 issues — roadmap complete)**; RFAI-10 PWA share-target merged in `#1078`, RFAI-11 ambient channel in `#1079`, RFAI-12 learning loop in `#1080` (2026-05-29).
 - Codex and Claude high-autonomy issue execution now have first-class local guidance: `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/skills/README.md`, `.claude/README.md`, `.claude/skills/README.md`, `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`, generalized worktree protocol, PowerShell git/worktree guards, GitHub helper scripts, Project v2 priority audit/sync support, and dedicated skills for batch orchestration, worktree issue workers, PR review loops, CI/conflict recovery, question batching, failure capture, and interface-map maintenance. A reusable Gitleaks workflow syntax issue in the summary heredoc has been corrected after the workflow began failing before job creation.
 - ~~**security bug discovered 2026-04-03**: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `ChangePassword` now derives userId exclusively from JWT claims; `[Authorize]` enforced; `UserId` removed from request body; `AuthController` inherits `AuthenticatedControllerBase`; 5 integration tests proving the fix
 - security and identity behavior is converging but still not uniform across all controller families
