@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Telemetry;
@@ -38,12 +39,14 @@ public class HealthController : ControllerBase
     }
 
     [HttpGet("live")]
+    [AllowAnonymous]
     public IActionResult LiveCheck()
     {
         return Ok(new { status = "Healthy", timestamp = DateTimeOffset.UtcNow });
     }
 
     [HttpGet("ready")]
+    [AllowAnonymous]
     public async Task<IActionResult> ReadyCheck(CancellationToken ct = default)
     {
         var checks = new Dictionary<string, object>();
