@@ -79,6 +79,85 @@ public class ApiControllerBoundaryTests
             $"Controllers inheriting AuthenticatedControllerBase must declare [Authorize]:{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
     }
 
+    [Fact]
+    public void Actions_InControllersWithoutClassAuthorize_MustDeclareExplicitAuthorization()
+    {
+        // For controllers that do NOT carry a class-level [Authorize] (the mixed-auth
+        // AuthController and the anonymous HealthController), every HTTP action must
+        // state its intent explicitly via [Authorize] or [AllowAnonymous]. This stops a
+        // newly-added action from being silently anonymous by omission.
+        var violations = new List<string>();
+
+        foreach (var controllerFile in GetControllerFiles())
+        {
+            var content = File.ReadAllText(controllerFile);
+            var declaration = FindControllerDeclaration(controllerFile, content);
+
+            // Controllers with a class-level [Authorize] cover all their actions by default.
+            if (declaration.HasClassAuthorizeAttribute)
+            {
+                continue;
+            }
+
+            foreach (var action in GetActionsMissingExplicitAuthorization(content))
+            {
+                violations.Add(
+                    $"{ArchitectureTestPaths.ToBackendRelativePath(controllerFile)}: action '{action}' is missing [Authorize] or [AllowAnonymous] (its controller has no class-level [Authorize]).");
+            }
+        }
+
+        Assert.True(
+            violations.Count == 0,
+            $"Actions in controllers without class-level [Authorize] must declare explicit authorization:{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
+    }
+
+    private static IEnumerable<string> GetActionsMissingExplicitAuthorization(string content)
+    {
+        var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var methodMatch = ActionMethodRegex.Match(lines[i]);
+            if (!methodMatch.Success)
+            {
+                continue;
+            }
+
+            // Collect the contiguous attribute lines immediately preceding the method.
+            var attributeLines = new List<string>();
+            var j = i - 1;
+            while (j >= 0 && lines[j].TrimStart().StartsWith("[", StringComparison.Ordinal))
+            {
+                attributeLines.Add(lines[j]);
+                j--;
+            }
+
+            var block = string.Join("\n", attributeLines);
+            if (!HttpVerbAttributeRegex.IsMatch(block))
+            {
+                // Not an HTTP action method (e.g. a constructor or helper).
+                continue;
+            }
+
+            if (!ExplicitAuthorizationRegex.IsMatch(block))
+            {
+                yield return methodMatch.Groups["method"].Value;
+            }
+        }
+    }
+
+    private static readonly Regex ActionMethodRegex = new(
+        @"^\s*public\s+(?:async\s+)?[\w<>\[\],\.\?\s]+?\s+(?<method>[A-Za-z_]\w*)\s*\(",
+        RegexOptions.Compiled);
+
+    private static readonly Regex HttpVerbAttributeRegex = new(
+        @"\[Http(Get|Post|Put|Delete|Patch|Head|Options)\b",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ExplicitAuthorizationRegex = new(
+        @"\[(Authorize|AllowAnonymous)\b",
+        RegexOptions.Compiled);
+
     private static IEnumerable<string> GetControllerFiles()
     {
         var controllersDirectory = ArchitectureTestPaths.GetBackendPath("src/Taskdeck.Api/Controllers");
