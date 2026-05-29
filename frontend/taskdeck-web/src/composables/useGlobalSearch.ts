@@ -27,6 +27,9 @@ export function useGlobalSearch(debounceMs = 250) {
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
   let abortController: AbortController | null = null
+  // Set once the owning scope is disposed; guards the `finally` blocks below so
+  // an abort-triggered continuation doesn't write reactive state after teardown.
+  let isDisposed = false
 
   function reset() {
     query.value = ''
@@ -90,7 +93,7 @@ export function useGlobalSearch(debounceMs = 250) {
       totalCardCount.value = 0
       hasMoreCards.value = false
     } finally {
-      loading.value = false
+      if (!isDisposed) loading.value = false
     }
   }
 
@@ -123,7 +126,7 @@ export function useGlobalSearch(debounceMs = 250) {
       }
       error.value = 'Failed to load more results.'
     } finally {
-      loadingMore.value = false
+      if (!isDisposed) loadingMore.value = false
     }
   }
 
@@ -150,6 +153,7 @@ export function useGlobalSearch(debounceMs = 250) {
   })
 
   onScopeDispose(() => {
+    isDisposed = true
     if (debounceTimer) {
       clearTimeout(debounceTimer)
       debounceTimer = null
