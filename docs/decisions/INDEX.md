@@ -34,4 +34,5 @@
 | [0030](ADR-0030-storybook-baseline-vite-8-compatibility.md) | Storybook Baseline with Vite 8 Compatibility | Accepted | 2026-04-09 |
 | [0031](ADR-0031-sast-scanning-semgrep.md) | SAST Scanning with Semgrep | Accepted | 2026-04-22 |
 | [0032](ADR-0032-polly-circuit-breaker-external-apis.md) | Polly Circuit Breaker for External API Calls | Accepted | 2026-04-22 |
-| [0033](ADR-0033-ambient-channel-vscode-over-voice.md) | Ambient Channel Hardening — VS Code Extension over Desktop Voice | Proposed | 2026-05-16 |
+| [0033](ADR-0033-ambient-channel-vscode-over-voice.md) | Ambient Channel Hardening — VS Code Extension over Desktop Voice | Accepted | 2026-05-16 |
+| [0034](ADR-0034-dependency-version-caps.md) | Dependency Version Caps via Dependabot Ignore Rules (EF Core 8.x, FluentAssertions 7.x) | Accepted | 2026-05-29 |

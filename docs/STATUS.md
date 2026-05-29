@@ -2,7 +2,7 @@
 
 Last Updated: 2026-05-29
 
-Continuous-cycle wave (2026-05-29, 17 PRs merged, zero open PRs): cleared the entire open-PR backlog with two adversarial reviews per PR and all findings (all severities, including bot comments) addressed.
+Continuous-cycle wave (2026-05-29, 19 PRs merged, zero open PRs): cleared the entire open-PR backlog with two adversarial reviews per PR and all findings (all severities, including bot comments) addressed.
 - **RFAI roadmap complete**: RFAI-11 (`#983`/`#1079`, ambient channel — VS Code extension + voice prototype; final Codex finding fixed: git repo matched by document-path containment) and RFAI-12 (`#984`/`#1080`, learning loop UI, Ollama provider, ProvenanceDrawer, cohort dashboard) delivered. All 12 RFAI issues now shipped.
 - **Composable hardening**: unhandled promise rejections (`#1093`/`#1095`), cleanup/memory-leak fixes with `onScopeDispose` (`#1094`/`#1104`), FilterPanel aria-labels (`#1097`/`#1098`).
 - **Identity/authz hardening**: an audit confirmed all 42 API controllers are claims-first with zero bypass risk; migrated `TelemetryController`/`EgressDisclosureController` onto `AuthenticatedControllerBase` (`#1109`/`#1111`) and added architecture guards enforcing per-action `[Authorize]`/`[AllowAnonymous]` (`#1110`/`#1116`).
