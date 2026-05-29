@@ -5,6 +5,7 @@
     "types": ["vite/client", "vite-plugin-pwa/client"],
 
     /* Linting */
+    "noEmit": true,
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
