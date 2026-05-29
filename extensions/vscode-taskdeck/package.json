@@ -65,7 +65,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npx tsc -p ./ && node ./out/context.test.js && node ./out/apiUrl.test.js && node ./out/manifest.test.js && node ./out/statusReset.test.js"
+    "test": "npx tsc -p ./ && node ./out/context.test.js && node ./out/apiUrl.test.js && node ./out/manifest.test.js && node ./out/statusReset.test.js && node ./out/pathMatch.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
