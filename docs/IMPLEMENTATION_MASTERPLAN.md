@@ -41,7 +41,7 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 
 Delivered in the latest cycle:
 
-Continuous-cycle wave (2026-05-29, 18 PRs merged, backlog cleared to zero open PRs; 2 independent adversarial reviews per PR, all findings of every severity addressed including bot comments):
+Continuous-cycle wave (2026-05-29, 19 PRs merged, backlog cleared to zero open PRs; 2 independent adversarial reviews per PR, all findings of every severity addressed including bot comments):
 - **RFAI roadmap complete (12 of 12)**: RFAI-11 (`#983`/`#1079`) ambient channel — VS Code extension + voice prototype (ADR-0033 ratified); RFAI-12 (`#984`/`#1080`) learning loop UI, Ollama provider, ProvenanceDrawer, cohort dashboard. Both heavily pre-reviewed; all Codex inline findings audited (one open item fixed on each: 1079 git-repo path-containment, 1080 already-clean).
 - **Composable hardening**: unhandled promise rejections (`#1093`/`#1095`), `onScopeDispose` cleanup + leak fixes (`#1094`/`#1104` — Review 2/2 added startClock double-start guard, fetch-generation invalidation on dispose, isDisposed finally guards, +3 tests), FilterPanel aria-labels + single-resolve label chips (`#1097`/`#1098`).
 - **Identity/authz hardening**: an audit confirmed all 42 API controllers are claims-first with zero bypass risk. `TelemetryController`/`EgressDisclosureController` migrated onto `AuthenticatedControllerBase` (`#1109`/`#1111`); a new `ApiControllerBoundaryTests` guard enforces per-action `[Authorize]`/`[AllowAnonymous]` on non-class-authorized controllers, with explicit attributes added to AuthController/HealthController (`#1110`/`#1116`).
