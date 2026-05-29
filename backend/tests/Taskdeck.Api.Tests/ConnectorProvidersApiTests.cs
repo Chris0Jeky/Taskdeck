@@ -42,7 +42,7 @@ public class ConnectorProvidersApiTests : IClassFixture<TestWebApplicationFactor
         var body = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);
         doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
-        doc.RootElement.GetArrayLength().Should().BeGreaterOrEqualTo(1);
+        doc.RootElement.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
 
         var githubProvider = doc.RootElement.EnumerateArray()
             .FirstOrDefault(p => p.GetProperty("providerId").GetString() == "github");

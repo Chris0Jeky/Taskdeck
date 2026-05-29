@@ -26,7 +26,7 @@ public class BoardPaginationApiTests : IClassFixture<TestWebApplicationFactory>
         var result = await ApiTestHarness.ListBoardsPaginatedAsync(client);
 
         result.Items.Should().NotBeEmpty();
-        result.TotalCount.Should().BeGreaterOrEqualTo(1);
+        result.TotalCount.Should().BeGreaterThanOrEqualTo(1);
         result.Offset.Should().Be(0);
         result.Limit.Should().Be(50, "default limit should be 50");
     }

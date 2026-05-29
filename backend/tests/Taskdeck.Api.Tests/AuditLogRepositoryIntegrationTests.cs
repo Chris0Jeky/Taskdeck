@@ -249,7 +249,7 @@ public class AuditLogRepositoryIntegrationTests : IClassFixture<TestWebApplicati
 
         var results = (await repo.GetByUserAsync(user.Id, limit: 2)).ToList();
 
-        results.Count.Should().BeLessOrEqualTo(2);
+        results.Count.Should().BeLessThanOrEqualTo(2);
     }
 
     [Fact]
@@ -279,8 +279,8 @@ public class AuditLogRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         var secondIdx = results.FindIndex(l => l.Id == second.Id);
 
         // Explicit assertions that items are present (not silently guarded)
-        firstIdx.Should().BeGreaterOrEqualTo(0, "first item should be in results");
-        secondIdx.Should().BeGreaterOrEqualTo(0, "second item should be in results");
+        firstIdx.Should().BeGreaterThanOrEqualTo(0, "first item should be in results");
+        secondIdx.Should().BeGreaterThanOrEqualTo(0, "second item should be in results");
         // DESC order: second (newer) should appear before first (older)
         secondIdx.Should().BeLessThan(firstIdx, "DESC: newer before older");
     }

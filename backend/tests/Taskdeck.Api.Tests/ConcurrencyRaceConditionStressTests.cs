@@ -90,7 +90,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // expected conflict/duplicate states.
         var statusCodes = results.ToList();
         var acceptedCount = statusCodes.Count(s => s == HttpStatusCode.Accepted);
-        acceptedCount.Should().BeGreaterOrEqualTo(1,
+        acceptedCount.Should().BeGreaterThanOrEqualTo(1,
             "at least one concurrent triage must succeed");
         statusCodes.Should().AllSatisfy(s =>
             s.Should().BeOneOf(
@@ -160,7 +160,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // At most one proposal should reference this capture item
         var captureProposals = proposals!.Where(p =>
             p.SourceReferenceId == capture.Id.ToString()).ToList();
-        captureProposals.Should().HaveCountLessOrEqualTo(1,
+        captureProposals.Should().HaveCountLessThanOrEqualTo(1,
             "stale re-triage should not create duplicate proposals");
     }
 
@@ -217,7 +217,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // while tolerating the expected SQLite contention.
         var succeeded = results.Values.Count(s =>
             s is HttpStatusCode.Accepted or HttpStatusCode.OK);
-        succeeded.Should().BeGreaterOrEqualTo(2,
+        succeeded.Should().BeGreaterThanOrEqualTo(2,
             "at least 2 out of 5 concurrent triage operations should succeed");
         results.Values.Should().AllSatisfy(s =>
             s.Should().BeOneOf(
@@ -677,7 +677,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
 
         var codes = statusCodes.ToList();
         var okCount = codes.Count(s => s == HttpStatusCode.OK);
-        okCount.Should().BeGreaterOrEqualTo(1,
+        okCount.Should().BeGreaterThanOrEqualTo(1,
             "at least one execute should succeed");
         // NOTE: SQLite serializes writes, so both may succeed sequentially.
         // The real guard is the final-state assertions below.
@@ -737,7 +737,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
 
         var codes = statusCodes.ToList();
         var throttledCount = codes.Count(s => s == (HttpStatusCode)429);
-        throttledCount.Should().BeGreaterOrEqualTo(burstSize - permitLimit,
+        throttledCount.Should().BeGreaterThanOrEqualTo(burstSize - permitLimit,
             $"with permit limit {permitLimit} and burst {burstSize}, " +
             $"at least {burstSize - permitLimit} requests should be throttled");
     }
@@ -957,7 +957,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             await Task.WhenAll(joinTasks);
 
             var actualJoined = joinedConnections.Count;
-            actualJoined.Should().BeGreaterOrEqualTo(1,
+            actualJoined.Should().BeGreaterThanOrEqualTo(1,
                 "at least one concurrent join must succeed to validate rapid join/leave behavior");
 
             // Wait for presence to stabilize after the burst of joins.
@@ -972,10 +972,10 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             afterJoin.Should().NotBeNull("at least one presence snapshot should arrive after joins");
             var settledJoinCount = afterJoin!.Members.Count;
             // Must include the owner plus at least one joined user
-            settledJoinCount.Should().BeGreaterOrEqualTo(2,
+            settledJoinCount.Should().BeGreaterThanOrEqualTo(2,
                 "presence should include the owner plus at least one joined user");
             // Should not exceed theoretical maximum (all joined + owner)
-            settledJoinCount.Should().BeLessOrEqualTo(actualJoined + 1,
+            settledJoinCount.Should().BeLessThanOrEqualTo(actualJoined + 1,
                 "presence should not exceed the number of successfully joined users plus the owner");
 
             // First half of successfully-joined connections leave rapidly.
@@ -1014,9 +1014,9 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 observerEvents, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(2));
             afterLeave.Should().NotBeNull("at least one presence snapshot should arrive after leaves");
             var settledLeaveCount = afterLeave!.Members.Count;
-            settledLeaveCount.Should().BeLessOrEqualTo(settledJoinCount,
+            settledLeaveCount.Should().BeLessThanOrEqualTo(settledJoinCount,
                 "presence count should not grow after members leave");
-            settledLeaveCount.Should().BeGreaterOrEqualTo(1,
+            settledLeaveCount.Should().BeGreaterThanOrEqualTo(1,
                 "the observer owner should always remain in presence");
         }
         finally

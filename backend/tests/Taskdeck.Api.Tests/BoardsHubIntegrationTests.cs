@@ -82,7 +82,7 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         await connection.InvokeAsync("JoinBoard", board.Id);
 
         var collected = await SignalRTestHelper.WaitForEventsAsync(events, 1);
-        collected.Should().HaveCountGreaterOrEqualTo(1);
+        collected.Should().HaveCountGreaterThanOrEqualTo(1);
 
         var snapshot = collected.Last();
         snapshot.BoardId.Should().Be(board.Id);
@@ -120,7 +120,7 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         await connection.InvokeAsync("SetEditingCard", board.Id, card!.Id);
 
         var collected = await SignalRTestHelper.WaitForEventsAsync(events, 1);
-        collected.Should().HaveCountGreaterOrEqualTo(1);
+        collected.Should().HaveCountGreaterThanOrEqualTo(1);
         collected.Last().Members.Should().ContainSingle(m =>
             m.UserId == user.UserId && m.EditingCardId == card.Id);
     }
@@ -158,7 +158,7 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         await connection.InvokeAsync("SetEditingCard", board.Id, (Guid?)null);
 
         var collected = await SignalRTestHelper.WaitForEventsAsync(events, 1);
-        collected.Should().HaveCountGreaterOrEqualTo(1);
+        collected.Should().HaveCountGreaterThanOrEqualTo(1);
         collected.Last().Members.Should().ContainSingle(m =>
             m.UserId == user.UserId && m.EditingCardId == null);
     }
@@ -202,7 +202,7 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         await conn2.InvokeAsync("LeaveBoard", board.Id);
 
         var afterLeave = await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
-        afterLeave.Should().HaveCountGreaterOrEqualTo(1);
+        afterLeave.Should().HaveCountGreaterThanOrEqualTo(1);
         afterLeave.Last().BoardId.Should().Be(board.Id);
         afterLeave.Last().Members.Should().ContainSingle(m => m.UserId == user1.UserId);
     }
@@ -248,7 +248,7 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
 
         // User1 should receive a snapshot without user2
         var afterDisconnect = await SignalRTestHelper.WaitForEventsAsync(events1, 1);
-        afterDisconnect.Should().HaveCountGreaterOrEqualTo(1);
+        afterDisconnect.Should().HaveCountGreaterThanOrEqualTo(1);
         afterDisconnect.Last().Members.Should().ContainSingle(m => m.UserId == user1.UserId);
         afterDisconnect.Last().Members.Should().NotContain(m => m.UserId == user2.UserId);
     }

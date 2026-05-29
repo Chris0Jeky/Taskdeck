@@ -204,7 +204,7 @@ public class LlmUsageRecordRepositoryIntegrationTests : IClassFixture<TestWebApp
         var userACount = await repo.GetRequestCountAsync(userA.Id, null, from, to);
 
         // All users count should include both users' records
-        allUsersCount.Should().BeGreaterOrEqualTo(2);
+        allUsersCount.Should().BeGreaterThanOrEqualTo(2);
         userACount.Should().Be(1);
     }
 
@@ -226,6 +226,6 @@ public class LlmUsageRecordRepositoryIntegrationTests : IClassFixture<TestWebApp
 
         // Using a tight window around the record creation
         var count = await repo.GetRequestCountAsync(user.Id, LlmSurface.Chat, before, after);
-        count.Should().BeGreaterOrEqualTo(1);
+        count.Should().BeGreaterThanOrEqualTo(1);
     }
 }

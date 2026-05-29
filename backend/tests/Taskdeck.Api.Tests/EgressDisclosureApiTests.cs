@@ -36,8 +36,8 @@ public class EgressDisclosureApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);
-        doc.RootElement.GetProperty("totalCount").GetInt32().Should().BeGreaterOrEqualTo(1);
-        doc.RootElement.GetProperty("destinations").GetArrayLength().Should().BeGreaterOrEqualTo(1);
+        doc.RootElement.GetProperty("totalCount").GetInt32().Should().BeGreaterThanOrEqualTo(1);
+        doc.RootElement.GetProperty("destinations").GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
     }
 
     [Fact]

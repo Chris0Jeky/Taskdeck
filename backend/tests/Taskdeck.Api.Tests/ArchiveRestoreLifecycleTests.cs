@@ -665,7 +665,7 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
             .Where(a => a.EntityId == archiveItem.Id && a.EntityType == "ArchiveItem")
             .ToList();
 
-        auditLogs.Should().HaveCountGreaterOrEqualTo(1);
+        auditLogs.Should().HaveCountGreaterThanOrEqualTo(1);
         auditLogs.Should().Contain(a => a.Changes != null && a.Changes.Contains("Restored"));
     }
 
