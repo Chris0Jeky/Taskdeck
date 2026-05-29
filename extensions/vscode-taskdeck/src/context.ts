@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { buildCaptureText, getSafeDocumentLabel, type WorkspaceContext } from './contextFormatter';
+import { isPathWithin } from './pathMatch';
 
 export type { WorkspaceContext } from './contextFormatter';
 
@@ -46,7 +47,7 @@ export async function getWorkspaceContext(editor: vscode.TextEditor): Promise<Wo
     : `L${selection.start.line + 1}-L${selection.end.line + 1}`;
 
   const gitRemoteHash = workspaceFolder
-    ? await getGitRemoteHash(workspaceFolder)
+    ? await getGitRemoteHash(doc.uri.fsPath)
     : null;
 
   return {
@@ -68,14 +69,8 @@ function isLocalAbsolutePath(fsPath: string): boolean {
   return path.isAbsolute(fsPath);
 }
 
-function normalizeFsPath(fsPath: string): string {
-  return process.platform === 'win32'
-    ? fsPath.toLowerCase()
-    : fsPath;
-}
-
-async function getGitRemoteHash(workspaceFolder: vscode.WorkspaceFolder): Promise<string | null> {
-  if (!isLocalAbsolutePath(workspaceFolder.uri.fsPath)) return null;
+async function getGitRemoteHash(documentFsPath: string): Promise<string | null> {
+  if (!isLocalAbsolutePath(documentFsPath)) return null;
 
   const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
   if (!gitExtension) return null;
@@ -85,8 +80,12 @@ async function getGitRemoteHash(workspaceFolder: vscode.WorkspaceFolder): Promis
       ? gitExtension.exports
       : await gitExtension.activate();
     const api = extensionApi.getAPI(1);
-    const workspacePath = normalizeFsPath(workspaceFolder.uri.fsPath);
-    const repository = api.repositories.find((repo) => normalizeFsPath(repo.rootUri.fsPath) === workspacePath);
+    // Match the most specific repository whose root contains the document, so a
+    // file in a subfolder of a repo (or a multi-root workspace) still resolves
+    // instead of requiring the workspace folder to equal the repo root exactly.
+    const repository = api.repositories
+      .filter((repo) => isPathWithin(documentFsPath, repo.rootUri.fsPath))
+      .sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length)[0];
     const remote = repository?.state.remotes.find((candidate) => candidate.name === 'origin')
       ?? repository?.state.remotes[0];
     const remoteUrl = (remote?.fetchUrl ?? remote?.pushUrl ?? '').trim();
