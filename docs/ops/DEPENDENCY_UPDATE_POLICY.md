@@ -132,3 +132,4 @@ coordinated migration), not incidentally.
 | Package(s) | Cap | Reason | Remove when |
 |---|---|---|---|
 | `Microsoft.EntityFrameworkCore`, `.Sqlite`, `.Design` | major bumps blocked (stay on 8.x) | The project pins the runtime EF Core stack to 8.x (#760/#767). Dependabot otherwise bumps the core package to 9.x while the providers stay on 8.x, desyncing them and reintroducing an ambiguous `ExecuteDeleteAsync` compile break (#1102, #1106). | The runtime EF Core stack is migrated to 9.x+ together, in one PR. |
+| `FluentAssertions` | major bumps blocked (stay on 7.x) | FluentAssertions 8.x+ requires a paid commercial license (Xceed); 7.x is the last free line. Maintainer decision on #1088. | The project purchases the Xceed license, or migrates to a free assertion library. |
