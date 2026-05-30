@@ -191,9 +191,13 @@ watch(
       return
     }
 
-    void workspace.hydratePreferences()
     if (!workspace.hasHomeSummary && !workspace.homeLoading) {
       void workspace.fetchHomeSummary().catch(() => {})
+      return
+    }
+
+    if (!workspace.preferencesHydrated && !workspace.preferenceLoading) {
+      void workspace.hydratePreferences()
     }
   },
   { immediate: true },

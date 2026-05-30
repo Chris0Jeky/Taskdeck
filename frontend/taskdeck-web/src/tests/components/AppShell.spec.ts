@@ -38,6 +38,8 @@ const mockWorkspace = reactive({
   reviewBadgeCount: 0,
   hasHomeSummary: false,
   homeLoading: false,
+  preferenceLoading: false,
+  preferencesHydrated: false,
   hydratePreferences: vi.fn().mockResolvedValue(null),
   fetchHomeSummary: vi.fn().mockResolvedValue(undefined),
   resetForLogout: vi.fn(),
@@ -123,6 +125,8 @@ describe('AppShell workspace navigation and command palette', () => {
     mockWorkspace.reviewBadgeCount = 0
     mockWorkspace.hasHomeSummary = false
     mockWorkspace.homeLoading = false
+    mockWorkspace.preferenceLoading = false
+    mockWorkspace.preferencesHydrated = false
     mockFeatureFlags.isEnabled = vi.fn(() => true)
   })
 
@@ -447,6 +451,7 @@ describe('AppShell workspace navigation and command palette', () => {
     mountedWrapper = mountShell()
 
     expect(mockWorkspace.fetchHomeSummary).toHaveBeenCalledOnce()
+    expect(mockWorkspace.hydratePreferences).not.toHaveBeenCalled()
   })
 
   it('skips home summary fetch when already loaded', () => {
@@ -455,6 +460,24 @@ describe('AppShell workspace navigation and command palette', () => {
     mountedWrapper = mountShell()
 
     expect(mockWorkspace.fetchHomeSummary).not.toHaveBeenCalled()
+  })
+
+  it('hydrates preferences when home summary is already loaded and preferences are stale', () => {
+    mockWorkspace.hasHomeSummary = true
+    mockWorkspace.preferencesHydrated = false
+    mockWorkspace.preferenceLoading = false
+    mountedWrapper = mountShell()
+
+    expect(mockWorkspace.hydratePreferences).toHaveBeenCalledOnce()
+  })
+
+  it('skips preference hydration while preferences are already loading', () => {
+    mockWorkspace.hasHomeSummary = true
+    mockWorkspace.preferencesHydrated = false
+    mockWorkspace.preferenceLoading = true
+    mountedWrapper = mountShell()
+
+    expect(mockWorkspace.hydratePreferences).not.toHaveBeenCalled()
   })
 
   it('skips home summary fetch when already loading', () => {

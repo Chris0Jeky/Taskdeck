@@ -307,6 +307,7 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
       await store.fetchHomeSummary()
 
       expect(store.mode).toBe('agent')
+      expect(store.preferencesHydrated).toBe(true)
       expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
     })
   })

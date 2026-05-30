@@ -172,6 +172,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       homeSummary.value = summary
       applyMode(summary.workspaceMode)
       syncOnboarding(summary.onboarding)
+      preferencesHydrated.value = true
       homeLoading.value = false
       return summary
     }
@@ -183,6 +184,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       homeSummary.value = summary
       applyMode(summary.workspaceMode)
       syncOnboarding(summary.onboarding)
+      preferencesHydrated.value = true
       return summary
     } catch (e: unknown) {
       homeError.value = getErrorMessage(e, 'Failed to load workspace summary')

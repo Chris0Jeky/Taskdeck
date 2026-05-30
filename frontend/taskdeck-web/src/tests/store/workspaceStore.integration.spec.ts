@@ -185,6 +185,7 @@ describe('workspaceStore — integration (real workspaceApi, mocked HTTP)', () =
       expect(store.inboxBadgeCount).toBe(3)
       expect(store.reviewBadgeCount).toBe(2)
       expect(store.mode).toBe('guided')
+      expect(store.preferencesHydrated).toBe(true)
       expect(store.homeLoading).toBe(false)
       expect(store.homeError).toBeNull()
       expect(http.get).toHaveBeenCalledWith('/workspace/home')
