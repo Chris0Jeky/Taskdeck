@@ -11,7 +11,14 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { assertSafeLocalApiTarget, isoDaysFromNow, normalizeBaseUrl, parseTrueishEnv } from './demo-shared.mjs'
+import {
+  assertSafeLocalApiTarget,
+  extractListItems,
+  hasMoreListItems,
+  isoDaysFromNow,
+  normalizeBaseUrl,
+  parseTrueishEnv,
+} from './demo-shared.mjs'
 
 export { isoDaysFromNow }
 
@@ -222,7 +229,7 @@ export async function cleanupDemoBoards(
   apiAuthed,
   { prefix = 'DEMO:', dryRun = false, keepCanonical = true, includeArchived = false } = {},
 ) {
-  const boards = await apiAuthed.get(`/boards?includeArchived=${includeArchived ? 'true' : 'false'}`)
+  const boards = await listBoards(apiAuthed, { includeArchived })
   const candidates = (boards || []).filter((board) => {
     if (typeof board?.name !== 'string' || !board.name.startsWith(prefix)) {
       return false
@@ -260,6 +267,26 @@ export async function cleanupDemoBoards(
     archived,
     skipped,
     candidates: candidates.map((board) => ({ id: board.id, name: board.name })),
+  }
+}
+
+async function listBoards(apiAuthed, { includeArchived = false } = {}) {
+  const limit = 200
+  let offset = 0
+  const boards = []
+
+  while (true) {
+    const response = await apiAuthed.get(
+      `/boards?includeArchived=${includeArchived ? 'true' : 'false'}&offset=${offset}&limit=${limit}`,
+    )
+    const items = extractListItems(response, 'GET /boards')
+    boards.push(...items)
+
+    if (!hasMoreListItems(response) || items.length === 0) {
+      return boards
+    }
+
+    offset += items.length
   }
 }
 

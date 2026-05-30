@@ -11,6 +11,7 @@ import path from 'node:path'
 import { createInterface } from 'node:readline'
 
 import { TaskdeckApiClient, ensureUser, getDemoConfig, traceEvent } from './demo-lib.mjs'
+import { extractListItems } from './demo-shared.mjs'
 
 function parseArgs(argv) {
   const args = {
@@ -48,7 +49,15 @@ async function safeGet(api, requestPath) {
 }
 
 function ensureArray(value) {
-  return Array.isArray(value) ? value : []
+  if (isErrorResult(value)) {
+    return []
+  }
+
+  try {
+    return extractListItems(value)
+  } catch {
+    return []
+  }
 }
 
 function isErrorResult(value) {

@@ -371,15 +371,16 @@ test.describe('Stakeholder demo recorder', () => {
     await expect(requestComposer).toBeHidden()
     await page.screenshot({ path: testInfo.outputPath('07-queue-submitted.png'), fullPage: true })
 
-    await page.getByRole('link', { name: 'Ops' }).click()
+    // Advanced surfaces remain routable but are no longer primary sidebar links.
+    await page.goto('/workspace/ops/cli')
     await expect(page.getByRole('heading', { name: 'Ops Console', level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('08-ops.png'), fullPage: true })
 
-    await page.getByRole('link', { name: 'Activity' }).click()
+    await page.goto('/workspace/activity')
     await expect(page.getByRole('heading', { name: 'Activity', level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('09-activity.png'), fullPage: true })
 
-    await page.getByRole('link', { name: 'Notifications' }).click()
+    await page.goto('/workspace/notifications')
     await expect(page.getByRole('heading', { name: 'Notifications', level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('10-notifications.png'), fullPage: true })
   })
