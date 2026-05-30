@@ -454,6 +454,20 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(mockWorkspace.hydratePreferences).not.toHaveBeenCalled()
   })
 
+  it('falls back to preference hydration when the startup home summary fetch fails', async () => {
+    mockWorkspace.hasHomeSummary = false
+    mockWorkspace.homeLoading = false
+    mockWorkspace.preferencesHydrated = false
+    mockWorkspace.preferenceLoading = false
+    mockWorkspace.fetchHomeSummary.mockRejectedValueOnce(new Error('summary unavailable'))
+
+    mountedWrapper = mountShell()
+    await waitForUi()
+
+    expect(mockWorkspace.fetchHomeSummary).toHaveBeenCalledOnce()
+    expect(mockWorkspace.hydratePreferences).toHaveBeenCalledOnce()
+  })
+
   it('skips home summary fetch when already loaded', () => {
     mockWorkspace.hasHomeSummary = true
     mockWorkspace.homeLoading = false

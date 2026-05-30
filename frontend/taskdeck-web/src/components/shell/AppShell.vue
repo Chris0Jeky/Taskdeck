@@ -183,6 +183,12 @@ onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
 })
 
+function hydratePreferencesIfNeeded() {
+  if (session.isAuthenticated && !workspace.preferencesHydrated && !workspace.preferenceLoading) {
+    void workspace.hydratePreferences()
+  }
+}
+
 watch(
   () => session.isAuthenticated,
   (isAuthenticated) => {
@@ -192,13 +198,13 @@ watch(
     }
 
     if (!workspace.hasHomeSummary && !workspace.homeLoading) {
-      void workspace.fetchHomeSummary().catch(() => {})
+      void workspace.fetchHomeSummary().catch(() => {
+        hydratePreferencesIfNeeded()
+      })
       return
     }
 
-    if (!workspace.preferencesHydrated && !workspace.preferenceLoading) {
-      void workspace.hydratePreferences()
-    }
+    hydratePreferencesIfNeeded()
   },
   { immediate: true },
 )
