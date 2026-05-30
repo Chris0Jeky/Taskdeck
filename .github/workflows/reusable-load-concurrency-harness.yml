@@ -82,10 +82,10 @@ jobs:
 
       - name: Reset harness result folders
         run: |
-          rm -f frontend/taskdeck-web/taskdeck.load.k6.ci.db
-          rm -f frontend/taskdeck-web/taskdeck.load.e2e.ci.db
           rm -rf frontend/taskdeck-web/test-results/load
           mkdir -p frontend/taskdeck-web/test-results/load
+          rm -f "${GITHUB_WORKSPACE}/frontend/taskdeck-web/test-results/load/taskdeck.load.k6.ci.db"
+          rm -f "${GITHUB_WORKSPACE}/frontend/taskdeck-web/test-results/load/taskdeck.load.e2e.ci.db"
 
       - name: Run k6 board-heavy API profile
         env:
@@ -94,7 +94,7 @@ jobs:
           K6_USER_POOL: ${{ inputs.k6-user-pool }}
           ASPNETCORE_ENVIRONMENT: Development
           ASPNETCORE_URLS: http://127.0.0.1:5000
-          ConnectionStrings__DefaultConnection: Data Source=frontend/taskdeck-web/taskdeck.load.k6.ci.db
+          ConnectionStrings__DefaultConnection: Data Source=${{ github.workspace }}/frontend/taskdeck-web/test-results/load/taskdeck.load.k6.ci.db
         run: |
           set -euo pipefail
 
@@ -141,7 +141,7 @@ jobs:
         working-directory: frontend/taskdeck-web
         env:
           CI: "true"
-          TASKDECK_E2E_DB: taskdeck.load.e2e.ci.db
+          TASKDECK_E2E_DB: ${{ github.workspace }}/frontend/taskdeck-web/test-results/load/taskdeck.load.e2e.ci.db
           TASKDECK_RUN_DEMO: "0"
         run: npx playwright test tests/e2e/concurrency.spec.ts --reporter=line
 
