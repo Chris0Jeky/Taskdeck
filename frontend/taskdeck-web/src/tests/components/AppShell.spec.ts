@@ -38,7 +38,9 @@ const mockWorkspace = reactive({
   reviewBadgeCount: 0,
   hasHomeSummary: false,
   homeLoading: false,
+  hydratePreferences: vi.fn().mockResolvedValue(null),
   fetchHomeSummary: vi.fn().mockResolvedValue(undefined),
+  resetForLogout: vi.fn(),
 })
 
 vi.mock('vue-router', () => ({
@@ -120,6 +122,7 @@ describe('AppShell workspace navigation and command palette', () => {
     mockWorkspace.inboxBadgeCount = 0
     mockWorkspace.reviewBadgeCount = 0
     mockWorkspace.hasHomeSummary = false
+    mockWorkspace.homeLoading = false
     mockFeatureFlags.isEnabled = vi.fn(() => true)
   })
 

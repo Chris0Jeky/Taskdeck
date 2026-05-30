@@ -42,7 +42,9 @@ const mockWorkspace = reactive({
   reviewBadgeCount: 0,
   hasHomeSummary: true,
   homeLoading: false,
+  hydratePreferences: vi.fn().mockResolvedValue(null),
   fetchHomeSummary: vi.fn().mockResolvedValue(undefined),
+  resetForLogout: vi.fn(),
 })
 
 const mockPaperTheme = reactive({

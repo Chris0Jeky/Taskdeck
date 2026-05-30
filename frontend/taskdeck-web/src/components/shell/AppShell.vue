@@ -181,10 +181,23 @@ function handleLogout() {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
-  if (session.isAuthenticated && !workspace.hasHomeSummary && !workspace.homeLoading) {
-    void workspace.fetchHomeSummary().catch(() => {})
-  }
 })
+
+watch(
+  () => session.isAuthenticated,
+  (isAuthenticated) => {
+    if (!isAuthenticated) {
+      workspace.resetForLogout()
+      return
+    }
+
+    void workspace.hydratePreferences()
+    if (!workspace.hasHomeSummary && !workspace.homeLoading) {
+      void workspace.fetchHomeSummary().catch(() => {})
+    }
+  },
+  { immediate: true },
+)
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
