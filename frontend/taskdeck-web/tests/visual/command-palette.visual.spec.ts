@@ -26,7 +26,7 @@ test('command palette open state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('command-palette-open')
+  await expect(page).toHaveScreenshot('command-palette-open.png')
 })
 
 test('command palette with search results', async ({ page }) => {
@@ -44,5 +44,5 @@ test('command palette with search results', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('command-palette-search')
+  await expect(page).toHaveScreenshot('command-palette-search.png')
 })

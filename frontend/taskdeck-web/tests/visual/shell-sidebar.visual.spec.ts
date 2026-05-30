@@ -23,5 +23,5 @@ test('shell sidebar default', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(sidebar).toHaveScreenshot('shell-sidebar')
+  await expect(sidebar).toHaveScreenshot('shell-sidebar.png')
 })

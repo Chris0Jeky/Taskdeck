@@ -31,5 +31,5 @@ test('calendar view default state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('calendar-default')
+  await expect(page).toHaveScreenshot('calendar-default.png')
 })

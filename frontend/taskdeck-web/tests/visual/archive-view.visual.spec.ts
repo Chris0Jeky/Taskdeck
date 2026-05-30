@@ -19,5 +19,5 @@ test('archive view empty state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('archive-empty')
+  await expect(page).toHaveScreenshot('archive-empty.png')
 })

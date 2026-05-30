@@ -18,5 +18,5 @@ test('inbox view empty state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('inbox-empty')
+  await expect(page).toHaveScreenshot('inbox-empty.png')
 })

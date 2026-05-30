@@ -26,7 +26,7 @@ test('board toolbar default', async ({ page }) => {
 
   // Mask the presence chip — it shows the freshly-registered username,
   // which differs per run.
-  await expect(toolbar).toHaveScreenshot('board-toolbar', {
+  await expect(toolbar).toHaveScreenshot('board-toolbar.png', {
     mask: [page.locator('[data-presence-user]')],
   })
 })
@@ -39,5 +39,5 @@ test('board action rail default', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(rail).toHaveScreenshot('board-action-rail')
+  await expect(rail).toHaveScreenshot('board-action-rail.png')
 })

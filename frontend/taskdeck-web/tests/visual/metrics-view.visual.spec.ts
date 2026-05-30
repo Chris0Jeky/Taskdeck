@@ -20,5 +20,5 @@ test('metrics view empty placeholder', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('metrics-placeholder')
+  await expect(page).toHaveScreenshot('metrics-placeholder.png')
 })

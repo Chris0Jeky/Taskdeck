@@ -16,7 +16,7 @@ test('login view default state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('login-default')
+  await expect(page).toHaveScreenshot('login-default.png')
 })
 
 test('register view default state', async ({ page }) => {
@@ -25,5 +25,5 @@ test('register view default state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('register-default')
+  await expect(page).toHaveScreenshot('register-default.png')
 })

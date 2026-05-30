@@ -20,5 +20,5 @@ test('notification inbox empty state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('notifications-empty')
+  await expect(page).toHaveScreenshot('notifications-empty.png')
 })

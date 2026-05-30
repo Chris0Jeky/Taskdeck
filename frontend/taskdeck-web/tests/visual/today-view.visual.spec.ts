@@ -20,5 +20,5 @@ test('today view default state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('today-default')
+  await expect(page).toHaveScreenshot('today-default.png')
 })
