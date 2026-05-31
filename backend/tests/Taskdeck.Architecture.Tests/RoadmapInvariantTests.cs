@@ -452,11 +452,18 @@ public class RoadmapInvariantTests
         Assert.NotEqual(hash, McpToolDefinitionHashService.ComputeDefinitionHash(name, description + " (v2)", schema));
         Assert.NotEqual(hash, McpToolDefinitionHashService.ComputeDefinitionHash(name, description, schema + " "));
 
-        // Length-prefixed framing prevents field-boundary collisions
-        // (moving a character across the name/description boundary must change the hash).
+        // Moving a character across the name/description boundary changes the hash.
         Assert.NotEqual(
             McpToolDefinitionHashService.ComputeDefinitionHash("ab", "c", schema),
             McpToolDefinitionHashService.ComputeDefinitionHash("a", "bc", schema));
+
+        // The property the length prefix specifically guards: inputs that would COLLIDE under
+        // bare-delimiter concatenation (both render "a|b|c|<schema>") stay distinct because their
+        // length prefixes differ ("N:1:a|D:3:b|c" vs "N:3:a|b|D:1:c"). This would regress if the
+        // framing dropped the length prefixes but kept the '|' delimiters.
+        Assert.NotEqual(
+            McpToolDefinitionHashService.ComputeDefinitionHash("a", "b|c", schema),
+            McpToolDefinitionHashService.ComputeDefinitionHash("a|b", "c", schema));
     }
 
     // ─── Invariant 11: Local analytics no user content ─────────────────
@@ -470,26 +477,34 @@ public class RoadmapInvariantTests
     public void Invariant11_LocalAnalytics_NoUserContent()
     {
         // TelemetryGuard enforces an allowlist of content-free metric keys and rejects PII /
-        // user content in values. Use the shipped default allowlist for a known baseline.
+        // user content in values. It holds process-global static options, so configure to the
+        // shipped default allowlist for a known baseline and restore it in finally to keep this
+        // assembly isolated (xUnit gives no cross-class ordering guarantee).
         TelemetryGuard.Configure(new TelemetryGuardOptions());
+        try
+        {
+            // Allowed: bucketed numeric counts and enumerated string values.
+            Assert.True(TelemetryGuard.Validate("capture.count", 5).IsValid);
+            Assert.True(TelemetryGuard.Validate("workspace.mode", "guided").IsValid);
 
-        // Allowed: bucketed numeric counts and enumerated string values.
-        Assert.True(TelemetryGuard.Validate("capture.count", 5).IsValid);
-        Assert.True(TelemetryGuard.Validate("workspace.mode", "guided").IsValid);
+            // Rejected: keys not on the allowlist (no arbitrary metric names).
+            Assert.False(TelemetryGuard.Validate("user.email", "anything").IsValid);
 
-        // Rejected: keys not on the allowlist (no arbitrary metric names).
-        Assert.False(TelemetryGuard.Validate("user.email", "anything").IsValid);
+            // Rejected: PII in an allowlisted key's value (email + URL), including encoded bypass.
+            Assert.False(TelemetryGuard.Validate("workspace.mode", "user@example.com").IsValid);
+            Assert.False(TelemetryGuard.Validate("workspace.mode", "https://example.com/u/42").IsValid);
+            Assert.False(TelemetryGuard.Validate("workspace.mode", "user%40example.com").IsValid);
 
-        // Rejected: PII in an allowlisted key's value (email + URL), including encoded bypass.
-        Assert.False(TelemetryGuard.Validate("workspace.mode", "user@example.com").IsValid);
-        Assert.False(TelemetryGuard.Validate("workspace.mode", "https://example.com/u/42").IsValid);
-        Assert.False(TelemetryGuard.Validate("workspace.mode", "user%40example.com").IsValid);
+            // Rejected: complex objects that could smuggle user content past primitive checks.
+            Assert.False(TelemetryGuard.Validate("capture.count", new { secret = "data" }).IsValid);
 
-        // Rejected: complex objects that could smuggle user content past primitive checks.
-        Assert.False(TelemetryGuard.Validate("capture.count", new { secret = "data" }).IsValid);
-
-        // Rejected: free-text string on a numeric-only key (no user content via the value shape).
-        Assert.False(TelemetryGuard.Validate("capture.count", "free text").IsValid);
+            // Rejected: free-text string on a numeric-only key (no user content via the value shape).
+            Assert.False(TelemetryGuard.Validate("capture.count", "free text").IsValid);
+        }
+        finally
+        {
+            TelemetryGuard.Configure(new TelemetryGuardOptions());
+        }
     }
 
     // ─── Invariant 12: Source spans reference source payload ────────────
