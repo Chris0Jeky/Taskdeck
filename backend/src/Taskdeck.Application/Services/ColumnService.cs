@@ -1,4 +1,5 @@
-﻿using Taskdeck.Application.DTOs;
+﻿using Microsoft.Extensions.Logging;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -12,25 +13,23 @@ public class ColumnService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
     private readonly IHistoryService? _historyService;
+    private readonly ILogger<ColumnService>? _logger;
 
     public ColumnService(IUnitOfWork unitOfWork)
         : this(unitOfWork, realtimeNotifier: null, historyService: null)
     {
     }
 
-    public ColumnService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null, IHistoryService? historyService = null)
+    public ColumnService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null, IHistoryService? historyService = null, ILogger<ColumnService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
         _historyService = historyService;
+        _logger = logger;
     }
 
-    private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
-    {
-        if (_historyService == null) return;
-        try { await _historyService.LogActionAsync(entityType, entityId, action, userId, changes); }
-        catch (Exception) { /* Audit is secondary — never crash the mutation */ }
-    }
+    private Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
+        => AuditLogWriter.SafeLogAsync(_historyService, _logger, entityType, entityId, action, userId, changes);
 
     public async Task<Result<ColumnDto>> CreateColumnAsync(CreateColumnDto dto, CancellationToken cancellationToken = default)
     {
