@@ -40,10 +40,8 @@ $FrontendDir  = Join-Path $RepoRoot "frontend/taskdeck-web"
 $FrontendDist = Join-Path $FrontendDir "dist"
 
 $ApiProject  = Join-Path $RepoRoot "backend/src/Taskdeck.Api/Taskdeck.Api.csproj"
-# NOTE: PKG-01 (#533) must be merged before UseStaticFiles / wwwroot serving is configured
-# in the .NET API (Program.cs / PipelineConfiguration.cs). Until that PR lands, the published
-# binary will NOT serve the SPA — it will return 404 for the frontend routes. Do not ship
-# a release artifact built from main until PKG-01 is merged.
+# SPA serving is wired (PKG-01/#533 merged): PipelineConfiguration.cs calls UseStaticFiles +
+# MapFallbackToFile("index.html"), so the published binary serves the frontend from wwwroot.
 $Wwwroot     = Join-Path $RepoRoot "backend/src/Taskdeck.Api/wwwroot"
 
 $OutputBase  = Join-Path $RepoRoot "artifacts\publish"
@@ -136,16 +134,17 @@ function Publish-Backend {
         Write-Fatal "API project file not found: $ApiProject"
     }
 
-    # TRIM WARNING: PublishTrimmed=true can silently break reflection-heavy code paths
-    # (EF Core migrations, ASP.NET DI conventions, System.Text.Json, SignalR).
-    # Validate the trimmed artifact with a smoke test before shipping.
+    # Match the validated CI release flags (.github/workflows/release-desktop.yml):
+    # PublishTrimmed=false (trimming silently breaks EF Core migrations, ASP.NET DI
+    # conventions, System.Text.Json, SignalR) and IncludeNativeLibrariesForSelfExtract=true
+    # so the SQLite native lib (e_sqlite3) is extracted for single-file self-contained runs.
     & dotnet publish $ApiProject `
         -c Release `
         -r $Rid `
         --self-contained true `
-        -p:PublishSingleFile=true `
-        -p:PublishTrimmed=true `
-        -p:TrimmerRootAssembly=Taskdeck.Api `
+        '-p:PublishSingleFile=true' `
+        '-p:PublishTrimmed=false' `
+        '-p:IncludeNativeLibrariesForSelfExtract=true' `
         -o $OutputDir
 
     if ($LASTEXITCODE -ne 0) { Write-Fatal "dotnet publish failed (exit $LASTEXITCODE)." }
