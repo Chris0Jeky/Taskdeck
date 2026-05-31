@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A local-first execution workspace for developers. Core thesis: near-zero-friction capture with review-first (proposal-based) automation -- no silent or destructive mutations. Local persistence via SQLite.
 
+## Outstanding Tasks (read first, surface always)
+
+`OUTSTANDING_TASKS.md` (repo root) is the maintainer's durable cross-session checklist.
+
+- **Read it at the start of every session.**
+- **Surface its open (`[ ]`) items — with their IDs — whenever you give a summary, status update, handoff, or "what's next."** The maintainer relies on this so nothing is forgotten across context resets.
+- **Only check off / remove a task when the maintainer explicitly says it is done** (then mark it and add a dated changelog line). Never auto-complete an item because a related PR was opened.
+- Add new outstanding tasks there when asked to remember something, or when substantial work is deferred.
+
 ## Required Reading Before Changes
 
 1. `docs/STATUS.md` -- source of truth for current shipped state (always read first)
