@@ -21,4 +21,11 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- Referenced so roadmap-invariant tests can assert against the shipped services/types
+       (TelemetryGuard, McpToolDefinitionHashService, SourceSpan/ProposalProvenance) — #1126. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Taskdeck.Domain\Taskdeck.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Taskdeck.Application\Taskdeck.Application.csproj" />
+  </ItemGroup>
+
 </Project>
