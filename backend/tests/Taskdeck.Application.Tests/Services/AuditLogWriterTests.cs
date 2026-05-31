@@ -74,7 +74,21 @@ public class AuditLogWriterTests
         Assert.Null(ex);
     }
 
-    private enum FakeBehavior { Succeed, Fail, Throw }
+    [Fact]
+    public async Task SafeLogAsync_WhenLogActionReturnsNullResult_LogsWarningWithoutException()
+    {
+        var logger = new RecordingLogger();
+        var history = new FakeHistoryService(FakeBehavior.ReturnNull);
+
+        await AuditLogWriter.SafeLogAsync(history, logger, "card", Guid.NewGuid(), AuditAction.Created);
+
+        // A null result is classified as a failed write (Warning, no exception), not a throw/NRE.
+        var warnings = logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
+        Assert.Single(warnings);
+        Assert.Null(warnings[0].Exception);
+    }
+
+    private enum FakeBehavior { Succeed, Fail, Throw, ReturnNull }
 
     private sealed class FakeHistoryService : IHistoryService
     {
@@ -86,6 +100,7 @@ public class AuditLogWriterTests
             {
                 FakeBehavior.Throw => throw new InvalidOperationException("audit store unavailable"),
                 FakeBehavior.Fail => Task.FromResult(Result.Failure("AuditError", "could not write audit log")),
+                FakeBehavior.ReturnNull => Task.FromResult<Result>(null!),
                 _ => Task.FromResult(Result.Success()),
             };
 
