@@ -4,6 +4,7 @@ This document is a concise contributor guide for the Taskdeck repository.
 Its scope applies to the entire repo unless overridden by more specific `AGENTS.md` files in subfolders.
 
 ## Always start here (required)
+- Read `OUTSTANDING_TASKS.md` (repo root) — the maintainer's durable cross-session checklist. Surface its open items in any summary/status/handoff; only check items off when the maintainer says they are done.
 - Read `docs/STATUS.md` for Current Focus and constraints (source of truth).
 - Use `docs/IMPLEMENTATION_MASTERPLAN.md` for roadmap context.
 - Use `docs/GOLDEN_PRINCIPLES.md` for stable repository invariants and guardrails.

@@ -144,7 +144,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "Write-Output 'Taskdeck repo. Read CLAUDE.md for context. Read docs/STATUS.md for current state before making changes.'",
+            "command": "Write-Output 'Taskdeck repo. Read CLAUDE.md for context. Read docs/STATUS.md for current state before making changes. Check OUTSTANDING_TASKS.md and surface its open items in summaries.'",
             "timeout": 5
           }
         ]
