@@ -540,7 +540,25 @@ public class RoadmapInvariantTests
         Assert.Throws<DomainException>(() =>
             new SourceSpan(sourceBlockId, envelopeId, 15, 10, "x"));        // end <= start
 
-        // A proposal's provenance chain ties automation output back to its originating run.
+        // An automation output must actually LINK to a source span — not merely have spans exist
+        // in isolation. An IntentCandidate carries EvidenceLinks that resolve to the SourceSpan
+        // referencing the originating payload; this guards against INV-12 going false-green when an
+        // output ships with no evidence link back to its source.
+        var candidate = new IntentCandidate(envelopeId, "Create card for API review", confidence: 0.9, rank: 0, actionType: "create-card");
+        var evidence = new EvidenceLink(candidate.Id, span.Id, relevance: 1.0, rationale: "contains the request");
+        candidate.AddEvidenceLink(evidence, span);
+
+        var link = Assert.Single(candidate.EvidenceLinks);
+        Assert.Equal(span.Id, link.SourceSpanId);            // the output's evidence resolves to the span...
+        Assert.Equal(candidate.Id, link.IntentCandidateId);  // ...and back to the originating output
+
+        // The link can only be formed when the span belongs to the output's envelope — a span from
+        // an unrelated envelope (i.e., not the output's source payload) is rejected.
+        var foreignSpan = new SourceSpan(Guid.NewGuid(), Guid.NewGuid(), 0, 3, "abc");
+        Assert.Throws<DomainException>(() =>
+            candidate.AddEvidenceLink(new EvidenceLink(candidate.Id, foreignSpan.Id), foreignSpan));
+
+        // A proposal's provenance chain also ties automation output back to its originating run.
         var provenance = new ProposalProvenance(Guid.NewGuid(), "corr-123", "mock");
         Assert.NotEqual(Guid.Empty, provenance.ProposalId);
         Assert.Equal("corr-123", provenance.CorrelationId);
