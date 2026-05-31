@@ -151,6 +151,13 @@ public class UnitOfWork : IUnitOfWork
                     "Proposal revision was created by another session. Refresh and retry your edit.",
                     ex);
             }
+            catch (DbUpdateException ex) when (IsOperationIdempotencyKeyUniqueViolation(ex))
+            {
+                throw new DomainException(
+                    ErrorCodes.Conflict,
+                    "An automation operation with this idempotency key already exists.",
+                    ex);
+            }
             catch (DbUpdateException ex) when (!resolvedRecoverableUniqueConflict && TryResolveRecoverableUniqueConflicts(ex))
             {
                 resolvedRecoverableUniqueConflict = true;
@@ -335,6 +342,19 @@ public class UnitOfWork : IUnitOfWork
             StringComparison.OrdinalIgnoreCase)
             || exception.InnerException.Message.Contains(
                 "IX_ProposalRevisions_ProposalId_RevisionNumber",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOperationIdempotencyKeyUniqueViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is null)
+            return false;
+
+        return exception.InnerException.Message.Contains(
+            "AutomationProposalOperations.IdempotencyKey",
+            StringComparison.OrdinalIgnoreCase)
+            || exception.InnerException.Message.Contains(
+                "IX_AutomationProposalOperations_IdempotencyKey",
                 StringComparison.OrdinalIgnoreCase);
     }
 
