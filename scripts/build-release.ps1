@@ -142,9 +142,9 @@ function Publish-Backend {
         -c Release `
         -r $Rid `
         --self-contained true `
-        -p:PublishSingleFile=true `
-        -p:PublishTrimmed=false `
-        -p:IncludeNativeLibrariesForSelfExtract=true `
+        '-p:PublishSingleFile=true' `
+        '-p:PublishTrimmed=false' `
+        '-p:IncludeNativeLibrariesForSelfExtract=true' `
         -o $OutputDir
 
     if ($LASTEXITCODE -ne 0) { Write-Fatal "dotnet publish failed (exit $LASTEXITCODE)." }
