@@ -179,6 +179,9 @@ public class BoardRepository : Repository<Board>, IBoardRepository
                     .ThenInclude(card => card.CardLabels)
                         .ThenInclude(cardLabel => cardLabel.Label)
             .Include(b => b.Labels)
+            // Split the 4-level Columns->Cards->CardLabels->Label fan-out into separate
+            // queries to avoid a cartesian row explosion on the hottest board read path.
+            .AsSplitQuery()
             .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
     }
 
