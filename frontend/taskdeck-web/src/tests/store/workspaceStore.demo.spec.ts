@@ -65,6 +65,7 @@ describe('workspaceStore demo mode', () => {
     expect(summary.workspaceMode).toBe('guided')
     expect(summary.boards.recentBoards.length).toBeGreaterThan(0)
     expect(store.homeSummary).not.toBeNull()
+    expect(store.preferencesHydrated).toBe(true)
     expect(workspaceApi.getHomeSummary).not.toHaveBeenCalled()
   })
 

@@ -181,10 +181,33 @@ function handleLogout() {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
-  if (session.isAuthenticated && !workspace.hasHomeSummary && !workspace.homeLoading) {
-    void workspace.fetchHomeSummary().catch(() => {})
-  }
 })
+
+function hydratePreferencesIfNeeded() {
+  if (session.isAuthenticated && !workspace.preferencesHydrated && !workspace.preferenceLoading) {
+    void workspace.hydratePreferences()
+  }
+}
+
+watch(
+  () => session.isAuthenticated,
+  (isAuthenticated) => {
+    if (!isAuthenticated) {
+      workspace.resetForLogout()
+      return
+    }
+
+    if (!workspace.hasHomeSummary && !workspace.homeLoading) {
+      void workspace.fetchHomeSummary().catch(() => {
+        hydratePreferencesIfNeeded()
+      })
+      return
+    }
+
+    hydratePreferencesIfNeeded()
+  },
+  { immediate: true },
+)
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)

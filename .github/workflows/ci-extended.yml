@@ -84,7 +84,7 @@ jobs:
 
   backend-solution:
     name: Backend Solution Regression
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (contains(github.event.pull_request.labels.*.name, 'testing') || contains(github.event.pull_request.labels.*.name, 'performance')))
     uses: ./.github/workflows/reusable-backend-solution.yml
     with:
       dotnet-version: 8.0.x

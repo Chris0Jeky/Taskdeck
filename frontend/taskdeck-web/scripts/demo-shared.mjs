@@ -42,6 +42,32 @@ export function assertSafeLocalApiTarget(
   )
 }
 
+export function extractListItems(response, contextLabel = 'response') {
+  if (Array.isArray(response)) {
+    return response
+  }
+
+  if (response && typeof response === 'object') {
+    if (Array.isArray(response.items)) {
+      return response.items
+    }
+
+    if (Array.isArray(response.Items)) {
+      return response.Items
+    }
+  }
+
+  throw new TypeError(`${contextLabel} did not return a list or paginated items object`)
+}
+
+export function hasMoreListItems(response) {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    return false
+  }
+
+  return Boolean(response.hasMore ?? response.HasMore)
+}
+
 export function isoDaysFromNow(days) {
   const value = new Date()
   value.setDate(value.getDate() + Number(days || 0))

@@ -22,5 +22,5 @@ test('review view empty state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('review-empty')
+  await expect(page).toHaveScreenshot('review-empty.png')
 })

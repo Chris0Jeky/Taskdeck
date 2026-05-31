@@ -24,5 +24,5 @@ test('capture modal typed mode default', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('capture-modal-typed')
+  await expect(page).toHaveScreenshot('capture-modal-typed.png')
 })

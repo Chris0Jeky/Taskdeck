@@ -31,7 +31,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   assertSafeLocalApiTarget,
+  extractListItems,
   getHostname,
+  hasMoreListItems,
   isLocalHostname,
   normalizeBaseUrl,
   parseTrueishEnv,
@@ -400,6 +402,28 @@ function safeJsonParse(text) {
     return JSON.parse(text)
   } catch {
     return null
+  }
+}
+
+async function listBoards(token) {
+  const limit = 200
+  let offset = 0
+  const boards = []
+
+  while (true) {
+    const response = await http(
+      'GET',
+      `/boards?includeArchived=true&offset=${offset}&limit=${limit}`,
+      { token },
+    )
+    const items = extractListItems(response, 'GET /boards')
+    boards.push(...items)
+
+    if (!hasMoreListItems(response) || items.length === 0) {
+      return boards
+    }
+
+    offset += items.length
   }
 }
 
@@ -939,7 +963,7 @@ export async function main({ reset = false } = {}) {
   console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
   // 2) Reuse/create canonical demo boards and archive extra active DEMO boards.
-  let boards = await http('GET', '/boards?includeArchived=true', { token: demoToken })
+  let boards = await listBoards(demoToken)
   let demoBoards = (boards || []).filter(isDemoBoard)
 
   if (reset && demoBoards.length) {
@@ -957,7 +981,7 @@ export async function main({ reset = false } = {}) {
       }
     }
     // Re-fetch after deletion
-    boards = await http('GET', '/boards?includeArchived=true', { token: demoToken })
+    boards = await listBoards(demoToken)
     demoBoards = (boards || []).filter(isDemoBoard)
     if (demoBoards.length) {
       console.warn(

@@ -42,7 +42,11 @@ const mockWorkspace = reactive({
   reviewBadgeCount: 0,
   hasHomeSummary: true,
   homeLoading: false,
+  preferenceLoading: false,
+  preferencesHydrated: false,
+  hydratePreferences: vi.fn().mockResolvedValue(null),
   fetchHomeSummary: vi.fn().mockResolvedValue(undefined),
+  resetForLogout: vi.fn(),
 })
 
 const mockPaperTheme = reactive({
@@ -115,6 +119,10 @@ describe('AppShell — paper variant routing', () => {
     mockPaperTheme.isOn = false
     mockPaperTheme.activeClass = null
     mockWorkspace.mode = 'guided'
+    mockWorkspace.hasHomeSummary = true
+    mockWorkspace.homeLoading = false
+    mockWorkspace.preferenceLoading = false
+    mockWorkspace.preferencesHydrated = false
     mockRoute.path = '/workspace/home'
     mockViewportMode.value = 'desktop'
   })

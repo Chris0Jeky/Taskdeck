@@ -1,20 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import ToastContainer from './components/common/ToastContainer.vue'
 import PaperToastContainer from './components/paper/PaperToastContainer.vue'
 import SessionTimeoutWarning from './components/common/SessionTimeoutWarning.vue'
-import AppShell from './components/shell/AppShell.vue'
 import ErrorBoundary from './components/ErrorBoundary.vue'
 import { useSessionStore } from './store/sessionStore'
 import { useFeatureFlagStore } from './store/featureFlagStore'
-import { useWorkspaceStore } from './store/workspaceStore'
 import { usePaperThemeStore } from './store/paperThemeStore'
+
+const AppShell = defineAsyncComponent(() => import('./components/shell/AppShell.vue'))
 
 const route = useRoute()
 const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
-const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
 
 paperTheme.apply()
@@ -27,19 +26,6 @@ onMounted(() => {
   session.restoreSession()
   featureFlags.restore()
 })
-
-watch(
-  () => session.isAuthenticated,
-  (isAuthenticated) => {
-    if (!isAuthenticated) {
-      workspace.resetForLogout()
-      return
-    }
-
-    void workspace.hydratePreferences()
-  },
-  { immediate: true }
-)
 </script>
 
 <template>

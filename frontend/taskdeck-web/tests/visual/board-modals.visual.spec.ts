@@ -21,8 +21,10 @@ test.beforeEach(async ({ page, request }) => {
 test('card modal edit state', async ({ page }) => {
   await seedMinimalBoard(page, 'Visual Board Modals')
 
-  // Open the first card to trigger CardModal
-  await page.locator('[data-card-id]').first().click()
+  // Click the title, not the card center: the center can land on the drag
+  // handle, whose click handler intentionally stops propagation.
+  const sampleCard = page.locator('[data-card-id]').filter({ hasText: 'Sample Card' }).first()
+  await sampleCard.getByRole('heading', { name: 'Sample Card', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Edit Card' })).toBeVisible()
 
   await prepareForScreenshot(page)
@@ -30,7 +32,7 @@ test('card modal edit state', async ({ page }) => {
   // Mask the card title input — it reflects the seeded card title which
   // could change if the setup helper is updated. Keep the screenshot
   // focused on modal chrome.
-  await expect(page).toHaveScreenshot('card-modal-edit', {
+  await expect(page).toHaveScreenshot('card-modal-edit.png', {
     mask: [page.locator('#card-title')],
   })
 })
@@ -46,7 +48,7 @@ test('column edit modal', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('column-edit-modal')
+  await expect(page).toHaveScreenshot('column-edit-modal.png')
 })
 
 test('starter pack modal json import tab', async ({ page }) => {
@@ -64,5 +66,5 @@ test('starter pack modal json import tab', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('starter-pack-modal-import')
+  await expect(page).toHaveScreenshot('starter-pack-modal-import.png')
 })

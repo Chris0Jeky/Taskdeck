@@ -116,7 +116,8 @@ jobs:
 
       - name: Reset harness result folders
         run: |
-          rm -f frontend/taskdeck-web/taskdeck.perf.k6.ci.db
+          rm -rf frontend/taskdeck-web/.ci-db/perf
+          mkdir -p frontend/taskdeck-web/.ci-db/perf
           mkdir -p frontend/taskdeck-web/test-results/perf
 
       - name: Run k6 board-heavy API profile
@@ -126,7 +127,7 @@ jobs:
           K6_USER_POOL: ${{ inputs.k6-user-pool }}
           ASPNETCORE_ENVIRONMENT: Development
           ASPNETCORE_URLS: http://127.0.0.1:5000
-          ConnectionStrings__DefaultConnection: Data Source=frontend/taskdeck-web/taskdeck.perf.k6.ci.db
+          ConnectionStrings__DefaultConnection: Data Source=${{ github.workspace }}/frontend/taskdeck-web/.ci-db/perf/taskdeck.perf.k6.ci.db
         run: |
           set -euo pipefail
 

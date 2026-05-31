@@ -9,8 +9,18 @@ import {
   planDemoSeedRerunState,
   shouldRecreateCaptureSeed,
 } from '../scripts/demo-seed.mjs'
+import { extractListItems } from '../scripts/demo-shared.mjs'
 
 describe('demo seed rerun planning', () => {
+  it('normalizes paginated API responses for demo board discovery', () => {
+    expect(extractListItems([{ id: 'legacy-board' }], 'boards')).toEqual([{ id: 'legacy-board' }])
+    expect(extractListItems({ items: [{ id: 'board-1' }] }, 'boards')).toEqual([{ id: 'board-1' }])
+    expect(extractListItems({ Items: [{ id: 'board-2' }] }, 'boards')).toEqual([{ id: 'board-2' }])
+    expect(() => extractListItems({ totalCount: 0 }, 'boards')).toThrow(
+      'boards did not return a list or paginated items object',
+    )
+  })
+
   it('marks all seeded artifacts for creation when the demo account is empty', () => {
     const plan = planDemoSeedRerunState({
       boardId: 'board-1',

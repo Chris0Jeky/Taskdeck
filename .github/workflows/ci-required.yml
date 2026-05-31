@@ -20,7 +20,7 @@
 #     ├── dependency-review (PR only)
 #     ├── reusable-dependency-security-signals.yml (label: security)
 #     ├── reusable-openapi-guardrail.yml
-#     ├── reusable-backend-solution.yml (label: testing)
+#     ├── reusable-backend-solution.yml (label: testing, performance)
 #     ├── reusable-e2e-smoke.yml (label: testing)
 #     ├── reusable-e2e-cross-browser.yml (label: testing)
 #     ├── reusable-demo-director-smoke.yml (label: automation)
