@@ -26,10 +26,8 @@ FRONTEND_DIR="$REPO_ROOT/frontend/taskdeck-web"
 FRONTEND_DIST="$FRONTEND_DIR/dist"
 
 API_PROJECT="$REPO_ROOT/backend/src/Taskdeck.Api/Taskdeck.Api.csproj"
-# NOTE: PKG-01 (#533) must be merged before UseStaticFiles / wwwroot serving is configured
-# in the .NET API (Program.cs / PipelineConfiguration.cs). Until that PR lands, the published
-# binary will NOT serve the SPA — it will return 404 for the frontend routes. Do not ship
-# a release artifact built from main until PKG-01 is merged.
+# SPA serving is wired (PKG-01/#533 merged): PipelineConfiguration.cs calls UseStaticFiles +
+# MapFallbackToFile("index.html"), so the published binary serves the frontend from wwwroot.
 WWWROOT="$REPO_ROOT/backend/src/Taskdeck.Api/wwwroot"
 
 OUTPUT_BASE="$REPO_ROOT/artifacts/publish"
@@ -136,16 +134,17 @@ publish_backend() {
         fail "API project file not found: $API_PROJECT"
     fi
 
-    # TRIM WARNING: PublishTrimmed=true can silently break reflection-heavy code paths
-    # (EF Core migrations, ASP.NET DI conventions, System.Text.Json, SignalR).
-    # Validate the trimmed artifact with a smoke test before shipping.
+    # Match the validated CI release flags (.github/workflows/release-desktop.yml):
+    # PublishTrimmed=false (trimming silently breaks EF Core migrations, ASP.NET DI
+    # conventions, System.Text.Json, SignalR) and IncludeNativeLibrariesForSelfExtract=true
+    # so the SQLite native lib (e_sqlite3) is extracted for single-file self-contained runs.
     dotnet publish "$API_PROJECT" \
         -c Release \
         -r "$rid" \
         --self-contained true \
         -p:PublishSingleFile=true \
-        -p:PublishTrimmed=true \
-        -p:TrimmerRootAssembly=Taskdeck.Api \
+        -p:PublishTrimmed=false \
+        -p:IncludeNativeLibrariesForSelfExtract=true \
         -o "$output_dir"
 
     log "Publish complete: $output_dir"
