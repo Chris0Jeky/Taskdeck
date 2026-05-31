@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-05-29
+Last Updated: 2026-05-31
 
 Continuous-cycle wave (2026-05-29, 19 PRs merged, zero open PRs): cleared the entire open-PR backlog with two adversarial reviews per PR and all findings (all severities, including bot comments) addressed.
 - **RFAI roadmap complete**: RFAI-11 (`#983`/`#1079`, ambient channel — VS Code extension + voice prototype; final Codex finding fixed: git repo matched by document-path containment) and RFAI-12 (`#984`/`#1080`, learning loop UI, Ollama provider, ProvenanceDrawer, cohort dashboard) delivered. All 12 RFAI issues now shipped.
@@ -1004,6 +1004,8 @@ Reconciliation record:
 - `docs/analysis/2026-02-23_outreach-crm-synthesis.md`
 
 ## Test Status (Executed)
+
+> **Authoritative test totals live in `docs/TESTING_GUIDE.md`** ("Current Verified Totals"). The per-section figures in this block are a historical snapshot (last recertified 2026-04-25) that has since drifted out of sync with TESTING_GUIDE; treat TESTING_GUIDE as the single source of truth and recertify there from a green CI/nightly run. (Tracked for cleanup in #1138.)
 
 Verification Date: 2026-04-25 (recertified after PRs #960–#969 audit-remediation wave)
 
