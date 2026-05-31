@@ -19,9 +19,6 @@ public class CardRepository : Repository<Card>, ICardRepository
                 .ThenInclude(cl => cl.Label)
             .OrderBy(c => c.ColumnId)
                 .ThenBy(c => c.Position)
-            // Split the cards->labels fan-out so a board with many labelled cards does
-            // not multiply rows; the root OrderBy is preserved under split queries.
-            .AsSplitQuery()
             .ToListAsync(cancellationToken);
     }
 
