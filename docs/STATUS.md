@@ -2,6 +2,13 @@
 
 Last Updated: 2026-05-31
 
+Cleanup/hardening wave (2026-05-31, 8 PRs merged, 2 issues closed; 2 adversarial review passes per PR with all findings of every severity fixed and all bot threads resolved):
+- **Open-PR backlog cleared** (`#1143`–`#1147`): non-watch `vitest run` + MetricsView flake fix (`#1143`), docs-truth corrections (`#1144`), CI-aligned release scripts + stale PKG-01 warning removed (`#1145`), duplicate operation idempotency-key now returns **409 not 500** (`#1146`), `AsSplitQuery` on the multi-collection board read (`#1147`).
+- **Proposal endpoint hardened** (`#1125`/`#1151`): new `ProposalOperationInputValidator` rejects malformed operation input (markup/binary `actionType`/`targetType`, non-JSON / oversized / over-nested `parameters`) with **400** at the shared create path, using a permissive identifier-format check so it never rejects legitimate planner/chat/capture/MCP operations. Adversarial review caught a self-introduced HIGH (a null `operations` element → 500) which was fixed before merge.
+- **Roadmap invariants enforced** (`#1126`/`#1153`): INV-10 (MCP hash-pin), INV-11 (TelemetryGuard), INV-12 (provenance source spans) un-skipped with real assertions against the shipped services; only INV-09 (DataFlowRegistry, genuinely unbuilt) remains skipped. Surfaced that `McpToolDefinitionHashService` is registered but **not wired into the MCP runtime** (tracked `#1154`).
+- **Swallowed audit failures surfaced** (`#1134` first slice / `#1155`): the 4 copy-pasted empty-catch `SafeLogAsync` (Board/Card/Column/Label) now route through a shared `AuditLogWriter` that logs at **Warning** on a thrown exception or a returned failed `Result`, keeping the never-crash intent.
+- Seeded follow-ups: `#1149` (idempotency-key contract ADR), `#1150` (packaging-doc trim drift), `#1152` (Queue/V1 validator bypass), `#1154` (MCP hash wiring). `#1134` stays open for its remaining 6 acceptance criteria.
+
 Continuous-cycle wave (2026-05-29, 19 PRs merged, zero open PRs): cleared the entire open-PR backlog with two adversarial reviews per PR and all findings (all severities, including bot comments) addressed.
 - **RFAI roadmap complete**: RFAI-11 (`#983`/`#1079`, ambient channel — VS Code extension + voice prototype; final Codex finding fixed: git repo matched by document-path containment) and RFAI-12 (`#984`/`#1080`, learning loop UI, Ollama provider, ProvenanceDrawer, cohort dashboard) delivered. All 12 RFAI issues now shipped.
 - **Composable hardening**: unhandled promise rejections (`#1093`/`#1095`), cleanup/memory-leak fixes with `onScopeDispose` (`#1094`/`#1104`), FilterPanel aria-labels (`#1097`/`#1098`).
