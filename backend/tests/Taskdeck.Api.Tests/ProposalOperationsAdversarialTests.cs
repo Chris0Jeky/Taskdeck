@@ -326,4 +326,23 @@ public class ProposalOperationsAdversarialTests : IClassFixture<TestWebApplicati
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
             $"oversized operation parameters must be rejected with 400. body={respBody}");
     }
+
+    [Fact]
+    public async Task NullOperationElement_ShouldReturn400()
+    {
+        await EnsureAuthenticatedAsync();
+
+        // A null element inside the operations array binds to a List with a null entry; the
+        // validator must reject it with 400 rather than dereferencing it into an unhandled 500.
+        var body = "{\"sourceType\": 0, \"summary\": \"test\", \"riskLevel\": 0, \"correlationId\": \"abc\", " +
+                   "\"operations\": [null]}";
+
+        var response = await _client.PostAsync("/api/automation/proposals",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        var actual = (int)response.StatusCode;
+        var respBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            $"a null operation element must be rejected with 400, not cause a 500. actual={actual} body={respBody}");
+    }
 }
