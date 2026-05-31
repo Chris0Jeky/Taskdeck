@@ -44,7 +44,9 @@ public class ProposalOperationInputValidatorTests
     [InlineData("<script>alert(1)</script>")]
     [InlineData("'; DROP TABLE cards; --")]
     [InlineData("create card")]            // internal whitespace
-    [InlineData("card\tcreate")]           // embedded tab survives Trim()
+    [InlineData("card\tcreate")]           // embedded tab
+    [InlineData(" create ")]               // surrounding whitespace (no longer trimmed away)
+    [InlineData("create\n")]               // trailing newline
     [InlineData("")]                       // empty
     [InlineData("   ")]                    // whitespace only
     [InlineData("1create")]                // must start with a letter
@@ -69,6 +71,43 @@ public class ProposalOperationInputValidatorTests
     {
         var longToken = "a" + new string('b', ProposalOperationInputValidator.MaxTokenLength);
         var result = ProposalOperationInputValidator.Validate(One(actionType: longToken));
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Validate_OverlongTargetType_Fails()
+    {
+        var longToken = "a" + new string('b', ProposalOperationInputValidator.MaxTokenLength);
+        var result = ProposalOperationInputValidator.Validate(One(targetType: longToken));
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Validate_NullOperationElement_Fails()
+    {
+        var ops = new List<CreateProposalOperationDto> { null! };
+        var result = ProposalOperationInputValidator.Validate(ops);
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Validate_ParametersAtDepthBound_Succeeds()
+    {
+        // MeasureDepth(BuildNested(n)) == n + 1; BuildNested(Max-1) -> depth == Max (allowed).
+        var json = BuildNested(ProposalOperationInputValidator.MaxParametersDepth - 1);
+        var result = ProposalOperationInputValidator.Validate(One(parameters: json));
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
+    [Fact]
+    public void Validate_ParametersJustBeyondDepthBound_Fails()
+    {
+        // BuildNested(Max) -> depth == Max + 1 (just over the bound).
+        var json = BuildNested(ProposalOperationInputValidator.MaxParametersDepth);
+        var result = ProposalOperationInputValidator.Validate(One(parameters: json));
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
