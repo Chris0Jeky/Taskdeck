@@ -6,7 +6,7 @@ This guide covers deploying Taskdeck with multiple API instances using the Redis
 
 By default, Taskdeck runs with in-memory SignalR transport. This works for single-instance deployments and local development. When scaling to multiple instances behind a load balancer, enable the Redis backplane so that realtime events (board mutations, presence updates, tool status) propagate across all instances.
 
-**Architecture decision**: ADR-0023 documents the rationale for choosing Redis backplane over alternatives.
+**Architecture decision**: ADR-0025 documents the rationale for choosing Redis backplane over alternatives.
 
 ## Prerequisites
 
@@ -189,7 +189,7 @@ The Redis backplane uses a channel prefix of `taskdeck` to namespace its pub/sub
 
 ## Related Documentation
 
-- [ADR-0023: SignalR Scale-Out -- Redis Backplane](../decisions/ADR-0023-signalr-scaleout-redis-backplane.md)
+- [ADR-0025: SignalR Scale-Out -- Redis Backplane](../decisions/ADR-0025-signalr-scaleout-redis-backplane.md)
 - [ADR-0012: SignalR Realtime with Polling Fallback](../decisions/ADR-0012-signalr-realtime-with-polling-fallback.md)
 - [ASP.NET Core SignalR Redis backplane](https://learn.microsoft.com/en-us/aspnet/core/signalr/redis-backplane)
 - [StackExchange.Redis Configuration](https://stackexchange.github.io/StackExchange.Redis/Configuration.html)
