@@ -191,44 +191,73 @@ public class ProposalOperationsAdversarialTests : IClassFixture<TestWebApplicati
             $"Proposal creation returned 500 for expiryMinutes={expiryMinutes}");
     }
 
-    // ─────────────────────── Known 500 bugs (skip-annotated) ───────────────────────
-    // These tests document real API bugs discovered by adversarial testing.
-    // When operations contain unexpected actionType values or nested parameter JSON,
-    // the proposal creation endpoint returns 500 instead of 4xx.
+    // ─────────────────────── Operation input robustness ───────────────────────
+    // These previously carried [Fact(Skip)] "known 500 bug" annotations. The real
+    // root cause was a *shared* idempotency key ("key1") colliding with the global
+    // unique index on AutomationProposalOperation.IdempotencyKey across tests on the
+    // shared test DB — a duplicate key now returns 409 instead of 500 (see
+    // DuplicateIdempotencyKey_ShouldReturnConflictNot500). With unique keys, unusual
+    // actionType values and deeply nested parameter JSON are handled without a 500.
 
-    [Fact(Skip = "Known bug: proposal endpoint returns 500 when operations contain XSS in actionType")]
-    public async Task KnownBug_XssInActionType_Causes500()
+    [Fact]
+    public async Task MalformedActionType_ShouldNotReturn500()
     {
         await EnsureAuthenticatedAsync();
 
+        var key = System.Guid.NewGuid().ToString("N");
         var body = "{\"sourceType\": 0, \"summary\": \"test\", \"riskLevel\": 0, \"correlationId\": \"abc\", " +
                    "\"operations\": [{\"sequence\": 0, \"actionType\": \"<script>alert(1)</script>\", " +
-                   "\"targetType\": \"card\", \"parameters\": \"{}\", \"idempotencyKey\": \"key1\"}]}";
+                   "\"targetType\": \"card\", \"parameters\": \"{}\", \"idempotencyKey\": \"" + key + "\"}]}";
 
         var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync("/api/automation/proposals", content);
 
-        // BUG: This returns 500 instead of 400/422.
-        // Expected: ((int)response.StatusCode).Should().BeLessThan(500);
-        ((int)response.StatusCode).Should().Be(500,
-            "Documenting known bug: XSS in actionType causes 500");
+        var actual = (int)response.StatusCode;
+        var respBody = await response.Content.ReadAsStringAsync();
+        actual.Should().BeLessThan(500,
+            $"an unusual actionType must not cause a server error. actual={actual} body={respBody}");
     }
 
-    [Fact(Skip = "Known bug: proposal endpoint returns 500 when operations contain deeply nested parameter JSON")]
-    public async Task KnownBug_DeepNestedParameters_Causes500()
+    [Fact]
+    public async Task DeepNestedParameters_ShouldNotReturn500()
     {
         await EnsureAuthenticatedAsync();
 
+        var key = System.Guid.NewGuid().ToString("N");
         var body = "{\"sourceType\": 0, \"summary\": \"test\", \"riskLevel\": 0, \"correlationId\": \"abc\", " +
                    "\"operations\": [{\"sequence\": 0, \"actionType\": \"create\", \"targetType\": \"card\", " +
-                   "\"parameters\": \"{\\\"nested\\\": {\\\"deep\\\": {\\\"deeper\\\": true}}}\", \"idempotencyKey\": \"key1\"}]}";
+                   "\"parameters\": \"{\\\"nested\\\": {\\\"deep\\\": {\\\"deeper\\\": true}}}\", \"idempotencyKey\": \"" + key + "\"}]}";
 
         var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync("/api/automation/proposals", content);
 
-        // BUG: This returns 500 instead of 400/422 or 201.
-        // Expected: ((int)response.StatusCode).Should().BeLessThan(500);
-        ((int)response.StatusCode).Should().Be(500,
-            "Documenting known bug: nested parameter JSON causes 500");
+        var actual = (int)response.StatusCode;
+        var respBody = await response.Content.ReadAsStringAsync();
+        actual.Should().BeLessThan(500,
+            $"deeply nested parameter JSON must not cause a server error. actual={actual} body={respBody}");
+    }
+
+    [Fact]
+    public async Task DuplicateIdempotencyKey_ShouldReturnConflictNot500()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var key = System.Guid.NewGuid().ToString("N");
+        string BuildBody() =>
+            "{\"sourceType\": 0, \"summary\": \"test\", \"riskLevel\": 0, \"correlationId\": \"abc\", " +
+            "\"operations\": [{\"sequence\": 0, \"actionType\": \"create\", \"targetType\": \"card\", " +
+            "\"parameters\": \"{}\", \"idempotencyKey\": \"" + key + "\"}]}";
+
+        var first = await _client.PostAsync("/api/automation/proposals",
+            new StringContent(BuildBody(), Encoding.UTF8, "application/json"));
+        ((int)first.StatusCode).Should().BeLessThan(400,
+            "the first create with a fresh idempotency key should succeed");
+
+        var second = await _client.PostAsync("/api/automation/proposals",
+            new StringContent(BuildBody(), Encoding.UTF8, "application/json"));
+        var actual = (int)second.StatusCode;
+        var respBody = await second.Content.ReadAsStringAsync();
+        second.StatusCode.Should().Be(HttpStatusCode.Conflict,
+            $"a duplicate operation idempotency key must return 409, not a 500. actual={actual} body={respBody}");
     }
 }
