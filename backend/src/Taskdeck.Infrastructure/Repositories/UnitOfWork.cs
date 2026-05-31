@@ -350,12 +350,14 @@ public class UnitOfWork : IUnitOfWork
         if (exception.InnerException is null)
             return false;
 
-        return exception.InnerException.Message.Contains(
-            "AutomationProposalOperations.IdempotencyKey",
-            StringComparison.OrdinalIgnoreCase)
-            || exception.InnerException.Message.Contains(
-                "IX_AutomationProposalOperations_IdempotencyKey",
-                StringComparison.OrdinalIgnoreCase);
+        var message = exception.InnerException.Message;
+
+        // Match UNIQUE violations only. The bare column name also appears in NOT NULL
+        // violation messages ("NOT NULL constraint failed: AutomationProposalOperations.IdempotencyKey"),
+        // so require the UNIQUE qualifier (SQLite) or the unique index name (other providers).
+        return (message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("AutomationProposalOperations.IdempotencyKey", StringComparison.OrdinalIgnoreCase))
+            || message.Contains("IX_AutomationProposalOperations_IdempotencyKey", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool TryResolveDuplicateDailySnapshotConflicts(DbUpdateException exception)
