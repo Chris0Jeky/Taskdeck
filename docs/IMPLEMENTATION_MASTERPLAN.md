@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-05-29
+Last Updated: 2026-05-31
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -40,6 +40,13 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+Cleanup/hardening wave (2026-05-31, 8 PRs merged, 2 issues closed; 2 adversarial review passes per PR, all findings of every severity fixed, all bot threads resolved):
+- **Open-PR backlog cleared** (`#1143`–`#1147`): non-watch `vitest run` + MetricsView flake (`#1143`); docs-truth corrections incl. ADR-0023→0025 + `.gemini` link-depth fixes (`#1144`); release scripts aligned to CI flags + stale PKG-01 warning removed (`#1145`); duplicate operation idempotency-key → **409 not 500** (`#1146`); `AsSplitQuery` on the multi-collection board read (`#1147`).
+- **Proposal-create hardening** (`#1125`/`#1151`): `ProposalOperationInputValidator` rejects malformed operation input (non-identifier `actionType`/`targetType`, non-JSON / >64 KiB / >depth-32 `parameters`) with **400** at the shared `CreateProposalAsync` path — a permissive format check (not a membership allowlist) so no legitimate producer is rejected. Adversarial review found and fixed a self-introduced HIGH (null `operations` element → 500).
+- **Roadmap-invariant enforcement** (`#1126`/`#1153`): INV-10/11/12 un-skipped with real assertions against `McpToolDefinitionHashService` / `TelemetryGuard` / `SourceSpan`+`ProposalProvenance` (Architecture.Tests now references Domain+Application); only INV-09 (DataFlowRegistry) stays skipped. Found the MCP hash service is registered but un-wired into the runtime → `#1154`.
+- **Audit-failure observability** (`#1134` first slice / `#1155`): shared `AuditLogWriter` replaces 4 copy-pasted empty-catch `SafeLogAsync`, logging at Warning on a thrown exception or returned failed `Result` while preserving never-crash.
+- Seeded: `#1149` (idempotency contract ADR), `#1150` (packaging trim-doc drift), `#1152` (Queue/V1 validator bypass), `#1154` (MCP hash wiring). `#1134` remains open for its other 6 acceptance criteria.
 
 Continuous-cycle wave (2026-05-29, 19 PRs merged, backlog cleared to zero open PRs; 2 independent adversarial reviews per PR, all findings of every severity addressed including bot comments):
 - **RFAI roadmap complete (12 of 12)**: RFAI-11 (`#983`/`#1079`) ambient channel — VS Code extension + voice prototype (ADR-0033 ratified); RFAI-12 (`#984`/`#1080`) learning loop UI, Ollama provider, ProvenanceDrawer, cohort dashboard. Both heavily pre-reviewed; all Codex inline findings audited (one open item fixed on each: 1079 git-repo path-containment, 1080 already-clean).
