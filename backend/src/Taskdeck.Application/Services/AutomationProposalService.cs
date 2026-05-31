@@ -50,6 +50,13 @@ public class AutomationProposalService : IAutomationProposalService
 
     public async Task<Result<ProposalDto>> CreateProposalAsync(CreateProposalDto dto, CancellationToken cancellationToken = default)
     {
+        // Defensive create-time validation (issue #1125): reject malformed operation input
+        // (markup/binary actionType-targetType, non-JSON or oversized/over-nested parameters)
+        // with 400 before any persistence, so junk never persists and never escapes as a 500.
+        var operationValidation = ProposalOperationInputValidator.Validate(dto.Operations);
+        if (!operationValidation.IsSuccess)
+            return Result.Failure<ProposalDto>(operationValidation.ErrorCode, operationValidation.ErrorMessage);
+
         try
         {
             var proposal = new AutomationProposal(
