@@ -39,7 +39,7 @@ Tracker `#972` seeds the next review-first AI verification program. Delivered it
 - `#978`--`#979`: (**both delivered**, `#990`/`#1050`) vector-search fallback tests, embedding backfill safety (61 tests). RFAI-07 hybrid retrieval, duplicate calibration, and memory-assisted generation delivered in `#1050`.
 - `#980`: (**delivered**, `#992` + `#1073`/`#1074`) TelemetryGuard fuzz rejection, egress registry completeness (108 tests), egress disclosure API endpoint (`#1073`), privacy insights API for proposal outcome cohorts (`#1074`).
 - `#981`: (**delivered**, `#1052`) agent runtime hardening — property tests for no approve/direct-mutation tools, egress handler violation tests, MCP definition re-approval, and scheduled Inbox Digest quota/coalescing.
-- `#982`--`#983`: (**both delivered**, `#1078`/`#1079`) ambient capture provenance — PWA share target (RFAI-10, `#1078`), browser extension prototype, and the VS Code extension + voice prototype ambient channel (RFAI-11, `#1079`).
+- `#982`--`#983`: (**both delivered**, `#1078`/`#1079`) ambient capture provenance — PWA share target (RFAI-10, `#1078`; browser-extension prototype deferred — only a `CaptureSource.BrowserExtension = 10` enum placeholder exists, no MV3/WXT artifact shipped), and the VS Code extension + voice prototype ambient channel (RFAI-11, `#1079`).
 - `#984`: (**delivered**, `#1080`) beta-gate work — learning loop UI, provenance drawer, Ollama flag. NOTE: the CI-visible `RoadmapInvariantTests` for INV-10 (MCP hash-pin), INV-11 (TelemetryGuard), and INV-12 (provenance source spans) are still `[Fact(Skip = "...")]` even though that infrastructure shipped; un-skipping/wiring them is tracked in `#1126`. INV-09 (DataFlowRegistry) is genuinely unbuilt.
 
 ## Windows PowerShell Command Convention
