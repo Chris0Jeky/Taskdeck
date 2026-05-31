@@ -17,7 +17,7 @@ Companion Active Docs:
   - Application: 3,185 passed
   - API integration: 1,685 passed (0 failed, 2 skipped; 1,687 total)
   - CLI contract: 82 passed
-  - Architecture boundaries: 16 passed (0 failed, 4 skipped; 20 total)
+  - Architecture boundaries: 0 failed, **1 skipped** (only INV-09/DataFlowRegistry; INV-10/11/12 un-skipped with real assertions in #1126) — exact pass/total pending CI recertification (#1138)
   - Integration (Testcontainers): 20 passed
 - Frontend unit: **3,267 passing** -- verified 2026-05-16 post-bulk-merge (CI)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing
@@ -40,7 +40,7 @@ Tracker `#972` seeds the next review-first AI verification program. Delivered it
 - `#980`: (**delivered**, `#992` + `#1073`/`#1074`) TelemetryGuard fuzz rejection, egress registry completeness (108 tests), egress disclosure API endpoint (`#1073`), privacy insights API for proposal outcome cohorts (`#1074`).
 - `#981`: (**delivered**, `#1052`) agent runtime hardening — property tests for no approve/direct-mutation tools, egress handler violation tests, MCP definition re-approval, and scheduled Inbox Digest quota/coalescing.
 - `#982`--`#983`: (**both delivered**, `#1078`/`#1079`) ambient capture provenance — PWA share target (RFAI-10, `#1078`; browser-extension prototype deferred — only a `CaptureSource.BrowserExtension = 10` enum placeholder exists, no MV3/WXT artifact shipped), and the VS Code extension + voice prototype ambient channel (RFAI-11, `#1079`).
-- `#984`: (**delivered**, `#1080`) beta-gate work — learning loop UI, provenance drawer, Ollama flag. NOTE: the CI-visible `RoadmapInvariantTests` for INV-10 (MCP hash-pin), INV-11 (TelemetryGuard), and INV-12 (provenance source spans) are still `[Fact(Skip = "...")]` even though that infrastructure shipped; un-skipping/wiring them is tracked in `#1126`. INV-09 (DataFlowRegistry) is genuinely unbuilt.
+- `#984`: (**delivered**, `#1080`) beta-gate work — learning loop UI, provenance drawer, Ollama flag. NOTE: the CI-visible `RoadmapInvariantTests` for INV-10 (MCP hash-pin), INV-11 (TelemetryGuard), and INV-12 (provenance source spans) are now un-skipped with real assertions against the shipped services (`#1126`). Only INV-09 (DataFlowRegistry) remains `[Fact(Skip = "...")]` — that registry is genuinely unbuilt.
 
 ## Windows PowerShell Command Convention
 
