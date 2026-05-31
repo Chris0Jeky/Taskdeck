@@ -1,4 +1,5 @@
-﻿using Taskdeck.Application.DTOs;
+﻿using Microsoft.Extensions.Logging;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -15,6 +16,7 @@ public class BoardService
     private readonly IHistoryService? _historyService;
     private readonly ICacheService? _cacheService;
     private readonly CacheSettings? _cacheSettings;
+    private readonly ILogger<BoardService>? _logger;
 
     public BoardService(IUnitOfWork unitOfWork)
         : this(unitOfWork, authorizationService: null, realtimeNotifier: null, historyService: null)
@@ -27,7 +29,8 @@ public class BoardService
         IBoardRealtimeNotifier? realtimeNotifier = null,
         IHistoryService? historyService = null,
         ICacheService? cacheService = null,
-        CacheSettings? cacheSettings = null)
+        CacheSettings? cacheSettings = null,
+        ILogger<BoardService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
@@ -35,14 +38,11 @@ public class BoardService
         _historyService = historyService;
         _cacheService = cacheService;
         _cacheSettings = cacheSettings ?? new CacheSettings();
+        _logger = logger;
     }
 
-    private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
-    {
-        if (_historyService == null) return;
-        try { await _historyService.LogActionAsync(entityType, entityId, action, userId, changes); }
-        catch (Exception) { /* Audit is secondary — never crash the mutation */ }
-    }
+    private Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
+        => AuditLogWriter.SafeLogAsync(_historyService, _logger, entityType, entityId, action, userId, changes);
 
     public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, Guid actingUserId, CancellationToken cancellationToken = default)
     {
