@@ -304,12 +304,13 @@ describe('MetricsView — accessibility', () => {
   })
 
   it('marks error state with role="alert"', async () => {
-    // Resolve with no boards so onMounted's loadBoards() does not select a board
-    // and trigger the async metrics/forecast fetch chain. That chain previously
-    // raced the fixed double-flush waitForUi() under suite load and made this
-    // accessibility assertion intermittently time out. The error banner does not
-    // depend on boards, so removing the race makes the test deterministic (#1128).
-    mockBoardStore.fetchBoards.mockImplementation(async () => { mockBoardStore.boards = [] })
+    // Resolve fetchBoards as a no-op (boards is already [] from beforeEach) so
+    // onMounted's loadBoards() does not select a board and trigger the async
+    // metrics/forecast fetch chain. That chain previously raced the fixed
+    // double-flush waitForUi() under suite load and made this accessibility
+    // assertion intermittently time out. The error banner does not depend on
+    // boards, so removing the race makes the test deterministic (#1128).
+    mockBoardStore.fetchBoards.mockResolvedValue(undefined)
     mockMetricsStore.error = 'Some error'
     const wrapper = mount(MetricsView)
     await waitForUi()
