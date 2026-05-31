@@ -464,6 +464,25 @@ public class RoadmapInvariantTests
         Assert.NotEqual(
             McpToolDefinitionHashService.ComputeDefinitionHash("a", "b|c", schema),
             McpToolDefinitionHashService.ComputeDefinitionHash("a|b", "c", schema));
+
+        // Connect the invariant to the REAL MCP tool surface: load the actual [McpServerTool]
+        // definitions and confirm the hash mechanism applies to them and distinguishes them
+        // (distinct tools -> distinct hashes, so a schema change is detectable).
+        // NOTE: the hash service is shipped but not yet invoked by the MCP runtime, so end-to-end
+        // re-approval enforcement is tracked separately in #1154; this guards the mechanism + drift
+        // detection across the real tool set, not the (un-wired) runtime enforcement.
+        var mcpToolNames = GetSourceFiles("src/Taskdeck.Api/Mcp")
+            .SelectMany(f => Regex.Matches(ReadFile(f), @"\[McpServerTool\s*\(\s*Name\s*=\s*""([^""]+)""\s*\)")
+                .Select(m => m.Groups[1].Value))
+            .Distinct()
+            .ToList();
+
+        Assert.NotEmpty(mcpToolNames);
+        var toolHashes = mcpToolNames
+            .Select(n => McpToolDefinitionHashService.ComputeDefinitionHash(n, description, schema))
+            .ToList();
+        Assert.All(toolHashes, h => Assert.Matches("^[0-9a-f]{64}$", h));
+        Assert.Equal(mcpToolNames.Count, toolHashes.Distinct().Count()); // distinct real tools -> no hash collisions
     }
 
     // ─── Invariant 11: Local analytics no user content ─────────────────
