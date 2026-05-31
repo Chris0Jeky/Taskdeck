@@ -73,8 +73,8 @@ public class ProposalOperationsAdversarialTests : IClassFixture<TestWebApplicati
             "\"operations\": \"not-an-array\"}"
         };
 
-        // NOTE: Deeply nested JSON parameters and XSS in actionType cause 500s.
-        // These are documented as known bugs in separate skip-annotated tests below.
+        // NOTE: deeply nested JSON parameters and markup in actionType are now rejected with
+        // 400 by ProposalOperationInputValidator — see the dedicated *_ShouldReturn400 tests below.
 
         // Null/empty operations
         yield return new object[]
@@ -88,7 +88,7 @@ public class ProposalOperationsAdversarialTests : IClassFixture<TestWebApplicati
             "\"operations\": []}"
         };
 
-        // NOTE: XSS in actionType causes 500 — documented in a separate skip-annotated test below.
+        // NOTE: markup in actionType is now rejected with 400 — see MalformedActionType_ShouldReturn400 below.
 
         // SQL injection in parameters
         yield return new object[]
@@ -191,16 +191,17 @@ public class ProposalOperationsAdversarialTests : IClassFixture<TestWebApplicati
             $"Proposal creation returned 500 for expiryMinutes={expiryMinutes}");
     }
 
-    // ─────────────────────── Operation input robustness ───────────────────────
-    // These previously carried [Fact(Skip)] "known 500 bug" annotations. The real
-    // root cause was a *shared* idempotency key ("key1") colliding with the global
-    // unique index on AutomationProposalOperation.IdempotencyKey across tests on the
-    // shared test DB — a duplicate key now returns 409 instead of 500 (see
-    // DuplicateIdempotencyKey_ShouldReturnConflictNot500). With unique keys, unusual
-    // actionType values and deeply nested parameter JSON are handled without a 500.
+    // ─────────────────────── Operation input robustness (#1125) ───────────────────────
+    // These previously carried [Fact(Skip)] "known 500 bug" annotations. Two distinct root
+    // causes were found: (1) a *shared* idempotency key ("key1") colliding with the global
+    // unique index on AutomationProposalOperation.IdempotencyKey produced a 500 — now a 409
+    // (see DuplicateIdempotencyKey_ShouldReturnConflictNot500); (2) malformed operation input
+    // was persisted unvalidated. ProposalOperationInputValidator now rejects markup/binary
+    // actionType/targetType and non-JSON / oversized / over-nested parameters with 400 at the
+    // create boundary, before any persistence.
 
     [Fact]
-    public async Task MalformedActionType_ShouldNotReturn500()
+    public async Task MalformedActionType_ShouldReturn400()
     {
         await EnsureAuthenticatedAsync();
 
@@ -214,8 +215,8 @@ public class ProposalOperationsAdversarialTests : IClassFixture<TestWebApplicati
 
         var actual = (int)response.StatusCode;
         var respBody = await response.Content.ReadAsStringAsync();
-        actual.Should().BeLessThan(500,
-            $"an unusual actionType must not cause a server error. actual={actual} body={respBody}");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            $"markup in actionType is malformed input and must be rejected with 400, not persisted. actual={actual} body={respBody}");
     }
 
     [Fact]
@@ -259,5 +260,70 @@ public class ProposalOperationsAdversarialTests : IClassFixture<TestWebApplicati
         var respBody = await second.Content.ReadAsStringAsync();
         second.StatusCode.Should().Be(HttpStatusCode.Conflict,
             $"a duplicate operation idempotency key must return 409, not a 500. actual={actual} body={respBody}");
+    }
+
+    [Fact]
+    public async Task NonJsonParameters_ShouldReturn400()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var key = System.Guid.NewGuid().ToString("N");
+        var body = "{\"sourceType\": 0, \"summary\": \"test\", \"riskLevel\": 0, \"correlationId\": \"abc\", " +
+                   "\"operations\": [{\"sequence\": 0, \"actionType\": \"create\", \"targetType\": \"card\", " +
+                   "\"parameters\": \"not valid json\", \"idempotencyKey\": \"" + key + "\"}]}";
+
+        var response = await _client.PostAsync("/api/automation/proposals",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        var respBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            $"non-JSON operation parameters must be rejected with 400. body={respBody}");
+    }
+
+    [Fact]
+    public async Task TooDeeplyNestedParameters_ShouldReturn400()
+    {
+        await EnsureAuthenticatedAsync();
+
+        // Build JSON nested well beyond ProposalOperationInputValidator.MaxParametersDepth (32).
+        const int depth = 40;
+        var nested = new StringBuilder();
+        for (var i = 0; i < depth; i++) nested.Append("{\\\"a\\\":");
+        nested.Append('1');
+        for (var i = 0; i < depth; i++) nested.Append('}');
+
+        var key = System.Guid.NewGuid().ToString("N");
+        var body = "{\"sourceType\": 0, \"summary\": \"test\", \"riskLevel\": 0, \"correlationId\": \"abc\", " +
+                   "\"operations\": [{\"sequence\": 0, \"actionType\": \"create\", \"targetType\": \"card\", " +
+                   "\"parameters\": \"" + nested + "\", \"idempotencyKey\": \"" + key + "\"}]}";
+
+        var response = await _client.PostAsync("/api/automation/proposals",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        var respBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            $"parameters nested beyond the depth bound must be rejected with 400. body={respBody}");
+    }
+
+    [Fact]
+    public async Task OversizedParameters_ShouldReturn400()
+    {
+        await EnsureAuthenticatedAsync();
+
+        // Valid JSON whose UTF-8 size exceeds ProposalOperationInputValidator.MaxParametersBytes (64 KiB).
+        var hugeValue = new string('x', 70 * 1024);
+        var parameters = "{\\\"note\\\":\\\"" + hugeValue + "\\\"}";
+
+        var key = System.Guid.NewGuid().ToString("N");
+        var body = "{\"sourceType\": 0, \"summary\": \"test\", \"riskLevel\": 0, \"correlationId\": \"abc\", " +
+                   "\"operations\": [{\"sequence\": 0, \"actionType\": \"create\", \"targetType\": \"card\", " +
+                   "\"parameters\": \"" + parameters + "\", \"idempotencyKey\": \"" + key + "\"}]}";
+
+        var response = await _client.PostAsync("/api/automation/proposals",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        var respBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            $"oversized operation parameters must be rejected with 400. body={respBody}");
     }
 }
