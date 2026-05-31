@@ -41,8 +41,10 @@ public static class ProposalOperationInputValidator
     // separators (covers plain verbs like "create" and namespaced ones like "card.create").
     // Deliberately permissive (not a fixed allowlist) so new legitimate verbs/targets are not
     // rejected, while markup, SQL, control/binary characters, and whitespace are.
+    // Uses \A..\z (absolute string anchors), NOT ^..$: in .NET, $ also matches just before a
+    // trailing newline, so "create\n" would otherwise slip through.
     private static readonly Regex TokenPattern = new(
-        "^[A-Za-z][A-Za-z0-9_.-]*$",
+        @"\A[A-Za-z][A-Za-z0-9_.-]*\z",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static Result Validate(IReadOnlyList<CreateProposalOperationDto>? operations)
@@ -53,6 +55,11 @@ public static class ProposalOperationInputValidator
         for (var i = 0; i < operations.Count; i++)
         {
             var op = operations[i];
+            if (op is null)
+                return Result.Failure(
+                    ErrorCodes.ValidationError,
+                    $"Operation {i}: operation cannot be null.");
+
             var prefix = $"Operation {i} (sequence {op.Sequence})";
 
             if (!IsValidToken(op.ActionType))
@@ -78,8 +85,9 @@ public static class ProposalOperationInputValidator
         if (string.IsNullOrWhiteSpace(value))
             return false;
 
-        var trimmed = value.Trim();
-        return trimmed.Length <= MaxTokenLength && TokenPattern.IsMatch(trimmed);
+        // Match the raw value (no Trim): the regex rejects leading/trailing whitespace, so the
+        // value we validate is exactly the value that gets persisted and later matched at apply time.
+        return value.Length <= MaxTokenLength && TokenPattern.IsMatch(value);
     }
 
     private static string? ValidateParameters(string? rawParameters, string prefix)
