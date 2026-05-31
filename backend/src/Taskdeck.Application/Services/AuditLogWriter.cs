@@ -29,7 +29,15 @@ internal static class AuditLogWriter
         try
         {
             var result = await historyService.LogActionAsync(entityType, entityId, action, userId, changes);
-            if (!result.IsSuccess)
+            if (result is null)
+            {
+                // Defensive: a null Result shouldn't happen in production, but classify it as a
+                // failed write rather than letting the catch below mislabel it as a throw/NRE.
+                logger?.LogWarning(
+                    "Audit log write returned a null result for {EntityType} {EntityId} action {Action}. Mutation continues.",
+                    entityType, entityId, action);
+            }
+            else if (!result.IsSuccess)
             {
                 logger?.LogWarning(
                     "Audit log write failed for {EntityType} {EntityId} action {Action}: {ErrorCode} {ErrorMessage}. Mutation continues.",
