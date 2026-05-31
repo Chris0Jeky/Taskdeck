@@ -752,7 +752,7 @@ Roadmap v4 first-wave delivery (2026-04-25, PRs `#985`--`#988`):
     - Two rounds of adversarial review; no changes required in round 2
 
 138. RFAI-01 safety invariants, IA cut, eval seed (`#973`/`#986`, 2026-04-25):
-    - 12 roadmap invariant tests in `RoadmapInvariantTests.cs` (8 passing: INV-01 through INV-08 covering mutation safety and EgressEnvelope HTTP audit; 4 skipped with TODO for future features)
+    - 12 roadmap invariant tests in `RoadmapInvariantTests.cs` (11 passing: INV-01 through INV-08 covering mutation safety and EgressEnvelope HTTP audit, plus INV-10 MCP hash-pinning, INV-11 TelemetryGuard, INV-12 provenance source spans — un-skipped with real assertions in `#1126`; 1 skipped: INV-09 DataFlowRegistry, genuinely unbuilt)
     - Sidebar IA reduced from 17 to 5 primary items (Today, Inbox, Review, Boards, Search) with Settings in footer; demoted surfaces accessible via command palette
     - `?` shortcut help updated with navigation section for new IA model
     - 15 eval golden fixtures in `evals/golden/` (5 happy-path, 4 multi-instruction, 3 ambiguous, 5 safety-boundary) with JSON schema and README
