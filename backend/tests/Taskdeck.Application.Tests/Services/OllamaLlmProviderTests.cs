@@ -650,6 +650,25 @@ public class OllamaLlmProviderTests
         error.Should().Contain("Model is required");
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryValidateOllamaSettings_ShouldReturnFalse_WhenBaseUrlIsNotConfigured(string? baseUrl)
+    {
+        var settings = BuildPolicySettings();
+        settings.Ollama!.BaseUrl = baseUrl!;
+
+        var isValid = LlmProviderSelectionPolicy.TryValidateOllamaSettings(
+            settings, out var error, allowLocalhostEndpoints: true);
+
+        isValid.Should().BeFalse();
+        // Pins the corrected operator hint: must point at the real Llm: section,
+        // not the non-existent LlmProviders: path (PR #1160).
+        error.Should().Contain("Llm:Ollama:BaseUrl");
+        error.Should().Contain("not configured");
+    }
+
     [Fact]
     public void TryValidateOllamaSettings_ShouldReturnFalse_WhenBaseUrlIsNotAbsolute()
     {
