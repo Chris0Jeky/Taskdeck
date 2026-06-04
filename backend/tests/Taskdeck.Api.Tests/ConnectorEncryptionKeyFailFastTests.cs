@@ -133,8 +133,10 @@ public class ConnectorEncryptionKeyFailFastTests
                 var path = dbPath + suffix;
                 if (File.Exists(path))
                 {
+                    // Best-effort: a still-locked file can throw IOException or
+                    // UnauthorizedAccessException on Windows; neither should fail the test.
                     try { File.Delete(path); }
-                    catch (IOException) { /* best-effort temp cleanup */ }
+                    catch (Exception) { /* best-effort temp cleanup */ }
                 }
             }
         }

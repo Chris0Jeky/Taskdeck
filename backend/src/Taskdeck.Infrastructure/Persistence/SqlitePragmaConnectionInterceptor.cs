@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Taskdeck.Infrastructure.Persistence;
@@ -48,22 +49,46 @@ public sealed class SqlitePragmaConnectionInterceptor : DbConnectionInterceptor
 
     private void ApplyPragmas(DbConnection connection)
     {
-        using var command = connection.CreateCommand();
-        command.CommandText = BuildPragmaSql();
-        command.ExecuteNonQuery();
+        if (connection is not SqliteConnection)
+            return;
+
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = BuildPragmaSql();
+            command.ExecuteNonQuery();
+        }
+        catch (SqliteException)
+        {
+            // Best-effort: these PRAGMAs are concurrency/perf optimizations. A failure
+            // (e.g. a read-only database or filesystem -> SQLITE_READONLY) must not
+            // prevent the connection from opening. busy_timeout runs first, so it is
+            // still applied even when the WAL switch is the part that fails.
+        }
     }
 
     private async Task ApplyPragmasAsync(DbConnection connection, CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
-        command.CommandText = BuildPragmaSql();
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (connection is not SqliteConnection)
+            return;
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = BuildPragmaSql();
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (SqliteException)
+        {
+            // See ApplyPragmas — best-effort; a PRAGMA failure must not break connection open.
+        }
     }
 
-    // busy_timeout is interpolated (not parameterized) because PRAGMA statements do not
-    // accept bound parameters in SQLite. The value originates from validated configuration
-    // (DatabaseSettings.BusyTimeoutMilliseconds, Range-checked) and is an int, so there is
-    // no injection surface.
+    // busy_timeout is set BEFORE journal_mode=WAL so that if the WAL switch must wait for
+    // another process's lock, the configured wait is already in effect (otherwise the open
+    // could fail immediately with SQLITE_BUSY — the very first-run/concurrent-host case this
+    // interceptor exists to prevent). Values are interpolated (PRAGMA does not bind
+    // parameters); the timeout is a Range-validated int, so there is no injection surface.
     private string BuildPragmaSql() =>
-        $"PRAGMA journal_mode=WAL; PRAGMA busy_timeout={_busyTimeoutMilliseconds};";
+        $"PRAGMA busy_timeout={_busyTimeoutMilliseconds}; PRAGMA journal_mode=WAL;";
 }

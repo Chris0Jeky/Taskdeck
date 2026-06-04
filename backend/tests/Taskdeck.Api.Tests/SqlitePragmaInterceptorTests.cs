@@ -126,8 +126,10 @@ public sealed class SqlitePragmaInterceptorTests : IDisposable
             var path = _dbPath + suffix;
             if (File.Exists(path))
             {
+                // Best-effort: on Windows a still-locked file can throw IOException or
+                // UnauthorizedAccessException; neither should fail the test run.
                 try { File.Delete(path); }
-                catch (IOException) { /* best-effort temp cleanup */ }
+                catch (Exception) { /* best-effort temp cleanup */ }
             }
         }
     }
