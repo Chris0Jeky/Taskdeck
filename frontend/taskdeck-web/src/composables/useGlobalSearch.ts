@@ -78,6 +78,7 @@ export function useGlobalSearch(debounceMs = 250) {
         maxResults: pageSize,
         offset: 0,
       })
+      if (isDisposed) return
       boards.value = result.boards
       cards.value = result.cards
       totalCardCount.value = result.totalCardCount
@@ -116,6 +117,7 @@ export function useGlobalSearch(debounceMs = 250) {
         maxResults: pageSize,
         offset: currentOffset.value,
       })
+      if (isDisposed) return
       cards.value = [...cards.value, ...result.cards]
       totalCardCount.value = result.totalCardCount
       hasMoreCards.value = result.hasMoreCards
