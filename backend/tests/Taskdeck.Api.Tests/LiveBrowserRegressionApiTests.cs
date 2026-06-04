@@ -111,38 +111,42 @@ public class LiveBrowserRegressionApiTests : IClassFixture<TestWebApplicationFac
     // =================================================================
 
     /// <summary>
-    /// Confirms bug #678: the approve endpoint does NOT currently reject expired proposals.
-    /// The domain entity Approve() checks DateTime.UtcNow > ExpiresAt, but the service layer
-    /// may serve the approval from a cached EF entity or the ExpiresAt check may not be
-    /// reached before status transition. This test documents the bug — once #678 is fixed,
-    /// flip the assertion to expect rejection.
+    /// Bug #678: an expired proposal must not be approvable. <see cref="AutomationProposal.Approve"/>
+    /// throws <c>DomainException(InvalidOperation, "Cannot approve expired proposal")</c> once
+    /// <c>DateTime.UtcNow &gt; ExpiresAt</c>, which the API surfaces as 409 Conflict.
     /// </summary>
+    /// <remarks>
+    /// The earlier version of this test expired the row with raw SQL keyed on the GUID rendered
+    /// as a lowercase string, which did not match EF's stored representation — so zero rows were
+    /// updated, the proposal stayed live, and the test was a false-green no-op asserting 200 OK.
+    /// We now expire it through the EF context (LINQ id match + writing ExpiresAt via the change
+    /// tracker), which is storage-format agnostic and genuinely exercises the expiry guard.
+    /// </remarks>
     [Fact]
-    public async Task ApproveProposal_WhenExpired_CurrentlySucceeds_Bug678()
+    public async Task ApproveProposal_WhenExpired_ReturnsConflict()
     {
-        // Arrange: create a proposal, then directly expire it in the DB
+        // Arrange: create a proposal, then genuinely expire it through EF.
         var userId = await AuthenticateAsync("expired-approve");
         var boardId = await CreateOwnedBoardAsync(userId);
         var proposal = await CreateTestProposal(userId, boardId);
 
-        // Force expiry by setting ExpiresAt to the past via raw SQL
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-            db.Database.ExecuteSqlRaw(
-                "UPDATE AutomationProposals SET ExpiresAt = '2020-01-01T00:00:00Z' WHERE Id = {0}",
-                proposal.Id.ToString());
+            var entity = await db.Set<AutomationProposal>().FirstAsync(p => p.Id == proposal.Id);
+            // ExpiresAt has a private setter; write it through the change tracker so the
+            // persisted row is genuinely expired regardless of Guid/DateTime storage format.
+            db.Entry(entity).Property(nameof(AutomationProposal.ExpiresAt)).CurrentValue =
+                DateTime.UtcNow.AddMinutes(-5);
+            await db.SaveChangesAsync();
         }
 
-        // Act: attempt to approve the expired proposal
+        // Act: attempt to approve the now-expired proposal.
         var approveResponse = await _client.PostAsync(
             $"/api/automation/proposals/{proposal.Id}/approve", null);
 
-        // BUG #678: This SHOULD return 400/409 but currently returns 200.
-        // When #678 is fixed, change this assertion to:
-        //   approveResponse.StatusCode.Should().BeOneOf(HttpStatusCode.Conflict, HttpStatusCode.BadRequest);
-        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK,
-            "bug #678: expired proposals are currently approvable — this test documents the bug");
+        // Assert: expired -> Approve() throws InvalidOperation -> 409 Conflict.
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [Fact]
