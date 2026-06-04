@@ -32,12 +32,18 @@ public static class DependencyInjection
             .ValidateOnStart();
 
         services.AddDbContext<TaskdeckDbContext>(options =>
-            options.UseSqlite(connectionString, sqliteOptions =>
-            {
-                // Apply command timeout from configuration (default: 30s).
-                // This applies to all EF Core commands including Database.Migrate().
-                sqliteOptions.CommandTimeout(databaseSettings.CommandTimeoutSeconds);
-            }));
+            options
+                .UseSqlite(connectionString, sqliteOptions =>
+                {
+                    // Apply command timeout from configuration (default: 30s).
+                    // This applies to all EF Core commands including Database.Migrate().
+                    sqliteOptions.CommandTimeout(databaseSettings.CommandTimeoutSeconds);
+                })
+                // Enable WAL + busy_timeout on every connection so the local-first
+                // UI + MCP + CLI processes sharing one SQLite file don't hit
+                // SQLITE_BUSY ("database is locked") under normal concurrency.
+                .AddInterceptors(new SqlitePragmaConnectionInterceptor(
+                    databaseSettings.BusyTimeoutMilliseconds)));
 
         services.AddScoped<IBoardRepository, BoardRepository>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
