@@ -125,11 +125,12 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
             // The imported file is a complete snapshot. Any WAL/SHM side files left over
             // belong to the PREVIOUS database; under WAL journal mode SQLite would replay
-            // them on the next connection open, silently corrupting the imported data.
-            // Remove them so the imported database opens cleanly. (scripts/restore.sh does
-            // the same for the same reason.)
-            TryDeleteFile(databasePath + "-wal");
-            TryDeleteFile(databasePath + "-shm");
+            // them on the next connection open, silently corrupting the imported data, so
+            // they MUST be gone before we report success. Unlike the best-effort temp
+            // cleanup, a failure to remove them propagates and fails the import (the catch
+            // blocks below restore the backup). (scripts/restore.sh does the same.)
+            DeleteDatabaseSideFile(databasePath + "-wal");
+            DeleteDatabaseSideFile(databasePath + "-shm");
 
             return Result.Success();
         }
@@ -233,6 +234,15 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
         {
             // Intentionally swallow backup restore failures to preserve original error.
         }
+    }
+
+    private static void DeleteDatabaseSideFile(string path)
+    {
+        // Intentionally NOT swallowing failures: a leftover WAL/SHM file would be replayed
+        // onto the imported database and corrupt it, so a deletion failure must propagate
+        // and fail the import rather than report a false success.
+        if (File.Exists(path))
+            File.Delete(path);
     }
 
     private static void TryDeleteFile(string path)

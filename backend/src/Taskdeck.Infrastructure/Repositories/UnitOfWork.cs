@@ -136,13 +136,14 @@ public class UnitOfWork : IUnitOfWork
         // full checkpoint, so some committed frames may still live in <db>-wal. Retry a
         // few times, then fail loudly rather than hand back an incomplete snapshot. On a
         // non-WAL or in-memory database the row reports busy=0, so this is a no-op.
-        var connection = _context.Database.GetDbConnection();
-        var openedHere = connection.State != System.Data.ConnectionState.Open;
-        if (openedHere)
-            await connection.OpenAsync(cancellationToken);
-
+        // Open through EF (not the raw DbConnection) so SqlitePragmaConnectionInterceptor
+        // installs busy_timeout (and WAL) on the connection before we checkpoint — otherwise
+        // a checkpoint contended by another process could fail without the configured wait.
+        // EF ref-counts opens, so this is safe whether or not the connection is already open.
+        await _context.Database.OpenConnectionAsync(cancellationToken);
         try
         {
+            var connection = _context.Database.GetDbConnection();
             for (var attempt = 1; attempt <= MaxWalCheckpointAttempts; attempt++)
             {
                 await using var command = connection.CreateCommand();
@@ -162,8 +163,7 @@ public class UnitOfWork : IUnitOfWork
         }
         finally
         {
-            if (openedHere)
-                await connection.CloseAsync();
+            await _context.Database.CloseConnectionAsync();
         }
     }
 
