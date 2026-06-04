@@ -103,19 +103,28 @@ async function addCard(
   const addCardInput = column.getByPlaceholder('Enter card title...')
   await expect(addCardInput).toBeVisible()
   await addCardInput.fill(cardTitle)
-  const createCardResponse = expectVisible
-    ? page.waitForResponse((response) =>
+  // Wait for the create POST to settle (any status) before asserting anything.
+  // Awaiting the response is what lets callers assert the transient rejection
+  // toast without racing the still-in-flight request (the toast can auto-dismiss
+  // before a non-awaited request even returns). Bound the wait so an unexpected
+  // outcome fails fast rather than hanging to the test timeout.
+  const createCardResponse = page.waitForResponse(
+    (response) =>
       response.request().method() === 'POST'
-      && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url())
-      && response.ok())
-    : null
+      && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url()),
+    { timeout: 15_000 },
+  )
   await column.getByRole('button', { name: 'Add', exact: true }).click()
-  if (createCardResponse) {
-    await createCardResponse
-  }
+  const created = await createCardResponse
 
   if (expectVisible) {
+    expect(created.ok(), 'card create should succeed').toBeTruthy()
     await expect(cardByTitle(page, cardTitle)).toBeVisible()
+  } else {
+    // A card added beyond the WIP limit must be rejected (WipLimitExceeded -> 400).
+    // Asserting this turns a WIP-enforcement regression (a 2xx here) into an
+    // explicit failure instead of a downstream toast/count timeout.
+    expect(created.ok(), 'card add beyond the WIP limit should be rejected').toBeFalsy()
   }
 }
 
@@ -325,8 +334,11 @@ test('column WIP limit should reject additional cards', async ({ page }) => {
   await expect(page.locator('[data-card-id]').filter({ hasText: firstCard }).first()).toBeVisible()
 
   await addCard(page, columnName, secondCard, { expectVisible: false })
-  await expect(page.locator('[data-card-id]').filter({ hasText: secondCard })).toHaveCount(0)
+  // Assert the (transient) rejection toast first — addCard has now awaited the
+  // rejecting response, so the toast is freshly rendered here; checking it
+  // before the card-count assertion avoids racing its auto-dismiss.
   await expect(page.locator('text=has reached its WIP limit').first()).toBeVisible()
+  await expect(page.locator('[data-card-id]').filter({ hasText: secondCard })).toHaveCount(0)
 })
 
 test('card drag and drop should move card between columns and persist after refresh', async ({ page }) => {
