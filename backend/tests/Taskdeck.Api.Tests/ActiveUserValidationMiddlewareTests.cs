@@ -312,6 +312,7 @@ public class ActiveUserValidationMiddlewareTests
         public IMcpToolHashRepository McpToolHashes => throw new NotImplementedException();
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task RollbackTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

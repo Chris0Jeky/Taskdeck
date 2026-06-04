@@ -633,6 +633,7 @@ public class WorkerResilienceTests
         public ITomorrowNoteRepository TomorrowNotes => null!;
         public IMcpToolHashRepository McpToolHashes => null!;
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task RollbackTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -677,6 +678,7 @@ public class WorkerResilienceTests
         public ITomorrowNoteRepository TomorrowNotes => null!;
         public IMcpToolHashRepository McpToolHashes => null!;
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task RollbackTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

@@ -42,6 +42,11 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
         try
         {
+            // Under WAL journal mode, recently committed pages may still live in the
+            // <db>-wal side file. Checkpoint first so the main-file byte copy below is a
+            // complete snapshot (no-op when the journal mode is not WAL).
+            await _unitOfWork.CheckpointWalAsync();
+
             var bytes = await File.ReadAllBytesAsync(databasePath);
             if (bytes.Length == 0)
                 return Result.Failure<byte[]>(ErrorCodes.ValidationError, "Database export produced an empty file");
@@ -117,6 +122,14 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
             {
                 File.Move(stagingPath, databasePath);
             }
+
+            // The imported file is a complete snapshot. Any WAL/SHM side files left over
+            // belong to the PREVIOUS database; under WAL journal mode SQLite would replay
+            // them on the next connection open, silently corrupting the imported data.
+            // Remove them so the imported database opens cleanly. (scripts/restore.sh does
+            // the same for the same reason.)
+            TryDeleteFile(databasePath + "-wal");
+            TryDeleteFile(databasePath + "-shm");
 
             return Result.Success();
         }

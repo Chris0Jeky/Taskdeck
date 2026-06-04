@@ -39,6 +39,14 @@ public interface IUnitOfWork
     IMcpToolHashRepository McpToolHashes { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Folds committed WAL pages back into the main database file so a file-level
+    /// snapshot (e.g. the dev-sandbox DB export) is complete. No-op when the journal
+    /// mode is not WAL (e.g. an in-memory database).
+    /// </summary>
+    Task CheckpointWalAsync(CancellationToken cancellationToken = default);
+
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
     Task CommitTransactionAsync(CancellationToken cancellationToken = default);
     Task RollbackTransactionAsync(CancellationToken cancellationToken = default);

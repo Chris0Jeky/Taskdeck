@@ -859,6 +859,7 @@ public class LlmQueueToProposalWorkerTests
             return Task.FromResult(0);
         }
 
+        public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 

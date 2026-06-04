@@ -127,6 +127,14 @@ public class UnitOfWork : IUnitOfWork
     public ITomorrowNoteRepository TomorrowNotes { get; }
     public IMcpToolHashRepository McpToolHashes { get; }
 
+    public async Task CheckpointWalAsync(CancellationToken cancellationToken = default)
+    {
+        // Fold committed-but-unflushed WAL pages back into the main database file so a
+        // file-level snapshot (DB export) is complete. On a non-WAL or in-memory database
+        // this PRAGMA simply reports busy=0 and is a harmless no-op.
+        await _context.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);", cancellationToken);
+    }
+
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var resolvedRecoverableUniqueConflict = false;
