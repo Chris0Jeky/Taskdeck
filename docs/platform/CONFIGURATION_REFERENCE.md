@@ -468,6 +468,7 @@ Registered via `RegisterValidatedOptions<DatabaseSettings>` with
 | Key | Type | Default | Range | Description | Required? |
 | --- | --- | --- | --- | --- | --- |
 | `Database:CommandTimeoutSeconds` | `int` | `30` | 1–300 | EF Core command timeout applied to the SQLite `DbContext`. Affects all queries including `Database.Migrate()` calls — avoid very low values if migrations are expected. | No |
+| `Database:BusyTimeoutMilliseconds` | `int` | `5000` | 0–60000 | SQLite `busy_timeout` applied to every connection (alongside WAL journal mode). When the single writer slot is contended (UI + MCP + CLI share one file), a waiting connection retries for up to this long before surfacing `SQLITE_BUSY`. `0` fails immediately (not recommended). | No |
 
 ### `AuditRetention`
 
@@ -502,6 +503,7 @@ Backs `DatabaseSettings` (`Taskdeck.Application.Services.DatabaseSettings`).
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `Database:CommandTimeoutSeconds` | `int` | `30` | Command timeout in seconds for database operations. Valid range: 1--300. Applies to all EF Core commands including `Database.Migrate()` -- avoid very low values if schema migrations are expected. | No |
+| `Database:BusyTimeoutMilliseconds` | `int` | `5000` | SQLite `busy_timeout` (range 0--60000) applied to every connection alongside WAL journal mode, so concurrent writers from the UI, MCP, and CLI wait for the lock instead of failing with `SQLITE_BUSY`. `0` fails immediately. | No |
 
 ### `ExportImport`
 
