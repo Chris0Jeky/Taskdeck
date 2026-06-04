@@ -1,9 +1,11 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure;
+using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Services;
 using Xunit;
 
@@ -73,6 +75,69 @@ public class ConnectorEncryptionKeyFailFastTests
         var act = () => services.AddInfrastructure(config);
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddInfrastructure_WiresWalAndBusyTimeoutInterceptorOnTheDbContext()
+    {
+        // Guards the production DI composition (AddDbContext + AddInterceptors): the
+        // direct-construction interceptor unit test does not prove AddInfrastructure
+        // actually registers it. Uses a file Data Source so WAL genuinely applies. #1130
+        var keyBytes = new byte[32];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(keyBytes);
+        var validKey = Convert.ToBase64String(keyBytes);
+
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-di-wal-{Guid.NewGuid():N}.db");
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                ["Connectors:EncryptionKey"] = validKey,
+                ["Database:BusyTimeoutMilliseconds"] = "5000",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddInfrastructure(config);
+
+        try
+        {
+            using var provider = services.BuildServiceProvider(validateScopes: true);
+            using var scope = provider.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+
+            // Open through EF so the registered DbConnectionInterceptor fires.
+            context.Database.OpenConnection();
+            try
+            {
+                var connection = context.Database.GetDbConnection();
+                using var journalCmd = connection.CreateCommand();
+                journalCmd.CommandText = "PRAGMA journal_mode;";
+                Convert.ToString(journalCmd.ExecuteScalar()).Should().BeEquivalentTo("wal");
+
+                using var busyCmd = connection.CreateCommand();
+                busyCmd.CommandText = "PRAGMA busy_timeout;";
+                Convert.ToInt64(busyCmd.ExecuteScalar()).Should().Be(5000);
+            }
+            finally
+            {
+                context.Database.CloseConnection();
+            }
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+            {
+                var path = dbPath + suffix;
+                if (File.Exists(path))
+                {
+                    try { File.Delete(path); }
+                    catch (IOException) { /* best-effort temp cleanup */ }
+                }
+            }
+        }
     }
 
     [Fact]

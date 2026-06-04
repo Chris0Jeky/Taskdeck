@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
@@ -21,11 +22,13 @@ public sealed class SqlitePragmaInterceptorTests : IDisposable
         _dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-pragma-test-{Guid.NewGuid():N}.db");
     }
 
-    private TaskdeckDbContext NewContext()
+    private TaskdeckDbContext NewContext() => NewContext(BusyTimeoutMs);
+
+    private TaskdeckDbContext NewContext(int busyTimeoutMs)
     {
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
             .UseSqlite($"Data Source={_dbPath}")
-            .AddInterceptors(new SqlitePragmaConnectionInterceptor(BusyTimeoutMs))
+            .AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMs))
             .Options;
         return new TaskdeckDbContext(options);
     }
@@ -58,35 +61,60 @@ public sealed class SqlitePragmaInterceptorTests : IDisposable
     }
 
     [Fact]
-    public async Task Two_contexts_writing_concurrently_both_succeed_under_wal()
+    public async Task Two_contexts_can_write_to_the_same_file()
     {
         using (var init = NewContext())
         {
             init.Database.Migrate();
         }
 
-        using var contextA = NewContext();
-        using var contextB = NewContext();
-
-        // Two independent contexts (separate connections) write at the same time.
-        // SQLite serializes the single writer slot; busy_timeout makes the loser
-        // wait for the lock instead of failing immediately, so both commits land.
-        var writeA = Task.Run(async () =>
+        // Coexistence smoke test: two independent contexts each commit a write to the
+        // same WAL file. (The load-bearing guards are the PRAGMA-verification test above
+        // and the busy_timeout contention test below — a fast single-row insert does not
+        // hold the writer slot long enough to reliably provoke contention on its own.)
+        using (var contextA = NewContext())
         {
-            contextA.Set<Board>().Add(new Board("concurrent-A"));
+            contextA.Set<Board>().Add(new Board("write-A"));
             await contextA.SaveChangesAsync();
-        });
-        var writeB = Task.Run(async () =>
+        }
+        using (var contextB = NewContext())
         {
-            contextB.Set<Board>().Add(new Board("concurrent-B"));
+            contextB.Set<Board>().Add(new Board("write-B"));
             await contextB.SaveChangesAsync();
-        });
-
-        var act = async () => await Task.WhenAll(writeA, writeB);
-        await act.Should().NotThrowAsync("WAL + busy_timeout should let concurrent writers serialize instead of erroring with SQLITE_BUSY");
+        }
 
         using var verify = NewContext();
         verify.Set<Board>().Count().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Writer_without_busy_timeout_fails_fast_under_a_held_write_lock()
+    {
+        using (var init = NewContext())
+        {
+            init.Database.Migrate();
+        }
+
+        // Hold an exclusive write lock on a separate raw connection.
+        await using var lockConnection = new SqliteConnection($"Data Source={_dbPath}");
+        await lockConnection.OpenAsync();
+        await using (var begin = lockConnection.CreateCommand())
+        {
+            begin.CommandText = "BEGIN IMMEDIATE;";
+            await begin.ExecuteNonQueryAsync();
+        }
+
+        // With busy_timeout=0 a contended writer fails immediately with SQLITE_BUSY.
+        // This proves busy_timeout is load-bearing: the interceptor's default (5000ms)
+        // is precisely what makes a real writer wait for the lock instead of erroring.
+        using var blocked = NewContext(busyTimeoutMs: 0);
+        blocked.Set<Board>().Add(new Board("blocked"));
+        var act = async () => await blocked.SaveChangesAsync();
+        await act.Should().ThrowAsync<DbUpdateException>();
+
+        await using var rollback = lockConnection.CreateCommand();
+        rollback.CommandText = "ROLLBACK;";
+        await rollback.ExecuteNonQueryAsync();
     }
 
     public void Dispose()
