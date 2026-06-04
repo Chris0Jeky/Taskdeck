@@ -15,6 +15,10 @@ namespace Taskdeck.Architecture.Tests;
 ///   - Invariants requiring unbuilt infrastructure use [Fact(Skip = "...")] with
 ///     clear scope comments describing what is needed.
 /// </summary>
+// INV-11 mutates TelemetryGuard's static options via Configure(); this named collection
+// is the join point so any future TelemetryGuard-touching test class added to THIS
+// assembly stays serialized against it (xUnit runs distinct classes in parallel by default).
+[Collection("TelemetryGuardGlobalState")]
 public class RoadmapInvariantTests
 {
     // ─── Helpers ────────────────────────────────────────────────────────
