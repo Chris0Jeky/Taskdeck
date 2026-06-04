@@ -656,6 +656,7 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(0);
 
+        public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 

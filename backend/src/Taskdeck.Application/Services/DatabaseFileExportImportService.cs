@@ -42,6 +42,11 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
         try
         {
+            // Under WAL journal mode, recently committed pages may still live in the
+            // <db>-wal side file. Checkpoint first so the main-file byte copy below is a
+            // complete snapshot (no-op when the journal mode is not WAL).
+            await _unitOfWork.CheckpointWalAsync();
+
             var bytes = await File.ReadAllBytesAsync(databasePath);
             if (bytes.Length == 0)
                 return Result.Failure<byte[]>(ErrorCodes.ValidationError, "Database export produced an empty file");
@@ -99,6 +104,12 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
             if (File.Exists(databasePath))
             {
+                // Under WAL the existing database's committed pages may still live in
+                // <db>-wal. Fold them into the main file first so the rollback backup below
+                // is a complete snapshot — otherwise a failed import could restore a main
+                // file that is missing committed data.
+                await _unitOfWork.CheckpointWalAsync();
+
                 File.Copy(databasePath, backupPath, overwrite: true);
                 backupCreated = true;
 
@@ -117,6 +128,15 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
             {
                 File.Move(stagingPath, databasePath);
             }
+
+            // The imported file is a complete snapshot. Any WAL/SHM side files left over
+            // belong to the PREVIOUS database; under WAL journal mode SQLite would replay
+            // them on the next connection open, silently corrupting the imported data, so
+            // they MUST be gone before we report success. Unlike the best-effort temp
+            // cleanup, a failure to remove them propagates and fails the import (the catch
+            // blocks below restore the backup). (scripts/restore.sh does the same.)
+            DeleteDatabaseSideFile(databasePath + "-wal");
+            DeleteDatabaseSideFile(databasePath + "-shm");
 
             return Result.Success();
         }
@@ -220,6 +240,15 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
         {
             // Intentionally swallow backup restore failures to preserve original error.
         }
+    }
+
+    private static void DeleteDatabaseSideFile(string path)
+    {
+        // Intentionally NOT swallowing failures: a leftover WAL/SHM file would be replayed
+        // onto the imported database and corrupt it, so a deletion failure must propagate
+        // and fail the import rather than report a false success.
+        if (File.Exists(path))
+            File.Delete(path);
     }
 
     private static void TryDeleteFile(string path)

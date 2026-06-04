@@ -11,6 +11,7 @@ namespace Taskdeck.Infrastructure.Repositories;
 public class UnitOfWork : IUnitOfWork
 {
     private const int MaxSqliteWriteLockRetries = 5;
+    private const int MaxWalCheckpointAttempts = 3;
 
     private readonly TaskdeckDbContext _context;
     private IDbContextTransaction? _transaction;
@@ -126,6 +127,45 @@ public class UnitOfWork : IUnitOfWork
     public IDailySnapshotRepository DailySnapshots { get; }
     public ITomorrowNoteRepository TomorrowNotes { get; }
     public IMcpToolHashRepository McpToolHashes { get; }
+
+    public async Task CheckpointWalAsync(CancellationToken cancellationToken = default)
+    {
+        // Fold committed WAL pages back into the main database file so a file-level
+        // snapshot (DB export) is complete. PRAGMA wal_checkpoint(TRUNCATE) returns a row
+        // (busy, log, checkpointed); busy=1 means a concurrent reader/writer prevented a
+        // full checkpoint, so some committed frames may still live in <db>-wal. Retry a
+        // few times, then fail loudly rather than hand back an incomplete snapshot. On a
+        // non-WAL or in-memory database the row reports busy=0, so this is a no-op.
+        // Open through EF (not the raw DbConnection) so SqlitePragmaConnectionInterceptor
+        // installs busy_timeout (and WAL) on the connection before we checkpoint — otherwise
+        // a checkpoint contended by another process could fail without the configured wait.
+        // EF ref-counts opens, so this is safe whether or not the connection is already open.
+        await _context.Database.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            var connection = _context.Database.GetDbConnection();
+            for (var attempt = 1; attempt <= MaxWalCheckpointAttempts; attempt++)
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                    return; // no result row -> nothing to checkpoint (non-WAL)
+
+                var busy = reader.GetInt64(0);
+                if (busy == 0)
+                    return; // all committed frames are now in the main file
+            }
+
+            throw new InvalidOperationException(
+                "Could not fully checkpoint the SQLite WAL after multiple attempts; another " +
+                "Taskdeck process (UI/MCP/CLI) is holding the database. Stop other processes and retry.");
+        }
+        finally
+        {
+            await _context.Database.CloseConnectionAsync();
+        }
+    }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

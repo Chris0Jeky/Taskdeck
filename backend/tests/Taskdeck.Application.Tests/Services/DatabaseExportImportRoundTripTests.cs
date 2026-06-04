@@ -180,6 +180,50 @@ public class DatabaseExportImportRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task Export_CheckpointsWal_BeforeReadingFile()
+    {
+        var user = CreateUser();
+        var dbPath = CreateTempFilePath();
+        await File.WriteAllBytesAsync(dbPath, CreateSqlitePayload(512));
+        var service = CreateService($"Data Source={dbPath}");
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ExportDatabaseAsync(user.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        // Under WAL the export must checkpoint so the file copy includes committed-but-
+        // unflushed pages from the -wal side file (#1130 review).
+        _unitOfWorkMock.Verify(u => u.CheckpointWalAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Import_DeletesStalePreviousWalAndShmSideFiles()
+    {
+        var user = CreateUser();
+        var dbPath = CreateTempFilePath();
+        await File.WriteAllBytesAsync(dbPath, CreateSqlitePayload(512));
+
+        // Simulate the previous database's WAL/SHM side files sitting next to the DB.
+        var walPath = dbPath + "-wal";
+        var shmPath = dbPath + "-shm";
+        _tempFiles.Add(walPath);
+        _tempFiles.Add(shmPath);
+        await File.WriteAllBytesAsync(walPath, new byte[] { 1, 2, 3, 4 });
+        await File.WriteAllBytesAsync(shmPath, new byte[] { 5, 6, 7, 8 });
+
+        var service = CreateService($"Data Source={dbPath}");
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ImportDatabaseAsync(CreateSqlitePayload(256), user.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        // Leftover WAL/SHM from the prior DB would be replayed onto the imported file
+        // and corrupt it under WAL, so the import must remove them (#1130 review).
+        File.Exists(walPath).Should().BeFalse();
+        File.Exists(shmPath).Should().BeFalse();
+    }
+
+    [Fact]
     public void ResolveDatabasePath_InMemorySource_ReturnsValidationError()
     {
         var service = CreateService("Data Source=:memory:");

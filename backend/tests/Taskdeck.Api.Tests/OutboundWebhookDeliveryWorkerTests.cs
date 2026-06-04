@@ -565,6 +565,7 @@ public class OutboundWebhookDeliveryWorkerTests
             return Task.FromResult(0);
         }
 
+        public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;

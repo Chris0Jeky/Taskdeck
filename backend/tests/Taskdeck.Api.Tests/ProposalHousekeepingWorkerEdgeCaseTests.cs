@@ -362,6 +362,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
             return Task.FromResult(0);
         }
 
+        public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task RollbackTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
