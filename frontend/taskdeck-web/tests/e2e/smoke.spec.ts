@@ -103,20 +103,28 @@ async function addCard(
   const addCardInput = column.getByPlaceholder('Enter card title...')
   await expect(addCardInput).toBeVisible()
   await addCardInput.fill(cardTitle)
-  // Wait for the create POST to settle in BOTH cases: a success (2xx) when the
-  // card is expected, or the rejection (non-2xx, e.g. 409 WIP-limit) when it is
-  // not. Awaiting the rejection is what lets callers assert the transient
-  // rejection toast without racing the still-in-flight request (the toast can
-  // auto-dismiss before a non-awaited request even returns).
-  const createCardResponse = page.waitForResponse((response) =>
-    response.request().method() === 'POST'
-    && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url())
-    && (expectVisible ? response.ok() : !response.ok()))
+  // Wait for the create POST to settle (any status) before asserting anything.
+  // Awaiting the response is what lets callers assert the transient rejection
+  // toast without racing the still-in-flight request (the toast can auto-dismiss
+  // before a non-awaited request even returns). Bound the wait so an unexpected
+  // outcome fails fast rather than hanging to the test timeout.
+  const createCardResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST'
+      && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url()),
+    { timeout: 15_000 },
+  )
   await column.getByRole('button', { name: 'Add', exact: true }).click()
-  await createCardResponse
+  const created = await createCardResponse
 
   if (expectVisible) {
+    expect(created.ok(), 'card create should succeed').toBeTruthy()
     await expect(cardByTitle(page, cardTitle)).toBeVisible()
+  } else {
+    // A card added beyond the WIP limit must be rejected (WipLimitExceeded -> 400).
+    // Asserting this turns a WIP-enforcement regression (a 2xx here) into an
+    // explicit failure instead of a downstream toast/count timeout.
+    expect(created.ok(), 'card add beyond the WIP limit should be rejected').toBeFalsy()
   }
 }
 
