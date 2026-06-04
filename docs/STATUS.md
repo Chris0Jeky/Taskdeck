@@ -1,6 +1,10 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-05-31
+Last Updated: 2026-06-04
+
+Post-audit correctness sweep (analysis 2026-05-31; landed as reviewed PR 2026-06-04): audited all 31 PRs merged since 2026-05-28 for CC 2.1.154–2.1.158 tool-channel corruption fallout. Results: **0 SUSPECT, 0 NO-OP, 31 CLEAN** — no corruption artifacts. Full build/test suite green (6,735 BE + 3,662 FE tests). Fan-out correctness review (4 agents, 219 tool calls) found 2 issues + 9 nitpicks, all addressed:
+- **Fixes applied**: `useGlobalSearch` dispose-race guard on success path; `useCaptureQueueSync` silent `.catch(() => {})` replaced with `logWarn`; Ollama `appsettings.json` BaseUrl changed from empty string to `null` with clearer validation message; `RoadmapInvariantTests` placed in a named xUnit `[Collection]` so any future TelemetryGuard-mutating test class in the same assembly stays serialized with INV-11; `AutomationMetricsController` TODO comment replaced with honest stub note referencing `#1142`.
+- **Documented**: `AutomationMetricsController.GetCohortMetrics` is a stub returning empty data — `CohortDashboard` frontend works but will show "No cohort data available" until `ICohortMetricsService` ships (tracked in `#1142`). `OllamaLlmProvider.StreamAsync` uses pseudo-streaming (complete-then-drip), not Ollama's native streaming API.
 
 Cleanup/hardening wave (2026-05-31, 8 PRs merged, 2 issues closed; 2 adversarial review passes per PR with all findings of every severity fixed and all bot threads resolved):
 - **Open-PR backlog cleared** (`#1143`–`#1147`): non-watch `vitest run` + MetricsView flake fix (`#1143`), docs-truth corrections (`#1144`), CI-aligned release scripts + stale PKG-01 warning removed (`#1145`), duplicate operation idempotency-key now returns **409 not 500** (`#1146`), `AsSplitQuery` on the multi-collection board read (`#1147`).
@@ -10,7 +14,7 @@ Cleanup/hardening wave (2026-05-31, 8 PRs merged, 2 issues closed; 2 adversarial
 - Seeded follow-ups: `#1149` (idempotency-key contract ADR), `#1150` (packaging-doc trim drift), `#1152` (Queue/V1 validator bypass), `#1154` (MCP hash wiring). `#1134` stays open for its remaining 6 acceptance criteria.
 
 Continuous-cycle wave (2026-05-29, 19 PRs merged, zero open PRs): cleared the entire open-PR backlog with two adversarial reviews per PR and all findings (all severities, including bot comments) addressed.
-- **RFAI roadmap complete**: RFAI-11 (`#983`/`#1079`, ambient channel — VS Code extension + voice prototype; final Codex finding fixed: git repo matched by document-path containment) and RFAI-12 (`#984`/`#1080`, learning loop UI, Ollama provider, ProvenanceDrawer, cohort dashboard) delivered. All 12 RFAI issues now shipped.
+- **RFAI roadmap complete**: RFAI-11 (`#983`/`#1079`, ambient channel — VS Code extension + voice prototype; voice composable is tested but not yet wired into any UI component) and RFAI-12 (`#984`/`#1080`, Ollama provider, ProvenanceDrawer, cohort dashboard shell) delivered. All 12 RFAI issues now shipped. **Note:** `CohortDashboard` frontend is wired but backend returns empty data (stub); `OllamaLlmProvider.StreamAsync` uses pseudo-streaming; `useVoiceCapture` has no UI integration yet. These are tracked in `OUTSTANDING_TASKS.md`.
 - **Composable hardening**: unhandled promise rejections (`#1093`/`#1095`), cleanup/memory-leak fixes with `onScopeDispose` (`#1094`/`#1104`), FilterPanel aria-labels (`#1097`/`#1098`).
 - **Identity/authz hardening**: an audit confirmed all 42 API controllers are claims-first with zero bypass risk; migrated `TelemetryController`/`EgressDisclosureController` onto `AuthenticatedControllerBase` (`#1109`/`#1111`) and added architecture guards enforcing per-action `[Authorize]`/`[AllowAnonymous]` (`#1110`/`#1116`).
 - **Dependency wave**: nuget/npm minor-patch groups, YamlDotNet 18, and a dotnet group (EF8/9 split fixed) merged; FluentAssertions moved to the free **7.x** line (`#1088`) instead of paid v8; durable dependabot `ignore` rules added for EF Core and FluentAssertions majors (`#1112`, `#1118`) so those churns stop recurring.
