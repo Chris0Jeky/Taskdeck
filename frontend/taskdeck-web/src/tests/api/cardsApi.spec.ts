@@ -132,7 +132,12 @@ describe('cardsApi', () => {
 
       const result = await cardsApi.getCardProvenance('board-1', 'card-1')
 
-      expect(http.get).toHaveBeenCalledWith('/boards/board-1/cards/card-1/provenance')
+      // A 404 here is an expected absence (manual cards have no provenance), so
+      // the request opts the http interceptor out of logging it as an API error.
+      expect(http.get).toHaveBeenCalledWith(
+        '/boards/board-1/cards/card-1/provenance',
+        { expectedStatuses: [404] },
+      )
       expect(result).toEqual(provenance)
     })
 

@@ -231,6 +231,21 @@ describe('useReviewProposals', () => {
       ] as any
       expect(rp.dismissableProposalIds.value).toEqual(['1', '3', '4', '5'])
     })
+
+    it('includes an Approved proposal that has expired but not a live one (#1124)', () => {
+      const rp = useReviewProposals()
+      rp.nowMs.value = new Date('2026-06-04T00:00:00Z').getTime()
+      rp.proposals.value = [
+        // Approved + already past expiresAt -> can no longer be applied, so dismissable
+        // (mirrors backend AutomationProposal.CanBeDismissed).
+        makeProposal({ id: 'a-expired', status: 'Approved', expiresAt: '2026-05-01T00:00:00Z' }),
+        // Approved + still valid -> NOT dismissable, it can still be executed.
+        makeProposal({ id: 'a-live', status: 'Approved', expiresAt: '2099-01-01T00:00:00Z' }),
+        // Pending + live -> NOT dismissable.
+        makeProposal({ id: 'p-live', status: 'PendingReview', expiresAt: '2099-01-01T00:00:00Z' }),
+      ] as any
+      expect(rp.dismissableProposalIds.value).toEqual(['a-expired'])
+    })
   })
 
   describe('loadProposals', () => {
