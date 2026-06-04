@@ -103,16 +103,17 @@ async function addCard(
   const addCardInput = column.getByPlaceholder('Enter card title...')
   await expect(addCardInput).toBeVisible()
   await addCardInput.fill(cardTitle)
-  const createCardResponse = expectVisible
-    ? page.waitForResponse((response) =>
-      response.request().method() === 'POST'
-      && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url())
-      && response.ok())
-    : null
+  // Wait for the create POST to settle in BOTH cases: a success (2xx) when the
+  // card is expected, or the rejection (non-2xx, e.g. 409 WIP-limit) when it is
+  // not. Awaiting the rejection is what lets callers assert the transient
+  // rejection toast without racing the still-in-flight request (the toast can
+  // auto-dismiss before a non-awaited request even returns).
+  const createCardResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url())
+    && (expectVisible ? response.ok() : !response.ok()))
   await column.getByRole('button', { name: 'Add', exact: true }).click()
-  if (createCardResponse) {
-    await createCardResponse
-  }
+  await createCardResponse
 
   if (expectVisible) {
     await expect(cardByTitle(page, cardTitle)).toBeVisible()
@@ -325,8 +326,11 @@ test('column WIP limit should reject additional cards', async ({ page }) => {
   await expect(page.locator('[data-card-id]').filter({ hasText: firstCard }).first()).toBeVisible()
 
   await addCard(page, columnName, secondCard, { expectVisible: false })
-  await expect(page.locator('[data-card-id]').filter({ hasText: secondCard })).toHaveCount(0)
+  // Assert the (transient) rejection toast first — addCard has now awaited the
+  // rejecting response, so the toast is freshly rendered here; checking it
+  // before the card-count assertion avoids racing its auto-dismiss.
   await expect(page.locator('text=has reached its WIP limit').first()).toBeVisible()
+  await expect(page.locator('[data-card-id]').filter({ hasText: secondCard })).toHaveCount(0)
 })
 
 test('card drag and drop should move card between columns and persist after refresh', async ({ page }) => {
