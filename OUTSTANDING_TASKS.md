@@ -39,7 +39,7 @@ Last reviewed: 2026-05-31
 - [ ] **#1132** — Make the required PR gate enforce security: gitleaks/SAST/dependency scan + CORS fail-closed + single ≥32 JWT floor + global `FallbackPolicy` + bundle-size in the required lane.
 - [ ] **#1130** — SQLite local concurrency: enable WAL + `busy_timeout`, fix per-process `Migrate()` race (UI + MCP + CLI share one DB → `SQLITE_BUSY`).
 - [ ] **#1131** — CLI hardening: fresh-machine bootstrap (it crashes without `Connectors:EncryptionKey`) + route CLI mutations through board-access authorization.
-- [ ] **#1124** — Core-loop polish: fix the false-green expiry regression test + the #678 frontend dismiss gap (Approved+expired) + the #680 provenance-404 console noise.
+- [ ] **#1124** — Core-loop polish: fix the false-green expiry regression test + the #678 frontend dismiss gap (Approved+expired) + the #680 provenance-404 console noise. *PR #1162 addresses all three (expiry test → 409, `isProposalDismissable` + Legacy dismiss, provenance opt-out). Paper view has no dismiss affordance for any status — split to **#1161** — so AC2's Paper portion remains open under #1161.*
 - [ ] **#1138** (rest) — Split the 1300+ line `STATUS.md` into a lean current-reality head + `docs/archive/status-history/`; add a rotation rule; recertify TESTING_GUIDE totals from a green CI run; add a markdown link-checker to nightly.
 - [ ] **#1136** — Write an ADR deciding the Paper vs Legacy UI question; remove dead paper composables.
 - [ ] **#1137** — Refocus strategy/roadmap on shipping to first users; freeze new feature/re-skin tracks until v0.1.0 ships.
