@@ -27,8 +27,9 @@ export function useGlobalSearch(debounceMs = 250) {
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
   let abortController: AbortController | null = null
-  // Set once the owning scope is disposed; guards the `finally` blocks below so
-  // an abort-triggered continuation doesn't write reactive state after teardown.
+  // Set once the owning scope is disposed; guards the success, catch, and finally
+  // branches below so neither a resolved request nor a non-abort error racing
+  // teardown writes reactive state after the scope is gone.
   let isDisposed = false
 
   function reset() {
@@ -85,6 +86,7 @@ export function useGlobalSearch(debounceMs = 250) {
       hasMoreCards.value = result.hasMoreCards
       currentOffset.value = result.cards.length
     } catch (err: unknown) {
+      if (isDisposed) return
       if (err instanceof DOMException && err.name === 'AbortError') {
         return
       }
@@ -123,6 +125,7 @@ export function useGlobalSearch(debounceMs = 250) {
       hasMoreCards.value = result.hasMoreCards
       currentOffset.value = currentOffset.value + result.cards.length
     } catch (err: unknown) {
+      if (isDisposed) return
       if (err instanceof DOMException && err.name === 'AbortError') {
         return
       }
