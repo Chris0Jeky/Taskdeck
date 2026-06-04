@@ -44,7 +44,7 @@ public class AutomationMetricsController : AuthenticatedControllerBase
                 ErrorCodes.ValidationError,
                 $"Date range must not exceed {MaxRangeDays} days."));
 
-        // TODO(RFAI-12): wire to ICohortMetricsService once learning-loop data layer ships
+        // Stub: returns empty cohorts until ICohortMetricsService is built (tracked in #1142).
         var response = new CohortComparisonResponse
         {
             Cohorts = [],
