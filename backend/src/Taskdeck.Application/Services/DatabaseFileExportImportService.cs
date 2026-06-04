@@ -104,6 +104,12 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
 
             if (File.Exists(databasePath))
             {
+                // Under WAL the existing database's committed pages may still live in
+                // <db>-wal. Fold them into the main file first so the rollback backup below
+                // is a complete snapshot — otherwise a failed import could restore a main
+                // file that is missing committed data.
+                await _unitOfWork.CheckpointWalAsync();
+
                 File.Copy(databasePath, backupPath, overwrite: true);
                 backupCreated = true;
 
