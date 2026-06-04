@@ -339,4 +339,137 @@ describe('useGlobalSearch', () => {
     expect(search.boards.value).toEqual([])
     expect(search.cards.value).toEqual([])
   })
+
+  it('does not write results when a search resolves after disposal', async () => {
+    const scope = effectScope()
+    let search!: ReturnType<typeof useGlobalSearch>
+    scope.run(() => {
+      search = useGlobalSearch(200)
+    })
+
+    // Controllable promise that ignores the abort signal, so it stays pending
+    // through disposal and only resolves when we say so.
+    let resolveSearch!: (val: typeof mockSearchResult) => void
+    mockSearch.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSearch = resolve
+      }) as ReturnType<typeof searchApi.search>,
+    )
+
+    search.query.value = 'hello world'
+    await nextTick()
+    vi.advanceTimersByTime(300) // fire debounce -> executeSearch awaits the pending promise
+    await nextTick()
+    expect(mockSearch).toHaveBeenCalledTimes(1)
+
+    scope.stop() // marks disposed; the pending promise is unaffected
+    resolveSearch(mockSearchResult) // resolves AFTER disposal
+    await nextTick()
+    await nextTick()
+
+    // The success-path `if (isDisposed) return` must block every reactive write.
+    expect(search.boards.value).toEqual([])
+    expect(search.cards.value).toEqual([])
+    expect(search.totalCardCount.value).toBe(0)
+    expect(search.hasMoreCards.value).toBe(false)
+  })
+
+  it('does not write error state when a non-abort error rejects after disposal', async () => {
+    const scope = effectScope()
+    let search!: ReturnType<typeof useGlobalSearch>
+    scope.run(() => {
+      search = useGlobalSearch(200)
+    })
+
+    let rejectSearch!: (err: unknown) => void
+    mockSearch.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectSearch = reject
+      }) as ReturnType<typeof searchApi.search>,
+    )
+
+    search.query.value = 'hello world'
+    await nextTick()
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(mockSearch).toHaveBeenCalledTimes(1)
+
+    scope.stop()
+    rejectSearch(new Error('network blew up')) // NOT an AbortError
+    await nextTick()
+    await nextTick()
+
+    // The catch-path `if (isDisposed) return` sits above the AbortError check,
+    // so a non-abort error after teardown must write nothing.
+    expect(search.error.value).toBeNull()
+    expect(search.boards.value).toEqual([])
+  })
+
+  it('loadMore does not append cards when it resolves after disposal', async () => {
+    const scope = effectScope()
+    let search!: ReturnType<typeof useGlobalSearch>
+    scope.run(() => {
+      search = useGlobalSearch(200)
+    })
+
+    // Establish a valid query + hasMoreCards = true so loadMore proceeds.
+    mockSearch.mockResolvedValueOnce(mockSearchResultWithMore)
+    search.query.value = 'test'
+    await nextTick()
+    vi.advanceTimersByTime(300)
+    await vi.runAllTimersAsync()
+    await nextTick()
+    expect(search.cards.value).toHaveLength(1)
+    expect(search.hasMoreCards.value).toBe(true)
+
+    let resolveMore!: (val: typeof mockLoadMoreResult) => void
+    mockSearch.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveMore = resolve
+      }) as ReturnType<typeof searchApi.search>,
+    )
+    const morePromise = search.loadMore()
+    await nextTick()
+
+    scope.stop()
+    resolveMore(mockLoadMoreResult)
+    await morePromise
+    await nextTick()
+
+    // The loadMore success-path guard must prevent the append after teardown.
+    expect(search.cards.value).toHaveLength(1)
+    expect(search.cards.value[0].id).toBe('c1')
+  })
+
+  it('loadMore does not write error state on a non-abort error after disposal', async () => {
+    const scope = effectScope()
+    let search!: ReturnType<typeof useGlobalSearch>
+    scope.run(() => {
+      search = useGlobalSearch(200)
+    })
+
+    mockSearch.mockResolvedValueOnce(mockSearchResultWithMore)
+    search.query.value = 'test'
+    await nextTick()
+    vi.advanceTimersByTime(300)
+    await vi.runAllTimersAsync()
+    await nextTick()
+    expect(search.hasMoreCards.value).toBe(true)
+
+    let rejectMore!: (err: unknown) => void
+    mockSearch.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectMore = reject
+      }) as ReturnType<typeof searchApi.search>,
+    )
+    const morePromise = search.loadMore()
+    await nextTick()
+
+    scope.stop()
+    rejectMore(new Error('network blew up'))
+    await morePromise
+    await nextTick()
+
+    expect(search.error.value).toBeNull()
+  })
 })
