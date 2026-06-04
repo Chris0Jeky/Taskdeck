@@ -13,21 +13,25 @@ Last reviewed: 2026-05-31
 
 ---
 
-## A. Open PRs awaiting review + merge
+## A. Merged PRs (confirmed by post-audit sweep 2026-05-31)
 
-All were opened 2026-05-31, are green on checks locally, and have had their Gemini Code Assist findings fixed with evidence comments. **Merge policy:** non-docs PRs need 2 adversarial review passes + all comments addressed + green checks revalidated immediately before merge; docs-only PRs can be lighter. Do not merge drafts.
-
-- [ ] **PR #1143** — Test loop: `npm test`→`vitest run` + stabilize the MetricsView flake. *How:* re-run CI, confirm green, merge. (relates #1128)
-- [ ] **PR #1144** — Docs truth: STATUS↔TESTING_GUIDE contradiction, RFAI spine, broken links. *Docs-only* → lighter review, merge when green. (relates #1138)
-- [ ] **PR #1145** — Release scripts aligned with CI flags + stale PKG-01 warning removed. *How:* review, merge. (relates #1123)
-- [ ] **PR #1146** — Proposal create returns 409 (not 500) on duplicate idempotency key. *How:* 2nd adversarial pass on `UnitOfWork` change, merge → **closes #1125**.
-- [ ] **PR #1147** — `AsSplitQuery` on the multi-collection board read. *How:* review, merge. (relates #1133)
+- [x] **PR #1143** — Test loop: `npm test`→`vitest run` + stabilize the MetricsView flake. *(merged 2026-05-31)*
+- [x] **PR #1144** — Docs truth: STATUS↔TESTING_GUIDE contradiction, RFAI spine, broken links. *(merged 2026-05-31)*
+- [x] **PR #1145** — Release scripts aligned with CI flags + stale PKG-01 warning removed. *(merged 2026-05-31)*
+- [x] **PR #1146** — Proposal create returns 409 (not 500) on duplicate idempotency key. *(merged 2026-05-31, closes #1125)*
+- [x] **PR #1147** — `AsSplitQuery` on the multi-collection board read. *(merged 2026-05-31)*
+- [x] **#1126** — Un-skip INV-10/11/12 roadmap-invariant tests with real service assertions. *(PR #1153, merged 2026-05-31)*
+- [x] **#1134** (first slice) — Surface swallowed audit-log failures via shared `AuditLogWriter`. *(PR #1155, merged 2026-05-31)*
 
 ## B. Next easy wins (seeded, not yet started)
 
-- [ ] **#1126** — Un-skip the 3 stale `RoadmapInvariantTests` (TelemetryGuard / MCP hash-pin / provenance) whose infra shipped. *How:* in `RoadmapInvariantTests.cs`, replace each `[Fact(Skip=...)]` body with real assertions against the existing services (`TelemetryGuard`, `McpToolDefinitionHashService`, `ProposalProvenance`/`SourceSpan`); run `dotnet test backend/tests/Taskdeck.Architecture.Tests` until green. Keep INV-09 (DataFlowRegistry) skipped with an accurate comment OR build a minimal registry.
-- [ ] **#1134** (first slice) — Surface swallowed audit-log failures: replace the 4 copy-pasted empty-catch `SafeLogAsync` (BoardService/CardService/ColumnService/LabelService) with one shared helper that logs at Warning on failure; add a test. *How:* extract to a base service / `IAuditWriter`; keep "never crash the mutation" but log.
 - [ ] **#1133** (rest) — Bound `NotificationRepository` paging (push ORDER BY+LIMIT to SQL), incremental SignalR board patch instead of full 3-call refetch, FTS-backed card search.
+
+## B2. Surfaced by post-audit correctness sweep (2026-05-31)
+
+- [ ] **Cohort metrics stub** — `AutomationMetricsController.GetCohortMetrics` returns empty data; `CohortDashboard` frontend is wired but always shows "No cohort data available." *How:* build `ICohortMetricsService` with real cohort aggregation once learning-loop data layer design is decided. Tracked in #1142.
+- [ ] **Ollama real streaming** — `OllamaLlmProvider.StreamAsync` does pseudo-streaming (complete-then-drip-by-word). *How:* consume Ollama's `stream:true` API for genuine token streaming when Ollama provider goes beyond prototype.
+- [ ] **#1134 remaining acceptance criteria** — first slice (AuditLogWriter) shipped; 6 remaining criteria still open on the issue.
 
 ## C. Strategic / larger tracks (seeded under tracker #1142)
 
@@ -46,4 +50,5 @@ All were opened 2026-05-31, are green on checks locally, and have had their Gemi
 ---
 
 ## Changelog
+- 2026-05-31 (post-audit): Checked off §A (PRs #1143–#1147 confirmed merged), §B #1126/#1134-first-slice (PRs #1153/#1155 merged). Added §B2 with correctness-sweep findings (cohort stub, Ollama pseudo-streaming, #1134 remaining). Correctness sweep: 31 PRs audited, 0 corruption, 2 issues + 9 nitpicks fixed.
 - 2026-05-31: File created. Seeded from the 2026-05-31 deep audit (tracker #1142). #972 (RFAI tracker) closed; PR #1122 merged; PRs #1143–#1147 opened.

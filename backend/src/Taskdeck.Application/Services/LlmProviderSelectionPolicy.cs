@@ -215,6 +215,12 @@ public static class LlmProviderSelectionPolicy
             return false;
         }
 
+        if (string.IsNullOrWhiteSpace(ollama.BaseUrl))
+        {
+            error = "Ollama is not configured. Set Llm:Ollama:BaseUrl to the Ollama server address (e.g. http://localhost:11434).";
+            return false;
+        }
+
         if (!Uri.TryCreate(ollama.BaseUrl, UriKind.Absolute, out var baseUri) ||
             (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
         {

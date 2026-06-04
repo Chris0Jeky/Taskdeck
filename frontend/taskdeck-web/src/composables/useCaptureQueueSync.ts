@@ -149,7 +149,7 @@ export function useCaptureQueueSync() {
     if (!('serviceWorker' in navigator)) return
     serviceWorkerMessageHandler = (event: MessageEvent<unknown>) => {
       if (isCaptureSyncMessage(event)) {
-        replayQueue().catch(() => {})
+        void replayQueue()
       }
     }
     navigator.serviceWorker.addEventListener('message', serviceWorkerMessageHandler)
@@ -161,14 +161,14 @@ export function useCaptureQueueSync() {
 
     onlineHandler = () => {
       if (isOnline.value) {
-        replayQueue().catch(() => {})
+        void replayQueue()
         requestServiceWorkerQueueReplay()
       }
     }
     window.addEventListener('online', onlineHandler)
 
     if (isOnline.value) {
-      replayQueue().catch(() => {})
+      void replayQueue()
     }
   })
 

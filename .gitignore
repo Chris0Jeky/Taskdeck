@@ -149,3 +149,8 @@ frontend/*/reports/mutation/
 /extensions/vscode-taskdeck/node_modules
 /extensions/vscode-taskdeck/out
 /ORCHESTRATOR.md
+
+# Local agent/session analysis artifacts (never commit)
+/.analysis-logs/
+/audit_prs.sh
+/audit_prs_*.tsv
