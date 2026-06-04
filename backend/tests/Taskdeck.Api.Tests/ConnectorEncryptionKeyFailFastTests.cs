@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Services;
@@ -135,6 +136,62 @@ public class ConnectorEncryptionKeyFailFastTests
                 {
                     // Best-effort: a still-locked file can throw IOException or
                     // UnauthorizedAccessException on Windows; neither should fail the test.
+                    try { File.Delete(path); }
+                    catch (Exception) { /* best-effort temp cleanup */ }
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task UnitOfWork_CheckpointWal_RunsCleanlyOnWalDatabaseAndPreservesData()
+    {
+        // Exercises the real UnitOfWork.CheckpointWalAsync (the export path's checkpoint)
+        // against a file-backed WAL database resolved through DI. #1130/#1165
+        var keyBytes = new byte[32];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(keyBytes);
+        var validKey = Convert.ToBase64String(keyBytes);
+
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-checkpoint-{Guid.NewGuid():N}.db");
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                ["Connectors:EncryptionKey"] = validKey,
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddInfrastructure(config);
+
+        try
+        {
+            using var provider = services.BuildServiceProvider(validateScopes: true);
+            using var scope = provider.CreateScope();
+            var sp = scope.ServiceProvider;
+
+            var context = sp.GetRequiredService<TaskdeckDbContext>();
+            context.Database.Migrate();
+            context.Set<Board>().Add(new Board("checkpoint-test"));
+            await context.SaveChangesAsync();
+
+            // IUnitOfWork wraps the same scoped DbContext; checkpoint must run cleanly
+            // (busy=0, no throw) and the committed data must survive.
+            var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
+            var act = async () => await unitOfWork.CheckpointWalAsync();
+            await act.Should().NotThrowAsync();
+
+            context.Set<Board>().Count(b => b.Name == "checkpoint-test").Should().Be(1);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+            {
+                var path = dbPath + suffix;
+                if (File.Exists(path))
+                {
                     try { File.Delete(path); }
                     catch (Exception) { /* best-effort temp cleanup */ }
                 }
