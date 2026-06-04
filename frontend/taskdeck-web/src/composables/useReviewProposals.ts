@@ -138,7 +138,13 @@ export function useReviewProposals() {
 
   function isProposalDismissable(proposal: ApiProposal): boolean {
     const status = normalizeProposalStatus(proposal.status)
-    return status === 'Applied' || status === 'Rejected' || status === 'Failed' || status === 'Expired'
+    if (status === 'Applied' || status === 'Rejected' || status === 'Failed' || status === 'Expired') {
+      return true
+    }
+    // Mirror backend AutomationProposal.CanBeDismissed: an Approved proposal that
+    // expired before it was executed can no longer be applied, so it stays
+    // dismissable (otherwise it lingers in Review with no way to clear it). #1124
+    return status === 'Approved' && isProposalExpired(proposal)
   }
 
   const dismissableProposalIds = computed(() =>
