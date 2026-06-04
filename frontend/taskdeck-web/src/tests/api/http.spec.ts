@@ -49,6 +49,15 @@ const navigationMock = vi.hoisted(() => ({
 }))
 vi.mock('../../utils/navigation', () => navigationMock)
 
+// Spy on the error-reporting sink so we can assert what the response
+// interceptor does (and does not) log. Harmless for the other suites, which
+// don't assert on it — it just suppresses real console output.
+const errorReportingMock = vi.hoisted(() => ({
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+}))
+vi.mock('../../utils/errorReporting', () => errorReportingMock)
+
 // ─── Module imports (after mocks) ───────────────────────────────────────────
 
 import http from '../../api/http'
@@ -274,6 +283,59 @@ describe('http interceptors (#725)', () => {
       await expect(http.get('/test')).rejects.toThrow()
 
       expect(clearSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── Response interceptor: expectedStatuses opt-out (#680) ─────────────
+  // Endpoints whose error status is part of their contract (e.g. the optional
+  // card-provenance 404 for manual cards) can pass `expectedStatuses` so the
+  // interceptor does not log them as API errors.
+  describe('response interceptor — expectedStatuses opt-out (#680)', () => {
+    beforeEach(() => {
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+      errorReportingMock.logError.mockClear()
+    })
+
+    const apiErrorLogCount = () =>
+      errorReportingMock.logError.mock.calls.filter((args) => args[0] === 'API Error:').length
+
+    it('does not log an API error for a status listed in expectedStatuses', async () => {
+      mock.onGet('/provenance').reply(404, { message: 'Capture provenance not found' })
+
+      await expect(
+        http.get('/provenance', { expectedStatuses: [404] } as Record<string, unknown>),
+      ).rejects.toMatchObject({ response: { status: 404 } })
+
+      expect(apiErrorLogCount()).toBe(0)
+    })
+
+    it('still rejects so the caller can handle the expected status', async () => {
+      mock.onGet('/provenance').reply(404, { message: 'Capture provenance not found' })
+
+      await expect(
+        http.get('/provenance', { expectedStatuses: [404] } as Record<string, unknown>),
+      ).rejects.toMatchObject({ response: { status: 404 } })
+    })
+
+    it('logs an API error for a status NOT in expectedStatuses', async () => {
+      mock.onGet('/provenance').reply(500, { message: 'boom' })
+
+      await expect(
+        http.get('/provenance', {
+          expectedStatuses: [404],
+          skipRetry: true,
+        } as Record<string, unknown>),
+      ).rejects.toMatchObject({ response: { status: 500 } })
+
+      expect(apiErrorLogCount()).toBeGreaterThan(0)
+    })
+
+    it('logs an API error for an error response when no expectedStatuses is set', async () => {
+      mock.onGet('/normal').reply(404, { message: 'Not Found' })
+
+      await expect(http.get('/normal')).rejects.toMatchObject({ response: { status: 404 } })
+
+      expect(apiErrorLogCount()).toBeGreaterThan(0)
     })
   })
 

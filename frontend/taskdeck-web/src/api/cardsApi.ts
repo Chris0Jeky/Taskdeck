@@ -33,7 +33,13 @@ export const cardsApi = {
 
   async getCardProvenance(boardId: string, cardId: string): Promise<CardCaptureProvenance | null> {
     try {
-      const { data } = await http.get<CardCaptureProvenance>(`/boards/${boardId}/cards/${cardId}/provenance`)
+      // A 404 here is an expected part of the contract — manual cards have no
+      // capture provenance. Mark it expected so the http interceptor does not
+      // log it as an API error (issue #680 console/Sentry noise).
+      const { data } = await http.get<CardCaptureProvenance>(
+        `/boards/${boardId}/cards/${cardId}/provenance`,
+        { expectedStatuses: [404] } as Record<string, unknown>,
+      )
       return data
     } catch (e: unknown) {
       const candidate = e as { response?: { status?: number; data?: { message?: string } } } | null

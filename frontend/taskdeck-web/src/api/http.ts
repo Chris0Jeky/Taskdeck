@@ -52,16 +52,26 @@ http.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
-      // Log only safe, non-sensitive details -- never the full error object,
-      // which includes error.config.headers (Authorization: Bearer ...).
-      const safeDetails = {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        url: error.config?.url,
-        method: error.config?.method,
+      // Callers can set `expectedStatuses` on the request config to mark certain
+      // error statuses as an expected part of that endpoint's contract (e.g. a 404
+      // from the optional card-provenance lookup for manual cards). Those are not
+      // logged as errors, which keeps the console and Sentry free of benign noise.
+      const expectedStatuses = (error.config as Record<string, unknown> | undefined)?.expectedStatuses
+      const isExpectedStatus =
+        Array.isArray(expectedStatuses) && expectedStatuses.includes(error.response.status)
+
+      if (!isExpectedStatus) {
+        // Log only safe, non-sensitive details -- never the full error object,
+        // which includes error.config.headers (Authorization: Bearer ...).
+        const safeDetails = {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          url: error.config?.url,
+          method: error.config?.method,
+        }
+        logError('API Error:', safeDetails)
       }
-      logError('API Error:', safeDetails)
 
       // Handle 401 - clear session and redirect to login (skip in demo mode).
       // Callers can set `skipAuth401` on the request config to suppress this
