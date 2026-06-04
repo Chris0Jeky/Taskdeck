@@ -12,6 +12,20 @@ import {
   type RetryableRequestConfig,
 } from './httpRetry'
 
+// Augment axios so custom Taskdeck request options are type-checked at call
+// sites (a misspelled key becomes a compile error instead of silently no-op).
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /**
+     * Error statuses that are an expected part of this endpoint's contract
+     * (e.g. a 404 from the optional card-provenance lookup for manual cards).
+     * The response interceptor will not log these as API errors. See
+     * `cardsApi.getCardProvenance`.
+     */
+    expectedStatuses?: number[]
+  }
+}
+
 const REQUEST_ID_HEADER = 'X-Request-Id'
 
 function ensureRequestIdHeader(config: InternalAxiosRequestConfig): void {
@@ -56,7 +70,7 @@ http.interceptors.response.use(
       // error statuses as an expected part of that endpoint's contract (e.g. a 404
       // from the optional card-provenance lookup for manual cards). Those are not
       // logged as errors, which keeps the console and Sentry free of benign noise.
-      const expectedStatuses = (error.config as Record<string, unknown> | undefined)?.expectedStatuses
+      const expectedStatuses = (error.config as InternalAxiosRequestConfig | undefined)?.expectedStatuses
       const isExpectedStatus =
         Array.isArray(expectedStatuses) && expectedStatuses.includes(error.response.status)
 

@@ -38,7 +38,7 @@ export const cardsApi = {
       // log it as an API error (issue #680 console/Sentry noise).
       const { data } = await http.get<CardCaptureProvenance>(
         `/boards/${boardId}/cards/${cardId}/provenance`,
-        { expectedStatuses: [404] } as Record<string, unknown>,
+        { expectedStatuses: [404] },
       )
       return data
     } catch (e: unknown) {
