@@ -217,7 +217,7 @@ public static class LlmProviderSelectionPolicy
 
         if (string.IsNullOrWhiteSpace(ollama.BaseUrl))
         {
-            error = "Ollama is not configured. Set LlmProviders:Ollama:BaseUrl to the Ollama server address (e.g. http://localhost:11434).";
+            error = "Ollama is not configured. Set Llm:Ollama:BaseUrl to the Ollama server address (e.g. http://localhost:11434).";
             return false;
         }
 
