@@ -12,14 +12,35 @@ internal sealed class CliTestHarness : IAsyncDisposable
 {
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
 
+    private readonly string _dataDirectory;
     private readonly string _databasePath;
     private readonly string _connectionString;
+    private readonly bool _provisionEncryptionKey;
 
-    public CliTestHarness(string dbPrefix = "taskdeck-cli-tests")
+    /// <param name="provisionEncryptionKey">
+    /// When true (default) the harness injects a test connector encryption key via
+    /// the environment, matching a configured machine. When false the harness
+    /// simulates a CLEAN machine: no key is supplied, so the CLI must bootstrap
+    /// one itself.
+    /// </param>
+    public CliTestHarness(string dbPrefix = "taskdeck-cli-tests", bool provisionEncryptionKey = true)
     {
-        _databasePath = Path.Combine(Path.GetTempPath(), $"{dbPrefix}-{Guid.NewGuid():N}.db");
+        // Each harness gets its own data directory so the SQLite file -- and any
+        // appsettings.local.json written by the CLI's first-run bootstrap -- are
+        // isolated from other tests and cleaned up on dispose.
+        _dataDirectory = Path.Combine(Path.GetTempPath(), $"{dbPrefix}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_dataDirectory);
+        _databasePath = Path.Combine(_dataDirectory, "taskdeck.db");
         _connectionString = $"Data Source={_databasePath}";
+        _provisionEncryptionKey = provisionEncryptionKey;
     }
+
+    /// <summary>
+    /// Directory that holds this harness's SQLite database. On a fresh-machine run
+    /// (<c>provisionEncryptionKey: false</c>) the CLI's first-run bootstrap writes
+    /// <c>appsettings.local.json</c> here.
+    /// </summary>
+    public string DataDirectory => _dataDirectory;
 
     public async Task<(Guid BoardId, Guid ColumnId)> CreateBoardAndColumnAsync(
         string boardName = "TestBoard",
@@ -54,8 +75,18 @@ internal sealed class CliTestHarness : IAsyncDisposable
 
         startInfo.Environment["TASKDECK_CONNECTION_STRING"] = _connectionString;
         startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        // Test-only 256-bit encryption key for connector credentials.
-        startInfo.Environment["Connectors__EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        if (_provisionEncryptionKey)
+        {
+            // Test-only 256-bit encryption key for connector credentials.
+            startInfo.Environment["Connectors__EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        }
+        else
+        {
+            // Clean machine: ensure no key leaks in from the parent environment so
+            // the CLI's first-run bootstrap is exercised.
+            startInfo.Environment.Remove("Connectors__EncryptionKey");
+            startInfo.Environment.Remove("TASKDECK_CONNECTORS__ENCRYPTIONKEY");
+        }
 
         using var process = new Process { StartInfo = startInfo };
         using var cts = new CancellationTokenSource(ProcessTimeout);
@@ -81,14 +112,15 @@ internal sealed class CliTestHarness : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
-        foreach (var path in new[] { _databasePath, $"{_databasePath}-wal", $"{_databasePath}-shm", $"{_databasePath}-journal" })
+        try
         {
-            try
+            if (Directory.Exists(_dataDirectory))
             {
-                if (File.Exists(path)) File.Delete(path);
+                Directory.Delete(_dataDirectory, recursive: true);
             }
-            catch (IOException) { }
         }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
 
         return ValueTask.CompletedTask;
     }
