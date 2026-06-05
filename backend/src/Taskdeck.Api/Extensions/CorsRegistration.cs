@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Taskdeck.Api.Extensions;
 
 public static class CorsRegistration
@@ -5,9 +7,27 @@ public static class CorsRegistration
     public static IServiceCollection AddTaskdeckCors(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool isDevelopment)
+        bool isDevelopment,
+        ILogger? logger = null)
     {
         var corsAllowedOrigins = ResolveCorsAllowedOrigins(configuration, isDevelopment);
+
+        if (!isDevelopment && corsAllowedOrigins.Count == 0)
+        {
+            // Fail-closed posture: no production origins configured. We deliberately do NOT fall
+            // back to localhost (that would authorize credentialed cross-origin requests from
+            // localhost on a real deployment). Surface this through the bootstrap ILogger that
+            // Program.cs threads into registration (same pattern as AddTaskdeckSignalR) so the
+            // message is level-filterable and captured by structured sinks. It is a Warning
+            // because a hosted deployment that forgot Cors:AllowedOrigins has a fully broken
+            // frontend (every API call blocked) and needs a loud signal to diagnose it; the
+            // desktop single-exe serves the SPA same-origin and never hits CORS, so it can ignore
+            // this line (or raise the "Cors" category log level to suppress it).
+            logger?.LogWarning(
+                "CORS fail-closed: no production origins configured (Cors:AllowedOrigins). All " +
+                "cross-origin browser requests will be denied. Set Cors:AllowedOrigins to your " +
+                "frontend origin(s) for a hosted deployment. Same-origin / desktop single-exe is unaffected.");
+        }
 
         services.AddCors(options =>
         {
@@ -44,11 +64,14 @@ public static class CorsRegistration
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             }
 
-            // Fall back to localhost defaults when no production origins are configured,
-            // preserving the existing local-first development posture.
-            var origins = productionOrigins.Length > 0 ? productionOrigins : defaultAllowedOrigins;
-
-            return origins
+            // Fail closed: when no production origins are configured we do NOT fall back to the
+            // localhost defaults. Falling back would authorize credentialed cross-origin requests
+            // (the "AllowFrontend" policy calls AllowCredentials()) from localhost on a real
+            // deployment that simply forgot to set Cors:AllowedOrigins. An empty set denies all
+            // cross-origin requests until origins are configured explicitly. Same-origin requests
+            // (the desktop single-exe serving the SPA from wwwroot) never hit CORS, so this is safe
+            // for the local-first posture.
+            return productionOrigins
                 .Where(origin => !string.IsNullOrWhiteSpace(origin))
                 .Select(NormalizeCorsOrigin)
                 .Distinct(StringComparer.OrdinalIgnoreCase)

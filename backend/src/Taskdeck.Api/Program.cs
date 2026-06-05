@@ -334,8 +334,13 @@ builder.AddTaskdeckSentry(sentrySettings);
 // Add worker services (LLM queue, proposal housekeeping, outbound webhooks)
 builder.Services.AddTaskdeckWorkers(builder.Configuration, builder.Environment);
 
-// Add CORS
-builder.Services.AddTaskdeckCors(builder.Configuration, builder.Environment.IsDevelopment());
+// Add CORS (bootstrap logger threaded in so the fail-closed warning is structured + filterable,
+// matching the AddTaskdeckSignalR pattern above).
+using (var corsLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
+{
+    var corsLogger = corsLoggerFactory.CreateLogger("Cors");
+    builder.Services.AddTaskdeckCors(builder.Configuration, builder.Environment.IsDevelopment(), corsLogger);
+}
 
 // Add rate limiting
 builder.Services.AddTaskdeckRateLimiting(rateLimitingSettings);

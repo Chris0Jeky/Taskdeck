@@ -108,13 +108,66 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         alternateOriginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         alternateOriginResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out _).Should().BeFalse();
 
+        // Fail-closed (#1132): with no Cors:AllowedOrigins configured in Production, even the
+        // default localhost frontend origin is denied (no Access-Control-Allow-Origin header).
+        // Previously this fell back to localhost and authorized credentialed cross-origin requests.
         using var defaultOriginRequest = new HttpRequestMessage(HttpMethod.Get, "/health/live");
         defaultOriginRequest.Headers.TryAddWithoutValidation("Origin", DefaultFrontendOrigin);
         var defaultOriginResponse = await client.SendAsync(defaultOriginRequest);
 
         defaultOriginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        defaultOriginResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
-        allowedOrigins.Should().ContainSingle().Which.Should().Be(DefaultFrontendOrigin);
+        defaultOriginResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Cors_ShouldFailClosed_InProduction_WhenNoOriginsConfigured()
+    {
+        using var factory = _baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
+            builder.UseSetting("Connectors:EncryptionKey", ApiTestHarness.TestEncryptionKey);
+        });
+        using var client = factory.CreateClient();
+
+        foreach (var origin in new[] { DefaultFrontendOrigin, "https://app.example.com" })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+            request.Headers.TryAddWithoutValidation("Origin", origin);
+            var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Headers.TryGetValues(AccessControlAllowOriginHeader, out _)
+                .Should().BeFalse($"origin {origin} must be denied when no production origins are configured");
+        }
+    }
+
+    [Fact]
+    public async Task Cors_ShouldAllowConfiguredProductionOrigin()
+    {
+        const string productionOrigin = "https://app.example.com";
+        using var factory = _baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
+            builder.UseSetting("Connectors:EncryptionKey", ApiTestHarness.TestEncryptionKey);
+            builder.UseSetting("Cors:AllowedOrigins:0", productionOrigin);
+        });
+        using var client = factory.CreateClient();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        request.Headers.TryAddWithoutValidation("Origin", productionOrigin);
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
+        allowedOrigins.Should().ContainSingle().Which.Should().Be(productionOrigin);
+
+        // Configuring one origin must not silently reopen the localhost fallback.
+        using var localhostRequest = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        localhostRequest.Headers.TryAddWithoutValidation("Origin", DefaultFrontendOrigin);
+        var localhostResponse = await client.SendAsync(localhostRequest);
+        localhostResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out _).Should().BeFalse();
     }
 
     [Theory]

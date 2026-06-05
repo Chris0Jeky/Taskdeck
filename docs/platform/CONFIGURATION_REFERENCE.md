@@ -112,19 +112,21 @@ Registered in
 `backend/src/Taskdeck.Api/Extensions/SettingsRegistration.cs` and consumed by
 `AuthenticationRegistration.AddTaskdeckAuthentication`.
 
-If `SecretKey` is missing, shorter than 32 characters, or `Issuer`/`Audience`
-is blank, `AddTaskdeckAuthentication` returns without registering the
-authentication services (`AuthenticationRegistration.cs`). Because
-`PipelineConfiguration.ConfigureTaskdeckPipeline` always calls
-`app.UseAuthentication()`, this results in a startup failure (the pipeline
-cannot resolve the missing authentication services) rather than authenticated
-endpoints simply returning 401. `FirstRunBootstrapper.EnsureJwtSecret` runs
-unconditionally in all environments (including Development and CI/headless)
-and generates a random 32-byte base64 secret into `appsettings.local.json`
-when the key is missing or equal to the well-known placeholder. This startup
-failure is therefore only reached when operators explicitly set an invalid
-value. Developers can alternatively supply the secret via `dotnet user-secrets`
-or the `Jwt__SecretKey` environment variable.
+If `SecretKey` is missing, shorter than `JwtSettings.MinSecretKeyLength` (32)
+characters, or `Issuer`/`Audience` is blank, `AddTaskdeckAuthentication`
+**throws `InvalidOperationException`** at registration time
+(`AuthenticationRegistration.cs`) — it fails fast rather than silently
+no-op'ing the authentication scheme (which would boot the app with auth
+effectively off). The 32-character floor is a single source of truth on
+`JwtSettings.MinSecretKeyLength`, shared by `AddTaskdeckAuthentication`, the
+`JwtSettingsValidator` (`ValidateOnStart`), and
+`AuthenticationService.TryValidateJwtSettings`. `FirstRunBootstrapper.EnsureJwtSecret`
+runs unconditionally in all environments (including Development and CI/headless)
+and generates a random 32-byte base64 secret into `appsettings.local.json` when
+the key is missing or equal to the well-known placeholder, so this fail-fast is
+only reached when operators explicitly set an invalid (e.g. too-short) value.
+Developers can alternatively supply the secret via `dotnet user-secrets` or the
+`Jwt__SecretKey` environment variable.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
@@ -287,9 +289,17 @@ Values may be supplied as a JSON array or a comma-separated string. Each
 origin must be an absolute `http` or `https` URL (host + scheme), otherwise
 startup fails with `InvalidOperationException`.
 
+Outside Development, CORS **fails closed**: when `Cors:AllowedOrigins` is unset
+the resolved origin set is empty, so all cross-origin browser requests are
+denied (there is no localhost fallback — that would authorize credentialed
+cross-origin requests from localhost on a forgotten-config deployment), and a
+startup warning is logged under the `Cors` category. Same-origin requests (the
+desktop single-exe serving the SPA from `wwwroot`, or the docker baseline) never
+hit CORS and are unaffected.
+
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Cors:AllowedOrigins` | `string[]` | `["http://localhost:5173", "http://localhost:5174"]` (fallback when unset in production) | Production CORS origins. Used only outside the Development environment. | Recommended in production |
+| `Cors:AllowedOrigins` | `string[]` | _none_ (unset → fail-closed: cross-origin denied, startup warning) | Production CORS origins. Used only outside the Development environment. | Recommended in production (required if a browser frontend is served from a different origin) |
 | `Cors:DevelopmentAllowedOrigins` | `string[]` | `[]` | Additional origins permitted only in Development. Merged with the localhost defaults and `http://localhost:4173`, `http://localhost:5001`. | No |
 
 ### `ForwardedHeaders`
