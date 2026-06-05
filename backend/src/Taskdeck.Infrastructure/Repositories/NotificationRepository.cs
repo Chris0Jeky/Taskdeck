@@ -45,7 +45,9 @@ public class NotificationRepository : Repository<Notification>, INotificationRep
                 parameters.Add(boardId.Value);
             }
 
-            sql.Append(" ORDER BY CreatedAt DESC");
+            // Id is a deterministic tiebreaker so offset paging stays consistent when
+            // two notifications share the same CreatedAt (mirrors BoardRepository.SearchIdsAsync).
+            sql.Append(" ORDER BY CreatedAt DESC, Id");
             sql.Append(" LIMIT {").Append(parameters.Count).Append('}');
             parameters.Add(boundedLimit);
             sql.Append(" OFFSET {").Append(parameters.Count).Append('}');
@@ -73,6 +75,7 @@ public class NotificationRepository : Repository<Notification>, INotificationRep
 
         return await query
             .OrderByDescending(n => n.CreatedAt)
+            .ThenBy(n => n.Id)
             .Skip(boundedOffset)
             .Take(boundedLimit)
             .ToListAsync(cancellationToken);

@@ -306,4 +306,52 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
         page[0].Id.Should().Be(notifications[3].Id);
         page[1].Id.Should().Be(notifications[2].Id);
     }
+
+    /// <summary>
+    /// Regression for #1133: when notifications share the same <c>CreatedAt</c>, offset paging
+    /// must remain deterministic (no skipped or duplicated rows across pages). A secondary
+    /// sort on <c>Id</c> provides the stable tiebreaker.
+    /// </summary>
+    [Fact]
+    public async Task GetByUserIdAsync_WithTiedCreatedAt_PagesDeterministicallyWithoutGapsOrDuplicates()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<INotificationRepository>();
+
+        var user = new User("notif-tie-user", "notif-tie@example.com", "hash");
+        db.Users.Add(user);
+
+        var notifications = new List<Notification>();
+        for (var i = 0; i < 4; i++)
+        {
+            var notif = new Notification(
+                user.Id, NotificationType.System, NotificationCadence.Immediate,
+                $"Tie notif {i}", $"Message {i}");
+            notifications.Add(notif);
+            db.Notifications.Add(notif);
+        }
+        await db.SaveChangesAsync();
+
+        // Two pairs of rows that share an identical timestamp (forces the tiebreaker).
+        var groupA = new DateTimeOffset(2024, 7, 1, 0, 0, 0, TimeSpan.Zero);
+        var groupB = groupA.AddSeconds(1);
+        db.Entry(notifications[0]).Property(nameof(Entity.CreatedAt)).CurrentValue = groupA;
+        db.Entry(notifications[1]).Property(nameof(Entity.CreatedAt)).CurrentValue = groupA;
+        db.Entry(notifications[2]).Property(nameof(Entity.CreatedAt)).CurrentValue = groupB;
+        db.Entry(notifications[3]).Property(nameof(Entity.CreatedAt)).CurrentValue = groupB;
+        await db.SaveChangesAsync();
+
+        var page1 = (await repo.GetByUserIdAsync(user.Id, limit: 2, offset: 0)).ToList();
+        var page2 = (await repo.GetByUserIdAsync(user.Id, limit: 2, offset: 2)).ToList();
+
+        // Repeated identical query returns the same order (deterministic).
+        var page1Again = (await repo.GetByUserIdAsync(user.Id, limit: 2, offset: 0)).ToList();
+        page1Again.Select(n => n.Id).Should().Equal(page1.Select(n => n.Id));
+
+        // The two pages together cover every row exactly once: no gaps, no duplicates.
+        var combined = page1.Concat(page2).Select(n => n.Id).ToList();
+        combined.Should().OnlyHaveUniqueItems();
+        combined.Should().BeEquivalentTo(notifications.Select(n => n.Id));
+    }
 }
