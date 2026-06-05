@@ -438,9 +438,9 @@ public class AuthenticationService : IAuthenticationService
             return false;
         }
 
-        if (_jwtSettings.SecretKey.Length < 32)
+        if (_jwtSettings.SecretKey.Length < JwtSettings.MinSecretKeyLength)
         {
-            errorMessage = "JWT SecretKey must be at least 32 characters";
+            errorMessage = $"JWT SecretKey must be at least {JwtSettings.MinSecretKeyLength} characters";
             return false;
         }
 
