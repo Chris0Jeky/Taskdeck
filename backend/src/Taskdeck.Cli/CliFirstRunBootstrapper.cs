@@ -38,13 +38,13 @@ internal static class CliFirstRunBootstrapper
     /// <summary>
     /// Ensures a connector encryption key is available in configuration,
     /// generating and persisting one on first run when none is configured.
-    /// No-op when a key is already supplied (env var, appsettings, user secrets,
+    /// No-op when a key is already supplied (environment variable, appsettings,
     /// or a previously generated <c>appsettings.local.json</c>).
     /// </summary>
     public static void EnsureConnectorEncryptionKey(IConfiguration configuration)
     {
-        // Respect an explicitly configured key (environment variable, appsettings,
-        // user secrets). Environment variables must always win over the generated
+        // Respect an explicitly configured key (environment variable or
+        // appsettings). Environment variables must always win over the generated
         // file so 12-factor / container deployments are never silently overridden.
         var configured = configuration[ConnectorKeyPath];
         if (!string.IsNullOrWhiteSpace(configured))
@@ -137,19 +137,31 @@ internal static class CliFirstRunBootstrapper
                 acquired = true;
             }
 
-            var root = ReadConfigObject(localConfigPath);
-
             // Re-check inside the mutex: a racing process may have just written one.
-            var existing = (root[ConnectorSection] as JsonObject)?[EncryptionKeyName]?.GetValue<string>();
-            if (!string.IsNullOrWhiteSpace(existing))
+            var existing = ReadExisting(localConfigPath);
+            if (!string.IsNullOrWhiteSpace(existing.Key))
             {
-                return existing;
+                return existing.Key!;
             }
 
             var generated = GenerateKey();
+
+            if (existing.PreserveFile)
+            {
+                // An existing file could not be read (e.g. transiently locked by an
+                // editor/AV/backup). Do NOT overwrite it -- a valid key may be on
+                // disk, and clobbering it would make previously-encrypted connector
+                // credentials undecryptable. Use a transient key for this run; the
+                // next run will pick up the real key.
+                Console.Error.WriteLine(
+                    $"[CliFirstRun] WARNING: Could not read {localConfigPath} to load the " +
+                    "connector encryption key. Using a transient in-memory key for this run.");
+                return generated;
+            }
+
             try
             {
-                PersistKey(localConfigPath, root, generated);
+                PersistKey(localConfigPath, existing.Root, generated);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -175,17 +187,39 @@ internal static class CliFirstRunBootstrapper
     internal static string GenerateKey()
         => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
-    private static JsonObject ReadConfigObject(string path)
+    /// <summary>
+    /// Result of inspecting an existing <c>appsettings.local.json</c>.
+    /// <paramref name="Root"/> is the object to merge new values into (empty when
+    /// the file is missing or corrupt). <paramref name="Key"/> is the existing
+    /// connector key when present and a string. <paramref name="PreserveFile"/>
+    /// is true when the file exists but could not be read, signalling the caller
+    /// to avoid overwriting it.
+    /// </summary>
+    private readonly record struct ExistingConfig(JsonObject Root, string? Key, bool PreserveFile);
+
+    private static ExistingConfig ReadExisting(string path)
     {
         if (!File.Exists(path))
         {
-            return new JsonObject();
+            return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: false);
         }
 
+        string text;
         try
         {
-            var existing = File.ReadAllText(path);
-            return JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
+            text = File.ReadAllText(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // File exists but is temporarily unreadable -- preserve it rather than
+            // risk clobbering a valid key.
+            return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: true);
+        }
+
+        JsonObject root;
+        try
+        {
+            root = JsonNode.Parse(text)?.AsObject() ?? new JsonObject();
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
@@ -194,8 +228,17 @@ internal static class CliFirstRunBootstrapper
             Console.Error.WriteLine(
                 $"[CliFirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
                 $"Details: {ex.Message}");
-            return new JsonObject();
+            return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: false);
         }
+
+        // Type-safe extraction: a non-string EncryptionKey value (e.g. a number)
+        // must not throw -- treat it as absent so a valid key is regenerated.
+        var key = (root[ConnectorSection] as JsonObject)?[EncryptionKeyName] is JsonValue value
+            && value.TryGetValue<string>(out var keyText)
+                ? keyText
+                : null;
+
+        return new ExistingConfig(root, key, PreserveFile: false);
     }
 
     private static void PersistKey(string path, JsonObject root, string key)
