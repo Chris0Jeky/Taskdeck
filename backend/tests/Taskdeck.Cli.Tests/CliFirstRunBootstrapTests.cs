@@ -133,6 +133,32 @@ public class CliFirstRunBootstrapTests
             .Should().NotBeNullOrWhiteSpace();
     }
 
+    [Theory]
+    [InlineData("{ this is not valid json")]                       // corrupt JSON
+    [InlineData("[1, 2, 3]")]                                       // valid JSON but not an object
+    [InlineData("{\"Connectors\":{\"EncryptionKey\":12345}}")]     // wrong-type key value
+    [InlineData("{\"Connectors\":{\"EncryptionKey\":\"\"}}")]      // empty key value
+    public void EnsureConnectorEncryptionKey_WithMalformedLocalConfig_RegeneratesValidKeyWithoutThrowing(
+        string malformedContent)
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        File.WriteAllText(localConfig, malformedContent);
+
+        var configuration = BuildConfiguration(temp.DatabasePath);
+
+        // Must not throw: the fail-safe exists to prevent a startup crash.
+        var act = () => CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+        act.Should().NotThrow();
+
+        var key = configuration["Connectors:EncryptionKey"];
+        key.Should().NotBeNullOrWhiteSpace();
+        Convert.FromBase64String(key!).Length.Should().Be(32);
+
+        // The file is overwritten with a valid persisted key.
+        ReadPersistedKey(localConfig).Should().Be(key);
+    }
+
     [Fact]
     public void GenerateKey_ProducesBase64EncodedTwoFiftySixBitKey()
     {
