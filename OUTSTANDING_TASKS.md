@@ -39,8 +39,10 @@ Last reviewed: 2026-06-05
 - [ ] **#1132** — Make the required PR gate enforce security: gitleaks/SAST/dependency scan + CORS fail-closed + single ≥32 JWT floor + global `FallbackPolicy` + bundle-size in the required lane.
 - [x] **#1130** — SQLite local concurrency: enable WAL + `busy_timeout`, fix per-process `Migrate()` race (UI + MCP + CLI share one DB → `SQLITE_BUSY`). *(closed 2026-06-05; ACs 1+3 shipped in PR #1165 / da764b92. AC2 cross-process `Migrate()` serialization → #1164; export/import redesign → #1166.)*
 - [ ] **#1131** — CLI hardening: fresh-machine bootstrap (it crashes without `Connectors:EncryptionKey`) + route CLI mutations through board-access authorization.
-- [x] **#1124** — Core-loop polish: false-green expiry regression test + #678 dismiss gap (Approved+expired) + #680 provenance-404 console noise. *(closed 2026-06-05; all three fixed in PR #1162 / 77162b2d. Paper-view dismiss affordance → #1161.)*
-- [ ] **#1161 / #1164 / #1166** — Carrier follow-ups for the #1124/#1130 remainders: **#1161** Paper review dismiss affordance (maintainer 2026-06-05: take it, design-first — propose the affordance before building); **#1164** serialize cross-process `Database.Migrate()`; **#1166** harden dev-sandbox export/import via the SQLite backup API.
+- [x] **#1124** — Core-loop polish: false-green expiry regression test (now asserts a real 409) + #678 dismiss gap (Approved+expired) + #680 provenance-404 console noise. *(closed 2026-06-05; all three fixed in PR #1162 / 77162b2d. Paper-view dismiss affordance → #1161.)*
+- [ ] **#1161** — Paper review dismiss affordance (carries #1124's Paper remainder; maintainer 2026-06-05: take it, design-first — propose the affordance before building).
+- [ ] **#1164** — Serialize cross-process `Database.Migrate()` (advisory/single-owner lock; carries #1130 AC2).
+- [ ] **#1166** — Harden dev-sandbox export/import via the SQLite backup API (carries #1130's export/import follow-up).
 - [ ] **#1138** (rest) — Split the 1300+ line `STATUS.md` into a lean current-reality head + `docs/archive/status-history/`; add a rotation rule; recertify TESTING_GUIDE totals from a green CI run; add a markdown link-checker to nightly.
 - [ ] **#1136** — Write an ADR deciding the Paper vs Legacy UI question; remove dead paper composables.
 - [ ] **#1137** — Refocus strategy/roadmap on shipping to first users; freeze new feature/re-skin tracks until v0.1.0 ships.
