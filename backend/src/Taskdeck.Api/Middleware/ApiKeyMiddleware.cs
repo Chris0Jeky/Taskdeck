@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -107,6 +108,15 @@ public sealed class ApiKeyMiddleware
 
         // Set the authenticated user ID for HttpUserContextProvider
         context.Items[HttpUserContextProvider.UserIdItemKey] = apiKey.UserId;
+
+        // Establish an authenticated principal so the global authorization FallbackPolicy
+        // (RequireAuthenticatedUser, #1132 AC4) is satisfied for valid-key MCP requests — a valid
+        // API key IS authentication. It carries only the user id (no JWT 'iat', so
+        // TokenValidationMiddleware's JWT-invalidation check is a no-op for it). Set before
+        // UseAuthentication runs; JwtBearer finds no token on /mcp and does not overwrite it.
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim(ClaimTypes.NameIdentifier, apiKey.UserId.ToString()) },
+            authenticationType: "ApiKey"));
 
         // Update last-used timestamp before continuing the pipeline.
         // This is non-critical so failures are swallowed.
