@@ -275,6 +275,66 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
         idx1.Should().BeLessThan(idx2);
     }
 
+    /// <summary>
+    /// Regression for #1133: <see cref="ICardRepository.GetByBoardIdAsync"/> uses
+    /// <c>AsSplitQuery()</c> to avoid a cartesian fan-out across the CardLabels-&gt;Label
+    /// collection. The split query must not change results: every card appears exactly once,
+    /// with all of its labels loaded, ordered by position within the column.
+    /// </summary>
+    [Fact]
+    public async Task GetByBoardIdAsync_WithMultipleLabels_LoadsAllLabelsWithoutDuplicatingCards()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ICardRepository>();
+
+        var user = new User("card-split-user", "card-split@example.com", "hash");
+        db.Users.Add(user);
+
+        var board = new Board("Split query board", ownerId: user.Id);
+        db.Boards.Add(board);
+
+        // Single column so ordering is by Position (avoids GUID-based ColumnId ordering).
+        var col = new Column(board.Id, "Todo", 0);
+        db.Columns.Add(col);
+
+        var labelX = new Label(board.Id, "Urgent", "#FF0000");
+        var labelY = new Label(board.Id, "Backend", "#00FF00");
+        db.Labels.AddRange(labelX, labelY);
+
+        // card0 has TWO labels (the case a cartesian single query would fan out),
+        // card1 has ONE label, card2 has NONE.
+        var card0 = new Card(board.Id, col.Id, "Card 0", position: 0);
+        var card1 = new Card(board.Id, col.Id, "Card 1", position: 1);
+        var card2 = new Card(board.Id, col.Id, "Card 2", position: 2);
+        db.Cards.AddRange(card0, card1, card2);
+        await db.SaveChangesAsync();
+
+        db.CardLabels.AddRange(
+            new CardLabel(card0.Id, labelX.Id),
+            new CardLabel(card0.Id, labelY.Id),
+            new CardLabel(card1.Id, labelX.Id));
+        await db.SaveChangesAsync();
+
+        var results = (await repo.GetByBoardIdAsync(board.Id)).ToList();
+
+        // Split query must not duplicate or drop root rows.
+        results.Should().HaveCount(3);
+        results.Select(c => c.Id).Should().OnlyHaveUniqueItems();
+
+        // Ordered by Position within the column.
+        results[0].Id.Should().Be(card0.Id);
+        results[1].Id.Should().Be(card1.Id);
+        results[2].Id.Should().Be(card2.Id);
+
+        // All labels are loaded for each card.
+        results[0].CardLabels.Select(cl => cl.Label.Name)
+            .Should().BeEquivalentTo(new[] { "Urgent", "Backend" });
+        results[1].CardLabels.Select(cl => cl.Label.Name)
+            .Should().BeEquivalentTo(new[] { "Urgent" });
+        results[2].CardLabels.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task GetAgendaByBoardIdsAsync_ShouldReturnOnlyBlockedOrDueDateCards()
     {
