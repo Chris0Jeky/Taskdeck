@@ -6,6 +6,7 @@
 # using Gitleaks with project-specific configuration.
 #
 # Callers:
+#   - ci-required.yml (blocking, PR commit scan via action — required merge gate, #1132)
 #   - ci-extended.yml (non-blocking, PR commit scan via action)
 #   - ci-release.yml (blocking, full-history scan via CLI)
 #
