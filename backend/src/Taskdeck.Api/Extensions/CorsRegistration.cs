@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Taskdeck.Api.Extensions;
 
 public static class CorsRegistration
@@ -5,7 +7,8 @@ public static class CorsRegistration
     public static IServiceCollection AddTaskdeckCors(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool isDevelopment)
+        bool isDevelopment,
+        ILogger? logger = null)
     {
         var corsAllowedOrigins = ResolveCorsAllowedOrigins(configuration, isDevelopment);
 
@@ -13,12 +16,16 @@ public static class CorsRegistration
         {
             // Fail-closed posture: no production origins configured. We deliberately do NOT fall
             // back to localhost (that would authorize credentialed cross-origin requests from
-            // localhost on a real deployment). Emit a loud, guaranteed-visible bootstrap warning —
-            // the application logger is not built yet at service-registration time, and this
-            // matches the Console.Error bootstrap diagnostics already used in Program.cs.
-            Console.Error.WriteLine(
-                "[WARN] CORS fail-closed: no production origins configured (Cors:AllowedOrigins). " +
-                "All cross-origin browser requests will be denied. Set Cors:AllowedOrigins to your " +
+            // localhost on a real deployment). Surface this through the bootstrap ILogger that
+            // Program.cs threads into registration (same pattern as AddTaskdeckSignalR) so the
+            // message is level-filterable and captured by structured sinks. It is a Warning
+            // because a hosted deployment that forgot Cors:AllowedOrigins has a fully broken
+            // frontend (every API call blocked) and needs a loud signal to diagnose it; the
+            // desktop single-exe serves the SPA same-origin and never hits CORS, so it can ignore
+            // this line (or raise the "Cors" category log level to suppress it).
+            logger?.LogWarning(
+                "CORS fail-closed: no production origins configured (Cors:AllowedOrigins). All " +
+                "cross-origin browser requests will be denied. Set Cors:AllowedOrigins to your " +
                 "frontend origin(s) for a hosted deployment. Same-origin / desktop single-exe is unaffected.");
         }
 
