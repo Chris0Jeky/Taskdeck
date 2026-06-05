@@ -45,6 +45,9 @@ on:
 
 permissions:
   contents: read
+  # PR scan-mode (gitleaks-action) reads the PR commit context. Intersected with the caller's
+  # grant, so non-PR callers are unaffected. (#1132 review)
+  pull-requests: read
 
 jobs:
   gitleaks:

@@ -80,6 +80,8 @@ on:
 
 permissions:
   contents: read
+  # The required-lane gitleaks job runs in PR scan-mode, which reads the PR commit context. (#1132 review)
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
