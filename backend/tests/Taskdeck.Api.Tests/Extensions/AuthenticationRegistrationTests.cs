@@ -54,6 +54,24 @@ public class AuthenticationRegistrationTests
     }
 
     [Fact]
+    public void AddTaskdeckAuthentication_Throws_WhenServicesNull()
+    {
+        IServiceCollection services = null!;
+
+        Assert.Throws<ArgumentNullException>(
+            () => services.AddTaskdeckAuthentication(ValidSettings()));
+    }
+
+    [Fact]
+    public void AddTaskdeckAuthentication_Throws_WhenJwtSettingsNull()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentNullException>(
+            () => services.AddTaskdeckAuthentication(null!));
+    }
+
+    [Fact]
     public void AddTaskdeckAuthentication_RegistersAuthentication_WhenValid()
     {
         var services = new ServiceCollection();

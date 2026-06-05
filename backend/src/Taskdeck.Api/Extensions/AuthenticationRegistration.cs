@@ -35,6 +35,9 @@ public static class AuthenticationRegistration
         CircuitBreakerStateTracker? circuitBreakerTracker = null,
         CircuitBreakerSettings? circuitBreakerSettings = null)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(jwtSettings);
+
         // Fail fast (do NOT silently no-op): a no-op here would register no authentication
         // scheme, so every [Authorize] endpoint would fault at request time and the app would
         // boot with authentication effectively off. A short-but-present key (16–31 chars) was the
