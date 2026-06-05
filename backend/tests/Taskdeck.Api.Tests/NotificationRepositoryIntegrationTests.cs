@@ -261,4 +261,49 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
         // DESC: second (newer) should appear before first (older)
         secondIdx.Should().BeLessThan(firstIdx, "DESC: newer before older");
     }
+
+    /// <summary>
+    /// Regression for #1133: paging must be pushed into SQL (ORDER BY + LIMIT/OFFSET),
+    /// not done in memory after materializing every matching row. Seeds more rows than the
+    /// page size and asserts the returned page is exactly the expected newest-first slice and
+    /// is bounded to <c>limit</c> rows.
+    /// </summary>
+    [Fact]
+    public async Task GetByUserIdAsync_WithPaging_ReturnsExactNewestFirstSliceBoundedToLimit()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<INotificationRepository>();
+
+        var user = new User("notif-slice-user", "notif-slice@example.com", "hash");
+        db.Users.Add(user);
+
+        // Seed 5 notifications (> page size) with strictly increasing timestamps.
+        var baseTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var notifications = new List<Notification>();
+        for (var i = 0; i < 5; i++)
+        {
+            var notif = new Notification(
+                user.Id, NotificationType.System, NotificationCadence.Immediate,
+                $"Slice notif {i}", $"Message {i}");
+            notifications.Add(notif);
+            db.Notifications.Add(notif);
+        }
+        await db.SaveChangesAsync();
+
+        for (var i = 0; i < notifications.Count; i++)
+        {
+            db.Entry(notifications[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(i);
+        }
+        await db.SaveChangesAsync();
+
+        // Newest-first order is index 4,3,2,1,0. With limit=2, offset=1 we expect [3, 2].
+        var page = (await repo.GetByUserIdAsync(user.Id, limit: 2, offset: 1)).ToList();
+
+        // Bounded: never more than the requested limit.
+        page.Should().HaveCount(2);
+        // Exact ordered slice (newest first, after skipping the single newest row).
+        page[0].Id.Should().Be(notifications[3].Id);
+        page[1].Id.Should().Be(notifications[2].Id);
+    }
 }
