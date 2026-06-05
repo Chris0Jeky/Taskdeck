@@ -41,6 +41,15 @@ public sealed class TokenValidationMiddleware
             return;
         }
 
+        // API-key principals (MCP) are validated by ApiKeyMiddleware — freshness + active checks —
+        // and carry no JWT 'iat', so the JWT token-invalidation logic below is a no-op for them.
+        // Short-circuit to avoid a redundant per-request user load on every authenticated MCP call. (#1176 review)
+        if (string.Equals(user.Identity.AuthenticationType, ApiKeyMiddleware.AuthenticationType, StringComparison.Ordinal))
+        {
+            await _next(context);
+            return;
+        }
+
         var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)
                           ?? user.FindFirst(JwtRegisteredClaimNames.Sub);
 

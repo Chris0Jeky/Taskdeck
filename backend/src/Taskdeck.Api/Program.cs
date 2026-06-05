@@ -323,7 +323,15 @@ var circuitBreakerSettings = builder.Services
     .FirstOrDefault();
 builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings, oidcSettings, circuitBreakerTracker, circuitBreakerSettings);
 builder.Services.AddAuthorizationBuilder()
-    .AddPolicy("AdminOnly", policy => policy.RequireRole("Owner", "Admin"));
+    .AddPolicy("AdminOnly", policy => policy.RequireRole("Owner", "Admin"))
+    // Defense-in-depth (#1132 AC4): any endpoint without explicit authorization metadata requires
+    // an authenticated user. Anonymous endpoints opt out explicitly — login/register/health/OAuth
+    // controllers carry [AllowAnonymous]; the SPA fallback calls .AllowAnonymous(); and /mcp is
+    // satisfied because ApiKeyMiddleware sets an authenticated principal for valid API keys (and
+    // 401s invalid ones). The standalone --mcp HTTP host has no UseAuthorization and is unaffected.
+    .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build());
 
 // Add OpenTelemetry observability
 builder.Services.AddTaskdeckObservability(observabilitySettings);

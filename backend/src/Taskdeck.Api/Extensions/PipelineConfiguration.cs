@@ -124,6 +124,10 @@ public static class PipelineConfiguration
         // Authenticated via ApiKeyMiddleware (Bearer tdsk_... tokens).
         // Rate limiting applied per API key user identity.
         var mcpEndpoint = app.MapMcp();
+        // MCP is authenticated by ApiKeyMiddleware (above): it 401s missing/invalid/revoked keys
+        // before routing and sets an authenticated principal for valid keys, which satisfies the
+        // global FallbackPolicy (#1132 AC4). The MCP SDK endpoint does not honor an
+        // .AllowAnonymous() convention, so the principal — not endpoint metadata — is the opt-in.
         if (rateLimitingSettings.Enabled)
         {
             mcpEndpoint.RequireRateLimiting(RateLimiting.RateLimitingPolicyNames.McpPerApiKey);
@@ -131,8 +135,9 @@ public static class PipelineConfiguration
 
         // SPA fallback: any route not matched by a controller or hub endpoint returns index.html,
         // enabling Vue Router's client-side navigation. API (/api/*) and hub (/hubs/*) routes
-        // are matched above and never reach this fallback.
-        app.MapFallbackToFile("index.html");
+        // are matched above and never reach this fallback. AllowAnonymous so the app shell loads for
+        // unauthenticated users (e.g. to reach the login page) under the global FallbackPolicy (#1132 AC4).
+        app.MapFallbackToFile("index.html").AllowAnonymous();
 
         return app;
     }

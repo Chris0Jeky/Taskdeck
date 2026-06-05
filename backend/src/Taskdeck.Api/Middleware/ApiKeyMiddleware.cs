@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,12 @@ public sealed class ApiKeyMiddleware
 
     /// <summary>The path prefix that triggers API key authentication.</summary>
     private const string McpPathPrefix = "/mcp";
+
+    /// <summary>
+    /// Authentication type stamped on the ClaimsIdentity for a valid API key so downstream
+    /// middleware (e.g. TokenValidationMiddleware) can distinguish API-key principals from JWT ones.
+    /// </summary>
+    public const string AuthenticationType = "ApiKey";
 
     public ApiKeyMiddleware(RequestDelegate next, ILogger<ApiKeyMiddleware> logger)
     {
@@ -107,6 +114,17 @@ public sealed class ApiKeyMiddleware
 
         // Set the authenticated user ID for HttpUserContextProvider
         context.Items[HttpUserContextProvider.UserIdItemKey] = apiKey.UserId;
+
+        // Establish an authenticated principal so the global authorization FallbackPolicy
+        // (RequireAuthenticatedUser, #1132 AC4) is satisfied for valid-key MCP requests — a valid
+        // API key IS authentication. It carries only the user id (no JWT 'iat', so
+        // TokenValidationMiddleware's JWT-invalidation check is a no-op for it, and that middleware
+        // short-circuits on this AuthenticationType). Set before UseAuthentication runs: JwtBearer
+        // reads the "Bearer tdsk_..." header and fails to validate it as a JWT, returning a null
+        // Principal that AuthenticationMiddleware does not assign over context.User, so this survives.
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim(ClaimTypes.NameIdentifier, apiKey.UserId.ToString()) },
+            authenticationType: AuthenticationType));
 
         // Update last-used timestamp before continuing the pipeline.
         // This is non-critical so failures are swallowed.
