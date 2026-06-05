@@ -134,8 +134,19 @@ jobs:
   # Previously these ran only in label-gated ci-extended / nightly / release lanes,
   # so a PR introducing a hardcoded secret or a high-severity vulnerable dependency
   # was not blocked. They run on the same fast PR critical path as the other required jobs.
+  #
+  # BREAK-GLASS: these gates fail closed. If a newly-published upstream CVE or Semgrep rule
+  # starts blocking unrelated PRs, the documented escape hatches are:
+  #   - secrets:     .gitleaks.toml / .gitleaksignore (per-finding allowlist)
+  #   - SAST:        .semgrepignore path excludes, or inline `# nosemgrep` comments
+  #   - dependency:  remediate, or temporarily set enforce-findings: false here (one-line,
+  #                  reviewable, tracked) while remediating. A per-advisory allowlist consulted
+  #                  by the enforce step is tracked as a follow-up (see PR/issue refs).
   secret-scan:
     name: Secret Scan
+    # gitleaks PR mode is only valid on pull_request events; guard so push / merge_group
+    # (which the gitleaks-action v3 rejects with exit 1) do not fail the required lane / merge queue.
+    if: ${{ github.event_name == 'pull_request' }}
     uses: ./.github/workflows/reusable-gitleaks.yml
     with:
       scan-mode: pr
@@ -148,6 +159,10 @@ jobs:
       dotnet-version: 8.0.x
       node-version: 24.13.1
       frontend-audit-level: high
+      # Block the merge gate on SHIPPED (production) dependencies only. Frontend dev-tooling
+      # vulnerabilities (vite/eslint/test deps) do not reach users and are often unfixable
+      # without major bumps; they stay visible (non-blocking) in the nightly dependency lane.
+      frontend-omit-dev: true
       enforce-findings: true
       workflow-context: ci-required
 
