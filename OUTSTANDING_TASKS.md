@@ -9,7 +9,7 @@
 4. **Add new outstanding tasks here** when the maintainer asks you to remember something, or when substantial work is deferred. Keep entries short with a one-line "how" and a link to the GitHub issue/PR that holds the detail.
 5. Keep this file lean and scannable. Detail lives in the linked issues, not here.
 
-Last reviewed: 2026-05-31
+Last reviewed: 2026-06-05
 
 ---
 
@@ -37,9 +37,12 @@ Last reviewed: 2026-05-31
 
 - [ ] **#1123** — Ship & validate **v0.1.0** (the #1 blocker to usefulness): add release smoke test to `release-desktop.yml`, build+smoke each RID on a clean VM, push the `v0.1.0` tag. *Most important strategic item.*
 - [ ] **#1132** — Make the required PR gate enforce security: gitleaks/SAST/dependency scan + CORS fail-closed + single ≥32 JWT floor + global `FallbackPolicy` + bundle-size in the required lane.
-- [ ] **#1130** — SQLite local concurrency: enable WAL + `busy_timeout`, fix per-process `Migrate()` race (UI + MCP + CLI share one DB → `SQLITE_BUSY`).
+- [x] **#1130** — SQLite local concurrency: enable WAL + `busy_timeout`, fix per-process `Migrate()` race (UI + MCP + CLI share one DB → `SQLITE_BUSY`). *(closed 2026-06-05; ACs 1+3 shipped in PR #1165 / da764b92. AC2 cross-process `Migrate()` serialization → #1164; export/import redesign → #1166.)*
 - [ ] **#1131** — CLI hardening: fresh-machine bootstrap (it crashes without `Connectors:EncryptionKey`) + route CLI mutations through board-access authorization.
-- [ ] **#1124** — Core-loop polish: fix the false-green expiry regression test + the #678 frontend dismiss gap (Approved+expired) + the #680 provenance-404 console noise. *PR #1162 addresses all three (expiry test → 409, `isProposalDismissable` + Legacy dismiss, provenance opt-out). Paper view has no dismiss affordance for any status — split to **#1161** — so AC2's Paper portion remains open under #1161.*
+- [x] **#1124** — Core-loop polish: false-green expiry regression test (now asserts a real 409) + #678 dismiss gap (Approved+expired) + #680 provenance-404 console noise. *(closed 2026-06-05; all three fixed in PR #1162 / 77162b2d. Paper-view dismiss affordance → #1161.)*
+- [ ] **#1161** — Paper review dismiss affordance (carries #1124's Paper remainder; maintainer 2026-06-05: take it, design-first — propose the affordance before building).
+- [ ] **#1164** — Serialize cross-process `Database.Migrate()` (advisory/single-owner lock; carries #1130 AC2).
+- [ ] **#1166** — Harden dev-sandbox export/import via the SQLite backup API (carries #1130's export/import follow-up).
 - [ ] **#1138** (rest) — Split the 1300+ line `STATUS.md` into a lean current-reality head + `docs/archive/status-history/`; add a rotation rule; recertify TESTING_GUIDE totals from a green CI run; add a markdown link-checker to nightly.
 - [ ] **#1136** — Write an ADR deciding the Paper vs Legacy UI question; remove dead paper composables.
 - [ ] **#1137** — Refocus strategy/roadmap on shipping to first users; freeze new feature/re-skin tracks until v0.1.0 ships.
@@ -50,5 +53,6 @@ Last reviewed: 2026-05-31
 ---
 
 ## Changelog
+- 2026-06-05: Maintainer directive — **ship-first**: prioritise the v0.1.0 release-blockers (#1123, #1131, #1132) ahead of #1154 (deferred). Closed #1124 and #1130 as substantially delivered (PRs #1162/#1165); remainders carried by #1161/#1164/#1166. Merge autonomy retained (full adversarial-review + green-CI + aging gate). #1161 to be taken design-first.
 - 2026-05-31 (post-audit): Checked off §A (PRs #1143–#1147 confirmed merged), §B #1126/#1134-first-slice (PRs #1153/#1155 merged). Added §B2 with correctness-sweep findings (cohort stub, Ollama pseudo-streaming, #1134 remaining). Correctness sweep: 31 PRs audited, 0 corruption, 2 issues + 9 nitpicks fixed.
 - 2026-05-31: File created. Seeded from the 2026-05-31 deep audit (tracker #1142). #972 (RFAI tracker) closed; PR #1122 merged; PRs #1143–#1147 opened.
