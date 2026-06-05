@@ -54,7 +54,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install Semgrep
-        run: pip install semgrep==1.113.0
+        # Pin setuptools < 81: setuptools 82 removed the bundled pkg_resources module, but
+        # Semgrep's transitive opentelemetry-instrumentation still imports it — which crashed
+        # the scan at startup (ModuleNotFoundError: No module named 'pkg_resources') on
+        # actions/setup-python 3.12, so the gate was red on a tooling crash with zero coverage. (#1132)
+        run: pip install "setuptools<81" semgrep==1.113.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
