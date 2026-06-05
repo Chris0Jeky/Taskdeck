@@ -36,3 +36,4 @@
 | [0032](ADR-0032-polly-circuit-breaker-external-apis.md) | Polly Circuit Breaker for External API Calls | Accepted | 2026-04-22 |
 | [0033](ADR-0033-ambient-channel-vscode-over-voice.md) | Ambient Channel Hardening — VS Code Extension over Desktop Voice | Accepted | 2026-05-16 |
 | [0034](ADR-0034-dependency-version-caps.md) | Dependency Version Caps via Dependabot Ignore Rules (EF Core 8.x, FluentAssertions 7.x) | Accepted | 2026-05-29 |
+| [0035](ADR-0035-required-security-scan-merge-gate.md) | Promote Secret / Dependency / SAST Scans into the Required PR Merge Gate | Accepted | 2026-06-05 |
