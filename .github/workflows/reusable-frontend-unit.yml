@@ -53,6 +53,16 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm run test:coverage
 
+      # Bundle-size budget promoted into the required lane (#1132). Reuses the build above
+      # (no extra install/build), so it is the "cheap" check the issue asks for. Runs AFTER the
+      # unit tests so a bundle regression does not mask test results. Linux-only to avoid a
+      # redundant second run on the Windows matrix leg. Error thresholds (entry 150 / single 250 /
+      # total-js 1200 KB) are the defaults in scripts/ci/check-bundle-size.mjs, matching the
+      # existing performance-regression gate.
+      - name: Check frontend bundle size
+        if: runner.os == 'Linux'
+        run: node scripts/ci/check-bundle-size.mjs --dist frontend/taskdeck-web/dist --fail-on-error
+
       - name: Upload frontend test artifacts
         if: always()
         uses: actions/upload-artifact@v7

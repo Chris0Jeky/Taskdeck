@@ -1388,6 +1388,20 @@ Required workflow: `.github/workflows/ci-required.yml`
 - `migration-validation`
   - EF Core migration chain validation via `scripts/ci/validate-migrations.sh` (TST-61, `#869`/`#916`)
   - Runs in parallel with other required jobs
+- `secret-scan` (#1132, ADR-0035)
+  - Gitleaks PR-diff secret detection via `reusable-gitleaks.yml` (scan-mode `pr`, **enforcing** — fails on a newly-introduced secret)
+  - Guarded to `pull_request` events (gitleaks PR mode is invalid on `push`/`merge_group`)
+- `dependency-security` (#1132, ADR-0035)
+  - Vulnerable-dependency scan via `reusable-dependency-security-signals.yml`; production deps only (`frontend-omit-dev`), high+ severity
+  - **Advisory** (`enforce-findings: false`) pending baseline remediation (#1175); flips to enforcing per #1175
+- `sast-scan` (#1132, ADR-0035)
+  - Semgrep SAST via `reusable-sast-scanning.yml`
+  - **Advisory** (`enforce-findings: false`) pending the pre-existing finding baseline triage (#1175)
+- Frontend bundle-size budget runs **enforcing** as a step inside `frontend-unit` (`scripts/ci/check-bundle-size.mjs`, total-js < 1200 KB)
+
+> Phased enforcement (ADR-0035): only `secret-scan` and the bundle check hard-block today;
+> `dependency-security`/`sast-scan` run on every PR but are advisory until the baseline is clean.
+> Branch-protection registration of the new check contexts is tracked in #1173.
 
 Extended workflow: `.github/workflows/ci-extended.yml`
 

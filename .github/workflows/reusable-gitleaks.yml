@@ -6,6 +6,7 @@
 # using Gitleaks with project-specific configuration.
 #
 # Callers:
+#   - ci-required.yml (blocking, PR commit scan via action — required merge gate, #1132)
 #   - ci-extended.yml (non-blocking, PR commit scan via action)
 #   - ci-release.yml (blocking, full-history scan via CLI)
 #
@@ -44,6 +45,9 @@ on:
 
 permissions:
   contents: read
+  # PR scan-mode (gitleaks-action) reads the PR commit context. Intersected with the caller's
+  # grant, so non-PR callers are unaffected. (#1132 review)
+  pull-requests: read
 
 jobs:
   gitleaks:
