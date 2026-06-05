@@ -11,11 +11,11 @@ namespace Taskdeck.Api.Validation;
 public sealed class JwtSettingsValidator : IValidateOptions<JwtSettings>
 {
     /// <summary>
-    /// Minimum key length in characters for HMAC-SHA256.
-    /// A 256-bit key is 32 bytes; base64 encoding produces ~44 characters.
-    /// We use 16 as a floor to be practical.
+    /// Minimum key length in characters for HMAC-SHA256, sourced from the single authoritative
+    /// floor on <see cref="JwtSettings.MinSecretKeyLength"/> so this validator and the
+    /// authentication registration never diverge. A 256-bit key is 32 bytes.
     /// </summary>
-    private const int MinSecretKeyLength = 16;
+    private const int MinSecretKeyLength = JwtSettings.MinSecretKeyLength;
 
     public ValidateOptionsResult Validate(string? name, JwtSettings options)
     {

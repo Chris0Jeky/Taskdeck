@@ -52,6 +52,30 @@ public class OptionsValidationTests
     }
 
     [Fact]
+    public void JwtValidator_Fails_OneCharBelowFloor()
+    {
+        // Floor is now a single ≥32 source of truth (JwtSettings.MinSecretKeyLength).
+        var validator = new JwtSettingsValidator();
+        var settings = new JwtSettings { SecretKey = new string('k', JwtSettings.MinSecretKeyLength - 1) };
+
+        var result = validator.Validate(null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("too short", result.FailureMessage);
+    }
+
+    [Fact]
+    public void JwtValidator_Succeeds_AtExactFloor()
+    {
+        var validator = new JwtSettingsValidator();
+        var settings = new JwtSettings { SecretKey = new string('k', JwtSettings.MinSecretKeyLength) };
+
+        var result = validator.Validate(null, settings);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
     public void JwtValidator_Succeeds_WithDevelopmentPlaceholder()
     {
         var validator = new JwtSettingsValidator();

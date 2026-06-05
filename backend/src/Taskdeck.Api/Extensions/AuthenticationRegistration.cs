@@ -35,12 +35,21 @@ public static class AuthenticationRegistration
         CircuitBreakerStateTracker? circuitBreakerTracker = null,
         CircuitBreakerSettings? circuitBreakerSettings = null)
     {
+        // Fail fast (do NOT silently no-op): a no-op here would register no authentication
+        // scheme, so every [Authorize] endpoint would fault at request time and the app would
+        // boot with authentication effectively off. A short-but-present key (16–31 chars) was the
+        // exact gap that let auth silently disable. The floor matches JwtSettingsValidator's
+        // ValidateOnStart check (JwtSettings.MinSecretKeyLength), so both fail consistently.
         if (string.IsNullOrWhiteSpace(jwtSettings.SecretKey) ||
-            jwtSettings.SecretKey.Length < 32 ||
+            jwtSettings.SecretKey.Length < JwtSettings.MinSecretKeyLength ||
             string.IsNullOrWhiteSpace(jwtSettings.Issuer) ||
             string.IsNullOrWhiteSpace(jwtSettings.Audience))
         {
-            return services;
+            throw new InvalidOperationException(
+                "JWT authentication is misconfigured: Jwt:SecretKey must be at least " +
+                $"{JwtSettings.MinSecretKeyLength} characters and Jwt:Issuer / Jwt:Audience must be set. " +
+                "In non-Development environments FirstRunBootstrapper provisions these automatically; " +
+                "for Development configure them in appsettings.Development.json.");
         }
 
         var authBuilder = services.AddAuthentication(options =>
