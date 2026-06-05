@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Services;
+using Taskdeck.Cli;
 using Taskdeck.Cli.Commands;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
@@ -24,6 +25,11 @@ if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Default
         ["ConnectionStrings:DefaultConnection"] = fallbackConnectionString
     });
 }
+
+// Fresh-machine bootstrap: provision the connector encryption key before
+// AddInfrastructure (which fail-fasts on a missing key). Must run after the
+// connection string is resolved so the key is persisted next to the data dir.
+CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(builder.Configuration);
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<BoardService>();
