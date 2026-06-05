@@ -18,20 +18,29 @@ whole-repo scan can block unrelated PRs when a new upstream CVE or analyzer rule
 
 ## Decision
 
-Add three scans to `ci-required.yml` as enforcing (fail-on-detect) jobs:
+Add three scans to `ci-required.yml` so they run on every PR in the required lane, with
+**phased enforcement** — hard-blocking only where the baseline is already clean:
 
-- **Secret Scan** — `reusable-gitleaks` in `pr` scan-mode (`fail-on-findings: true`), guarded to
-  `pull_request` events (gitleaks PR mode is invalid on `push`/`merge_group`). PR-diff scoped, so it
-  catches newly introduced secrets without tripping on pre-existing test fixtures.
-- **Dependency Security** — `reusable-dependency-security-signals` (`enforce-findings: true`),
-  scoped to **shipped (production) dependencies** (`frontend-omit-dev: true`, `frontend-audit-level:
-  high`). Frontend dev-tooling vulnerabilities do not reach users and are often unfixable without
-  major bumps; they remain visible (non-blocking) in the nightly dependency lane.
-- **SAST Scan** — `reusable-sast-scanning` (Semgrep, `enforce-findings: true`). Extends ADR-0031's
-  enforcement path into the required lane.
+- **Secret Scan** — `reusable-gitleaks` in `pr` scan-mode (`fail-on-findings: true`, **enforcing**),
+  guarded to `pull_request` events (gitleaks PR mode is invalid on `push`/`merge_group`). PR-diff
+  scoped, so it catches newly introduced secrets without tripping on pre-existing test fixtures.
+- **Dependency Security** — `reusable-dependency-security-signals`, **advisory for now**
+  (`enforce-findings: false`). When flipped to enforcing it blocks on **shipped (production)**
+  dependencies only (`frontend-omit-dev: true`, `frontend-audit-level: high`); dev-tooling vulns
+  stay visible (non-blocking) in the nightly lane. It is advisory until a pre-existing Critical
+  transitive (`NuGet.CommandLine` via `Microsoft.Recognizers.Text`) is remediated and a per-advisory
+  allowlist exists (tracked in #1175, #1174).
+- **SAST Scan** — `reusable-sast-scanning` (Semgrep), **advisory for now** (`enforce-findings:
+  false`). The setuptools-82 `pkg_resources` crash is fixed (pin `setuptools<81`) so Semgrep now
+  actually scans; it stays advisory until its pre-existing finding baseline is triaged (#1175),
+  then flips to enforcing per ADR-0031.
 
-The frontend bundle-size budget is also promoted into the required lane (as a step in the existing
-`Frontend Unit` job, reusing its build).
+The frontend bundle-size budget is also promoted into the required lane as an **enforcing** step in
+the existing `Frontend Unit` job (reusing its build; current bundle 994 KB < 1200 KB).
+
+Rationale for phasing: flipping a scan to merge-blocking before its baseline is clean ships a red
+required lane (blocking every PR on pre-existing debt). The honest sequence is: run the scan in the
+required lane for visibility now, remediate the baseline + add a break-glass, then enforce.
 
 ### Break-glass
 

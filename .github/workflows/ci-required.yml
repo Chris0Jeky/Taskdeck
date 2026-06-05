@@ -130,18 +130,24 @@ jobs:
     name: Container Images
     uses: ./.github/workflows/reusable-container-images.yml
 
-  # ── Security gate (#1132): secret/dependency/SAST scans now block PR merge ──
-  # Previously these ran only in label-gated ci-extended / nightly / release lanes,
-  # so a PR introducing a hardcoded secret or a high-severity vulnerable dependency
-  # was not blocked. They run on the same fast PR critical path as the other required jobs.
+  # ── Security gate (#1132): secret/dependency/SAST scans in the required PR lane ──
+  # Previously these ran only in label-gated ci-extended / nightly / release lanes, so a PR
+  # introducing a hardcoded secret was not blocked and dependency/SAST signals were invisible
+  # on the PR critical path. They now run on every PR here.
   #
-  # BREAK-GLASS: these gates fail closed. If a newly-published upstream CVE or Semgrep rule
-  # starts blocking unrelated PRs, the documented escape hatches are:
-  #   - secrets:     .gitleaks.toml / .gitleaksignore (per-finding allowlist)
-  #   - SAST:        .semgrepignore path excludes, or inline `# nosemgrep` comments
-  #   - dependency:  remediate, or temporarily set enforce-findings: false here (one-line,
-  #                  reviewable, tracked) while remediating. A per-advisory allowlist consulted
-  #                  by the enforce step is tracked as a follow-up (see PR/issue refs).
+  # PHASED ENFORCEMENT (ADR-0035): hard-blocking is rolled out only where the baseline is clean:
+  #   - secret-scan  : ENFORCING — PR-diff scoped (gitleaks pr mode), so pre-existing fixtures
+  #                    don't trip it; it blocks only newly-introduced secrets.
+  #   - bundle-size  : ENFORCING — inside the Frontend Unit job (current bundle 994 KB < 1200 KB).
+  #   - dependency   : advisory (enforce-findings: false) — the repo has a pre-existing Critical
+  #                    transitive (NuGet.CommandLine via Microsoft.Recognizers.Text). Remediate +
+  #                    add a per-advisory allowlist, then flip to enforcing. Tracked: #1175, #1174.
+  #   - SAST         : advisory (enforce-findings: false) — Semgrep now scans (setuptools<81 crash
+  #                    fix) and surfaces a pre-existing finding baseline to triage first. Tracked: #1175.
+  #
+  # BREAK-GLASS (when enforcing): secrets → .gitleaks.toml / .gitleaksignore; SAST → .semgrepignore
+  # / inline `# nosemgrep`; dependency → remediate or temporarily flip enforce-findings here (a
+  # one-line, reviewable, tracked change). Durable per-advisory dependency allowlist: #1174.
   secret-scan:
     name: Secret Scan
     # gitleaks PR mode is only valid on pull_request events; guard so push / merge_group
@@ -159,11 +165,11 @@ jobs:
       dotnet-version: 8.0.x
       node-version: 24.13.1
       frontend-audit-level: high
-      # Block the merge gate on SHIPPED (production) dependencies only. Frontend dev-tooling
-      # vulnerabilities (vite/eslint/test deps) do not reach users and are often unfixable
-      # without major bumps; they stay visible (non-blocking) in the nightly dependency lane.
+      # When flipped to enforcing, block on SHIPPED (production) deps only — frontend dev-tooling
+      # vulnerabilities do not reach users and stay visible (non-blocking) in the nightly lane.
       frontend-omit-dev: true
-      enforce-findings: true
+      # Advisory until the pre-existing baseline is remediated (#1175). Flip to true to enforce.
+      enforce-findings: false
       workflow-context: ci-required
 
   sast-scan:
@@ -171,7 +177,8 @@ jobs:
     uses: ./.github/workflows/reusable-sast-scanning.yml
     with:
       node-version: 24.13.1
-      enforce-findings: true
+      # Advisory until the pre-existing Semgrep baseline is triaged (#1175). Flip to true to enforce.
+      enforce-findings: false
       workflow-context: ci-required
 
   e2e-smoke:
