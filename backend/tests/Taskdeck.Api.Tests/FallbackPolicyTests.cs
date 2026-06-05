@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http;
 using FluentAssertions;
-using Taskdeck.Api.Tests.Support;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -16,6 +18,21 @@ public class FallbackPolicyTests : IClassFixture<TestWebApplicationFactory>
     private readonly TestWebApplicationFactory _factory;
 
     public FallbackPolicyTests(TestWebApplicationFactory factory) => _factory = factory;
+
+    [Fact]
+    public async Task FallbackPolicy_RequiringAuthenticatedUser_IsRegistered()
+    {
+        // Directly proves SetFallbackPolicy(RequireAuthenticatedUser) was applied — this assertion
+        // (unlike the endpoint tests, which exercise explicit [Authorize]/[AllowAnonymous] metadata)
+        // fails if SetFallbackPolicy is removed, since GetFallbackPolicyAsync then returns null.
+        using var scope = _factory.Services.CreateScope();
+        var policyProvider = scope.ServiceProvider.GetRequiredService<IAuthorizationPolicyProvider>();
+
+        var fallback = await policyProvider.GetFallbackPolicyAsync();
+
+        fallback.Should().NotBeNull("the global FallbackPolicy must be configured (#1132 AC4)");
+        fallback!.Requirements.Should().Contain(r => r is DenyAnonymousAuthorizationRequirement);
+    }
 
     [Fact]
     public async Task AnonymousAllowlistedEndpoint_StillReachable_UnderFallbackPolicy()
