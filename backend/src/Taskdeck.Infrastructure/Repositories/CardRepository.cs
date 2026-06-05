@@ -17,6 +17,9 @@ public class CardRepository : Repository<Card>, ICardRepository
             .Where(c => c.BoardId == boardId)
             .Include(c => c.CardLabels)
                 .ThenInclude(cl => cl.Label)
+            // Split the Cards->CardLabels->Label collection fan-out into separate queries
+            // to avoid a cartesian row explosion on the hottest board read path.
+            .AsSplitQuery()
             .OrderBy(c => c.ColumnId)
                 .ThenBy(c => c.Position)
             .ToListAsync(cancellationToken);
@@ -36,6 +39,8 @@ public class CardRepository : Repository<Card>, ICardRepository
             .Where(card => materializedBoardIds.Contains(card.BoardId))
             .Include(card => card.CardLabels)
                 .ThenInclude(cardLabel => cardLabel.Label)
+            // Split the collection fan-out to avoid a cartesian product across boards.
+            .AsSplitQuery()
             .OrderBy(card => card.BoardId)
                 .ThenBy(card => card.ColumnId)
             .ThenBy(card => card.Position)
@@ -69,6 +74,8 @@ public class CardRepository : Repository<Card>, ICardRepository
             .Where(c => c.ColumnId == columnId)
             .Include(c => c.CardLabels)
                 .ThenInclude(cl => cl.Label)
+            // Split the collection fan-out to avoid a cartesian product over the column's cards.
+            .AsSplitQuery()
             .OrderBy(c => c.Position)
             .ToListAsync(cancellationToken);
     }
@@ -102,6 +109,8 @@ public class CardRepository : Repository<Card>, ICardRepository
         }
 
         return await query
+            // Split the Cards->CardLabels->Label collection fan-out to avoid a cartesian product.
+            .AsSplitQuery()
             .OrderBy(c => c.ColumnId)
                 .ThenBy(c => c.Position)
             .ToListAsync(cancellationToken);
