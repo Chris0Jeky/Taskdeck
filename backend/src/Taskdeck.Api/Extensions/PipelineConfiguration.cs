@@ -122,6 +122,21 @@ public static class PipelineConfiguration
         app.MapControllers();
         app.MapHub<BoardsHub>("/hubs/boards");
 
+        // Bare root "/" serves the SPA shell. The {*path:nonfile} catch-all in MapFallbackToFile
+        // does not match the empty path, so "/" needs its own endpoint (#1181).
+        app.MapGet("/", async (HttpContext ctx, IWebHostEnvironment env) =>
+        {
+            var file = env.WebRootFileProvider.GetFileInfo("index.html");
+            if (!file.Exists)
+            {
+                ctx.Response.StatusCode = 404;
+                return;
+            }
+            ctx.Response.ContentType = "text/html";
+            ctx.Response.Headers["Cache-Control"] = "no-cache";
+            await ctx.Response.SendFileAsync(file);
+        }).AllowAnonymous();
+
         // MCP Streamable HTTP endpoint for external AI agent integration.
         // Authenticated via ApiKeyMiddleware (Bearer tdsk_... tokens).
         // Rate limiting applied per API key user identity.
