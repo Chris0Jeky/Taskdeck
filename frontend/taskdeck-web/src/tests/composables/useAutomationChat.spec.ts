@@ -41,12 +41,15 @@ vi.mock('../../api/boardsApi', () => ({
   boardsApi: boardsApiMocks,
 }))
 
+const scopeDisposeFns: Array<() => void> = []
+
 vi.mock('vue', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue')>()
   return {
     ...actual,
     onMounted: (fn: () => void) => fn(),
-    watch: vi.fn(),
+    watch: vi.fn().mockReturnValue(vi.fn()),
+    onScopeDispose: (fn: () => void) => { scopeDisposeFns.push(fn) },
   }
 })
 
@@ -58,6 +61,7 @@ async function loadComposable() {
 describe('useAutomationChat', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    scopeDisposeFns.length = 0
     routeMocks.query = {}
     chatApiMocks.getMySessions.mockResolvedValue([])
     chatApiMocks.getSession.mockResolvedValue(undefined)
@@ -356,6 +360,56 @@ describe('useAutomationChat', () => {
         expect(chat.chatHealthLoadError.value).not.toBeNull()
         expect(toastMocks.error).toHaveBeenCalled()
       })
+    })
+  })
+
+  describe('scope disposal', () => {
+    it('registers an onScopeDispose callback', async () => {
+      const { useAutomationChat } = await loadComposable()
+      useAutomationChat()
+
+      expect(scopeDisposeFns.length).toBeGreaterThan(0)
+    })
+
+    it('does not write reactive state after disposal on loadSessions', async () => {
+      let resolveGetSessions!: (value: unknown[]) => void
+      chatApiMocks.getMySessions.mockReturnValue(
+        new Promise((resolve) => { resolveGetSessions = resolve }),
+      )
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+
+      // Trigger disposal before the pending request resolves
+      for (const fn of scopeDisposeFns) fn()
+
+      // Now resolve the in-flight request
+      resolveGetSessions([{ id: 's1', title: 'Late', boardId: null, recentMessages: [] }])
+      await vi.waitFor(() => {
+        expect(chatApiMocks.getMySessions).toHaveBeenCalled()
+      })
+
+      // The sessions ref should NOT have been updated after disposal
+      expect(chat.sessions.value).toEqual([])
+    })
+
+    it('does not write reactive state after disposal on loadProviderHealth', async () => {
+      let resolveHealth!: (value: unknown) => void
+      chatApiMocks.getHealth.mockReturnValue(
+        new Promise((resolve) => { resolveHealth = resolve }),
+      )
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+
+      for (const fn of scopeDisposeFns) fn()
+
+      resolveHealth({ status: 'healthy', provider: 'mock' })
+      await vi.waitFor(() => {
+        expect(chatApiMocks.getHealth).toHaveBeenCalled()
+      })
+
+      expect(chat.chatHealth.value).toBeNull()
     })
   })
 })
