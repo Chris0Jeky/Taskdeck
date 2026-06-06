@@ -438,17 +438,19 @@ public static class FirstRunBootstrapper
             var dir = Path.GetDirectoryName(path)!;
             Directory.CreateDirectory(dir);
             var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-            File.WriteAllText(tempPath, payload);
 
             if (!OperatingSystem.IsWindows())
             {
-                // The payload may contain a base64 encryption key. On a default POSIX
-                // umask (022), File.WriteAllText creates the temp file 0644
-                // (world-readable), and File.Move preserves that mode -- exposing the
-                // key to other local users. Restrict to owner read/write (0600) BEFORE
-                // the move so the final file is never world-readable. No-op on Windows,
-                // where NTFS ACL inheritance governs access.
+                // Create the file empty and restrict to 0600 BEFORE writing the payload,
+                // eliminating the TOCTOU window where secrets would be world-readable
+                // under the default umask (022).
+                File.Create(tempPath).Dispose();
                 File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.WriteAllText(tempPath, payload);
+            }
+            else
+            {
+                File.WriteAllText(tempPath, payload);
             }
 
             try
@@ -466,7 +468,8 @@ public static class FirstRunBootstrapper
         {
             if (acquired)
             {
-                mutex?.ReleaseMutex();
+                try { mutex?.ReleaseMutex(); }
+                catch (ApplicationException) { }
             }
             mutex?.Dispose();
         }
