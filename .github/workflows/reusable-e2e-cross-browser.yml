@@ -51,6 +51,7 @@ jobs:
           cache-dependency-path: |
             backend/Taskdeck.sln
             backend/**/*.csproj
+            backend/Directory.Packages.props
 
       - name: Setup Node
         uses: actions/setup-node@v6

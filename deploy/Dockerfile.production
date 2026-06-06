@@ -50,7 +50,7 @@ WORKDIR /src
 # for restore layer caching. Directory.Packages.props and global.json must be
 # present before dotnet restore because .csproj files no longer carry versions.
 COPY backend/Taskdeck.sln backend/
-COPY backend/global.json backend/
+COPY global.json ./
 COPY backend/Directory.Packages.props backend/
 COPY backend/src/Taskdeck.Domain/Taskdeck.Domain.csproj backend/src/Taskdeck.Domain/
 COPY backend/src/Taskdeck.Application/Taskdeck.Application.csproj backend/src/Taskdeck.Application/
