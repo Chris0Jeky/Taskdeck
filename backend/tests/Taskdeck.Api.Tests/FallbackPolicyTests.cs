@@ -68,6 +68,19 @@ public class FallbackPolicyTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task BareRoot_NotBlockedByFallbackPolicy_WhenAnonymous()
+    {
+        using var client = _factory.CreateClient();
+
+        // The bare root "/" must serve the SPA shell anonymously (#1181). The {*path:nonfile}
+        // catch-all does not match the empty path, so "/" has its own explicit MapGet endpoint.
+        // Returns 200 if wwwroot/index.html exists (frontend built), 404 otherwise — never 401.
+        var response = await client.GetAsync("/");
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task McpEndpoint_WithoutApiKey_Returns401_FromApiKeyMiddleware()
     {
         using var client = _factory.CreateClient();
