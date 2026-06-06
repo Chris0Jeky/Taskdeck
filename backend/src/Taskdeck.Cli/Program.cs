@@ -15,6 +15,13 @@ var builder = Host.CreateApplicationBuilder(args);
 // and framework diagnostics never corrupt JSON output parsed by callers.
 builder.Logging.ClearProviders();
 
+// Honor the documented TASKDECK_-prefixed environment variables. The default host
+// only registers the no-prefix provider, so TASKDECK_CONNECTORS__ENCRYPTIONKEY
+// (advertised in docs and the AddInfrastructure fail-fast message) would otherwise
+// never map to Connectors:EncryptionKey. Registering the TASKDECK_ prefix maps it
+// (the canonical Connectors__EncryptionKey keeps working via the no-prefix provider).
+builder.Configuration.AddEnvironmentVariables("TASKDECK_");
+
 var fallbackConnectionString = Environment.GetEnvironmentVariable("TASKDECK_CONNECTION_STRING")
     ?? "Data Source=taskdeck.db";
 
