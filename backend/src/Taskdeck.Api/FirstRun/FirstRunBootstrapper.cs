@@ -349,18 +349,37 @@ public static class FirstRunBootstrapper
         // one finishes, producing the `'}' is invalid after a single JSON
         // value` parse error seen in CI.
         var mutexName = BuildMutexName(path);
-        using var mutex = new System.Threading.Mutex(initiallyOwned: false, name: mutexName);
+        Mutex? mutex = null;
         var acquired = false;
         try
         {
             try
             {
+                // The named (Global\ on Windows) mutex ctor AND WaitOne can throw on
+                // locked-down or multi-user hosts -- e.g. when another user already
+                // owns the name. That must NOT crash API startup.
+                mutex = new System.Threading.Mutex(initiallyOwned: false, name: mutexName);
                 acquired = mutex.WaitOne(TimeSpan.FromSeconds(10));
             }
             catch (AbandonedMutexException)
             {
                 // A previous holder crashed without releasing; we still own it now.
                 acquired = true;
+            }
+            catch (Exception ex) when (
+                ex is UnauthorizedAccessException
+                    or WaitHandleCannotBeOpenedException
+                    or IOException)
+            {
+                // Could not create/open or wait on the cross-process lock. Degrade
+                // gracefully: skip the persistent write entirely so two unsynchronized
+                // writers never race to persist different keys. The caller's catch
+                // block will fall back to an in-memory value.
+                Console.Error.WriteLine(
+                    $"[FirstRun] WARNING: Could not acquire the cross-process bootstrap " +
+                    $"lock ({ex.Message}). Skipping persistent write.");
+                throw new IOException(
+                    "Cross-process bootstrap lock unavailable; skipping persistent write.", ex);
             }
 
             JsonObject root;
@@ -405,6 +424,18 @@ public static class FirstRunBootstrapper
             Directory.CreateDirectory(dir);
             var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
             File.WriteAllText(tempPath, payload);
+
+            if (!OperatingSystem.IsWindows())
+            {
+                // The payload may contain a base64 encryption key. On a default POSIX
+                // umask (022), File.WriteAllText creates the temp file 0644
+                // (world-readable), and File.Move preserves that mode -- exposing the
+                // key to other local users. Restrict to owner read/write (0600) BEFORE
+                // the move so the final file is never world-readable. No-op on Windows,
+                // where NTFS ACL inheritance governs access.
+                File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+
             try
             {
                 ReplaceFileWithRetry(tempPath, path);
@@ -420,8 +451,9 @@ public static class FirstRunBootstrapper
         {
             if (acquired)
             {
-                mutex.ReleaseMutex();
+                mutex?.ReleaseMutex();
             }
+            mutex?.Dispose();
         }
     }
 
@@ -445,7 +477,7 @@ public static class FirstRunBootstrapper
         }
     }
 
-    private static string BuildMutexName(string path)
+    internal static string BuildMutexName(string path)
     {
         // Named mutex must be stable per-path and fit OS name rules.
         // Use SHA256 of the absolute path; prefix with "Global\" on Windows

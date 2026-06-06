@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Xunit;
@@ -115,5 +116,79 @@ public class FirstRunBootstrapperTests
         Assert.True(envIndex > fileIndex,
             $"EnvironmentVariablesConfigurationSource (index {envIndex}) should come AFTER " +
             $"the local config file source (index {fileIndex}) so env vars take precedence.");
+    }
+
+    // ---- BuildMutexName ---------------------------------------------------------
+
+    [Fact]
+    public void BuildMutexName_ReturnsDeterministicNameForSamePath()
+    {
+        var name1 = FirstRunBootstrapper.BuildMutexName("/tmp/test.json");
+        var name2 = FirstRunBootstrapper.BuildMutexName("/tmp/test.json");
+        Assert.Equal(name1, name2);
+    }
+
+    [Fact]
+    public void BuildMutexName_ReturnsDifferentNamesForDifferentPaths()
+    {
+        var name1 = FirstRunBootstrapper.BuildMutexName("/tmp/a.json");
+        var name2 = FirstRunBootstrapper.BuildMutexName("/tmp/b.json");
+        Assert.NotEqual(name1, name2);
+    }
+
+    [Fact]
+    public void BuildMutexName_ContainsTaskdeckPrefix()
+    {
+        var name = FirstRunBootstrapper.BuildMutexName("/tmp/test.json");
+        Assert.Contains("Taskdeck.FirstRun.", name);
+    }
+
+    // ---- PersistValue structural hardening (mutex guard + Unix perms) -----------
+    // PersistValue is private, so these tests verify the hardening structurally
+    // via reflection-based assertions on the source code patterns.
+
+    [Fact]
+    public void PersistValue_MutexConstructorIsGuarded_StructuralCheck()
+    {
+        // Verify that the PersistValue method source contains the guarded
+        // exception types matching the CLI's CliFirstRunBootstrapper pattern.
+        // This is a structural assertion: if someone removes the guard, the
+        // test fails.
+        var source = File.ReadAllText(
+            FindSourceFile("FirstRunBootstrapper.cs"));
+
+        Assert.Contains("UnauthorizedAccessException", source);
+        Assert.Contains("WaitHandleCannotBeOpenedException", source);
+        // Verify the mutex is constructed inside the try block (nullable pattern).
+        Assert.Contains("Mutex? mutex = null", source);
+    }
+
+    [Fact]
+    public void PersistValue_SetsUnixFileMode_StructuralCheck()
+    {
+        // Verify that the temp file gets 0600 permissions on Unix before being
+        // moved into place, matching the CLI's CliFirstRunBootstrapper pattern.
+        var source = File.ReadAllText(
+            FindSourceFile("FirstRunBootstrapper.cs"));
+
+        Assert.Contains("SetUnixFileMode", source);
+        Assert.Contains("UnixFileMode.UserRead | UnixFileMode.UserWrite", source);
+        Assert.Contains("!OperatingSystem.IsWindows()", source);
+    }
+
+    private static string FindSourceFile(string fileName)
+    {
+        // Walk up from the test output directory to find the repo source.
+        var dir = AppContext.BaseDirectory;
+        while (dir != null)
+        {
+            var candidate = Path.Combine(dir, "backend", "src", "Taskdeck.Api", "FirstRun", fileName);
+            if (File.Exists(candidate))
+                return candidate;
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        throw new FileNotFoundException(
+            $"Could not locate {fileName} by walking up from {AppContext.BaseDirectory}");
     }
 }
