@@ -12,18 +12,30 @@ namespace Taskdeck.Cli;
 /// The CLI ships no <c>appsettings.json</c> and never runs the API's
 /// <c>FirstRunBootstrapper</c>, yet <c>AddInfrastructure</c> fail-fasts when
 /// <c>Connectors:EncryptionKey</c> is missing. On a clean machine that made
-/// <c>taskdeck boards list</c> crash at startup unless the operator exported
-/// <c>TASKDECK_CONNECTORS__ENCRYPTIONKEY</c> by hand.
+/// <c>taskdeck boards list</c> crash at startup unless the operator exported a
+/// key by hand (<c>Connectors__EncryptionKey</c>, or
+/// <c>TASKDECK_CONNECTORS__ENCRYPTIONKEY</c> now that the CLI host registers the
+/// <c>TASKDECK_</c> prefix).
 ///
 /// This helper provisions a cryptographically-random 256-bit connector key on
-/// first run, persists it to a CLI-local <c>appsettings.local.json</c> (next to
-/// the resolved SQLite data directory, so the key is co-located with the
-/// encrypted data it protects and lives in a user-writable location), and loads
-/// it into configuration so <c>AddInfrastructure</c> succeeds.
+/// first run, persists it to a CLI-local <c>appsettings.local.json</c> next to
+/// the resolved SQLite data directory (a user-writable location alongside the
+/// data it protects), and loads it into configuration so
+/// <c>AddInfrastructure</c> succeeds.
 ///
 /// It intentionally does NOT modify the shared <c>AddInfrastructure</c>: the API
-/// deliberately fail-fasts on a missing key in Production. This is a CLI-local
-/// convenience that mirrors the API's <c>FirstRunBootstrapper</c> write pattern.
+/// deliberately fail-fasts on a missing key in Production. NOTE the key location
+/// differs from the API's <c>FirstRunBootstrapper</c>, which persists ITS key
+/// next to the executable (<c>AppContext.BaseDirectory</c>) -- this CLI bootstrap
+/// writes next to the data directory. Because the two locations differ, a
+/// deployment that points BOTH the API and CLI (or several hosts) at one shared
+/// database would auto-generate a DIFFERENT key per host and be unable to decrypt
+/// the other's connector credentials. For any shared-database or multi-host
+/// deployment, set one explicit <c>Connectors__EncryptionKey</c> (env var or
+/// appsettings) on every host instead of relying on this per-host
+/// auto-generation; the bootstrap emits a stderr warning when it auto-generates a
+/// key against a non-default data directory (<c>TASKDECK_CONNECTION_STRING</c>
+/// set) to surface this.
 ///
 /// Must run BEFORE the DI container is built and must never write to stdout
 /// (the CLI keeps stdout clean JSON for callers); diagnostics go to stderr only.
@@ -38,8 +50,14 @@ internal static class CliFirstRunBootstrapper
     /// <summary>
     /// Ensures a connector encryption key is available in configuration,
     /// generating and persisting one on first run when none is configured.
-    /// No-op when a key is already supplied (environment variable, appsettings,
-    /// or a previously generated <c>appsettings.local.json</c>).
+    /// Returns early (no file I/O) when a key is already present in the live
+    /// <see cref="IConfiguration"/> -- i.e. an environment variable
+    /// (<c>Connectors__EncryptionKey</c>, or <c>TASKDECK_CONNECTORS__ENCRYPTIONKEY</c>
+    /// once the CLI host registers the <c>TASKDECK_</c> prefix) or an appsettings
+    /// entry. The previously generated <c>appsettings.local.json</c> is NOT
+    /// registered as a configuration source, so it does not trigger this early
+    /// return; instead <see cref="EnsureKeyOnDisk"/> re-reads that file on every
+    /// run and reuses the persisted key (idempotent).
     /// </summary>
     public static void EnsureConnectorEncryptionKey(IConfiguration configuration)
     {
@@ -88,9 +106,16 @@ internal static class CliFirstRunBootstrapper
             var fullPath = Path.GetFullPath(dataSource);
             return Path.GetDirectoryName(fullPath) ?? Directory.GetCurrentDirectory();
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (
+            ex is ArgumentException
+                or PathTooLongException
+                or NotSupportedException
+                or IOException
+                or System.Security.SecurityException)
         {
-            // Non-file data sources (e.g. ":memory:") have no real directory.
+            // Non-file data sources (e.g. ":memory:") or otherwise unresolvable paths
+            // (too long, unsupported format, restricted) must not crash startup --
+            // fall back to the current working directory.
             return Directory.GetCurrentDirectory();
         }
     }
@@ -123,12 +148,17 @@ internal static class CliFirstRunBootstrapper
     internal static string EnsureKeyOnDisk(string localConfigPath)
     {
         var mutexName = BuildMutexName(localConfigPath);
-        using var mutex = new Mutex(initiallyOwned: false, name: mutexName);
+        Mutex? mutex = null;
         var acquired = false;
         try
         {
             try
             {
+                // The named (Global\ on Windows) mutex ctor AND WaitOne can throw on
+                // locked-down or multi-user hosts -- e.g. when another user already
+                // owns the name. That must NOT crash the CLI at startup (the exact
+                // failure this bootstrap exists to prevent).
+                mutex = new Mutex(initiallyOwned: false, name: mutexName);
                 acquired = mutex.WaitOne(TimeSpan.FromSeconds(10));
             }
             catch (AbandonedMutexException)
@@ -136,8 +166,24 @@ internal static class CliFirstRunBootstrapper
                 // A previous holder crashed without releasing; we own it now.
                 acquired = true;
             }
+            catch (Exception ex) when (
+                ex is UnauthorizedAccessException
+                    or WaitHandleCannotBeOpenedException
+                    or IOException)
+            {
+                // Could not create/open or wait on the cross-process lock. Degrade
+                // gracefully: continue WITHOUT the lock and treat this run as
+                // read-only (see the !acquired branch below) so two unsynchronized
+                // writers never race to persist different keys.
+                Console.Error.WriteLine(
+                    $"[CliFirstRun] WARNING: Could not acquire the cross-process bootstrap " +
+                    $"lock ({ex.Message}). Proceeding without it; a generated key will not be " +
+                    "persisted on this run.");
+            }
 
-            // Re-check inside the mutex: a racing process may have just written one.
+            // Re-check (inside the lock when held): a racing process may have just
+            // written a key, or one may already exist from a previous run. Reading
+            // is safe without the lock.
             var existing = ReadExisting(localConfigPath);
             if (!string.IsNullOrWhiteSpace(existing.Key))
             {
@@ -145,6 +191,21 @@ internal static class CliFirstRunBootstrapper
             }
 
             var generated = GenerateKey();
+
+            if (!acquired)
+            {
+                // We do NOT hold the lock (ctor/wait threw, or the 10s wait timed
+                // out). Persisting now could race a concurrent writer and leave
+                // connector credentials encrypted under a key no longer on disk.
+                // Use a transient in-memory key for this run only; a later run that
+                // wins the lock will persist a stable key. Warn on stderr (stdout
+                // stays clean JSON).
+                Console.Error.WriteLine(
+                    "[CliFirstRun] WARNING: Bootstrap lock unavailable; using a transient " +
+                    "in-memory connector encryption key for this run without persisting it. " +
+                    "Set an explicit Connectors__EncryptionKey to avoid per-run keys.");
+                return generated;
+            }
 
             if (existing.PreserveFile)
             {
@@ -162,6 +223,7 @@ internal static class CliFirstRunBootstrapper
             try
             {
                 PersistKey(localConfigPath, existing.Root, generated);
+                WarnIfSharedDbAutoGenerated(localConfigPath);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -177,11 +239,44 @@ internal static class CliFirstRunBootstrapper
         }
         finally
         {
-            if (acquired)
+            if (acquired && mutex is not null)
             {
-                mutex.ReleaseMutex();
+                try
+                {
+                    mutex.ReleaseMutex();
+                }
+                catch (ApplicationException)
+                {
+                    // Best-effort release: another path may already have released it.
+                }
             }
+
+            mutex?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Emits a one-line stderr warning when the bootstrap AUTO-GENERATES a key
+    /// while pointed at a non-default data directory (<c>TASKDECK_CONNECTION_STRING</c>
+    /// set). A custom/relocated database is often shared across hosts, where
+    /// per-host auto-generated keys diverge (the API stores its key next to the
+    /// executable) and cannot decrypt each other's connector credentials -- so the
+    /// operator should set one explicit shared <c>Connectors__EncryptionKey</c>.
+    /// stderr only; stdout stays clean JSON.
+    /// </summary>
+    private static void WarnIfSharedDbAutoGenerated(string localConfigPath)
+    {
+        var customDb = Environment.GetEnvironmentVariable("TASKDECK_CONNECTION_STRING");
+        if (string.IsNullOrWhiteSpace(customDb))
+        {
+            return;
+        }
+
+        Console.Error.WriteLine(
+            $"[CliFirstRun] WARNING: Auto-generated a new connector encryption key at " +
+            $"{localConfigPath} for a custom database location. If this database is shared " +
+            "across hosts (or with the API), set one explicit Connectors__EncryptionKey on " +
+            "every host instead -- per-host auto-generated keys cannot decrypt each other's data.");
     }
 
     internal static string GenerateKey()
@@ -266,6 +361,18 @@ internal static class CliFirstRunBootstrapper
         var tempDir = string.IsNullOrEmpty(dir) ? Directory.GetCurrentDirectory() : dir;
         var tempPath = Path.Combine(tempDir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
         File.WriteAllText(tempPath, payload);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            // The payload is a base64 256-bit connector encryption key. On a default
+            // POSIX umask (022), File.WriteAllText creates the temp file 0644
+            // (world-readable), and File.Move preserves that mode -- exposing the key
+            // to other local users. Restrict to owner read/write (0600) BEFORE the
+            // move so the final file is never world-readable. No-op on Windows, where
+            // NTFS ACL inheritance governs access.
+            File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
         try
         {
             MoveWithRetry(tempPath, path);
