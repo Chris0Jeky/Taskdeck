@@ -61,13 +61,15 @@ This architecture is the foundation for every packaging approach below.
 1. Build Vue frontend: `npm run build` → produces `dist/` folder
 2. Copy `dist/` into ASP.NET Core's `wwwroot/`
 3. Configure ASP.NET Core to serve SPA static files with fallback routing
-4. Publish: `dotnet publish --self-contained -r win-x64 -p:PublishSingleFile=true -p:PublishTrimmed=true -p:IncludeNativeLibrariesForSelfExtract=true`
-5. Result: **single .exe file** (~40-50MB trimmed, ~60-80MB untrimmed) that runs everything
+4. Publish: `dotnet publish --self-contained -r win-x64 -p:PublishSingleFile=true -p:PublishTrimmed=false -p:IncludeNativeLibrariesForSelfExtract=true`
+5. Result: **single .exe file** (~60-80MB) that runs everything
+
+> **Why `PublishTrimmed=false`?** IL trimming silently breaks EF Core migrations, ASP.NET DI conventions, reflection-based System.Text.Json serialization, and SignalR -- all of which rely on runtime reflection. CI (`release-desktop.yml`) and build scripts (`build-release.sh`) enforce `PublishTrimmed=false` for this reason.
 
 **Pros:**
 - Single file, no dependencies (runtime is embedded)
 - Native performance (no Electron overhead)
-- Small-ish download (~40-50MB trimmed, ~60-80MB untrimmed)
+- Small-ish download (~60-80MB, ~25-40MB compressed)
 - Cross-platform (produce for win-x64, linux-x64, osx-x64, osx-arm64)
 - Opens a browser tab automatically on launch
 - SQLite database created on first run in user's app data folder
@@ -354,9 +356,10 @@ jobs:
             rid: osx-arm64
             artifact: taskdeck-osx-arm64.tar.gz
     steps:
+      # PublishTrimmed=false: trimming breaks EF Core, DI, System.Text.Json, SignalR
       - dotnet publish --self-contained -r ${{ matrix.rid }}
         -p:PublishSingleFile=true
-        -p:PublishTrimmed=true
+        -p:PublishTrimmed=false
         -p:IncludeNativeLibrariesForSelfExtract=true
         -c Release
       - Upload release artifacts
@@ -387,7 +390,7 @@ Use semantic versioning aligned with release milestones:
 
 | Technique | Size Impact | Complexity |
 |-----------|-------------|------------|
-| `PublishTrimmed=true` | -30-50% | Medium (requires trim compatibility testing) |
+| `PublishTrimmed=true` | -30-50% | **Not viable for Taskdeck** -- breaks EF Core migrations, ASP.NET DI, System.Text.Json, and SignalR (reflection-dependent). CI enforces `=false`. |
 | `PublishReadyToRun=true` | +10-20% but faster startup | Low |
 | Compression (zip/tar.gz) | -40-60% | Trivial |
 | NativeAOT (ahead-of-time) | -60-70% + faster startup | High (not all .NET features supported) |
