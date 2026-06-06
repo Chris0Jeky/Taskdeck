@@ -6,7 +6,7 @@
 
 ## Context
 
-Automation proposal operations carry an `IdempotencyKey` field (max 100 characters, non-empty, enforced at the domain level). The key serves two purposes: preventing duplicate operations from being persisted, and enabling safe replay of proposal execution.
+Automation proposal operations carry an `IdempotencyKey` field (non-empty, enforced at the domain level; max 100 characters, enforced via EF Core `HasMaxLength(100)` at the infrastructure level). The key serves two purposes: preventing duplicate operations from being persisted, and enabling safe replay of proposal execution.
 
 Prior to PR #1146, a duplicate key insertion produced an unhandled `DbUpdateException` surfacing as HTTP 500. The fix translated this into a 409 Conflict response, but the contract governing key format, scope, and replay semantics was never formally documented. Different callers generate keys using different patterns, and the uniqueness constraint is global (not scoped to a user or board), which has implications for key collision and cross-user visibility.
 
@@ -63,7 +63,7 @@ Proposal execution (via `AutomationExecutorService`) is independently idempotent
 
 A composite unique index `(UserId, IdempotencyKey)` or `(BoardId, IdempotencyKey)` would allow different users to reuse the same key independently. Rejected because:
 - Operations belong to proposals, not directly to users — adding a userId column to the operations table breaks the current entity model.
-- The SHA256-based keys from capture triage already include board/item context, making cross-user collision practically impossible.
+- The SHA256-based keys from capture triage already include a per-capture-item GUID, making cross-user collision practically impossible.
 - Global uniqueness is simpler to reason about and provides a stronger guarantee.
 
 ### Return-existing on duplicate (upsert)
