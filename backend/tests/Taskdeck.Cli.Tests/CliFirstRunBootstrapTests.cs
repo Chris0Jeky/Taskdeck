@@ -65,6 +65,37 @@ public class CliFirstRunBootstrapTests
         secondKey.Should().Be(firstKey);
     }
 
+    [Fact]
+    public async Task BoardsList_WithOperatorKeyViaTaskdeckEnvVar_HonorsOverrideAndDoesNotPersist()
+    {
+        // Clean machine (no Connectors__EncryptionKey) but the operator supplies the
+        // DOCUMENTED TASKDECK_CONNECTORS__ENCRYPTIONKEY override. The CLI host must
+        // register the TASKDECK_ prefix so the bootstrapper sees the key and no-ops.
+        await using var harness = new CliTestHarness("cli-env-override", provisionEncryptionKey: false);
+
+        // Known-valid base64 256-bit key (32 zero bytes).
+        const string operatorKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+        var result = await harness.RunAsync(
+            "boards list --json",
+            new Dictionary<string, string?>
+            {
+                ["TASKDECK_CONNECTORS__ENCRYPTIONKEY"] = operatorKey
+            });
+
+        result.ExitCode.Should().Be(0, result.StdErr);
+        using var doc = JsonDocument.Parse(result.StdOut);
+        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+
+        // If TASKDECK_CONNECTORS__ENCRYPTIONKEY were ignored (the bug), the bootstrap
+        // would generate and persist a DIFFERENT key here. Honoring the override means
+        // an early no-op: no appsettings.local.json is written and the operator key is
+        // never overwritten.
+        var localConfig = Path.Combine(harness.DataDirectory, "appsettings.local.json");
+        File.Exists(localConfig).Should().BeFalse(
+            "the documented TASKDECK_CONNECTORS__ENCRYPTIONKEY override must be honored so the bootstrap no-ops");
+    }
+
     // ----- Unit tests for the bootstrapper ----------------------------------
 
     [Fact]
