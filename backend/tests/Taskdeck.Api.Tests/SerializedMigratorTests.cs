@@ -13,6 +13,11 @@ namespace Taskdeck.Api.Tests;
 /// Verifies <see cref="SerializedMigrator"/> serializes <c>Database.Migrate()</c> across
 /// concurrent migrators sharing one SQLite file so the schema is applied exactly once, and
 /// that in-memory / non-file databases skip the cross-process lock entirely. #1164
+/// <para>
+/// The concurrency test drives two in-process threads rather than a second OS process; the
+/// <see cref="FileShare.None"/> lock is OS-enforced, so this is a faithful in-process proxy
+/// for the cross-process race the migrator must close.
+/// </para>
 /// </summary>
 public sealed class SerializedMigratorTests : IDisposable
 {
@@ -24,10 +29,12 @@ public sealed class SerializedMigratorTests : IDisposable
         _dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-serialized-migrate-{Guid.NewGuid():N}.db");
     }
 
-    private TaskdeckDbContext NewFileContext()
+    private TaskdeckDbContext NewFileContext() => NewFileContext(_dbPath);
+
+    private static TaskdeckDbContext NewFileContext(string dbPath)
     {
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
+            .UseSqlite($"Data Source={dbPath}")
             // Mirror production: WAL + busy_timeout (#1130) on every connection.
             .AddInterceptors(new SqlitePragmaConnectionInterceptor(BusyTimeoutMs))
             .Options;
@@ -35,59 +42,97 @@ public sealed class SerializedMigratorTests : IDisposable
     }
 
     [Fact]
-    public async Task Two_concurrent_migrators_apply_schema_exactly_once()
+    public async Task Concurrent_migrators_apply_schema_exactly_once()
     {
         // Two independent DbContexts point at the SAME fresh file DB. Each applies migrations
         // from its own task; a Barrier makes both reach Migrate at the same instant to
-        // maximize the overlap the file lock must serialize. Without the lock the loser would
-        // hit a UNIQUE violation double-inserting into __EFMigrationsHistory.
+        // maximize the overlap the file lock must serialize. These are two in-process threads,
+        // NOT a second OS process, but FileShare.None is an OS-enforced exclusive lock, so this
+        // is a faithful in-process proxy for the cross-process race. Without the lock the loser
+        // would hit a UNIQUE violation double-inserting into __EFMigrationsHistory.
         //
-        // Both contexts are constructed up front (not inside the tasks) so nothing between
-        // barrier-entry and Migrate() can throw and deadlock the sibling participant.
-        using var contextA = NewFileContext();
-        using var contextB = NewFileContext();
-        using var startBarrier = new Barrier(2);
-
-        Task RunMigratorAsync(TaskdeckDbContext context) => Task.Run(() =>
+        // Repeated over a few fresh databases to shrink the probabilistic window in which the
+        // two threads happen not to overlap (and so the lock is never actually contended).
+        const int iterations = 4;
+        for (var i = 0; i < iterations; i++)
         {
-            startBarrier.SignalAndWait();
-            SerializedMigrator.Migrate(context);
-        });
+            var dbPath = Path.Combine(
+                Path.GetTempPath(), $"taskdeck-serialized-migrate-concurrent-{Guid.NewGuid():N}.db");
+            try
+            {
+                // Both contexts are constructed up front (not inside the tasks) so nothing
+                // between barrier-entry and Migrate() can throw and deadlock the sibling.
+                using var contextA = NewFileContext(dbPath);
+                using var contextB = NewFileContext(dbPath);
+                using var startBarrier = new Barrier(2);
 
-        var migratorA = RunMigratorAsync(contextA);
-        var migratorB = RunMigratorAsync(contextB);
+                Task RunMigratorAsync(TaskdeckDbContext context) => Task.Run(() =>
+                {
+                    // Bounded wait: if a sibling dies before reaching the barrier, fail fast
+                    // instead of hanging CI forever.
+                    if (!startBarrier.SignalAndWait(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException(
+                            "Sibling migrator never reached the start barrier.");
+                    }
 
-        var act = async () => await Task.WhenAll(migratorA, migratorB);
-        await act.Should().NotThrowAsync(
-            "the cross-process file lock must serialize concurrent migrators so neither fails");
+                    SerializedMigrator.Migrate(context);
+                });
 
-        using var verify = NewFileContext();
+                var migratorA = RunMigratorAsync(contextA);
+                var migratorB = RunMigratorAsync(contextB);
 
-        // Schema applied: a known table exists.
-        GetUserTableNames(verify).Should().Contain(
-            "Boards", "the migration chain must have created the Boards table");
+                var act = async () => await Task.WhenAll(migratorA, migratorB);
+                await act.Should().NotThrowAsync(
+                    "the advisory file lock must serialize concurrent migrators so neither fails");
 
-        // Applied exactly once: every defined migration appears exactly once in history.
-        var historyIds = GetMigrationHistoryIds(verify);
-        historyIds.Should().OnlyHaveUniqueItems(
-            "two migrators must not double-insert __EFMigrationsHistory rows");
-        historyIds.Should().BeEquivalentTo(
-            verify.Database.GetMigrations(),
-            "every defined migration should be applied exactly once across the concurrent run");
+                using var verify = NewFileContext(dbPath);
+
+                // Schema applied: a known table exists.
+                GetUserTableNames(verify).Should().Contain(
+                    "Boards", "the migration chain must have created the Boards table");
+
+                // Applied exactly once: every defined migration appears exactly once in history.
+                var historyIds = GetMigrationHistoryIds(verify);
+                historyIds.Should().OnlyHaveUniqueItems(
+                    "two migrators must not double-insert __EFMigrationsHistory rows");
+                historyIds.Should().BeEquivalentTo(
+                    verify.Database.GetMigrations(),
+                    "every defined migration should be applied exactly once across the concurrent run");
+            }
+            finally
+            {
+                CleanupDbFiles(dbPath);
+            }
+        }
     }
 
     [Fact]
-    public void Single_migrator_on_file_db_creates_sidecar_lock_file()
+    public void Single_migrator_on_file_db_acquires_lock_and_does_not_fail_open()
     {
+        var logger = new InMemoryLogger<SerializedMigratorTests>();
         using var context = NewFileContext();
 
-        SerializedMigrator.Migrate(context);
+        SerializedMigrator.Migrate(context, logger);
 
-        // The helper leaves the sidecar lock file in place (cleanup is optional/best-effort).
-        // Its presence documents the lock path resolution: "<dbpath>.migrate.lock".
-        var expectedLockPath = Path.GetFullPath(_dbPath) + ".migrate.lock";
-        File.Exists(expectedLockPath).Should().BeTrue(
-            "a real SQLite file database should be migrated under a sidecar advisory lock");
+        // Assert the helper's "acquired migration lock" Debug entry rather than the sidecar
+        // file's continued existence: cleanup is documented as optional/best-effort, so the
+        // log is the stable contract that the lock was actually taken (locked path), not
+        // silently skipped or degraded to the fail-open branch.
+        logger.Entries.Should().Contain(
+            e => e.Level == LogLevel.Debug && e.Message.Contains("acquired migration lock"),
+            "a real SQLite file database must be migrated under the sidecar advisory lock");
+
+        // Fail-open regression guard: a healthy single-migrator run must emit NO Warning/Error.
+        // If the lock were silently never taken (always degrading to the unlocked path), this
+        // happy path would start logging a warning and this assertion would catch it.
+        logger.Entries.Should().NotContain(
+            e => e.Level >= LogLevel.Warning,
+            "a healthy single migrator must take the lock, never silently fail open");
+
+        using var verify = NewFileContext();
+        GetUserTableNames(verify).Should().Contain(
+            "Boards", "the migration chain must have created the Boards table");
     }
 
     [Fact]
@@ -191,13 +236,15 @@ public sealed class SerializedMigratorTests : IDisposable
         return ids;
     }
 
-    public void Dispose()
+    public void Dispose() => CleanupDbFiles(_dbPath);
+
+    private static void CleanupDbFiles(string dbPath)
     {
         // Drop pooled connections so file handles release before cleanup.
         SqliteConnection.ClearAllPools();
         foreach (var suffix in new[] { "", "-wal", "-shm", ".migrate.lock" })
         {
-            var path = _dbPath + suffix;
+            var path = dbPath + suffix;
             if (File.Exists(path))
             {
                 // Best-effort: on Windows a still-locked file can throw; never fail the run.
