@@ -106,4 +106,40 @@ public class NotificationRepository : Repository<Notification>, INotificationRep
 
         return await query.ToListAsync(cancellationToken);
     }
+
+    /// <inheritdoc />
+    public async Task<int> DeleteByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        const int batchSize = 1000;
+        var totalDeleted = 0;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            int deleted;
+            if (_context.Database.IsSqlite())
+            {
+                deleted = await _context.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM Notifications WHERE Id IN (SELECT Id FROM Notifications WHERE UserId = {0} LIMIT {1})",
+                    new object[] { userId, batchSize },
+                    cancellationToken);
+            }
+            else
+            {
+                // SQL Server: use a CTE with TOP for deterministic batch deletion.
+                deleted = await _context.Database.ExecuteSqlRawAsync(
+                    "WITH CTE AS (SELECT TOP({1}) Id FROM Notifications WHERE UserId = {0}) DELETE FROM Notifications WHERE Id IN (SELECT Id FROM CTE)",
+                    new object[] { userId, batchSize },
+                    cancellationToken);
+            }
+
+            totalDeleted += deleted;
+
+            if (deleted < batchSize)
+            {
+                break;
+            }
+        }
+
+        return totalDeleted;
+    }
 }
