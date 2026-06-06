@@ -27,8 +27,13 @@ namespace Taskdeck.Infrastructure.Persistence;
 /// (<c>:memory:</c>, <c>Mode=Memory</c>, the EF Core InMemory provider) and non-SQLite
 /// providers skip the lock entirely — there is no shared file to coordinate on, and tests /
 /// ephemeral databases must not stall. If the lock cannot be acquired within the timeout, or
-/// the lock directory is unwritable, a warning is logged and migration proceeds anyway:
-/// <c>Migrate()</c> remains idempotent and <c>busy_timeout</c> still makes a racing writer wait.
+/// the lock directory is unwritable, a warning is logged and migration proceeds anyway.
+/// On that lock-free path a concurrent migrator can still win a logical DDL race
+/// (<c>"table already exists"</c>, or a duplicate <c>__EFMigrationsHistory</c> insert):
+/// <c>busy_timeout</c> only serializes <c>SQLITE_BUSY</c>, <b>not</b> these logical conflicts.
+/// So the unlocked <c>Migrate()</c> is wrapped — a throw is swallowed only when a re-check of
+/// <see cref="RelationalDatabaseFacadeExtensions.GetPendingMigrations"/> shows nothing remains
+/// pending (the racing winner already applied everything); otherwise the failure propagates.
 /// </para>
 /// </summary>
 public static class SerializedMigrator
@@ -74,14 +79,69 @@ public static class SerializedMigrator
             lockStream = AcquireLock(lockPath, lockTimeout, logger);
             if (lockStream is not null)
             {
+                // Locked path: we hold the exclusive advisory lock, so no other migrator can be
+                // mutating the schema concurrently. Any Migrate() throw here is a genuine failure
+                // — let it propagate untouched.
                 logger?.LogDebug("SerializedMigrator: acquired migration lock '{LockPath}'.", lockPath);
+                context.Database.Migrate();
             }
-
-            context.Database.Migrate();
+            else
+            {
+                // Fail-open path: we could NOT take the lock (timed out, or the lock file was
+                // uncreatable). A concurrent migrator may still be applying the schema, so this
+                // Migrate() can race it. Guard the throw rather than crash startup.
+                MigrateWithoutLock(context, logger);
+            }
         }
         finally
         {
             lockStream?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Applies migrations on the lock-free fallback path, where a concurrent migrator may win a
+    /// logical DDL race. EF computes the pending set <em>before</em> taking SQLite's write lock,
+    /// so a racing loser can throw <see cref="Microsoft.Data.Sqlite.SqliteException"/>
+    /// (<c>"table already exists"</c>) or a <see cref="DbUpdateException"/> from a duplicate
+    /// <c>__EFMigrationsHistory</c> primary-key insert. <c>busy_timeout</c> only serializes
+    /// <c>SQLITE_BUSY</c>, not these conflicts. The exception filter re-checks the pending set:
+    /// if it is now empty the racing winner applied everything and the throw is swallowed as a
+    /// no-op; otherwise migrations genuinely remain unapplied and the failure propagates with its
+    /// original stack trace.
+    /// </summary>
+    private static void MigrateWithoutLock(DbContext context, ILogger? logger)
+    {
+        try
+        {
+            context.Database.Migrate();
+        }
+        catch (Exception ex) when (NoMigrationsPending(context))
+        {
+            logger?.LogWarning(
+                ex,
+                "SerializedMigrator: applied migrations without the cross-process lock and raced " +
+                "a concurrent migrator ({Reason}); all migrations are now present, so the conflict " +
+                "is treated as a successful no-op.",
+                ex.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> only when EF reports zero pending migrations — i.e. another process
+    /// already applied everything. If the pending set cannot be read, returns <c>false</c> so the
+    /// caller's exception filter declines to swallow the original failure.
+    /// </summary>
+    private static bool NoMigrationsPending(DbContext context)
+    {
+        try
+        {
+            return !context.Database.GetPendingMigrations().Any();
+        }
+        catch
+        {
+            // Could not confirm the schema is fully applied: do not mask the real failure.
+            return false;
         }
     }
 
@@ -115,9 +175,29 @@ public static class SerializedMigrator
 
         try
         {
+            var filePath = dataSource!;
+
+            // SQLite also accepts URI data sources (e.g. "file:taskdeck.db?cache=shared").
+            // Handing the raw URI to Path.GetFullPath throws on Windows (the '?' is an invalid
+            // path char) or, on Unix, produces a lock file with a literal '?' in its name.
+            // Extract the local file path first so both spellings of the same file coordinate
+            // on one lock. (Pure ":memory:" URIs are already filtered out above.)
+            if (Uri.TryCreate(filePath, UriKind.Absolute, out var uri) && uri.IsFile)
+            {
+                filePath = uri.LocalPath;
+            }
+
             // Normalize so two processes that pass the same relative "Data Source=taskdeck.db"
             // from the same working directory resolve to the same absolute lock path.
-            return Path.GetFullPath(dataSource!) + LockFileSuffix;
+            //
+            // LIMITATION: Path.GetFullPath is a LEXICAL normalization only — it collapses
+            // "."/".." and applies the current directory, but does NOT canonicalize symlinks,
+            // junctions, or hard links. Two differently-spelled paths that resolve to the same
+            // physical file (e.g. a symlink and its target, or 8.3 vs long Windows names) key to
+            // DIFFERENT lock files and are therefore NOT serialized against each other. That
+            // residual race is bounded by the WAL + busy_timeout writer fallback and the
+            // unlocked-Migrate re-check, and is acceptable for the local-first SQLite scenario.
+            return Path.GetFullPath(filePath) + LockFileSuffix;
         }
         catch (Exception ex) when (
             ex is ArgumentException
@@ -142,7 +222,9 @@ public static class SerializedMigrator
     /// </summary>
     private static FileStream? AcquireLock(string lockPath, TimeSpan timeout, ILogger? logger)
     {
-        var deadline = DateTime.UtcNow + timeout;
+        // Monotonic clock (Stopwatch), not DateTime.UtcNow: a wall-clock step (NTP correction,
+        // DST, manual change) must not skew how long we are willing to wait for the lock.
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         var attempts = 0;
 
         while (true)
@@ -156,7 +238,7 @@ public static class SerializedMigrator
                     FileAccess.ReadWrite,
                     FileShare.None);
             }
-            catch (IOException) when (DateTime.UtcNow < deadline)
+            catch (IOException) when (elapsed.Elapsed < timeout)
             {
                 // Another process (or thread) holds the exclusive lock; wait and retry.
                 Thread.Sleep(RetryDelay);
@@ -167,7 +249,9 @@ public static class SerializedMigrator
                     ex,
                     "SerializedMigrator: could not acquire migration lock '{LockPath}' within " +
                     "{TimeoutSeconds}s after {Attempts} attempts; applying migrations without it. " +
-                    "Migrate() is idempotent and busy_timeout still serializes the write.",
+                    "The unlocked Migrate() re-checks the pending set and swallows a concurrent " +
+                    "migrator's conflict only if nothing remains pending — busy_timeout alone only " +
+                    "serializes SQLITE_BUSY, not logical DDL conflicts.",
                     lockPath,
                     timeout.TotalSeconds,
                     attempts);
