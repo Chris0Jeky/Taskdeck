@@ -1,8 +1,10 @@
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -39,18 +41,21 @@ public sealed class SerializedMigratorTests : IDisposable
         // from its own task; a Barrier makes both reach Migrate at the same instant to
         // maximize the overlap the file lock must serialize. Without the lock the loser would
         // hit a UNIQUE violation double-inserting into __EFMigrationsHistory.
+        //
+        // Both contexts are constructed up front (not inside the tasks) so nothing between
+        // barrier-entry and Migrate() can throw and deadlock the sibling participant.
+        using var contextA = NewFileContext();
+        using var contextB = NewFileContext();
         using var startBarrier = new Barrier(2);
 
-        async Task RunMigratorAsync()
+        Task RunMigratorAsync(TaskdeckDbContext context) => Task.Run(() =>
         {
-            await Task.Yield();
-            using var context = NewFileContext();
             startBarrier.SignalAndWait();
             SerializedMigrator.Migrate(context);
-        }
+        });
 
-        var migratorA = Task.Run(RunMigratorAsync);
-        var migratorB = Task.Run(RunMigratorAsync);
+        var migratorA = RunMigratorAsync(contextA);
+        var migratorB = RunMigratorAsync(contextB);
 
         var act = async () => await Task.WhenAll(migratorA, migratorB);
         await act.Should().NotThrowAsync(
@@ -109,6 +114,33 @@ public sealed class SerializedMigratorTests : IDisposable
         var strayLock = Path.Combine(Directory.GetCurrentDirectory(), ":memory:.migrate.lock");
         File.Exists(strayLock).Should().BeFalse(
             "an in-memory database must not produce a sidecar migration lock file");
+    }
+
+    [Fact]
+    public void Migrate_proceeds_with_a_warning_when_lock_cannot_be_acquired_within_timeout()
+    {
+        var lockPath = Path.GetFullPath(_dbPath) + ".migrate.lock";
+
+        // Simulate another process holding the exclusive lock for the whole call.
+        using var heldLock = new FileStream(
+            lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        var logger = new InMemoryLogger<SerializedMigratorTests>();
+        using var context = NewFileContext();
+
+        // Acquisition must time out, then degrade to a warning and migrate anyway —
+        // Migrate() is idempotent and busy_timeout still serializes the actual write.
+        // This also exercises the public Migrate(DbContext, TimeSpan, ILogger?) overload.
+        var act = () => SerializedMigrator.Migrate(context, TimeSpan.FromMilliseconds(300), logger);
+        act.Should().NotThrow("a contended lock must degrade to a warning, never block startup");
+
+        using var verify = NewFileContext();
+        GetUserTableNames(verify).Should().Contain(
+            "Boards", "migrations must still apply when the lock cannot be acquired");
+
+        logger.Entries.Should().Contain(
+            e => e.Level == LogLevel.Warning,
+            "failing to acquire the migration lock within the timeout must be logged as a warning");
     }
 
     private static List<string> GetUserTableNames(TaskdeckDbContext context)
