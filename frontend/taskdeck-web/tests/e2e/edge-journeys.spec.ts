@@ -17,7 +17,7 @@
  * Keyboard navigation:
  *   - Escape closes every open modal/dialog
  *
- * Dark mode:
+ * Dark mode (test.fixme — #1129: dark mode toggle not present in current UI):
  *   - Toggle dark mode → all views render (no white-on-white indicators)
  *   - Dark mode preference persists across page refresh
  */
@@ -320,8 +320,12 @@ test('Escape key should close each open modal and inline form in sequence', asyn
 })
 
 // ─── Dark mode ────────────────────────────────────────────────────────────────
+// FIXME(#1129): dark mode toggle does not exist in the current UI.
+// These tests were silently skipping via runtime checks, producing false-green
+// signals. Converted to test.fixme so they surface as "pending" until the
+// dark mode feature ships.
 
-test('dark mode toggle should apply dark theme class to document', async ({ page }) => {
+test.fixme('dark mode toggle should apply dark theme class to document', async ({ page }) => {
   await page.goto('/workspace/home')
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
@@ -331,10 +335,7 @@ test('dark mode toggle should apply dark theme class to document', async ({ page
     .or(page.getByLabel(/dark mode|toggle theme/i))
     .first()
 
-  if (!(await darkModeToggle.isVisible({ timeout: 5_000 }).catch(() => false))) {
-    test.skip()
-    return
-  }
+  await expect(darkModeToggle).toBeVisible({ timeout: 5_000 })
 
   await darkModeToggle.click()
 
@@ -351,7 +352,7 @@ test('dark mode toggle should apply dark theme class to document', async ({ page
   expect(hasDarkClass).toBeTruthy()
 })
 
-test('dark mode preference should persist across page refresh', async ({ page }) => {
+test.fixme('dark mode preference should persist across page refresh', async ({ page }) => {
   await page.goto('/workspace/home')
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
@@ -360,10 +361,7 @@ test('dark mode preference should persist across page refresh', async ({ page })
     .or(page.getByLabel(/dark mode|toggle theme/i))
     .first()
 
-  if (!(await darkModeToggle.isVisible({ timeout: 5_000 }).catch(() => false))) {
-    test.skip()
-    return
-  }
+  await expect(darkModeToggle).toBeVisible({ timeout: 5_000 })
 
   await darkModeToggle.click()
 

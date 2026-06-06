@@ -1,11 +1,15 @@
 /**
  * E2E: Dark Mode Scenarios
  *
- * Extends dark mode coverage beyond the basic toggle test:
+ * All tests are marked test.fixme because the dark mode toggle does not exist
+ * in the current UI (#1129). Previously these used runtime conditional
+ * test.skip() which produced false-green signals in CI.
+ *
+ * Convert back to test(...) once the dark mode feature ships:
  * - Dark mode persists when navigating between Home, Boards, Inbox, and Today views
  * - Dark mode board view renders column headings visible with non-zero dimensions
  * - Toggling dark mode off restores light theme
- * - System prefers-color-scheme: dark (stub -- test.fixme until feature ships)
+ * - System prefers-color-scheme: dark
  */
 
 import type { Page } from '@playwright/test'
@@ -58,16 +62,17 @@ async function enableDarkMode(page: Page): Promise<boolean> {
 }
 
 // --- Dark mode across multiple views ---
+// FIXME(#1129): dark mode toggle does not exist in the current UI.
+// These tests were silently skipping via runtime checks, producing false-green
+// signals. Converted to test.fixme so they surface as "pending" until the
+// dark mode feature ships.
 
-test('dark mode should persist when navigating between Home, Boards, and Inbox views', async ({ page }) => {
+test.fixme('dark mode should persist when navigating between Home, Boards, and Inbox views', async ({ page }) => {
   await page.goto('/workspace/home')
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
   const activated = await enableDarkMode(page)
-  if (!activated) {
-    test.skip()
-    return
-  }
+  expect(activated).toBeTruthy()
 
   expect(await isDarkMode(page)).toBeTruthy()
 
@@ -88,8 +93,9 @@ test('dark mode should persist when navigating between Home, Boards, and Inbox v
 })
 
 // --- Dark mode with board content ---
+// FIXME(#1129): dark mode toggle does not exist in the current UI.
 
-test('dark mode board view should render columns and cards without invisible text', async ({ page, request }) => {
+test.fixme('dark mode board view should render columns and cards without invisible text', async ({ page, request }) => {
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
   const boardId = await createBoardWithColumn(request, auth, seed, {
     boardNamePrefix: 'Dark Mode Board',
@@ -101,10 +107,7 @@ test('dark mode board view should render columns and cards without invisible tex
   await expect(page.getByRole('heading', { name: `Dark Mode Board ${seed}` })).toBeVisible()
 
   const activated = await enableDarkMode(page)
-  if (!activated) {
-    test.skip()
-    return
-  }
+  expect(activated).toBeTruthy()
 
   expect(await isDarkMode(page)).toBeTruthy()
 
@@ -120,26 +123,24 @@ test('dark mode board view should render columns and cards without invisible tex
 })
 
 // --- Toggling dark mode off restores light theme ---
+// FIXME(#1129): dark mode toggle does not exist in the current UI.
 
-test('toggling dark mode off should restore light theme', async ({ page }) => {
+test.fixme('toggling dark mode off should restore light theme', async ({ page }) => {
   await page.goto('/workspace/home')
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
   const toggle = await findDarkModeToggle(page)
-  if (!toggle) {
-    test.skip()
-    return
-  }
+  expect(toggle).not.toBeNull()
 
   // Enable dark mode
   const wasDark = await isDarkMode(page)
   if (!wasDark) {
-    await toggle.click()
+    await toggle!.click()
   }
   expect(await isDarkMode(page)).toBeTruthy()
 
   // Disable dark mode
-  await toggle.click()
+  await toggle!.click()
   expect(await isDarkMode(page)).toBeFalsy()
 })
 

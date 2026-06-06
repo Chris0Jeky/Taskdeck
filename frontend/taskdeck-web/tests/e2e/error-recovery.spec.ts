@@ -322,8 +322,12 @@ test('boards list API failure should show error in boards workspace', async ({ p
 })
 
 // ─── Scenario 8: Workspace preferences save failure → visual feedback ─────────
+// FIXME(#1129): workspace mode selector does not exist in the current UI.
+// This test was silently skipping via a runtime check, producing a false-green
+// signal. Converted to test.fixme so it surfaces as "pending" until the
+// workspace mode selector ships.
 
-test('workspace preferences save failure should show error and not silently discard input', async ({ page }) => {
+test.fixme('workspace preferences save failure should show error and not silently discard input', async ({ page }) => {
   await page.goto('/workspace/home')
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
@@ -344,17 +348,13 @@ test('workspace preferences save failure should show error and not silently disc
   })
 
   const workspaceModeSelect = page.getByLabel('Workspace mode')
-  if (await workspaceModeSelect.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await workspaceModeSelect.selectOption('workbench')
+  await expect(workspaceModeSelect).toBeVisible({ timeout: 5_000 })
+  await workspaceModeSelect.selectOption('workbench')
 
-    // The save attempt should surface an error — either an alert or inline message
-    const errorFeedback = page
-      .getByRole('alert')
-      .or(page.getByText(/error|failed|could not save/i))
-      .first()
-    await expect(errorFeedback).toBeVisible({ timeout: 10_000 })
-  } else {
-    // Workspace mode selector absent; skip gracefully
-    test.skip()
-  }
+  // The save attempt should surface an error — either an alert or inline message
+  const errorFeedback = page
+    .getByRole('alert')
+    .or(page.getByText(/error|failed|could not save/i))
+    .first()
+  await expect(errorFeedback).toBeVisible({ timeout: 10_000 })
 })

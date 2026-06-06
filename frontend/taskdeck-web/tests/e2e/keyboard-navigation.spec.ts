@@ -142,8 +142,12 @@ test('Escape from command palette should close it and return to the prior view',
 })
 
 // --- Shortcut help panel ---
+// FIXME(#1129): keyboard shortcuts help overlay is not implemented yet.
+// This test was silently skipping via a runtime check, producing a false-green
+// signal. Converted to test.fixme so it surfaces as "pending" until the
+// shortcuts help feature ships.
 
-test('question mark shortcut should toggle keyboard shortcuts help', async ({ page }) => {
+test.fixme('question mark shortcut should toggle keyboard shortcuts help', async ({ page }) => {
   await page.goto('/workspace/boards')
   await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
 
@@ -160,14 +164,9 @@ test('question mark shortcut should toggle keyboard shortcuts help', async ({ pa
     .or(page.getByText(/keyboard shortcuts/i))
     .first()
 
-  if (await shortcutsPanel.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await expect(shortcutsPanel).toBeVisible()
+  await expect(shortcutsPanel).toBeVisible({ timeout: 5_000 })
 
-    // Press ? again or Escape to dismiss
-    await page.keyboard.press('Escape')
-    await expect(shortcutsPanel).not.toBeVisible()
-  } else {
-    // If the shortcut help is not implemented, skip gracefully
-    test.skip()
-  }
+  // Press ? again or Escape to dismiss
+  await page.keyboard.press('Escape')
+  await expect(shortcutsPanel).not.toBeVisible()
 })
