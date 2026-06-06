@@ -100,14 +100,9 @@ public class AccountDeletionService : IAccountDeletionService
             var auditLogs = await _unitOfWork.AuditLogs.GetByUserAsync(userId, limit: 100000, cancellationToken: cancellationToken);
             var auditLogsAnonymized = auditLogs.Count();
 
-            // 2. Delete notifications (personal data)
-            var notifications = await _unitOfWork.Notifications.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
-            var notificationsDeleted = 0;
-            foreach (var notification in notifications)
-            {
-                await _unitOfWork.Notifications.DeleteAsync(notification, cancellationToken);
-                notificationsDeleted++;
-            }
+            // 2. Delete notifications (personal data) — batched SQL DELETE avoids
+            //    unbounded memory from fetching all rows and N+1 single-row deletes.
+            var notificationsDeleted = await _unitOfWork.Notifications.DeleteByUserIdAsync(userId, cancellationToken);
 
             // 3. Delete capture/inbox items (personal data)
             var captures = await _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken);
