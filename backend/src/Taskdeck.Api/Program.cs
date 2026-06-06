@@ -105,11 +105,13 @@ if (args.Contains("--mcp"))
 
         var mcpHttpApp = mcpHttpBuilder.Build();
 
-        // Apply EF Core migrations before starting.
+        // Apply EF Core migrations before starting, serialized across processes via a
+        // cross-process file lock so the MCP HTTP host does not race the API/CLI (#1164).
         using (var scope = mcpHttpApp.Services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
-            dbContext.Database.Migrate();
+            var migrationLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, migrationLogger);
         }
 
         // Correlation ID propagation: honours client X-Request-Id header.
@@ -182,11 +184,14 @@ if (args.Contains("--mcp"))
         })
         .Build();
 
-    // Apply EF Core migrations before starting the MCP host (mirrors web mode behaviour).
+    // Apply EF Core migrations before starting the MCP host (mirrors web mode behaviour),
+    // serialized across processes via a cross-process file lock (#1164). In stdio mode logs
+    // go to stderr, so the logger never corrupts the stdout JSON-RPC stream.
     using (var scope = mcpHost.Services.CreateScope())
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
-        dbContext.Database.Migrate();
+        var migrationLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, migrationLogger);
     }
 
     await mcpHost.RunAsync();
