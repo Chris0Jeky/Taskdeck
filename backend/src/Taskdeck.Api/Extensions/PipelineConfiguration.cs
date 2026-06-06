@@ -28,10 +28,12 @@ public static class PipelineConfiguration
                 "Configure ForwardedHeaders:KnownProxies or ForwardedHeaders:KnownNetworks.");
         }
 
+        // Apply EF Core migrations serialized across processes via a cross-process file lock
+        // so concurrent API/MCP/CLI startups apply the schema exactly once (#1164).
         using (var scope = app.Services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-            dbContext.Database.Migrate();
+            SerializedMigrator.Migrate(dbContext, app.Logger);
         }
 
         if (app.Environment.IsDevelopment())
