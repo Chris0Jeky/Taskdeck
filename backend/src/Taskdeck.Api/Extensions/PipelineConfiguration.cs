@@ -122,17 +122,21 @@ public static class PipelineConfiguration
         app.MapControllers();
         app.MapHub<BoardsHub>("/hubs/boards");
 
-        // Bare root "/" serves the SPA shell. The {*path:nonfile} catch-all in MapFallbackToFile
-        // does not match the empty path, so "/" needs its own endpoint (#1181).
-        app.MapGet("/", async (HttpContext ctx, IWebHostEnvironment env) =>
+        // Bare root "/": in production, UseDefaultFiles + UseStaticFiles (above) rewrites "/" to
+        // "/index.html" and serves it before routing. When wwwroot is absent (dev/test without a
+        // frontend build), that middleware no-ops and the request reaches routing. The {*path:nonfile}
+        // catch-all in MapFallbackToFile does not match the empty path, so this explicit endpoint
+        // prevents "/" from hitting the global RequireAuthenticatedUser FallbackPolicy (#1181).
+        var webRootProvider = app.Environment.WebRootFileProvider;
+        app.MapGet("/", async (HttpContext ctx) =>
         {
-            var file = env.WebRootFileProvider.GetFileInfo("index.html");
+            var file = webRootProvider.GetFileInfo("index.html");
             if (!file.Exists)
             {
                 ctx.Response.StatusCode = 404;
                 return;
             }
-            ctx.Response.ContentType = "text/html";
+            ctx.Response.ContentType = "text/html; charset=utf-8";
             ctx.Response.Headers["Cache-Control"] = "no-cache";
             await ctx.Response.SendFileAsync(file);
         }).AllowAnonymous();
