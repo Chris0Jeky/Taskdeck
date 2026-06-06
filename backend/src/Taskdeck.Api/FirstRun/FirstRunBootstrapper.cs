@@ -294,7 +294,22 @@ public static class FirstRunBootstrapper
 
         // Write into the local config file so the value is picked up by
         // AddInfrastructure later in the startup pipeline.
-        PersistValue("ConnectionStrings", "DefaultConnection", resolvedConnectionString);
+        try
+        {
+            PersistValue("ConnectionStrings", "DefaultConnection", resolvedConnectionString);
+        }
+        catch (IOException ex)
+        {
+            // The cross-process bootstrap lock may be unavailable on locked-down
+            // hosts. Fall back to setting the value in-memory so the current
+            // startup still succeeds with a relative DB path.
+            configuration["ConnectionStrings:DefaultConnection"] = resolvedConnectionString;
+            logger.LogWarning(
+                "First-run: Could not persist DB path to {ConfigFile} ({Error}). " +
+                "A transient in-memory connection string has been set instead.",
+                LocalConfigPath, ex.Message);
+            return;
+        }
 
         if (configuration is IConfigurationRoot root)
         {
