@@ -129,11 +129,17 @@ public class LlmQueueService : ILlmQueueService
                     continue;
 
                 // Re-fetch so the in-memory entity reflects the DB state set by the atomic UPDATE.
-                var claimed_request = await _unitOfWork.LlmQueue.GetByIdAsync(candidate.Id);
-                if (claimed_request == null)
+                var claimedRequest = await _unitOfWork.LlmQueue.GetByIdAsync(candidate.Id);
+                if (claimedRequest == null)
+                {
+                    // Claimed successfully but re-fetch returned null -- item is orphaned in
+                    // Processing. This should be impossible unless the row was deleted between
+                    // the UPDATE and SELECT. The proposal housekeeping worker will eventually
+                    // time out stuck Processing items, but log a warning so the anomaly is visible.
                     continue;
+                }
 
-                return Result.Success(MapToDto(claimed_request));
+                return Result.Success(MapToDto(claimedRequest));
             }
 
             return Result.Failure<LlmRequestDto>(ErrorCodes.NotFound, "No pending requests in the queue");

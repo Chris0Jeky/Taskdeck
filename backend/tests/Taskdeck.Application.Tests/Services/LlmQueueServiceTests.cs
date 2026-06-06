@@ -445,7 +445,7 @@ public class LlmQueueServiceTests
     }
 
     [Fact]
-    public async Task ProcessNextRequestAsync_ShouldReturnConflict_WhenClaimFails()
+    public async Task ProcessNextRequestAsync_ShouldReturnNotFound_WhenAllClaimsFail()
     {
         // Arrange -- simulates concurrent claim: another worker claimed the item first
         var userId = Guid.NewGuid();
