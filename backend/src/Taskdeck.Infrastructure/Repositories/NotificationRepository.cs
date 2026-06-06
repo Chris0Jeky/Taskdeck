@@ -108,6 +108,16 @@ public class NotificationRepository : Repository<Notification>, INotificationRep
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Uses raw SQL (ExecuteSqlRawAsync) which bypasses the EF Core change tracker.
+    /// Callers must not query Notification entities into the same DbContext before
+    /// calling this method, or the tracked entities will become stale.
+    /// This is the same pattern used by <see cref="AuditLogRepository.DeleteOldEntriesAsync"/>.
+    ///
+    /// When called inside a transaction (e.g. AccountDeletionService), cancellation
+    /// mid-batch is safe — the enclosing transaction rollback will undo partial deletes
+    /// and the returned count will be discarded by the caller's catch block.
+    /// </remarks>
     public async Task<int> DeleteByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         const int batchSize = 1000;
