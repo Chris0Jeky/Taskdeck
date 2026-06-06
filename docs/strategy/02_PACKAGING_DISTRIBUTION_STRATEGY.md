@@ -64,7 +64,7 @@ This architecture is the foundation for every packaging approach below.
 4. Publish: `dotnet publish --self-contained -r win-x64 -p:PublishSingleFile=true -p:PublishTrimmed=false -p:IncludeNativeLibrariesForSelfExtract=true`
 5. Result: **single .exe file** (~60-80MB) that runs everything
 
-> **Why `PublishTrimmed=false`?** IL trimming silently breaks EF Core migrations, ASP.NET DI conventions, System.Text.Json source generation, and SignalR -- all of which rely on runtime reflection. CI (`release-desktop.yml`) and build scripts (`build-release.sh`) enforce `PublishTrimmed=false` for this reason.
+> **Why `PublishTrimmed=false`?** IL trimming silently breaks EF Core migrations, ASP.NET DI conventions, reflection-based System.Text.Json serialization, and SignalR -- all of which rely on runtime reflection. CI (`release-desktop.yml`) and build scripts (`build-release.sh`) enforce `PublishTrimmed=false` for this reason.
 
 **Pros:**
 - Single file, no dependencies (runtime is embedded)
