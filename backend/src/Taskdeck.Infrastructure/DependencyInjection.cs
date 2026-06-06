@@ -121,7 +121,7 @@ public static class DependencyInjection
             throw new InvalidOperationException(
                 "Connectors:EncryptionKey is not configured. " +
                 "Set a base64-encoded 256-bit key via configuration or the " +
-                "TASKDECK_CONNECTORS__ENCRYPTIONKEY environment variable. " +
+                "Connectors__EncryptionKey environment variable. " +
                 "Generate one with: openssl rand -base64 32");
         }
         services.AddSingleton<ICredentialEncryptionService>(
