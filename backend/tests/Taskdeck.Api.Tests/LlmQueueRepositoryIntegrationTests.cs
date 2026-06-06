@@ -313,6 +313,109 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task TryClaimProcessingAsync_ShouldClaimPendingRequest()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-claim-pending-user", "llm-claim-pending@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"claim-pending-test\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        request.Status.Should().Be(RequestStatus.Pending);
+        var expectedUpdatedAt = request.UpdatedAt;
+
+        var result = await repo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt);
+
+        result.Should().BeTrue();
+
+        // Re-fetch to verify status changed in the database
+        db.ChangeTracker.Clear();
+        var updated = await repo.GetByIdAsync(request.Id);
+        updated.Should().NotBeNull();
+        updated!.Status.Should().Be(RequestStatus.Processing);
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_ShouldFailWhenStatusAlreadyChanged()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-claim-stale-user", "llm-claim-stale@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"already-claimed\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        var expectedUpdatedAt = request.UpdatedAt;
+
+        // Simulate another worker already claiming it by transitioning to Processing
+        request.MarkAsProcessing();
+        await db.SaveChangesAsync();
+
+        // Try to claim with the old expectedUpdatedAt -- should fail
+        var result = await repo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_ShouldSucceedOnFirstClaim_FailOnSecond()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+
+        var user = new User("llm-claim-race-user", "llm-claim-race@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"race-test\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        var expectedUpdatedAt = request.UpdatedAt;
+
+        // Use separate scopes + Task.WhenAll for truly concurrent claims
+        using var firstScope = _factory.Services.CreateScope();
+        using var secondScope = _factory.Services.CreateScope();
+        var firstRepo = firstScope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+        var secondRepo = secondScope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var results = await Task.WhenAll(
+            firstRepo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt),
+            secondRepo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt));
+
+        // Exactly one should succeed (optimistic concurrency)
+        results.Count(r => r).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_ShouldRejectNonPendingRequest()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-nonpending-user", "llm-nonpending@example.com", "hash");
+        db.Users.Add(user);
+
+        // Request is already Processing — TryClaimProcessingAsync should reject
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"not-pending\"}");
+        request.MarkAsProcessing();
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        var result = await repo.TryClaimProcessingAsync(request.Id, request.UpdatedAt);
+        result.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task GuidFormat_ShouldBePreservedThroughRoundTrip()
     {
         using var scope = _factory.Services.CreateScope();

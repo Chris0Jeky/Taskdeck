@@ -212,4 +212,23 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 
         return rowsAffected > 0;
     }
+
+    public async Task<bool> TryClaimProcessingAsync(
+        Guid requestId,
+        DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var claimedAt = DateTimeOffset.UtcNow;
+        var rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE LlmRequests
+            SET Status = {(int)RequestStatus.Processing}, UpdatedAt = {claimedAt}
+            WHERE Id = {requestId}
+              AND Status = {(int)RequestStatus.Pending}
+              AND UpdatedAt = {expectedUpdatedAt}
+            """,
+            cancellationToken);
+
+        return rowsAffected > 0;
+    }
 }

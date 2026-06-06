@@ -426,6 +426,8 @@ public class WorkerResilienceTests
             => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public Task<bool> TryClaimProcessingAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class FakeLlmQueueRepository : ILlmQueueRepository
@@ -474,6 +476,15 @@ public class WorkerResilienceTests
             => Task.FromResult(_pending.FirstOrDefault(i => i.Status == RequestStatus.Pending));
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
+        public Task<bool> TryClaimProcessingAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
+        {
+            var item = _pending.Concat(_processing).FirstOrDefault(i => i.Id == requestId);
+            if (item != null && item.Status == RequestStatus.Pending)
+            {
+                item.MarkAsProcessing();
+            }
+            return Task.FromResult(true);
+        }
     }
 
     private sealed class FakeAutomationPlannerService : IAutomationPlannerService
