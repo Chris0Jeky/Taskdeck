@@ -258,13 +258,9 @@ public class AccountDeletionServiceTests
         SetupUserFound();
         SetupEmptyRepositories();
 
-        var notification = new Notification(
-            _userId, NotificationType.System, NotificationCadence.Immediate,
-            "Test", "Test message");
-
         _notificationRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, 100000, false, null, default, 0))
-            .ReturnsAsync(new[] { notification });
+            .Setup(r => r.DeleteByUserIdAsync(_userId, default))
+            .ReturnsAsync(3);
 
         var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
 
@@ -273,8 +269,8 @@ public class AccountDeletionServiceTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        result.Value.NotificationsDeleted.Should().Be(1);
-        _notificationRepoMock.Verify(r => r.DeleteAsync(notification, default), Times.Once);
+        result.Value.NotificationsDeleted.Should().Be(3);
+        _notificationRepoMock.Verify(r => r.DeleteByUserIdAsync(_userId, default), Times.Once);
     }
 
     [Fact]
@@ -592,8 +588,8 @@ public class AccountDeletionServiceTests
             .Setup(r => r.GetByUserAsync(_userId, It.IsAny<int>(), default))
             .ReturnsAsync(Enumerable.Empty<AuditLog>());
         _notificationRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), false, null, default, 0))
-            .ReturnsAsync(Enumerable.Empty<Notification>());
+            .Setup(r => r.DeleteByUserIdAsync(_userId, default))
+            .ReturnsAsync(0);
         _llmQueueRepoMock
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
