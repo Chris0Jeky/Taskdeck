@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-05-31
+Last Updated: 2026-06-06
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -40,6 +40,12 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+Security gate + hardening epic (2026-06-05/06, 5 PRs merged; 2 independent adversarial reviews per PR plus Gemini/Codex bot reviews, all findings of every severity fixed or tracked):
+- **#1132 security gate + config hardening** delivered across 4 PRs: ≥32 JWT secret floor + fail-fast registration + Production CORS fail-closed (`#1169`, AC2/AC3); secret/dependency/SAST scans + bundle-size promoted into the required PR merge gate with **phased enforcement** per **ADR-0035** (`#1170`, AC1/AC5, fixed the pre-existing Semgrep `setuptools-82` crash); global default-deny `FallbackPolicy` + `[AllowAnonymous]` audit per **ADR-0036** (`#1176`, AC4).
+- **#1133 backend query perf** first slices (`#1171`): NotificationRepository SQL paging + CardRepository `AsSplitQuery`.
+- **#1131 AC1 CLI hardening** (`#1177`): fresh-machine connector-key bootstrap (CSPRNG, atomic write, `0600`, guarded mutex).
+- New ADRs `0035`/`0036`; seeded follow-ups `#1172`–`#1175`, `#1178`. Remaining: branch-protection registration (`#1173`), flip dependency/SAST to enforcing after baseline remediation (`#1175`), CLI authz routing (`#1131` AC2).
 
 Cleanup/hardening wave (2026-05-31, 8 PRs merged, 2 issues closed; 2 adversarial review passes per PR, all findings of every severity fixed, all bot threads resolved):
 - **Open-PR backlog cleared** (`#1143`–`#1147`): non-watch `vitest run` + MetricsView flake (`#1143`); docs-truth corrections incl. ADR-0023→0025 + `.gemini` link-depth fixes (`#1144`); release scripts aligned to CI flags + stale PKG-01 warning removed (`#1145`); duplicate operation idempotency-key → **409 not 500** (`#1146`); `AsSplitQuery` on the multi-collection board read (`#1147`).
