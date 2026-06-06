@@ -1,11 +1,10 @@
 /**
  * E2E: Dark Mode Scenarios
  *
- * All tests are marked test.fixme because the dark mode toggle does not exist
- * in the current UI (#1129). Previously these used runtime conditional
- * test.skip() which produced false-green signals in CI.
- *
- * Convert back to test(...) once the dark mode feature ships:
+ * All tests are marked test.fixme (#1129) because the selectors are stale:
+ * they check for a `dark` CSS class but the Paper theme uses `paper-night`
+ * via PaperSidebar's theme toggle. Update selectors to match Paper, then
+ * convert back to test(...):
  * - Dark mode persists when navigating between Home, Boards, Inbox, and Today views
  * - Dark mode board view renders column headings visible with non-zero dimensions
  * - Toggling dark mode off restores light theme
@@ -62,10 +61,9 @@ async function enableDarkMode(page: Page): Promise<boolean> {
 }
 
 // --- Dark mode across multiple views ---
-// FIXME(#1129): dark mode toggle does not exist in the current UI.
-// These tests were silently skipping via runtime checks, producing false-green
-// signals. Converted to test.fixme so they surface as "pending" until the
-// dark mode feature ships.
+// FIXME(#1129): test selectors are stale — they check for a `dark` CSS class
+// but the Paper theme uses `paper-night` via PaperSidebar's theme toggle.
+// Update selectors to match the Paper design system.
 
 test.fixme('dark mode should persist when navigating between Home, Boards, and Inbox views', async ({ page }) => {
   await page.goto('/workspace/home')
@@ -93,7 +91,7 @@ test.fixme('dark mode should persist when navigating between Home, Boards, and I
 })
 
 // --- Dark mode with board content ---
-// FIXME(#1129): dark mode toggle does not exist in the current UI.
+// FIXME(#1129): stale selectors — check for `dark` class but Paper uses `paper-night`.
 
 test.fixme('dark mode board view should render columns and cards without invisible text', async ({ page, request }) => {
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
@@ -123,7 +121,7 @@ test.fixme('dark mode board view should render columns and cards without invisib
 })
 
 // --- Toggling dark mode off restores light theme ---
-// FIXME(#1129): dark mode toggle does not exist in the current UI.
+// FIXME(#1129): stale selectors — check for `dark` class but Paper uses `paper-night`.
 
 test.fixme('toggling dark mode off should restore light theme', async ({ page }) => {
   await page.goto('/workspace/home')

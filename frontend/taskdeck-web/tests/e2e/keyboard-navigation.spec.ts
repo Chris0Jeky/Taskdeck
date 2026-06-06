@@ -142,10 +142,9 @@ test('Escape from command palette should close it and return to the prior view',
 })
 
 // --- Shortcut help panel ---
-// FIXME(#1129): keyboard shortcuts help overlay is not implemented yet.
-// This test was silently skipping via a runtime check, producing a false-green
-// signal. Converted to test.fixme so it surfaces as "pending" until the
-// shortcuts help feature ships.
+// FIXME(#1129): PaperShortcutsOverlay exists (wired via AppShell on `?` key)
+// but this test's selectors may be stale. Verify selectors match Paper overlay,
+// then convert back to test(...).
 
 test.fixme('question mark shortcut should toggle keyboard shortcuts help', async ({ page }) => {
   await page.goto('/workspace/boards')

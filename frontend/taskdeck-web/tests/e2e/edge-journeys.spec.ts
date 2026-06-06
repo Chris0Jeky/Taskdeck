@@ -320,10 +320,8 @@ test('Escape key should close each open modal and inline form in sequence', asyn
 })
 
 // ─── Dark mode ────────────────────────────────────────────────────────────────
-// FIXME(#1129): dark mode toggle does not exist in the current UI.
-// These tests were silently skipping via runtime checks, producing false-green
-// signals. Converted to test.fixme so they surface as "pending" until the
-// dark mode feature ships.
+// FIXME(#1129): stale selectors — check for `dark` class but Paper uses `paper-night`.
+// Update selectors to match PaperSidebar's theme toggle, then convert to test(...).
 
 test.fixme('dark mode toggle should apply dark theme class to document', async ({ page }) => {
   await page.goto('/workspace/home')

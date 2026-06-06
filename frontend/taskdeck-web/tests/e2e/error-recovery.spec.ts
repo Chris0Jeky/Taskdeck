@@ -322,10 +322,9 @@ test('boards list API failure should show error in boards workspace', async ({ p
 })
 
 // ─── Scenario 8: Workspace preferences save failure → visual feedback ─────────
-// FIXME(#1129): workspace mode selector does not exist in the current UI.
-// This test was silently skipping via a runtime check, producing a false-green
-// signal. Converted to test.fixme so it surfaces as "pending" until the
-// workspace mode selector ships.
+// FIXME(#1129): workspace mode selector exists (works in smoke.spec.ts) but
+// this test's runtime skip guard prevented it from running. Verify the route
+// interception pattern works, then convert back to test(...).
 
 test.fixme('workspace preferences save failure should show error and not silently discard input', async ({ page }) => {
   await page.goto('/workspace/home')
