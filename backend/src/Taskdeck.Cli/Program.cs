@@ -53,7 +53,10 @@ using var host = builder.Build();
 using (var startupScope = host.Services.CreateScope())
 {
     var dbContext = startupScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-    dbContext.Database.Migrate();
+    // Serialize migrations across processes (API/MCP/CLI) via a file lock (#1164).
+    // Pass no logger: CLI stdout must stay clean JSON (the helper never writes to stdout,
+    // but logging is suppressed here regardless).
+    SerializedMigrator.Migrate(dbContext);
 }
 
 var dispatcher = new CommandDispatcher(host.Services);
