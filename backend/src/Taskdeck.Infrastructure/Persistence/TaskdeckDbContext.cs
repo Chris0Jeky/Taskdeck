@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Domain.Agents;
 using Taskdeck.Domain.Entities;
 
@@ -55,10 +56,43 @@ public class TaskdeckDbContext : DbContext
     public DbSet<TomorrowNote> TomorrowNotes => Set<TomorrowNote>();
     public DbSet<McpToolHash> McpToolHashes => Set<McpToolHash>();
 
+    /// <summary>
+    /// SQLite stores DateTime as TEXT without timezone info. EF Core materializes
+    /// these as DateTimeKind.Unspecified, which causes incorrect comparisons with
+    /// DateTime.UtcNow. Apply UTC normalization globally via conventions so every
+    /// DateTime property is materialized with DateTimeKind.Utc.
+    /// See: https://github.com/Chris0Jeky/Taskdeck/issues/1191
+    /// </summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<DateTime>()
+            .HaveConversion<UtcDateTimeConverter>();
+        configurationBuilder.Properties<DateTime?>()
+            .HaveConversion<NullableUtcDateTimeConverter>();
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TaskdeckDbContext).Assembly);
+    }
+
+    private sealed class UtcDateTimeConverter : ValueConverter<DateTime, DateTime>
+    {
+        public UtcDateTimeConverter() : base(
+            v => v,
+            v => DateTime.SpecifyKind(v, DateTimeKind.Utc))
+        {
+        }
+    }
+
+    private sealed class NullableUtcDateTimeConverter : ValueConverter<DateTime?, DateTime?>
+    {
+        public NullableUtcDateTimeConverter() : base(
+            v => v,
+            v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v)
+        {
+        }
     }
 }
