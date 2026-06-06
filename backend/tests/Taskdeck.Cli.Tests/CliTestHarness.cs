@@ -59,7 +59,14 @@ internal sealed class CliTestHarness : IAsyncDisposable
         return (boardId, columnId);
     }
 
-    public async Task<CliCommandResult> RunAsync(string arguments)
+    /// <param name="extraEnvironment">
+    /// Optional environment variables applied AFTER the harness's own provisioning
+    /// logic, letting a test exercise operator overrides (e.g. supplying the
+    /// documented <c>TASKDECK_CONNECTORS__ENCRYPTIONKEY</c> on a clean machine).
+    /// </param>
+    public async Task<CliCommandResult> RunAsync(
+        string arguments,
+        IReadOnlyDictionary<string, string?>? extraEnvironment = null)
     {
         var cliDllPath = ResolveCliDllPath();
         var startInfo = new ProcessStartInfo
@@ -86,6 +93,22 @@ internal sealed class CliTestHarness : IAsyncDisposable
             // the CLI's first-run bootstrap is exercised.
             startInfo.Environment.Remove("Connectors__EncryptionKey");
             startInfo.Environment.Remove("TASKDECK_CONNECTORS__ENCRYPTIONKEY");
+        }
+
+        // Test-supplied overrides win over the provisioning defaults above.
+        if (extraEnvironment is not null)
+        {
+            foreach (var (name, value) in extraEnvironment)
+            {
+                if (value is null)
+                {
+                    startInfo.Environment.Remove(name);
+                }
+                else
+                {
+                    startInfo.Environment[name] = value;
+                }
+            }
         }
 
         using var process = new Process { StartInfo = startInfo };
