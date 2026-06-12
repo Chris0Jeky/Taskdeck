@@ -11,7 +11,7 @@ Simulate a Docker Compose deployment where the API container starts but fails re
 
 - Repository checked out at a known commit on `main`.
 - Docker Engine with `docker compose` support installed and running.
-- `deploy/.env` configured per `deploy/.env.example` (at minimum, `TASKDECK_JWT_SECRET` must be set).
+- `deploy/.env` configured per `deploy/.env.example` (both required secrets set: `TASKDECK_JWT_SECRET` and `TASKDECK_CONNECTORS_ENCRYPTION_KEY`).
 - No other services occupying the default proxy port (8080).
 - `curl` or equivalent HTTP client available.
 
