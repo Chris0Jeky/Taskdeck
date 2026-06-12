@@ -411,5 +411,36 @@ describe('useAutomationChat', () => {
 
       expect(chat.chatHealth.value).toBeNull()
     })
+
+    it('does not apply route board context after disposal on the mount continuation', async () => {
+      // Route points at a board that the deferred getBoards response contains.
+      routeMocks.query = { boardId: 'b1' }
+
+      let resolveBoards!: (value: unknown[]) => void
+      const boardsPromise = new Promise<unknown[]>((resolve) => { resolveBoards = resolve })
+      boardsApiMocks.getBoards.mockReturnValue(boardsPromise)
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+
+      // Register a disposal hook on the same getBoards promise. Because the
+      // composable's internal `await boardsApi.getBoards()` reaction is registered
+      // first (during the synchronous onMounted), this runs AFTER availableBoards
+      // is populated but BEFORE the onMounted `.then(applyRouteBoardContext)`
+      // continuation -- exactly the post-load, post-dispose race the guard covers.
+      void boardsPromise.then(() => {
+        for (const fn of scopeDisposeFns) fn()
+      })
+
+      resolveBoards([{ id: 'b1', name: 'Project Alpha', description: null, isArchived: false }])
+
+      // Drain all microtasks so the deferred continuation runs.
+      await new Promise((resolve) => setTimeout(resolve))
+
+      // The continuation must be a no-op after disposal. Without the isDisposed
+      // guard, applyRouteBoardContext would resolve 'b1' to 'Project Alpha' and
+      // write it to newSessionBoardId after the scope is gone.
+      expect(chat.newSessionBoardId.value).toBe('')
+    })
   })
 })
