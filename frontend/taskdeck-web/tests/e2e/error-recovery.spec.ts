@@ -322,11 +322,12 @@ test('boards list API failure should show error in boards workspace', async ({ p
 })
 
 // ─── Scenario 8: Workspace preferences save failure → visual feedback ─────────
-// FIXME(#1129): workspace mode selector exists (works in smoke.spec.ts) but
-// this test's runtime skip guard prevented it from running. Verify the route
-// interception pattern works, then convert back to test(...).
+// The workspace mode selector lives in the top bar (aria-label "Workspace
+// mode", exercised by smoke.spec.ts). On a failed PUT the workspace store
+// keeps the local selection and raises a warning toast (role="status"):
+// "<message>. Keeping the local selection for now."
 
-test.fixme('workspace preferences save failure should show error and not silently discard input', async ({ page }) => {
+test('workspace preferences save failure should show error and not silently discard input', async ({ page }) => {
   await page.goto('/workspace/home')
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
@@ -348,12 +349,19 @@ test.fixme('workspace preferences save failure should show error and not silentl
 
   const workspaceModeSelect = page.getByLabel('Workspace mode')
   await expect(workspaceModeSelect).toBeVisible({ timeout: 5_000 })
-  await workspaceModeSelect.selectOption('workbench')
 
-  // The save attempt should surface an error — either an alert or inline message
-  const errorFeedback = page
-    .getByRole('alert')
-    .or(page.getByText(/error|failed|could not save/i))
-    .first()
-  await expect(errorFeedback).toBeVisible({ timeout: 10_000 })
+  const failedSave = page.waitForResponse((response) =>
+    response.url().includes('/api/workspace/preferences') &&
+    response.request().method() === 'PUT' &&
+    response.status() === 500)
+  await workspaceModeSelect.selectOption('workbench')
+  await failedSave
+
+  // The save attempt surfaces a warning toast naming the failure
+  await expect(
+    page.getByText(/failed to save workspace/i).first(),
+  ).toBeVisible({ timeout: 10_000 })
+
+  // The user's selection is kept locally rather than silently discarded
+  await expect(workspaceModeSelect).toHaveValue('workbench')
 })
