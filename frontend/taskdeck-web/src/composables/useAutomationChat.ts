@@ -355,6 +355,10 @@ export function useAutomationChat() {
     void loadSessions()
     void loadProviderHealth()
     void loadBoardOptions().then(() => {
+      // Guard the continuation: loadBoardOptions can resolve after the owning
+      // scope is disposed (e.g. navigation mid-flight), and applyRouteBoardContext
+      // writes reactive state. Skip it once disposed to avoid a post-teardown write.
+      if (isDisposed) return
       applyRouteBoardContext()
     })
   })
