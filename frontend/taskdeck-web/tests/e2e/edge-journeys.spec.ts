@@ -17,9 +17,9 @@
  * Keyboard navigation:
  *   - Escape closes every open modal/dialog
  *
- * Dark mode (test.fixme — #1129: dark mode toggle not present in current UI):
- *   - Toggle dark mode → all views render (no white-on-white indicators)
- *   - Dark mode preference persists across page refresh
+ * Dark mode (Paper night theme — PaperSidebar toggle applies `paper-night`):
+ *   - Toggle night theme → paper-night class applied to <body>
+ *   - Night theme preference persists across page refresh (td.paper.mode)
  */
 
 import type { Page } from '@playwright/test'
@@ -319,74 +319,50 @@ test('Escape key should close each open modal and inline form in sequence', asyn
   await expect(page).toHaveURL(/\/workspace\/boards$/)
 })
 
-// ─── Dark mode ────────────────────────────────────────────────────────────────
-// FIXME(#1129): stale selectors — check for `dark` class but Paper uses `paper-night`.
-// Update selectors to match PaperSidebar's theme toggle, then convert to test(...).
+// ─── Dark mode (Paper night theme) ────────────────────────────────────────────
+// Dark mode ships as the Paper night theme: PaperSidebar's theme toggle
+// ("Switch to dark Paper theme") applies `paper-night` to <body> via
+// paperThemeStore, persisted under `td.paper.mode`. Paper mode must be ON
+// for the toggle to exist, so we seed it before app load (same pattern as
+// paper-night.spec.ts). The seed is guarded so it does not clobber the
+// night-mode value the app persists — addInitScript re-runs on reload.
 
-test.fixme('dark mode toggle should apply dark theme class to document', async ({ page }) => {
-  await page.goto('/workspace/home')
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
+const PAPER_NIGHT_CLASS = /(^|\s)paper-night(\s|$)/
 
-  // Find the dark-mode toggle — look by aria-label or common patterns
-  const darkModeToggle = page
-    .getByRole('button', { name: /dark mode|theme|light|dark/i })
-    .or(page.getByLabel(/dark mode|toggle theme/i))
-    .first()
-
-  await expect(darkModeToggle).toBeVisible({ timeout: 5_000 })
-
-  await darkModeToggle.click()
-
-  // Expect a dark-mode class on html or body
-  const hasDarkClass = await page.evaluate(() => {
-    return (
-      document.documentElement.classList.contains('dark') ||
-      document.documentElement.dataset.theme === 'dark' ||
-      document.body.classList.contains('dark') ||
-      document.body.dataset.theme === 'dark'
-    )
+async function enablePaperMode(page: Page) {
+  await page.addInitScript(() => {
+    if (!window.localStorage.getItem('td.paper.mode')) {
+      window.localStorage.setItem('td.paper.mode', 'paper')
+    }
   })
+}
 
-  expect(hasDarkClass).toBeTruthy()
+test('night theme toggle should apply the paper-night class to the document body', async ({ page }) => {
+  await enablePaperMode(page)
+
+  await page.goto('/workspace/home')
+  await expect(page.getByTestId('paper-home-greeting')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Switch to dark Paper theme' }).click()
+
+  await expect(page.locator('body')).toHaveClass(PAPER_NIGHT_CLASS)
 })
 
-test.fixme('dark mode preference should persist across page refresh', async ({ page }) => {
+test('night theme preference should persist across page refresh', async ({ page }) => {
+  await enablePaperMode(page)
+
   await page.goto('/workspace/home')
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
+  await expect(page.getByTestId('paper-home-greeting')).toBeVisible()
 
-  const darkModeToggle = page
-    .getByRole('button', { name: /dark mode|theme|light|dark/i })
-    .or(page.getByLabel(/dark mode|toggle theme/i))
-    .first()
+  await page.getByRole('button', { name: 'Switch to dark Paper theme' }).click()
 
-  await expect(darkModeToggle).toBeVisible({ timeout: 5_000 })
+  // Confirm the night theme is active
+  await expect(page.locator('body')).toHaveClass(PAPER_NIGHT_CLASS)
 
-  await darkModeToggle.click()
-
-  // Confirm dark mode is active
-  const isDarkAfterToggle = await page.evaluate(() => {
-    return (
-      document.documentElement.classList.contains('dark') ||
-      document.documentElement.dataset.theme === 'dark' ||
-      document.body.classList.contains('dark') ||
-      document.body.dataset.theme === 'dark'
-    )
-  })
-  expect(isDarkAfterToggle).toBeTruthy()
-
-  // Reload and check that dark mode persists
+  // Reload and check that the night theme persists (td.paper.mode in localStorage)
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
-
-  const isDarkAfterReload = await page.evaluate(() => {
-    return (
-      document.documentElement.classList.contains('dark') ||
-      document.documentElement.dataset.theme === 'dark' ||
-      document.body.classList.contains('dark') ||
-      document.body.dataset.theme === 'dark'
-    )
-  })
-  expect(isDarkAfterReload).toBeTruthy()
+  await expect(page.getByTestId('paper-home-greeting')).toBeVisible()
+  await expect(page.locator('body')).toHaveClass(PAPER_NIGHT_CLASS)
 })
 
 // ─── Rapid sequential captures ────────────────────────────────────────────────
