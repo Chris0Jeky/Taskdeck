@@ -49,6 +49,6 @@ On 2026-06-13 the maintainer set the project's final direction: Taskdeck will no
 - #1136 (Paper vs Legacy decision — this ADR delivers AC1; AC2 lands with the STATUS.md statement in the same PR; AC3 lands in the polish wave)
 - #996 (PAPER-00 master tracker), #1161 (Paper review dismiss affordance)
 - `design_handoff_taskdeck_paper/README.md` (canonical Paper spec)
-- `frontend/taskdeck-web/PAPER_NIGHT_AUDIT.md` (night-theme audit scope and pending surface follow-up)
+- `frontend/taskdeck-web/src/components/paper/PAPER_NIGHT_AUDIT.md` (night-theme audit scope and pending surface follow-up)
 - ADR-0011 (Obsidian & Ember tokens — remains in force for Legacy/frozen surfaces)
 - Maintainer directive 2026-06-13 (finish + activate the paper feel; personal use; archive)
