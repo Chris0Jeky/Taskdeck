@@ -359,18 +359,16 @@ public class LlmQueueServiceTests
         // Arrange
         var userId = Guid.NewGuid();
         var request = new LlmRequest(userId, "voicenote", "payload text");
+        var pendingUpdatedAt = request.UpdatedAt;
 
         _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
             .ReturnsAsync(new[] { request });
-        _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(request.Id, request.UpdatedAt, default))
-            .ReturnsAsync(true);
 
-        // After atomic claim, re-fetch returns the item with Processing status
-        var claimedRequest = new LlmRequest(userId, "voicenote", "payload text");
-        SetId(claimedRequest, request.Id);
-        claimedRequest.MarkAsProcessing();
-        _llmQueueRepoMock.Setup(r => r.GetByIdAsync(request.Id, default))
-            .ReturnsAsync(claimedRequest);
+        // Per the ILlmQueueRepository contract, a successful claim refreshes the
+        // in-memory entity so it reflects the Processing state written to the database.
+        _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(request.Id, pendingUpdatedAt, default))
+            .Callback(() => request.MarkAsProcessing())
+            .ReturnsAsync(true);
 
         // Act
         var result = await _service.ProcessNextRequestAsync();
@@ -378,7 +376,7 @@ public class LlmQueueServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Status.Should().Be(RequestStatus.Processing);
-        _llmQueueRepoMock.Verify(r => r.TryClaimProcessingAsync(request.Id, request.UpdatedAt, default), Times.Once);
+        _llmQueueRepoMock.Verify(r => r.TryClaimProcessingAsync(request.Id, pendingUpdatedAt, default), Times.Once);
     }
 
     [Fact]
@@ -428,14 +426,8 @@ public class LlmQueueServiceTests
         _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
             .ReturnsAsync(new[] { newestNonCapture, captureRequest, oldestNonCapture });
         _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(oldestNonCapture.Id, oldestNonCapture.UpdatedAt, default))
+            .Callback(() => oldestNonCapture.MarkAsProcessing())
             .ReturnsAsync(true);
-
-        var claimedRequest = new LlmRequest(userId, "summarize", "oldest non-capture");
-        SetId(claimedRequest, oldestNonCapture.Id);
-        SetCreatedAt(claimedRequest, baseTime);
-        claimedRequest.MarkAsProcessing();
-        _llmQueueRepoMock.Setup(r => r.GetByIdAsync(oldestNonCapture.Id, default))
-            .ReturnsAsync(claimedRequest);
 
         var result = await _service.ProcessNextRequestAsync();
 
@@ -480,14 +472,8 @@ public class LlmQueueServiceTests
         _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(first.Id, first.UpdatedAt, default))
             .ReturnsAsync(false);
         _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(second.Id, second.UpdatedAt, default))
+            .Callback(() => second.MarkAsProcessing())
             .ReturnsAsync(true);
-
-        var claimedSecond = new LlmRequest(userId, "summarize", "second payload");
-        SetId(claimedSecond, second.Id);
-        SetCreatedAt(claimedSecond, baseTime.AddMilliseconds(1));
-        claimedSecond.MarkAsProcessing();
-        _llmQueueRepoMock.Setup(r => r.GetByIdAsync(second.Id, default))
-            .ReturnsAsync(claimedSecond);
 
         // Act
         var result = await _service.ProcessNextRequestAsync();
@@ -549,21 +535,8 @@ public class LlmQueueServiceTests
         CreatedAtProperty.GetSetMethod(true)
         ?? throw new InvalidOperationException("Expected Entity.CreatedAt setter to exist.");
 
-    private static readonly PropertyInfo IdProperty =
-        typeof(Entity).GetProperty(nameof(Entity.Id))
-        ?? throw new InvalidOperationException("Expected Entity.Id property to exist.");
-
-    private static readonly MethodInfo IdSetter =
-        IdProperty.GetSetMethod(true)
-        ?? throw new InvalidOperationException("Expected Entity.Id setter to exist.");
-
     private static void SetCreatedAt(LlmRequest request, DateTimeOffset createdAt)
     {
         CreatedAtSetter.Invoke(request, new object[] { createdAt });
-    }
-
-    private static void SetId(LlmRequest request, Guid id)
-    {
-        IdSetter.Invoke(request, new object[] { id });
     }
 }
