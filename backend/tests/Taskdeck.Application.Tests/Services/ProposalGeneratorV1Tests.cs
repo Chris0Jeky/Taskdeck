@@ -342,6 +342,81 @@ public class ProposalGeneratorV1Tests
         return envelope;
     }
 
+    [Theory]
+    [InlineData("<script>alert(1)</script>")]
+    [InlineData("drop-table;--")]
+    [InlineData("action with spaces")]
+    public async Task GenerateAsync_MalformedActionType_ReturnsValidationFailure(string badActionType)
+    {
+        var envelope = CreateEnvelopeWithActionType(badActionType);
+        var boardId = Guid.NewGuid();
+
+        var result = await _sut.GenerateAsync(envelope, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("actionType");
+    }
+
+    [Fact]
+    public async Task GenerateAsync_MalformedActionType_DoesNotPersist()
+    {
+        var envelope = CreateEnvelopeWithActionType("<script>alert(1)</script>");
+        var boardId = Guid.NewGuid();
+
+        await _sut.GenerateAsync(envelope, boardId);
+
+        _proposalRepo.Verify(
+            r => r.AddAsync(It.IsAny<AutomationProposal>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWork.Verify(
+            u => u.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_MalformedActionType_LogsWarning()
+    {
+        var envelope = CreateEnvelopeWithActionType("<script>");
+        var boardId = Guid.NewGuid();
+
+        await _sut.GenerateAsync(envelope, boardId);
+
+        _logger.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("Operation input validation failed")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_ValidActionType_PassesValidation()
+    {
+        // Ensure legitimate identifier-like action types still work
+        var envelope = CreateEnvelopeWithActionType("create-card");
+        var boardId = Guid.NewGuid();
+
+        var result = await _sut.GenerateAsync(envelope, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Proposals.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_NamespacedActionType_PassesValidation()
+    {
+        var envelope = CreateEnvelopeWithActionType("card.create");
+        var boardId = Guid.NewGuid();
+
+        var result = await _sut.GenerateAsync(envelope, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Proposals.Should().HaveCount(1);
+    }
+
     private IntentEnvelopeV1 CreateEnvelopeWithActionType(string actionType)
     {
         var userId = Guid.NewGuid();

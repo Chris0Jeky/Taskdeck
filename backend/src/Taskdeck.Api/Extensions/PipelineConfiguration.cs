@@ -122,6 +122,25 @@ public static class PipelineConfiguration
         app.MapControllers();
         app.MapHub<BoardsHub>("/hubs/boards");
 
+        // Bare root "/": in production, UseDefaultFiles + UseStaticFiles (above) rewrites "/" to
+        // "/index.html" and serves it before routing. When wwwroot is absent (dev/test without a
+        // frontend build), that middleware no-ops and the request reaches routing. The {*path:nonfile}
+        // catch-all in MapFallbackToFile does not match the empty path, so this explicit endpoint
+        // prevents "/" from hitting the global RequireAuthenticatedUser FallbackPolicy (#1181).
+        var webRootProvider = app.Environment.WebRootFileProvider;
+        app.MapGet("/", async (HttpContext ctx) =>
+        {
+            var file = webRootProvider.GetFileInfo("index.html");
+            if (!file.Exists)
+            {
+                ctx.Response.StatusCode = 404;
+                return;
+            }
+            ctx.Response.ContentType = "text/html; charset=utf-8";
+            ctx.Response.Headers["Cache-Control"] = "no-cache";
+            await ctx.Response.SendFileAsync(file);
+        }).AllowAnonymous();
+
         // MCP Streamable HTTP endpoint for external AI agent integration.
         // Authenticated via ApiKeyMiddleware (Bearer tdsk_... tokens).
         // Rate limiting applied per API key user identity.

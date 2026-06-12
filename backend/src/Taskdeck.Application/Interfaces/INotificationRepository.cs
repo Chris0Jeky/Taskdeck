@@ -21,4 +21,11 @@ public interface INotificationRepository : IRepository<Notification>
         Guid userId,
         Guid? boardId = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes all notifications for a user in batched SQL DELETEs to avoid
+    /// unbounded memory and N+1 single-row deletes.
+    /// </summary>
+    /// <returns>Total number of deleted rows.</returns>
+    Task<int> DeleteByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 }

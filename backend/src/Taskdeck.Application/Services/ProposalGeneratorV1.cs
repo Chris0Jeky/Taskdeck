@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -59,6 +60,26 @@ public class ProposalGeneratorV1 : IProposalGenerator
                     break;
 
                 var proposal = CreateProposalFromIntent(intent, envelope, boardId);
+
+                // Defensive create-time validation (issue #1152): match the API path
+                // (AutomationProposalService.CreateProposalAsync) by running the same
+                // ProposalOperationInputValidator before persisting, so malformed operation
+                // input from the queue path never reaches the database.
+                var operationDtos = proposal.Operations
+                    .Select(op => new CreateProposalOperationDto(
+                        op.Sequence, op.ActionType, op.TargetType,
+                        op.Parameters, op.IdempotencyKey, op.TargetId, op.ExpectedVersion))
+                    .ToList();
+                var operationValidation = ProposalOperationInputValidator.Validate(operationDtos);
+                if (!operationValidation.IsSuccess)
+                {
+                    _logger.LogWarning(
+                        "Operation input validation failed for envelope {EnvelopeId}, intent {IntentId}: {Error}",
+                        envelope.Id, intent.Id, operationValidation.ErrorMessage);
+                    return Result.Failure<ProposalGenerationResult>(
+                        operationValidation.ErrorCode, operationValidation.ErrorMessage);
+                }
+
                 await _unitOfWork.AutomationProposals.AddAsync(proposal, cancellationToken);
                 batch.AddProposalId(proposal.Id);
 
