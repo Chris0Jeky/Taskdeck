@@ -416,6 +416,63 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task TryClaimProcessingAsync_ShouldRefreshTrackedEntity()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-claim-refresh-user", "llm-claim-refresh@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"refresh-tracked\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        // Mimic the service path: fetch the candidate via a tracking query so the
+        // entity is held by the change tracker as Pending before the raw-SQL claim.
+        var tracked = (await repo.GetByStatusAsync(RequestStatus.Pending))
+            .Single(r => r.Id == request.Id);
+        tracked.Status.Should().Be(RequestStatus.Pending);
+        var expectedUpdatedAt = tracked.UpdatedAt;
+
+        var claimed = await repo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt);
+
+        claimed.Should().BeTrue();
+
+        // The raw-SQL UPDATE bypasses the change tracker; the repository must refresh
+        // the tracked instance so callers holding it observe the claimed state.
+        tracked.Status.Should().Be(RequestStatus.Processing);
+        tracked.UpdatedAt.Should().NotBe(expectedUpdatedAt);
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_GetByIdAfterClaim_ShouldReturnProcessingWithoutClearingTracker()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-claim-findasync-user", "llm-claim-findasync@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"findasync-after-claim\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        var claimed = await repo.TryClaimProcessingAsync(request.Id, request.UpdatedAt);
+
+        claimed.Should().BeTrue();
+
+        // Deliberately do NOT clear the change tracker: GetByIdAsync delegates to
+        // FindAsync, which serves the tracked instance from the identity map.
+        // Without a post-claim refresh it would still report stale Pending.
+        var refetched = await repo.GetByIdAsync(request.Id);
+        refetched.Should().NotBeNull();
+        refetched!.Status.Should().Be(RequestStatus.Processing);
+    }
+
+    [Fact]
     public async Task GuidFormat_ShouldBePreservedThroughRoundTrip()
     {
         using var scope = _factory.Services.CreateScope();
