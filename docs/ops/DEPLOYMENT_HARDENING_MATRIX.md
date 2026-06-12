@@ -28,7 +28,7 @@ If proxy port differs, use the configured value for `-Port`.
 Secret-gated compose render check:
 
 ```bash
-TASKDECK_JWT_SECRET=local-test-secret docker compose -f deploy/docker-compose.yml --profile baseline config
+TASKDECK_JWT_SECRET=local-test-secret TASKDECK_CONNECTORS_ENCRYPTION_KEY=local-test-key docker compose -f deploy/docker-compose.yml --profile baseline config
 ```
 
 Manual start/smoke/stop path:
