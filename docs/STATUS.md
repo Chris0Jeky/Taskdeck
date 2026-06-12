@@ -1,6 +1,10 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-06-06
+Last Updated: 2026-06-13
+
+Direction + canonical UI (2026-06-13, maintainer-decided):
+- **Project direction is finish-for-personal-use, then archive.** Taskdeck will not be distributed; the goals are to finish and activate the Paper UI, make the app trivially easy to run locally, land general quality improvements, and archive cleanly. This supersedes the 2026-06-05 ship-first framing; distribution-era tracks (code-signing, GTM, cloud, mobile) are de-scoped.
+- **Paper is the canonical UI** per **ADR-0038** (resolves the #1136 decision): the default theme flips to `paper` once the activation prerequisites land (#1161 dismiss affordance, shared review-actionability logic, light-theme straggler tokenization, Paper review de-stubbing). **All new frontend UX work targets the Paper views; Legacy is frozen** (reachable via a settings toggle as an escape hatch, no new fixes). The ~26 routes without Paper variants keep rendering Legacy views inside the Paper shell after a contrast pass.
 
 Security gate + hardening epic (2026-06-05/06, 5 PRs merged; **2 independent adversarial reviews per PR** plus Gemini/Codex bot reviews, all findings of every severity fixed or tracked, merges gated on green CI + aging):
 - **#1132 (security gate + config hardening) delivered across 4 PRs**: a single ≥32-char JWT secret floor (`JwtSettings.MinSecretKeyLength`) with **fail-fast** registration (throws instead of silently no-op'ing auth) + CORS that **fails closed** in Production when no origins are configured (`#1169`, AC2/AC3); required **secret/dependency/SAST scans + the bundle-size budget promoted into the PR merge gate** (`#1170`, AC1/AC5), with **phased enforcement** per **ADR-0035** (gitleaks + bundle enforcing; dependency + SAST advisory pending baseline remediation) and the pre-existing Semgrep `pkg_resources`/`setuptools-82` crash fixed; a global default-deny `AuthorizationOptions.FallbackPolicy = RequireAuthenticatedUser` with an explicit `[AllowAnonymous]` audit (SPA fallback opt-out; the API-key MCP path now sets an authenticated principal in `ApiKeyMiddleware`) per **ADR-0036** (`#1176`, AC4).
