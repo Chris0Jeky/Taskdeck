@@ -27,6 +27,23 @@ public sealed class RedisCacheService : ICacheService, IDisposable
 
     private DateTime _lastConnectAttemptUtc = DateTime.MinValue;
 
+    /// <summary>
+    /// Test-only seam: invoked on the connecting thread immediately before the blocking
+    /// <see cref="ConnectionMultiplexer.Connect(ConfigurationOptions, System.IO.TextWriter?)"/>
+    /// call. Used by regression tests to observe — from another thread — whether
+    /// <see cref="_connectionLock"/> is held while the connect blocks. Null (and zero-cost)
+    /// in production.
+    /// </summary>
+    internal Action? OnBeforeConnect { get; set; }
+
+    /// <summary>
+    /// Test-only seam: exposes the connection lock so a regression test can probe, from a
+    /// separate thread, whether the lock is held across the blocking connect. The fixed code
+    /// performs the connect OUTSIDE this lock, so a probe acquires it promptly; the pre-#1189
+    /// code held it across the connect, so a probe would be serialized behind the connect.
+    /// </summary>
+    internal object ConnectionLock => _connectionLock;
+
     public RedisCacheService(string connectionString, ILogger<RedisCacheService> logger, string keyPrefix = "td")
     {
         _connectionString = connectionString;
@@ -261,6 +278,11 @@ public sealed class RedisCacheService : ICacheService, IDisposable
             options.ConnectTimeout = 3000;       // 3 second connect timeout
             options.SyncTimeout = 1000;          // 1 second sync timeout
             options.AsyncTimeout = 1000;         // 1 second async timeout
+
+            // Test seam: lets a regression test observe (from another thread) whether
+            // _connectionLock is held while this blocking connect runs. No-op in production.
+            OnBeforeConnect?.Invoke();
+
             var candidate = ConnectionMultiplexer.Connect(options);
 
             if (candidate.IsConnected)
