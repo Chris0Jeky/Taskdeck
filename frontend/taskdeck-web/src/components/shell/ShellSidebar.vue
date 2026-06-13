@@ -251,7 +251,7 @@ const navCatalog: NavItem[] = [
   {
     id: 'appearance',
     label: 'Appearance',
-    icon: 'T',
+    icon: 'E',
     path: '/workspace/settings/appearance',
     flag: null,
     primaryModes: ['workbench'],
