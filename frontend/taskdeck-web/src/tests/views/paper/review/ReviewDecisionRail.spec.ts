@@ -44,10 +44,10 @@ describe('ReviewDecisionRail', () => {
 
     const fileAway = wrapper.find('[data-testid="decision-file-away"]')
     expect(fileAway.exists()).toBe(true)
-    // Visible label stays in the paper voice; accessible name matches the
-    // backend/API dismiss vocabulary so tests and a11y tooling agree.
+    // Accessible name must CONTAIN the visible label "File away" (WCAG 2.5.3
+    // Label in Name) — it reads "File away proposal", not "Dismiss proposal".
     expect(fileAway.text()).toContain('File away')
-    expect(fileAway.attributes('aria-label')).toBe('Dismiss proposal')
+    expect(fileAway.attributes('aria-label')).toBe('File away proposal')
     expect(wrapper.find('[role="toolbar"]').attributes('aria-label')).toBe('Filing actions')
     expect(wrapper.text()).toContain('SETTLED')
   })

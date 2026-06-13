@@ -508,7 +508,9 @@ describe('PaperReviewView', () => {
     expect(mocks.dismissProposals).toHaveBeenCalledWith(['expired-a', 'expired-b'])
   })
 
-  it('does not show the bulk "File away" action with fewer than two settled proposals', async () => {
+  it('shows the bulk "File away" action for a single settled proposal so it is never unclearable', async () => {
+    // A single hidden settled proposal (e.g. Applied) has no per-proposal rail
+    // in Paper, so the bulk affordance must appear at count 1. #1161 (review)
     const wrapper = await mountView([
       makeProposal({
         id: 'expired-only',
@@ -518,7 +520,44 @@ describe('PaperReviewView', () => {
       }),
     ])
 
+    const bulk = wrapper.find('[data-testid="queue-file-away-all"]')
+    expect(bulk.exists()).toBe(true)
+    expect(bulk.text()).toContain('File away 1 settled')
+  })
+
+  it('hides the bulk "File away" action when there are no settled proposals', async () => {
+    const wrapper = await mountView([
+      makeProposal({ id: 'pending-only', status: 'PendingReview', summary: 'Still pending' }),
+    ])
+
     expect(wrapper.find('[data-testid="queue-file-away-all"]').exists()).toBe(false)
+  })
+
+  it('omits collaborator-owned settled proposals from the bulk file-away set (avoids a 403)', async () => {
+    // The dismiss endpoint 403s the whole request if any id is not owned by the
+    // caller, so a board-filtered queue with another user's settled proposal must
+    // not include it in the bulk set. #1161 (review)
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'mine-expired',
+        status: 'Expired',
+        requestedByUserId: 'u-1',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'My expired',
+      }),
+      makeProposal({
+        id: 'theirs-expired',
+        status: 'Expired',
+        requestedByUserId: 'u-2',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Their expired',
+      }),
+    ])
+
+    // Only the caller's own settled proposal counts → "1 settled", not 2.
+    const bulk = wrapper.find('[data-testid="queue-file-away-all"]')
+    expect(bulk.exists()).toBe(true)
+    expect(bulk.text()).toContain('File away 1 settled')
   })
 
   it('treats an Approved-then-expired proposal as dismissable (File away)', async () => {

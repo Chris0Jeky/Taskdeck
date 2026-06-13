@@ -125,9 +125,14 @@ describe('ReviewQueueRail', () => {
     expect(wrapper.text()).toContain('2 stale')
   })
 
-  it('hides the bulk file-away action below two settled proposals', () => {
+  it('hides the bulk file-away action only when there are no settled proposals', () => {
     expect(mountRail({ dismissableCount: 0 }).find('[data-testid="queue-file-away-all"]').exists()).toBe(false)
-    expect(mountRail({ dismissableCount: 1 }).find('[data-testid="queue-file-away-all"]').exists()).toBe(false)
+  })
+
+  it('shows the bulk file-away action for a single settled proposal', () => {
+    const bulk = mountRail({ dismissableCount: 1 }).find('[data-testid="queue-file-away-all"]')
+    expect(bulk.exists()).toBe(true)
+    expect(bulk.text()).toContain('File away 1 settled')
   })
 
   it('shows the bulk file-away action with the count and emits file-away-all on click', async () => {
