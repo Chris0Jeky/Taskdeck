@@ -19,7 +19,10 @@ const props = defineProps<{
 // Reject are only available while the proposal is still pending and unexpired;
 // Apply-to-board is the Approved-and-actionable arm of apply-actionable.
 const canReject = computed(() => isProposalRejectActionable(props.proposal, props.isExpired))
-const canApprove = canReject
+// Approve and Reject share the same precondition (a still-live PendingReview
+// proposal), but keep them as independent computeds so they can diverge later
+// without a hidden alias coupling them (e.g. an approve-only permission gate).
+const canApprove = computed(() => isProposalRejectActionable(props.proposal, props.isExpired))
 const canExecute = computed(
   () =>
     isProposalApplyActionable(props.proposal, props.isExpired) &&
