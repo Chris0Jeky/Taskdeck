@@ -36,6 +36,23 @@ Taskdeck is a local-first execution workspace for developers. It captures messy 
 
 **Prerequisites:** .NET 8 SDK and Node.js 24.x (minimum 24.13.1 LTS)
 
+**One command** (starts the API + frontend, pins the dev database to a stable
+per-user location, waits for readiness; add `-Seed`/`--seed` to create the
+`demo` / `demo123` account):
+
+```powershell
+.\scripts\dev-up.ps1 -Seed         # Windows (PowerShell)
+```
+
+```bash
+scripts/dev-up.sh --seed           # macOS / Linux
+```
+
+Stop it with `.\scripts\dev-up.ps1 -Stop` (or `scripts/dev-up.sh --stop`).
+
+<details>
+<summary>Or start the two processes manually</summary>
+
 ```bash
 # Clone the repo
 git clone https://github.com/Chris0Jeky/Taskdeck.git
@@ -49,6 +66,7 @@ cd frontend/taskdeck-web
 npm install
 npm run dev
 ```
+</details>
 
 Open `http://localhost:5173` to start. See [docs/START_HERE.md](docs/START_HERE.md) for the full guided walkthrough.
 
