@@ -4,6 +4,8 @@
 **Related ADR**: ADR-0023 (SQLite-to-PostgreSQL Production Migration Strategy)
 **Related issue**: #84 (PLAT-01)
 
+> **⚠️ REFERENCE ONLY — cloud / multi-instance scope de-scoped 2026-06-13.** Taskdeck is being finished as a single-instance, SQLite-based, personal-use tool (archive pivot) and will not be distributed or scaled out. The cloud / scale-out / PostgreSQL procedures below are retained as historical reference, not active plans. SQLite + single-instance + local-first are the permanent architecture. See `docs/STATUS.md`.
+
 This runbook provides step-by-step instructions for migrating an existing Taskdeck SQLite database to PostgreSQL. It is intended for operators deploying Taskdeck to a hosted environment.
 
 > **Current repository state**: this is a preparatory runbook, not a fully executable cutover guide yet.

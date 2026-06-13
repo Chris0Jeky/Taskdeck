@@ -211,6 +211,7 @@ Provider-registry architecture: `IExternalImportAdapter` + `IExternalImportServi
 ## Strategic Planning
 
 ### Platform Expansion Strategy
+_(Superseded by the 2026-06-13 archive pivot — distribution/cloud/mobile/GTM tracks are de-scoped; see docs/STATUS.md. Retained as a record of past planning.)_
 Four-pillar roadmap: market adoption, packaging/distribution, cloud/collaboration, mobile platform. Version milestones: v0.1.0 (exe) → v0.2.0 (cloud) → v0.3.0 (PWA) → v0.4.0 (collaboration) → v0.5.0 (maturity) → v1.0.0 (GA). Master tracker at #531.
 
 ### Multi-Tenancy Strategy

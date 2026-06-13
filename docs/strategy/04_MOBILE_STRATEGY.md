@@ -4,6 +4,8 @@
 **Scope:** Android, iOS, and mobile-responsive access for Taskdeck
 **Status:** Strategic planning document — not yet executed
 
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The distribution / cloud / mobile / GTM tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial, general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
+
 ---
 
 ## 1. Why Mobile Matters

@@ -1,6 +1,9 @@
 # ADR-0023: SQLite-to-PostgreSQL Production Migration Strategy
 
 - **Status**: Accepted
+
+> **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
+
 - **Date**: 2026-04-09
 - **Deciders**: Project maintainers
 

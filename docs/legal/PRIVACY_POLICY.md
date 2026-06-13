@@ -11,6 +11,8 @@
 **Last updated:** 2026-04-23 (draft)
 **Tracking issue:** `#548` (LEGAL-01)
 
+> **⚠️ DRAFT — NOT IN USE.** This was prepared for a hosted cloud instance that is no longer planned (2026-06-13 archive pivot: Taskdeck is personal-use only, never distributed or hosted as a service). It is retained only as a template; any self-hosted deployment is the operator's sole responsibility. See `docs/STATUS.md`.
+
 ## 1. Who this policy applies to
 
 This draft is intended to describe how a hosted Taskdeck instance operated by

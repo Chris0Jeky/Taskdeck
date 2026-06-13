@@ -51,6 +51,8 @@ Note:
 
 ## Platform Expansion Labels
 
+> **Note:** These expansion labels (cloud, marketing, mobile, packaging) are retained for issue triage and history, but the labeled efforts were de-scoped by the 2026-06-13 archive pivot. See `docs/STATUS.md`.
+
 - `cloud`
   - Cloud hosting, SaaS deployment, online access, and multi-tenant infrastructure work.
 - `marketing`

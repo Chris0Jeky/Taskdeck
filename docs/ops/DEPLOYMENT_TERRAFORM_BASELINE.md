@@ -3,6 +3,8 @@
 Last Updated: 2026-03-06
 Issue: `#102` OPS-10 Infrastructure-as-Code baseline for Taskdeck environments
 
+> **⚠️ REFERENCE ONLY — cloud / multi-instance scope de-scoped 2026-06-13.** Taskdeck is being finished as a single-instance, SQLite-based, personal-use tool (archive pivot) and will not be distributed or scaled out. The cloud / scale-out / PostgreSQL procedures below are retained as historical reference, not active plans. SQLite + single-instance + local-first are the permanent architecture. See `docs/STATUS.md`.
+
 This runbook defines the first Terraform baseline for Taskdeck.
 It intentionally matches the current shipped deployment posture instead of inventing a second runtime:
 
