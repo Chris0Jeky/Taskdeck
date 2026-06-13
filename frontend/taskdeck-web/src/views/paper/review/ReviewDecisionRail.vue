@@ -47,7 +47,7 @@ const emit = defineEmits<{
         kbd="⌫"
         :disabled="busy"
         data-testid="decision-file-away"
-        aria-label="Dismiss proposal"
+        aria-label="File away proposal"
         @click="emit('dismiss')"
       />
     </template>
