@@ -446,6 +446,9 @@ const authorMeta = computed(() => {
   // Only the confidence score is real wire data. Latency and token counts are
   // not yet surfaced by the backend, so we do not fabricate them here. #1136
   const c = selectors.confidenceBreakdown.value
+  // Defensive: the type says overall is always a number, but guard against a
+  // malformed/NaN value so toFixed can never throw on the deep-review surface.
+  if (!c || !Number.isFinite(c.overall)) return ''
   return `${c.overall.toFixed(2)} confidence`
 })
 
