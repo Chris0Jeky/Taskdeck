@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -444,6 +445,18 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         // the tracked instance so callers holding it observe the claimed state.
         tracked.Status.Should().Be(RequestStatus.Processing);
         tracked.UpdatedAt.Should().NotBe(expectedUpdatedAt);
+
+        // Read the persisted row from a fresh, untracked query and assert the tracked
+        // instance now mirrors the DB exactly. This distinguishes a true DB reload
+        // (ReloadAsync) from an in-memory MarkAsProcessing() substitute that would set
+        // a different UTC-now UpdatedAt than the value the raw-SQL UPDATE persisted.
+        using var freshScope = _factory.Services.CreateScope();
+        var freshDb = freshScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await freshDb.LlmRequests
+            .AsNoTracking()
+            .SingleAsync(r => r.Id == request.Id);
+        persisted.Status.Should().Be(RequestStatus.Processing);
+        tracked.UpdatedAt.Should().Be(persisted.UpdatedAt);
     }
 
     [Fact]
