@@ -86,11 +86,30 @@ function Stop-Stack {
         $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
         if ($proc) {
             Write-Step "Stopping PID $procId ($($proc.ProcessName))..."
-            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+            # `dotnet run` / `npm run dev` are launchers; the real Kestrel API
+            # and Vite node processes are children. taskkill /T kills the whole
+            # tree so the ports are released, not just the parent launcher (H1).
+            $tkOut = & taskkill /T /F /PID $procId 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn "taskkill failed for PID ${procId}: $tkOut"
+            }
         }
     }
     Remove-Item $PidFile -ErrorAction SilentlyContinue
     Write-Step "Stack stopped."
+}
+
+# Stop only the API we started in this run (its process tree) and clear the PID
+# file. Used to clean up a half-started stack when a later step fails fatally, so
+# we never leave the port + pinned SQLite DB held by an orphaned background API.
+function Stop-StartedApi {
+    param([int]$ApiPid)
+    if (-not $ApiPid) { return }
+    if (Get-Process -Id $ApiPid -ErrorAction SilentlyContinue) {
+        Write-Warn "Stopping background API (PID $ApiPid) started by this run..."
+        & taskkill /T /F /PID $ApiPid 2>&1 | Out-Null
+    }
+    Remove-Item $PidFile -ErrorAction SilentlyContinue
 }
 
 if ($Stop) {
@@ -132,9 +151,22 @@ if (-not (Test-Path $DataDir)) {
     New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
 }
 
-# A fresh PID file for this run.
+# Refuse to start over a live stack: overwriting the PID file would orphan the
+# running API/frontend and lose the PIDs that -Stop needs (H1). A PID file whose
+# PIDs are all dead is stale — remove it and continue.
 if (Test-Path $PidFile) {
-    Write-Warn "An existing PID file was found; a stack may already be running. Run '.\scripts\dev-up.ps1 -Stop' first if so."
+    $running = $false
+    foreach ($line in Get-Content $PidFile) {
+        $procId = ($line -as [int])
+        if ($procId -and (Get-Process -Id $procId -ErrorAction SilentlyContinue)) {
+            $running = $true
+        }
+    }
+    if ($running) {
+        Write-Fatal "A stack is already running (PIDs found in $PidFile). Run '.\scripts\dev-up.ps1 -Stop' first."
+    } else {
+        Remove-Item $PidFile -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Step "Database: $DevDbPath (pinned via ConnectionStrings__DefaultConnection)"
@@ -143,6 +175,10 @@ Write-Step "Database: $DevDbPath (pinned via ConnectionStrings__DefaultConnectio
 # so the DB no longer follows the launch directory (#1140 AC1).
 $env:ConnectionStrings__DefaultConnection = "Data Source=$DevDbPath"
 $env:ASPNETCORE_ENVIRONMENT = "Development"
+# The launch profile's applicationUrl is fixed at :5000. Override it so the API
+# actually binds the requested port — otherwise a custom -ApiPort only moves the
+# readiness probe / printed URL while the API stays on 5000 (P2).
+$env:ASPNETCORE_URLS = "http://localhost:$ApiPort"
 
 Write-Step "Starting API (dotnet run) on port $ApiPort..."
 $apiProc = Start-Process -FilePath "dotnet" `
@@ -178,9 +214,15 @@ if (-not (Test-Path (Join-Path $FrontendDir "node_modules"))) {
     Push-Location $FrontendDir
     try {
         npm install
-        if ($LASTEXITCODE -ne 0) { Write-Fatal "npm install failed (code $LASTEXITCODE)." }
+        $npmExit = $LASTEXITCODE
     } finally {
         Pop-Location
+    }
+    if ($npmExit -ne 0) {
+        # The API is already running in the background; stop it before exiting or
+        # we leave the port + pinned SQLite DB held by an orphaned process (P2).
+        Stop-StartedApi -ApiPid $apiProc.Id
+        Write-Fatal "npm install failed (code $npmExit)."
     }
 }
 
