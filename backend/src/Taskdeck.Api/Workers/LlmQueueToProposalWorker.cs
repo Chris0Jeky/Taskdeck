@@ -157,7 +157,16 @@ public class LlmQueueToProposalWorker : BackgroundService
         var item = await unitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
         if (item == null || item.Status != RequestStatus.Processing)
         {
-            outcome = "already_claimed";
+            // We successfully claimed the row (UPDATE flipped it to Processing) but the
+            // post-claim re-fetch no longer sees it Processing. The row vanished or was
+            // mutated between our UPDATE and SELECT -- this is distinct from losing the
+            // claim race ("already_claimed"), so surface it with its own outcome and a
+            // warning so the orphaned-Processing case stays visible in telemetry/logs.
+            _logger.LogWarning(
+                "Queue item {ItemId} claimed but re-fetch returned {Status}; row vanished or mutated between claim and read",
+                itemId,
+                item?.Status.ToString() ?? "null");
+            outcome = "claimed_then_missing";
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
             return;
