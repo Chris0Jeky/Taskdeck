@@ -15,11 +15,10 @@
 #
 # Requires: .NET 8 SDK, Node.js 24.x, npm.
 #
-# Note: --stop tracks the `dotnet run` and `npm run dev` launcher PIDs. Because
-# `dotnet run` builds then runs the API as a child process, stopping the
-# launcher can on rare occasions leave the API listening. If a later start
-# reports the port in use, kill the lingering process (e.g. `pkill -f
-# Taskdeck.Api`).
+# Note: --stop kills each recorded launcher PID together with its whole process
+# tree (the real Kestrel API and Vite node are children/grandchildren), so the
+# API (custom or default port) and 5173 are released. PIDs are stored with the
+# process name so a recycled PID is not mistaken for the stack.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,22 +49,50 @@ info() { printf '\033[90m[dev-up] %s\033[0m\n' "$1"; }
 warn() { printf '\033[33m[dev-up] %s\033[0m\n' "$1" >&2; }
 fatal() { printf '\033[31m[dev-up] FATAL: %s\033[0m\n' "$1" >&2; exit 1; }
 
+# Recursively terminate a process and its whole descendant tree, depth-first.
+# `dotnet run` / `npm run dev` are launchers whose real port-holders (Kestrel,
+# the Vite node) are children — and the node is often a GRANDCHILD (npm -> sh ->
+# node), which `pkill -P` (direct children only) would miss. Walking the tree
+# with repeated `pgrep -P` mirrors the Windows `taskkill /T` whole-tree kill so
+# ports 5000/5173 are actually released (H1).
+kill_tree() {
+  local _pid="$1" _child
+  if command -v pgrep >/dev/null 2>&1; then
+    for _child in $(pgrep -P "$_pid" 2>/dev/null); do
+      kill_tree "$_child"
+    done
+  fi
+  kill "$_pid" 2>/dev/null || true
+}
+
+# Best-effort guard against PID reuse: a stale PID file can name a PID the OS
+# has since recycled to an unrelated process. Returns 0 (treat as ours) when the
+# live process name contains the expected token, OR when the name can't be read
+# (degrade to prior PID-only behavior). Returns 1 only on a clear name mismatch,
+# so we never kill / abort over an unrelated process.
+pid_is_ours() {
+  local _pid="$1" _expected="$2" _comm
+  [[ -z "$_expected" ]] && return 0
+  _comm="$(ps -p "$_pid" -o comm= 2>/dev/null | tr -d ' ')"
+  [[ -z "$_comm" ]] && return 0
+  case "$_comm" in
+    *"$_expected"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 stop_stack() {
   if [[ ! -f "$PID_FILE" ]]; then
     info "No PID file at $PID_FILE - nothing to stop."
     return 0
   fi
-  while read -r pid; do
+  # PID file lines are "<pid> <name>"; <name> identifies the launched process so
+  # we skip PIDs the OS may have recycled to something unrelated.
+  while read -r pid name; do
     [[ -z "$pid" ]] && continue
-    if kill -0 "$pid" 2>/dev/null; then
-      step "Stopping PID $pid..."
-      # `dotnet run` / `npm run dev` are launchers; the real Kestrel API and
-      # Vite node processes are children. Kill the children first so the ports
-      # (API + 5173) are released, not just the parent launcher (H1).
-      if command -v pkill >/dev/null 2>&1; then
-        pkill -P "$pid" 2>/dev/null || true
-      fi
-      kill "$pid" 2>/dev/null || true
+    if kill -0 "$pid" 2>/dev/null && pid_is_ours "$pid" "$name"; then
+      step "Stopping PID $pid (${name:-unknown}) and its children..."
+      kill_tree "$pid"
     fi
   done < "$PID_FILE"
   rm -f "$PID_FILE"
@@ -80,10 +107,7 @@ stop_started_api() {
   [[ -z "$pid" ]] && return 0
   if kill -0 "$pid" 2>/dev/null; then
     warn "Stopping background API (PID $pid) started by this run..."
-    if command -v pkill >/dev/null 2>&1; then
-      pkill -P "$pid" 2>/dev/null || true
-    fi
-    kill "$pid" 2>/dev/null || true
+    kill_tree "$pid"
   fi
   rm -f "$PID_FILE"
 }
@@ -115,9 +139,9 @@ mkdir -p "$DATA_DIR"
 # whose PIDs are all dead is stale — remove it and continue.
 if [[ -f "$PID_FILE" ]]; then
   running=0
-  while read -r pid; do
+  while read -r pid name; do
     [[ -z "$pid" ]] && continue
-    if kill -0 "$pid" 2>/dev/null; then
+    if kill -0 "$pid" 2>/dev/null && pid_is_ours "$pid" "$name"; then
       running=1
     fi
   done < "$PID_FILE"
@@ -133,16 +157,22 @@ step "Database: $DEV_DB_PATH (pinned via ConnectionStrings__DefaultConnection)"
 # Setting the connection string here beats appsettings, so the DB no longer
 # follows the launch directory (#1140 AC1).
 export ConnectionStrings__DefaultConnection="Data Source=$DEV_DB_PATH"
+# --no-launch-profile (below) skips launchSettings.json, which would otherwise
+# set ASPNETCORE_ENVIRONMENT=Development, so set it explicitly here.
 export ASPNETCORE_ENVIRONMENT="Development"
-# The launch profile's applicationUrl is fixed at :5000. Override it so the API
-# actually binds the requested port — otherwise a custom TASKDECK_API_PORT only
-# moves the readiness probe / printed URL while the API stays on 5000 (P2).
-export ASPNETCORE_URLS="http://localhost:$API_PORT"
 
 step "Starting API (dotnet run) on port $API_PORT..."
-( cd "$REPO_ROOT" && exec dotnet run --project "$API_PROJECT" ) &
+# Pass --urls AND --no-launch-profile: the `http` launch profile's applicationUrl
+# is fixed at :5000 and would override an inherited ASPNETCORE_URLS, so a custom
+# TASKDECK_API_PORT must be applied via --urls with the profile disabled, or the
+# API stays on 5000 while only the probe/printed URL move (P2).
+( cd "$REPO_ROOT" && exec dotnet run --no-launch-profile --project "$API_PROJECT" --urls "http://localhost:$API_PORT" ) &
 API_PID=$!
-echo "$API_PID" > "$PID_FILE"
+# Record the process's actual name (read live, not guessed) next to its PID so
+# --stop can detect PID reuse by comparing names like-for-like (falls back to a
+# literal when `ps` is unavailable).
+api_name="$(ps -p "$API_PID" -o comm= 2>/dev/null | tr -d ' ')"
+echo "$API_PID ${api_name:-dotnet}" > "$PID_FILE"
 
 step "Waiting for $READY_URL (up to 90s)..."
 ready=0
@@ -182,7 +212,8 @@ fi
 step "Starting Vite dev server (npm run dev)..."
 ( cd "$FRONTEND_DIR" && exec npm run dev ) &
 WEB_PID=$!
-echo "$WEB_PID" >> "$PID_FILE"
+web_name="$(ps -p "$WEB_PID" -o comm= 2>/dev/null | tr -d ' ')"
+echo "$WEB_PID ${web_name:-node}" >> "$PID_FILE"
 
 echo ""
 step "Stack is up."

@@ -35,11 +35,10 @@
     Requires: .NET 8 SDK, Node.js 24.x, npm on PATH.
     The dev database lives at %LOCALAPPDATA%\Taskdeck\taskdeck-dev.db.
 
-    -Stop tracks the `dotnet run` and `npm run dev` launcher PIDs. `dotnet run`
-    builds then runs the API as a child process, so on rare occasions stopping
-    the launcher can leave the API still listening on the port. If a later
-    start reports the port in use, close the lingering API window (or
-    `Get-Process -Name Taskdeck.Api | Stop-Process`).
+    -Stop kills each recorded launcher PID with its whole process tree via
+    `taskkill /T` (the real Kestrel API and Vite node are children), so the API
+    (custom or default port) and 5173 are released. PIDs are stored with the
+    process name so a recycled PID is not mistaken for the stack.
 #>
 
 [CmdletBinding()]
@@ -72,6 +71,23 @@ function Write-Info  { param([string]$Msg) Write-Host "[dev-up] $Msg" -Foregroun
 function Write-Warn  { param([string]$Msg) Write-Warning "[dev-up] $Msg" }
 function Write-Fatal { param([string]$Msg) Write-Error "[dev-up] FATAL: $Msg"; exit 1 }
 
+# Resolve a live process for a PID-file line ("<pid> <name>"), guarding against
+# PID reuse: returns the process only when it is alive AND (no name was recorded,
+# or its current name matches the recorded one). Returns $null for a dead PID or
+# a clear name mismatch (a recycled PID now owned by something unrelated), so we
+# never taskkill an unrelated process tree.
+function Resolve-OurProcess {
+    param([string]$Line)
+    $parts = $Line.Trim() -split '\s+', 2
+    $procId = ($parts[0] -as [int])
+    if (-not $procId) { return $null }
+    $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+    if (-not $proc) { return $null }
+    $recordedName = if ($parts.Count -gt 1) { $parts[1] } else { "" }
+    if ($recordedName -and $proc.ProcessName -ne $recordedName) { return $null }
+    return $proc
+}
+
 # ---------------------------------------------------------------------------
 # Stop mode
 # ---------------------------------------------------------------------------
@@ -81,10 +97,9 @@ function Stop-Stack {
         return
     }
     foreach ($line in Get-Content $PidFile) {
-        $procId = ($line -as [int])
-        if (-not $procId) { continue }
-        $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+        $proc = Resolve-OurProcess -Line $line
         if ($proc) {
+            $procId = $proc.Id
             Write-Step "Stopping PID $procId ($($proc.ProcessName))..."
             # `dotnet run` / `npm run dev` are launchers; the real Kestrel API
             # and Vite node processes are children. taskkill /T kills the whole
@@ -157,8 +172,7 @@ if (-not (Test-Path $DataDir)) {
 if (Test-Path $PidFile) {
     $running = $false
     foreach ($line in Get-Content $PidFile) {
-        $procId = ($line -as [int])
-        if ($procId -and (Get-Process -Id $procId -ErrorAction SilentlyContinue)) {
+        if (Resolve-OurProcess -Line $line) {
             $running = $true
         }
     }
@@ -174,18 +188,21 @@ Write-Step "Database: $DevDbPath (pinned via ConnectionStrings__DefaultConnectio
 # Env for the API process. Setting the connection string here beats appsettings,
 # so the DB no longer follows the launch directory (#1140 AC1).
 $env:ConnectionStrings__DefaultConnection = "Data Source=$DevDbPath"
+# --no-launch-profile (below) skips launchSettings.json, which would otherwise
+# set ASPNETCORE_ENVIRONMENT=Development, so set it explicitly here.
 $env:ASPNETCORE_ENVIRONMENT = "Development"
-# The launch profile's applicationUrl is fixed at :5000. Override it so the API
-# actually binds the requested port — otherwise a custom -ApiPort only moves the
-# readiness probe / printed URL while the API stays on 5000 (P2).
-$env:ASPNETCORE_URLS = "http://localhost:$ApiPort"
 
 Write-Step "Starting API (dotnet run) on port $ApiPort..."
+# Pass --urls AND --no-launch-profile: the `http` launch profile's applicationUrl
+# is fixed at :5000 and would override an inherited ASPNETCORE_URLS, so a custom
+# -ApiPort must be applied via --urls with the profile disabled, or the API stays
+# on 5000 while only the probe/printed URL move (P2).
 $apiProc = Start-Process -FilePath "dotnet" `
-    -ArgumentList @("run", "--project", $ApiProject) `
+    -ArgumentList @("run", "--no-launch-profile", "--project", $ApiProject, "--urls", "http://localhost:$ApiPort") `
     -WorkingDirectory $RepoRoot `
     -PassThru -WindowStyle Minimized
-"$($apiProc.Id)" | Set-Content $PidFile
+# Record "<pid> <name>" so -Stop can detect PID reuse by comparing names.
+"$($apiProc.Id) $($apiProc.ProcessName)" | Set-Content $PidFile
 
 Write-Step "Waiting for $ReadyUrl (up to 90s)..."
 $ready = $false
@@ -242,7 +259,7 @@ $webProc = Start-Process -FilePath "npm" `
     -ArgumentList @("run", "dev") `
     -WorkingDirectory $FrontendDir `
     -PassThru -WindowStyle Minimized
-Add-Content -Path $PidFile -Value "$($webProc.Id)"
+Add-Content -Path $PidFile -Value "$($webProc.Id) $($webProc.ProcessName)"
 
 Write-Host ""
 Write-Step "Stack is up."
