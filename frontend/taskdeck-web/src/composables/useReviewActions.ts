@@ -16,6 +16,11 @@ export function useReviewActions(
   const diffRenderPerf = usePerformanceMark('proposal-diff-render')
 
   const proposalActionBusyId = ref<string | null>(null)
+  // Bulk dismiss has no single proposal id to track, so it gets its own
+  // in-flight flag. Surfaced into the shared `busy` state so the bulk button
+  // disables, re-entry is blocked, and the keymap/per-proposal actions are
+  // gated while a bulk clear is running. #1161
+  const bulkDismissBusy = ref(false)
   const selectedDiffProposalId = ref<string | null>(null)
   const selectedDiff = ref<string | null>(null)
   let latestDiffRequestId = 0
@@ -125,6 +130,10 @@ export function useReviewActions(
   }
 
   async function handleDismissApplied() {
+    // Block re-entry: a second bulk request while the first is in flight would
+    // race on proposals.value and fire duplicate dismiss calls.
+    if (bulkDismissBusy.value) return
+
     const ids = dismissableProposalIds.value
     if (ids.length === 0) {
       toast.info('No completed proposals to clear.')
@@ -132,6 +141,7 @@ export function useReviewActions(
     }
 
     try {
+      bulkDismissBusy.value = true
       const result = await automationApi.dismissProposals(ids)
       if (result.dismissed === ids.length) {
         const dismissedSet = new Set(ids)
@@ -142,11 +152,14 @@ export function useReviewActions(
       toast.success(`Cleared ${result.dismissed} completed proposal${result.dismissed === 1 ? '' : 's'}.`)
     } catch (e: unknown) {
       toast.error(getErrorDisplay(e, 'Failed to clear proposals').message)
+    } finally {
+      bulkDismissBusy.value = false
     }
   }
 
   return {
     proposalActionBusyId,
+    bulkDismissBusy,
     selectedDiffProposalId,
     selectedDiff,
     handleApproveProposal,
