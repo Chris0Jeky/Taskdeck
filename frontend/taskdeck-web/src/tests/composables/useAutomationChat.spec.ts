@@ -442,5 +442,43 @@ describe('useAutomationChat', () => {
       // write it to newSessionBoardId after the scope is gone.
       expect(chat.newSessionBoardId.value).toBe('')
     })
+
+    it('does not create a session after disposal lands while loading board options', async () => {
+      // Defer getBoards so disposal can land in the microtask gap between the
+      // boards resolving (loadBoardOptions returns true) and handleCreateSession
+      // resuming after its `await loadBoardOptions()`.
+      let resolveBoards!: (value: unknown[]) => void
+      const boardsPromise = new Promise<unknown[]>((resolve) => { resolveBoards = resolve })
+      boardsApiMocks.getBoards.mockReturnValue(boardsPromise)
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+
+      chat.newSessionTitle.value = 'Test Session'
+      chat.newSessionBoardId.value = 'Project Alpha'
+
+      // Kick off creation without awaiting; it suspends on `await loadBoardOptions()`.
+      const pending = chat.handleCreateSession()
+
+      // Dispose AFTER boards resolve but BEFORE handleCreateSession resumes.
+      // loadBoardOptions's own internal continuation is registered first, so it
+      // resolves to true, then this fires, then handleCreateSession resumes --
+      // exactly the post-load, post-dispose race the guard covers.
+      void boardsPromise.then(() => {
+        for (const fn of scopeDisposeFns) fn()
+      })
+
+      resolveBoards([{ id: 'b1', name: 'Project Alpha', description: null, isArchived: false }])
+
+      // Drain microtasks so the deferred dispose and the resumed continuation run.
+      await new Promise((resolve) => setTimeout(resolve))
+      await pending
+
+      // Post-dispose the function must bail before creating the session or
+      // emitting any toast, and must not leave creatingSession stuck true.
+      expect(chatApiMocks.createSession).not.toHaveBeenCalled()
+      expect(toastMocks.error).not.toHaveBeenCalled()
+      expect(chat.creatingSession.value).toBe(false)
+    })
   })
 })

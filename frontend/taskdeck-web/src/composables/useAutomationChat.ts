@@ -225,6 +225,8 @@ export function useAutomationChat() {
       }
     }
 
+    if (isDisposed) return
+
     const normalizedBoardId = normalizeSelectedBoardId(newSessionBoardId.value)
     if (newSessionBoardId.value.trim() && !normalizedBoardId) {
       toast.error('Choose a board from the list or leave board context blank.')
