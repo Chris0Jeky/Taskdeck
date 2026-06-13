@@ -55,14 +55,21 @@ function selectMode(mode: PaperMode) {
     </p>
 
     <section class="td-panel">
-      <div class="td-section-title">Theme</div>
-      <div class="td-theme-segments" role="group" aria-label="Theme">
+      <div id="td-appearance-theme-label" class="td-section-title">Theme</div>
+      <!--
+        Single-select segmented control. Kept as <button> + aria-pressed to match
+        the project-wide convention (PaperStyleGuideView, Today/Review rails, etc.
+        all use aria-pressed; no role="radiogroup" exists anywhere in the app). The
+        group is labelled by the visible "Theme" heading via aria-labelledby.
+      -->
+      <div class="td-theme-segments" role="group" aria-labelledby="td-appearance-theme-label">
         <button
           v-for="option in options"
           :key="option.mode"
           type="button"
           class="td-theme-segment"
           :class="{ 'td-theme-segment--active': activeMode === option.mode }"
+          :data-mode="option.mode"
           :aria-pressed="activeMode === option.mode"
           @click="selectMode(option.mode)"
         >
@@ -75,6 +82,13 @@ function selectMode(mode: PaperMode) {
 </template>
 
 <style scoped>
+/*
+ * Intentionally styled with the Legacy/Obsidian --td-* design tokens, matching
+ * every other /workspace/settings/* view. Paper does not redefine --td-*, so
+ * inside the Paper shell this panel renders in the Obsidian palette (readable,
+ * just not Paper-skinned) until the settings surfaces are Paper-tokenized in a
+ * later archive-pivot wave. Deliberately not re-skinned in this slice.
+ */
 .td-appearance-settings {
   max-width: 640px;
 }
