@@ -249,6 +249,16 @@ const navCatalog: NavItem[] = [
     keywords: 'preferences notifications',
   },
   {
+    id: 'appearance',
+    label: 'Appearance',
+    icon: 'T',
+    path: '/workspace/settings/appearance',
+    flag: null,
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'appearance theme paper night dark light obsidian legacy',
+  },
+  {
     id: 'access',
     label: 'Access',
     icon: 'A',
