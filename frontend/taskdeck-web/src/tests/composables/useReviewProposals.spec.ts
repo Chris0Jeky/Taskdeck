@@ -332,6 +332,18 @@ describe('useReviewProposals', () => {
         expect(isProposalStale(p, NOW)).toBe(expected)
       }
     })
+
+    it('isProposalStale is defensive against null proposal and bad createdAt', () => {
+      // Malformed/partial data must not throw and must not mis-flag staleness.
+      // Build raw objects so makeProposal's `?? default` cannot resupply a valid
+      // createdAt and mask the guard.
+      const base = makeProposal({ status: 'PendingReview' })
+      expect(isProposalStale(null as any, NOW)).toBe(false)
+      expect(isProposalStale({ ...base, createdAt: undefined } as any, NOW)).toBe(false)
+      expect(isProposalStale({ ...base, createdAt: 'not-a-date' } as any, NOW)).toBe(false)
+      // new Date(null) -> epoch would otherwise read as wildly stale; rejected.
+      expect(isProposalStale({ ...base, createdAt: null } as any, NOW)).toBe(false)
+    })
   })
 
   describe('summaryCards', () => {

@@ -45,8 +45,14 @@ export function isProposalRejectActionable(proposal: ApiProposal, isExpired: boo
 }
 
 export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
-  if (normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
-  return nowMs - new Date(proposal.createdAt).getTime() >= STALE_PROPOSAL_MS
+  if (!proposal || normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
+  // Guard against missing/invalid createdAt: a falsy value (new Date(null) is
+  // the epoch) or an unparseable string (new Date(...).getTime() is NaN) would
+  // otherwise mis-flag the proposal as wildly stale.
+  if (!proposal.createdAt) return false
+  const createdMs = new Date(proposal.createdAt).getTime()
+  if (Number.isNaN(createdMs)) return false
+  return nowMs - createdMs >= STALE_PROPOSAL_MS
 }
 
 export function useReviewProposals() {
