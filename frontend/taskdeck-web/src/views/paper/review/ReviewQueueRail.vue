@@ -25,12 +25,15 @@ const props = withDefaults(
     activeId: string | null
     awaitingCount: number
     staleCount: number
+    /** Board-scoped count of settled proposals; ≥2 reveals the bulk file-away action. */
+    dismissableCount?: number
     recentlyApplied: RecentlyAppliedRow[]
     cadence?: number[]
     applyRate?: number
     undoRate?: number
   }>(),
   {
+    dismissableCount: 0,
     cadence: () => [4, 3, 5, 2, 4, 1, 3],
     applyRate: 0.71,
     undoRate: 0.04,
@@ -40,6 +43,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   (event: 'select', id: string): void
   (event: 'filter-change', filter: QueueFilter): void
+  (event: 'file-away-all'): void
 }>()
 
 const filter = ref<QueueFilter>('all')
@@ -83,6 +87,14 @@ function setFilter(next: QueueFilter) {
           @click="setFilter(key)"
         >{{ key === 'all' ? 'All' : key === 'mine' ? 'Mine' : 'Stale' }}</button>
       </div>
+      <button
+        v-if="dismissableCount >= 2"
+        type="button"
+        class="paper-review-rail__file-away"
+        data-testid="queue-file-away-all"
+        :aria-label="`File away ${dismissableCount} settled proposals`"
+        @click="emit('file-away-all')"
+      >File away {{ dismissableCount }} settled</button>
     </div>
 
     <div v-if="visible.length === 0" class="paper-review-rail__empty tk-meta">
@@ -145,6 +157,23 @@ function setFilter(next: QueueFilter) {
   background: var(--paper-card);
   color: var(--ink);
   border-color: var(--line);
+}
+.paper-review-rail__file-away {
+  margin-top: 10px;
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  padding: 5px 8px;
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--mute);
+  cursor: pointer;
+  text-align: left;
+}
+.paper-review-rail__file-away:hover {
+  color: var(--ink);
+  border-color: var(--ink);
 }
 .paper-review-rail__empty {
   padding: 14px 18px;
