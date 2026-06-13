@@ -123,6 +123,8 @@ describe('KeyboardShortcutsHelp', () => {
     expect(markup).not.toMatch(/\bbg-gray-\d/)
     expect(markup).not.toMatch(/\bborder-gray-\d/)
     expect(markup).not.toMatch(/\b(?:bg|text|border)-blue-\d/)
+    expect(markup).not.toMatch(/\b(?:bg|text|border)-red-\d/)
+    expect(markup).not.toMatch(/text-white\b/)
     wrapper.unmount()
   })
 })
