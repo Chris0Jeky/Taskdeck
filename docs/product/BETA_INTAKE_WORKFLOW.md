@@ -2,6 +2,8 @@
 
 Last Updated: 2026-03-27
 
+> **⚠️ NOT IN USE — parked by the 2026-06-13 archive pivot.** This is GTM / beta-launch material for distributing Taskdeck as a product, which is permanently de-scoped (Taskdeck is personal-use only, never distributed). Retained as a historical record, not an active workstream. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
+
 ## Purpose
 
 Define the process for acquiring, onboarding, and retaining early beta users. This is an operator document — it describes what the maintainer does, not what users see.

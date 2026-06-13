@@ -7,8 +7,8 @@ This folder contains product-facing guides that help users understand, use, demo
 - `DEMO_PLAYBOOK.md`
 - `DEMO_SCRIPT.md`
 - `SAUL_DEMO_REHEARSAL_CONTRACT.md`
-- `LANDING_COPY.md`
-- `BETA_INTAKE_WORKFLOW.md`
+- `LANDING_COPY.md` — **parked by the archive pivot** (GTM/beta, not in use)
+- `BETA_INTAKE_WORKFLOW.md` — **parked by the archive pivot** (GTM/beta, not in use)
 - `DOGFOODING_GUIDE.md`
 - `SCENARIOS.md`
 

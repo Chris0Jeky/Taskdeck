@@ -2,6 +2,8 @@
 
 Last Updated: 2026-03-27
 
+> **⚠️ NOT IN USE — parked by the 2026-06-13 archive pivot.** This is GTM / beta-launch material for distributing Taskdeck as a product, which is permanently de-scoped (Taskdeck is personal-use only, never distributed). Retained as a historical record, not an active workstream. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
+
 ## Purpose
 
 Thesis-aligned landing page content for early beta positioning. Every claim maps to shipped functionality. This is source material for a future landing page — not a deployed page itself.
