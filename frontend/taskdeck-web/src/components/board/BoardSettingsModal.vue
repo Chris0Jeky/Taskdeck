@@ -41,8 +41,8 @@ const lifecycleActionLabel = computed(() => {
 
 const lifecycleActionButtonClass = computed(() => (
   props.board.isArchived
-    ? 'px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 border border-blue-300 rounded-md transition-colors'
-    : 'px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-300 rounded-md transition-colors'
+    ? 'px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 border border-primary/40 rounded-md transition-colors'
+    : 'px-4 py-2 text-sm font-medium text-error hover:text-error/80 hover:bg-error/10 border border-error/40 rounded-md transition-colors'
 ))
 
 const lifecycleDescription = computed(() => (
@@ -137,13 +137,13 @@ useEscapeToClose(() => props.isOpen, handleClose)
 
     <!-- Modal -->
     <div class="flex min-h-full items-center justify-center p-4">
-      <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6" @click.stop>
+      <div class="relative bg-surface-container rounded-lg shadow-xl max-w-md w-full p-6 border border-outline-variant/30" @click.stop>
         <!-- Header -->
         <div class="flex items-start justify-between mb-4">
-          <h2 class="text-2xl font-semibold text-gray-900">Board Settings</h2>
+          <h2 class="text-2xl font-semibold text-on-surface">Board Settings</h2>
           <button
             @click="handleClose"
-            class="text-gray-400 hover:text-gray-600 transition-colors"
+            class="text-on-surface-variant hover:text-on-surface transition-colors"
             aria-label="Close board settings"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -156,7 +156,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
         <div class="space-y-4">
           <!-- Name -->
           <div>
-            <label for="board-name" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="board-name" class="block text-sm font-medium text-on-surface-variant mb-1">
               Board Name *
             </label>
             <input
@@ -164,41 +164,41 @@ useEscapeToClose(() => props.isOpen, handleClose)
               v-model="name"
               type="text"
               required
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
               placeholder="My Board"
             />
           </div>
 
           <!-- Description -->
           <div>
-            <label for="board-description" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="board-description" class="block text-sm font-medium text-on-surface-variant mb-1">
               Description
             </label>
             <textarea
               id="board-description"
               v-model="description"
               rows="3"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
               placeholder="What is this board for?"
             ></textarea>
           </div>
 
           <!-- Lifecycle State -->
-          <div class="border border-gray-200 rounded-md p-4">
+          <div class="border border-outline-variant/30 rounded-md p-4">
             <div class="flex flex-col gap-1">
-              <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Lifecycle</span>
-              <span class="text-sm text-gray-700">
+              <span class="text-xs font-semibold uppercase tracking-wide text-on-surface-variant">Lifecycle</span>
+              <span class="text-sm text-on-surface">
                 {{ board.isArchived ? 'Archived' : 'Active' }}
               </span>
             </div>
-            <p class="mt-1 text-xs text-gray-500">
+            <p class="mt-1 text-xs text-on-surface-variant">
               {{ lifecycleDescription }}
             </p>
           </div>
 
           <!-- Metadata -->
-          <div class="pt-4 border-t border-gray-200">
-            <div class="text-xs text-gray-500 space-y-1">
+          <div class="pt-4 border-t border-outline-variant/30">
+            <div class="text-xs text-on-surface-variant space-y-1">
               <p>Created: {{ new Date(board.createdAt).toLocaleString() }}</p>
               <p>Last updated: {{ new Date(board.updatedAt).toLocaleString() }}</p>
             </div>
@@ -219,7 +219,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
             <button
               @click="handleClose"
               type="button"
-              class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-md transition-colors"
+              class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
             >
               Cancel
             </button>
@@ -227,7 +227,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
               @click="handleSave"
               :disabled="!isFormValid()"
               type="button"
-              class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+              class="px-4 py-2 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all"
             >
               Save Changes
             </button>
