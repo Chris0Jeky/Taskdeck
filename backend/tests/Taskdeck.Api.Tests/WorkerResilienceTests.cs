@@ -56,6 +56,27 @@ public class WorkerResilienceTests
     }
 
     [Fact]
+    public async Task LlmQueueWorker_ForwardsPendingUpdatedAtToClaim()
+    {
+        var item = CreatePendingItem();
+        // Snapshot the value the worker must forward before the claim mutates UpdatedAt.
+        var expectedUpdatedAt = item.UpdatedAt;
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var planner = new FakeAutomationPlannerService();
+        using var sp = BuildServiceProvider(queueRepo, planner);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        // Regression guard: forwarding default/now instead of the pending item's actual
+        // UpdatedAt would silently stall the queue in production (UPDATE matches no rows)
+        // while leaving this fake's claim path green.
+        queueRepo.TryClaimProcessingCalls.Should().ContainSingle();
+        queueRepo.TryClaimProcessingCalls[0].RequestId.Should().Be(item.Id);
+        queueRepo.TryClaimProcessingCalls[0].ExpectedUpdatedAt.Should().Be(expectedUpdatedAt);
+    }
+
+    [Fact]
     public async Task LlmQueueWorker_DatabaseThrowsOnGetStatus_WorkerDoesNotCrash()
     {
         // Simulate DB unavailability on the queue read — the outer ExecuteAsync loop
@@ -426,6 +447,8 @@ public class WorkerResilienceTests
             => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public Task<bool> TryClaimProcessingAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class FakeLlmQueueRepository : ILlmQueueRepository
@@ -474,6 +497,23 @@ public class WorkerResilienceTests
             => Task.FromResult(_pending.FirstOrDefault(i => i.Status == RequestStatus.Pending));
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
+
+        // Records the (requestId, expectedUpdatedAt) the worker forwards on each claim so
+        // tests can assert it equals the pending item's actual UpdatedAt. Passing default/now
+        // instead would make the production optimistic-concurrency UPDATE match nothing and
+        // stall the queue while this fake still claims successfully.
+        public List<(Guid RequestId, DateTimeOffset ExpectedUpdatedAt)> TryClaimProcessingCalls { get; } = [];
+
+        public Task<bool> TryClaimProcessingAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
+        {
+            TryClaimProcessingCalls.Add((requestId, expectedUpdatedAt));
+            var item = _pending.Concat(_processing).FirstOrDefault(i => i.Id == requestId);
+            if (item != null && item.Status == RequestStatus.Pending)
+            {
+                item.MarkAsProcessing();
+            }
+            return Task.FromResult(true);
+        }
     }
 
     private sealed class FakeAutomationPlannerService : IAutomationPlannerService

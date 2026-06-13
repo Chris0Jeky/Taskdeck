@@ -212,4 +212,39 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 
         return rowsAffected > 0;
     }
+
+    public async Task<bool> TryClaimProcessingAsync(
+        Guid requestId,
+        DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var claimedAt = DateTimeOffset.UtcNow;
+        var rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE LlmRequests
+            SET Status = {(int)RequestStatus.Processing}, UpdatedAt = {claimedAt}
+            WHERE Id = {requestId}
+              AND Status = {(int)RequestStatus.Pending}
+              AND UpdatedAt = {expectedUpdatedAt}
+              AND RequestType NOT LIKE {CaptureRequestTypeLike}
+            """,
+            cancellationToken);
+
+        if (rowsAffected == 0)
+        {
+            return false;
+        }
+
+        // The raw-SQL UPDATE bypasses the EF change tracker. If this context already
+        // tracks the entity (e.g. it was materialized by GetByStatusAsync), reload it so
+        // callers holding the instance -- and GetByIdAsync, whose FindAsync serves the
+        // identity map -- observe the claimed Processing state instead of stale Pending.
+        var tracked = _context.LlmRequests.Local.FirstOrDefault(lr => lr.Id == requestId);
+        if (tracked != null)
+        {
+            await _context.Entry(tracked).ReloadAsync(cancellationToken);
+        }
+
+        return true;
+    }
 }
