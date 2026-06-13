@@ -294,7 +294,22 @@ public static class FirstRunBootstrapper
 
         // Write into the local config file so the value is picked up by
         // AddInfrastructure later in the startup pipeline.
-        PersistValue("ConnectionStrings", "DefaultConnection", resolvedConnectionString);
+        try
+        {
+            PersistValue("ConnectionStrings", "DefaultConnection", resolvedConnectionString);
+        }
+        catch (IOException ex)
+        {
+            // The cross-process bootstrap lock may be unavailable on locked-down
+            // hosts. Fall back to setting the value in-memory so the current
+            // startup still succeeds with a relative DB path.
+            configuration["ConnectionStrings:DefaultConnection"] = resolvedConnectionString;
+            logger.LogWarning(
+                "First-run: Could not persist DB path to {ConfigFile} ({Error}). " +
+                "A transient in-memory connection string has been set instead.",
+                LocalConfigPath, ex.Message);
+            return;
+        }
 
         if (configuration is IConfigurationRoot root)
         {
@@ -349,18 +364,37 @@ public static class FirstRunBootstrapper
         // one finishes, producing the `'}' is invalid after a single JSON
         // value` parse error seen in CI.
         var mutexName = BuildMutexName(path);
-        using var mutex = new System.Threading.Mutex(initiallyOwned: false, name: mutexName);
+        Mutex? mutex = null;
         var acquired = false;
         try
         {
             try
             {
+                // The named (Global\ on Windows) mutex ctor AND WaitOne can throw on
+                // locked-down or multi-user hosts -- e.g. when another user already
+                // owns the name. That must NOT crash API startup.
+                mutex = new System.Threading.Mutex(initiallyOwned: false, name: mutexName);
                 acquired = mutex.WaitOne(TimeSpan.FromSeconds(10));
             }
             catch (AbandonedMutexException)
             {
                 // A previous holder crashed without releasing; we still own it now.
                 acquired = true;
+            }
+            catch (Exception ex) when (
+                ex is UnauthorizedAccessException
+                    or WaitHandleCannotBeOpenedException
+                    or IOException)
+            {
+                // Could not create/open or wait on the cross-process lock. Degrade
+                // gracefully: skip the persistent write entirely so two unsynchronized
+                // writers never race to persist different keys. The caller's catch
+                // block will fall back to an in-memory value.
+                Console.Error.WriteLine(
+                    $"[FirstRun] WARNING: Could not acquire the cross-process bootstrap " +
+                    $"lock ({ex.Message}). Skipping persistent write.");
+                throw new IOException(
+                    "Cross-process bootstrap lock unavailable; skipping persistent write.", ex);
             }
 
             JsonObject root;
@@ -404,7 +438,21 @@ public static class FirstRunBootstrapper
             var dir = Path.GetDirectoryName(path)!;
             Directory.CreateDirectory(dir);
             var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-            File.WriteAllText(tempPath, payload);
+
+            if (!OperatingSystem.IsWindows())
+            {
+                // Create the file empty and restrict to 0600 BEFORE writing the payload,
+                // eliminating the TOCTOU window where secrets would be world-readable
+                // under the default umask (022).
+                File.Create(tempPath).Dispose();
+                File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.WriteAllText(tempPath, payload);
+            }
+            else
+            {
+                File.WriteAllText(tempPath, payload);
+            }
+
             try
             {
                 ReplaceFileWithRetry(tempPath, path);
@@ -420,8 +468,10 @@ public static class FirstRunBootstrapper
         {
             if (acquired)
             {
-                mutex.ReleaseMutex();
+                try { mutex?.ReleaseMutex(); }
+                catch (ApplicationException) { }
             }
+            mutex?.Dispose();
         }
     }
 
@@ -445,7 +495,7 @@ public static class FirstRunBootstrapper
         }
     }
 
-    private static string BuildMutexName(string path)
+    internal static string BuildMutexName(string path)
     {
         // Named mutex must be stable per-path and fit OS name rules.
         // Use SHA256 of the absolute path; prefix with "Global\" on Windows

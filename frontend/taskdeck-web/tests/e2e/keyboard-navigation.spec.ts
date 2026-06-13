@@ -142,32 +142,56 @@ test('Escape from command palette should close it and return to the prior view',
 })
 
 // --- Shortcut help panel ---
+// AppShell owns the `?` toggle in both shells: the legacy shell opens
+// ShellKeyboardHelp (dialog labelled "Keyboard shortcuts"), and Paper mode
+// opens PaperShortcutsOverlay ("The full keystroke ledger"). Both variants
+// are covered below.
 
 test('question mark shortcut should toggle keyboard shortcuts help', async ({ page }) => {
   await page.goto('/workspace/boards')
   await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
 
-  // Ensure no input is capturing keystrokes
-  await page.keyboard.press('Escape')
-
-  // Press ? to open shortcut help
+  // Press ? to open shortcut help (ShellKeyboardHelp in the legacy shell)
   await page.keyboard.press('?')
 
-  // Look for a shortcuts panel/dialog/overlay
-  const shortcutsPanel = page
-    .getByRole('dialog', { name: /shortcut|keyboard|help/i })
-    .or(page.locator('[data-shortcuts-help]'))
-    .or(page.getByText(/keyboard shortcuts/i))
-    .first()
+  const shortcutsPanel = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+  await expect(shortcutsPanel).toBeVisible()
+  await expect(shortcutsPanel.getByRole('heading', { name: 'Keyboard Shortcuts' })).toBeVisible()
 
-  if (await shortcutsPanel.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await expect(shortcutsPanel).toBeVisible()
+  // Press ? again to toggle it closed
+  await page.keyboard.press('?')
+  await expect(shortcutsPanel).toHaveCount(0)
 
-    // Press ? again or Escape to dismiss
-    await page.keyboard.press('Escape')
-    await expect(shortcutsPanel).not.toBeVisible()
-  } else {
-    // If the shortcut help is not implemented, skip gracefully
-    test.skip()
-  }
+  // Reopen, then Escape dismisses via the escape stack
+  await page.keyboard.press('?')
+  await expect(shortcutsPanel).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(shortcutsPanel).toHaveCount(0)
+})
+
+test('question mark shortcut should toggle the Paper shortcuts overlay in Paper mode', async ({ page }) => {
+  // Seed Paper mode before app load (same pattern as paper-night.spec.ts)
+  await page.addInitScript(() => {
+    if (!window.localStorage.getItem('td.paper.mode')) {
+      window.localStorage.setItem('td.paper.mode', 'paper')
+    }
+  })
+
+  await page.goto('/workspace/boards')
+  await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
+
+  // Press ? to open the Paper shortcuts overlay
+  await page.keyboard.press('?')
+
+  const overlay = page.getByRole('dialog', { name: /keystroke ledger/i })
+  await expect(overlay).toBeVisible()
+
+  // The three shortcut groups render real content
+  await expect(overlay.getByText('Navigate', { exact: true })).toBeVisible()
+  await expect(overlay.getByText('Capture & Review', { exact: true })).toBeVisible()
+  await expect(overlay.getByText('Command palette')).toBeVisible()
+
+  // Escape dismisses the overlay
+  await page.keyboard.press('Escape')
+  await expect(overlay).toHaveCount(0)
 })

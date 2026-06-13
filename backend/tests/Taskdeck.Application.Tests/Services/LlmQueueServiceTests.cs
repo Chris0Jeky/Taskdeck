@@ -354,14 +354,21 @@ public class LlmQueueServiceTests
     #region ProcessNextRequestAsync Tests
 
     [Fact]
-    public async Task ProcessNextRequestAsync_ShouldReturnSuccess_WhenRequestExists()
+    public async Task ProcessNextRequestAsync_ShouldReturnSuccess_WhenClaimSucceeds()
     {
         // Arrange
         var userId = Guid.NewGuid();
         var request = new LlmRequest(userId, "voicenote", "payload text");
+        var pendingUpdatedAt = request.UpdatedAt;
 
         _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
             .ReturnsAsync(new[] { request });
+
+        // Per the ILlmQueueRepository contract, a successful claim refreshes the
+        // in-memory entity so it reflects the Processing state written to the database.
+        _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(request.Id, pendingUpdatedAt, default))
+            .Callback(() => request.MarkAsProcessing())
+            .ReturnsAsync(true);
 
         // Act
         var result = await _service.ProcessNextRequestAsync();
@@ -369,7 +376,7 @@ public class LlmQueueServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Status.Should().Be(RequestStatus.Processing);
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        _llmQueueRepoMock.Verify(r => r.TryClaimProcessingAsync(request.Id, pendingUpdatedAt, default), Times.Once);
     }
 
     [Fact]
@@ -401,7 +408,7 @@ public class LlmQueueServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
         captureRequest.Status.Should().Be(RequestStatus.Pending);
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+        _llmQueueRepoMock.Verify(r => r.TryClaimProcessingAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), default), Times.Never);
     }
 
     [Fact]
@@ -418,11 +425,62 @@ public class LlmQueueServiceTests
 
         _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
             .ReturnsAsync(new[] { newestNonCapture, captureRequest, oldestNonCapture });
+        _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(oldestNonCapture.Id, oldestNonCapture.UpdatedAt, default))
+            .Callback(() => oldestNonCapture.MarkAsProcessing())
+            .ReturnsAsync(true);
 
         var result = await _service.ProcessNextRequestAsync();
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Id.Should().Be(oldestNonCapture.Id);
+        result.Value.Status.Should().Be(RequestStatus.Processing);
+    }
+
+    [Fact]
+    public async Task ProcessNextRequestAsync_ShouldReturnNotFound_WhenAllClaimsFail()
+    {
+        // Arrange -- simulates concurrent claim: another worker claimed the item first
+        var userId = Guid.NewGuid();
+        var request = new LlmRequest(userId, "voicenote", "payload text");
+
+        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+            .ReturnsAsync(new[] { request });
+        _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(request.Id, request.UpdatedAt, default))
+            .ReturnsAsync(false);
+
+        // Act
+        var result = await _service.ProcessNextRequestAsync();
+
+        // Assert -- all candidates failed to claim, so NotFound
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task ProcessNextRequestAsync_ShouldTryNextCandidate_WhenFirstClaimFails()
+    {
+        // Arrange -- first candidate already claimed, second succeeds
+        var userId = Guid.NewGuid();
+        var first = new LlmRequest(userId, "summarize", "first payload");
+        var second = new LlmRequest(userId, "summarize", "second payload");
+        var baseTime = DateTimeOffset.UtcNow;
+        SetCreatedAt(first, baseTime);
+        SetCreatedAt(second, baseTime.AddMilliseconds(1));
+
+        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+            .ReturnsAsync(new[] { first, second });
+        _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(first.Id, first.UpdatedAt, default))
+            .ReturnsAsync(false);
+        _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(second.Id, second.UpdatedAt, default))
+            .Callback(() => second.MarkAsProcessing())
+            .ReturnsAsync(true);
+
+        // Act
+        var result = await _service.ProcessNextRequestAsync();
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(second.Id);
         result.Value.Status.Should().Be(RequestStatus.Processing);
     }
 

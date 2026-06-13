@@ -18,4 +18,16 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
         Guid requestId,
         DateTimeOffset expectedUpdatedAt,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims a pending non-capture request for processing using optimistic concurrency.
+    /// Sets Status from Pending to Processing and updates UpdatedAt, only if the row still has the
+    /// expected Status (Pending) and UpdatedAt values. Returns true if the claim succeeded.
+    /// On success, implementations must refresh any in-memory instance of the request they hold
+    /// (e.g. one materialized by an earlier query) so callers observe the claimed Processing state.
+    /// </summary>
+    Task<bool> TryClaimProcessingAsync(
+        Guid requestId,
+        DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken = default);
 }
