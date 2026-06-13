@@ -94,16 +94,11 @@ import {
   useReviewProposals,
 } from '../../composables/useReviewProposals'
 
-// The PaperReviewView local copies that this slice replaced — kept verbatim
-// here so the shared helpers are pinned to the EXACT prior semantics
-// (ADR-0038 / #1124 drift class). If a shared rule diverges, these expectations
-// will disagree with the helper and the test fails.
-function localIsApplyActionable(status: string, expired: boolean): boolean {
-  return (status === 'PendingReview' || status === 'Approved') && !expired
-}
-function localIsRejectActionable(status: string, expired: boolean): boolean {
-  return status === 'PendingReview' && !expired
-}
+// The apply/reject parity cases now assert against HARD-CODED truth tables (see
+// the cases array below) rather than a re-derived mirror, so a flipped rule
+// actually fails the test instead of self-confirming (ADR-0038 / #1124 drift
+// class). The one remaining local mirror is for stale, which is paired with its
+// own hard-coded .toBe() assertions in the stale test.
 function localIsStaleProposal(status: string, createdAtMs: number, nowMs: number): boolean {
   if (status !== 'PendingReview') return false
   return nowMs - createdAtMs >= 24 * 60 * 60 * 1000
@@ -221,50 +216,66 @@ describe('useReviewProposals', () => {
     })
   })
 
-  // These prove the shared actionability helpers return the SAME verdict the
-  // old PaperReviewView/Legacy local functions did, across every status. They
-  // are the regression net for the #1124 drift class (ADR-0038): if the shared
-  // rule changes, the parity assertions against the inlined local logic fail.
+  // These pin the shared actionability helpers to HARD-CODED expected verdicts
+  // across every status × expiry case (NOT a re-derived mirror of the same
+  // rule). A meaningful regression net for the #1124 drift class (ADR-0038): if
+  // a shared rule flips, the literal expectations below disagree and the test
+  // fails. The local* helpers stay imported only for the concrete-verdict test.
   describe('shared actionability helpers parity', () => {
     const NOW = new Date('2026-06-04T00:00:00Z').getTime()
     const PAST = '2026-05-01T00:00:00Z' // before NOW -> expired when status permits
     const FUTURE = '2099-01-01T00:00:00Z' // after NOW -> not yet expired
 
-    // Status × expiry matrix covering the required scenarios:
+    // Status × expiry matrix with the EXPECTED truth table baked in by hand, so
+    // the assertions can catch a rule change instead of self-confirming.
     // Pending, Approved, Approved+expired (#1124), Applied, Rejected, Expired.
-    const cases: Array<{ label: string; status: string; expiresAt: string }> = [
-      { label: 'Pending (live)', status: 'PendingReview', expiresAt: FUTURE },
-      { label: 'Pending (expired by clock)', status: 'PendingReview', expiresAt: PAST },
-      { label: 'Approved (live)', status: 'Approved', expiresAt: FUTURE },
-      { label: 'Approved + expired (#1124)', status: 'Approved', expiresAt: PAST },
-      { label: 'Applied', status: 'Applied', expiresAt: PAST },
-      { label: 'Rejected', status: 'Rejected', expiresAt: PAST },
-      { label: 'Expired', status: 'Expired', expiresAt: PAST },
+    const cases: Array<{
+      label: string
+      status: string
+      expiresAt: string
+      expectedExpired: boolean
+      expectedApply: boolean
+      expectedReject: boolean
+    }> = [
+      // Pending live: open for both apply and reject.
+      { label: 'Pending (live)', status: 'PendingReview', expiresAt: FUTURE, expectedExpired: false, expectedApply: true, expectedReject: true },
+      // Pending past expiresAt: clock-expired, so neither action is offered.
+      { label: 'Pending (expired by clock)', status: 'PendingReview', expiresAt: PAST, expectedExpired: true, expectedApply: false, expectedReject: false },
+      // Approved live: can still be applied/executed, but reject is gone.
+      { label: 'Approved (live)', status: 'Approved', expiresAt: FUTURE, expectedExpired: false, expectedApply: true, expectedReject: false },
+      // Approved + expired (#1124): can no longer be applied, and not rejectable.
+      { label: 'Approved + expired (#1124)', status: 'Approved', expiresAt: PAST, expectedExpired: true, expectedApply: false, expectedReject: false },
+      // Terminal states: never actionable, never (clock-)expired here.
+      { label: 'Applied', status: 'Applied', expiresAt: PAST, expectedExpired: false, expectedApply: false, expectedReject: false },
+      { label: 'Rejected', status: 'Rejected', expiresAt: PAST, expectedExpired: false, expectedApply: false, expectedReject: false },
+      // Expired status is expired by definition; nothing actionable.
+      { label: 'Expired', status: 'Expired', expiresAt: PAST, expectedExpired: true, expectedApply: false, expectedReject: false },
     ]
 
     it.each(cases)(
-      'isApplyActionable matches prior local logic for $label',
-      ({ status, expiresAt }) => {
+      'isApplyActionable returns the hard-coded verdict for $label',
+      ({ status, expiresAt, expectedExpired, expectedApply }) => {
         const rp = useReviewProposals()
         rp.nowMs.value = NOW
         const p = makeProposal({ status, expiresAt }) as any
         const expired = rp.isProposalExpired(p)
-        const expected = localIsApplyActionable(status, expired)
-        expect(rp.isApplyActionable(p)).toBe(expected)
-        expect(isProposalApplyActionable(p, expired)).toBe(expected)
+        // Pin the expiry derivation too, so a broken clock rule is also caught.
+        expect(expired).toBe(expectedExpired)
+        expect(rp.isApplyActionable(p)).toBe(expectedApply)
+        expect(isProposalApplyActionable(p, expired)).toBe(expectedApply)
       },
     )
 
     it.each(cases)(
-      'isRejectActionable matches prior local logic for $label',
-      ({ status, expiresAt }) => {
+      'isRejectActionable returns the hard-coded verdict for $label',
+      ({ status, expiresAt, expectedExpired, expectedReject }) => {
         const rp = useReviewProposals()
         rp.nowMs.value = NOW
         const p = makeProposal({ status, expiresAt }) as any
         const expired = rp.isProposalExpired(p)
-        const expected = localIsRejectActionable(status, expired)
-        expect(rp.isRejectActionable(p)).toBe(expected)
-        expect(isProposalRejectActionable(p, expired)).toBe(expected)
+        expect(expired).toBe(expectedExpired)
+        expect(rp.isRejectActionable(p)).toBe(expectedReject)
+        expect(isProposalRejectActionable(p, expired)).toBe(expectedReject)
       },
     )
 
