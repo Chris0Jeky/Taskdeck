@@ -104,6 +104,7 @@ jobs:
           cache: true
           cache-dependency-path: |
             backend/Taskdeck.sln
+            backend/Directory.Packages.props
             backend/**/*.csproj
 
       - name: Download frontend dist
