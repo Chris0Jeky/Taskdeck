@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
@@ -27,6 +27,11 @@ export function useAutomationChat() {
   let boardOptionsRequest: Promise<boolean> | null = null
   const chatHealth = ref<ChatProviderHealth | null>(null)
   const chatHealthLoadError = ref<string | null>(null)
+
+  // Set once the owning scope is disposed; guards async continuations so
+  // neither a resolved request nor an error racing teardown writes reactive
+  // state after the scope is gone.
+  let isDisposed = false
 
   const newSessionTitle = ref('')
   const newSessionBoardId = ref('')
@@ -166,21 +171,27 @@ export function useAutomationChat() {
   async function loadSessions() {
     try {
       loadingSessions.value = true
-      sessions.value = await chatApi.getMySessions()
+      const result = await chatApi.getMySessions()
+      if (isDisposed) return
+      sessions.value = result
       if (!selectedSession.value && sessions.value.length > 0) {
         await loadSession(sessions.value[0]!.id)
       }
     } catch (e: unknown) {
+      if (isDisposed) return
       toast.error(getErrorDisplay(e, 'Failed to load chat sessions').message)
     } finally {
-      loadingSessions.value = false
+      if (!isDisposed) loadingSessions.value = false
     }
   }
 
   async function loadSession(sessionId: string) {
     try {
-      selectedSession.value = await chatApi.getSession(sessionId)
+      const result = await chatApi.getSession(sessionId)
+      if (isDisposed) return
+      selectedSession.value = result
     } catch (e: unknown) {
+      if (isDisposed) return
       toast.error(getErrorDisplay(e, 'Failed to load chat session').message)
     }
   }
@@ -189,12 +200,15 @@ export function useAutomationChat() {
     try {
       loadingHealth.value = true
       chatHealthLoadError.value = null
-      chatHealth.value = await chatApi.getHealth(options)
+      const result = await chatApi.getHealth(options)
+      if (isDisposed) return
+      chatHealth.value = result
     } catch (e: unknown) {
+      if (isDisposed) return
       chatHealthLoadError.value = getErrorDisplay(e, 'Failed to load LLM status').message
       toast.error(chatHealthLoadError.value)
     } finally {
-      loadingHealth.value = false
+      if (!isDisposed) loadingHealth.value = false
     }
   }
 
@@ -211,6 +225,8 @@ export function useAutomationChat() {
       }
     }
 
+    if (isDisposed) return
+
     const normalizedBoardId = normalizeSelectedBoardId(newSessionBoardId.value)
     if (newSessionBoardId.value.trim() && !normalizedBoardId) {
       toast.error('Choose a board from the list or leave board context blank.')
@@ -223,15 +239,18 @@ export function useAutomationChat() {
         title: newSessionTitle.value.trim(),
         boardId: normalizedBoardId,
       })
+      if (isDisposed) return
       newSessionTitle.value = ''
       newSessionBoardId.value = ''
       selectedNewSessionBoardId.value = null
       await loadSessions()
+      if (isDisposed) return
       await loadSession(created.id)
     } catch (e: unknown) {
+      if (isDisposed) return
       toast.error(getErrorDisplay(e, 'Failed to create session').message)
     } finally {
-      creatingSession.value = false
+      if (!isDisposed) creatingSession.value = false
     }
   }
 
@@ -243,17 +262,20 @@ export function useAutomationChat() {
 
     try {
       sendingMessage.value = true
-      await chatApi.sendMessage(selectedSession.value.id, {
+      const sessionId = selectedSession.value.id
+      await chatApi.sendMessage(sessionId, {
         content,
         requestProposal: requestProposal.value,
       })
+      if (isDisposed) return
       messageContent.value = ''
       requestProposal.value = false
-      await loadSession(selectedSession.value.id)
+      await loadSession(sessionId)
     } catch (e: unknown) {
+      if (isDisposed) return
       toast.error(getErrorDisplay(e, 'Failed to send message').message)
     } finally {
-      sendingMessage.value = false
+      if (!isDisposed) sendingMessage.value = false
     }
   }
 
@@ -277,13 +299,16 @@ export function useAutomationChat() {
     request = (async () => {
       try {
         loadingBoards.value = true
-        availableBoards.value = await boardsApi.getBoards()
+        const result = await boardsApi.getBoards()
+        if (isDisposed) return false
+        availableBoards.value = result
         return true
       } catch (e: unknown) {
+        if (isDisposed) return false
         toast.error(getErrorDisplay(e, 'Failed to load boards').message)
         return false
       } finally {
-        loadingBoards.value = false
+        if (!isDisposed) loadingBoards.value = false
         if (boardOptionsRequest === request) {
           boardOptionsRequest = null
         }
@@ -332,16 +357,25 @@ export function useAutomationChat() {
     void loadSessions()
     void loadProviderHealth()
     void loadBoardOptions().then(() => {
+      // Guard the continuation: loadBoardOptions can resolve after the owning
+      // scope is disposed (e.g. navigation mid-flight), and applyRouteBoardContext
+      // writes reactive state. Skip it once disposed to avoid a post-teardown write.
+      if (isDisposed) return
       applyRouteBoardContext()
     })
   })
 
-  watch(
+  const stopWatch = watch(
     () => [queryBoardId.value, availableBoards.value.length],
     () => {
       applyRouteBoardContext()
     },
   )
+
+  onScopeDispose(() => {
+    isDisposed = true
+    stopWatch()
+  })
 
   return {
     // State
