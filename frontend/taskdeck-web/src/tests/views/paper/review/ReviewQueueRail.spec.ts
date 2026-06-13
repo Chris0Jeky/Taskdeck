@@ -25,6 +25,7 @@ function mountRail(props?: Partial<{
   activeId: string | null
   recentlyApplied: RecentlyAppliedRow[]
   dismissableCount: number
+  busy: boolean
 }>) {
   return mount(ReviewQueueRail, {
     props: {
@@ -33,6 +34,7 @@ function mountRail(props?: Partial<{
       awaitingCount: 3,
       staleCount: 2,
       dismissableCount: props?.dismissableCount ?? 0,
+      busy: props?.busy ?? false,
       recentlyApplied: props?.recentlyApplied ?? [],
     },
   })
@@ -137,6 +139,11 @@ describe('ReviewQueueRail', () => {
 
     await bulk.trigger('click')
     expect(wrapper.emitted('file-away-all')).toHaveLength(1)
+  })
+
+  it('disables the bulk file-away action while a review action is in flight', () => {
+    const wrapper = mountRail({ dismissableCount: 3, busy: true })
+    expect(wrapper.find('[data-testid="queue-file-away-all"]').attributes('disabled')).toBeDefined()
   })
 
   it('renders recently-applied rows when provided', () => {
