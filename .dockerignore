@@ -20,6 +20,7 @@ backend/**/*.db-wal
 taskdeck.db
 taskdeck.db-shm
 taskdeck.db-wal
+**/*.migrate.lock
 api-tests.log
 
 docs/archive/
