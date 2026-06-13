@@ -1,13 +1,34 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Proposal } from '../../types/automation'
 import { normalizeProposalStatus } from '../../utils/automation'
+import {
+  isProposalApplyActionable,
+  isProposalApproveActionable,
+  isProposalRejectActionable,
+} from '../../composables/useReviewProposals'
 
-defineProps<{
+const props = defineProps<{
   proposal: Proposal
   isExpired: boolean
   isBusy: boolean
   selectedDiffProposalId: string | null
 }>()
+
+// Decision gating comes from the shared review rules so the Legacy card and the
+// Paper deep-review surface can never drift (#1124 / ADR-0038). Approve and
+// Reject are only available while the proposal is still pending and unexpired;
+// Apply-to-board is the Approved-and-actionable arm of apply-actionable.
+const canReject = computed(() => isProposalRejectActionable(props.proposal, props.isExpired))
+// Approve and Reject share the same precondition (a still-live PendingReview
+// proposal), but each routes through its own named helper so they can diverge
+// later without a hidden alias coupling them (e.g. an approve-only permission gate).
+const canApprove = computed(() => isProposalApproveActionable(props.proposal, props.isExpired))
+const canExecute = computed(
+  () =>
+    isProposalApplyActionable(props.proposal, props.isExpired) &&
+    normalizeProposalStatus(props.proposal.status) === 'Approved',
+)
 
 defineEmits<{
   (e: 'approve', proposalId: string): void
@@ -78,21 +99,21 @@ defineEmits<{
       </button>
       <button
         class="td-btn td-btn--primary td-btn--sm"
-        :disabled="isBusy || normalizeProposalStatus(proposal.status) !== 'PendingReview'"
+        :disabled="isBusy || !canApprove"
         @click="$emit('approve', proposal.id)"
       >
         Approve for board
       </button>
       <button
         class="td-btn td-btn--danger td-btn--sm"
-        :disabled="isBusy || normalizeProposalStatus(proposal.status) !== 'PendingReview'"
+        :disabled="isBusy || !canReject"
         @click="$emit('reject', proposal.id, proposal.riskLevel)"
       >
         Reject
       </button>
       <button
         class="td-btn td-btn--secondary td-btn--sm"
-        :disabled="isBusy || normalizeProposalStatus(proposal.status) !== 'Approved'"
+        :disabled="isBusy || !canExecute"
         @click="$emit('execute', proposal.id)"
       >
         Apply to board

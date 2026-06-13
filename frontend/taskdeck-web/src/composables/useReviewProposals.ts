@@ -16,6 +16,51 @@ import { getErrorDisplay } from './useErrorMapper'
 import { logError } from '../utils/errorReporting'
 import { usePerformanceMark } from './usePerformanceMark'
 
+/**
+ * A proposal counts as "stale" once it has sat in PendingReview for 24 hours.
+ * Centralised here so both the Paper and Legacy review surfaces agree (#1124
+ * drift class — ADR-0038).
+ */
+export const STALE_PROPOSAL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Decision rules shared by every review surface (Paper deep-review and the
+ * Legacy card). These are pure functions so the prop-driven Legacy components
+ * can reuse the exact same gating without importing the composable. The
+ * reactive instances exposed by `useReviewProposals` are thin wrappers that
+ * supply `isExpired`/`nowMs` from the composable's own reactive clock.
+ *
+ * `isExpired` is passed in explicitly because expiry depends on a reactive
+ * clock that only the composable (or the parent view) owns. Callers must pass
+ * the same `isProposalExpired(proposal)` value the rest of the surface uses,
+ * including the Approved+expired #1124 case.
+ */
+export function isProposalApplyActionable(proposal: ApiProposal, isExpired: boolean): boolean {
+  const status = normalizeProposalStatus(proposal.status)
+  return (status === 'PendingReview' || status === 'Approved') && !isExpired
+}
+
+export function isProposalRejectActionable(proposal: ApiProposal, isExpired: boolean): boolean {
+  return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isExpired
+}
+
+// Approve shares Reject's precondition today (a live, non-expired PendingReview proposal),
+// but is named distinctly so the two can diverge without one silently aliasing the other.
+export function isProposalApproveActionable(proposal: ApiProposal, isExpired: boolean): boolean {
+  return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isExpired
+}
+
+export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
+  if (!proposal || normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
+  // Guard against missing/invalid createdAt: a falsy value (new Date(null) is
+  // the epoch) or an unparseable string (new Date(...).getTime() is NaN) would
+  // otherwise mis-flag the proposal as wildly stale.
+  if (!proposal.createdAt) return false
+  const createdMs = new Date(proposal.createdAt).getTime()
+  if (Number.isNaN(createdMs)) return false
+  return nowMs - createdMs >= STALE_PROPOSAL_MS
+}
+
 export function useReviewProposals() {
   const route = useRoute()
   const router = useRouter()
@@ -87,6 +132,20 @@ export function useReviewProposals() {
       return new Date(proposal.expiresAt).getTime() <= nowMs.value
     }
     return false
+  }
+
+  // Reactive wrappers over the shared pure decision rules. They bind the
+  // surface's own expiry/clock state so Paper and Legacy can never drift. #1124
+  function isApplyActionable(proposal: ApiProposal): boolean {
+    return isProposalApplyActionable(proposal, isProposalExpired(proposal))
+  }
+
+  function isRejectActionable(proposal: ApiProposal): boolean {
+    return isProposalRejectActionable(proposal, isProposalExpired(proposal))
+  }
+
+  function isStaleProposal(proposal: ApiProposal): boolean {
+    return isProposalStale(proposal, nowMs.value)
   }
 
   const visibleProposals = computed(() =>
@@ -366,6 +425,9 @@ export function useReviewProposals() {
     dismissableProposalIds,
     matchesActiveBoardFilter,
     isProposalExpired,
+    isApplyActionable,
+    isRejectActionable,
+    isStaleProposal,
     loadProposals,
     loadBoardOptions,
     startClock,

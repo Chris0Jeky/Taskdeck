@@ -55,6 +55,9 @@ const {
   dismissableProposalIds,
   matchesActiveBoardFilter,
   isProposalExpired,
+  isApplyActionable,
+  isRejectActionable,
+  isStaleProposal,
   loadProposals,
   loadBoardOptions,
   startClock,
@@ -86,11 +89,6 @@ const hashProposalId = computed(() => {
     return null
   }
 })
-
-function isStaleProposal(proposal: ApiProposal): boolean {
-  if (normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
-  return nowMs.value - new Date(proposal.createdAt).getTime() >= 24 * 60 * 60 * 1000
-}
 
 const filteredVisibleProposals = computed(() => {
   switch (queueFilter.value) {
@@ -196,14 +194,13 @@ const awaitingCount = computed(() => {
   ).length
 })
 
-const staleCount = computed(() => {
-  // A proposal is "stale" when older than 24h and still pending review.
-  const cutoff = nowMs.value - 24 * 60 * 60 * 1000
-  return visibleProposals.value.filter((p) => {
-    if (normalizeProposalStatus(p.status) !== 'PendingReview') return false
-    return new Date(p.createdAt).getTime() < cutoff
-  }).length
-})
+const staleCount = computed(() =>
+  // Route through the SHARED isStaleProposal (PendingReview + inclusive >=24h)
+  // so the badge count and the 'stale' queue filter always agree — no third
+  // inline copy that could drift at the 24h boundary (#1124 / ADR-0038).
+  // visibleProposals is already board-scoped via matchesActiveBoardFilter.
+  visibleProposals.value.filter(isStaleProposal).length,
+)
 
 function ageLabel(iso: string): string {
   const ms = nowMs.value - new Date(iso).getTime()
@@ -227,7 +224,9 @@ const queueItems = computed<QueueRailItem[]>(() =>
       serial: `#${p.id.slice(0, 4).toUpperCase()}`,
       title: p.summary || '(no summary)',
       who: normalizeProposalSourceType(p.sourceType) === 'Chat' ? 'haiku' : 'capture',
-      // Confidence is not yet on the wire — leave null until the gap lands.
+      // Per-item rail confidence is not yet wired per-proposal — leave null until
+      // the gap lands. Not contradictory with `authorMeta` below, which shows the
+      // REAL aggregate /confidence breakdown for the single active proposal.
       confidence: null,
       age: ageLabel(p.createdAt),
       reach: summariseReach(p),
@@ -444,8 +443,13 @@ const proposedNum = computed(() => {
 })
 
 const authorMeta = computed(() => {
+  // Only the confidence score is real wire data. Latency and token counts are
+  // not yet surfaced by the backend, so we do not fabricate them here. #1136
   const c = selectors.confidenceBreakdown.value
-  return `${c.overall.toFixed(2)} confidence · 4s · 1.2k tokens`
+  // Defensive: the type says overall is always a number, but guard against a
+  // malformed/NaN value so toFixed can never throw on the deep-review surface.
+  if (!c || !Number.isFinite(c.overall)) return ''
+  return `${c.overall.toFixed(2)} confidence`
 })
 
 const authorName = computed(() => {
@@ -465,15 +469,6 @@ const whyNowBody = computed(() => {
 
 const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
 const busy = computed(() => proposalActionBusyId.value !== null || revisionBusy.value)
-
-function isApplyActionable(proposal: ApiProposal): boolean {
-  const status = normalizeProposalStatus(proposal.status)
-  return (status === 'PendingReview' || status === 'Approved') && !isProposalExpired(proposal)
-}
-
-function isRejectActionable(proposal: ApiProposal): boolean {
-  return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isProposalExpired(proposal)
-}
 
 function onApply() {
   const p = activeProposal.value
