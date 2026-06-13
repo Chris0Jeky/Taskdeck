@@ -31,7 +31,11 @@ info() { printf '\033[90m[clean-workspace] %s\033[0m\n' "$1"; }
 warn() { printf '\033[33m[clean-workspace] %s\033[0m\n' "$1" >&2; }
 
 SCAN_DIRS=("$REPO_ROOT" "$REPO_ROOT/backend/src/Taskdeck.Api")
-PATTERNS=("taskdeck.db" "taskdeck.db-shm" "taskdeck.db-wal" "*.db-shm" "*.db-wal" "*.migrate.lock" "api-tests.log")
+# No redundant literals: the *.db-shm / *.db-wal globs already cover
+# taskdeck.db-shm / taskdeck.db-wal (listing both made a file match twice and
+# double-counted skips). The literal taskdeck.db stays — there is intentionally
+# no *.db glob, to avoid deleting unrelated .db files.
+PATTERNS=("taskdeck.db" "*.db-shm" "*.db-wal" "*.migrate.lock" "api-tests.log")
 
 removed=0
 skipped=0
@@ -76,8 +80,14 @@ for dir in "${SCAN_DIRS[@]}"; do
       fi
       if [[ "$DRY_RUN" -eq 1 ]]; then
         info "Would remove: $file"
+      # Guard rm so a single failure (permission denied, immutable) only warns
+      # and is not counted — without this, the failing `&&` chain would abort the
+      # whole cleanup under `set -e`, leaving later safe artifacts un-removed.
+      elif rm -f "$file" 2>/dev/null; then
+        info "Removed: $file"
+        removed=$((removed + 1))
       else
-        rm -f "$file" && info "Removed: $file" && removed=$((removed + 1))
+        warn "Failed to remove: $file"
       fi
     done < <(find "$dir" -maxdepth 1 -type f -name "$pattern" -print0 2>/dev/null)
   done
@@ -87,8 +97,11 @@ TMP_DIR="$REPO_ROOT/.tmp"
 if [[ -d "$TMP_DIR" ]]; then
   if [[ "$DRY_RUN" -eq 1 ]]; then
     info "Would remove directory: $TMP_DIR"
+  elif rm -rf "$TMP_DIR" 2>/dev/null; then
+    info "Removed: $TMP_DIR"
+    removed=$((removed + 1))
   else
-    rm -rf "$TMP_DIR" && info "Removed: $TMP_DIR" && removed=$((removed + 1))
+    warn "Failed to remove: $TMP_DIR"
   fi
 fi
 

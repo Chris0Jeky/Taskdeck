@@ -43,9 +43,13 @@ $ScanDirs = @(
     (Join-Path $RepoRoot "backend/src/Taskdeck.Api")
 )
 
-# Glob patterns of disposable local-run artifacts.
+# Glob patterns of disposable local-run artifacts. No redundant literals: the
+# *.db-shm / *.db-wal globs already cover taskdeck.db-shm / taskdeck.db-wal
+# (listing both made a file match twice and double-counted skips). The literal
+# taskdeck.db stays — there is intentionally no *.db glob, to avoid deleting
+# unrelated .db files.
 $Patterns = @(
-    "taskdeck.db", "taskdeck.db-shm", "taskdeck.db-wal",
+    "taskdeck.db",
     "*.db-shm", "*.db-wal", "*.migrate.lock",
     "api-tests.log"
 )
