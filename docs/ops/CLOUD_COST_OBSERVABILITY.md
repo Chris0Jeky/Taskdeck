@@ -4,6 +4,8 @@ Last Updated: 2026-04-09
 Issue: `#104` OPS-12 Cloud cost observability and budget-guardrail automation
 ADR: ADR-0026
 
+> **⚠️ Reference-only — parked by the 2026-06-13 archive pivot.** Companion guidance for **ADR-0026** (cloud cost observability), whose hosted / multi-instance premise is de-scoped — Taskdeck is personal-use only (SQLite + single-instance, never hosted). Retained as a historical record, not active ops guidance. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
+
 ---
 
 ## Purpose
