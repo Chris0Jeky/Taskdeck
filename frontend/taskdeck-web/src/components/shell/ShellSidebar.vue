@@ -415,12 +415,25 @@ defineExpose({
         v-if="featureFlags.isEnabled('newAuth')"
         to="/workspace/settings/profile"
         class="td-nav-item td-nav-item--secondary"
-        :class="{ 'td-nav-item--active': isActiveRoute('/workspace/settings') }"
-        :aria-current="isActiveRoute('/workspace/settings') ? 'page' : undefined"
+        :class="{ 'td-nav-item--active': isActiveRoute('/workspace/settings/profile') }"
+        :aria-current="isActiveRoute('/workspace/settings/profile') ? 'page' : undefined"
         @click="closeMobileMenu"
       >
         <span class="td-nav-item__icon">S</span>
         <span v-if="!sidebarCollapsed" class="td-nav-item__label">Settings</span>
+      </router-link>
+      <!-- Appearance/theme is the one settings page worth a visible link: it is
+           the only way for a default-'off' user to discover Paper from the
+           Legacy shell (the rest of the settings cluster stays Ctrl+K-only). -->
+      <router-link
+        to="/workspace/settings/appearance"
+        class="td-nav-item td-nav-item--secondary"
+        :class="{ 'td-nav-item--active': isActiveRoute('/workspace/settings/appearance') }"
+        :aria-current="isActiveRoute('/workspace/settings/appearance') ? 'page' : undefined"
+        @click="closeMobileMenu"
+      >
+        <span class="td-nav-item__icon">E</span>
+        <span v-if="!sidebarCollapsed" class="td-nav-item__label">Appearance</span>
       </router-link>
     </nav>
 
