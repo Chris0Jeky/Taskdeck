@@ -114,14 +114,14 @@ function selectMode(mode: PaperMode) {
 }
 
 .td-theme-segments {
-  display: flex;
-  flex-wrap: wrap;
+  /* Grid (not flex-wrap) so segments keep equal widths and wrap cleanly
+     instead of stretching a lone item to full width on the next row. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--td-space-2);
 }
 
 .td-theme-segment {
-  flex: 1 1 auto;
-  min-width: 140px;
   padding: var(--td-space-2) var(--td-space-3);
   border-radius: var(--td-radius-md);
   border: 1px solid var(--td-border-default);
@@ -133,6 +133,11 @@ function selectMode(mode: PaperMode) {
 
 .td-theme-segment:hover {
   border-color: var(--td-color-primary);
+}
+
+.td-theme-segment:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
 }
 
 .td-theme-segment--active {
