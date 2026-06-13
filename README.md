@@ -61,7 +61,14 @@ Open `http://localhost:5173` to start. See [docs/START_HERE.md](docs/START_HERE.
 
 ```bash
 cp deploy/.env.example deploy/.env
-# Set a strong TASKDECK_JWT_SECRET value in deploy/.env before continuing.
+```
+
+Set BOTH required secrets in `deploy/.env` before continuing — compose refuses to start without them:
+
+- `TASKDECK_JWT_SECRET` (generate with: `openssl rand -base64 48`)
+- `TASKDECK_CONNECTORS_ENCRYPTION_KEY` (generate with: `openssl rand -base64 32`)
+
+```bash
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline up -d --build
 ```
 
