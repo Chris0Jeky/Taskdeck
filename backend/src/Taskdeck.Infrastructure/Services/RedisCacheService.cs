@@ -25,16 +25,6 @@ public sealed class RedisCacheService : ICacheService, IDisposable
     /// </summary>
     private static readonly TimeSpan ReconnectMinInterval = TimeSpan.FromSeconds(15);
 
-    /// <summary>
-    /// Maximum number of immediate retry attempts when establishing a connection.
-    /// </summary>
-    private const int MaxConnectionRetries = 3;
-
-    /// <summary>
-    /// Base delay between connection retry attempts (doubles with each retry).
-    /// </summary>
-    private static readonly TimeSpan RetryBaseDelay = TimeSpan.FromMilliseconds(500);
-
     private DateTime _lastConnectAttemptUtc = DateTime.MinValue;
 
     public RedisCacheService(string connectionString, ILogger<RedisCacheService> logger, string keyPrefix = "td")
@@ -205,9 +195,12 @@ public sealed class RedisCacheService : ICacheService, IDisposable
     }
 
     /// <summary>
-    /// Gets or establishes the Redis connection. Unlike the previous Lazy-based approach,
-    /// this retries connection on failure (with a backoff interval) so transient Redis
-    /// outages do not permanently disable caching.
+    /// Gets or establishes the Redis connection. A single connection attempt is made per
+    /// <see cref="ReconnectMinInterval"/> window so transient Redis outages do not permanently
+    /// disable caching, while the throttle prevents reconnection storms. On failure the method
+    /// returns <c>null</c> immediately so callers fall through to the no-cache path — it never
+    /// throws and never blocks while holding <see cref="_connectionLock"/> for the connect
+    /// (the lock guards only the minimal check-and-assign of <see cref="_connection"/>).
     /// </summary>
     private ConnectionMultiplexer? GetConnection()
     {
@@ -217,14 +210,21 @@ public sealed class RedisCacheService : ICacheService, IDisposable
         if (conn is not null && conn.IsConnected)
             return conn;
 
-        // Throttle reconnection attempts to avoid storms
+        // Throttle reconnection attempts to avoid storms. A single attempt per window means a
+        // failed Connect degrades to no-cache immediately rather than blocking on retries.
         if (DateTime.UtcNow - _lastConnectAttemptUtc < ReconnectMinInterval)
             return conn; // Return stale connection (or null) — don't retry yet
 
-        lock (_connectionLock)
+        // Hold the lock only around the minimal check-and-assign so a single connecting thread
+        // updates shared state while concurrent callers fall straight through to the no-cache path.
+        if (!Monitor.TryEnter(_connectionLock))
+            return conn; // Another thread is already attempting — don't pile up.
+
+        ConnectionMultiplexer? old;
+        try
         {
-            // Double-check after acquiring lock
             if (_disposed) return null;
+
             conn = _connection;
             if (conn is not null && conn.IsConnected)
                 return conn;
@@ -234,57 +234,80 @@ public sealed class RedisCacheService : ICacheService, IDisposable
 
             _lastConnectAttemptUtc = DateTime.UtcNow;
 
-            // Dispose old broken connection before attempting reconnect
-            var old = _connection;
-            Exception? lastException = null;
+            // Capture the (possibly broken) old connection to dispose after we release the lock.
+            old = _connection;
+        }
+        finally
+        {
+            Monitor.Exit(_connectionLock);
+        }
 
-            // Retry connection with exponential backoff
-            for (var attempt = 1; attempt <= MaxConnectionRetries; attempt++)
+        // Single connection attempt performed OUTSIDE the lock: the 3s ConnectTimeout must never
+        // block other callers, and the outer throttle already guarantees at most one attempt per
+        // ReconnectMinInterval window.
+        ConnectionMultiplexer? established = null;
+        try
+        {
+            var options = ConfigurationOptions.Parse(_connectionString);
+            options.AbortOnConnectFail = false;  // Allow startup without Redis
+            options.ConnectTimeout = 3000;       // 3 second connect timeout
+            options.SyncTimeout = 1000;          // 1 second sync timeout
+            options.AsyncTimeout = 1000;         // 1 second async timeout
+            var candidate = ConnectionMultiplexer.Connect(options);
+
+            if (candidate.IsConnected)
             {
-                try
-                {
-                    var options = ConfigurationOptions.Parse(_connectionString);
-                    options.AbortOnConnectFail = false;  // Allow startup without Redis
-                    options.ConnectTimeout = 3000;       // 3 second connect timeout
-                    options.SyncTimeout = 1000;          // 1 second sync timeout
-                    options.AsyncTimeout = 1000;         // 1 second async timeout
-                    _connection = ConnectionMultiplexer.Connect(options);
+                established = candidate;
+            }
+            else
+            {
+                // With AbortOnConnectFail=false, Connect returns a non-connected multiplexer
+                // instead of throwing. Discard it and surface degraded mode to operators.
+                candidate.Dispose();
+                _logger.LogWarning("Redis cache connection unavailable — operating in degraded (no-cache) mode");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Redis cache connection failed — operating in degraded (no-cache) mode");
+        }
 
-                    if (_connection.IsConnected)
-                    {
-                        _logger.LogInformation("Redis cache connected successfully on attempt {Attempt}", attempt);
-
-                        // Dispose old connection after successful replacement
-                        if (old is not null && !ReferenceEquals(old, _connection))
-                        {
-                            try { old.Dispose(); }
-                            catch (Exception) { /* best-effort cleanup */ }
-                        }
-
-                        return _connection;
-                    }
-
-                    // Connection object created but not connected — dispose and retry
-                    _connection.Dispose();
-                    _connection = null;
-                }
-                catch (Exception ex)
-                {
-                    lastException = ex;
-                    _logger.LogDebug(ex, "Redis connection attempt {Attempt}/{MaxAttempts} failed", attempt, MaxConnectionRetries);
-                }
-
-                // Wait before retry (exponential backoff: 500ms, 1s, 2s, ...)
-                if (attempt < MaxConnectionRetries)
-                {
-                    var delay = TimeSpan.FromMilliseconds(RetryBaseDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
-                    Thread.Sleep(delay);
-                }
+        // Publish the result under the lock (minimal check-and-assign only).
+        lock (_connectionLock)
+        {
+            if (_disposed)
+            {
+                established?.Dispose();
+                return null;
             }
 
-            _logger.LogWarning(lastException, "Redis cache connection failed after {MaxAttempts} attempts — operating in degraded (no-cache) mode", MaxConnectionRetries);
-            return null;
+            // Another thread may have established a live connection while we were connecting.
+            var current = _connection;
+            if (current is not null && current.IsConnected && !ReferenceEquals(current, established))
+            {
+                established?.Dispose();
+                return current;
+            }
+
+            if (established is not null)
+            {
+                _connection = established;
+                _logger.LogInformation("Redis cache connected successfully");
+            }
+            else
+            {
+                _connection = null;
+            }
         }
+
+        // Dispose the previous broken connection outside the lock (best-effort cleanup).
+        if (old is not null && !ReferenceEquals(old, established))
+        {
+            try { old.Dispose(); }
+            catch (Exception) { /* best-effort cleanup */ }
+        }
+
+        return established;
     }
 
     private string BuildKey(string key) => $"{_keyPrefix}:{key}";
