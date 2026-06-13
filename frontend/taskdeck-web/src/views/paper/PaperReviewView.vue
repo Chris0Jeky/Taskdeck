@@ -70,6 +70,7 @@ const route = useRoute()
 
 const {
   proposalActionBusyId,
+  bulkDismissBusy,
   handleApproveProposal,
   handleRejectProposal,
   handleExecuteProposal,
@@ -471,7 +472,9 @@ const whyNowBody = computed(() => {
 // --- Action wiring -----------------------------------------------------
 
 const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
-const busy = computed(() => proposalActionBusyId.value !== null || revisionBusy.value)
+const busy = computed(
+  () => proposalActionBusyId.value !== null || revisionBusy.value || bulkDismissBusy.value,
+)
 
 // True once the active proposal is settled (Applied/Rejected/Failed/Expired/
 // Approved-then-expired). Reads the SHARED rule so Paper and Legacy never
@@ -482,8 +485,11 @@ const activeDismissable = computed(
   () => !!activeProposal.value && isProposalDismissable(activeProposal.value),
 )
 
-// Board-scoped count of settled proposals; drives the bulk "File away N
-// settled" affordance in the queue header (≥2). #1161
+// Count of EVERY settled proposal on the active board — including ones the
+// queue currently hides (Applied/Rejected/Failed when showCompleted is off,
+// or items outside the active 'mine'/'stale' filter). Bulk file-away is
+// board-scoped housekeeping, not queue-scoped, so the count can exceed what's
+// visible. ≥2 reveals the bulk affordance in the queue header. #1161
 const bulkDismissableCount = computed(() => dismissableProposalIds.value.length)
 
 function onFileAway() {
@@ -493,6 +499,8 @@ function onFileAway() {
     toast.info('Save or cancel the revision before filing this proposal away.')
     return
   }
+  // Another dismiss/approve/reject/bulk action is already in flight.
+  if (busy.value) return
   if (!activeDismissable.value) {
     toast.info('This proposal is still active and cannot be filed away yet.')
     return
@@ -501,7 +509,10 @@ function onFileAway() {
 }
 
 function onFileAwayBulk() {
-  if (busy.value) return
+  if (busy.value) {
+    toast.info('Wait for the current action to finish before filing more away.')
+    return
+  }
   void handleDismissApplied()
 }
 
@@ -626,6 +637,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :awaiting-count="awaitingCount"
       :stale-count="staleCount"
       :dismissable-count="bulkDismissableCount"
+      :busy="busy"
       :recently-applied="recentlyApplied"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
