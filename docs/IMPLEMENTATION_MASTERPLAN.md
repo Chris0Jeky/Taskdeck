@@ -16,6 +16,17 @@ This is the active execution guide for sequencing past, current, and future impl
 `docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
 Update this file at the end of each meaningful delivery cycle or when new work is seeded.
 
+## Direction (2026-06-13, maintainer-decided): finish-for-personal-use → archive
+
+**Taskdeck will not be distributed.** The maintainer's decision is to finish it as a personal-use tool, then archive it as a completed project. This **supersedes** both the 2026-06-05 ship-first framing (v0.1.0 → … → v1.0.0 GA) and the 2026-03-29 platform-expansion "four pillars" framing. Goals, in order:
+
+1. **Finish + activate the Paper UI** as canonical (ADR-0038 ratified; the default-theme flip to `paper` is the remaining activation step).
+2. **Trivially easy to run** locally — one-command dev-up plus a self-contained exe as the canonical personal run path.
+3. **General quality** — backend correctness + usability, proactively found.
+4. **Archive cleanly** — docs reflect the final state; de-scoped trackers closed with dated pivot notes.
+
+**De-scoped permanently** (closed as not-planned or parked during archive closeout, with dated notes): distribution & code-signing (`#1167`), GTM/marketing (`#544`/`#546`/`#550`), cloud & collaboration (`#537`/`#548`), mobile (`#540`), beta intake, multi-DB support (SQLite-only forever), and multi-user scale work. The platform-expansion strategy docs under `docs/strategy/` and the cloud/mobile ADRs (0014, 0023–0029) are retained as historical records of parked tracks, not active plans. The planning principles below remain valid for the *product* (review-first, capture-friction, novice legibility) even though the *distribution* roadmap is retired.
+
 ## Planning Principles
 
 - `docs/STATUS.md` is authoritative for current shipped reality.
@@ -40,6 +51,13 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+Archive-pivot delivery wave (2026-06-13, **17 PRs merged** across Waves 0–2 plus 2 dependabot bumps; full review gate per PR — 2 independent adversarial reviews, all-severity findings fixed, bot threads resolved, fresh green CI + aging). This wave executed the first three waves of the archive-pivot plan (clear the PR deck → ratify Paper-canonical + cheap foundations → Paper-activation prerequisites + backend quality):
+- **Decision/foundation:** **ADR-0038** ratifies Paper as the canonical UI with Legacy frozen (`#1207`); **ADR-0039** moves the backend to Central Package Management with a pinned SDK and 8.x dependency alignment (`#1196`, carrying the `#1203` NuGet bumps into `Directory.Packages.props`); **ADR-0040** adds a global UTC DateTime materialization convention for SQLite (`#1201`). `*.migrate.lock` is now gitignored (`#1204`); the docker-compose quickstart documents both required secrets (`#1205`, `#1139` AC1).
+- **Paper activation prerequisites:** the shared review-actionability composable (`#1217`) extracts `isProposalApply/Reject/Approve/Dismissable` + `isProposalStale` as pure functions so Paper and Legacy can no longer drift at the 24h-stale / Approved+expired boundaries (collapsing the `#1124` double-fix), and removes fabricated author metadata in favour of the real `/confidence` value; paper-night straggler tokens + a full-opacity WCAG focus ring landed (`#1216`, `#1135`; seeded `#1218`). The `#1161` "File away" dismiss affordance that builds on this foundation is in review (`#1219`).
+- **Backend + run-story quality:** dead `ProposalGeneratorV1`/`IProposalGenerator` removed as never-consumed code (`#1198`/`#1214`, `FieldVerifier`/`DeterministicPreExtractor` retained for a future V2 per `#1215`); Redis distributed-lock starvation fixed (`#1213`, `#1189`); the queue-claim raw-SQL path now reloads so the DTO isn't a stale identity-map entity (`#1200`, seeded `#1209`); automation-chat composable continuation guarded against dispose (`#1199`); the false-green E2E specs were re-enabled on real Paper selectors (`#1197`); and the one-command `dev-up` + `clean-workspace` scripts shipped (`#1208`, `#1140`) — the canonical personal run path's biggest ergonomics gap.
+- **Dependency hygiene:** group npm/nuget bumps (`#1202`/`#1203` in-wave, `#1211`/`#1212` follow-on).
+- **Net:** Waves 0–2 of the archive-pivot plan are complete; remaining toward "Paper is the default UI" are the Wave-2 stragglers (real settings theme toggle, remaining Paper-review de-stubs), then the Wave-3 default-theme flip, then Paper polish (Wave 4), with run-story (Wave 5) and backend-quality (Wave 6) tracks interleaving.
 
 Security gate + hardening epic (2026-06-05/06, 5 PRs merged; 2 independent adversarial reviews per PR plus Gemini/Codex bot reviews, all findings of every severity fixed or tracked):
 - **#1132 security gate + config hardening** delivered across 4 PRs: ≥32 JWT secret floor + fail-fast registration + Production CORS fail-closed (`#1169`, AC2/AC3); secret/dependency/SAST scans + bundle-size promoted into the required PR merge gate with **phased enforcement** per **ADR-0035** (`#1170`, AC1/AC5, fixed the pre-existing Semgrep `setuptools-82` crash); global default-deny `FallbackPolicy` + `[AllowAnonymous]` audit per **ADR-0036** (`#1176`, AC4).
