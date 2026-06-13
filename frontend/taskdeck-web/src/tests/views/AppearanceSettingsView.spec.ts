@@ -6,10 +6,10 @@ import { usePaperThemeStore } from '../../store/paperThemeStore'
 
 const STORAGE_KEY = 'td.paper.mode'
 
-function segmentByLabel(wrapper: ReturnType<typeof mount>, label: string) {
-  return wrapper
-    .findAll('.td-theme-segment')
-    .find((b) => b.text().includes(label))
+// Select by the stable data-mode hook rather than label text, so the tests are
+// resilient to label wording changes.
+function segmentByMode(wrapper: ReturnType<typeof mount>, mode: string) {
+  return wrapper.find(`[data-mode="${mode}"]`)
 }
 
 describe('AppearanceSettingsView', () => {
@@ -35,42 +35,42 @@ describe('AppearanceSettingsView', () => {
 
   it('reflects the current mode via aria-pressed (default off)', () => {
     const wrapper = mount(AppearanceSettingsView)
-    expect(segmentByLabel(wrapper, 'Off (Legacy / Obsidian)')?.attributes('aria-pressed')).toBe('true')
-    expect(segmentByLabel(wrapper, 'Paper (Light)')?.attributes('aria-pressed')).toBe('false')
-    expect(segmentByLabel(wrapper, 'Auto (match system)')?.attributes('aria-pressed')).toBe('false')
+    expect(segmentByMode(wrapper, 'off').attributes('aria-pressed')).toBe('true')
+    expect(segmentByMode(wrapper, 'paper').attributes('aria-pressed')).toBe('false')
+    expect(segmentByMode(wrapper, 'auto').attributes('aria-pressed')).toBe('false')
   })
 
   it('selecting a mode calls setMode and persists to localStorage', async () => {
     const wrapper = mount(AppearanceSettingsView)
     const store = usePaperThemeStore()
 
-    await segmentByLabel(wrapper, 'Paper Night (Dark)')?.trigger('click')
+    await segmentByMode(wrapper, 'paper-night').trigger('click')
 
     expect(store.mode).toBe('paper-night')
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('paper-night')
     expect(document.body.classList.contains('paper-night')).toBe(true)
-    expect(segmentByLabel(wrapper, 'Paper Night (Dark)')?.attributes('aria-pressed')).toBe('true')
+    expect(segmentByMode(wrapper, 'paper-night').attributes('aria-pressed')).toBe('true')
   })
 
   it('Auto stays Auto (does not collapse to the resolved class)', async () => {
     const wrapper = mount(AppearanceSettingsView)
     const store = usePaperThemeStore()
 
-    await segmentByLabel(wrapper, 'Auto (match system)')?.trigger('click')
+    await segmentByMode(wrapper, 'auto').trigger('click')
 
     expect(store.mode).toBe('auto')
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('auto')
-    expect(segmentByLabel(wrapper, 'Auto (match system)')?.attributes('aria-pressed')).toBe('true')
+    expect(segmentByMode(wrapper, 'auto').attributes('aria-pressed')).toBe('true')
   })
 
   it('Off restores Legacy (no paper body class, store off)', async () => {
     const wrapper = mount(AppearanceSettingsView)
     const store = usePaperThemeStore()
 
-    await segmentByLabel(wrapper, 'Paper (Light)')?.trigger('click')
+    await segmentByMode(wrapper, 'paper').trigger('click')
     expect(store.isOn).toBe(true)
 
-    await segmentByLabel(wrapper, 'Off (Legacy / Obsidian)')?.trigger('click')
+    await segmentByMode(wrapper, 'off').trigger('click')
 
     expect(store.mode).toBe('off')
     expect(store.isOn).toBe(false)
