@@ -128,6 +128,28 @@ public class LlmQueueToProposalWorkerTests
         planner.CallCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task ProcessBatch_PendingItem_ForwardsPendingUpdatedAtToClaim()
+    {
+        var item = CreatePendingItem();
+        // Capture the value the worker should forward BEFORE running the batch:
+        // BuildFairBatchItems snapshots pending.UpdatedAt, and the claim mutates it.
+        var expectedUpdatedAt = item.UpdatedAt;
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var planner = new FakeAutomationPlannerService();
+        using var sp = BuildServiceProvider(queueRepo, planner);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        // Regression guard: if the worker passed default/now instead of the pending
+        // item's actual UpdatedAt, the optimistic-concurrency UPDATE would match nothing
+        // in production and stall the queue while this fake still claimed successfully.
+        queueRepo.TryClaimProcessingCalls.Should().ContainSingle();
+        queueRepo.TryClaimProcessingCalls[0].RequestId.Should().Be(item.Id);
+        queueRepo.TryClaimProcessingCalls[0].ExpectedUpdatedAt.Should().Be(expectedUpdatedAt);
+    }
+
     #endregion
 
     #region Empty queue
@@ -691,11 +713,20 @@ public class LlmQueueToProposalWorkerTests
 
         public bool TryClaimProcessingResult { get; set; } = true;
 
+        /// <summary>
+        /// Records the (requestId, expectedUpdatedAt) the worker passed on each non-capture
+        /// claim attempt so tests can assert the worker forwarded the pending item's actual
+        /// UpdatedAt (not default/now). A wrong value here would make the optimistic-concurrency
+        /// UPDATE match nothing in production and stall the queue while tests stayed green.
+        /// </summary>
+        public List<(Guid RequestId, DateTimeOffset ExpectedUpdatedAt)> TryClaimProcessingCalls { get; } = [];
+
         public Task<bool> TryClaimProcessingAsync(
             Guid requestId,
             DateTimeOffset expectedUpdatedAt,
             CancellationToken cancellationToken = default)
         {
+            TryClaimProcessingCalls.Add((requestId, expectedUpdatedAt));
             if (TryClaimProcessingResult)
             {
                 var item = _allItems.FirstOrDefault(i => i.Id == requestId);
