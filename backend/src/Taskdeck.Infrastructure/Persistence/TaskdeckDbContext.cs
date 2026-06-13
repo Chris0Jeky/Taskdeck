@@ -60,8 +60,11 @@ public class TaskdeckDbContext : DbContext
     /// SQLite stores DateTime as TEXT without timezone info. EF Core materializes
     /// these as DateTimeKind.Unspecified, which causes incorrect comparisons with
     /// DateTime.UtcNow. Apply UTC normalization globally via conventions so every
-    /// DateTime property is materialized with DateTimeKind.Utc.
-    /// See: https://github.com/Chris0Jeky/Taskdeck/issues/1191
+    /// DateTime property is materialized with DateTimeKind.Utc, and a Local-kind value supplied
+    /// on write is normalized to UTC. Raw-SQL paths (AuditLogRepository / OAuthAuthCodeRepository)
+    /// bypass conventions and hand-format UTC instead.
+    /// See: https://github.com/Chris0Jeky/Taskdeck/issues/1191 and
+    /// docs/decisions/ADR-0040-utc-datetime-materialization-convention.md
     /// </summary>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -81,7 +84,13 @@ public class TaskdeckDbContext : DbContext
     private sealed class UtcDateTimeConverter : ValueConverter<DateTime, DateTime>
     {
         public UtcDateTimeConverter() : base(
-            v => v,
+            // Write: the writer contract is "supply UTC". A Local-kind value (for example a
+            // future System.Text.Json binding of an offset-bearing payload) would otherwise be
+            // stored as local wall-time and re-read stamped Utc -- silently wrong. Normalize
+            // Local to UTC on write; leave Utc/Unspecified untouched (behavior-preserving for
+            // all current writers, which use DateTime.UtcNow).
+            v => v.Kind == DateTimeKind.Local ? v.ToUniversalTime() : v,
+            // Read: SQLite returns DateTimeKind.Unspecified; stamp it Utc.
             v => DateTime.SpecifyKind(v, DateTimeKind.Utc))
         {
         }
@@ -90,7 +99,7 @@ public class TaskdeckDbContext : DbContext
     private sealed class NullableUtcDateTimeConverter : ValueConverter<DateTime?, DateTime?>
     {
         public NullableUtcDateTimeConverter() : base(
-            v => v,
+            v => v.HasValue && v.Value.Kind == DateTimeKind.Local ? v.Value.ToUniversalTime() : v,
             v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v)
         {
         }
