@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 
-> **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
+> **Archive-pivot note (2026-06-13):** The *multi-instance scale-out* motivation behind this decision is de-scoped — Taskdeck stays single-instance and local-first per the archive pivot (see ADR-0038 and `docs/STATUS.md`). The **backplane wiring itself remains live in the codebase**: `AddTaskdeckSignalR` registers the optional `Microsoft.AspNetCore.SignalR.StackExchangeRedis` backplane (config-gated — dormant/no-op without a Redis connection string, which is the single-instance default) and `RedisBackplaneHealthCheck` is registered. The base single-instance SignalR realtime (ADR-0012) is unaffected and live. Only the multi-instance scale-out rationale is parked.
 
 - **Date**: 2026-04-09
 - **Deciders**: Project maintainers
