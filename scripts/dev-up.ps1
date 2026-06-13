@@ -185,22 +185,31 @@ if (Test-Path $PidFile) {
 
 Write-Step "Database: $DevDbPath (pinned via ConnectionStrings__DefaultConnection)"
 
-# Env for the API process. Setting the connection string here beats appsettings,
-# so the DB no longer follows the launch directory (#1140 AC1).
+Write-Step "Starting API (dotnet run) on port $ApiPort..."
+# The API needs ConnectionStrings__DefaultConnection (pins the DB so it no longer
+# follows the launch directory, #1140 AC1) and ASPNETCORE_ENVIRONMENT. On PS 5.1
+# Start-Process has no -Environment param, so the child inherits the parent's
+# env — set it just for the spawn, then RESTORE so we don't leak these into an
+# interactive session that outlives the launcher (P2).
+$prevConn = $env:ConnectionStrings__DefaultConnection
+$prevEnvName = $env:ASPNETCORE_ENVIRONMENT
 $env:ConnectionStrings__DefaultConnection = "Data Source=$DevDbPath"
 # --no-launch-profile (below) skips launchSettings.json, which would otherwise
 # set ASPNETCORE_ENVIRONMENT=Development, so set it explicitly here.
 $env:ASPNETCORE_ENVIRONMENT = "Development"
-
-Write-Step "Starting API (dotnet run) on port $ApiPort..."
-# Pass --urls AND --no-launch-profile: the `http` launch profile's applicationUrl
-# is fixed at :5000 and would override an inherited ASPNETCORE_URLS, so a custom
-# -ApiPort must be applied via --urls with the profile disabled, or the API stays
-# on 5000 while only the probe/printed URL move (P2).
-$apiProc = Start-Process -FilePath "dotnet" `
-    -ArgumentList @("run", "--no-launch-profile", "--project", $ApiProject, "--urls", "http://localhost:$ApiPort") `
-    -WorkingDirectory $RepoRoot `
-    -PassThru -WindowStyle Minimized
+try {
+    # Pass --urls AND --no-launch-profile: the `http` launch profile's applicationUrl
+    # is fixed at :5000 and would override an inherited ASPNETCORE_URLS, so a custom
+    # -ApiPort must be applied via --urls with the profile disabled, or the API stays
+    # on 5000 while only the probe/printed URL move (P2).
+    $apiProc = Start-Process -FilePath "dotnet" `
+        -ArgumentList @("run", "--no-launch-profile", "--project", $ApiProject, "--urls", "http://localhost:$ApiPort") `
+        -WorkingDirectory $RepoRoot `
+        -PassThru -WindowStyle Minimized
+} finally {
+    $env:ConnectionStrings__DefaultConnection = $prevConn
+    $env:ASPNETCORE_ENVIRONMENT = $prevEnvName
+}
 # Record "<pid> <name>" so -Stop can detect PID reuse by comparing names.
 "$($apiProc.Id) $($apiProc.ProcessName)" | Set-Content $PidFile
 
@@ -261,10 +270,19 @@ $webProc = Start-Process -FilePath "npm" `
     -PassThru -WindowStyle Minimized
 Add-Content -Path $PidFile -Value "$($webProc.Id) $($webProc.ProcessName)"
 
+# Confirm the dev server didn't exit immediately (missing/broken Vite, bad Node,
+# unbindable port) before declaring success (P2).
+Start-Sleep -Seconds 2
+if ($webProc.HasExited) {
+    Write-Warn "The Vite dev server exited immediately (code $($webProc.ExitCode)). Check 'cd $FrontendDir; npm run dev' manually."
+}
+
 Write-Host ""
 Write-Step "Stack is up."
 Write-Info  "API     : http://localhost:$ApiPort  (Swagger: http://localhost:$ApiPort/swagger)"
-Write-Info  "Frontend: http://localhost:5173"
+# Vite uses 5173 if free, else falls back (4173/5001 — see run-vite-dev.mjs);
+# check the dev-server output for the actual URL if 5173 was occupied.
+Write-Info  "Frontend: http://localhost:5173 (or the next free port if 5173 was taken)"
 if ($Seed) { Write-Info "Sign in : demo / demo123" }
 Write-Info  "PIDs    : API=$($apiProc.Id)  Web=$($webProc.Id)  (saved to $PidFile)"
 Write-Info  "Stop    : .\scripts\dev-up.ps1 -Stop"

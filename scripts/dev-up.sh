@@ -215,10 +215,19 @@ WEB_PID=$!
 web_name="$(ps -p "$WEB_PID" -o comm= 2>/dev/null | tr -d ' ')"
 echo "$WEB_PID ${web_name:-node}" >> "$PID_FILE"
 
+# Confirm the dev server didn't exit immediately (missing/broken Vite, bad Node,
+# unbindable port) before declaring success (P2).
+sleep 2
+if ! kill -0 "$WEB_PID" 2>/dev/null; then
+  warn "The Vite dev server exited immediately. Check 'cd $FRONTEND_DIR && npm run dev' manually."
+fi
+
 echo ""
 step "Stack is up."
 info "API     : http://localhost:${API_PORT}  (Swagger: http://localhost:${API_PORT}/swagger)"
-info "Frontend: http://localhost:5173"
+# Vite uses 5173 if free, else falls back (4173/5001 — see run-vite-dev.mjs);
+# check the dev-server output for the actual URL if 5173 was occupied.
+info "Frontend: http://localhost:5173 (or the next free port if 5173 was taken)"
 [[ "$SEED" -eq 1 ]] && info "Sign in : demo / demo123"
 info "PIDs    : API=$API_PID  Web=$WEB_PID  (saved to $PID_FILE)"
 info "Stop    : scripts/dev-up.sh --stop"
