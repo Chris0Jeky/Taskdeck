@@ -57,6 +57,7 @@ const {
   isProposalExpired,
   isApplyActionable,
   isRejectActionable,
+  isProposalDismissable,
   isStaleProposal,
   loadProposals,
   loadBoardOptions,
@@ -72,6 +73,8 @@ const {
   handleApproveProposal,
   handleRejectProposal,
   handleExecuteProposal,
+  handleDismissProposal,
+  handleDismissApplied,
 } = useReviewActions(proposals, dismissableProposalIds, loadProposals)
 
 // --- Active proposal ---------------------------------------------------
@@ -470,6 +473,38 @@ const whyNowBody = computed(() => {
 const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
 const busy = computed(() => proposalActionBusyId.value !== null || revisionBusy.value)
 
+// True once the active proposal is settled (Applied/Rejected/Failed/Expired/
+// Approved-then-expired). Reads the SHARED rule so Paper and Legacy never
+// drift (#1124 / ADR-0038). Reactive to the 60s expiry clock via
+// isProposalDismissable → isProposalExpired, so the rail swaps to "File away"
+// the moment a focused proposal expires (#1161). #1161
+const activeDismissable = computed(
+  () => !!activeProposal.value && isProposalDismissable(activeProposal.value),
+)
+
+// Board-scoped count of settled proposals; drives the bulk "File away N
+// settled" affordance in the queue header (≥2). #1161
+const bulkDismissableCount = computed(() => dismissableProposalIds.value.length)
+
+function onFileAway() {
+  const p = activeProposal.value
+  if (!p) return
+  if (revisionBusy.value) {
+    toast.info('Save or cancel the revision before filing this proposal away.')
+    return
+  }
+  if (!activeDismissable.value) {
+    toast.info('This proposal is still active and cannot be filed away yet.')
+    return
+  }
+  void handleDismissProposal(p.id)
+}
+
+function onFileAwayBulk() {
+  if (busy.value) return
+  void handleDismissApplied()
+}
+
 function onApply() {
   const p = activeProposal.value
   if (!p) return
@@ -492,6 +527,13 @@ function onApply() {
 function onReject() {
   const p = activeProposal.value
   if (!p) return
+  // ⌫ is dual-purpose: on a settled proposal the rail shows "File away", so
+  // the same key files it away instead of rejecting (single-key consistency
+  // for "remove this from my queue"). #1161
+  if (activeDismissable.value) {
+    onFileAway()
+    return
+  }
   if (revisionBusy.value) {
     toast.info('Save or cancel the revision before rejecting this proposal.')
     return
@@ -583,9 +625,11 @@ function onQueueFilterChange(filter: QueueFilter) {
       :active-id="activeProposal?.id ?? null"
       :awaiting-count="awaitingCount"
       :stale-count="staleCount"
+      :dismissable-count="bulkDismissableCount"
       :recently-applied="recentlyApplied"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
+      @file-away-all="onFileAwayBulk"
     />
 
     <div v-if="activeProposal" class="paper-review-deep__main-col">
@@ -613,10 +657,12 @@ function onQueueFilterChange(filter: QueueFilter) {
         :side-effects="selectors.sideEffects.value"
         :conflicts="selectors.conflicts.value"
         :history="selectors.history.value"
+        :dismissable="activeDismissable"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
         @defer="onDefer"
+        @dismiss="onFileAway"
         @report="onReportBadSuggestion"
       />
       <ReviewRevisionEditor
