@@ -44,6 +44,12 @@ export function isProposalRejectActionable(proposal: ApiProposal, isExpired: boo
   return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isExpired
 }
 
+// Approve shares Reject's precondition today (a live, non-expired PendingReview proposal),
+// but is named distinctly so the two can diverge without one silently aliasing the other.
+export function isProposalApproveActionable(proposal: ApiProposal, isExpired: boolean): boolean {
+  return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isExpired
+}
+
 export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
   if (!proposal || normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
   // Guard against missing/invalid createdAt: a falsy value (new Date(null) is

@@ -89,6 +89,7 @@ vi.mock('../../utils/errorReporting', () => ({
 import {
   STALE_PROPOSAL_MS,
   isProposalApplyActionable,
+  isProposalApproveActionable,
   isProposalRejectActionable,
   isProposalStale,
   useReviewProposals,
@@ -276,6 +277,21 @@ describe('useReviewProposals', () => {
         expect(expired).toBe(expectedExpired)
         expect(rp.isRejectActionable(p)).toBe(expectedReject)
         expect(isProposalRejectActionable(p, expired)).toBe(expectedReject)
+      },
+    )
+
+    it.each(cases)(
+      'isProposalApproveActionable returns the hard-coded verdict for $label (shares Reject precondition)',
+      ({ status, expiresAt, expectedExpired, expectedReject }) => {
+        const rp = useReviewProposals()
+        rp.nowMs.value = NOW
+        const p = makeProposal({ status, expiresAt }) as any
+        const expired = rp.isProposalExpired(p)
+        expect(expired).toBe(expectedExpired)
+        // Approve currently mirrors Reject (live, unexpired PendingReview) but is
+        // asserted against the hard-coded table independently so a future divergence
+        // in either helper is caught.
+        expect(isProposalApproveActionable(p, expired)).toBe(expectedReject)
       },
     )
 

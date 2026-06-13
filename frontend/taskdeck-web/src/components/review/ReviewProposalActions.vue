@@ -4,6 +4,7 @@ import type { Proposal } from '../../types/automation'
 import { normalizeProposalStatus } from '../../utils/automation'
 import {
   isProposalApplyActionable,
+  isProposalApproveActionable,
   isProposalRejectActionable,
 } from '../../composables/useReviewProposals'
 
@@ -20,9 +21,9 @@ const props = defineProps<{
 // Apply-to-board is the Approved-and-actionable arm of apply-actionable.
 const canReject = computed(() => isProposalRejectActionable(props.proposal, props.isExpired))
 // Approve and Reject share the same precondition (a still-live PendingReview
-// proposal), but keep them as independent computeds so they can diverge later
-// without a hidden alias coupling them (e.g. an approve-only permission gate).
-const canApprove = computed(() => isProposalRejectActionable(props.proposal, props.isExpired))
+// proposal), but each routes through its own named helper so they can diverge
+// later without a hidden alias coupling them (e.g. an approve-only permission gate).
+const canApprove = computed(() => isProposalApproveActionable(props.proposal, props.isExpired))
 const canExecute = computed(
   () =>
     isProposalApplyActionable(props.proposal, props.isExpired) &&
