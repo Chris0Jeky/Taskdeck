@@ -86,7 +86,28 @@ vi.mock('../../utils/errorReporting', () => ({
   logError: vi.fn(),
 }))
 
-import { useReviewProposals } from '../../composables/useReviewProposals'
+import {
+  STALE_PROPOSAL_MS,
+  isProposalApplyActionable,
+  isProposalRejectActionable,
+  isProposalStale,
+  useReviewProposals,
+} from '../../composables/useReviewProposals'
+
+// The PaperReviewView local copies that this slice replaced — kept verbatim
+// here so the shared helpers are pinned to the EXACT prior semantics
+// (ADR-0038 / #1124 drift class). If a shared rule diverges, these expectations
+// will disagree with the helper and the test fails.
+function localIsApplyActionable(status: string, expired: boolean): boolean {
+  return (status === 'PendingReview' || status === 'Approved') && !expired
+}
+function localIsRejectActionable(status: string, expired: boolean): boolean {
+  return status === 'PendingReview' && !expired
+}
+function localIsStaleProposal(status: string, createdAtMs: number, nowMs: number): boolean {
+  if (status !== 'PendingReview') return false
+  return nowMs - createdAtMs >= 24 * 60 * 60 * 1000
+}
 
 function watcherForCurrentSourceValue(expected: unknown) {
   const watcher = watchers.find(([source]) => typeof source === 'function' && (source as () => unknown)() === expected)
@@ -197,6 +218,108 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       const p = makeProposal({ status: 'Applied' })
       expect(rp.isProposalExpired(p as any)).toBe(false)
+    })
+  })
+
+  // These prove the shared actionability helpers return the SAME verdict the
+  // old PaperReviewView/Legacy local functions did, across every status. They
+  // are the regression net for the #1124 drift class (ADR-0038): if the shared
+  // rule changes, the parity assertions against the inlined local logic fail.
+  describe('shared actionability helpers parity', () => {
+    const NOW = new Date('2026-06-04T00:00:00Z').getTime()
+    const PAST = '2026-05-01T00:00:00Z' // before NOW -> expired when status permits
+    const FUTURE = '2099-01-01T00:00:00Z' // after NOW -> not yet expired
+
+    // Status × expiry matrix covering the required scenarios:
+    // Pending, Approved, Approved+expired (#1124), Applied, Rejected, Expired.
+    const cases: Array<{ label: string; status: string; expiresAt: string }> = [
+      { label: 'Pending (live)', status: 'PendingReview', expiresAt: FUTURE },
+      { label: 'Pending (expired by clock)', status: 'PendingReview', expiresAt: PAST },
+      { label: 'Approved (live)', status: 'Approved', expiresAt: FUTURE },
+      { label: 'Approved + expired (#1124)', status: 'Approved', expiresAt: PAST },
+      { label: 'Applied', status: 'Applied', expiresAt: PAST },
+      { label: 'Rejected', status: 'Rejected', expiresAt: PAST },
+      { label: 'Expired', status: 'Expired', expiresAt: PAST },
+    ]
+
+    it.each(cases)(
+      'isApplyActionable matches prior local logic for $label',
+      ({ status, expiresAt }) => {
+        const rp = useReviewProposals()
+        rp.nowMs.value = NOW
+        const p = makeProposal({ status, expiresAt }) as any
+        const expired = rp.isProposalExpired(p)
+        const expected = localIsApplyActionable(status, expired)
+        expect(rp.isApplyActionable(p)).toBe(expected)
+        expect(isProposalApplyActionable(p, expired)).toBe(expected)
+      },
+    )
+
+    it.each(cases)(
+      'isRejectActionable matches prior local logic for $label',
+      ({ status, expiresAt }) => {
+        const rp = useReviewProposals()
+        rp.nowMs.value = NOW
+        const p = makeProposal({ status, expiresAt }) as any
+        const expired = rp.isProposalExpired(p)
+        const expected = localIsRejectActionable(status, expired)
+        expect(rp.isRejectActionable(p)).toBe(expected)
+        expect(isProposalRejectActionable(p, expired)).toBe(expected)
+      },
+    )
+
+    // Concrete verdicts (not just self-parity) so a logic flip is caught even
+    // if the local mirror is wrong too.
+    it('apply is actionable only for live Pending/Approved; reject only for live Pending', () => {
+      const rp = useReviewProposals()
+      rp.nowMs.value = NOW
+
+      const pendingLive = makeProposal({ status: 'PendingReview', expiresAt: FUTURE }) as any
+      const approvedLive = makeProposal({ status: 'Approved', expiresAt: FUTURE }) as any
+      const approvedExpired = makeProposal({ status: 'Approved', expiresAt: PAST }) as any
+      const applied = makeProposal({ status: 'Applied' }) as any
+      const rejected = makeProposal({ status: 'Rejected' }) as any
+      const expired = makeProposal({ status: 'Expired', expiresAt: PAST }) as any
+
+      expect(rp.isApplyActionable(pendingLive)).toBe(true)
+      expect(rp.isApplyActionable(approvedLive)).toBe(true)
+      expect(rp.isApplyActionable(approvedExpired)).toBe(false) // #1124: can't apply
+      expect(rp.isApplyActionable(applied)).toBe(false)
+      expect(rp.isApplyActionable(rejected)).toBe(false)
+      expect(rp.isApplyActionable(expired)).toBe(false)
+
+      expect(rp.isRejectActionable(pendingLive)).toBe(true)
+      expect(rp.isRejectActionable(approvedLive)).toBe(false)
+      expect(rp.isRejectActionable(approvedExpired)).toBe(false)
+      expect(rp.isRejectActionable(applied)).toBe(false)
+      expect(rp.isRejectActionable(rejected)).toBe(false)
+      expect(rp.isRejectActionable(expired)).toBe(false)
+    })
+
+    it('isStaleProposal flags only Pending proposals at/after the 24h cutoff', () => {
+      const rp = useReviewProposals()
+      rp.nowMs.value = NOW
+      const justUnder = new Date(NOW - (STALE_PROPOSAL_MS - 1000)).toISOString()
+      const exactly = new Date(NOW - STALE_PROPOSAL_MS).toISOString()
+      const wellOver = new Date(NOW - (STALE_PROPOSAL_MS + 60_000)).toISOString()
+
+      const freshPending = makeProposal({ status: 'PendingReview', createdAt: justUnder }) as any
+      const borderlinePending = makeProposal({ status: 'PendingReview', createdAt: exactly }) as any
+      const oldPending = makeProposal({ status: 'PendingReview', createdAt: wellOver }) as any
+      const oldApproved = makeProposal({ status: 'Approved', createdAt: wellOver }) as any
+
+      // Reactive instance wrapper
+      expect(rp.isStaleProposal(freshPending)).toBe(false)
+      expect(rp.isStaleProposal(borderlinePending)).toBe(true) // >= cutoff is inclusive
+      expect(rp.isStaleProposal(oldPending)).toBe(true)
+      expect(rp.isStaleProposal(oldApproved)).toBe(false) // only Pending is stale
+
+      // Parity with the prior local logic + the pure helper
+      for (const p of [freshPending, borderlinePending, oldPending, oldApproved]) {
+        const expected = localIsStaleProposal(p.status, new Date(p.createdAt).getTime(), NOW)
+        expect(rp.isStaleProposal(p)).toBe(expected)
+        expect(isProposalStale(p, NOW)).toBe(expected)
+      }
     })
   })
 
