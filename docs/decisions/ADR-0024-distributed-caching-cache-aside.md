@@ -1,6 +1,6 @@
 # ADR-0024: Distributed Caching — Cache-Aside Pattern with Redis
 
-- **Status**: Proposed
+- **Status**: Accepted
 
 > **Archive-pivot note (2026-06-13):** The *multi-instance / cloud scale-out* motivation behind this decision is de-scoped — Taskdeck stays single-instance and local-first per the archive pivot (see ADR-0038 and `docs/STATUS.md`). The cache **abstraction itself remains live**: `ICacheService` with the Redis/in-memory fallback is registered and used, the in-memory path is the single-instance default, and a Redis lock-starvation fix shipped in the same 2026-06-13 wave (`#1213`). Only the multi-instance scale-out rationale is parked.
 
