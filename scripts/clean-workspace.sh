@@ -36,13 +36,15 @@ PATTERNS=("taskdeck.db" "taskdeck.db-shm" "taskdeck.db-wal" "*.db-shm" "*.db-wal
 removed=0
 skipped=0
 
+have_lsof=0
+command -v lsof >/dev/null 2>&1 && have_lsof=1
+
 is_locked() {
-  # Returns 0 (locked) if any process holds the file open. Best-effort: lsof if
-  # present, otherwise assume unlocked (the rm will fail safely if truly locked).
+  # Returns 0 (locked) only when lsof confirms an open handle. Callers must NOT
+  # rely on this when lsof is absent (have_lsof=0) — for SQLite data files that
+  # is handled separately so we never unlink an open WAL/SHM (P1).
   local f="$1"
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -- "$f" >/dev/null 2>&1 && return 0
-  fi
+  lsof -- "$f" >/dev/null 2>&1 && return 0
   return 1
 }
 
@@ -50,13 +52,27 @@ for dir in "${SCAN_DIRS[@]}"; do
   [[ -d "$dir" ]] || continue
   for pattern in "${PATTERNS[@]}"; do
     while IFS= read -r -d '' file; do
-      # Never delete a live SQLite data file. The WAL/SHM sidecars hold
-      # committed-but-uncheckpointed state — on Linux `rm -f` unlinks an open
-      # file, so guard them as well as the main .db (H1).
-      if { [[ "$file" == *.db ]] || [[ "$file" == *.db-wal ]] || [[ "$file" == *.db-shm ]]; } && is_locked "$file"; then
-        warn "In use, skipping: $file (stop the stack first)"
-        skipped=$((skipped + 1))
-        continue
+      # SQLite data file? (main .db plus the WAL/SHM sidecars that hold
+      # committed-but-uncheckpointed state — on Unix `rm -f` unlinks an open
+      # file, losing those writes, so all three must be guarded, not just .db).
+      is_sqlite_data=0
+      if [[ "$file" == *.db ]] || [[ "$file" == *.db-wal ]] || [[ "$file" == *.db-shm ]]; then
+        is_sqlite_data=1
+      fi
+      if [[ "$is_sqlite_data" -eq 1 ]]; then
+        if [[ "$have_lsof" -eq 0 ]]; then
+          # Without lsof we cannot prove the DB is not in use. Conservative on
+          # unknown: refuse to delete SQLite data files rather than risk
+          # corrupting a live stack (P1). Always-safe artifacts below still go.
+          warn "Cannot verify lock (lsof not installed), skipping: $file (stop the stack first)"
+          skipped=$((skipped + 1))
+          continue
+        fi
+        if is_locked "$file"; then
+          warn "In use, skipping: $file (stop the stack first)"
+          skipped=$((skipped + 1))
+          continue
+        fi
       fi
       if [[ "$DRY_RUN" -eq 1 ]]; then
         info "Would remove: $file"
