@@ -357,10 +357,16 @@ test('workspace preferences save failure should show error and not silently disc
   await workspaceModeSelect.selectOption('workbench')
   await failedSave
 
-  // The save attempt surfaces a warning toast naming the failure
+  // The save attempt surfaces a warning toast naming the failure.
+  // The preferences PUT is idempotent, so httpRetry.ts retries it 3 times
+  // (worst-case backoff with +25% jitter = 1.25s + 2.5s + 5s = 8.75s) before
+  // the store rejects and shows the toast. `failedSave` above only resolves on
+  // the FIRST 500, so the toast assertion must allow for the full retry budget
+  // — a 20s timeout keeps it comfortably clear of 8.75s on slow nightly
+  // firefox/webkit runners.
   await expect(
     page.getByText(/failed to save workspace/i).first(),
-  ).toBeVisible({ timeout: 10_000 })
+  ).toBeVisible({ timeout: 20_000 })
 
   // The user's selection is kept locally rather than silently discarded
   await expect(workspaceModeSelect).toHaveValue('workbench')
