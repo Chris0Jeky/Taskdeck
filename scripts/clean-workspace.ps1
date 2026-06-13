@@ -69,8 +69,11 @@ foreach ($dir in $ScanDirs) {
     foreach ($pattern in $Patterns) {
         $matches = Get-ChildItem -Path $dir -Filter $pattern -File -ErrorAction SilentlyContinue
         foreach ($file in $matches) {
-            # Never delete a .db that is locked by a live process.
-            if ($file.Extension -eq ".db" -and (Test-FileLocked -Path $file.FullName)) {
+            # Never delete a live SQLite data file. The WAL/SHM sidecars hold
+            # committed-but-uncheckpointed state, so guard them as well as the
+            # main .db — not just the .db (H1).
+            $isSqliteData = $file.Name -like "*.db" -or $file.Name -like "*.db-wal" -or $file.Name -like "*.db-shm"
+            if ($isSqliteData -and (Test-FileLocked -Path $file.FullName)) {
                 Write-Warn "In use, skipping: $($file.FullName) (stop the stack first)"
                 $skipped++
                 continue

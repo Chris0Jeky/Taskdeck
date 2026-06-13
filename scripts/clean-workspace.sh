@@ -50,7 +50,10 @@ for dir in "${SCAN_DIRS[@]}"; do
   [[ -d "$dir" ]] || continue
   for pattern in "${PATTERNS[@]}"; do
     while IFS= read -r -d '' file; do
-      if [[ "$file" == *.db ]] && is_locked "$file"; then
+      # Never delete a live SQLite data file. The WAL/SHM sidecars hold
+      # committed-but-uncheckpointed state — on Linux `rm -f` unlinks an open
+      # file, so guard them as well as the main .db (H1).
+      if { [[ "$file" == *.db ]] || [[ "$file" == *.db-wal ]] || [[ "$file" == *.db-shm ]]; } && is_locked "$file"; then
         warn "In use, skipping: $file (stop the stack first)"
         skipped=$((skipped + 1))
         continue
