@@ -25,7 +25,7 @@ const props = withDefaults(
     activeId: string | null
     awaitingCount: number
     staleCount: number
-    /** Board-scoped count of settled proposals; ≥2 reveals the bulk file-away action. */
+    /** Caller-owned settled proposals on this board; ≥1 reveals the bulk file-away action. */
     dismissableCount?: number
     /** Disables the bulk file-away action while any review action is in flight. */
     busy?: boolean
@@ -91,7 +91,7 @@ function setFilter(next: QueueFilter) {
         >{{ key === 'all' ? 'All' : key === 'mine' ? 'Mine' : 'Stale' }}</button>
       </div>
       <button
-        v-if="dismissableCount >= 2"
+        v-if="dismissableCount >= 1"
         type="button"
         class="paper-review-rail__file-away"
         data-testid="queue-file-away-all"
