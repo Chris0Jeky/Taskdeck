@@ -77,7 +77,7 @@ const categories: ShortcutCategory[] = [
         @click="handleBackdropClick"
         @keydown.escape="emit('close')"
       >
-        <div class="kbd-help-panel bg-surface-container rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="kbd-help-panel bg-surface-container rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-outline-variant/30">
           <!-- Header -->
           <div class="sticky top-0 bg-surface-container border-b border-outline-variant/30 px-6 py-4 flex items-center justify-between">
             <div>
