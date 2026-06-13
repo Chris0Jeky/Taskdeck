@@ -417,7 +417,7 @@ describe('PaperReviewView', () => {
     expect(railText.indexOf('Newer applied work')).toBeLessThan(railText.indexOf('Older applied work'))
   })
 
-  it('does not send apply or reject transitions for expired proposals', async () => {
+  it('replaces decision buttons with "File away" for an expired proposal', async () => {
     const wrapper = await mountView([
       makeProposal({
         status: 'Expired',
@@ -426,16 +426,92 @@ describe('PaperReviewView', () => {
       }),
     ])
 
-    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
-    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    // A settled proposal can no longer be applied/rejected/edited/deferred, so
+    // those buttons are gone entirely — the rail becomes a filing rail. #1161
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-edit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-defer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-file-away"]').exists()).toBe(true)
+  })
+
+  it('files away an expired proposal when File away is clicked', async () => {
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'expired-001',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Expired proposal',
+      }),
+    ])
+
+    await wrapper.find('[data-testid="decision-file-away"]').trigger('click')
     await flushPromises()
 
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['expired-001'])
     expect(mocks.approveProposal).not.toHaveBeenCalled()
-    expect(mocks.executeProposal).not.toHaveBeenCalled()
     expect(mocks.rejectProposal).not.toHaveBeenCalled()
-    expect(mocks.infoToast).toHaveBeenCalledWith(
-      'This proposal is no longer actionable. Refresh review to see current status.',
-    )
+  })
+
+  it('files away a settled proposal with the ⌫ key', async () => {
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'expired-002',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Expired proposal',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['expired-002'])
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('shows a bulk "File away" action and clears every settled proposal on click', async () => {
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 2 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'expired-a',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Expired A',
+      }),
+      makeProposal({
+        id: 'expired-b',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 120_000).toISOString(),
+        summary: 'Expired B',
+      }),
+    ])
+
+    const bulk = wrapper.find('[data-testid="queue-file-away-all"]')
+    expect(bulk.exists()).toBe(true)
+    expect(bulk.text()).toContain('File away 2 settled')
+
+    await bulk.trigger('click')
+    await flushPromises()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['expired-a', 'expired-b'])
+  })
+
+  it('does not show the bulk "File away" action with fewer than two settled proposals', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'expired-only',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Lone expired',
+      }),
+    ])
+
+    expect(wrapper.find('[data-testid="queue-file-away-all"]').exists()).toBe(false)
   })
 
   it('surfaces feedback when defer is invoked before backend support exists', async () => {
