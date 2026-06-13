@@ -77,16 +77,16 @@ const categories: ShortcutCategory[] = [
         @click="handleBackdropClick"
         @keydown.escape="emit('close')"
       >
-        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="kbd-help-panel bg-surface-container rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           <!-- Header -->
-          <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <div class="sticky top-0 bg-surface-container border-b border-outline-variant/30 px-6 py-4 flex items-center justify-between">
             <div>
-              <h2 class="text-xl font-bold text-gray-900">Keyboard Shortcuts</h2>
-              <p class="text-sm text-gray-600 mt-1">Navigate and manage your boards faster</p>
+              <h2 class="text-xl font-bold text-on-surface">Keyboard Shortcuts</h2>
+              <p class="text-sm text-on-surface-variant mt-1">Navigate and manage your boards faster</p>
             </div>
             <button
               @click="emit('close')"
-              class="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100"
+              class="text-on-surface-variant hover:text-on-surface transition-colors p-1 rounded hover:bg-surface-container-high"
               aria-label="Close"
             >
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -102,25 +102,25 @@ const categories: ShortcutCategory[] = [
               :key="category.title"
               class="space-y-3"
             >
-              <h3 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <span class="w-1 h-6 bg-blue-600 rounded"></span>
+              <h3 class="text-lg font-semibold text-on-surface flex items-center gap-2">
+                <span class="w-1 h-6 bg-primary rounded"></span>
                 {{ category.title }}
               </h3>
               <div class="space-y-2 ml-3">
                 <div
                   v-for="shortcut in category.shortcuts"
                   :key="`${category.title}-${shortcut.description}`"
-                  class="flex items-center justify-between py-2 px-3 rounded hover:bg-gray-50 transition-colors"
+                  class="flex items-center justify-between py-2 px-3 rounded hover:bg-surface-container-high transition-colors"
                 >
-                  <span class="text-gray-700">{{ shortcut.description }}</span>
+                  <span class="text-on-surface-variant">{{ shortcut.description }}</span>
                   <div class="flex items-center gap-1">
                     <template v-for="(key, keyIndex) in shortcut.keys" :key="`${shortcut.description}-${keyIndex}-${key}`">
                       <kbd
-                        class="px-2 py-1 text-sm font-semibold text-gray-800 bg-gray-100 border border-gray-300 rounded shadow-sm min-w-[2rem] text-center"
+                        class="px-2 py-1 text-sm font-semibold text-on-surface bg-surface-container-high border border-outline-variant/40 rounded shadow-sm min-w-[2rem] text-center"
                       >
                         {{ key }}
                       </kbd>
-                      <span v-if="keyIndex < shortcut.keys.length - 1" class="text-gray-400 text-sm">or</span>
+                      <span v-if="keyIndex < shortcut.keys.length - 1" class="text-on-surface-variant text-sm">or</span>
                     </template>
                   </div>
                 </div>
@@ -129,14 +129,14 @@ const categories: ShortcutCategory[] = [
           </div>
 
           <!-- Footer -->
-          <div class="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4">
+          <div class="sticky bottom-0 bg-surface-container-low border-t border-outline-variant/30 px-6 py-4">
             <div class="flex items-center justify-between">
-              <p class="text-sm text-gray-600">
-                Press <kbd class="px-2 py-1 text-xs font-semibold text-gray-800 bg-white border border-gray-300 rounded shadow-sm">?</kbd> anytime to show or hide this help
+              <p class="text-sm text-on-surface-variant">
+                Press <kbd class="px-2 py-1 text-xs font-semibold text-on-surface bg-surface-container-high border border-outline-variant/40 rounded shadow-sm">?</kbd> anytime to show or hide this help
               </p>
               <button
                 @click="emit('close')"
-                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                class="px-4 py-2 bg-primary-container text-on-primary-container rounded-lg hover:brightness-110 transition-all font-medium"
               >
                 Got it!
               </button>
@@ -159,13 +159,13 @@ const categories: ShortcutCategory[] = [
   opacity: 0;
 }
 
-.modal-enter-active .bg-white,
-.modal-leave-active .bg-white {
+.modal-enter-active .kbd-help-panel,
+.modal-leave-active .kbd-help-panel {
   transition: transform 0.2s ease;
 }
 
-.modal-enter-from .bg-white,
-.modal-leave-to .bg-white {
+.modal-enter-from .kbd-help-panel,
+.modal-leave-to .kbd-help-panel {
   transform: scale(0.95);
 }
 

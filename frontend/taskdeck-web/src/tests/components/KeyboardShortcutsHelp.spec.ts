@@ -106,4 +106,23 @@ describe('KeyboardShortcutsHelp', () => {
     expect(text).toContain('anytime to show or hide this help')
     wrapper.unmount()
   })
+
+  it('uses design-token surfaces, not hardcoded light-theme classes', () => {
+    // Regression guard for ADR-0038 paper-night activation (#1135): this legacy
+    // overlay must survive the dark/paper canonical theme. Every surface, text,
+    // and accent color must come from the --td-*/Material token utilities, never
+    // from raw Tailwind light-theme classes that bake in a white background.
+    const wrapper = mountHelp(true)
+    const panel = document.body.querySelector('.kbd-help-panel') as HTMLElement
+    expect(panel).not.toBeNull()
+    expect(panel.className).toContain('bg-surface-container')
+
+    const markup = document.body.querySelector('[role="dialog"]')?.outerHTML ?? ''
+    expect(markup).not.toMatch(/\bbg-white\b/)
+    expect(markup).not.toMatch(/\btext-gray-\d/)
+    expect(markup).not.toMatch(/\bbg-gray-\d/)
+    expect(markup).not.toMatch(/\bborder-gray-\d/)
+    expect(markup).not.toMatch(/\b(?:bg|text|border)-blue-\d/)
+    wrapper.unmount()
+  })
 })
