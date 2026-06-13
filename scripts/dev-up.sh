@@ -14,6 +14,12 @@
 #   scripts/dev-up.sh --stop     # stop a stack started by this script
 #
 # Requires: .NET 8 SDK, Node.js 24.x, npm.
+#
+# Note: --stop tracks the `dotnet run` and `npm run dev` launcher PIDs. Because
+# `dotnet run` builds then runs the API as a child process, stopping the
+# launcher can on rare occasions leave the API listening. If a later start
+# reports the port in use, kill the lingering process (e.g. `pkill -f
+# Taskdeck.Api`).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -113,14 +119,16 @@ else
   warn "API did not report ready within 90s. It may still be migrating; continuing to start the frontend."
 fi
 
-if [[ "$SEED" -eq 1 ]]; then
-  step "Seeding demo account (demo / demo123)..."
-  ( cd "$FRONTEND_DIR" && npm run demo:seed ) || warn "demo:seed failed; continuing."
-fi
-
+# Frontend deps only if missing. Must run BEFORE seeding: demo:seed is a Node
+# script that resolves through the installed toolchain.
 if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
   step "Installing frontend dependencies (npm install)..."
   ( cd "$FRONTEND_DIR" && npm install ) || fatal "npm install failed."
+fi
+
+if [[ "$SEED" -eq 1 ]]; then
+  step "Seeding demo account (demo / demo123)..."
+  ( cd "$FRONTEND_DIR" && npm run demo:seed ) || warn "demo:seed failed; continuing."
 fi
 
 step "Starting Vite dev server (npm run dev)..."

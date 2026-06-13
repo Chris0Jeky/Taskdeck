@@ -34,6 +34,12 @@
 .NOTES
     Requires: .NET 8 SDK, Node.js 24.x, npm on PATH.
     The dev database lives at %LOCALAPPDATA%\Taskdeck\taskdeck-dev.db.
+
+    -Stop tracks the `dotnet run` and `npm run dev` launcher PIDs. `dotnet run`
+    builds then runs the API as a child process, so on rare occasions stopping
+    the launcher can leave the API still listening on the port. If a later
+    start reports the port in use, close the lingering API window (or
+    `Get-Process -Name Taskdeck.Api | Stop-Process`).
 #>
 
 [CmdletBinding()]
@@ -165,24 +171,25 @@ if (-not $ready) {
     Write-Step "API is ready."
 }
 
-if ($Seed) {
-    Write-Step "Seeding demo account (demo / demo123)..."
-    Push-Location $FrontendDir
-    try {
-        npm run demo:seed
-        if ($LASTEXITCODE -ne 0) { Write-Warn "demo:seed exited with code $LASTEXITCODE." }
-    } finally {
-        Pop-Location
-    }
-}
-
-# Frontend deps only if missing.
+# Frontend deps only if missing. Must run BEFORE seeding: demo:seed is a Node
+# script that resolves through the installed toolchain.
 if (-not (Test-Path (Join-Path $FrontendDir "node_modules"))) {
     Write-Step "Installing frontend dependencies (npm install)..."
     Push-Location $FrontendDir
     try {
         npm install
         if ($LASTEXITCODE -ne 0) { Write-Fatal "npm install failed (code $LASTEXITCODE)." }
+    } finally {
+        Pop-Location
+    }
+}
+
+if ($Seed) {
+    Write-Step "Seeding demo account (demo / demo123)..."
+    Push-Location $FrontendDir
+    try {
+        npm run demo:seed
+        if ($LASTEXITCODE -ne 0) { Write-Warn "demo:seed exited with code $LASTEXITCODE." }
     } finally {
         Pop-Location
     }
