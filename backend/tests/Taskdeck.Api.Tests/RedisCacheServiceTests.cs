@@ -76,38 +76,119 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ConcurrentCallers_AreNotSerializedBehindBlockingConnect()
+    public async Task ConnectionLock_IsNotHeld_WhileBlockingConnectRuns()
     {
-        // Regression guard for #1189: the connect attempt (up to a 3s timeout) must NOT be
-        // performed while holding _connectionLock. If it were, N concurrent callers would each
-        // block on the lock for the full connect duration and total wall-clock time would scale
-        // with N. With the lock held only around the minimal check-and-assign, the throttle lets
-        // exactly one thread attempt the connect while the rest fall straight through to no-cache,
-        // so total time stays close to a single connect attempt.
-        const int callers = 16;
+        // DETERMINISTIC regression guard for #1189 (does not rely on wall-clock margins).
+        //
+        // The pre-#1189 code performed the blocking ConnectionMultiplexer.Connect (up to a 3s
+        // ConnectTimeout, plus Thread.Sleep backoff) INSIDE lock (_connectionLock). Any other
+        // caller that needed the lock was therefore serialized behind the whole connect, starving
+        // the thread pool. The fix performs the connect OUTSIDE the lock (the lock guards only the
+        // minimal check-and-assign of _connection).
+        //
+        // We prove this directly: the OnBeforeConnect seam fires on the connecting thread at the
+        // exact moment the connect is about to block. From a SEPARATE probe thread we try to take
+        // _connectionLock. (TryEnter is re-entrant on the connecting thread, so the probe MUST run
+        // on another thread to observe the real held/not-held state.)
+        //   - Fixed code:    lock already released -> probe acquires it -> lockWasFree == true.
+        //   - Pre-#1189 code: lock held across connect -> probe times out -> lockWasFree == false.
+        var probeAcquiredLock = false;
+        var probeElapsed = TimeSpan.MaxValue;
+        var probeCompleted = new ManualResetEventSlim(false);
+        var seamFired = new ManualResetEventSlim(false);
 
-        var sw = Stopwatch.StartNew();
-
-        var tasks = Enumerable.Range(0, callers).Select(i => Task.Run(async () =>
+        _cache.OnBeforeConnect = () =>
         {
-            // Mix of operations all routed through GetConnection/GetDatabase.
-            var got = await _cache.GetAsync<TestData>($"k{i}");
-            got.Should().BeNull();
-            await _cache.SetAsync($"k{i}", new TestData("v", i), TimeSpan.FromMinutes(1));
-        }));
+            // Runs on the connecting thread, immediately before the blocking connect. Hand off to a
+            // foreign thread so the lock probe reflects the lock's real state, not re-entrancy.
+            seamFired.Set();
+            var probe = new Thread(() =>
+            {
+                // If the connect is OUTSIDE the lock (fixed), this succeeds immediately. If it is
+                // INSIDE the lock (old), the connecting thread holds it for the whole connect, so
+                // this 2s TryEnter times out (the old code holds the lock for the full 3s+ connect).
+                var sw = Stopwatch.StartNew();
+                if (Monitor.TryEnter(_cache.ConnectionLock, TimeSpan.FromSeconds(2)))
+                {
+                    try { probeAcquiredLock = true; }
+                    finally { Monitor.Exit(_cache.ConnectionLock); }
+                }
+                sw.Stop();
+                probeElapsed = sw.Elapsed;
+                probeCompleted.Set();
+            })
+            { IsBackground = true, Name = "redis-lock-probe" };
+            probe.Start();
 
-        var act = async () => await Task.WhenAll(tasks);
+            // Block the connecting thread here until the probe has finished its TryEnter window so
+            // the observation happens entirely within the connect's hold window. Bounded so the
+            // test can never hang.
+            probeCompleted.Wait(TimeSpan.FromSeconds(6));
+        };
 
-        await act.Should().NotThrowAsync("unreachable Redis must never surface exceptions to callers");
+        // Trigger exactly one connect attempt. GetConnection routes through GetDatabase here.
+        var result = await _cache.GetAsync<TestData>("trigger");
+        result.Should().BeNull();
 
+        seamFired.IsSet.Should().BeTrue("the connect seam must fire — otherwise the test proves nothing");
+        probeAcquiredLock.Should().BeTrue(
+            "the blocking connect must run OUTSIDE _connectionLock so other callers are not serialized behind it (#1189)");
+        // Deterministic timing margin: on the fixed path the lock is free, so the probe acquires it
+        // almost instantly (well under 500ms). The old lock-around-connect path would block the
+        // probe for the entire ~3s connect, so this assertion fails hard there.
+        probeElapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(500),
+            "a concurrent caller must acquire _connectionLock promptly, not block for the full connect duration");
+    }
+
+    [Fact]
+    public void Dispose_IsNotSerialized_BehindAnInFlightConnect()
+    {
+        // Second revert-sensitive guard for #1189, from a real caller's perspective. Dispose() takes
+        // lock (_connectionLock) UNCONDITIONALLY — unlike GetAsync, it has no ReconnectMinInterval
+        // throttle gate in front of the lock, so it is the cleanest public path that genuinely
+        // contends for _connectionLock. (A throttled GetAsync caller would early-return before the
+        // lock in BOTH old and new code, so it cannot distinguish the regression — which is exactly
+        // why the old wall-clock concurrency test was not a real guard.)
+        //
+        // While one thread is parked mid-connect (via the OnBeforeConnect seam), Dispose() must
+        // acquire the lock and complete promptly.
+        //   - Fixed code:    the connecting thread released _connectionLock before the connect, so
+        //                    Dispose acquires it immediately.
+        //   - Pre-#1189 code: the connecting thread holds _connectionLock across the multi-second
+        //                    connect, so Dispose blocks behind it for the whole connect.
+        var releaseConnect = new ManualResetEventSlim(false);
+        var connectEntered = new ManualResetEventSlim(false);
+
+        _cache.OnBeforeConnect = () =>
+        {
+            connectEntered.Set();
+            // Simulate the multi-second blocking connect. Bounded so the test cannot hang. The
+            // fixed code has already released _connectionLock by this point; the old code has not.
+            releaseConnect.Wait(TimeSpan.FromSeconds(5));
+        };
+
+        // Park a connecting thread inside the seam (simulated mid-connect).
+        var connectingCall = Task.Run(() => _cache.GetAsync<TestData>("connector").GetAwaiter().GetResult());
+
+        connectEntered.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue(
+            "the connect seam must be reached so Dispose is timed against a real mid-connect window");
+
+        // Time Dispose() while the connecting thread is parked mid-connect.
+        var sw = Stopwatch.StartNew();
+        _cache.Dispose();
         sw.Stop();
+        var disposeElapsed = sw.Elapsed;
 
-        // A single connect attempt is bounded by the 3s ConnectTimeout. If the connect were
-        // serialized under the lock, 16 callers could take many multiples of that. We assert the
-        // aggregate stays within roughly two connect windows — generous enough to avoid CI
-        // flakiness but far below the serialized-blocking failure mode.
-        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(8),
-            "concurrent callers must not each block for the full connect timeout under the lock");
+        // Let the parked connecting thread proceed and finish (it must not throw post-dispose).
+        releaseConnect.Set();
+        var connectorResult = connectingCall.GetAwaiter().GetResult();
+        connectorResult.Should().BeNull("an unreachable Redis degrades the connector to a miss");
+
+        // On the fixed path Dispose acquires the free lock in microseconds. On the old path it would
+        // block ~the full connect (seconds). 500ms is a wide, CI-robust margin that the fixed path
+        // clears easily and the serialized path cannot.
+        disposeElapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(500),
+            "Dispose must not be serialized behind another thread's in-flight connect (#1189)");
     }
 
     [Fact]
