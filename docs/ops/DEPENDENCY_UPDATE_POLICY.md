@@ -1,6 +1,6 @@
 # Dependency Update Policy
 
-Last Updated: 2026-03-29
+Last Updated: 2026-06-13
 Owner: Repository maintainers
 Linked issue: `#148` (OPS-18)
 
@@ -131,5 +131,39 @@ coordinated migration), not incidentally.
 
 | Package(s) | Cap | Reason | Remove when |
 |---|---|---|---|
-| `Microsoft.EntityFrameworkCore`, `.Sqlite`, `.Design` | major bumps blocked (stay on 8.x) | The project pins the runtime EF Core stack to 8.x (#760/#767). Dependabot otherwise bumps the core package to 9.x while the providers stay on 8.x, desyncing them and reintroducing an ambiguous `ExecuteDeleteAsync` compile break (#1102, #1106). | The runtime EF Core stack is migrated to 9.x+ together, in one PR. |
+| `Microsoft.EntityFrameworkCore`, `.Sqlite`, `.Design`, `.Tools` | major bumps blocked (stay on 8.x) | The project pins the runtime EF Core stack to 8.x (#760/#767). Dependabot otherwise bumps the core package to 9.x while the providers stay on 8.x, desyncing them and reintroducing an ambiguous `ExecuteDeleteAsync` compile break (#1102, #1106). `Microsoft.EntityFrameworkCore.Tools` is now capped here too: although design-time-only (`PrivateAssets`), on its 10.x line it dragged EF Core 9.x in transitively, so it is pinned to 8.0.x with the rest of the EF stack (#1127, ADR-0039). | The runtime EF Core stack is migrated to 9.x+ together, in one PR. |
+| `Npgsql.EntityFrameworkCore.PostgreSQL` | major bumps blocked (stay on 8.x) | Must track the EF Core 8.x family it builds on. CPM aligned it down from 9.0.4 to 8.0.11 (#1127, ADR-0039); without the cap Dependabot re-proposes 9.x and re-desyncs it from EF Core. | The runtime EF Core stack is migrated to 9.x+ together, in one PR (with the EF Core packages above). |
+| `Microsoft.AspNetCore.SignalR.Client`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Http.Polly`, `Microsoft.Extensions.Logging.Abstractions` | major bumps blocked (stay on 8.x) | These had drifted to 10.0.8 while the backend targets `net8.0`. CPM aligned them to the 8.0.x family (#1127, ADR-0039); without major caps the next weekly Dependabot run re-proposes 9.x/10.x and reverts the alignment. | The backend is migrated off `net8.0` as one coordinated migration. |
 | `FluentAssertions` | major bumps blocked (stay on 7.x) | FluentAssertions 8.x+ requires a paid commercial license (Xceed); 7.x is the last free line. Maintainer decision on #1088. | The project purchases the Xceed license, or migrates to a free assertion library. |
+
+## Central Package Management (backend NuGet)
+
+The backend uses **Central Package Management (CPM)**. Every NuGet version is declared
+once in **`backend/Directory.Packages.props`** as a `<PackageVersion>` entry
+(`ManagePackageVersionsCentrally = true`). Individual `.csproj` files reference packages
+with `<PackageReference Include="..." />` and **must not** carry a `Version=` attribute —
+adding one fails restore with **NU1008**.
+
+Practical implications for dependency updates:
+
+- **To bump a version, edit `backend/Directory.Packages.props`, not the `.csproj`.**
+  Dependabot edits this central file, so a single bump applies uniformly across all 11
+  backend projects (no more per-project version drift).
+- The version caps in the table above are enforced via `.github/dependabot.yml` `ignore`
+  rules, which act on the package name regardless of where the version is declared, so CPM
+  and the caps work together.
+- See ADR-0039 for the full rationale (CPM adoption, the 8.x alignment, and the SDK pin).
+
+## .NET SDK pin (`global.json`)
+
+A `global.json` at the **repository root** pins the .NET SDK to **8.0.415** with
+**`rollForward: latestFeature`** and `allowPrerelease: false`. The file is at the repo
+root (not under `backend/`) because the .NET muxer discovers `global.json` by walking
+**upward** from the working directory, and the documented commands and all CI jobs run
+`dotnet` from the repo root.
+
+`rollForward` is `latestFeature` (not `latestPatch`): the pin still locks the **8.0**
+major.minor line but tolerates feature-band rollovers. CI (`setup-dotnet` with
+`dotnet-version: 8.0.x`) and the Docker builds (`mcr.microsoft.com/dotnet/sdk:8.0`) carry
+only the newest 8.0.x feature band, so `latestPatch` would break every CI job and Docker
+build simultaneously the day Microsoft ships only `8.0.5xx` SDKs. See ADR-0039.
