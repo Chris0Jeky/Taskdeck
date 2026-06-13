@@ -24,6 +24,7 @@ function mountRail(props?: Partial<{
   items: QueueRailItem[]
   activeId: string | null
   recentlyApplied: RecentlyAppliedRow[]
+  dismissableCount: number
 }>) {
   return mount(ReviewQueueRail, {
     props: {
@@ -31,6 +32,7 @@ function mountRail(props?: Partial<{
       activeId: props?.activeId ?? null,
       awaitingCount: 3,
       staleCount: 2,
+      dismissableCount: props?.dismissableCount ?? 0,
       recentlyApplied: props?.recentlyApplied ?? [],
     },
   })
@@ -119,6 +121,22 @@ describe('ReviewQueueRail', () => {
     const wrapper = mountRail()
     expect(wrapper.text()).toContain('3 awaiting')
     expect(wrapper.text()).toContain('2 stale')
+  })
+
+  it('hides the bulk file-away action below two settled proposals', () => {
+    expect(mountRail({ dismissableCount: 0 }).find('[data-testid="queue-file-away-all"]').exists()).toBe(false)
+    expect(mountRail({ dismissableCount: 1 }).find('[data-testid="queue-file-away-all"]').exists()).toBe(false)
+  })
+
+  it('shows the bulk file-away action with the count and emits file-away-all on click', async () => {
+    const wrapper = mountRail({ dismissableCount: 3 })
+    const bulk = wrapper.find('[data-testid="queue-file-away-all"]')
+    expect(bulk.exists()).toBe(true)
+    expect(bulk.text()).toContain('File away 3 settled')
+    expect(bulk.attributes('aria-label')).toBe('File away 3 settled proposals')
+
+    await bulk.trigger('click')
+    expect(wrapper.emitted('file-away-all')).toHaveLength(1)
   })
 
   it('renders recently-applied rows when provided', () => {
