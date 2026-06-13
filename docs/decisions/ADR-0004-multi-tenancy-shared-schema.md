@@ -4,6 +4,8 @@
 - **Date**: 2026-02-22
 - **Deciders**: Project maintainers
 
+> **Archive-pivot note (2026-06-13):** The *multi-organization / hosted-SaaS tenancy* expansion premise is de-scoped — Taskdeck is single-user, local-first, SQLite-only per the archive pivot (see ADR-0038 and `docs/STATUS.md`). The **shared-schema + `TenantId` model and the cross-user isolation behaviour this ADR decides remain LIVE**: `TenantId` is carried on entities and the `403`/`404` cross-user existence policy (a Golden Principle) is enforced in the running app. Only the multi-tenant scale-out / multi-org adoption premise is parked — do not treat the isolation security model as historical.
+
 ## Context
 
 Taskdeck started as a single-tenant SQLite application. The cloud/collaboration roadmap requires supporting multiple users and eventually organizations. Three multi-tenancy models were evaluated for the transition from single-tenant to multi-tenant.
