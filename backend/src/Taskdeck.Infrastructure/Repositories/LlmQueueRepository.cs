@@ -226,6 +226,7 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             WHERE Id = {requestId}
               AND Status = {(int)RequestStatus.Pending}
               AND UpdatedAt = {expectedUpdatedAt}
+              AND RequestType NOT LIKE {CaptureRequestTypeLike}
             """,
             cancellationToken);
 
