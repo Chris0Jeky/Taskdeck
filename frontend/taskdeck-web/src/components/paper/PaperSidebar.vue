@@ -92,7 +92,7 @@ const metaItems: PaperNavItem[] = [
   { id: 'settings', label: 'Settings', glyph: 'S', path: '/workspace/settings/profile', flag: 'newAuth', workbenchBypassesFlag: true, keywords: 'settings profile password account' },
   { id: 'api-keys', label: 'API Keys', glyph: 'K', path: '/workspace/settings/api-keys', keywords: 'api keys mcp tokens authentication' },
   { id: 'preferences', label: 'Preferences', glyph: 'P', path: '/workspace/settings/preferences', keywords: 'preferences notifications' },
-  { id: 'appearance', label: 'Appearance', glyph: 'T', path: '/workspace/settings/appearance', keywords: 'appearance theme paper night dark light obsidian legacy' },
+  { id: 'appearance', label: 'Appearance', glyph: 'E', path: '/workspace/settings/appearance', keywords: 'appearance theme paper night dark light obsidian legacy' },
   { id: 'shortcuts', label: 'Shortcuts', glyph: '?', path: '#shortcuts' },
   { id: 'logout', label: 'Logout', glyph: '→', path: '#logout' },
 ]
