@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-06-06
+Last Updated: 2026-06-13
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -1023,7 +1023,9 @@ These continue in parallel where they protect trust, performance, or operator po
 
 ## Release Framing
 
-### Platform Release Plan (2026-03-29)
+> **SUPERSEDED 2026-06-13 — archive pivot.** The maintainer ended the product effort: Taskdeck will **not** be distributed. It is being finished as a personal-use tool and then archived (see `docs/STATUS.md` and **ADR-0038**). The multi-version platform release plan below (packaging → cloud → mobile → collaboration, `v0.2.0`–`v1.0.0`) is **no longer the roadmap** — it is retained only as historical record of the abandoned distribution strategy. The distribution-era tracks (GTM `#544`/`#546`/`#550`, cloud `#537`/`#548`, mobile `#540`, code-signing `#1167`, `#531` master) are de-scoped and will be closed as not-planned during archive closeout. `v0.1.0` survives only as an *optional* unsigned local build for the maintainer's own convenience, not a published release. Current work is tracked against the archive-pivot waves: finish + activate the Paper UI (canonical per ADR-0038), make the app trivially easy to run locally, land general quality improvements, then archive cleanly.
+
+### Platform Release Plan (2026-03-29 — SUPERSEDED, historical)
 
 The release plan now spans packaging, cloud, mobile, and collaboration — not just feature milestones.
 Strategy documents: `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar docs.
