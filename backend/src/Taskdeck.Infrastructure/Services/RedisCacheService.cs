@@ -161,12 +161,20 @@ public sealed class RedisCacheService : ICacheService, IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        // Take the connection lock so a concurrent GetConnection() publish cannot assign a
+        // freshly-established multiplexer after we read _connection, which would leak it.
+        ConnectionMultiplexer? toDispose;
+        lock (_connectionLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            toDispose = _connection;
+            _connection = null;
+        }
 
         try
         {
-            _connection?.Dispose();
+            toDispose?.Dispose();
         }
         catch (Exception ex)
         {

@@ -110,5 +110,21 @@ public sealed class RedisCacheServiceTests : IDisposable
             "concurrent callers must not each block for the full connect timeout under the lock");
     }
 
+    [Fact]
+    public async Task Dispose_IsIdempotent_AndSubsequentCallsDegradeWithoutThrowing()
+    {
+        // Establish the degraded state, then dispose. Dispose takes the connection lock, so a
+        // concurrent connect cannot leak a multiplexer past disposal; calling it twice must no-op.
+        await _cache.GetAsync<TestData>("warm");
+
+        _cache.Dispose();
+        _cache.Dispose(); // second call must be a no-op, not throw
+
+        // After disposal the service stays in the no-cache path and never throws.
+        var result = await _cache.GetAsync<TestData>("after-dispose");
+        result.Should().BeNull();
+        await _cache.SetAsync("after-dispose", new TestData("v", 1), TimeSpan.FromMinutes(1));
+    }
+
     private sealed record TestData(string Name, int Value);
 }
