@@ -25,7 +25,7 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 3. **General quality** — backend correctness + usability, proactively found.
 4. **Archive cleanly** — docs reflect the final state; de-scoped trackers closed with dated pivot notes.
 
-**De-scoped permanently** (closed as not-planned or parked during archive closeout, with dated notes): distribution & code-signing (`#1167`), GTM/marketing (`#544`/`#546`/`#550`), cloud & collaboration (`#537`/`#548`), mobile (`#540`), beta intake, multi-DB support (SQLite-only forever), and multi-user scale work. The platform-expansion strategy docs under `docs/strategy/` and the cloud/mobile ADRs (0014, 0023–0029) are retained as historical records of parked tracks, not active plans. The planning principles below remain valid for the *product* (review-first, capture-friction, novice legibility) even though the *distribution* roadmap is retired.
+**De-scoped permanently** (closed as not-planned or parked during archive closeout, with dated notes): distribution & code-signing (`#1167`), GTM/marketing (`#544`/`#546`/`#550`), cloud & collaboration (`#537`/`#548`), mobile (`#540`), beta intake, multi-DB support (SQLite-only forever), and multi-user scale work. The platform-expansion strategy docs under `docs/strategy/` and the cloud/platform ADRs **0014, 0020, 0023, 0026–0028** are retained as historical records of parked tracks, not active plans. Three ADRs in the 0023–0029 range decide behaviour that is **still live** in the single-instance app — only their multi-instance/enterprise premise is parked: **ADR-0024** (the `ICacheService` cache-aside abstraction, in-memory by default), **ADR-0025** (the `AddTaskdeckSignalR` Redis-backplane wiring, config-gated and dormant in the single-instance default), and **ADR-0029** (optional TOTP MFA + OIDC/OAuth). Likewise the single-self-contained-executable packaging path in `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md` stays the active personal run path; only its installer / cross-platform-distribution / GTM framing is parked. The planning principles below remain valid for the *product* (review-first, capture-friction, novice legibility) even though the *distribution* roadmap is retired.
 
 ## Planning Principles
 
@@ -1117,6 +1117,8 @@ Master tracker: `#531`.
 
 ## Active Backlog (Priority-Labeled)
 
+> **Archive-pivot note (2026-06-13):** The `Priority I`–`V` / "Phase 4" tranche framing below is the **pre-pivot** priority model, retained for historical traceability. Active sequencing now follows the archive-pivot **waves** in the Direction section above (Paper UI activation → easy local run → general quality → archive); most items below are already annotated *(delivered)*, and the distribution/cloud/mobile/GTM tranches are de-scoped.
+
 ### Priority I (Current Phase 4 Completion Path)
 
 - **Security bug**: `#722` (SEC-20) — `ChangePassword` does not verify caller identity; any authenticated user can change another user's password. Discovered during 2026-04-03 test audit. Must be resolved before external onboarding.
@@ -1197,6 +1199,8 @@ Master tracker: `#531`.
 
 ### Platform Expansion Wave (2026-03-29 — Priority II)
 
+> **⚠️ SUPERSEDED 2026-06-13 — archive pivot.** This entire wave (packaging/distribution, cloud/collaboration, mobile, GTM) is **de-scoped** and retained as a historical record only. The `v0.1.0 → … → v1.0.0 GA` execution order below is **no longer the roadmap** — see the Direction section above and the SUPERSEDED Platform Release Plan. The self-contained-exe *personal* run path survives this de-scoping (only its *distribution* framing is parked; see `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md`).
+
 Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents.
 
 - Master strategy tracker: `#531`
@@ -1206,7 +1210,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 - Market adoption and GTM wave: `#544` → `#545` (README polish), `#546` (demo video), `#547` (LICENSE)
 - Cross-cutting: `#548` (legal/privacy), `#549` (analytics/error tracking), `#550` (brand/domain)
 - Reuse anchors: `#95` (PWA readiness), `#87` (mobile E2E), `#111` (cloud topology), `#105` (SignalR scale-out), `#216` (GTM execution), `#341` (telemetry)
-- Execution order: `v0.1.0` packaging → `v0.2.0` cloud → `v0.3.0` mobile → `v0.4.0` collab → `v0.5.0` maturity → `v1.0.0` GA
+- Execution order (**historical — superseded by the archive pivot, not the active roadmap**): `v0.1.0` packaging → `v0.2.0` cloud → `v0.3.0` mobile → `v0.4.0` collab → `v0.5.0` maturity → `v1.0.0` GA
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
