@@ -8,6 +8,8 @@
 > Before sending EU/UK personal data to any sub-processor below, the operator
 > must have a Data Processing Addendum (DPA) in place with that sub-processor.
 
+> **⚠️ NOT IN USE — parked by the 2026-06-13 archive pivot.** This hosted-instance legal package is no longer planned — Taskdeck is personal-use only, never distributed or hosted as a service. Retained only as a template; any self-hosted deployment is the operator’s sole responsibility. See `docs/STATUS.md`.
+
 **Last updated:** 2026-04-23 (draft)
 **Tracking issue:** `#548` (LEGAL-01)
 

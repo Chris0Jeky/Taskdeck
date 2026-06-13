@@ -9,6 +9,8 @@
 > counsel. Sections containing placeholder or unverified claims are explicitly
 > marked `[LEGAL REVIEW REQUIRED]`.
 
+> **⚠️ NOT IN USE — parked by the 2026-06-13 archive pivot.** This hosted-instance legal package is no longer planned — Taskdeck is personal-use only, never distributed or hosted as a service. Retained only as a template; any self-hosted deployment is the operator’s sole responsibility. See `docs/STATUS.md`.
+
 ## Contents
 
 - [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md) — draft privacy policy covering data collected, lawful bases, retention, sub-processors, and user rights.
