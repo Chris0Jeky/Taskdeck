@@ -55,6 +55,9 @@ const {
   dismissableProposalIds,
   matchesActiveBoardFilter,
   isProposalExpired,
+  isApplyActionable,
+  isRejectActionable,
+  isStaleProposal,
   loadProposals,
   loadBoardOptions,
   startClock,
@@ -86,11 +89,6 @@ const hashProposalId = computed(() => {
     return null
   }
 })
-
-function isStaleProposal(proposal: ApiProposal): boolean {
-  if (normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
-  return nowMs.value - new Date(proposal.createdAt).getTime() >= 24 * 60 * 60 * 1000
-}
 
 const filteredVisibleProposals = computed(() => {
   switch (queueFilter.value) {
@@ -444,8 +442,10 @@ const proposedNum = computed(() => {
 })
 
 const authorMeta = computed(() => {
+  // Only the confidence score is real wire data. Latency and token counts are
+  // not yet surfaced by the backend, so we do not fabricate them here. #1136
   const c = selectors.confidenceBreakdown.value
-  return `${c.overall.toFixed(2)} confidence · 4s · 1.2k tokens`
+  return `${c.overall.toFixed(2)} confidence`
 })
 
 const authorName = computed(() => {
@@ -465,15 +465,6 @@ const whyNowBody = computed(() => {
 
 const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
 const busy = computed(() => proposalActionBusyId.value !== null || revisionBusy.value)
-
-function isApplyActionable(proposal: ApiProposal): boolean {
-  const status = normalizeProposalStatus(proposal.status)
-  return (status === 'PendingReview' || status === 'Approved') && !isProposalExpired(proposal)
-}
-
-function isRejectActionable(proposal: ApiProposal): boolean {
-  return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isProposalExpired(proposal)
-}
 
 function onApply() {
   const p = activeProposal.value
