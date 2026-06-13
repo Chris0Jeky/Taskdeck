@@ -78,6 +78,23 @@ describe('ShellSidebar', () => {
     expect(wrapper.text()).toContain('Settings')
   })
 
+  it('renders a visible Appearance link in the footer pointing at the theme settings', () => {
+    const wrapper = mountSidebar({
+      stub: { template: '<a :data-to="to"><slot /></a>', props: ['to'] },
+    })
+    const appearanceLink = wrapper.findAll('a').find((a) => a.text().includes('Appearance'))
+    expect(appearanceLink).toBeTruthy()
+    expect(appearanceLink!.attributes('data-to')).toBe('/workspace/settings/appearance')
+  })
+
+  it('keeps the Appearance link visible even when newAuth is disabled (theme is auth-independent)', () => {
+    mockFeatureFlags.isEnabled = vi.fn((flag: string) => flag !== 'newAuth')
+    const wrapper = mountSidebar()
+    expect(wrapper.text()).toContain('Appearance')
+    // The Settings (profile) link is gated on newAuth; Appearance is not.
+    expect(wrapper.text()).not.toContain('Settings')
+  })
+
   it('does not show demoted items (Metrics, Activity, Ops, etc.) in the sidebar', () => {
     const wrapper = mountSidebar()
     // These items were demoted from sidebar and are now command-palette-only
