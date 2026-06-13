@@ -3,7 +3,7 @@
 Last Updated: 2026-04-16
 Issue: `#538` CLD-01 Deploy Taskdeck to managed cloud platform
 
-> **⚠️ REFERENCE ONLY — cloud / multi-instance scope de-scoped 2026-06-13.** Taskdeck is being finished as a single-instance, SQLite-based, personal-use tool (archive pivot) and will not be distributed or scaled out. The cloud / scale-out / PostgreSQL procedures below are retained as historical reference, not active plans. SQLite + single-instance + local-first are the permanent architecture. See `docs/STATUS.md`.
+> **⚠️ REFERENCE ONLY — cloud / multi-instance track de-scoped 2026-06-13.** Taskdeck is being finished as a single-instance, SQLite-based, personal-use tool (archive pivot) and will not be distributed or scaled out. The cloud / scale-out / PostgreSQL procedures below are retained as historical reference, not active plans. SQLite + single-instance + local-first are the permanent architecture. See `docs/STATUS.md`.
 
 ---
 

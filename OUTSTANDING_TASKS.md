@@ -35,7 +35,7 @@ Last reviewed: 2026-06-05
 
 ## C. Strategic / larger tracks (seeded under tracker #1142)
 
-- [ ] **#1123** — Ship & validate **v0.1.0** (the #1 blocker to usefulness): add release smoke test to `release-desktop.yml`, build+smoke each RID on a clean VM, push the `v0.1.0` tag. *Most important strategic item.*
+- [ ] **#1123** — v0.1.0 release: now an **optional archival item** (archive pivot 2026-06-13 — no distribution). The self-contained exe is the personal run path; pushing a `v0.1.0` tag is a maintainer end-of-project decision, not a usefulness blocker. The release smoke step already landed in `release-desktop.yml`. *(Was "the #1 blocker" under ship-first; re-scoped by the pivot.)*
 - [ ] **#1132** — Make the required PR gate enforce security: gitleaks/SAST/dependency scan + CORS fail-closed + single ≥32 JWT floor + global `FallbackPolicy` + bundle-size in the required lane.
 - [x] **#1130** — SQLite local concurrency: enable WAL + `busy_timeout`, fix per-process `Migrate()` race (UI + MCP + CLI share one DB → `SQLITE_BUSY`). *(closed 2026-06-05; ACs 1+3 shipped in PR #1165 / da764b92. AC2 cross-process `Migrate()` serialization → #1164; export/import redesign → #1166.)*
 - [ ] **#1131** — CLI hardening: fresh-machine bootstrap (it crashes without `Connectors:EncryptionKey`) + route CLI mutations through board-access authorization.
@@ -45,7 +45,7 @@ Last reviewed: 2026-06-05
 - [ ] **#1166** — Harden dev-sandbox export/import via the SQLite backup API (carries #1130's export/import follow-up).
 - [ ] **#1138** (rest) — Split the 1300+ line `STATUS.md` into a lean current-reality head + `docs/archive/status-history/`; add a rotation rule; recertify TESTING_GUIDE totals from a green CI run; add a markdown link-checker to nightly.
 - [ ] **#1136** (remainder) — ADR decision **delivered** (ADR-0038, Paper canonical / Legacy frozen; STATUS states the canonical stack) via PR #1207. **Still open:** remove/quarantine the dead paper composables (AC3) — scheduled for the Paper polish wave.
-- [ ] **#1137** — Refocus strategy/roadmap on shipping to first users; freeze new feature/re-skin tracks until v0.1.0 ships.
+- [ ] **#1137** — Refocus strategy/roadmap. **Effectively satisfied by the 2026-06-13 archive pivot** (strategy is now finish-for-personal-use → archive; distribution/GTM/cloud/mobile tracks de-scoped). Pending maintainer check-off / close as not-planned during archive closeout.
 - [ ] **#1135 / #1140 / #1141 / #1139** — Code-health guardrails + oversized-view decomposition; workspace hygiene + one-command dev-up; i18n/a11y ADR; deployment docs (docker quickstart secret, desktop run docs).
 
 > Full audit context and the complete gap inventory: **GitHub issue #1142** (master tracker).

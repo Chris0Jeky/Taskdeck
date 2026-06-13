@@ -270,7 +270,7 @@ Taskdeck uses EF Core auto-migration on API startup. When blue and green slots s
 - **Migration order**: The idle slot starts first and applies any pending migrations. If the migration fails, the idle slot will not become healthy and the deployment is blocked at Phase 3 step 4 (health check).
 - **Shared database risk**: During the canary window, both slots read/write the same database. If the new migration alters behavior for existing data, ensure the active slot can still function with the migrated schema.
 
-If blue and green are deployed on separate hosts with separate databases (e.g., in a hypothetical multi-node topology (not planned — single-instance is permanent per the 2026-06-13 archive pivot)), migration safety is simplified since each slot has its own schema lifecycle.
+If blue and green are deployed on separate hosts with separate databases (e.g., in a hypothetical multi-node topology; not planned — single-instance is permanent per the 2026-06-13 archive pivot), migration safety is simplified since each slot has its own schema lifecycle.
 
 ## Emergency Hotfix Override
 
