@@ -164,7 +164,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
               v-model="name"
               type="text"
               required
-              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="My Board"
             />
           </div>
@@ -178,7 +178,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
               id="board-description"
               v-model="description"
               rows="3"
-              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="What is this board for?"
             ></textarea>
           </div>
