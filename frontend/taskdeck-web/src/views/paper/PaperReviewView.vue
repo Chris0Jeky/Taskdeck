@@ -224,7 +224,9 @@ const queueItems = computed<QueueRailItem[]>(() =>
       serial: `#${p.id.slice(0, 4).toUpperCase()}`,
       title: p.summary || '(no summary)',
       who: normalizeProposalSourceType(p.sourceType) === 'Chat' ? 'haiku' : 'capture',
-      // Confidence is not yet on the wire — leave null until the gap lands.
+      // Per-item rail confidence is not yet wired per-proposal — leave null until
+      // the gap lands. Not contradictory with `authorMeta` below, which shows the
+      // REAL aggregate /confidence breakdown for the single active proposal.
       confidence: null,
       age: ageLabel(p.createdAt),
       reach: summariseReach(p),
