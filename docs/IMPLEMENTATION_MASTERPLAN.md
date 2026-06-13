@@ -65,7 +65,7 @@ Continuous-cycle wave (2026-05-29, 19 PRs merged, backlog cleared to zero open P
 Bulk merge wave (2026-05-16, PRs `#1055`--`#1074`, 15 PRs merged to main):
 - **Security fixes** (3 PRs, `#1055`/`#1067`/`#1068`): redirect handler hardening (buffer content, filter sensitive headers), SEC-31/SEC-32 (hardcoded key removal + RBAC on abuse endpoints), SEC-33 (health endpoint info disclosure suppression)
 - **Test coverage** (2 PRs, `#1069`/`#1072`): MFA/API Keys/Board Access controller integration tests, ConnectorProviders API + useAutomationChat composable tests
-- **RFAI-03** (`#1071`): `IProposalGenerator` interface, `FieldVerifier`, `ProposalGeneratorV1` with LLM-backed field extraction and verification
+- **RFAI-03** (`#1071`): `IProposalGenerator` interface, `FieldVerifier`, `ProposalGeneratorV1` with LLM-backed field extraction and verification. _(Update `#1198`, 2026-06-13: `ProposalGeneratorV1` and the `IProposalGenerator` interface were removed as dead code — they never acquired a runtime consumer; `FieldVerifier`/`DeterministicPreExtractor` are retained for a future V2 generator.)_
 - **RFAI-04** (`#1058`): `ProposalRevision` revision chain, edit-before-approve flow, `IProposalCompiler`, `CompilerValidationResult`, revision API endpoints
 - **RFAI-05** (`#1062`): Paper Review deep-dive wired to backend provenance/confidence/conflicts/history/similar-past APIs
 - **RFAI-08** (`#1073`/`#1074`): `EgressDisclosureController` with `IEgressRegistry`, `InsightsController` with bucketed privacy-preserving cohort analytics, `InsightsService`, 21 new tests
