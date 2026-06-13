@@ -27,6 +27,8 @@ const props = withDefaults(
     staleCount: number
     /** Board-scoped count of settled proposals; ≥2 reveals the bulk file-away action. */
     dismissableCount?: number
+    /** Disables the bulk file-away action while any review action is in flight. */
+    busy?: boolean
     recentlyApplied: RecentlyAppliedRow[]
     cadence?: number[]
     applyRate?: number
@@ -34,6 +36,7 @@ const props = withDefaults(
   }>(),
   {
     dismissableCount: 0,
+    busy: false,
     cadence: () => [4, 3, 5, 2, 4, 1, 3],
     applyRate: 0.71,
     undoRate: 0.04,
@@ -92,6 +95,7 @@ function setFilter(next: QueueFilter) {
         type="button"
         class="paper-review-rail__file-away"
         data-testid="queue-file-away-all"
+        :disabled="busy"
         :aria-label="`File away ${dismissableCount} settled proposals`"
         @click="emit('file-away-all')"
       >File away {{ dismissableCount }} settled</button>
@@ -171,9 +175,13 @@ function setFilter(next: QueueFilter) {
   cursor: pointer;
   text-align: left;
 }
-.paper-review-rail__file-away:hover {
+.paper-review-rail__file-away:hover:not(:disabled) {
   color: var(--ink);
   border-color: var(--ink);
+}
+.paper-review-rail__file-away:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .paper-review-rail__empty {
   padding: 14px 18px;
