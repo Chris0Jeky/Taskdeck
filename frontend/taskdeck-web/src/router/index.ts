@@ -34,6 +34,7 @@ const ExportImportView = () => import('../views/ExportImportView.vue')
 const ArchiveView = () => import('../views/ArchiveView.vue')
 const NotificationInboxView = () => import('../views/NotificationInboxView.vue')
 const NotificationPreferencesView = () => import('../views/NotificationPreferencesView.vue')
+const AppearanceSettingsView = () => import('../views/AppearanceSettingsView.vue')
 const InboxView = () => import('../views/InboxView.vue')
 const HomeView = () => import('../views/HomeView.vue')
 const TodayView = () => import('../views/TodayView.vue')
@@ -275,6 +276,12 @@ const router = createRouter({
       name: 'workspace-settings-preferences',
       component: NotificationPreferencesView,
       meta: { requiresShell: true, breadcrumb: 'Preferences' },
+    },
+    {
+      path: '/workspace/settings/appearance',
+      name: 'workspace-settings-appearance',
+      component: AppearanceSettingsView,
+      meta: { requiresShell: true, breadcrumb: 'Appearance' },
     },
     {
       path: '/workspace/settings/api-keys',
