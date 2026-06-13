@@ -173,7 +173,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
       <button
         type="button"
         :disabled="isDeleting"
-        class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         @click="handleDeleteCancel"
       >
         Cancel
@@ -181,7 +181,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
       <button
         type="button"
         :disabled="isDeleting"
-        class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 border border-transparent rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         @click="handleDeleteConfirm"
       >
         {{ isDeleting ? 'Deleting…' : 'Delete' }}
