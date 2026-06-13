@@ -39,5 +39,6 @@
 | [0035](ADR-0035-required-security-scan-merge-gate.md) | Promote Secret / Dependency / SAST Scans into the Required PR Merge Gate | Accepted | 2026-06-05 |
 | [0036](ADR-0036-default-deny-authorization-fallback-policy.md) | Default-Deny Authorization via a Global FallbackPolicy | Accepted | 2026-06-05 |
 | [0037](ADR-0037-idempotency-key-contract.md) | Idempotency-Key Contract for Automation Proposal Operations | Accepted | 2026-06-06 |
+| [0038](ADR-0038-paper-ui-canonical.md) | Paper UI Is the Canonical Frontend (Legacy Frozen) | Accepted | 2026-06-13 |
 | [0039](ADR-0039-central-package-management-sdk-pin.md) | Central Package Management, SDK Pin, and 8.x Dependency Alignment | Accepted | 2026-06-13 |
 | [0040](ADR-0040-utc-datetime-materialization-convention.md) | Global UTC DateTime Materialization Convention for SQLite | Accepted | 2026-06-13 |

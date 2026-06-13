@@ -33,7 +33,11 @@ When Terraform is used, these compose assets remain the workload layer. The Terr
 ## Secrets
 
 Secret handling for all environments follows `docs/security/SECRETS_MANAGEMENT_BASELINE.md`.
-For compose deployments, `TASKDECK_JWT_SECRET` in `deploy/.env` is required and enforced at render time.
+For compose deployments, two variables in `deploy/.env` are required and enforced at render time
+(compose aborts with an error if either is unset):
+
+- `TASKDECK_JWT_SECRET` — JWT signing secret, minimum 32 bytes (generate with `openssl rand -base64 48`)
+- `TASKDECK_CONNECTORS_ENCRYPTION_KEY` — AES-256 key for connector credentials (generate with `openssl rand -base64 32`)
 
 ## Prerequisites
 

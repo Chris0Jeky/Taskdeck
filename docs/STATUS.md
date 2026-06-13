@@ -2,6 +2,10 @@
 
 Last Updated: 2026-06-13
 
+Direction + canonical UI (2026-06-13, maintainer-decided):
+- **Project direction is finish-for-personal-use, then archive.** Taskdeck will not be distributed; the goals are to finish and activate the Paper UI, make the app trivially easy to run locally, land general quality improvements, and archive cleanly. This supersedes the 2026-06-05 ship-first framing; distribution-era tracks (code-signing, GTM, cloud, mobile) are de-scoped.
+- **Paper is the canonical UI** per **ADR-0038** (records the #1136 decision; activation not yet shipped). The default theme will flip to `paper` once the activation prerequisites land (#1161 dismiss affordance, shared review-actionability logic, light-theme straggler tokenization, Paper review de-stubbing, and a real in-app theme toggle — **today the only switch that turns Paper off is the unlinked `/styleguide/paper` route**; the planned settings toggle is the Legacy escape hatch and does not exist yet). **All new frontend UX work targets the Paper views; Legacy is frozen** (no new fixes). The ~26 routes without Paper variants keep rendering Legacy views inside the Paper shell after a contrast pass.
+
 Dead-code removal (2026-06-13, `#1198`): deleted the unused `ProposalGeneratorV1` — the `IProposalGenerator` interface (incl. its V1-only `ProposalGenerationResult`/`GeneratedProposal` result DTOs), its sole DI registration, and its test class — after confirming **zero consumers** inject `IProposalGenerator` (the only non-definition reference was the DI line). This resolves the tracked partial-entity-tracking bug in `#1198` by removing the unreachable code path rather than patching it. The shared `FieldVerifier`/`IFieldVerifier` and `DeterministicPreExtractor`/`IDeterministicPreExtractor` utilities (V1 was their only consumer but each has standalone tests and DI registration) are retained for a future V2 generator. Build clean, Proposal-filtered backend tests green.
 
 Security gate + hardening epic (2026-06-05/06, 5 PRs merged; **2 independent adversarial reviews per PR** plus Gemini/Codex bot reviews, all findings of every severity fixed or tracked, merges gated on green CI + aging):
