@@ -322,6 +322,10 @@ test('boards list API failure should show error in boards workspace', async ({ p
 })
 
 // ─── Scenario 8: Workspace preferences save failure → visual feedback ─────────
+// The workspace mode selector lives in the top bar (aria-label "Workspace
+// mode", exercised by smoke.spec.ts). On a failed PUT the workspace store
+// keeps the local selection and raises a warning toast (role="status"):
+// "<message>. Keeping the local selection for now."
 
 test('workspace preferences save failure should show error and not silently discard input', async ({ page }) => {
   await page.goto('/workspace/home')
@@ -344,17 +348,26 @@ test('workspace preferences save failure should show error and not silently disc
   })
 
   const workspaceModeSelect = page.getByLabel('Workspace mode')
-  if (await workspaceModeSelect.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await workspaceModeSelect.selectOption('workbench')
+  await expect(workspaceModeSelect).toBeVisible({ timeout: 5_000 })
 
-    // The save attempt should surface an error — either an alert or inline message
-    const errorFeedback = page
-      .getByRole('alert')
-      .or(page.getByText(/error|failed|could not save/i))
-      .first()
-    await expect(errorFeedback).toBeVisible({ timeout: 10_000 })
-  } else {
-    // Workspace mode selector absent; skip gracefully
-    test.skip()
-  }
+  const failedSave = page.waitForResponse((response) =>
+    response.url().includes('/api/workspace/preferences') &&
+    response.request().method() === 'PUT' &&
+    response.status() === 500)
+  await workspaceModeSelect.selectOption('workbench')
+  await failedSave
+
+  // The save attempt surfaces a warning toast naming the failure.
+  // The preferences PUT is idempotent, so httpRetry.ts retries it 3 times
+  // (worst-case backoff with +25% jitter = 1.25s + 2.5s + 5s = 8.75s) before
+  // the store rejects and shows the toast. `failedSave` above only resolves on
+  // the FIRST 500, so the toast assertion must allow for the full retry budget
+  // — a 20s timeout keeps it comfortably clear of 8.75s on slow nightly
+  // firefox/webkit runners.
+  await expect(
+    page.getByText(/failed to save workspace/i).first(),
+  ).toBeVisible({ timeout: 20_000 })
+
+  // The user's selection is kept locally rather than silently discarded
+  await expect(workspaceModeSelect).toHaveValue('workbench')
 })
