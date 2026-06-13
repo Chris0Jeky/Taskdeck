@@ -79,9 +79,16 @@ foreach ($dir in $ScanDirs) {
                 continue
             }
             if ($PSCmdlet.ShouldProcess($file.FullName, "Delete")) {
-                Remove-Item -Path $file.FullName -Force -ErrorAction SilentlyContinue
-                Write-Info "Removed: $($file.FullName)"
-                $removed++
+                # Only report/count a deletion that actually succeeded. -ErrorAction
+                # Stop surfaces failures (e.g. permission denied) instead of silently
+                # claiming success (M1).
+                try {
+                    Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+                    Write-Info "Removed: $($file.FullName)"
+                    $removed++
+                } catch {
+                    Write-Warn "Failed to remove: $($file.FullName). $($_.Exception.Message)"
+                }
             }
         }
     }
@@ -91,9 +98,15 @@ foreach ($dir in $ScanDirs) {
 $tmpDir = Join-Path $RepoRoot ".tmp"
 if (Test-Path $tmpDir) {
     if ($PSCmdlet.ShouldProcess($tmpDir, "Delete directory")) {
-        Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Info "Removed: $tmpDir"
-        $removed++
+        # Same as the file path: only report/count a directory that was actually
+        # removed, surfacing failures instead of claiming success (M2).
+        try {
+            Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction Stop
+            Write-Info "Removed: $tmpDir"
+            $removed++
+        } catch {
+            Write-Warn "Failed to remove directory: $tmpDir. $($_.Exception.Message)"
+        }
     }
 }
 
