@@ -73,11 +73,13 @@ foreach ($dir in $ScanDirs) {
     foreach ($pattern in $Patterns) {
         $matches = Get-ChildItem -Path $dir -Filter $pattern -File -ErrorAction SilentlyContinue
         foreach ($file in $matches) {
-            # Never delete a live SQLite data file. The WAL/SHM sidecars hold
-            # committed-but-uncheckpointed state, so guard them as well as the
-            # main .db — not just the .db (H1).
-            $isSqliteData = $file.Name -like "*.db" -or $file.Name -like "*.db-wal" -or $file.Name -like "*.db-shm"
-            if ($isSqliteData -and (Test-FileLocked -Path $file.FullName)) {
+            # Never delete a file a running stack holds open: the SQLite WAL/SHM
+            # sidecars carry committed-but-uncheckpointed state (guard them as well
+            # as the main .db, H1), and SerializedMigrator holds .migrate.lock while
+            # applying EF migrations (deleting it mid-migration breaks the guard, P2).
+            $needsLockCheck = $file.Name -like "*.db" -or $file.Name -like "*.db-wal" `
+                -or $file.Name -like "*.db-shm" -or $file.Name -like "*.migrate.lock"
+            if ($needsLockCheck -and (Test-FileLocked -Path $file.FullName)) {
                 Write-Warn "In use, skipping: $($file.FullName) (stop the stack first)"
                 $skipped++
                 continue

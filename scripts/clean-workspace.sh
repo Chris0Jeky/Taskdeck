@@ -56,18 +56,22 @@ for dir in "${SCAN_DIRS[@]}"; do
   [[ -d "$dir" ]] || continue
   for pattern in "${PATTERNS[@]}"; do
     while IFS= read -r -d '' file; do
-      # SQLite data file? (main .db plus the WAL/SHM sidecars that hold
-      # committed-but-uncheckpointed state — on Unix `rm -f` unlinks an open
-      # file, losing those writes, so all three must be guarded, not just .db).
-      is_sqlite_data=0
-      if [[ "$file" == *.db ]] || [[ "$file" == *.db-wal ]] || [[ "$file" == *.db-shm ]]; then
-        is_sqlite_data=1
-      fi
-      if [[ "$is_sqlite_data" -eq 1 ]]; then
+      # Live-state files that must not be unlinked while a stack is running:
+      #   - SQLite data: the main .db plus the WAL/SHM sidecars that hold
+      #     committed-but-uncheckpointed state (on Unix `rm -f` unlinks an open
+      #     file, losing those writes), so all three are guarded, not just .db.
+      #   - .migrate.lock: SerializedMigrator holds it FileShare.None while
+      #     applying EF migrations; deleting it mid-migration breaks the
+      #     cross-process guard (P2).
+      needs_lock_check=0
+      case "$file" in
+        *.db|*.db-wal|*.db-shm|*.migrate.lock) needs_lock_check=1 ;;
+      esac
+      if [[ "$needs_lock_check" -eq 1 ]]; then
         if [[ "$have_lsof" -eq 0 ]]; then
-          # Without lsof we cannot prove the DB is not in use. Conservative on
-          # unknown: refuse to delete SQLite data files rather than risk
-          # corrupting a live stack (P1). Always-safe artifacts below still go.
+          # Without lsof we cannot prove the file is not in use. Conservative on
+          # unknown: refuse to delete it rather than risk corrupting a live stack
+          # or breaking an active migration (P1/P2).
           warn "Cannot verify lock (lsof not installed), skipping: $file (stop the stack first)"
           skipped=$((skipped + 1))
           continue
