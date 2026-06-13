@@ -112,7 +112,12 @@ public class LlmQueueToProposalWorker : BackgroundService
                     }
                     else
                     {
-                        await ProcessSingleItemAsync(batchItem.ItemId, ct);
+                        if (!batchItem.ExpectedUpdatedAt.HasValue)
+                        {
+                            return;
+                        }
+
+                        await ProcessSingleItemAsync(batchItem.ItemId, batchItem.ExpectedUpdatedAt.Value, ct);
                     }
                 }
                 finally
@@ -125,7 +130,7 @@ public class LlmQueueToProposalWorker : BackgroundService
         await Task.WhenAll(tasks);
     }
 
-    private async Task ProcessSingleItemAsync(Guid itemId, CancellationToken ct)
+    private async Task ProcessSingleItemAsync(Guid itemId, DateTimeOffset expectedUpdatedAt, CancellationToken ct)
     {
         using var activity = TaskdeckTelemetry.ActivitySource.StartActivity(
             "taskdeck.worker.process_llm_queue_item",
@@ -140,10 +145,28 @@ public class LlmQueueToProposalWorker : BackgroundService
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var planner = scope.ServiceProvider.GetRequiredService<IAutomationPlannerService>();
 
-        var item = await unitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
-        if (item == null || item.Status != RequestStatus.Pending)
+        var claimed = await unitOfWork.LlmQueue.TryClaimProcessingAsync(itemId, expectedUpdatedAt, ct);
+        if (!claimed)
         {
             outcome = "already_claimed";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+            return;
+        }
+
+        var item = await unitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
+        if (item == null || item.Status != RequestStatus.Processing)
+        {
+            // We successfully claimed the row (UPDATE flipped it to Processing) but the
+            // post-claim re-fetch no longer sees it Processing. The row vanished or was
+            // mutated between our UPDATE and SELECT -- this is distinct from losing the
+            // claim race ("already_claimed"), so surface it with its own outcome and a
+            // warning so the orphaned-Processing case stays visible in telemetry/logs.
+            _logger.LogWarning(
+                "Queue item {ItemId} claimed but re-fetch returned {Status}; row vanished or mutated between claim and read",
+                itemId,
+                item?.Status.ToString() ?? "null");
+            outcome = "claimed_then_missing";
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
             return;
@@ -154,23 +177,6 @@ public class LlmQueueToProposalWorker : BackgroundService
         if (item.BoardId.HasValue)
         {
             activity?.SetTag(TaskdeckTelemetryTags.BoardId, item.BoardId.Value.ToString());
-        }
-
-        try
-        {
-            item.MarkAsProcessing();
-            await unitOfWork.SaveChangesAsync(ct);
-        }
-        catch (DomainException ex)
-        {
-            _logger.LogDebug(
-                "Queue item {ItemId} was already claimed by another worker. {ExceptionSummary}",
-                itemId,
-                SensitiveDataRedactor.SummarizeException(ex));
-            outcome = "already_claimed";
-            stopWatch.Stop();
-            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
-            return;
         }
 
         try
@@ -404,14 +410,16 @@ public class LlmQueueToProposalWorker : BackgroundService
 
                 if (pendingIndex < pendingItems.Count)
                 {
-                    batch.Add(new WorkerBatchItem(pendingItems[pendingIndex++].Id, IsCaptureTriage: false));
+                    var pending = pendingItems[pendingIndex++];
+                    batch.Add(new WorkerBatchItem(pending.Id, IsCaptureTriage: false, ExpectedUpdatedAt: pending.UpdatedAt));
                 }
             }
             else
             {
                 if (pendingIndex < pendingItems.Count)
                 {
-                    batch.Add(new WorkerBatchItem(pendingItems[pendingIndex++].Id, IsCaptureTriage: false));
+                    var pending = pendingItems[pendingIndex++];
+                    batch.Add(new WorkerBatchItem(pending.Id, IsCaptureTriage: false, ExpectedUpdatedAt: pending.UpdatedAt));
                     if (batch.Count == maxBatchSize)
                     {
                         break;

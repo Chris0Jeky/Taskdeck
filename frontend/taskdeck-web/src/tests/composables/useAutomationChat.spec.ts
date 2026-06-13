@@ -41,12 +41,15 @@ vi.mock('../../api/boardsApi', () => ({
   boardsApi: boardsApiMocks,
 }))
 
+const scopeDisposeFns: Array<() => void> = []
+
 vi.mock('vue', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue')>()
   return {
     ...actual,
     onMounted: (fn: () => void) => fn(),
-    watch: vi.fn(),
+    watch: vi.fn().mockReturnValue(vi.fn()),
+    onScopeDispose: (fn: () => void) => { scopeDisposeFns.push(fn) },
   }
 })
 
@@ -58,6 +61,7 @@ async function loadComposable() {
 describe('useAutomationChat', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    scopeDisposeFns.length = 0
     routeMocks.query = {}
     chatApiMocks.getMySessions.mockResolvedValue([])
     chatApiMocks.getSession.mockResolvedValue(undefined)
@@ -356,6 +360,125 @@ describe('useAutomationChat', () => {
         expect(chat.chatHealthLoadError.value).not.toBeNull()
         expect(toastMocks.error).toHaveBeenCalled()
       })
+    })
+  })
+
+  describe('scope disposal', () => {
+    it('registers an onScopeDispose callback', async () => {
+      const { useAutomationChat } = await loadComposable()
+      useAutomationChat()
+
+      expect(scopeDisposeFns.length).toBeGreaterThan(0)
+    })
+
+    it('does not write reactive state after disposal on loadSessions', async () => {
+      let resolveGetSessions!: (value: unknown[]) => void
+      chatApiMocks.getMySessions.mockReturnValue(
+        new Promise((resolve) => { resolveGetSessions = resolve }),
+      )
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+
+      // Trigger disposal before the pending request resolves
+      for (const fn of scopeDisposeFns) fn()
+
+      // Now resolve the in-flight request
+      resolveGetSessions([{ id: 's1', title: 'Late', boardId: null, recentMessages: [] }])
+      await vi.waitFor(() => {
+        expect(chatApiMocks.getMySessions).toHaveBeenCalled()
+      })
+
+      // The sessions ref should NOT have been updated after disposal
+      expect(chat.sessions.value).toEqual([])
+    })
+
+    it('does not write reactive state after disposal on loadProviderHealth', async () => {
+      let resolveHealth!: (value: unknown) => void
+      chatApiMocks.getHealth.mockReturnValue(
+        new Promise((resolve) => { resolveHealth = resolve }),
+      )
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+
+      for (const fn of scopeDisposeFns) fn()
+
+      resolveHealth({ status: 'healthy', provider: 'mock' })
+      await vi.waitFor(() => {
+        expect(chatApiMocks.getHealth).toHaveBeenCalled()
+      })
+
+      expect(chat.chatHealth.value).toBeNull()
+    })
+
+    it('does not apply route board context after disposal on the mount continuation', async () => {
+      // Route points at a board that the deferred getBoards response contains.
+      routeMocks.query = { boardId: 'b1' }
+
+      let resolveBoards!: (value: unknown[]) => void
+      const boardsPromise = new Promise<unknown[]>((resolve) => { resolveBoards = resolve })
+      boardsApiMocks.getBoards.mockReturnValue(boardsPromise)
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+
+      // Register a disposal hook on the same getBoards promise. Because the
+      // composable's internal `await boardsApi.getBoards()` reaction is registered
+      // first (during the synchronous onMounted), this runs AFTER availableBoards
+      // is populated but BEFORE the onMounted `.then(applyRouteBoardContext)`
+      // continuation -- exactly the post-load, post-dispose race the guard covers.
+      void boardsPromise.then(() => {
+        for (const fn of scopeDisposeFns) fn()
+      })
+
+      resolveBoards([{ id: 'b1', name: 'Project Alpha', description: null, isArchived: false }])
+
+      // Drain all microtasks so the deferred continuation runs.
+      await new Promise((resolve) => setTimeout(resolve))
+
+      // The continuation must be a no-op after disposal. Without the isDisposed
+      // guard, applyRouteBoardContext would resolve 'b1' to 'Project Alpha' and
+      // write it to newSessionBoardId after the scope is gone.
+      expect(chat.newSessionBoardId.value).toBe('')
+    })
+
+    it('does not create a session after disposal lands while loading board options', async () => {
+      // Defer getBoards so disposal can land in the microtask gap between the
+      // boards resolving (loadBoardOptions returns true) and handleCreateSession
+      // resuming after its `await loadBoardOptions()`.
+      let resolveBoards!: (value: unknown[]) => void
+      const boardsPromise = new Promise<unknown[]>((resolve) => { resolveBoards = resolve })
+      boardsApiMocks.getBoards.mockReturnValue(boardsPromise)
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+
+      chat.newSessionTitle.value = 'Test Session'
+      chat.newSessionBoardId.value = 'Project Alpha'
+
+      // Kick off creation without awaiting; it suspends on `await loadBoardOptions()`.
+      const pending = chat.handleCreateSession()
+
+      // Dispose AFTER boards resolve but BEFORE handleCreateSession resumes.
+      // loadBoardOptions's own internal continuation is registered first, so it
+      // resolves to true, then this fires, then handleCreateSession resumes --
+      // exactly the post-load, post-dispose race the guard covers.
+      void boardsPromise.then(() => {
+        for (const fn of scopeDisposeFns) fn()
+      })
+
+      resolveBoards([{ id: 'b1', name: 'Project Alpha', description: null, isArchived: false }])
+
+      // Drain microtasks so the deferred dispose and the resumed continuation run.
+      await new Promise((resolve) => setTimeout(resolve))
+      await pending
+
+      // Post-dispose the function must bail before creating the session or
+      // emitting any toast, and must not leave creatingSession stuck true.
+      expect(chatApiMocks.createSession).not.toHaveBeenCalled()
+      expect(toastMocks.error).not.toHaveBeenCalled()
+      expect(chat.creatingSession.value).toBe(false)
     })
   })
 })

@@ -116,17 +116,24 @@ public class LlmQueueService : ILlmQueueService
         try
         {
             var pendingRequests = await _unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending);
-            var request = pendingRequests
+            var candidates = pendingRequests
+                .Where(candidate => !CaptureRequestContract.IsCaptureRequestType(candidate.RequestType))
                 .OrderBy(candidate => candidate.CreatedAt)
-                .FirstOrDefault(
-                candidate => !CaptureRequestContract.IsCaptureRequestType(candidate.RequestType));
-            if (request == null)
-                return Result.Failure<LlmRequestDto>(ErrorCodes.NotFound, "No pending requests in the queue");
+                .ToList();
 
-            request.MarkAsProcessing();
-            await _unitOfWork.SaveChangesAsync();
+            foreach (var candidate in candidates)
+            {
+                var claimed = await _unitOfWork.LlmQueue.TryClaimProcessingAsync(
+                    candidate.Id, candidate.UpdatedAt);
+                if (!claimed)
+                    continue;
 
-            return Result.Success(MapToDto(request));
+                // TryClaimProcessingAsync refreshes the tracked entity on success, so the
+                // candidate now reflects the claimed Processing state from the database.
+                return Result.Success(MapToDto(candidate));
+            }
+
+            return Result.Failure<LlmRequestDto>(ErrorCodes.NotFound, "No pending requests in the queue");
         }
         catch (DomainException ex)
         {

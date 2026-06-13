@@ -128,6 +128,28 @@ public class LlmQueueToProposalWorkerTests
         planner.CallCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task ProcessBatch_PendingItem_ForwardsPendingUpdatedAtToClaim()
+    {
+        var item = CreatePendingItem();
+        // Capture the value the worker should forward BEFORE running the batch:
+        // BuildFairBatchItems snapshots pending.UpdatedAt, and the claim mutates it.
+        var expectedUpdatedAt = item.UpdatedAt;
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var planner = new FakeAutomationPlannerService();
+        using var sp = BuildServiceProvider(queueRepo, planner);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        // Regression guard: if the worker passed default/now instead of the pending
+        // item's actual UpdatedAt, the optimistic-concurrency UPDATE would match nothing
+        // in production and stall the queue while this fake still claimed successfully.
+        queueRepo.TryClaimProcessingCalls.Should().ContainSingle();
+        queueRepo.TryClaimProcessingCalls[0].RequestId.Should().Be(item.Id);
+        queueRepo.TryClaimProcessingCalls[0].ExpectedUpdatedAt.Should().Be(expectedUpdatedAt);
+    }
+
     #endregion
 
     #region Empty queue
@@ -497,20 +519,17 @@ public class LlmQueueToProposalWorkerTests
     public async Task ProcessBatch_ItemClaimedBetweenFetchAndProcess_SkipsGracefully()
     {
         // Simulate a race: item is Pending when the batch is built,
-        // but another worker claims it (transitions to Processing)
-        // before ProcessSingleItemAsync re-fetches and tries MarkAsProcessing.
+        // but another worker already claimed it (TryClaimProcessingAsync returns false).
         var item = CreatePendingItem();
         var queueRepo = new FakeLlmQueueRepository([item])
         {
-            // Hook: when GetByIdAsync is called, transition the item to Processing
-            // before returning, simulating another worker claiming it first.
-            OnBeforeGetById = i => { if (i.Status == RequestStatus.Pending) i.MarkAsProcessing(); }
+            // Atomic claim returns false, simulating another worker claiming it first.
+            TryClaimProcessingResult = false
         };
         var planner = new FakeAutomationPlannerService();
         using var sp = BuildServiceProvider(queueRepo, planner);
         var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
 
-        // Should not throw - the worker catches DomainException from double MarkAsProcessing
         var act = async () => await InvokeProcessBatchAsync(worker, CancellationToken.None);
         await act.Should().NotThrowAsync();
 
@@ -690,6 +709,33 @@ public class LlmQueueToProposalWorkerTests
             CancellationToken cancellationToken = default)
         {
             return Task.FromResult(TryClaimProcessingCaptureResult);
+        }
+
+        public bool TryClaimProcessingResult { get; set; } = true;
+
+        /// <summary>
+        /// Records the (requestId, expectedUpdatedAt) the worker passed on each non-capture
+        /// claim attempt so tests can assert the worker forwarded the pending item's actual
+        /// UpdatedAt (not default/now). A wrong value here would make the optimistic-concurrency
+        /// UPDATE match nothing in production and stall the queue while tests stayed green.
+        /// </summary>
+        public List<(Guid RequestId, DateTimeOffset ExpectedUpdatedAt)> TryClaimProcessingCalls { get; } = [];
+
+        public Task<bool> TryClaimProcessingAsync(
+            Guid requestId,
+            DateTimeOffset expectedUpdatedAt,
+            CancellationToken cancellationToken = default)
+        {
+            TryClaimProcessingCalls.Add((requestId, expectedUpdatedAt));
+            if (TryClaimProcessingResult)
+            {
+                var item = _allItems.FirstOrDefault(i => i.Id == requestId);
+                if (item != null && item.Status == RequestStatus.Pending)
+                {
+                    item.MarkAsProcessing();
+                }
+            }
+            return Task.FromResult(TryClaimProcessingResult);
         }
 
         // Unused members below

@@ -33,14 +33,32 @@ updates:
       # them and reintroduces the ambiguous ExecuteDeleteAsync break (fixed in
       # #1102 and again in #1106). Block their major bumps until the project
       # deliberately migrates the runtime EF stack together.
-      # Note: Microsoft.EntityFrameworkCore.Tools is a design-time-only package
-      # (PrivateAssets) tracked separately on its own line and is intentionally
-      # NOT pinned here; it does not affect the runtime compile.
       - dependency-name: "Microsoft.EntityFrameworkCore"
         update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.EntityFrameworkCore.Sqlite"
         update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.EntityFrameworkCore.Design"
+        update-types: ["version-update:semver-major"]
+      # Central Package Management aligns the whole backend stack to the net8.0
+      # TFM (#1127, ADR-0039). The packages below were re-aligned DOWN from 9.x/10.x
+      # to the 8.x line; without major-version caps the next weekly dependabot run
+      # re-proposes the same majors and reverts the alignment — the exact recurrence
+      # ADR-0034 documents. Block their majors until the backend deliberately moves
+      # off net8.0 as one coordinated migration.
+      # Microsoft.EntityFrameworkCore.Tools is now capped here too: it is design-time
+      # only (PrivateAssets), but on its 10.x line it dragged EF Core 9.x in
+      # transitively, so it is pinned to 8.0.x with the rest of the EF stack (ADR-0039).
+      - dependency-name: "Microsoft.EntityFrameworkCore.Tools"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.AspNetCore.SignalR.Client"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions.Hosting"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions.Http.Polly"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions.Logging.Abstractions"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Npgsql.EntityFrameworkCore.PostgreSQL"
         update-types: ["version-update:semver-major"]
       # FluentAssertions 8.x+ requires a paid commercial license (Xceed); the
       # project intentionally stays on the free 7.x line (maintainer decision on

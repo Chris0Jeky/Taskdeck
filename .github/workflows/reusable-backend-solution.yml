@@ -31,6 +31,7 @@ jobs:
           cache-dependency-path: |
             backend/Taskdeck.sln
             backend/**/*.csproj
+            backend/Directory.Packages.props
 
       - name: Restore backend
         run: dotnet restore backend/Taskdeck.sln

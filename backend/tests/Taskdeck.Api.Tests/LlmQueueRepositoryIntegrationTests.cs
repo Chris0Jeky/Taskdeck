@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -310,6 +311,178 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         counts[RequestStatus.Pending].Should().Be(2);
         counts.Should().ContainKey(RequestStatus.Processing);
         counts[RequestStatus.Processing].Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_ShouldClaimPendingRequest()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-claim-pending-user", "llm-claim-pending@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"claim-pending-test\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        request.Status.Should().Be(RequestStatus.Pending);
+        var expectedUpdatedAt = request.UpdatedAt;
+
+        var result = await repo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt);
+
+        result.Should().BeTrue();
+
+        // Re-fetch to verify status changed in the database
+        db.ChangeTracker.Clear();
+        var updated = await repo.GetByIdAsync(request.Id);
+        updated.Should().NotBeNull();
+        updated!.Status.Should().Be(RequestStatus.Processing);
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_ShouldFailWhenStatusAlreadyChanged()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-claim-stale-user", "llm-claim-stale@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"already-claimed\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        var expectedUpdatedAt = request.UpdatedAt;
+
+        // Simulate another worker already claiming it by transitioning to Processing
+        request.MarkAsProcessing();
+        await db.SaveChangesAsync();
+
+        // Try to claim with the old expectedUpdatedAt -- should fail
+        var result = await repo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_ShouldSucceedOnFirstClaim_FailOnSecond()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+
+        var user = new User("llm-claim-race-user", "llm-claim-race@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"race-test\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        var expectedUpdatedAt = request.UpdatedAt;
+
+        // Use separate scopes + Task.WhenAll for truly concurrent claims
+        using var firstScope = _factory.Services.CreateScope();
+        using var secondScope = _factory.Services.CreateScope();
+        var firstRepo = firstScope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+        var secondRepo = secondScope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var results = await Task.WhenAll(
+            firstRepo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt),
+            secondRepo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt));
+
+        // Exactly one should succeed (optimistic concurrency)
+        results.Count(r => r).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_ShouldRejectNonPendingRequest()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-nonpending-user", "llm-nonpending@example.com", "hash");
+        db.Users.Add(user);
+
+        // Request is already Processing — TryClaimProcessingAsync should reject
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"not-pending\"}");
+        request.MarkAsProcessing();
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        var result = await repo.TryClaimProcessingAsync(request.Id, request.UpdatedAt);
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_ShouldRefreshTrackedEntity()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-claim-refresh-user", "llm-claim-refresh@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"refresh-tracked\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        // Mimic the service path: fetch the candidate via a tracking query so the
+        // entity is held by the change tracker as Pending before the raw-SQL claim.
+        var tracked = (await repo.GetByStatusAsync(RequestStatus.Pending))
+            .Single(r => r.Id == request.Id);
+        tracked.Status.Should().Be(RequestStatus.Pending);
+        var expectedUpdatedAt = tracked.UpdatedAt;
+
+        var claimed = await repo.TryClaimProcessingAsync(request.Id, expectedUpdatedAt);
+
+        claimed.Should().BeTrue();
+
+        // The raw-SQL UPDATE bypasses the change tracker; the repository must refresh
+        // the tracked instance so callers holding it observe the claimed state.
+        tracked.Status.Should().Be(RequestStatus.Processing);
+        tracked.UpdatedAt.Should().NotBe(expectedUpdatedAt);
+
+        // Read the persisted row from a fresh, untracked query and assert the tracked
+        // instance now mirrors the DB exactly. This distinguishes a true DB reload
+        // (ReloadAsync) from an in-memory MarkAsProcessing() substitute that would set
+        // a different UTC-now UpdatedAt than the value the raw-SQL UPDATE persisted.
+        using var freshScope = _factory.Services.CreateScope();
+        var freshDb = freshScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await freshDb.LlmRequests
+            .AsNoTracking()
+            .SingleAsync(r => r.Id == request.Id);
+        persisted.Status.Should().Be(RequestStatus.Processing);
+        tracked.UpdatedAt.Should().Be(persisted.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingAsync_GetByIdAfterClaim_ShouldReturnProcessingWithoutClearingTracker()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-claim-findasync-user", "llm-claim-findasync@example.com", "hash");
+        db.Users.Add(user);
+
+        var request = new LlmRequest(user.Id, "chat.completion", "{\"text\":\"findasync-after-claim\"}");
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        var claimed = await repo.TryClaimProcessingAsync(request.Id, request.UpdatedAt);
+
+        claimed.Should().BeTrue();
+
+        // Deliberately do NOT clear the change tracker: GetByIdAsync delegates to
+        // FindAsync, which serves the tracked instance from the identity map.
+        // Without a post-claim refresh it would still report stale Pending.
+        var refetched = await repo.GetByIdAsync(request.Id);
+        refetched.Should().NotBeNull();
+        refetched!.Status.Should().Be(RequestStatus.Processing);
     }
 
     [Fact]

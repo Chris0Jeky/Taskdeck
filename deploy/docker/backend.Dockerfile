@@ -1,6 +1,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
+# global.json lives at the repo root (build context root) and pins the .NET
+# SDK; it must be copied in before any dotnet command so the muxer sees the
+# pin. Directory.Packages.props is inside backend/ and arrives with the COPY
+# below. Mirrors deploy/Dockerfile.production.
+COPY global.json ./
 COPY backend/ ./backend/
 RUN dotnet restore backend/src/Taskdeck.Api/Taskdeck.Api.csproj
 RUN dotnet publish backend/src/Taskdeck.Api/Taskdeck.Api.csproj -c Release -o /app/publish /p:UseAppHost=false

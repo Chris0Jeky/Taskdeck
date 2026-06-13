@@ -46,8 +46,12 @@ RUN npm run build
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS backend-build
 WORKDIR /src
 
-# Copy solution and project files first for restore layer caching
+# Copy solution, SDK pin, central package management, and project files first
+# for restore layer caching. Directory.Packages.props and global.json must be
+# present before dotnet restore because .csproj files no longer carry versions.
 COPY backend/Taskdeck.sln backend/
+COPY global.json ./
+COPY backend/Directory.Packages.props backend/
 COPY backend/src/Taskdeck.Domain/Taskdeck.Domain.csproj backend/src/Taskdeck.Domain/
 COPY backend/src/Taskdeck.Application/Taskdeck.Application.csproj backend/src/Taskdeck.Application/
 COPY backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj backend/src/Taskdeck.Infrastructure/
