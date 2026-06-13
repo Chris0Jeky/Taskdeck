@@ -4,7 +4,7 @@
 **Scope:** Single-executable packaging, installer creation, cross-platform distribution, and first-run experience
 **Status:** Strategic planning document — not yet executed
 
-> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The distribution / cloud / mobile / GTM tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial, general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
+> **⚠️ PARTIALLY SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The **installer-creation, cross-platform-distribution, cloud, mobile, and GTM** tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. **Still active, however:** the **single-self-contained-executable packaging + first-run experience** described below remains the canonical *personal* run path (see `README.md` and `OUTSTANDING_TASKS.md`) — only its *distribution* framing is parked, not the build-a-runnable-exe goal itself. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial (incl. the self-contained exe), general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
 
 ---
 
