@@ -52,6 +52,8 @@ const props = defineProps<{
   sideEffects: SideEffects
   conflicts: ConflictRow[]
   history: HistoryRow[]
+  /** When true the active proposal is settled; the rail offers "File away" only. */
+  dismissable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -59,6 +61,7 @@ const emit = defineEmits<{
   (event: 'reject'): void
   (event: 'request-edit'): void
   (event: 'defer'): void
+  (event: 'dismiss'): void
   (event: 'report', proposalId: string): void
 }>()
 
@@ -101,11 +104,13 @@ const dialSubline = computed(() =>
     <ReviewDecisionRail
       :summary="decisionSummary"
       :busy="busy"
+      :dismissable="dismissable"
       data-testid="paper-review-decision-rail"
       @apply="emit('apply')"
       @reject="emit('reject')"
       @request-edit="emit('request-edit')"
       @defer="emit('defer')"
+      @dismiss="emit('dismiss')"
     />
 
     <ReviewChangeSection
@@ -122,7 +127,7 @@ const dialSubline = computed(() =>
 
     <footer class="paper-review-main__footer">
       <span class="tk-serial">REVIEW · {{ serial }} · LOCAL-FIRST · LEDGER</span>
-      <span class="tk-serial">PRESS ⏎ TO APPLY · ⌫ TO REJECT</span>
+      <span class="tk-serial">{{ dismissable ? 'PRESS ⌫ TO FILE AWAY' : 'PRESS ⏎ TO APPLY · ⌫ TO REJECT' }}</span>
     </footer>
   </div>
 </template>
