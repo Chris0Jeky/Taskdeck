@@ -59,11 +59,33 @@ stop_stack() {
     [[ -z "$pid" ]] && continue
     if kill -0 "$pid" 2>/dev/null; then
       step "Stopping PID $pid..."
+      # `dotnet run` / `npm run dev` are launchers; the real Kestrel API and
+      # Vite node processes are children. Kill the children first so the ports
+      # (API + 5173) are released, not just the parent launcher (H1).
+      if command -v pkill >/dev/null 2>&1; then
+        pkill -P "$pid" 2>/dev/null || true
+      fi
       kill "$pid" 2>/dev/null || true
     fi
   done < "$PID_FILE"
   rm -f "$PID_FILE"
   step "Stack stopped."
+}
+
+# Stop only the API we started in this run (its process tree) and clear the PID
+# file. Used to clean up a half-started stack when a later step fails fatally,
+# so we never leave port + SQLite DB pinned by an orphaned background API.
+stop_started_api() {
+  local pid="${API_PID:-}"
+  [[ -z "$pid" ]] && return 0
+  if kill -0 "$pid" 2>/dev/null; then
+    warn "Stopping background API (PID $pid) started by this run..."
+    if command -v pkill >/dev/null 2>&1; then
+      pkill -P "$pid" 2>/dev/null || true
+    fi
+    kill "$pid" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE"
 }
 
 if [[ "$STOP" -eq 1 ]]; then
@@ -87,7 +109,24 @@ if [[ "$node_major" -lt 24 ]]; then
 fi
 
 mkdir -p "$DATA_DIR"
-[[ -f "$PID_FILE" ]] && warn "An existing PID file was found; a stack may already be running. Run 'scripts/dev-up.sh --stop' first if so."
+
+# Refuse to start over a live stack: overwriting the PID file would orphan the
+# running API/frontend and lose the PIDs that --stop needs (H1 / P2). A PID file
+# whose PIDs are all dead is stale — remove it and continue.
+if [[ -f "$PID_FILE" ]]; then
+  running=0
+  while read -r pid; do
+    [[ -z "$pid" ]] && continue
+    if kill -0 "$pid" 2>/dev/null; then
+      running=1
+    fi
+  done < "$PID_FILE"
+  if [[ "$running" -eq 1 ]]; then
+    fatal "A stack is already running (PIDs found in $PID_FILE). Run 'scripts/dev-up.sh --stop' first."
+  else
+    rm -f "$PID_FILE"
+  fi
+fi
 
 step "Database: $DEV_DB_PATH (pinned via ConnectionStrings__DefaultConnection)"
 
@@ -95,6 +134,10 @@ step "Database: $DEV_DB_PATH (pinned via ConnectionStrings__DefaultConnection)"
 # follows the launch directory (#1140 AC1).
 export ConnectionStrings__DefaultConnection="Data Source=$DEV_DB_PATH"
 export ASPNETCORE_ENVIRONMENT="Development"
+# The launch profile's applicationUrl is fixed at :5000. Override it so the API
+# actually binds the requested port — otherwise a custom TASKDECK_API_PORT only
+# moves the readiness probe / printed URL while the API stays on 5000 (P2).
+export ASPNETCORE_URLS="http://localhost:$API_PORT"
 
 step "Starting API (dotnet run) on port $API_PORT..."
 ( cd "$REPO_ROOT" && exec dotnet run --project "$API_PROJECT" ) &
@@ -123,7 +166,12 @@ fi
 # script that resolves through the installed toolchain.
 if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
   step "Installing frontend dependencies (npm install)..."
-  ( cd "$FRONTEND_DIR" && npm install ) || fatal "npm install failed."
+  # The API is already running in the background; if install fails we must stop
+  # it before exiting or we leave the port + pinned SQLite DB in use (P2).
+  if ! ( cd "$FRONTEND_DIR" && npm install ); then
+    stop_started_api
+    fatal "npm install failed."
+  fi
 fi
 
 if [[ "$SEED" -eq 1 ]]; then
