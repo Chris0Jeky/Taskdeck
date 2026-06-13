@@ -194,14 +194,13 @@ const awaitingCount = computed(() => {
   ).length
 })
 
-const staleCount = computed(() => {
-  // A proposal is "stale" when older than 24h and still pending review.
-  const cutoff = nowMs.value - 24 * 60 * 60 * 1000
-  return visibleProposals.value.filter((p) => {
-    if (normalizeProposalStatus(p.status) !== 'PendingReview') return false
-    return new Date(p.createdAt).getTime() < cutoff
-  }).length
-})
+const staleCount = computed(() =>
+  // Route through the SHARED isStaleProposal (PendingReview + inclusive >=24h)
+  // so the badge count and the 'stale' queue filter always agree — no third
+  // inline copy that could drift at the 24h boundary (#1124 / ADR-0038).
+  // visibleProposals is already board-scoped via matchesActiveBoardFilter.
+  visibleProposals.value.filter(isStaleProposal).length,
+)
 
 function ageLabel(iso: string): string {
   const ms = nowMs.value - new Date(iso).getTime()
