@@ -68,6 +68,20 @@ const session = useSessionStore()
 const toast = useToastStore()
 const route = useRoute()
 
+// The dismiss endpoint rejects the WHOLE request with 403 if any id isn't owned
+// by the caller, and a board-filtered proposal list deliberately includes other
+// users' proposals on shared boards. So the file-away affordance (per-proposal
+// and bulk) must be scoped to the caller's own settled proposals. #1161 (review)
+function isOwnProposal(proposal: ApiProposal): boolean {
+  return !!session.userId && proposal.requestedByUserId === session.userId
+}
+const ownedDismissableIds = computed(() =>
+  dismissableProposalIds.value.filter((id) => {
+    const proposal = proposals.value.find((p) => p.id === id)
+    return !!proposal && isOwnProposal(proposal)
+  }),
+)
+
 const {
   proposalActionBusyId,
   bulkDismissBusy,
@@ -76,7 +90,7 @@ const {
   handleExecuteProposal,
   handleDismissProposal,
   handleDismissApplied,
-} = useReviewActions(proposals, dismissableProposalIds, loadProposals)
+} = useReviewActions(proposals, ownedDismissableIds, loadProposals)
 
 // --- Active proposal ---------------------------------------------------
 
@@ -482,15 +496,19 @@ const busy = computed(
 // isProposalDismissable → isProposalExpired, so the rail swaps to "File away"
 // the moment a focused proposal expires (#1161). #1161
 const activeDismissable = computed(
-  () => !!activeProposal.value && isProposalDismissable(activeProposal.value),
+  () =>
+    !!activeProposal.value &&
+    isProposalDismissable(activeProposal.value) &&
+    isOwnProposal(activeProposal.value),
 )
 
-// Count of EVERY settled proposal on the active board — including ones the
-// queue currently hides (Applied/Rejected/Failed when showCompleted is off,
-// or items outside the active 'mine'/'stale' filter). Bulk file-away is
+// Count of the caller's own settled proposals on the active board — including
+// ones the queue currently hides (Applied/Rejected/Failed when showCompleted is
+// off, or items outside the active 'mine'/'stale' filter). Bulk file-away is
 // board-scoped housekeeping, not queue-scoped, so the count can exceed what's
-// visible. ≥2 reveals the bulk affordance in the queue header. #1161
-const bulkDismissableCount = computed(() => dismissableProposalIds.value.length)
+// visible — and ≥1 reveals it so a single hidden settled proposal (which has no
+// per-proposal rail in Paper) is never left unclearable. #1161
+const bulkDismissableCount = computed(() => ownedDismissableIds.value.length)
 
 function onFileAway() {
   const p = activeProposal.value
