@@ -18,7 +18,7 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 
 ## Current Focus Snapshot
 
-As of the active docs, Taskdeck is in review-first AI and Paper backend gap delivery. The project thesis remains:
+**Direction (2026-06-13 archive pivot):** Taskdeck will not be distributed — finish it for personal use, then archive. Active sequencing is the archive-pivot **waves** (Paper UI activation → trivially-easy local run → general quality → clean archive), per the Direction sections of `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md`. The prior "review-first AI / Paper backend gap delivery" RFAI phase is **historical** — do not resume distribution/GTM/cloud/mobile work. The project thesis remains unchanged:
 
 - capture should be near-zero friction
 - automation-originated board writes must remain proposal-first and human-approved
