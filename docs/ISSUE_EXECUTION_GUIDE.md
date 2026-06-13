@@ -1,7 +1,9 @@
 # Issue Execution Guide
 
-Last Updated: 2026-05-16
+Last Updated: 2026-06-13
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
+
+> **⚠️ Archive-pivot override (2026-06-13).** The maintainer's direction is now **finish-for-personal-use → archive** (see the Direction sections of `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md`). The **active sequencing** is the archive-pivot waves — Paper UI activation, trivially-easy local run, general quality, then clean archive — **not** the "Phase 4 / post-Phase-4 / Expansion" tranches described in the Priority Model below. Distribution, cloud, mobile, and GTM tracks are de-scoped. Treat the priority-tranche language in this guide as **historical pre-pivot framing**; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Concretely: where the Start Protocol says "pick the highest-priority issue" and the Priority Model ranks `Priority I`–`V` tranches, read "highest-priority" as **the next item in the active archive-pivot waves** (Paper UI activation → easy local run → general quality → archive), **not** the Phase-4 / Expansion tranches below. When this guide and the Direction sections conflict, the Direction sections win.
 
 ## Purpose
 
