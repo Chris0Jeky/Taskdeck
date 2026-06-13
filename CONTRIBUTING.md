@@ -100,9 +100,14 @@ From the repo root:
 
 ```bash
 cp deploy/.env.example deploy/.env
-# Edit deploy/.env and set BOTH required secrets before starting:
-#   TASKDECK_JWT_SECRET                (generate with: openssl rand -base64 48)
-#   TASKDECK_CONNECTORS_ENCRYPTION_KEY (generate with: openssl rand -base64 32)
+```
+
+Edit `deploy/.env` and set BOTH required secrets before starting:
+
+- `TASKDECK_JWT_SECRET` (generate with: `openssl rand -base64 48`)
+- `TASKDECK_CONNECTORS_ENCRYPTION_KEY` (generate with: `openssl rand -base64 32`)
+
+```bash
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline up -d --build
 ```
 
