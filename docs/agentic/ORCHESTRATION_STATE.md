@@ -1,7 +1,9 @@
 # Orchestration State
 
 Last Updated: 2026-05-17
-Status: ACTIVE
+Status: SUPERSEDED (2026-06-13 archive pivot)
+
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This autonomous-loop execution queue is stale: it sequences de-scoped external-product work (e.g. `#546` demo video, `#550` brand/domain, `#548` privacy policy). The active direction is finish-for-personal-use → archive; current sequencing follows the archive-pivot **waves** in the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`, **not** the queue below. Do not resume work from this file's queue.
 
 ## Purpose
 
