@@ -44,7 +44,7 @@ Last reviewed: 2026-06-05
 - [ ] **#1164** — Serialize cross-process `Database.Migrate()` (advisory/single-owner lock; carries #1130 AC2).
 - [ ] **#1166** — Harden dev-sandbox export/import via the SQLite backup API (carries #1130's export/import follow-up).
 - [ ] **#1138** (rest) — Split the 1300+ line `STATUS.md` into a lean current-reality head + `docs/archive/status-history/`; add a rotation rule; recertify TESTING_GUIDE totals from a green CI run; add a markdown link-checker to nightly.
-- [ ] **#1136** — Write an ADR deciding the Paper vs Legacy UI question; remove dead paper composables.
+- [ ] **#1136** (remainder) — ADR decision **delivered** (ADR-0038, Paper canonical / Legacy frozen; STATUS states the canonical stack) via PR #1207. **Still open:** remove/quarantine the dead paper composables (AC3) — scheduled for the Paper polish wave.
 - [ ] **#1137** — Refocus strategy/roadmap on shipping to first users; freeze new feature/re-skin tracks until v0.1.0 ships.
 - [ ] **#1135 / #1140 / #1141 / #1139** — Code-health guardrails + oversized-view decomposition; workspace hygiene + one-command dev-up; i18n/a11y ADR; deployment docs (docker quickstart secret, desktop run docs).
 
