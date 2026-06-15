@@ -22,7 +22,7 @@
     <!-- ── Microsoft Extensions (pinned to 8.0.x to match TFM) ── -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Http.Polly" Version="8.0.28" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
 
     <!-- ── Identity / JWT ──────────────────────────────────────── -->
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
@@ -50,7 +50,7 @@
     <PackageVersion Include="Microsoft.Recognizers.Text.Number" Version="1.8.13" />
 
     <!-- ── Data / Caching ──────────────────────────────────────── -->
-    <PackageVersion Include="StackExchange.Redis" Version="2.13.17" />
+    <PackageVersion Include="StackExchange.Redis" Version="3.0.0" />
 
     <!-- ── Security / Crypto ───────────────────────────────────── -->
     <PackageVersion Include="BCrypt.Net-Next" Version="4.2.0" />
