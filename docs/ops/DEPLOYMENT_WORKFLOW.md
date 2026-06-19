@@ -6,7 +6,7 @@ ADR: `ADR-0028`
 
 > **⚠️ Reference-only — parked by the 2026-06-13 archive pivot.** This blue/green + canary workflow implements **ADR-0028**, whose multi-instance / hosted-deployment premise is de-scoped. Taskdeck's personal run path is the self-contained exe plus the `release-desktop.yml` release smoke — **not** this staged cloud workflow. Retained as a historical record, not a mandatory process. See `docs/STATUS.md`.
 
-This document is the canonical reference for Taskdeck's staging-to-production deployment workflow. All release processes must follow this workflow unless an emergency hotfix override is explicitly authorized by the release owner.
+This document **was** the canonical reference for Taskdeck's staging-to-production deployment workflow on the de-scoped hosted / multi-instance track. _(Historical: it is no longer a mandatory process.)_ With the 2026-06-13 archive pivot, the personal run path is the self-contained exe plus the `release-desktop.yml` release smoke — this staged staging-to-production workflow no longer governs releases.
 
 ## Overview
 
