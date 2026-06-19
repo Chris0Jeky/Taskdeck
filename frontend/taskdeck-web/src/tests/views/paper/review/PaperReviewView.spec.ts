@@ -815,4 +815,50 @@ describe('PaperReviewView', () => {
 
     wrapper.unmount()
   })
+
+  it('shows the empty-diff state without fetching for a no-operation proposal', async () => {
+    const wrapper = await mountView([
+      makeProposal({ id: 'diff-noop', diffPreview: null, operations: [] }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    // No diffPreview + no operations → the backend `/diff` would 404, so the view
+    // shows the empty state directly without firing the request.
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-empty"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('shows a revision caveat in the diff preview when a saved revision exists', async () => {
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'diff-rev',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    mocks.getProposalDiff.mockResolvedValueOnce('--- before\n+++ after\n+x')
+    const wrapper = await mountView([makeProposal({ id: 'diff-rev' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
+    // The preview reflects the ORIGINAL proposal, so a pending saved revision must
+    // be flagged (the diff does not reflect the revision that Apply will run).
+    const caveat = wrapper.find('[data-testid="paper-review-diff-revision-caveat"]')
+    expect(caveat.exists()).toBe(true)
+    expect(caveat.text()).toContain('original')
+
+    wrapper.unmount()
+  })
 })

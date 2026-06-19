@@ -638,6 +638,18 @@ async function onPreviewDiff() {
     return
   }
 
+  // No-op proposals: the backend `/diff` (GetProposalDiffAsync) returns 404 when
+  // there is no stored DiffPreview AND no operations. The view already renders a
+  // "No operation preview" change section for that state, so show the empty-diff
+  // surface directly rather than firing a request that 404s.
+  if (!p.diffPreview && (p.operations?.length ?? 0) === 0) {
+    latestDiffRequestId += 1
+    previewDiffProposalId.value = p.id
+    previewDiff.value = ''
+    previewDiffLoading.value = false
+    return
+  }
+
   const requestId = ++latestDiffRequestId
   previewDiffProposalId.value = p.id
   previewDiff.value = null
@@ -650,9 +662,16 @@ async function onPreviewDiff() {
     previewDiff.value = diff
   } catch (e: unknown) {
     if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
+    const { message, code } = getErrorDisplay(e, 'Failed to load proposal diff')
+    // A 404 means the backend has no diff to show (no-op proposal) — render the
+    // empty-diff state rather than surfacing it as an error.
+    if (code === 'NotFound') {
+      previewDiff.value = ''
+      return
+    }
     previewDiffProposalId.value = null
     previewDiff.value = null
-    toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)
+    toast.error(message)
   } finally {
     if (requestId === latestDiffRequestId) {
       previewDiffLoading.value = false
@@ -762,6 +781,15 @@ function onQueueFilterChange(filter: QueueFilter) {
           <h3 class="tk-h3 paper-review-deep__diff-title">Operation details</h3>
           <span class="tk-meta paper-review-deep__diff-sub">Press Space to hide</span>
         </header>
+        <p
+          v-if="revisionCount > 0"
+          class="paper-review-deep__diff-caveat tk-meta"
+          data-testid="paper-review-diff-revision-caveat"
+        >
+          ⚠ This preview shows the <strong>original</strong> proposal. A saved edit
+          (revision) will be applied instead, so the diff below may not reflect your
+          pending change (revision-aware diff tracked in #1235).
+        </p>
         <div class="card paper-review-deep__diff-card">
           <p
             v-if="previewDiffLoading"
@@ -879,6 +907,10 @@ function onQueueFilterChange(filter: QueueFilter) {
 .paper-review-deep__diff-card {
   padding: 0;
   overflow: hidden;
+}
+.paper-review-deep__diff-caveat {
+  margin: 0 0 8px;
+  color: var(--ink-2);
 }
 .paper-review-deep__diff-empty {
   padding: 16px;
