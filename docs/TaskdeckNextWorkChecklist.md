@@ -117,6 +117,8 @@ Secondary lower-priority follow-through wave seeded from the audit:
 
 ## Out-of-Code and Configuration Actions Coverage
 
+> _(historical — superseded by the archive pivot; not active work. The cloud / distribution / release-ops items here — staged rollout `#101`, IaC `#102`, SBOM/provenance `#103`, cost guardrails `#104`, cloud topology/autoscaling `#111` — are **de-scoped** (no distribution/cloud). Do not pick these up. Any genuinely general-quality concerns are folded into the archive-pivot general-quality wave, not this pre-pivot list.)_
+
 - [x] Containerized runtime + reverse proxy + compression: `#69`
 - [ ] Staged rollout strategy: `#101`
 - [ ] Infrastructure as Code baseline: `#102`
@@ -130,6 +132,8 @@ Secondary lower-priority follow-through wave seeded from the audit:
 - [ ] Cloud topology/autoscaling ADR: `#111`
 
 ## WIP Discipline (Execution)
+
+> _(historical — superseded by the archive pivot; not active work. There are no "release activities" under finish-for-personal-use → archive.)_
 
 - [ ] Max 1 major issue in `Now`
 - [ ] Max 1 issue in `Review`
