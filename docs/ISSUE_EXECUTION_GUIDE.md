@@ -26,7 +26,9 @@ Use this file when starting backlog work. It prevents out-of-order development a
 - Move issue to `Done` only after merge and verification notes are posted.
 - If item is blocked by dependency or external input, move to `Blocked` and add blocking note.
 
-## Priority Model (Required)
+## Priority Model (historical pre-pivot framing — see the override banner above)
+
+> _(The Phase-4 / post-Phase-4 / Expansion tranches below are pre-pivot framing. The active sequencing is the archive-pivot waves — Paper UI activation → easy local run → general quality → archive. Retained for historical continuity.)_
 
 - `Priority I`: Current Phase 4 completion path and blockers.
 - `Priority II`: Immediate post-Phase-4 foundation work, including novice-first productization.
@@ -74,7 +76,7 @@ Reuse instead of duplicate when seeding:
 
 Execution rule:
 
-- keep Wave P indexed in `#107`
+- _(historical)_ Wave P was indexed in `#107` (now a **closed historical index** — see Stage 5)
 - do not promote agent/knowledge breadth ahead of the novice-first shell and board-centered workflow wave
 
 Implementation note from the full-source audit:
