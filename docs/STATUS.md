@@ -481,7 +481,7 @@ Eight parallel worktree agents delivered new features, security infrastructure, 
 - **CLD-03 OAuth PKCE and account linking** (`#676`/`#812`): DB-backed auth code store replacing in-memory `ConcurrentDictionary` — `OAuthAuthCode` entity with EF migration, `IOAuthAuthCodeRepository` with atomic `TryConsumeAtomicAsync` (raw SQL `UPDATE WHERE IsConsumed = 0 AND ExpiresAt > now`); PKCE support via `UsePkce = true` in ASP.NET Core 8 OAuth middleware; account linking endpoints (`POST /api/auth/github/link`, `DELETE /api/auth/github/link`, `GET /api/auth/linked-accounts`) with conflict detection and session verification; frontend Linked Accounts section in `ProfileSettingsView` with Link/Unlink buttons and avatar display; 24+ backend tests; adversarial review fixed CSRF on account linking, TOCTOU in expiry check, JWT plaintext in DB, DoS via full-table load, and unbounded table growth
 
 **Ops & Observability:**
-- **OPS-09 Staged deployment workflow** (`#101`/`#806`): ADR-0028 documents blue/green + canary deployment strategy with rollback criteria; `docs/ops/DEPLOYMENT_WORKFLOW.md` canonical 4-phase workflow (build verification → staging → production canary → production promotion) with rollback procedures, database migration safety, emergency hotfix override, and ownership/escalation model; `docs/ops/RELEASE_CHECKLIST.md` versioned smoke verification (7 pre-deploy + 9 automated staging + 7 manual staging + 7 canary + 6 post-promotion + 5 post-release checks) with failure response matrix; `scripts/deploy/smoke-test.sh` portable smoke test (9 automated checks: health, API, auth, board auth gate, frontend, SignalR, static assets, security headers, container restart detection); `.github/workflows/cd-staging-gate.yml` with `production` environment manual approval gate; adversarial review fixed script injection in CI workflow and unscoped container checks
+- **OPS-09 Staged deployment workflow** (`#101`/`#806`): ADR-0028 documents blue/green + canary deployment strategy with rollback criteria; `docs/ops/DEPLOYMENT_WORKFLOW.md` canonical 4-phase workflow (build verification → staging → production canary → production promotion) with rollback procedures, database migration safety, emergency hotfix override, and ownership/escalation model; `docs/ops/RELEASE_CHECKLIST.md` versioned smoke verification (7 pre-deploy + 9 automated staging + 7 manual staging + 7 canary + 6 post-promotion + 5 post-release checks) with failure response matrix; `scripts/deploy/smoke-test.sh` portable smoke test (9 automated checks: health, API, auth, board auth gate, frontend, SignalR, static assets, security headers, container restart detection); `.github/workflows/cd-staging-gate.yml` with `production` environment manual approval gate; adversarial review fixed script injection in CI workflow and unscoped container checks. _(⚠️ Parked by the 2026-06-13 archive pivot — staged cloud rollout de-scoped, see the parked-cloud note below. The workflow still auto-triggers on `release: published` and would hang on the non-existent `production` environment for the personal build; disabling that trigger is tracked in **#1228**.)_
 - **OBS-02 Error tracking and product analytics** (`#549`/`#811`): config-gated Sentry SDK for backend (`Sentry.AspNetCore` with `BeforeSend` PII scrubbing for emails/JWTs, `ServerName` blanked) and frontend; opt-in product telemetry service (`TelemetryEventService`) aligned with `docs/product/TELEMETRY_TAXONOMY.md` — property key allowlist (15 safe keys), max 10 properties, 200-char value truncation; `TelemetryController` with anonymous config endpoint and authenticated events endpoint; Plausible/Umami analytics script injection (`useAnalyticsScript`) with HTTPS-only URL validation; Pinia `telemetryStore` with consent management, event buffering, and flush; DNT/GPC privacy signal detection prevents auto-restore of consent; telemetry consent toggle in `ProfileSettingsView`; `docs/ops/OBSERVABILITY_SETUP.md` configuration guide; all telemetry opt-in and disabled by default; 38 backend + 25 frontend tests; adversarial review fixed Sentry PII leak, arbitrary properties injection, XSS via script URL, and DNT non-compliance
 
 ## Post-Merge Housekeeping (2026-04-12)
@@ -1136,17 +1136,19 @@ Mutation testing workflow: `.github/workflows/mutation-testing.yml`
 - Backend Stryker.NET (Domain) + Frontend Stryker JS (captureStore/boardStore)
 - Non-blocking; HTML/JSON reports uploaded as 30-day artifacts
 
-Release workflow: `.github/workflows/ci-release.yml`
+> _(Archive-pivot caveat, 2026-06-13: the **release/tag-triggered distribution & external-publication lanes** below are parked by the pivot — no public distribution — **except** the two carve-outs noted. Note that tag/release events still **auto-fire** these workflows: `release-desktop.yml` builds the cross-platform self-contained exe + publishes a GitHub Release on any `v*` tag push (this **is** the *optional archival* exe-release path, `#535`/PKG-03 — retained, not a bug), and `ci-release.yml`/`release-security.yml` run on `v*` tags / `release: published`. The `release: published` event also triggers the parked `cd-staging-gate.yml`, which then hangs on a missing `production` environment — disabling that trigger is tracked in **#1228**. SBOM/provenance (`reusable-sbom-provenance.yml`) **remains relevant** as a release-security artifact.)_
 
-- SBOM/provenance generation via `.github/workflows/reusable-sbom-provenance.yml` (CycloneDX SBOMs for backend + frontend, SLSA v1-style provenance manifest)
-- Container image build/export artifacts
+Release workflow: `.github/workflows/ci-release.yml` _(release-triggered; container-image build/export is part of the parked distribution track — SBOM/provenance stays relevant)_
+
+- SBOM/provenance generation via `.github/workflows/reusable-sbom-provenance.yml` (CycloneDX SBOMs for backend + frontend, SLSA v1-style provenance manifest) — **relevant** (release-security artifact)
+- Container image build/export artifacts — _(parked — hosted/distribution)_
 
 Security workflow: `.github/workflows/release-security.yml`
 
 - Dependency inventory/vulnerability reporting
 - SBOM/provenance generation alongside existing security scans
 
-Developer portal workflow: `.github/workflows/reusable-developer-portal.yml`
+Developer portal workflow: `.github/workflows/reusable-developer-portal.yml` _(external developer-portal generation — parked by the archive pivot, no public API surface)_
 
 - OpenAPI spec export and developer portal generation
 
