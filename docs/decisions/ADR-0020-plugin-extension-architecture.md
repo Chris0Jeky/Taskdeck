@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 
-> **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
+> **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active. Note also that the **`TenantId` enforcement this RFC names as a prerequisite was never implemented** (see ADR-0004's archive-pivot note): the references below to "Once `TenantId` enforcement is implemented" describe a design that was never built. Under the live single-instance model, plugin cross-user isolation rides on the existing per-`UserId` / board-access predicates, not a `TenantId` global query filter.
 
 - **Date**: 2026-04-01
 - **Deciders**: Repository maintainers (INT-03 / issue #97)
@@ -307,7 +307,7 @@ Extend the MCP work (ADR-0019) so that all plugins are simply MCP servers. The h
 
 - [ADR-0002](ADR-0002-claims-first-identity.md) — Claims-First Identity (GP-02): identity source for plugin execution context
 - [ADR-0003](ADR-0003-proposal-first-automation.md) — Proposal-First Automation: the core constraint this RFC extends to third-party code
-- [ADR-0004](ADR-0004-multi-tenancy-shared-schema.md) — Multi-Tenancy: TenantId enforcement (accepted, not yet implemented) — prerequisite for cross-tenant data isolation from plugins
+- [ADR-0004](ADR-0004-multi-tenancy-shared-schema.md) — Multi-Tenancy: the `TenantId` enforcement this RFC named as a prerequisite was **never implemented** (ADR-0004 archive-pivot note); under the live single-instance model, plugin cross-user isolation rides on per-`UserId`/board-access predicates
 - [ADR-0014](ADR-0014-platform-expansion-four-pillars.md) — Platform Expansion: strategic context for why a plugin system is needed
 - [ADR-0015](ADR-0015-starter-pack-idempotent-apply.md) — Starter Pack: manifest validation pattern reused for plugin manifests
 - [ADR-0017](ADR-0017-agent-tool-registry-review-first.md) — Agent Tool Registry: `ITaskdeckTool` / `ITaskdeckToolRegistry` that plugins extend
