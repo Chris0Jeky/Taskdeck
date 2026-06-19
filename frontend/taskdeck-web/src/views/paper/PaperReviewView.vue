@@ -13,6 +13,8 @@ import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useProposalRevisions } from '../../composables/useProposalRevisions'
+import { getErrorDisplay } from '../../composables/useErrorMapper'
+import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
 import { normalizeProposalSourceType, normalizeProposalStatus } from '../../utils/automation'
@@ -171,6 +173,32 @@ watch(
 )
 
 const selectors = usePaperReviewSelectors(activeProposal)
+
+// --- Inline diff preview ----------------------------------------------
+//
+// Mirrors useReviewActions.handleToggleDiff: a per-proposal toggle that
+// (a) hides the diff if it is already shown for the active proposal,
+// (b) ignores stale async responses via a monotonic request counter, and
+// (c) clears itself when the active proposal changes. The diff renders
+// inline in the deep-review surface below the change section — no drawer.
+const previewDiff = ref<string | null>(null)
+const previewDiffProposalId = ref<string | null>(null)
+const previewDiffLoading = ref(false)
+let latestDiffRequestId = 0
+
+// Clear the preview whenever the active proposal changes so a diff loaded
+// for one proposal never leaks onto the next (mirrors legacy behaviour).
+watch(
+  () => activeProposal.value?.id ?? null,
+  (id) => {
+    if (previewDiffProposalId.value && previewDiffProposalId.value !== id) {
+      latestDiffRequestId += 1
+      previewDiffProposalId.value = null
+      previewDiff.value = null
+      previewDiffLoading.value = false
+    }
+  },
+)
 
 const {
   editing: revisionEditing,
@@ -597,10 +625,39 @@ function onToggleProvenance() {
   toast.info('Provenance toggle is not wired yet; provenance is rendered inline below.')
 }
 
-function onPreviewDiff() {
+async function onPreviewDiff() {
   const p = activeProposal.value
   if (!p) return
-  toast.info('Preview diff is not wired yet; no diff was loaded.')
+
+  // Already showing this proposal's diff → toggle it off.
+  if (previewDiffProposalId.value === p.id) {
+    latestDiffRequestId += 1
+    previewDiffProposalId.value = null
+    previewDiff.value = null
+    previewDiffLoading.value = false
+    return
+  }
+
+  const requestId = ++latestDiffRequestId
+  previewDiffProposalId.value = p.id
+  previewDiff.value = null
+  previewDiffLoading.value = true
+
+  try {
+    const diff = await automationApi.getProposalDiff(p.id)
+    // Ignore stale responses and ones whose target proposal has changed.
+    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
+    previewDiff.value = diff
+  } catch (e: unknown) {
+    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
+    previewDiffProposalId.value = null
+    previewDiff.value = null
+    toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)
+  } finally {
+    if (requestId === latestDiffRequestId) {
+      previewDiffLoading.value = false
+    }
+  }
 }
 
 function onReportBadSuggestion(proposalId: string) {
@@ -695,6 +752,40 @@ function onQueueFilterChange(filter: QueueFilter) {
         @dismiss="onFileAway"
         @report="onReportBadSuggestion"
       />
+      <section
+        v-if="previewDiffProposalId === activeProposal.id"
+        class="paper-review-deep__diff"
+        data-testid="paper-review-diff"
+      >
+        <header class="paper-review-deep__diff-head">
+          <span class="tk-serial paper-review-deep__diff-serial">§ DIFF</span>
+          <h3 class="tk-h3 paper-review-deep__diff-title">Operation details</h3>
+          <span class="tk-meta paper-review-deep__diff-sub">Press Space to hide</span>
+        </header>
+        <div class="card paper-review-deep__diff-card">
+          <p
+            v-if="previewDiffLoading"
+            class="paper-review-deep__diff-empty tk-meta"
+            data-testid="paper-review-diff-loading"
+          >
+            Loading diff…
+          </p>
+          <p
+            v-else-if="!previewDiff"
+            class="paper-review-deep__diff-empty tk-meta"
+            data-testid="paper-review-diff-empty"
+          >
+            No changes to preview for this proposal.
+          </p>
+          <pre
+            v-else
+            class="paper-review-deep__diff-pre"
+            role="region"
+            aria-label="Proposal operation diff"
+            data-testid="paper-review-diff-pre"
+          >{{ previewDiff }}</pre>
+        </div>
+      </section>
       <ReviewRevisionEditor
         v-if="revisionEditing"
         :operations-payload="editablePayload"
@@ -764,6 +855,44 @@ function onQueueFilterChange(filter: QueueFilter) {
 .paper-review-deep__empty {
   padding: 80px 56px;
   text-align: left;
+}
+.paper-review-deep__diff {
+  margin: 0 36px 28px;
+}
+.paper-review-deep__diff-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.paper-review-deep__diff-serial {
+  color: var(--faint);
+}
+.paper-review-deep__diff-title {
+  margin: 0;
+}
+.paper-review-deep__diff-sub {
+  margin-left: auto;
+}
+.paper-review-deep__diff-card {
+  padding: 0;
+  overflow: hidden;
+}
+.paper-review-deep__diff-empty {
+  padding: 16px;
+}
+.paper-review-deep__diff-pre {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2, var(--ink));
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .paper-review-deep__rail-empty {
   border-left: 1px solid var(--line);
