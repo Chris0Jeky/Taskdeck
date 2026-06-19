@@ -900,7 +900,7 @@ Implementation carry-forward from the full source audit:
 
 ## Roadmap by Horizon
 
-> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This entire block — the RFAI v4 roadmap (Tracker `#972`, slices `#973`–`#984` and their `#986`/`#989`–`#994` execution sequence) plus every week-numbered / Post-R1 / Post-R2 horizon below (Horizons A–F) — is **historical**. It is retained as a delivery record, not an active plan. The active sequence is the finite archive-pivot **waves** in the **Direction** section above (Paper UI activation → easy local run → general quality → archive). The RFAI track is **complete (12/12 slices delivered)** — including RFAI-10/11/12 (`#982`/`#983`/`#984`), which **were delivered and ship live** (merged `#1078`/`#1079`/`#1080`): PWA share-target capture, the VS Code / browser-extension prototype, the Ollama provider, and the ProvenanceDrawer all remain in the codebase (consistent with STATUS.md, the source of truth). What the archive pivot retires is only their **onward productization** — extension-store publishing, the public beta gate, and ambient-channel hardening beyond prototype — **not the shipped code**, which stays live for personal use. Items annotated *delivered* below remain accurate as history; un-delivered week-numbered work is either complete-as-history or de-scoped (distribution/beta only).
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This entire block — the RFAI v4 roadmap (Tracker `#972`, slices `#973`–`#984` and their `#986`/`#989`–`#994` execution sequence) plus every week-numbered / Post-R1 / Post-R2 horizon below (Horizons A–F) — is **historical**. It is retained as a delivery record, not an active plan. The active sequence is the finite archive-pivot **waves** in the **Direction** section above (Paper UI activation → easy local run → general quality → archive). The RFAI track is **complete (12/12 slices delivered)** — including RFAI-10/11/12 (`#982`/`#983`/`#984`), which **were delivered and ship live** (merged `#1078`/`#1079`/`#1080`): PWA share-target capture, the VS Code / browser-extension prototype, the Ollama provider, and the ProvenanceDrawer all remain in the codebase (consistent with STATUS.md, the source of truth). What the archive pivot retires is only their **onward productization** — extension-store publishing, the public beta gate, and ambient-channel hardening beyond prototype — **not the shipped code**, which stays live for personal use. Items annotated *delivered* below remain accurate as history; un-delivered week-numbered work is either complete-as-history or de-scoped (distribution/beta only). **Blanket rule:** any `Focus:` / `remaining` / future-tense ("add …") bullet in the horizons below that describes functionality STATUS.md records as **shipped** has in fact been delivered — the forward phrasing is the original pre-delivery plan preserved as a record, not current outstanding work. When this block and STATUS.md disagree on whether something shipped, **STATUS.md wins** (it is the source of truth).
 
 ### Roadmap v4 Adoption: Review-First AI Without the Rewrite (Tracker `#972`)
 
@@ -967,7 +967,7 @@ Focus:
   - resume point
 - remaining follow-through for this horizon:
   - richer contextual help and in-product teaching on top of the shipped board-centered loop
-  - broader telemetry and release-gate follow-through beyond the shipped first-run guardrail
+  - broader telemetry beyond the shipped first-run guardrail _(the telemetry recording surface shipped opt-in/off-by-default; the **release-gate** portion is de-scoped by the 2026-06-13 archive pivot — no public release)_
 
 Exit Criteria:
 - the `capture -> review -> board` loop is visible and coherent inside the product
@@ -1022,11 +1022,11 @@ Exit Criteria:
 
 ### Horizon E (Post-R2): Knowledge and Integrations Surface
 
-Focus:
-- add local-first knowledge documents/notes and SQLite FTS-backed search
-- add note/transcript/clip-style intake paths that feed capture or knowledge flows
-- add integrations registry/management view so imports and webhooks have a coherent home
-- keep connector behavior capture-first and review-safe by default
+Focus _(all delivered — see STATUS.md; retained as the original pre-delivery plan)_:
+- ~~add local-first knowledge documents/notes and SQLite FTS-backed search~~ (delivered, `#339`/KNW: `KnowledgeDocument`/`KnowledgeChunk` + `KnowledgeFtsSearchService` FTS5)
+- ~~add note/transcript/clip-style intake paths that feed capture or knowledge flows~~ (delivered, INT-05 `#334` `NoteImportService`)
+- ~~add integrations registry/management view so imports and webhooks have a coherent home~~ (delivered, INT-06 `#340`: `IntegrationConnector` + `IntegrationRegistryService` + `IntegrationsView` at `/workspace/integrations`)
+- keep connector behavior capture-first and review-safe by default (held — inbound connectors route through capture per GP-06)
 
 Exit Criteria:
 - durable searchable context exists without external vector infrastructure
