@@ -28,6 +28,8 @@ _The "Status" column below describes the **original (parked) beta plan**, not cu
 
 ## Intake Process
 
+_(⚠️ Historical / parked — the imperative steps and cadences below describe the **original beta plan**, not current operator duties. Nothing here is being staffed under the archive pivot; read "the owner does X" as "the plan was for the owner to do X.")_
+
 ### Step 1: Interest Signal
 
 A potential user expresses interest via any channel above.
@@ -110,6 +112,8 @@ Share this with beta users after their first week:
 - If they disengage, record the reason and move on (do not pressure)
 
 ## Graduation Criteria
+
+_(⚠️ Historical / parked — these graduation criteria and the "broader channels" step below are de-scoped GTM steps; there is no public launch under the archive pivot.)_
 
 Beta is "working" when:
 - 5+ users have completed the capture-to-board loop independently
