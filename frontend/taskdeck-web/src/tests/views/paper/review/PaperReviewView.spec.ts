@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
@@ -148,6 +148,13 @@ async function mountView(proposals: Proposal[], path = '/workspace/review') {
 }
 
 describe('PaperReviewView', () => {
+  // Unmount every mounted wrapper after each test. PaperReviewView attaches a
+  // window keydown listener (review keymap) and a 60s clock interval; without
+  // teardown those leak across tests, so a keydown dispatched in one test
+  // reaches leftover components from earlier tests (e.g. firing stray File
+  // away dismissals). #1161 / #1128
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.sessionState.userId = 'u-1'
@@ -417,7 +424,7 @@ describe('PaperReviewView', () => {
     expect(railText.indexOf('Newer applied work')).toBeLessThan(railText.indexOf('Older applied work'))
   })
 
-  it('does not send apply or reject transitions for expired proposals', async () => {
+  it('replaces decision buttons with "File away" for an expired proposal', async () => {
     const wrapper = await mountView([
       makeProposal({
         status: 'Expired',
@@ -426,16 +433,202 @@ describe('PaperReviewView', () => {
       }),
     ])
 
-    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
-    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    // A settled proposal can no longer be applied/rejected/edited/deferred, so
+    // those buttons are gone entirely — the rail becomes a filing rail. #1161
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-edit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-defer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-file-away"]').exists()).toBe(true)
+  })
+
+  it('files away an expired proposal when File away is clicked', async () => {
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'expired-001',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Expired proposal',
+      }),
+    ])
+
+    await wrapper.find('[data-testid="decision-file-away"]').trigger('click')
     await flushPromises()
 
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['expired-001'])
     expect(mocks.approveProposal).not.toHaveBeenCalled()
-    expect(mocks.executeProposal).not.toHaveBeenCalled()
     expect(mocks.rejectProposal).not.toHaveBeenCalled()
-    expect(mocks.infoToast).toHaveBeenCalledWith(
-      'This proposal is no longer actionable. Refresh review to see current status.',
-    )
+  })
+
+  it('files away a settled proposal with the ⌫ key', async () => {
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'expired-002',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Expired proposal',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['expired-002'])
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('shows a bulk "File away" action and clears every settled proposal on click', async () => {
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 2 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'expired-a',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Expired A',
+      }),
+      makeProposal({
+        id: 'expired-b',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 120_000).toISOString(),
+        summary: 'Expired B',
+      }),
+    ])
+
+    const bulk = wrapper.find('[data-testid="queue-file-away-all"]')
+    expect(bulk.exists()).toBe(true)
+    expect(bulk.text()).toContain('File away 2 settled')
+
+    await bulk.trigger('click')
+    await flushPromises()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['expired-a', 'expired-b'])
+  })
+
+  it('shows the bulk "File away" action for a single settled proposal so it is never unclearable', async () => {
+    // A single hidden settled proposal (e.g. Applied) has no per-proposal rail
+    // in Paper, so the bulk affordance must appear at count 1. #1161 (review)
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'expired-only',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Lone expired',
+      }),
+    ])
+
+    const bulk = wrapper.find('[data-testid="queue-file-away-all"]')
+    expect(bulk.exists()).toBe(true)
+    expect(bulk.text()).toContain('File away 1 settled')
+  })
+
+  it('hides the bulk "File away" action when there are no settled proposals', async () => {
+    const wrapper = await mountView([
+      makeProposal({ id: 'pending-only', status: 'PendingReview', summary: 'Still pending' }),
+    ])
+
+    expect(wrapper.find('[data-testid="queue-file-away-all"]').exists()).toBe(false)
+  })
+
+  it('omits collaborator-owned settled proposals from the bulk file-away set (avoids a 403)', async () => {
+    // The dismiss endpoint 403s the whole request if any id is not owned by the
+    // caller, so a board-filtered queue with another user's settled proposal must
+    // not include it in the bulk set. #1161 (review)
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'mine-expired',
+        status: 'Expired',
+        requestedByUserId: 'u-1',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'My expired',
+      }),
+      makeProposal({
+        id: 'theirs-expired',
+        status: 'Expired',
+        requestedByUserId: 'u-2',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Their expired',
+      }),
+    ])
+
+    // Only the caller's own settled proposal counts → "1 settled", not 2.
+    const bulk = wrapper.find('[data-testid="queue-file-away-all"]')
+    expect(bulk.exists()).toBe(true)
+    expect(bulk.text()).toContain('File away 1 settled')
+  })
+
+  it('treats an Approved-then-expired proposal as dismissable (File away)', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'approved-expired',
+        status: 'Approved',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Approved but expired before execution',
+      }),
+    ])
+
+    expect(wrapper.find('[data-testid="decision-file-away"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+  })
+
+  it('rejects (not files away) with the ⌫ key when the proposal is still actionable', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('')
+    mocks.rejectProposal.mockResolvedValueOnce(makeProposal({ id: 'pending-xyz', status: 'Rejected' }))
+    const wrapper = await mountView([
+      makeProposal({ id: 'pending-xyz', status: 'PendingReview', summary: 'Still actionable' }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.rejectProposal).toHaveBeenCalled()
+    expect(mocks.dismissProposals).not.toHaveBeenCalled()
+
+    promptSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('swaps the decision rail to "File away" when a focused proposal expires on the clock tick', async () => {
+    vi.useFakeTimers()
+    try {
+      const base = new Date('2026-06-13T12:00:00.000Z').getTime()
+      vi.setSystemTime(base)
+      mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+
+      const wrapper = await mountView([
+        makeProposal({
+          id: 'approved-soon',
+          status: 'Approved',
+          // Live now (base), but expires in 30s — before the first 60s tick.
+          expiresAt: new Date(base + 30_000).toISOString(),
+          summary: 'Approved, expiring shortly',
+        }),
+      ])
+
+      // Still actionable at mount: decision buttons present, no File away.
+      expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="decision-file-away"]').exists()).toBe(false)
+
+      // One 60s clock tick advances nowMs past expiry; the rail must swap
+      // reactively without a reload (#1161).
+      await vi.advanceTimersByTimeAsync(60_000)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="decision-file-away"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+
+      await wrapper.find('[data-testid="decision-file-away"]').trigger('click')
+      await flushPromises()
+      expect(mocks.dismissProposals).toHaveBeenCalledWith(['approved-soon'])
+
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('surfaces feedback when defer is invoked before backend support exists', async () => {

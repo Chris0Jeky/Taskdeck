@@ -427,6 +427,7 @@ export function useReviewProposals() {
     isProposalExpired,
     isApplyActionable,
     isRejectActionable,
+    isProposalDismissable,
     isStaleProposal,
     loadProposals,
     loadBoardOptions,

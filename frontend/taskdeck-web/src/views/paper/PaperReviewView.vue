@@ -57,6 +57,7 @@ const {
   isProposalExpired,
   isApplyActionable,
   isRejectActionable,
+  isProposalDismissable,
   isStaleProposal,
   loadProposals,
   loadBoardOptions,
@@ -67,12 +68,29 @@ const session = useSessionStore()
 const toast = useToastStore()
 const route = useRoute()
 
+// The dismiss endpoint rejects the WHOLE request with 403 if any id isn't owned
+// by the caller, and a board-filtered proposal list deliberately includes other
+// users' proposals on shared boards. So the file-away affordance (per-proposal
+// and bulk) must be scoped to the caller's own settled proposals. #1161 (review)
+function isOwnProposal(proposal: ApiProposal): boolean {
+  return !!session.userId && proposal.requestedByUserId === session.userId
+}
+const ownedDismissableIds = computed(() =>
+  dismissableProposalIds.value.filter((id) => {
+    const proposal = proposals.value.find((p) => p.id === id)
+    return !!proposal && isOwnProposal(proposal)
+  }),
+)
+
 const {
   proposalActionBusyId,
+  bulkDismissBusy,
   handleApproveProposal,
   handleRejectProposal,
   handleExecuteProposal,
-} = useReviewActions(proposals, dismissableProposalIds, loadProposals)
+  handleDismissProposal,
+  handleDismissApplied,
+} = useReviewActions(proposals, ownedDismissableIds, loadProposals)
 
 // --- Active proposal ---------------------------------------------------
 
@@ -468,7 +486,53 @@ const whyNowBody = computed(() => {
 // --- Action wiring -----------------------------------------------------
 
 const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
-const busy = computed(() => proposalActionBusyId.value !== null || revisionBusy.value)
+const busy = computed(
+  () => proposalActionBusyId.value !== null || revisionBusy.value || bulkDismissBusy.value,
+)
+
+// True once the active proposal is settled (Applied/Rejected/Failed/Expired/
+// Approved-then-expired). Reads the SHARED rule so Paper and Legacy never
+// drift (#1124 / ADR-0038). Reactive to the 60s expiry clock via
+// isProposalDismissable → isProposalExpired, so the rail swaps to "File away"
+// the moment a focused proposal expires (#1161). #1161
+const activeDismissable = computed(
+  () =>
+    !!activeProposal.value &&
+    isProposalDismissable(activeProposal.value) &&
+    isOwnProposal(activeProposal.value),
+)
+
+// Count of the caller's own settled proposals on the active board — including
+// ones the queue currently hides (Applied/Rejected/Failed when showCompleted is
+// off, or items outside the active 'mine'/'stale' filter). Bulk file-away is
+// board-scoped housekeeping, not queue-scoped, so the count can exceed what's
+// visible — and ≥1 reveals it so a single hidden settled proposal (which has no
+// per-proposal rail in Paper) is never left unclearable. #1161
+const bulkDismissableCount = computed(() => ownedDismissableIds.value.length)
+
+function onFileAway() {
+  const p = activeProposal.value
+  if (!p) return
+  if (revisionBusy.value) {
+    toast.info('Save or cancel the revision before filing this proposal away.')
+    return
+  }
+  // Another dismiss/approve/reject/bulk action is already in flight.
+  if (busy.value) return
+  if (!activeDismissable.value) {
+    toast.info('This proposal is still active and cannot be filed away yet.')
+    return
+  }
+  void handleDismissProposal(p.id)
+}
+
+function onFileAwayBulk() {
+  if (busy.value) {
+    toast.info('Wait for the current action to finish before filing more away.')
+    return
+  }
+  void handleDismissApplied()
+}
 
 function onApply() {
   const p = activeProposal.value
@@ -492,6 +556,13 @@ function onApply() {
 function onReject() {
   const p = activeProposal.value
   if (!p) return
+  // ⌫ is dual-purpose: on a settled proposal the rail shows "File away", so
+  // the same key files it away instead of rejecting (single-key consistency
+  // for "remove this from my queue"). #1161
+  if (activeDismissable.value) {
+    onFileAway()
+    return
+  }
   if (revisionBusy.value) {
     toast.info('Save or cancel the revision before rejecting this proposal.')
     return
@@ -583,9 +654,12 @@ function onQueueFilterChange(filter: QueueFilter) {
       :active-id="activeProposal?.id ?? null"
       :awaiting-count="awaitingCount"
       :stale-count="staleCount"
+      :dismissable-count="bulkDismissableCount"
+      :busy="busy"
       :recently-applied="recentlyApplied"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
+      @file-away-all="onFileAwayBulk"
     />
 
     <div v-if="activeProposal" class="paper-review-deep__main-col">
@@ -613,10 +687,12 @@ function onQueueFilterChange(filter: QueueFilter) {
         :side-effects="selectors.sideEffects.value"
         :conflicts="selectors.conflicts.value"
         :history="selectors.history.value"
+        :dismissable="activeDismissable"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
         @defer="onDefer"
+        @dismiss="onFileAway"
         @report="onReportBadSuggestion"
       />
       <ReviewRevisionEditor
