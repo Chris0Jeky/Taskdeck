@@ -86,6 +86,8 @@ Note:
 
 ## Priority Labels
 
+> _(Historical — pre-pivot framing. The `Priority I`–`V` tranche meanings and the "exactly one priority label" rule below describe the pre-pivot priority model, which `docs/ISSUE_EXECUTION_GUIDE.md` now marks **historical**; the active sequencing is the 2026-06-13 archive-pivot waves, not these tranches. Retained for label-history / triage.)_
+
 Rule:
 - Every issue must have exactly one priority label.
 
