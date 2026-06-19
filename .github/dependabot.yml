@@ -65,6 +65,22 @@ updates:
       # #1088). Block major bumps so v8 isn't re-proposed every cycle.
       - dependency-name: "FluentAssertions"
         update-types: ["version-update:semver-major"]
+      # The Redis stack backs the SignalR backplane (ADR-0025) and the optional
+      # Redis-backed cache service (RedisCacheService), both config-gated and DORMANT
+      # in the single-instance default (Cache:Provider=InMemory, SignalR:Redis
+      # connection string empty). Under the archive pivot (single-instance, SQLite,
+      # personal-use) a major bump carries breaking-change risk on never-exercised
+      # runtime paths with no benefit, so block majors on both direct Redis packages:
+      #   - StackExchange.Redis: the underlying client (cache service + transitive).
+      #   - Microsoft.AspNetCore.SignalR.StackExchangeRedis: the SignalR backplane
+      #     implementation itself (direct dependency in Directory.Packages.props),
+      #     otherwise its own semver-major could still reopen the dormant churn.
+      # PR #1224 was closed for proposing StackExchange.Redis 3.0.0. Revisit only if
+      # Redis is ever deliberately activated.
+      - dependency-name: "StackExchange.Redis"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.AspNetCore.SignalR.StackExchangeRedis"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "deps(nuget)"
 
