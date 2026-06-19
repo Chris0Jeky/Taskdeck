@@ -10,7 +10,7 @@ Stable reference material belongs in topical subfolders.
 - `STATUS.md`
   - Current shipped reality, verified state, current focus, and active constraints.
 - `IMPLEMENTATION_MASTERPLAN.md`
-  - Forward execution roadmap, horizons, release framing, and priority-labeled backlog map.
+  - Delivery history, the archive-pivot direction (finish-for-personal-use → archive), and the priority-labeled backlog map. *(The forward "horizons" / "release framing" / priority tranches are historical pre-pivot framing; the active sequence is the Direction-section waves.)*
 - `GOLDEN_PRINCIPLES.md`
   - Stable repository invariants and decision rules.
 - `ISSUE_EXECUTION_GUIDE.md`
