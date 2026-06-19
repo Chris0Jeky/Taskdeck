@@ -34,9 +34,7 @@ This directory is intentionally narrow:
 
 ### For Taskdeck contributors
 
-- When a change touches data collection, retention, or a new sub-processor, update
-  the relevant file here in the same PR. Treat these files like living documentation
-  of the platform's privacy surface, not a one-off deliverable.
+- _(Parked per the 2026-06-13 archive pivot — **not a required update path.**)_ These drafts apply only to a hosted Taskdeck instance, which is not shipping. Feature work that touches data collection, retention, or sub-processors does **not** need to update these files in the same PR. Only if a hosted instance is ever revived should they be updated (and then treated as living documentation of the platform's privacy surface).
 - Do not add claims you cannot point at in code. If it is aspirational, mark it
   `[LEGAL REVIEW REQUIRED]` or `[NOT YET IMPLEMENTED]`.
 - Do not copy text verbatim from other companies' policies — write original drafts
