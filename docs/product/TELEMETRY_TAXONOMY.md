@@ -20,7 +20,7 @@ Related: #341, #77
 - Events collected locally (for personal analytics dashboards) follow the same property rules as opt-in remote telemetry.
 - The backend MUST NOT forward telemetry payloads to any third-party without explicit configuration and opt-in consent.
 
-**Implementation status**: The `settings.telemetry.enabled` preference and the telemetry service/event bus described in this document are **not yet implemented**. This taxonomy is the planning artefact that must precede instrumentation. No telemetry code should be merged until this taxonomy is ratified and the opt-in guard is in place.
+**Implementation status**: The telemetry pipeline described here **is now implemented and opt-in / OFF by default** — do **not** read this doc as "telemetry is unbuilt." Shipped: backend recording (`TelemetryController` `POST /api/telemetry/events` + `GET /api/telemetry/config`, `TelemetryEventService` with taxonomy-name validation + PII-stripping allowlist, `TelemetrySettings.Enabled = false` default); frontend consent-gated event bus (`telemetryStore.emit()` → `telemetryApi.sendEvents()`, gated on `consentGiven && serverConfig.telemetry.enabled`). Recorded events are currently **logged, not persisted/forwarded** to any analytics backend, and with the default config nothing is collected. This taxonomy remains the naming/governance reference; the remaining work is **full instrumentation coverage** of every event named below (not the pipeline itself). The earlier "no telemetry code should be merged until ratified" gate is **obsolete** — the guarded, opt-in pipeline has shipped.
 
 ---
 
