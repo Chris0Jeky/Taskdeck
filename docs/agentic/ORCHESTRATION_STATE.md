@@ -72,7 +72,7 @@ _(Point-in-time snapshot — several items below were **subsequently delivered**
 - [ ] ~~#546 GTM-02: Demo video~~ — **DE-SCOPED (GTM, archive pivot)**
 - [ ] ~~#550 BRAND-01: Domain/logo~~ — **DE-SCOPED (branding/GTM, archive pivot)**
 - [ ] ~~#548 LEGAL-01: Privacy policy~~ — **DE-SCOPED (hosted-instance legal, archive pivot)**
-- [ ] ~~#219 CAP-21: Voice capture (Priority IV)~~ — **DE-SCOPED (archive pivot)**
+- [ ] #219 CAP-21: Voice capture (Priority IV) — **DEFERRED, not de-scoped**: the `useVoiceCapture` prototype exists (STATUS) but isn't wired into the UI. Voice capture is a capture-friction improvement (not GTM/cloud/mobile), so the remaining UI integration stays a legitimate deferred follow-on — do not close as de-scoped without an explicit maintainer decision.
 
 ## Current Work
 
