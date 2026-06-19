@@ -29,7 +29,7 @@ This file is the persistent memory and execution state for Claude Code's autonom
 6. **Review Round 2**: Fresh adversarial review of the fixes. Post findings. Fix everything. Push.
 7. **Bot Check**: Read ALL PR comments (Gemini Code Assist, Dependabot, any bot). Address anything found.
 8. **Verify**: Run tests again post-fix. Confirm CI passes (check via `gh pr checks <PR#>`).
-9. **Merge gate**: Leave PRs open unless the active user request explicitly authorizes merging after the normal review, bot-comment, test, and CI gates. Current cleanup session is merge-authorized after those gates.
+9. **Merge gate**: Leave PRs open unless the active user request explicitly authorizes merging after the normal review, bot-comment, test, and CI gates. _(The 2026-05-17 cleanup session WAS merge-authorized after those gates; that authorization was session-scoped and is historical.)_
 10. **Stack if needed**: If the next issue depends on this PR, branch from the PR branch.
 
 ### Parallel Subagent Protocol:
@@ -67,11 +67,11 @@ This file is the persistent memory and execution state for Claude Code's autonom
 - [ ] #655 MCP-04: MCP production hardening
 - [ ] Audit pass: find and seed new issues from code/test gaps
 
-### Tier 4: Strategy & External (lower priority)
-- [ ] #546 GTM-02: Demo video
-- [ ] #550 BRAND-01: Domain/logo
-- [ ] #548 LEGAL-01: Privacy policy
-- [ ] #219 CAP-21: Voice capture (Priority IV)
+### Tier 4: Strategy & External (lower priority) — **DE-SCOPED by the 2026-06-13 archive pivot; do not action**
+- [ ] ~~#546 GTM-02: Demo video~~ — **DE-SCOPED (GTM, archive pivot)**
+- [ ] ~~#550 BRAND-01: Domain/logo~~ — **DE-SCOPED (branding/GTM, archive pivot)**
+- [ ] ~~#548 LEGAL-01: Privacy policy~~ — **DE-SCOPED (hosted-instance legal, archive pivot)**
+- [ ] ~~#219 CAP-21: Voice capture (Priority IV)~~ — **DE-SCOPED (archive pivot)**
 
 ## Current Work
 
