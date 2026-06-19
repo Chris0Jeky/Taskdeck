@@ -8,10 +8,11 @@
 
 This runbook provides step-by-step instructions for migrating an existing Taskdeck SQLite database to PostgreSQL. It is intended for operators deploying Taskdeck to a hosted environment.
 
-> **Current repository state**: this is a preparatory runbook, not a fully executable cutover guide yet.
+> **Current repository state**: this is a preparatory runbook, not a fully executable cutover guide.
 > The application runtime still hard-wires SQLite in `Taskdeck.Infrastructure.DependencyInjection`, and
-> the `AddKnowledgeDocumentsAndFts` migration contains SQLite-only FTS5 SQL. Treat this document as the
-> canonical operator checklist for the follow-up implementation work needed to make PostgreSQL migration real.
+> the `AddKnowledgeDocumentsAndFts` migration contains SQLite-only FTS5 SQL. Per the archive pivot
+> (2026-06-13), making PostgreSQL migration real is **not active follow-up work** — SQLite single-instance
+> is the permanent architecture. Treat this document as a **historical reference** only, not a live checklist.
 
 ---
 
