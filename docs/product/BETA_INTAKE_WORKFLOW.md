@@ -17,12 +17,14 @@ Define the process for acquiring, onboarding, and retaining early beta users. Th
 
 ## Intake Channels
 
-| Channel | Status | Owner Action |
+_The "Status" column below describes the **original (parked) beta plan**, not current work — no channel is being staffed or implemented under the archive pivot._
+
+| Channel | Status _(historical — parked)_ | Owner Action |
 | --- | --- | --- |
-| GitHub Discussions (beta-interest thread) | Recommended first channel | Pin a "Beta Interest" discussion, respond within 48h |
-| Direct outreach (classmates, dev communities) | Active | Personal message with install link + demo video |
-| Landing page email capture | Future | Implement when landing page ships |
-| Hacker News / Reddit | Deferred | Only after demo recording is solid and 5+ beta users are active |
+| GitHub Discussions (beta-interest thread) | ~~Recommended first channel~~ _(parked plan)_ | Pin a "Beta Interest" discussion, respond within 48h |
+| Direct outreach (classmates, dev communities) | ~~Active~~ _(parked plan — not currently active)_ | Personal message with install link + demo video |
+| Landing page email capture | ~~Future~~ _(parked plan — no landing page is shipping)_ | Implement when landing page ships |
+| Hacker News / Reddit | ~~Deferred~~ _(parked plan)_ | Only after demo recording is solid and 5+ beta users are active |
 
 ## Intake Process
 
