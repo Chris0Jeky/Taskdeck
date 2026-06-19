@@ -82,10 +82,14 @@ contain usernames, IP addresses, and request metadata.
 - **Third-party analytics.** The shipped product does not call a third-party
   analytics service by default. An opt-in, consent-gated, cookie-free analytics
   surface exists in the codebase but is **off** unless explicitly enabled.
-- **Telemetry event stream.** A product-telemetry taxonomy is drafted
-  (`docs/product/TELEMETRY_TAXONOMY.md`) but has not been implemented; if/when
-  it ships, it is designed to be opt-in with no PII. Treat it as **not yet
-  implemented** for the purposes of this policy.
+- **Telemetry event stream.** A product-telemetry recording surface **is
+  implemented** (`TelemetryController` — `POST /api/telemetry/events` +
+  `GET /api/telemetry/config` — backed by `TelemetryEventService`, taxonomy in
+  `docs/product/TELEMETRY_TAXONOMY.md`) but is **opt-in and OFF by default**
+  (`TelemetrySettings.Enabled = false`) and **strips PII via an allowlist**.
+  Recorded events are currently only logged — they are **not persisted or
+  forwarded** to any analytics backend. With the default configuration, no
+  telemetry is collected.
 
 ## 3. Legal basis for processing (GDPR)
 
