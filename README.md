@@ -97,7 +97,7 @@ Reverse proxy: `http://localhost:8080`. See [docs/ops/DEPLOYMENT_CONTAINERS.md](
 ## What Taskdeck Is NOT
 
 - **Not a cloud SaaS.** Local-first is the permanent posture — Taskdeck is a personal-use tool, not a hosted service.
-- **Not a team platform.** Single-user by design, with local SignalR for development.
+- **Not a team platform.** Single-user-first by design (one local owner) — board-access sharing (`BoardAccessController`, `/workspace/settings/access`) and SignalR realtime board updates do ship for local use; there is just no hosted multi-user service.
 - **Not an autonomous AI agent.** Review-first means you stay in control — proposals are suggestions, not commands.
 
 ---
