@@ -225,7 +225,9 @@ ADR for shared-schema + TenantId as immediate target with promotion path to data
 
 ## By the Numbers
 
-| Metric | Count |
+> _(⚠️ Counts below are a snapshot **as of 2026-03-31** and are now stale — e.g. ADRs are 40 (ADR-0001..0040) not 17, and tests are far higher. For current totals see `docs/STATUS.md` (source of truth) and `docs/decisions/INDEX.md`. Retained as a historical chronicle, not current state.)_
+
+| Metric | Count (as of 2026-03-31) |
 |--------|-------|
 | Backend tests | 1,668+ |
 | Frontend unit tests | 1,174+ |
