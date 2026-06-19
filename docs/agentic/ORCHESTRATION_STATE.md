@@ -55,11 +55,11 @@ This file is the persistent memory and execution state for Claude Code's autonom
 - [x] Commit docs cleanup work as PR #1075 — DONE 2026-05-16
 
 ### Tier 1: Quick Wins
-- [ ] #1070 TST-63: MFA setup 409-Conflict test (small, isolated)
+- [x] #1070 TST-63: MFA setup 409-Conflict test — **delivered** (merged #1076)
 
 ### Tier 2: Feature Delivery
 _(Point-in-time snapshot — several items below were **subsequently delivered** and ship live; do not re-pick them. See `docs/STATUS.md`.)_
-- [ ] #1001 PAPER-05: Board/Kanban surface in Paper (frontend, clear spec)
+- [x] #1001 PAPER-05: Board/Kanban surface in Paper — **delivered** (merged #1083; Paper board surface ships live)
 - [x] #982 RFAI-10: PWA share-target quick capture — **delivered** (merged `#1078`; PWA share-target ships live)
 - [x] #983 RFAI-11: Ambient channel hardening decision — **delivered** (merged `#1079`; VS Code/ambient prototype, ADR-0033)
 - [x] #984 RFAI-12: Learning loop UI + beta gate — **delivered** (merged `#1080`; learning-loop UI + Ollama + ProvenanceDrawer). Only the onward beta-gate/distribution is de-scoped.
@@ -104,7 +104,7 @@ User authorized merging PRs only after green CI/tests, bot comments addressed, e
 #983 RFAI-11 (ambient channel)
   └── #984 RFAI-12 (learning loop + beta gate) [also depends on #977✓, #980✓, #981✓]
 
-#1001 PAPER-05 (board surface) [blocked by PAPER-01✓, PAPER-02✓, PAPER-03✓]
+#1001 PAPER-05 (board surface) ✓ DELIVERED (#1083) [was blocked by PAPER-01✓, PAPER-02✓, PAPER-03✓]
 
 All others: independent
 ```
