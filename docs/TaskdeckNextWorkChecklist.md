@@ -1,10 +1,13 @@
 # Taskdeck Next Work Checklist
 
 Last Updated: 2026-04-25
+
+> **⚠️ SUPERSEDED 2026-06-13 — archive pivot.** The active execution order is now the archive-pivot **waves** in the **Direction** section of `docs/IMPLEMENTATION_MASTERPLAN.md` / `docs/STATUS.md` (Paper UI activation → easy local run → general quality → archive). The RFAI roadmap (tracker `#972`, weeks `#973`–`#984`) listed below is **complete (2026-05-29) and superseded** — do not restart it. Only the generic promotion / thesis-alignment gates below remain useful.
+
 Source of truth for issue-level execution is now:
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
-- Active roadmap tracker: `#972`
+- Historical roadmap tracker: `#972` (RFAI complete 2026-05-29, superseded by the archive pivot)
 - Historical wave index: `#107`
 
 This checklist is now a lightweight promotion checklist (not a duplicate issue catalog).
@@ -25,7 +28,9 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Slice identifies outbound data-flow implications when LLM, MCP, integration, agent, telemetry, voice, browser, or IDE channels are involved.
 - [ ] Slice includes provenance/error-policy implications where relevant.
 
-## Active Near-Horizon Roadmap (RFAI Wave)
+## Historical RFAI Wave (complete 2026-05-29 — superseded by the archive pivot)
+
+> Delivered 12-of-12 and retired; retained for continuity only. **Not active work** — see the archive-pivot waves in `IMPLEMENTATION_MASTERPLAN.md`. The checkboxes below are historical.
 
 - [ ] Tracker `#972`: 12-week review-first AI roadmap.
 - [ ] Week 1 foundation: `#973` safety invariants, IA cut, eval seed, recertification.
