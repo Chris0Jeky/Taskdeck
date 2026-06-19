@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-29
 **Scope:** Single-executable packaging, installer creation, cross-platform distribution, and first-run experience
-**Status:** Strategic planning document — not yet executed
+**Status:** PARTIALLY SUPERSEDED (2026-06-13 archive pivot) — installer / cross-platform distribution / cloud / mobile de-scoped; only the **single self-contained executable + first-run path** below remains the canonical *personal* run goal.
 
 > **⚠️ PARTIALLY SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The **installer-creation, cross-platform-distribution, cloud, mobile, and GTM** tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. **Still active, however:** the **single-self-contained-executable packaging + first-run experience** described below remains the canonical *personal* run path (see `README.md` and `OUTSTANDING_TASKS.md`) — only its *distribution* framing is parked, not the build-a-runnable-exe goal itself. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial (incl. the self-contained exe), general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
 
@@ -375,14 +375,16 @@ jobs:
 
 Use semantic versioning aligned with release milestones:
 
+> **⚠️ PARKED (2026-06-13 archive pivot).** Only the **0.1.0** row (self-contained executable) survives the pivot as the canonical personal run goal. The 0.2.0–1.0.0 rows below (installers, cloud, mobile, Tauri, all-platforms GA) are **de-scoped** and describe the abandoned pre-pivot plan only — do not action.
+
 | Version | Meaning |
 |---------|---------|
-| 0.1.0 | First packaged beta (self-contained executable) |
-| 0.2.0 | Platform installers |
-| 0.3.0 | Cloud/hosted option |
-| 0.4.0 | Mobile PWA |
-| 0.5.0 | Native desktop shell (Tauri) |
-| 1.0.0 | First stable release (all platforms, polished UX) |
+| 0.1.0 | First packaged beta (self-contained executable) — _survives the pivot (canonical personal run goal)_ |
+| 0.2.0 | Platform installers — _**de-scoped** (parked by the archive pivot)_ |
+| 0.3.0 | Cloud/hosted option — _**de-scoped** (parked by the archive pivot)_ |
+| 0.4.0 | Mobile PWA — _**de-scoped** (parked by the archive pivot)_ |
+| 0.5.0 | Native desktop shell (Tauri) — _**de-scoped** (parked by the archive pivot)_ |
+| 1.0.0 | First stable release (all platforms, polished UX) — _**de-scoped** (parked by the archive pivot)_ |
 
 ---
 
