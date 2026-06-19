@@ -1001,17 +1001,17 @@ Exit Criteria:
 ### Horizon D (Post-R1): Agent Substrate Foundation
 
 Focus:
-- add `AgentProfile`, `AgentRun`, and `AgentRunEvent` as first-class runtime primitives
+- ~~add `AgentProfile`, `AgentRun`, and `AgentRunEvent` as first-class runtime primitives~~ (delivered, `#336` — entities ship live)
 - ~~add a tool registry abstraction and policy evaluator~~ (delivered in AGT-02, `#337`)
 - ~~add a first bounded agent template~~ (delivered: `InboxTriageAssistant` in AGT-02)
-- add inspectable run traces
-- expose agent mode views only after the substrate is real
+- ~~add inspectable run traces~~ (delivered: `AgentRunDetailView` run-event timeline, AGT-03 `#338`)
+- ~~expose agent mode views only after the substrate is real~~ (delivered: `AgentsView`/`AgentRunsView` under `/workspace/agents`, AGT-03 `#338`)
 
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
 - LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); `#651` delivered (Phase 3 refinements: cost tracking, `LlmToolCalling:Enabled` feature flag, `TruncateToolResult` byte budget with binary search — 17 new tests, PR `#773`); ~~`#673`~~ delivered (argument replay — `Arguments` field on `ToolCallResult`, OpenAI/Gemini replay uses real arguments, 6 new tests, PR `#770`)
 - MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; ~~`#653`~~ delivered (full inventory — 9 resources + 11 tools, PR `#739`); ~~`#654`~~ delivered (HTTP transport + API key auth, PR `#792`/`#819`); remaining: `#655` (production hardening, deferred)
-- remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
+- ~~remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail~~ — **all delivered**: the `AgentProfile`/`AgentRun`/`AgentRunEvent` entities ship (`#336` foundation), and AGT-03 (`#338`) delivered the `AgentsView`/`AgentRunsView`/`AgentRunDetailView` surfaces with an inspectable run-event timeline (STATUS.md records AGT-03 `#338` delivered). Horizon D's substrate is complete; nothing here is outstanding.
 
 Exit Criteria:
 - runs are first-class and inspectable
