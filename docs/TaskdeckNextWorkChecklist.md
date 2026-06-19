@@ -46,14 +46,18 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Week 11 ambient channel: `#983`, reusing `#219` if voice is selected.
 - [ ] Week 12 beta gate: `#984` learning loop, provenance drawer, Ollama flag, recertification.
 
-## Current Priority I Completion Tranche
+## Current Priority I Completion Tranche _(historical — superseded by the archive pivot; not active work)_
+
+> _(These issue tranches describe the pre-pivot backlog. The active execution order is the archive-pivot waves in `IMPLEMENTATION_MASTERPLAN.md` — do not pick these up as current work.)_
 
 - [ ] Security/policy convergence: `#33`, `#34`, `#44`
 - [ ] UX reliability tranche: `#35`, `#45`, `#36`, `#37`, `#38`, `#46`
 - [ ] Automation/provider tranche: `#39`, `#40`, `#57`
 - [ ] Starter-packs/debt blockers: `#47` to `#54`
 
-## Future Expansion Waves (Seeded)
+## Future Expansion Waves (Seeded) _(historical — superseded by the archive pivot; not active work)_
+
+> _(Pre-pivot expansion backlog, retained as a record. Distribution/cloud/mobile/analytics expansion is de-scoped; do not pick these up.)_
 
 - [ ] Wave A/B foundation: `#67` to `#76` (`Priority II`)
 - [ ] Wave C analytics/security/compliance: `#77` to `#83`, `#106`, `#110` (`Priority III`)
@@ -63,7 +67,7 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave H outreach CRM deferred expansion: `#262` to `#268` (`Priority IV`)
 - [x] Meta index maintenance: `#107` (`Priority V`, closed historical index)
 
-## MVP Expansion Productization (Wave P Seeded)
+## MVP Expansion Productization (Wave P Seeded) _(historical — superseded by the archive pivot; not active work)_
 
 Detailed reconciliation:
 - `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
