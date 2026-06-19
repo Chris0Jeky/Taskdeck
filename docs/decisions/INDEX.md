@@ -28,7 +28,7 @@
 | [0024](ADR-0024-distributed-caching-cache-aside.md) | Distributed Caching - Cache-Aside with Redis/InMemory Fallback | Accepted (cache abstraction live; multi-instance scale-out parked) | 2026-04-09 |
 | [0025](ADR-0025-signalr-scaleout-redis-backplane.md) | SignalR Scale-Out - Redis Backplane | Accepted (backplane wiring retained/dormant; scale-out premise parked) | 2026-04-09 |
 | [0026](ADR-0026-cloud-cost-observability.md) | Cloud Cost Observability and Budget Guardrails | Accepted (parked: archive pivot) | 2026-04-09 |
-| [0027](ADR-0027-cloud-target-topology-autoscaling.md) | Cloud Target Topology and Autoscaling Reference Architecture | Accepted (parked: archive pivot) | 2026-04-09 |
+| [0027](ADR-0027-cloud-target-topology-autoscaling.md) | Cloud Target Topology and Autoscaling Reference Architecture | Proposed (parked: archive pivot) | 2026-04-09 |
 | [0028](ADR-0028-staged-deployment-bluegreen-canary.md) | Staged Deployment - Blue/Green with Canary Verification | Accepted (parked: archive pivot) | 2026-04-09 |
 | [0029](ADR-0029-oidc-mfa-pluggable-identity.md) | OIDC/SSO Integration with Optional TOTP MFA | Accepted (MFA/OIDC behaviour live; enterprise/SSO premise parked) | 2026-04-09 |
 | [0030](ADR-0030-storybook-baseline-vite-8-compatibility.md) | Storybook Baseline with Vite 8 Compatibility | Accepted | 2026-04-09 |
