@@ -51,7 +51,7 @@ Note:
 
 ## Platform Expansion Labels
 
-> **Note:** These expansion labels (cloud, marketing, mobile, packaging) are retained for issue triage and history, but the labeled efforts were de-scoped by the 2026-06-13 archive pivot. See `docs/STATUS.md`.
+> **Note:** These expansion labels (cloud, marketing, mobile, packaging) are retained for issue triage and history. The **cloud / marketing / mobile** efforts and the **installer / cross-platform distribution** part of packaging were de-scoped by the 2026-06-13 archive pivot. **Exception:** the single self-contained-executable + first-run packaging path remains the **live personal run path** (see `README.md` and `OUTSTANDING_TASKS.md`) — `packaging`-labeled issues for that exe path are still active work, not parked. See `docs/STATUS.md`.
 
 - `cloud`
   - Cloud hosting, SaaS deployment, online access, and multi-tenant infrastructure work.
