@@ -1,6 +1,6 @@
 # ADR-0027: Cloud Target Topology and Autoscaling Reference Architecture
 
-- **Status**: Proposed
+- **Status**: Proposed — PARKED (entire cloud/multi-instance topology de-scoped; see ADR-0038)
 
 > **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
 
@@ -9,7 +9,7 @@
 
 ## Context
 
-Taskdeck is transitioning from a local-first SQLite application to a cloud-hosted multi-tenant service (ADR-0014 pillar: Cloud & Collaboration, `#537`). The current deployment baseline is a single-node Docker Compose stack (documented in `docs/ops/DEPLOYMENT_CONTAINERS.md`) running behind an Nginx reverse proxy with SQLite persistence on an EC2 instance provisioned by Terraform (`docs/ops/DEPLOYMENT_TERRAFORM_BASELINE.md`).
+_(Historical context.)_ At the time, Taskdeck **was being positioned** to transition from a local-first SQLite application to a cloud-hosted multi-tenant service (ADR-0014 pillar: Cloud & Collaboration, `#537`). The deployment baseline was a single-node Docker Compose stack (documented in `docs/ops/DEPLOYMENT_CONTAINERS.md`) running behind an Nginx reverse proxy with SQLite persistence on an EC2 instance provisioned by Terraform (`docs/ops/DEPLOYMENT_TERRAFORM_BASELINE.md`). _(That cloud transition was de-scoped by the 2026-06-13 archive pivot; Taskdeck stays single-instance and local-first.)_
 
 This single-node architecture cannot support the `v0.2.0` hosted cloud milestone because:
 
@@ -165,7 +165,7 @@ Implementation notes:
 
 ### SLO Targets
 
-These targets are for the initial hosted cloud deployment (small user base, single region). They will be revised upward as the product matures and the user base grows.
+These targets were for the initial hosted cloud deployment (small user base, single region). _(Historical — the plan was to revise them upward as the product matured and the user base grew; that cloud deployment was de-scoped by the archive pivot, so these targets were never applied.)_
 
 | SLO | Target | Measurement |
 |-----|--------|-------------|
@@ -311,7 +311,9 @@ Cost notes:
 
 ### Follow-Up Implementation Tasks
 
-These concrete tasks should be created as GitHub issues to implement this ADR:
+> **DO NOT ACTION — parked by the archive pivot.** The list below was the original plan; do not turn these into issues. The entire cloud/multi-instance topology was de-scoped on 2026-06-13 (see ADR-0038); these items are retained only as a historical record.
+
+These concrete tasks _were_ originally to be created as GitHub issues to implement this ADR:
 
 1. **PostgreSQL migration** (`#84` — already tracked): Migrate from SQLite to PostgreSQL. Prerequisite for all horizontal scaling.
 2. **Redis backplane for SignalR**: Add `Microsoft.AspNetCore.SignalR.StackExchangeRedis` package, configure connection string, test cross-instance event delivery.
