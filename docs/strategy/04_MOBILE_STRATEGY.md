@@ -2,9 +2,9 @@
 
 **Date:** 2026-03-29
 **Scope:** Android, iOS, and mobile-responsive access for Taskdeck
-**Status:** SUPERSEDED / historical (2026-06-13 archive pivot) — mobile / PWA / native permanently de-scoped; retained as a record of parked plans (never executed).
+**Status:** SUPERSEDED / historical (2026-06-13 archive pivot) — the **mobile-native platform play** (Capacitor wrappers, app-store presence, iOS/Android native) is permanently de-scoped and was never executed; retained as a record of parked plans. **Caveat:** the **PWA / offline / share-target substrate is live and shipped** (`#95`/`#982`/`#1078`) — `vite-plugin-pwa`, `share-target-handler.js`, and `ShareTargetView` serve the local web app's installability and offline capture; that substrate is *not* de-scoped, only the mobile-native expansion built on top of it.
 
-> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The distribution / cloud / mobile / GTM tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial, general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The **mobile-native / Capacitor / app-store** tracks it describes (alongside distribution / cloud / GTM) are **permanently de-scoped** and retained here only as a historical record of parked plans. **The PWA/offline/share-target code this doc references is already shipped and remains live** (see STATUS `#95`/`#982`/`#1078`); do not treat it as abandoned — only the mobile-platform expansion is parked. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial, general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
 
 ---
 
