@@ -410,8 +410,8 @@ You've built the engine. Now turn the key.
 
 These are valid ideas that should NOT be prioritized in the next 3 months:
 
-- Agent substrate (AgentProfile/Run/Event) — no user has asked for this yet
-- Knowledge/FTS surface — build when users need cross-board search
+- Agent substrate (AgentProfile/Run/Event) — no user has asked for this yet _(historical note: this was subsequently **built and ships live** — `AgentProfile`/`AgentRun`/`AgentRunEvent` entities + Agents/Runs surfaces — via the RFAI roadmap; see `docs/STATUS.md`. This appendix reflects the pre-pivot 2026-03-29 framing.)_
+- Knowledge/FTS surface — build when users need cross-board search _(historical note: also **built and ships live** — `KnowledgeDocument`/`KnowledgeChunk` + `KnowledgeService`; see `docs/STATUS.md`.)_
 - Plugin/extension architecture — premature abstraction
 - CQRS/MediatR refactor — architectural astronautics unless app layer becomes unmanageable
 - Calendar/timeline views — nice to have, not core
