@@ -61,7 +61,7 @@ _(Historical.)_ These items **were** framed as blocking shipping to real users; 
 
 ---
 
-## Category 2: v0.1.0 "First Light" Prerequisites (SHOULD)
+## Category 2: v0.1.0 "First Light" Prerequisites (SHOULD) _(historical — de-scoped by the archive pivot; only the self-contained personal-use exe survives, packaging/distribution/GTM prep retired)_
 
 ### 2.1 Packaging & Distribution
 | Item | Issue | Effort | Details |
@@ -167,7 +167,7 @@ _(Historical.)_ These items **were** framed as blocking shipping to real users; 
 
 ---
 
-## Category 6: Agent & Knowledge Expansion (DEFERRED)
+## Category 6: Agent & Knowledge Expansion (DEFERRED) _(historical — pre-pivot plan; the base agent/knowledge substrate already shipped via the RFAI roadmap, further expansion parked)_
 
 ### 6.1 Agent Substrate (Horizon D)
 | Item | Issue | Effort | Details |
@@ -194,7 +194,7 @@ _(Historical.)_ These items **were** framed as blocking shipping to real users; 
 
 ---
 
-## Category 7: Testing & Quality Expansion (SHOULD)
+## Category 7: Testing & Quality Expansion (SHOULD) _(historical — pre-pivot plan; general quality continues under the archive-pivot waves, but this specific category list is superseded)_
 
 ### 7.1 Test Coverage Improvements
 | Item | Effort | Impact | Details |
@@ -221,7 +221,7 @@ _(Historical.)_ These items **were** framed as blocking shipping to real users; 
 
 ---
 
-## Category 8: Documentation Expansion (COULD)
+## Category 8: Documentation Expansion (COULD) _(historical — pre-pivot plan)_
 
 | Item | Effort | Priority | Details |
 |------|--------|----------|---------|
@@ -236,7 +236,7 @@ _(Historical.)_ These items **were** framed as blocking shipping to real users; 
 
 ---
 
-## Category 9: Nice-to-Have Product Features (DEFERRED)
+## Category 9: Nice-to-Have Product Features (DEFERRED) _(historical — pre-pivot plan)_
 
 | Feature | Effort | Value | Notes |
 |---------|--------|-------|-------|
