@@ -3,25 +3,28 @@
 **Date:** 2026-04-16
 **Scope:** All possible expansions organized by necessity, strategic value, and priority
 **Companion:** `docs/AUDIT.md`, `docs/QA_STRATEGY.md`, `docs/HARDENING_AND_PERFORMANCE.md`
+**Status:** SUPERSEDED / historical (2026-06-13 archive pivot) — the entire roadmap below is the abandoned pre-pivot plan; retained as a record only.
 
-> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The distribution / cloud / mobile / GTM tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial, general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. **EVERY category, priority label (MUST/SHOULD/COULD/DEFERRED), timeline, milestone, execution sequence, and issue reference below describes the abandoned pre-pivot plan and must NOT be actioned** — do not turn any of it into issues, milestones, or "next steps." The distribution / cloud / mobile / GTM / multi-tenancy / PostgreSQL tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. The only exception is the single self-contained-executable local-run goal, which survives the pivot (see `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md`). Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial, general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
 
 ---
 
 ## How to Read This Document
 
-- **MUST** = Required before external users / production
-- **SHOULD** = High-value, de-risks the product significantly
-- **COULD** = Strategic advantage, nice-to-have
-- **DEFERRED** = Valuable but not on the near-horizon
+_(Historical legend — the priority labels below described the pre-pivot plan. With distribution/production de-scoped by the archive pivot, none of these tiers represents active or planned work; they are retained verbatim as a record.)_
+
+- **MUST** = _(historical)_ Was: required before external users / production
+- **SHOULD** = _(historical)_ Was: high-value, de-risks the product significantly
+- **COULD** = _(historical)_ Was: strategic advantage, nice-to-have
+- **DEFERRED** = _(historical)_ Was: valuable but not on the near-horizon
 
 Each section includes effort estimates (S/M/L/XL) and dependencies.
 
 ---
 
-## Category 1: Production Readiness (MUST)
+## Category 1: Production Readiness (MUST) _(historical — pre-pivot plan)_
 
-These items block shipping to real users.
+_(Historical.)_ These items **were** framed as blocking shipping to real users; shipping/distribution is de-scoped by the archive pivot, so they are no longer required work — retained as a record.
 
 ### 1.1 Performance Quick Fixes
 | Item | Effort | Impact | Details |
@@ -94,7 +97,7 @@ These items block shipping to real users.
 
 ---
 
-## Category 3: v0.2.0 "Open Doors" — Cloud & SaaS (SHOULD)
+## Category 3: v0.2.0 "Open Doors" — Cloud & SaaS (SHOULD) _(historical — de-scoped by the archive pivot)_
 
 ### 3.1 Cloud Deployment
 | Item | Issue | Effort | Details |
@@ -124,7 +127,7 @@ These items block shipping to real users.
 
 ---
 
-## Category 4: v0.3.0 "In Your Pocket" — Mobile & PWA (COULD)
+## Category 4: v0.3.0 "In Your Pocket" — Mobile & PWA (COULD) _(historical — de-scoped by the archive pivot)_
 
 ### 4.1 Mobile Responsiveness
 | Item | Issue | Effort | Details |
@@ -143,7 +146,7 @@ These items block shipping to real users.
 
 ---
 
-## Category 5: v0.4.0 "Bring Friends" — Collaboration (COULD)
+## Category 5: v0.4.0 "Bring Friends" — Collaboration (COULD) _(historical — de-scoped by the archive pivot)_
 
 ### 5.1 Team Features
 | Item | Effort | Details |
@@ -252,7 +255,9 @@ These items block shipping to real users.
 
 ---
 
-## Prioritized Execution Sequence
+## Prioritized Execution Sequence _(historical — DO NOT ACTION)_
+
+> **⚠️ PARKED (2026-06-13 archive pivot).** The week-by-week sequence below was the original pre-pivot delivery plan. It is **de-scoped** — do not action it, do not turn its steps into issues or milestones. Retained as a historical record only.
 
 ### Week 1-2: Production Readiness Sprint
 1. Performance quick fixes (1.1) — 1 day
@@ -278,13 +283,15 @@ These items block shipping to real users.
 
 ---
 
-## Summary
+## Summary _(historical — superseded by the archive pivot)_
 
-Taskdeck has **14 open issues** and the core product is effectively complete. The expansion path is:
+_(Historical, as of 2026-04-16.)_ At the time of writing, Taskdeck had **14 open issues** and the core product was effectively complete. The expansion path **was envisioned** as:
 
-1. **This week**: 5 performance fixes + 4 security fixes = **production-ready API**
-2. **This month**: Packaging + Docker + CI = **v0.1.0 downloadable**
-3. **Next month**: Cloud + PostgreSQL + GTM = **v0.2.0 hosted**
-4. **Q3 2026**: Mobile + collaboration + agent runtime = **v0.4.0+**
+1. **(historical) This week**: 5 performance fixes + 4 security fixes = production-ready API
+2. **(historical) This month**: Packaging + Docker + CI = v0.1.0 downloadable
+3. **(historical) Next month**: Cloud + PostgreSQL + GTM = v0.2.0 hosted
+4. **(historical) Q3 2026**: Mobile + collaboration + agent runtime = v0.4.0+
 
-The bottleneck is not engineering — it's the packaging-to-distribution pipeline. The code is ready; the delivery vehicle isn't.
+The 2026-06-13 archive pivot ended this expansion path: cloud, PostgreSQL, GTM, mobile, and collaboration are **permanently de-scoped**. The closing thesis below described the pre-pivot framing and no longer reflects current direction:
+
+> _(historical)_ The bottleneck is not engineering — it's the packaging-to-distribution pipeline. The code is ready; the delivery vehicle isn't.
