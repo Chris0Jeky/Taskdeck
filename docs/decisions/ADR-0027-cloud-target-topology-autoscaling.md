@@ -14,7 +14,7 @@ _(Historical context.)_ At the time, Taskdeck **was being positioned** to transi
 This single-node architecture cannot support the `v0.2.0` hosted cloud milestone because:
 
 - **SQLite does not support concurrent writers** across multiple API processes. The managed database migration (`#84`) to PostgreSQL is a prerequisite for horizontal scaling.
-- **SignalR connection state is in-process**. Multiple API instances require a Redis backplane (noted in ADR-0012) to fan out realtime events across nodes.
+- **SignalR connection state is in-process**. Multiple API instances require a Redis backplane (see ADR-0025) to fan out realtime events across nodes.
 - **The background worker (`LlmQueueToProposalWorker`) runs in-process** inside the API host. Scaling API instances would duplicate worker execution without coordination.
 - **No load balancer exists** in the current Terraform baseline. The Nginx reverse proxy runs on the same host as the application.
 - **No autoscaling policy exists**. The single EC2 instance is statically provisioned.
@@ -328,7 +328,8 @@ These concrete tasks _were_ originally to be created as GitHub issues to impleme
 
 ## References
 
-- ADR-0012: SignalR Realtime with Polling Fallback (sticky session and Redis backplane requirements)
+- ADR-0012: SignalR Realtime with Polling Fallback (base realtime decision)
+- ADR-0025: SignalR Scale-Out — Redis Backplane (the backplane + multi-instance scale-out requirements)
 - ADR-0014: Platform Expansion — Four Pillars (cloud & collaboration pillar, `v0.2.0` milestone)
 - ADR-0004: Multi-Tenancy — Shared Schema + TenantId (database scaling implications)
 - `docs/ops/DEPLOYMENT_CONTAINERS.md` — current container deployment baseline
