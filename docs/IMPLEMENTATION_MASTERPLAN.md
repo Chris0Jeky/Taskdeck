@@ -1125,7 +1125,7 @@ Master tracker: `#531`.
 
 ### Priority I (Current Phase 4 Completion Path)
 
-- **Security bug**: `#722` (SEC-20) — `ChangePassword` does not verify caller identity; any authenticated user can change another user's password. Discovered during 2026-04-03 test audit. Must be resolved before external onboarding.
+- ~~**Security bug**: `#722` (SEC-20) — `ChangePassword` does not verify caller identity; any authenticated user can change another user's password. Discovered during 2026-04-03 test audit.~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `AuthController.ChangePassword` derives `userId` from the JWT and `ChangePasswordApiTests` guard it; STATUS records the fix. (Historical backlog entry retained for context.)
 - Security and policy convergence: `#33`, `#34`, `#44`
 - Final cross-user policy convergence follow-through: `#152`
 - Starter packs foundation: `#48`, `#49`, `#50`, `#51` (delivered)
@@ -1292,8 +1292,8 @@ Outstanding strategy-level gap to monitor:
 > **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** The multi-tenant / hosted-SaaS premise that motivated Stages B and C is **de-scoped**. The **live cross-user isolation behaviour** delivered in Stage A stays intact — enforced today by per-`UserId` and board-access predicates with the `403`/`404` existence policy (no `TenantId` column), consistent with **ADR-0004** as reframed in the **Direction** section. Stages B and C are **parked** below; only their multi-instance/multi-org expansion is retired, not the running app's isolation guarantees or the **live local backup/restore** path.
 
 1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76` delivered). _(The cross-user isolation behaviour delivered here remains **live** in the single-instance app.)_
-2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`, `#85`) — **parked** _(historical — the multi-tenant data-plane premise is de-scoped by the archive pivot; production stays SQLite-only single-instance)_.
-3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#86`, `#101`, `#111`) — **parked** _(historical — tenant-aware DR / staged rollout / cloud topology is de-scoped with the cloud premise; the **local backup/restore** path remains live, only the tenant-aware / hosted-DR framing is parked)_.
+2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`) — **parked** _(historical — the multi-tenant data-plane / production-Postgres premise is de-scoped by the archive pivot; production stays SQLite-only single-instance)_. **`#85` (distributed cache strategy) is NOT parked** — its deliverable, the `ICacheService` cache-aside abstraction (ADR-0024, `InMemoryCacheService` default), **shipped and stays live** in the personal build; only its Redis/distributed framing is parked.
+3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#101`, `#111`) — **parked** _(historical — tenant-aware DR / staged rollout / cloud topology is de-scoped with the cloud premise)_. **`#86` (local backup/restore disaster-recovery) is NOT parked** — local backup/restore (`DatabaseFileExportImportService`) **remains relevant** to the personal build (STATUS keeps `#86` out of the parked cloud bundle); only the tenant-aware / hosted-DR framing is parked.
 4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81` delivered; `#82`, `#83` delivered, `#110` pending).
 
 
