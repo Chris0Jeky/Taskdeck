@@ -65,12 +65,13 @@ updates:
       # #1088). Block major bumps so v8 isn't re-proposed every cycle.
       - dependency-name: "FluentAssertions"
         update-types: ["version-update:semver-major"]
-      # StackExchange.Redis backs the SignalR backplane + distributed lock, which
-      # are config-gated and DORMANT in the single-instance default (ADR-0025).
-      # Under the archive pivot (single-instance, SQLite, personal-use) a major
-      # bump carries breaking-change risk on never-exercised runtime paths with no
-      # benefit, so block its majors (PR #1224 closed for proposing 3.0.0). Revisit
-      # only if the Redis backplane is ever deliberately activated.
+      # StackExchange.Redis backs the SignalR backplane (ADR-0025) and the optional
+      # Redis-backed cache service (RedisCacheService), both config-gated and DORMANT
+      # in the single-instance default (Cache:Provider=InMemory, SignalR:Redis
+      # connection string empty). Under the archive pivot (single-instance, SQLite,
+      # personal-use) a major bump carries breaking-change risk on never-exercised
+      # runtime paths with no benefit, so block its majors (PR #1224 closed for
+      # proposing 3.0.0). Revisit only if Redis is ever deliberately activated.
       - dependency-name: "StackExchange.Redis"
         update-types: ["version-update:semver-major"]
     commit-message:
