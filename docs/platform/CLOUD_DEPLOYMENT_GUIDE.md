@@ -346,7 +346,7 @@ Render's free tier is available for evaluation but has spin-down behavior (cold 
 
 **Check**:
 1. Verify only one instance is running. SQLite does not support multiple writers.
-2. If scaling is needed, migrate to PostgreSQL (`docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md`).
+2. _(Historical/reference only — multi-instance scale-out / PostgreSQL migration is **de-scoped** by the 2026-06-13 archive pivot; single-instance SQLite is the permanent architecture, and `UseSqlite()` is hardwired with no provider switch, so "migrate to PostgreSQL" is not an executable path. The migration runbook (`docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md`) is retained as historical reference.)_
 
 ### SPA shows blank page
 
