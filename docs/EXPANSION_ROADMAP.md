@@ -24,7 +24,7 @@ Each section includes effort estimates (S/M/L/XL) and dependencies.
 
 ## Category 1: Production Readiness (MUST) _(historical — pre-pivot plan)_
 
-_(Historical.)_ These items **were** framed as blocking shipping to real users; shipping/distribution is de-scoped by the archive pivot, so they are no longer required work — retained as a record.
+_(Historical record — most of these were since DELIVERED.)_ These items **were** framed as blocking shipping to real users; that *shipping-gate* priority label is de-scoped by the archive pivot (no distribution). **But the underlying perf/security/docs work was largely done** — response compression (`ResponseCompressionRegistration`), the missing DB indexes (`AddPerfIndexes` migration), the WorkspaceService sync-I/O fix, AuditLog SQL filtering, SSRF protection (`SsrfProtectionService`), removing the dev JWT secret, `SECURITY.md`, startup config validation (`ValidateOnStart`), and the configuration/data-model references (`docs/platform/CONFIGURATION_REFERENCE.md`, `docs/architecture/DATA_MODEL.md`) **all shipped** (see `docs/ISSUE_EXECUTION_GUIDE.md` Stages 6–7, PRs ~#902–#924). **Do not re-open these as backlog** — the tables below are a historical record of since-delivered work, not a to-do list.
 
 ### 1.1 Performance Quick Fixes
 | Item | Effort | Impact | Details |
@@ -109,12 +109,15 @@ _(Historical.)_ These items **were** framed as blocking shipping to real users; 
 | Production monitoring stack | — | L | Prometheus + Grafana or CloudWatch |
 
 ### 3.2 Auth & Identity
+
+_(Carve-out — two rows below already shipped as **local-app** identity hardening and are **not** parked: **Session timeout warning** delivered (`#861`, `SessionTimeoutWarning.vue` + `useSessionTimeout`), and **OIDC/SSO + optional MFA** delivered (`#82`, ADR-0029, `MfaCredential`). Only the cloud-server **RBAC**, **OAuth-scope enforcement**, and **at-scale account-lockout** framing is de-scoped.)_
+
 | Item | Issue | Effort | Details |
 |------|-------|--------|---------|
-| Role-based authorization (RBAC) | — | L | Admin/member/viewer roles on boards |
-| OAuth scope validation | — | M | Enforce scope claims in token validation |
-| Session timeout warning | — | S | Toast before token expiry |
-| Account lockout after failed attempts | — | M | Progressive delay or CAPTCHA |
+| Role-based authorization (RBAC) | — | L | Admin/member/viewer roles on boards _(parked — cloud)_ |
+| OAuth scope validation | — | M | Enforce scope claims in token validation _(parked — cloud)_ |
+| Session timeout warning | #861 | S | ~~Toast before token expiry~~ **delivered** (`SessionTimeoutWarning.vue`) |
+| Account lockout after failed attempts | — | M | Progressive delay or CAPTCHA _(parked — cloud scale)_ |
 
 ### 3.3 GTM & Marketing
 | Item | Issue | Effort | Details |
