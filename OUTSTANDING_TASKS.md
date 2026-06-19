@@ -9,7 +9,7 @@
 4. **Add new outstanding tasks here** when the maintainer asks you to remember something, or when substantial work is deferred. Keep entries short with a one-line "how" and a link to the GitHub issue/PR that holds the detail.
 5. Keep this file lean and scannable. Detail lives in the linked issues, not here.
 
-Last reviewed: 2026-06-05
+Last reviewed: 2026-06-19
 
 ---
 
