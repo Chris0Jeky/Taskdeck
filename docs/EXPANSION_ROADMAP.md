@@ -132,6 +132,8 @@ _(Carve-out — two rows below already shipped as **local-app** identity hardeni
 
 ## Category 4: v0.3.0 "In Your Pocket" — Mobile & PWA (COULD) _(historical — de-scoped by the archive pivot)_
 
+_(Carve-out — the **PWA / offline / share-target baseline already shipped** (`#95`/`#982`/`#1078`: VitePWA, `share-target-handler.js`, `ShareTargetView`, offline shell) and stays live for the local app; only the **mobile-native platform play** (responsive redesign, native nav/gestures, and the PWA *enhancements* below like web push / background sync) is de-scoped — not the shipped PWA substrate.)_
+
 ### 4.1 Mobile Responsiveness
 | Item | Issue | Effort | Details |
 |------|-------|--------|---------|
@@ -150,6 +152,8 @@ _(Carve-out — two rows below already shipped as **local-app** identity hardeni
 ---
 
 ## Category 5: v0.4.0 "Bring Friends" — Collaboration (COULD) _(historical — de-scoped by the archive pivot)_
+
+_(Carve-out — the **base local primitives** these rows would extend already ship and stay live: board sharing via board-access grants (`BoardAccessController`, `/workspace/settings/access`) and SignalR realtime board updates (`BoardsHub`), per README/STATUS. What is de-scoped is the **multi-user/team expansion on top** — permission tiers, workspace invitations, email delivery, card-level collaborative editing — not the shipped board-access/realtime base.)_
 
 ### 5.1 Team Features
 | Item | Effort | Details |
@@ -171,6 +175,8 @@ _(Carve-out — two rows below already shipped as **local-app** identity hardeni
 ---
 
 ## Category 6: Agent & Knowledge Expansion (DEFERRED) _(historical — pre-pivot plan; the base agent/knowledge substrate already shipped via the RFAI roadmap, further expansion parked)_
+
+_(Carve-outs: the base agent substrate (`AgentProfile`/`AgentRun`/`AgentRunEvent` `#336`, Agents/Runs surfaces `#338`) and knowledge backend (`#339`) **shipped**; and the **`#219` note/transcript + voice-capture rows below are DEFERRED, not de-scoped** — `useVoiceCapture` exists as a tested prototype and voice/transcript is a capture-friction improvement (not GTM/cloud/mobile), so its UI integration stays a legitimate follow-on. Only further agent/knowledge *expansion* beyond the shipped base is parked.)_
 
 ### 6.1 Agent Substrate (Horizon D)
 | Item | Issue | Effort | Details |
