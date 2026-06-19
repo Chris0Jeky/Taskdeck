@@ -1,6 +1,7 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-06-19 (PR-state sync for the in-flight Paper-activation PRs; delivery facts unchanged since 2026-06-13)
+Last Updated: 2026-06-19
+<!-- 2026-06-19: PR-state sync for the in-flight Paper-activation PRs; shipped-delivery facts unchanged since 2026-06-13. -->
 
 Direction + canonical UI (2026-06-13, maintainer-decided):
 - **Project direction is finish-for-personal-use, then archive.** Taskdeck will not be distributed; the goals are to finish and activate the Paper UI, make the app trivially easy to run locally, land general quality improvements, and archive cleanly. This supersedes the 2026-06-05 ship-first framing; distribution-era tracks (code-signing, GTM, cloud, mobile) are de-scoped.
