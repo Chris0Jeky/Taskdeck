@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ReviewQueueRail, {
   type QueueFilter,
   type QueueRailItem,
@@ -184,7 +184,18 @@ const selectors = usePaperReviewSelectors(activeProposal)
 const previewDiff = ref<string | null>(null)
 const previewDiffProposalId = ref<string | null>(null)
 const previewDiffLoading = ref(false)
+const previewDiffSection = ref<HTMLElement | null>(null)
 let latestDiffRequestId = 0
+
+// Space can be pressed while the reviewer is looking at the top of a long
+// review surface; the diff renders below the (often tall) deep-review content,
+// so scroll it into view once it appears. Guarded for jsdom where the method
+// is absent.
+function scrollDiffIntoView() {
+  void nextTick(() => {
+    previewDiffSection.value?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+  })
+}
 
 // Clear the preview whenever the active proposal changes so a diff loaded
 // for one proposal never leaks onto the next (mirrors legacy behaviour).
@@ -647,6 +658,7 @@ async function onPreviewDiff() {
     previewDiffProposalId.value = p.id
     previewDiff.value = ''
     previewDiffLoading.value = false
+    scrollDiffIntoView()
     return
   }
 
@@ -660,18 +672,16 @@ async function onPreviewDiff() {
     // Ignore stale responses and ones whose target proposal has changed.
     if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
     previewDiff.value = diff
+    scrollDiffIntoView()
   } catch (e: unknown) {
     if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
-    const { message, code } = getErrorDisplay(e, 'Failed to load proposal diff')
-    // A 404 means the backend has no diff to show (no-op proposal) — render the
-    // empty-diff state rather than surfacing it as an error.
-    if (code === 'NotFound') {
-      previewDiff.value = ''
-      return
-    }
+    // The no-op case (no diff to show) is handled by the guard above BEFORE
+    // fetching, so a failure here is a real error — most often a 404 because the
+    // proposal was deleted/dismissed from another session. Surface it rather than
+    // silently rendering an empty diff for a proposal that no longer exists.
     previewDiffProposalId.value = null
     previewDiff.value = null
-    toast.error(message)
+    toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)
   } finally {
     if (requestId === latestDiffRequestId) {
       previewDiffLoading.value = false
@@ -773,6 +783,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       />
       <section
         v-if="previewDiffProposalId === activeProposal.id"
+        ref="previewDiffSection"
         class="paper-review-deep__diff"
         data-testid="paper-review-diff"
       >

@@ -861,4 +861,23 @@ describe('PaperReviewView', () => {
 
     wrapper.unmount()
   })
+
+  it('surfaces an error (not an empty diff) when a 404 occurs for an operations-bearing proposal', async () => {
+    // A proposal with operations bypasses the no-op guard and fetches; a 404 here
+    // means the proposal was deleted/dismissed elsewhere, so it must error rather
+    // than silently render an empty diff.
+    mocks.getProposalDiff.mockRejectedValueOnce({
+      response: { data: { errorCode: 'NotFound', message: 'Proposal not found' } },
+    })
+    const wrapper = await mountView([makeProposal({ id: 'diff-gone' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-gone')
+    expect(mocks.errorToast).toHaveBeenCalledWith('Proposal not found')
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
 })
