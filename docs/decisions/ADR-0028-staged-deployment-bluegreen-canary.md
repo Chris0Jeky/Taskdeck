@@ -1,6 +1,6 @@
 # ADR-0028: Staged Deployment Workflow — Blue/Green with Canary Verification
 
-- **Status**: Accepted
+- **Status**: Accepted — PARKED (cloud deployment de-scoped)
 
 > **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
 
@@ -9,7 +9,7 @@
 
 ## Context
 
-Taskdeck's production deployment currently follows a direct-replace model: a single Docker Compose stack is updated in place on the target host. This approach provides no mechanism for staged rollout, traffic-shifted verification, or instant rollback without downtime. As Taskdeck moves toward cloud hosting (v0.2.0 in the platform expansion strategy, ADR-0014), a formal deployment strategy is needed to:
+Taskdeck's production deployment currently follows a direct-replace model: a single Docker Compose stack is updated in place on the target host. This approach provides no mechanism for staged rollout, traffic-shifted verification, or instant rollback without downtime. _(Historical context.)_ At the time, as Taskdeck **was being positioned** to move toward cloud hosting (v0.2.0 in the platform expansion strategy, ADR-0014), a formal deployment strategy **was deemed** needed to: _(that cloud move was de-scoped by the 2026-06-13 archive pivot, so this strategy was never adopted)_
 
 1. Prevent bad releases from reaching all users simultaneously.
 2. Provide deterministic rollback within seconds, not minutes.
