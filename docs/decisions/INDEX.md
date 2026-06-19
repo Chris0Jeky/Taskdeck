@@ -5,7 +5,7 @@
 | [0001](ADR-0001-clean-architecture-layering.md) | Clean Architecture Layering | Accepted | 2025 |
 | [0002](ADR-0002-claims-first-identity.md) | Claims-First Identity Model | Accepted | 2026-01 |
 | [0003](ADR-0003-proposal-first-automation.md) | Proposal-First Automation (Review-First Safety) | Accepted | 2026-02-23 |
-| [0004](ADR-0004-multi-tenancy-shared-schema.md) | Multi-Tenancy - Shared Schema + TenantId | Accepted | 2026-02-22 |
+| [0004](ADR-0004-multi-tenancy-shared-schema.md) | Multi-Tenancy - Shared Schema + TenantId | Accepted (cross-user isolation live via per-UserId/board-access; multi-org/TenantId shared-schema premise parked: archive pivot) | 2026-02-22 |
 | [0005](ADR-0005-capture-model-queue-wrapper.md) | Capture Model - Queue-Wrapper MVP | Accepted | 2026-02-23 |
 | [0006](ADR-0006-llm-provider-mock-default.md) | LLM Provider - Mock-Default with Config-Gated Live Providers | Accepted | 2026-02 |
 | [0007](ADR-0007-stable-error-contracts.md) | Stable Error Contracts (ApiErrorResponse) | Accepted | 2026-01 |
