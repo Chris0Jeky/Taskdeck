@@ -26,7 +26,7 @@ This guide covers deploying Taskdeck to managed cloud platforms (**Railway** and
 
 Related documents:
 - `docs/ops/DEPLOYMENT_CONTAINERS.md` -- local Docker Compose baseline
-- `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md` -- full AWS/ECS architecture (future scale)
+- `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md` -- full AWS/ECS architecture (de-scoped cloud scale-out — reference only)
 - `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` -- PostgreSQL migration path
 - `docs/strategy/03_CLOUD_COLLABORATION_STRATEGY.md` -- strategic context
 
@@ -234,7 +234,7 @@ SQLite stores data in a file. Without a persistent volume, data is lost on every
 SQLite supports one writer at a time (WAL mode improves this but does not eliminate it). This means:
 - **Do not scale to multiple instances** while using SQLite
 - Railway `numReplicas` and Render `numInstances` must remain at 1
-- If you need horizontal scaling, migrate to PostgreSQL first
+- _(Historical: the "migrate to PostgreSQL first" path for horizontal scaling is **de-scoped** by the 2026-06-13 archive pivot. Single-instance SQLite is the permanent architecture; there is no scale-out plan.)_
 
 ### Backups
 
@@ -255,7 +255,9 @@ Cloud platform volumes are not automatically backed up. Implement a backup strat
 
 ### Migration to PostgreSQL
 
-When scaling beyond a single instance or needing managed backups, migrate to PostgreSQL. See `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` for the full migration procedure.
+> **⚠️ De-scoped by the 2026-06-13 archive pivot.** PostgreSQL migration and horizontal scaling are **not planned**. Single-instance SQLite is the permanent architecture.
+
+_(Historical: when scaling beyond a single instance or needing managed backups, the original plan was to migrate to PostgreSQL — see `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` for the full migration procedure, retained as reference only.)_
 
 ---
 
@@ -368,7 +370,9 @@ Both Railway and Render support custom domains with automatic TLS.
 
 ---
 
-## Next Steps
+## Next Steps _(historical — de-scoped)_
+
+> **⚠️ De-scoped by the 2026-06-13 archive pivot.** These were planned follow-ons before the pivot de-scoped cloud / scale-out. They are **not** active next steps; retained as historical record only.
 
 - **Scale beyond single instance**: Migrate to PostgreSQL and add Redis for SignalR backplane. See `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`.
 - **CI/CD pipeline**: Configure GitHub Actions to auto-deploy on merge to main. See `.github/workflows/` for existing CI configuration.
