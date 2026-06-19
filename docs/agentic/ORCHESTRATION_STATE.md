@@ -3,7 +3,7 @@
 Last Updated: 2026-05-17
 Status: SUPERSEDED (2026-06-13 archive pivot)
 
-> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This autonomous-loop execution queue is stale: it sequences de-scoped external-product work (e.g. `#546` demo video, `#550` brand/domain, `#548` privacy policy). The active direction is finish-for-personal-use → archive; current sequencing follows the archive-pivot **waves** in the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`, **not** the queue below. Do not resume work from this file's queue.
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This autonomous-loop execution queue is stale: it is a point-in-time snapshot in which **some items were since delivered and ship live** (e.g. `#982`/`#983`/`#984` via `#1078`/`#1079`/`#1080`) while others sequence de-scoped external-product work (e.g. `#546` demo video, `#550` brand/domain, `#548` privacy policy). The active direction is finish-for-personal-use → archive; current sequencing follows the archive-pivot **waves** in the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`, **not** the queue below. Do not resume work from this file's queue.
 
 ## Purpose
 
@@ -58,10 +58,11 @@ This file is the persistent memory and execution state for Claude Code's autonom
 - [ ] #1070 TST-63: MFA setup 409-Conflict test (small, isolated)
 
 ### Tier 2: Feature Delivery
+_(Point-in-time snapshot — several items below were **subsequently delivered** and ship live; do not re-pick them. See `docs/STATUS.md`.)_
 - [ ] #1001 PAPER-05: Board/Kanban surface in Paper (frontend, clear spec)
-- [ ] #982 RFAI-10: PWA share-target quick capture (Priority III)
-- [ ] #983 RFAI-11: Ambient channel hardening decision (Priority IV)
-- [ ] #984 RFAI-12: Learning loop UI + beta gate (depends on #983)
+- [x] #982 RFAI-10: PWA share-target quick capture — **delivered** (merged `#1078`; PWA share-target ships live)
+- [x] #983 RFAI-11: Ambient channel hardening decision — **delivered** (merged `#1079`; VS Code/ambient prototype, ADR-0033)
+- [x] #984 RFAI-12: Learning loop UI + beta gate — **delivered** (merged `#1080`; learning-loop UI + Ollama + ProvenanceDrawer). Only the onward beta-gate/distribution is de-scoped.
 
 ### Tier 3: Infrastructure & Hardening
 - [ ] #655 MCP-04: MCP production hardening
