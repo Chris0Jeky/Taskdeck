@@ -161,7 +161,7 @@ Implementation notes:
 - Liveness is lightweight: returns 200 if the ASP.NET request pipeline can execute. No dependency checks (to avoid cascade failures where a DB outage kills all API tasks).
 - Readiness checks actual dependency connectivity. A task that fails readiness stops receiving traffic but is not killed (allowing transient DB/Redis issues to self-heal).
 - Startup probe gives migrations up to 5 minutes to complete. During rolling deployments, old tasks continue serving while new tasks run migrations.
-- The existing `/health/live` and `/health/ready` endpoints (in `HealthController`) already serve liveness and readiness roles. `/health/ready` should be extended to include a Redis connectivity check once the Redis backplane is introduced. Only `/health/startup` needs to be added as a new endpoint.
+- The existing `/health/live` and `/health/ready` endpoints (in `HealthController`) already serve liveness and readiness roles, and `/health/ready` **already includes a SignalR Redis backplane connectivity check** (`RedisBackplaneHealthCheck` — `NotConfigured`/no-op when no Redis connection string is set; see ADR-0025, where the backplane wiring is retained but dormant). Only `/health/startup` was never added as a separate endpoint.
 
 ### SLO Targets
 
@@ -306,7 +306,7 @@ Cost notes:
 ### Neutral
 
 - **PostgreSQL migration is a hard prerequisite**: This topology cannot be deployed until `#84` (managed production DB migration) is complete.
-- **Redis backplane is a new dependency**: Adds a service to manage but is operationally simple at single-node scale.
+- **Redis backplane dependency**: the wiring (`AddStackExchangeRedis`, conditional on a SignalR Redis connection string) was already added and remains in the codebase but **dormant** — only the multi-instance scale-out premise it would serve is parked (see ADR-0025). At single-node scale it is a no-op.
 - **Monitoring gap**: The existing OpenTelemetry baseline (`docs/ops/OBSERVABILITY_BASELINE.md`) provides application metrics. CloudWatch provides infrastructure metrics. A unified dashboard combining both is a follow-up task.
 
 ### Follow-Up Implementation Tasks
@@ -316,9 +316,9 @@ Cost notes:
 These concrete tasks _were_ originally to be created as GitHub issues to implement this ADR:
 
 1. **PostgreSQL migration** (`#84` — already tracked): Migrate from SQLite to PostgreSQL. Prerequisite for all horizontal scaling.
-2. **Redis backplane for SignalR**: Add `Microsoft.AspNetCore.SignalR.StackExchangeRedis` package, configure connection string, test cross-instance event delivery.
+2. **Redis backplane for SignalR**: _(already implemented/dormant — the `Microsoft.AspNetCore.SignalR.StackExchangeRedis` package is referenced and `AddStackExchangeRedis` is wired conditional on a connection string; see ADR-0025.)_ Remaining for scale-out would be configuring a connection string and testing cross-instance event delivery.
 3. **Worker extraction**: Add `--worker` / `TASKDECK_ROLE=worker` startup mode. Extract all three `BackgroundService` registrations (`LlmQueueToProposalWorker`, `ProposalHousekeepingWorker`, `OutboundWebhookDeliveryWorker`) to worker-only startup. Implement `SELECT ... FOR UPDATE SKIP LOCKED` queue claiming for LLM queue items and webhook deliveries.
-4. **Health check extension**: The existing `/health/live` and `/health/ready` endpoints already serve liveness and readiness roles. Extend `/health/ready` to include a Redis connectivity check once the Redis backplane is introduced. Add a new `/health/startup` endpoint that verifies EF Core migrations are complete and initial seed data is present.
+4. **Health check extension**: The existing `/health/live` and `/health/ready` endpoints already serve liveness and readiness roles, and `/health/ready` **already includes the Redis/SignalR backplane connectivity check** (`RedisBackplaneHealthCheck`). Only `/health/startup` (verifying EF Core migrations complete + initial seed data present) was never added.
 5. **ALB + ECS Terraform module**: Extend `deploy/terraform/aws/` with ALB, ECS cluster, task definitions, service definitions, and autoscaling policies.
 6. **CDN deployment for SPA**: Configure CloudFront distribution with S3 origin for frontend static assets. Remove frontend container from ECS (SPA served from CDN, not a container).
 7. **CI/CD pipeline for ECS**: Extend GitHub Actions to build images, push to ECR, and trigger ECS service update with rolling deployment.
