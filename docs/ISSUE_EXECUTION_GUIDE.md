@@ -382,7 +382,7 @@ Maintainability hotspot refactor wave (analysis-driven, all delivered):
 
 ### Stage 5: Priority V - Meta/Historical
 
-1. ~~`#107`~~ OPS-13 future expansion wave index (**closed historical index**; active roadmap tracker is `#972`)
+1. ~~`#107`~~ OPS-13 future expansion wave index (**closed historical index**; the RFAI roadmap tracker `#972` is complete 2026-05-29 and **superseded by the archive pivot** — active execution order is the archive-pivot waves in `IMPLEMENTATION_MASTERPLAN.md`)
 2. ~~`#338`~~ AGT-03 agent mode surfaces and run-detail timeline (**delivered**)
 3. ~~`#340`~~ INT-06 integrations registry and supervised inbound connector foundation (**delivered** `#841`)
 4. ~~`#341`~~ TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through (**delivered** `#741`)
