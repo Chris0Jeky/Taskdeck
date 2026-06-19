@@ -4,6 +4,8 @@ Last Updated: 2026-04-22
 Issue: `#868` OPS-30 Define monitoring and alerting rules
 Depends on: `docs/ops/OBSERVABILITY_BASELINE.md` (OBS-01, #68)
 
+> **⚠️ Cloud/hosted sections REFERENCE ONLY — archive pivot 2026-06-13.** Taskdeck is a single-instance, SQLite, personal-use tool (not hosted or scaled out). The production CloudWatch/PagerDuty wiring and the `CLOUD_REFERENCE_ARCHITECTURE.md` alarm overrides described below are retained as historical reference, not active on-call setup — only local / single-instance signals apply. See `docs/STATUS.md`.
+
 ---
 
 ## Overview
