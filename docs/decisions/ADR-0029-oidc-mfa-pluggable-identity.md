@@ -1,6 +1,6 @@
 # ADR-0029: OIDC/SSO Integration with Optional TOTP MFA
 
-- **Status**: Accepted
+- **Status**: Accepted (MFA/OIDC behaviour live; enterprise/SSO/multi-org premise parked — archive pivot)
 
 > **Archive-pivot note (2026-06-13):** The *hosted / enterprise / multi-org adoption* premise behind this decision is de-scoped — Taskdeck is personal-use only per the archive pivot (see ADR-0038 and `docs/STATUS.md`). The **MFA + OIDC/OAuth behaviour this ADR decides remains live**: TOTP MFA (`MfaSetup`, `MfaChallengeModal`) and GitHub OAuth (`exchangeOidcCode`) are implemented and exposed. Only the enterprise-adoption rationale is parked.
 
