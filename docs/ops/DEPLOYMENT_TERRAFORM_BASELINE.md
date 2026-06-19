@@ -18,12 +18,12 @@ This baseline is deliberately single-node because the current product/runtime as
 - in-process workers run inside the API host
 - SignalR/rate-limiting posture is not yet scale-out hardened
 
-Related follow-through remains separate:
+Related (now de-scoped) follow-through historically tracked separately _(reference only — the 2026-06-13 archive pivot de-scoped the cloud / scale-out track; do not action)_:
 - `#101` staged rollout / canary / blue-green policy
 - `#103` SBOM and provenance posture
 - `#110` secrets/config management baseline
-- `#111` cloud topology + autoscaling ADR
-- `#84` managed production DB migration strategy
+- `#111` cloud topology + autoscaling ADR — **parked** (de-scoped cloud scale-out)
+- `#84` managed production DB migration strategy — **parked** (PostgreSQL migration de-scoped; single-instance SQLite permanent)
 
 ## Files
 
