@@ -117,7 +117,7 @@ Secondary lower-priority follow-through wave seeded from the audit:
 
 ## Out-of-Code and Configuration Actions Coverage
 
-> _(historical — superseded by the archive pivot; not active work. The cloud / distribution items here — staged rollout `#101`, IaC `#102`, cost guardrails `#104`, cloud topology/autoscaling `#111` — are **de-scoped** (no distribution/cloud). Do not pick these up as a cloud track. Supply-chain/security items such as SBOM/provenance (`#103`) are **not** parked by the cloud de-scope — STATUS keeps `#103` relevant to the personal build (tracked alongside the security-gate work `#1132`); evaluate it on its own merits, not as part of the retired cloud track. Any genuinely general-quality concerns are folded into the archive-pivot general-quality wave, not this pre-pivot list.)_
+> _(historical — superseded by the archive pivot; not active work. The cloud / distribution items here — staged rollout `#101`, IaC `#102`, cost guardrails `#104`, cloud topology/autoscaling `#111` — are **de-scoped** (no distribution/cloud). Do not pick these up as a cloud track. Supply-chain/security items such as SBOM/provenance (`#103`) **and local backup/restore disaster-recovery (`#86`)** are **not** parked by the cloud de-scope — STATUS explicitly keeps both relevant to the personal build (`#103` ships live in `reusable-sbom-provenance.yml`; `#86` is the live `DatabaseFileExportImportService` local backup/restore); evaluate them on their own merits, not as part of the retired cloud track. Any genuinely general-quality concerns are folded into the archive-pivot general-quality wave, not this pre-pivot list.)_
 
 - [x] Containerized runtime + reverse proxy + compression: `#69`
 - [ ] Staged rollout strategy: `#101`
