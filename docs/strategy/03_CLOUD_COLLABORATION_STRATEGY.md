@@ -188,7 +188,7 @@ This is far simpler than CRDTs and sufficient for board/card/column operations. 
 
 ### 4.1 Current State
 
-The ADR at `docs/analysis/2026-02-22_multi-tenancy-strategy-adr.md` already selected **shared-schema + TenantId** as the approach, with a promotion path to database-per-tenant for high-isolation tiers.
+The ADR at `docs/analysis/2026-02-22_multi-tenancy-strategy-adr.md` selected **shared-schema + TenantId** as the **(now-parked) pre-pivot** approach, with a promotion path to database-per-tenant for high-isolation tiers. _(Multi-org / multi-tenancy / `TenantId` is **permanently de-scoped** by the 2026-06-13 archive pivot — there is no `TenantId` in the codebase; cross-user isolation is via per-`UserId` / board-access only. See ADR-0004, which records this. The referenced analysis ADR predates the pivot and is itself historical.)_
 
 ### 4.2 What Needs to Happen
 
