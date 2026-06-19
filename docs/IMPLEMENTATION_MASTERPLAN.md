@@ -1281,7 +1281,7 @@ Covered by seeded issues:
   - reusable dependency-security signal workflow now normalizes backend/frontend scan results for PR/manual, nightly, and release contexts; remaining follow-through is limited to future automation escalation (for example auto-ticketing or stricter PR gating) rather than baseline policy definition
 - Secrets/configuration management baseline: `#110`
 - DB migration strategy and cache strategy: `#84`, `#85`
-- Cloud target topology and autoscaling ADR: `#111` (delivered — ADR-0023 defines ECS Fargate topology with ALB, RDS PostgreSQL, ElastiCache Redis, CloudFront CDN; autoscaling policy with CPU/request-rate/connection thresholds; health check contract; SLO targets; cost estimates; companion reference architecture at `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`)
+- Cloud target topology and autoscaling ADR: `#111` (delivered — **ADR-0027** defines ECS Fargate topology with ALB, RDS PostgreSQL, ElastiCache Redis, CloudFront CDN; autoscaling policy with CPU/request-rate/connection thresholds; health check contract; SLO targets; cost estimates; companion reference architecture at `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`)
 - CI workflow topology expansion/governance baseline: `#168`
 
 Outstanding strategy-level gap to monitor:
@@ -1451,12 +1451,12 @@ Tracker: `#570`. Improvement tiers:
 
 Analysis: `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
 
-## Active Blockers (2026-03-29 Manual Test Session)
+## Active Blockers (2026-03-29 Manual Test Session) — ✅ RESOLVED (historical)
 
-Two P0 bugs discovered in fresh-registration manual testing must be resolved before Phase 4 can be signed off or any external user onboarding begins. These are data correctness/security failures, not UX polish:
+> **Both P0 bugs below were fixed** (regression coverage per `#777`; see STATUS.md). This section is retained as a historical record. The "before Phase 4 sign-off / external user onboarding" framing is also moot under the 2026-06-13 archive pivot (finish-for-personal-use → archive; no external onboarding).
 
-- **`#508`** — Queue list endpoint not scoped to the authenticated user: a fresh-registered account sees all historical queue items from other sessions. Add a `userId` predicate to the LLM queue list query and add a cross-user isolation integration test.
-- **`#509`** — Board view auto-switches between boards every few seconds: `boardStore` overwrites `activeBoardId` on each `fetchBoards` response. Add a `preserveSelection` guard so the active board is not reset while it still exists in the refreshed list.
+- ~~**`#508`** — Queue list endpoint not scoped to the authenticated user~~ — **RESOLVED**: `LlmQueueService.GetUserQueueAsync(userId)` scopes the queue via `LlmQueue.GetByUserAsync(userId)`; cross-user isolation regression tests cover it.
+- ~~**`#509`** — Board view auto-switches between boards~~ — **RESOLVED**: `boardStore` preserves `activeBoardId` across `fetchBoards` when it still exists; regression test covers the auto-switch.
 
 Additional P1 issues from the same session (tracked in `#510`–`#515`) cover excessive board polling, the missing Inbox capture button, chat not emitting proposals, delete-card without confirmation, dark-mode theming gaps on three surfaces, and text-selected cards being non-draggable. Full findings at `docs/analysis/2026-03-29_manual_testing_consolidated_findings.md`.
 
