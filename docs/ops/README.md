@@ -8,7 +8,7 @@ This folder contains deployment, observability, and human-operator runbooks.
 - `RELEASE_CHECKLIST.md` — Smoke checklist for the OPS-09 staged (blue/green/canary) deployment — **parked by the archive pivot** (hosted/multi-instance; requires staging/prod URLs, container images, rollback slots — not the personal run path).
 - `DEPLOYMENT_CONTAINERS.md` — Container baseline (Dockerfiles, compose, nginx)
 - `DEPLOYMENT_HARDENING_MATRIX.md` — Container hardening verification matrix
-- `DEPLOYMENT_TERRAFORM_BASELINE.md` — Terraform IaC baseline for AWS
+- `DEPLOYMENT_TERRAFORM_BASELINE.md` — Terraform IaC baseline for AWS — **parked by the archive pivot** (cloud/multi-instance IaC; reference-only, not the personal run path)
 
 ## Operations
 
