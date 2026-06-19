@@ -2,7 +2,7 @@
 
 Last Updated: 2026-06-13
 <br>
-Planning Horizon: Next 8 to 12 weeks
+Planning Horizon: the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive), then archival — _(historical: this was an open "Next 8 to 12 weeks" release horizon before the 2026-06-13 archive pivot)_
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -12,7 +12,7 @@ Companion Active Docs:
 
 ## Purpose
 
-This is the active execution guide for sequencing past, current, and future implementation.
+This is the active execution guide for sequencing past, current, and the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive) that remain before archival.
 `docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
 Update this file at the end of each meaningful delivery cycle or when new work is seeded.
 
@@ -900,12 +900,14 @@ Implementation carry-forward from the full source audit:
 
 ## Roadmap by Horizon
 
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This entire block — the RFAI v4 roadmap (Tracker `#972`, slices `#973`–`#984` and their `#986`/`#989`–`#994` execution sequence) plus every week-numbered / Post-R1 / Post-R2 horizon below (Horizons A–F) — is **historical**. It is retained as a delivery record, not an active plan. The active sequence is the finite archive-pivot **waves** in the **Direction** section above (Paper UI activation → easy local run → general quality → archive). The RFAI track is **complete (12/12 slices delivered)**, and the ambient-capture / PWA share-target / browser-extension / beta-gate items (`#982`, `#983`, `#984`) are **de-scoped** with the archive pivot (no distribution, no beta). Items annotated *delivered* below remain accurate as history; un-delivered week-numbered work is either complete-as-history or de-scoped.
+
 ### Roadmap v4 Adoption: Review-First AI Without the Rewrite (Tracker `#972`)
 
-Active source:
+Historical source _(was the active source pre-pivot)_:
 - `taskdeck-12-week-roadmap-v4.md`
 
-Execution sequence:
+Execution sequence _(historical — RFAI is complete 12/12; remaining ambient/PWA/extension/beta items de-scoped per the archive pivot)_:
 1. `#973` RFAI-01: Safety invariants, IA cut, eval seed, and recertification (`Priority I`) — **delivered** (`#986`)
 2. `#974` RFAI-02: IntentEnvelopeV1, IChatClient adapter, and schema spike (`Priority I`) — **delivered** (`#989`)
 3. `#975` RFAI-03: Proposal generator V1 with verified provenance and outcomes ledger (`Priority I`) — **delivered** (foundational slice, `#993`)
@@ -1100,6 +1102,8 @@ Master tracker: `#531`.
 
 ### Feature Milestones (Original)
 
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** The `R1`→`v0.1.0`/`v0.2.0`, `R2`→`v1.0.0+`, `R3`→`post-v1.0.0` ladder and its beta/alpha framing are **retired** — there is no distribution, no public beta/alpha, and no `v0.x`→`v1.0.0` release ladder. This is kept only as a historical map of which capability cohorts were delivered. Active sequencing is the archive-pivot **waves** in the **Direction** section above.
+
 - `R1` novice-first beta (largely delivered — maps to v0.1.0/v0.2.0):
   - `Home`, `Today`, `Review`, onboarding/help coherence
   - readable proposals, board-centered action rails
@@ -1264,7 +1268,7 @@ Covered by seeded issues:
 - Developer MCP baseline and Docker Marketplace setup hardening: delivered (2026-02-20 local ops cycle)
 - MCP operator wiring + verification workflow: `#140` (delivered via `#144`)
 - MCP integration smoke/regression harness: `#141` (delivered)
-- Staged rollout policy (blue/green/canary): `#101`
+- Staged rollout policy (blue/green/canary): `#101` — **parked** _(historical — cloud/hosted deploy de-scoped by the 2026-06-13 archive pivot; the personal run path is local dev-up + self-contained exe, so blue/green/canary rollout has no live target)_
 - SBOM/release provenance: `#103`
 - Cost guardrails: `#104` (delivered 2026-04-09): cloud cost observability framework, feature cost hotspot registry, budget breach runbook, ADR-0026
 - Backup/restore disaster recovery: `#86`
@@ -1285,9 +1289,11 @@ Outstanding strategy-level gap to monitor:
 
 ## ARCH-01 Follow-Through Stages (Post-ADR)
 
-1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76` delivered).
-2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`, `#85`).
-3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#86`, `#101`, `#111`).
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** The multi-tenant / hosted-SaaS premise that motivated Stages B and C is **de-scoped**. The **live cross-user isolation behaviour** delivered in Stage A stays intact — enforced today by per-`UserId` and board-access predicates with the `403`/`404` existence policy (no `TenantId` column), consistent with **ADR-0004** as reframed in the **Direction** section. Stages B and C are **parked** below; only their multi-instance/multi-org expansion is retired, not the running app's isolation guarantees or the **live local backup/restore** path.
+
+1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76` delivered). _(The cross-user isolation behaviour delivered here remains **live** in the single-instance app.)_
+2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`, `#85`) — **parked** _(historical — the multi-tenant data-plane premise is de-scoped by the archive pivot; production stays SQLite-only single-instance)_.
+3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#86`, `#101`, `#111`) — **parked** _(historical — tenant-aware DR / staged rollout / cloud topology is de-scoped with the cloud premise; the **local backup/restore** path remains live, only the tenant-aware / hosted-DR framing is parked)_.
 4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81` delivered; `#82`, `#83` delivered, `#110` pending).
 
 
