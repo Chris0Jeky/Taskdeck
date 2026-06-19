@@ -20,12 +20,12 @@ This baseline is deliberately single-node because the current product/runtime as
 
 Related (now de-scoped) follow-through historically tracked separately _(reference only — the 2026-06-13 archive pivot de-scoped the cloud / scale-out track; do not action)_:
 - `#101` staged rollout / canary / blue-green policy
-- `#110` secrets/config management baseline
 - `#111` cloud topology + autoscaling ADR — **parked** (de-scoped cloud scale-out)
 - `#84` managed production DB migration strategy — **parked** (PostgreSQL migration de-scoped; single-instance SQLite permanent)
 
 **Not parked** (do not bucket these with the cloud de-scope — STATUS keeps them relevant to the personal build):
 - `#103` SBOM and provenance posture — **remains relevant / live**: `reusable-sbom-provenance.yml` runs in `ci-required.yml` (the merge gate), `ci-release.yml`, and `release-security.yml`, independent of the parked cloud-deploy path.
+- `#110` secrets/config management baseline — **remains relevant**: the secret-handoff/encryption-key handling (`docs/security/SECRETS_MANAGEMENT_BASELINE.md`) applies to the local personal build (it needs `Connectors:EncryptionKey`), not just cloud; only the hosted-rotation/provider-credential framing is parked.
 
 ## Files
 
