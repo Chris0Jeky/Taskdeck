@@ -29,7 +29,7 @@ The migration strategy is:
 
 1. **Provider target decision now, runtime switch later**: PostgreSQL _was_ the production target _(now parked — SQLite is permanent)_, but the application runtime hard-wires `UseSqlite()` in `Taskdeck.Infrastructure.DependencyInjection`. Adding runtime provider selection and Npgsql registration was follow-up implementation work that this ADR PR did not ship — and is **no longer planned** after the archive pivot.
 
-2. **SQLite-backed compatibility baseline first**: `DatabaseProviderCompatibilityTests` establishes the persistence behaviors that PostgreSQL support must preserve. Today those tests run against SQLite only. A future follow-up can add a provider-switching test factory and opt-in PostgreSQL execution once the runtime path exists.
+2. **SQLite-backed compatibility baseline first**: `DatabaseProviderCompatibilityTests` establishes the persistence behaviors that PostgreSQL support must preserve, running against SQLite only. Note that **opt-in PostgreSQL execution already exists** in `Taskdeck.Integration.Tests` (Testcontainers + `UseNpgsql()`), independent of the runtime provider switch — the integration suite constructs the DbContext directly with `UseNpgsql`. What remains unbuilt — and is **no longer planned after the archive pivot** — is runtime provider selection in the application/DI path (`UseSqlite()` is hardwired).
 
 3. **Schema migration remains blocked on follow-up implementation**: EF Core migrations stay the source of truth, but PostgreSQL schema application cannot be treated as ready until SQLite-only migration SQL (notably the FTS5 migration) is wrapped in provider-conditional logic and the application/test infrastructure can actually build `UseNpgsql()` contexts.
 
@@ -76,7 +76,7 @@ The migration strategy is:
 
 - The runtime application projects do not yet reference `Npgsql.EntityFrameworkCore.PostgreSQL` or expose a provider-selection path.
 - SQLite-specific constructs (FTS5 virtual tables in `KnowledgeDocuments`) require provider-conditional migration code before PostgreSQL schema creation is possible.
-- CI and the API test factory do not yet have a PostgreSQL execution path.
+- The **API test factory** (`DatabaseProviderCompatibilityTests`) runs SQLite only. A separate **PostgreSQL execution path does exist** for integration coverage: `backend/tests/Taskdeck.Integration.Tests` builds real `UseNpgsql()` DbContexts against a PostgreSQL Testcontainer (CRUD, proposal-lifecycle, cross-class isolation, parallel-execution), skipping gracefully when Docker is unavailable. What remains unbuilt is provider selection in the *runtime/application* path.
 - The current runbook is therefore a preparatory operator document, not a fully executable migration recipe.
 
 ### Neutral
