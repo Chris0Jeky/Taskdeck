@@ -3,6 +3,8 @@
 Last Updated: 2026-04-16
 Issue: `#538` CLD-01 Deploy Taskdeck to managed cloud platform
 
+> **⚠️ REFERENCE ONLY — cloud / multi-instance track de-scoped 2026-06-13.** Taskdeck is being finished as a single-instance, SQLite-based, personal-use tool (archive pivot) and will not be distributed or scaled out. The cloud / scale-out / PostgreSQL procedures below are retained as historical reference, not active plans. SQLite + single-instance + local-first are the permanent architecture. See `docs/STATUS.md`.
+
 ---
 
 ## Overview
@@ -24,7 +26,7 @@ This guide covers deploying Taskdeck to managed cloud platforms (**Railway** and
 
 Related documents:
 - `docs/ops/DEPLOYMENT_CONTAINERS.md` -- local Docker Compose baseline
-- `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md` -- full AWS/ECS architecture (future scale)
+- `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md` -- full AWS/ECS architecture (de-scoped cloud scale-out — reference only)
 - `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` -- PostgreSQL migration path
 - `docs/strategy/03_CLOUD_COLLABORATION_STRATEGY.md` -- strategic context
 
@@ -232,7 +234,7 @@ SQLite stores data in a file. Without a persistent volume, data is lost on every
 SQLite supports one writer at a time (WAL mode improves this but does not eliminate it). This means:
 - **Do not scale to multiple instances** while using SQLite
 - Railway `numReplicas` and Render `numInstances` must remain at 1
-- If you need horizontal scaling, migrate to PostgreSQL first
+- _(Historical: the "migrate to PostgreSQL first" path for horizontal scaling is **de-scoped** by the 2026-06-13 archive pivot. Single-instance SQLite is the permanent architecture; there is no scale-out plan.)_
 
 ### Backups
 
@@ -253,7 +255,9 @@ Cloud platform volumes are not automatically backed up. Implement a backup strat
 
 ### Migration to PostgreSQL
 
-When scaling beyond a single instance or needing managed backups, migrate to PostgreSQL. See `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` for the full migration procedure.
+> **⚠️ De-scoped by the 2026-06-13 archive pivot.** PostgreSQL migration and horizontal scaling are **not planned**. Single-instance SQLite is the permanent architecture.
+
+_(Historical: when scaling beyond a single instance or needing managed backups, the original plan was to migrate to PostgreSQL — see `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` for the full migration procedure, retained as reference only.)_
 
 ---
 
@@ -342,7 +346,7 @@ Render's free tier is available for evaluation but has spin-down behavior (cold 
 
 **Check**:
 1. Verify only one instance is running. SQLite does not support multiple writers.
-2. If scaling is needed, migrate to PostgreSQL (`docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md`).
+2. _(Historical/reference only — multi-instance scale-out / PostgreSQL migration is **de-scoped** by the 2026-06-13 archive pivot; single-instance SQLite is the permanent architecture, and `UseSqlite()` is hardwired with no provider switch, so "migrate to PostgreSQL" is not an executable path. The migration runbook (`docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md`) is retained as historical reference.)_
 
 ### SPA shows blank page
 
@@ -366,7 +370,9 @@ Both Railway and Render support custom domains with automatic TLS.
 
 ---
 
-## Next Steps
+## Next Steps _(historical — de-scoped)_
+
+> **⚠️ De-scoped by the 2026-06-13 archive pivot.** These were planned follow-ons before the pivot de-scoped cloud / scale-out. They are **not** active next steps; retained as historical record only.
 
 - **Scale beyond single instance**: Migrate to PostgreSQL and add Redis for SignalR backplane. See `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`.
 - **CI/CD pipeline**: Configure GitHub Actions to auto-deploy on merge to main. See `.github/workflows/` for existing CI configuration.

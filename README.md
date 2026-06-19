@@ -96,8 +96,8 @@ Reverse proxy: `http://localhost:8080`. See [docs/ops/DEPLOYMENT_CONTAINERS.md](
 
 ## What Taskdeck Is NOT
 
-- **Not a cloud SaaS (yet).** Local-first is the current posture. Cloud collaboration is on the roadmap.
-- **Not a team platform.** Single-user today, with local SignalR for development.
+- **Not a cloud SaaS.** Local-first is the permanent posture — Taskdeck is a personal-use tool, not a hosted service.
+- **Not a team platform.** Single-user-first by design (one local owner) — board-access sharing (`BoardAccessController`, `/workspace/settings/access`) and SignalR realtime board updates do ship for local use; there is just no hosted multi-user service.
 - **Not an autonomous AI agent.** Review-first means you stay in control — proposals are suggestions, not commands.
 
 ---
@@ -155,20 +155,19 @@ For CI parity and verified test totals, see [docs/STATUS.md](docs/STATUS.md) and
 
 ---
 
-## Current Status and Roadmap
+## Current Status and Direction
 
-Taskdeck is in active development (pre-v1.0). The core capture → triage → review → apply loop is shipped and stable.
+Taskdeck is being **finished for personal use, then archived** (maintainer decision, 2026-06-13). The core capture → triage → review → apply loop is shipped and stable. There is **no distribution roadmap** — the earlier v0.1.0→v1.0.0 release plan (cloud, mobile, GA) is retired.
 
-| Version | Focus |
-|---------|-------|
-| v0.1.0 | Self-contained executable — download and run, no install required |
-| v0.2.0 | Hosted cloud option |
-| v0.3.0 | PWA / mobile |
-| v0.4.0 | Real-time collaboration |
-| v1.0.0 | General availability |
+Remaining work, in order:
+
+1. **Finish + activate the Paper UI** as the canonical frontend (ADR-0038; the default-theme flip is the last activation step).
+2. **Trivially easy to run** locally — one-command `dev-up` plus a self-contained executable for personal use.
+3. **General quality** — backend correctness and usability.
+4. **Archive cleanly** — docs reflect the final state.
 
 - [docs/STATUS.md](docs/STATUS.md) — current shipped reality
-- [docs/IMPLEMENTATION_MASTERPLAN.md](docs/IMPLEMENTATION_MASTERPLAN.md) — delivery sequencing
+- [docs/IMPLEMENTATION_MASTERPLAN.md](docs/IMPLEMENTATION_MASTERPLAN.md) — delivery sequencing and the archive-pivot direction
 
 ---
 
@@ -180,9 +179,9 @@ Open or pick a GitHub issue before larger changes. Keep PRs scoped and include v
 
 ---
 
-## Beta Interest
+## Personal Project
 
-We are looking for developers and small-team leads who manage their own boards and want to reduce maintenance overhead. If you want to try Taskdeck and share feedback, open a GitHub Discussion or file an issue.
+Taskdeck is built for the maintainer's personal use and will be archived once it is finished — it is not distributed or supported as a product. The code is public as a portfolio/reference project; the contributor protocol in [AGENTS.md](AGENTS.md) governs any changes.
 
 ---
 

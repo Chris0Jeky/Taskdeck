@@ -1,17 +1,20 @@
 # ADR-0027: Cloud Target Topology and Autoscaling Reference Architecture
 
-- **Status**: Proposed
+- **Status**: Proposed — PARKED (entire cloud/multi-instance topology de-scoped; see ADR-0038)
+
+> **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
+
 - **Date**: 2026-04-09
 - **Deciders**: Project maintainers
 
 ## Context
 
-Taskdeck is transitioning from a local-first SQLite application to a cloud-hosted multi-tenant service (ADR-0014 pillar: Cloud & Collaboration, `#537`). The current deployment baseline is a single-node Docker Compose stack (documented in `docs/ops/DEPLOYMENT_CONTAINERS.md`) running behind an Nginx reverse proxy with SQLite persistence on an EC2 instance provisioned by Terraform (`docs/ops/DEPLOYMENT_TERRAFORM_BASELINE.md`).
+_(Historical context.)_ At the time, Taskdeck **was being positioned** to transition from a local-first SQLite application to a cloud-hosted multi-tenant service (ADR-0014 pillar: Cloud & Collaboration, `#537`). The deployment baseline was a single-node Docker Compose stack (documented in `docs/ops/DEPLOYMENT_CONTAINERS.md`) running behind an Nginx reverse proxy with SQLite persistence on an EC2 instance provisioned by Terraform (`docs/ops/DEPLOYMENT_TERRAFORM_BASELINE.md`). _(That cloud transition was de-scoped by the 2026-06-13 archive pivot; Taskdeck stays single-instance and local-first.)_
 
 This single-node architecture cannot support the `v0.2.0` hosted cloud milestone because:
 
 - **SQLite does not support concurrent writers** across multiple API processes. The managed database migration (`#84`) to PostgreSQL is a prerequisite for horizontal scaling.
-- **SignalR connection state is in-process**. Multiple API instances require a Redis backplane (noted in ADR-0012) to fan out realtime events across nodes.
+- **SignalR connection state is in-process**. Multiple API instances require a Redis backplane (see ADR-0025) to fan out realtime events across nodes.
 - **The background worker (`LlmQueueToProposalWorker`) runs in-process** inside the API host. Scaling API instances would duplicate worker execution without coordination.
 - **No load balancer exists** in the current Terraform baseline. The Nginx reverse proxy runs on the same host as the application.
 - **No autoscaling policy exists**. The single EC2 instance is statically provisioned.
@@ -158,11 +161,11 @@ Implementation notes:
 - Liveness is lightweight: returns 200 if the ASP.NET request pipeline can execute. No dependency checks (to avoid cascade failures where a DB outage kills all API tasks).
 - Readiness checks actual dependency connectivity. A task that fails readiness stops receiving traffic but is not killed (allowing transient DB/Redis issues to self-heal).
 - Startup probe gives migrations up to 5 minutes to complete. During rolling deployments, old tasks continue serving while new tasks run migrations.
-- The existing `/health/live` and `/health/ready` endpoints (in `HealthController`) already serve liveness and readiness roles. `/health/ready` should be extended to include a Redis connectivity check once the Redis backplane is introduced. Only `/health/startup` needs to be added as a new endpoint.
+- The existing `/health/live` and `/health/ready` endpoints (in `HealthController`) already serve liveness and readiness roles, and `/health/ready` **already includes a SignalR Redis backplane connectivity check** (`RedisBackplaneHealthCheck` — `NotConfigured`/no-op when no Redis connection string is set; see ADR-0025, where the backplane wiring is retained but dormant). Only `/health/startup` was never added as a separate endpoint.
 
 ### SLO Targets
 
-These targets are for the initial hosted cloud deployment (small user base, single region). They will be revised upward as the product matures and the user base grows.
+These targets were for the initial hosted cloud deployment (small user base, single region). _(Historical — the plan was to revise them upward as the product matured and the user base grew; that cloud deployment was de-scoped by the archive pivot, so these targets were never applied.)_
 
 | SLO | Target | Measurement |
 |-----|--------|-------------|
@@ -303,17 +306,19 @@ Cost notes:
 ### Neutral
 
 - **PostgreSQL migration is a hard prerequisite**: This topology cannot be deployed until `#84` (managed production DB migration) is complete.
-- **Redis backplane is a new dependency**: Adds a service to manage but is operationally simple at single-node scale.
+- **Redis backplane dependency**: the wiring (`AddStackExchangeRedis`, conditional on a SignalR Redis connection string) was already added and remains in the codebase but **dormant** — only the multi-instance scale-out premise it would serve is parked (see ADR-0025). At single-node scale it is a no-op.
 - **Monitoring gap**: The existing OpenTelemetry baseline (`docs/ops/OBSERVABILITY_BASELINE.md`) provides application metrics. CloudWatch provides infrastructure metrics. A unified dashboard combining both is a follow-up task.
 
 ### Follow-Up Implementation Tasks
 
-These concrete tasks should be created as GitHub issues to implement this ADR:
+> **DO NOT ACTION — parked by the archive pivot.** The list below was the original plan; do not turn these into issues. The entire cloud/multi-instance topology was de-scoped on 2026-06-13 (see ADR-0038); these items are retained only as a historical record.
+
+These concrete tasks _were_ originally to be created as GitHub issues to implement this ADR:
 
 1. **PostgreSQL migration** (`#84` — already tracked): Migrate from SQLite to PostgreSQL. Prerequisite for all horizontal scaling.
-2. **Redis backplane for SignalR**: Add `Microsoft.AspNetCore.SignalR.StackExchangeRedis` package, configure connection string, test cross-instance event delivery.
+2. **Redis backplane for SignalR**: _(already implemented/dormant — the `Microsoft.AspNetCore.SignalR.StackExchangeRedis` package is referenced and `AddStackExchangeRedis` is wired conditional on a connection string; see ADR-0025.)_ Remaining for scale-out would be configuring a connection string and testing cross-instance event delivery.
 3. **Worker extraction**: Add `--worker` / `TASKDECK_ROLE=worker` startup mode. Extract all three `BackgroundService` registrations (`LlmQueueToProposalWorker`, `ProposalHousekeepingWorker`, `OutboundWebhookDeliveryWorker`) to worker-only startup. Implement `SELECT ... FOR UPDATE SKIP LOCKED` queue claiming for LLM queue items and webhook deliveries.
-4. **Health check extension**: The existing `/health/live` and `/health/ready` endpoints already serve liveness and readiness roles. Extend `/health/ready` to include a Redis connectivity check once the Redis backplane is introduced. Add a new `/health/startup` endpoint that verifies EF Core migrations are complete and initial seed data is present.
+4. **Health check extension**: The existing `/health/live` and `/health/ready` endpoints already serve liveness and readiness roles, and `/health/ready` **already includes the Redis/SignalR backplane connectivity check** (`RedisBackplaneHealthCheck`). Only `/health/startup` (verifying EF Core migrations complete + initial seed data present) was never added.
 5. **ALB + ECS Terraform module**: Extend `deploy/terraform/aws/` with ALB, ECS cluster, task definitions, service definitions, and autoscaling policies.
 6. **CDN deployment for SPA**: Configure CloudFront distribution with S3 origin for frontend static assets. Remove frontend container from ECS (SPA served from CDN, not a container).
 7. **CI/CD pipeline for ECS**: Extend GitHub Actions to build images, push to ECR, and trigger ECS service update with rolling deployment.
@@ -323,7 +328,8 @@ These concrete tasks should be created as GitHub issues to implement this ADR:
 
 ## References
 
-- ADR-0012: SignalR Realtime with Polling Fallback (sticky session and Redis backplane requirements)
+- ADR-0012: SignalR Realtime with Polling Fallback (base realtime decision)
+- ADR-0025: SignalR Scale-Out — Redis Backplane (the backplane + multi-instance scale-out requirements)
 - ADR-0014: Platform Expansion — Four Pillars (cloud & collaboration pillar, `v0.2.0` milestone)
 - ADR-0004: Multi-Tenancy — Shared Schema + TenantId (database scaling implications)
 - `docs/ops/DEPLOYMENT_CONTAINERS.md` — current container deployment baseline

@@ -1,12 +1,15 @@
 # ADR-0026: Cloud Cost Observability and Budget Guardrails
 
-- **Status**: Accepted
+- **Status**: Accepted — PARKED (cloud deployment de-scoped)
+
+> **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
+
 - **Date**: 2026-04-09
 - **Deciders**: Project maintainers
 
 ## Context
 
-Taskdeck is transitioning from a purely local-first SQLite tool to a cloud-hosted deployment model (see ADR-0014, platform expansion strategy). Cloud hosting introduces ongoing variable costs that do not exist in local-first operation: compute instances, LLM API calls, storage growth, logging/telemetry volume, network egress, and DNS/domain hosting.
+_(Historical context.)_ At the time, Taskdeck **was being positioned** to transition from a purely local-first SQLite tool to a cloud-hosted deployment model (see ADR-0014, platform expansion strategy). Cloud hosting introduces ongoing variable costs that do not exist in local-first operation: compute instances, LLM API calls, storage growth, logging/telemetry volume, network egress, and DNS/domain hosting. _(That cloud transition was de-scoped by the 2026-06-13 archive pivot; Taskdeck stays local-first.)_
 
 Three characteristics make proactive cost observability essential:
 
@@ -45,8 +48,8 @@ Supporting artifacts:
 
 ## Consequences
 
-**Positive**:
-- Cost surprises during v0.2.0 cloud launch are caught early through tiered alerts.
+**Positive** _(historical — the v0.2.0 cloud launch was never undertaken; de-scoped by the archive pivot)_:
+- Cost surprises during the (never-launched) v0.2.0 cloud launch would have been caught early through tiered alerts.
 - Monthly review cadence creates institutional knowledge about cost trends before they become emergencies.
 - Feature owners have explicit accountability for cost-impacting decisions.
 - Budget breach runbook reduces mean-time-to-mitigate for cost incidents.

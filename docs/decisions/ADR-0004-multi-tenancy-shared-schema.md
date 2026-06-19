@@ -4,11 +4,15 @@
 - **Date**: 2026-02-22
 - **Deciders**: Project maintainers
 
+> **Archive-pivot note (2026-06-13):** The *multi-organization / hosted-SaaS tenancy* expansion premise is de-scoped — Taskdeck is single-user, local-first, SQLite-only per the archive pivot (see ADR-0038 and `docs/STATUS.md`). The **cross-user isolation behaviour this ADR set out to protect remains LIVE** — but it is enforced by per-`UserId` and board-access predicates plus the `403`/`404` cross-user existence policy (consistent with GP-02 Claims-First Identity and GP-03 Stable Error Contracts), **not** by the shared-schema `TenantId` mechanism in the Decision below. That `TenantId` column model was **never implemented**: there is no `TenantId` symbol in `backend/src`, `backend/tests`, or the frontend. The Decision section is retained as the original proposed design. Park the multi-tenant scale-out / multi-org premise and do not resurrect `TenantId`-keyed tenancy — but do not treat the live cross-user isolation security model as historical.
+
 ## Context
 
 Taskdeck started as a single-tenant SQLite application. The cloud/collaboration roadmap requires supporting multiple users and eventually organizations. Three multi-tenancy models were evaluated for the transition from single-tenant to multi-tenant.
 
 ## Decision
+
+> **Never implemented** (see the archive-pivot note above): the `TenantId` design below was the proposed target as of 2026-02-22 but was never built. The app shipped cross-user isolation via per-`UserId` and board-access predicates instead. The section is retained as the original decision record.
 
 Adopt **shared-schema + TenantId** as the immediate target:
 

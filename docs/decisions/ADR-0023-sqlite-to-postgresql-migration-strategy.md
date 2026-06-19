@@ -1,6 +1,9 @@
 # ADR-0023: SQLite-to-PostgreSQL Production Migration Strategy
 
-- **Status**: Accepted
+- **Status**: Accepted — PARKED (PostgreSQL target de-scoped; SQLite permanent)
+
+> **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
+
 - **Date**: 2026-04-09
 - **Deciders**: Project maintainers
 
@@ -20,13 +23,13 @@ The project needs a clear provider choice, a migration path, and a compatibility
 
 ## Decision
 
-**Adopt PostgreSQL as the target production database provider.** SQLite remains the default for local development, self-contained single-user deployments, and CI test runs.
+_(Parked — historical record. This ADR **had adopted** PostgreSQL as the target production database provider; the 2026-06-13 archive pivot de-scoped that target, so **SQLite is now the permanent** persistence provider. SQLite remained the default for local development, self-contained single-user deployments, and CI test runs even before the pivot.)_
 
 The migration strategy is:
 
-1. **Provider target decision now, runtime switch later**: PostgreSQL is the production target, but the current application runtime still hard-wires `UseSqlite()` in `Taskdeck.Infrastructure.DependencyInjection`. Adding runtime provider selection and Npgsql registration is follow-up implementation work, not something this ADR PR ships.
+1. **Provider target decision now, runtime switch later**: PostgreSQL _was_ the production target _(now parked — SQLite is permanent)_, but the application runtime hard-wires `UseSqlite()` in `Taskdeck.Infrastructure.DependencyInjection`. Adding runtime provider selection and Npgsql registration was follow-up implementation work that this ADR PR did not ship — and is **no longer planned** after the archive pivot.
 
-2. **SQLite-backed compatibility baseline first**: `DatabaseProviderCompatibilityTests` establishes the persistence behaviors that PostgreSQL support must preserve. Today those tests run against SQLite only. A future follow-up can add a provider-switching test factory and opt-in PostgreSQL execution once the runtime path exists.
+2. **SQLite-backed compatibility baseline first**: `DatabaseProviderCompatibilityTests` establishes the persistence behaviors that PostgreSQL support must preserve, running against SQLite only. Note that **opt-in PostgreSQL execution already exists** in `Taskdeck.Integration.Tests` (Testcontainers + `UseNpgsql()`), independent of the runtime provider switch — the integration suite constructs the DbContext directly with `UseNpgsql`. What remains unbuilt — and is **no longer planned after the archive pivot** — is runtime provider selection in the application/DI path (`UseSqlite()` is hardwired).
 
 3. **Schema migration remains blocked on follow-up implementation**: EF Core migrations stay the source of truth, but PostgreSQL schema application cannot be treated as ready until SQLite-only migration SQL (notably the FTS5 migration) is wrapped in provider-conditional logic and the application/test infrastructure can actually build `UseNpgsql()` contexts.
 
@@ -73,7 +76,7 @@ The migration strategy is:
 
 - The runtime application projects do not yet reference `Npgsql.EntityFrameworkCore.PostgreSQL` or expose a provider-selection path.
 - SQLite-specific constructs (FTS5 virtual tables in `KnowledgeDocuments`) require provider-conditional migration code before PostgreSQL schema creation is possible.
-- CI and the API test factory do not yet have a PostgreSQL execution path.
+- The **API test factory** (`DatabaseProviderCompatibilityTests`) runs SQLite only. A separate **PostgreSQL execution path does exist** for integration coverage: `backend/tests/Taskdeck.Integration.Tests` builds real `UseNpgsql()` DbContexts against a PostgreSQL Testcontainer (CRUD, proposal-lifecycle, cross-class isolation, parallel-execution), skipping gracefully when Docker is unavailable. What remains unbuilt is provider selection in the *runtime/application* path.
 - The current runbook is therefore a preparatory operator document, not a fully executable migration recipe.
 
 ### Neutral

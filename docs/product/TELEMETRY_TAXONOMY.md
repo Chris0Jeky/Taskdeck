@@ -20,7 +20,7 @@ Related: #341, #77
 - Events collected locally (for personal analytics dashboards) follow the same property rules as opt-in remote telemetry.
 - The backend MUST NOT forward telemetry payloads to any third-party without explicit configuration and opt-in consent.
 
-**Implementation status**: The `settings.telemetry.enabled` preference and the telemetry service/event bus described in this document are **not yet implemented**. This taxonomy is the planning artefact that must precede instrumentation. No telemetry code should be merged until this taxonomy is ratified and the opt-in guard is in place.
+**Implementation status**: The telemetry pipeline described here **is now implemented and opt-in / OFF by default** — do **not** read this doc as "telemetry is unbuilt." Shipped: backend recording (`TelemetryController` `POST /api/telemetry/events` + `GET /api/telemetry/config`, `TelemetryEventService` with event-name **format** validation (the `noun.verb` lowercase-dotted regex — **not** membership in this taxonomy's event registry; any well-formed `noun.verb` is accepted) + a property-key allowlist + count cap, `TelemetrySettings.Enabled = false` default); frontend consent-gated event bus (`telemetryStore.emit()` → `telemetryApi.sendEvents()`, gated on `consentGiven && serverConfig.telemetry.enabled`). Recorded events are currently **logged, not persisted/forwarded** to any analytics backend, and with the default config nothing is collected. This taxonomy remains the naming/governance reference. **Remaining work** is (a) **syncing the backend with this taxonomy** — the service does not yet validate against the named event registry, and its property allowlist does **not** include several taxonomy-required fields (e.g. `trigger_source`, `proposal_id`, `page`, `tool_name`), so instrumentation written from this doc would currently have those properties stripped — and (b) **full instrumentation coverage** of every event named below. The pipeline itself has shipped. The earlier "no telemetry code should be merged until ratified" gate is **obsolete** — the guarded, opt-in pipeline has shipped.
 
 ---
 
@@ -273,7 +273,9 @@ A route-level page loaded successfully.
 
 Required: `page: string` — current route-level values: `home`, `today`, `inbox`, `review`, `board`, `metrics`, `settings`
 
-Reserved/future values (do not emit until the corresponding router surface exists and instrumentation is wired): `agents`, `agent_run_detail`, `knowledge`, `help` (tracked via #341, #77)
+Reserved values (do not emit until instrumentation is wired — telemetry is opt-in/off and not yet fully instrumented):
+- **Surface shipped, instrumentation not yet wired:** `agents`, `agent_run_detail` (the `workspace-agents` / `workspace-agent-run-detail` routes + `AgentsView`/`AgentRunDetailView` ship live, AGT-03 `#338`; also `integrations` via `workspace-integrations`).
+- **Surface not yet built:** `knowledge` (backend-only `#339`, no `KnowledgeView` frontend), `help`. (Tracked via #341, #77.)
 Optional: `load_duration_ms: number`
 
 ### `page.load_failed`
@@ -380,6 +382,8 @@ Required: `page: string`, `reason: string` — `no_data`, `load_failed`, `filter
 ---
 
 ## Launch Gate Telemetry Anchors
+
+> **⚠️ DE-SCOPED — 2026-06-13 archive pivot.** The `R1` / `R2` / `R3` beta/alpha **launch gates** are retired (GTM/public-release de-scoped — finish-for-personal-use then archive). The signal groupings below are a **historical record**, not active release criteria; the taxonomy's *naming/event* reference above stays useful, but there is **no release gate to promote to**. Do not action these as gating requirements.
 
 Each release gate has a set of telemetry signals that constitute evidence of product coherence. These are the minimum signals that should be flowing before promoting to a release gate.
 

@@ -1,5 +1,7 @@
 # SignalR Scale-Out Runbook
 
+> **⚠️ PARKED / REFERENCE-ONLY — 2026-06-13 archive pivot.** Multi-instance scale-out is **de-scoped** — Taskdeck stays single-instance, SQLite, local-first per the pivot (see ADR-0025 and `docs/STATUS.md`). The multi-API-instance / load-balancer / Redis-backplane-deployment procedures below are retained as a historical reference, **not active operating instructions — do not action**. (The backplane *wiring* itself remains in the codebase but dormant/no-op without a Redis connection string, which is the single-instance default; only the operate-it-at-scale runbook is parked.)
+
 This guide covers deploying Taskdeck with multiple API instances using the Redis backplane for SignalR realtime event propagation.
 
 ## Overview

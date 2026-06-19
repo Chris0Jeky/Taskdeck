@@ -4,7 +4,9 @@ Last Updated: 2026-04-09
 Issue: `#101` OPS-09 staged deployment with blue/green and canary release policy
 ADR: `ADR-0028`
 
-This document is the canonical reference for Taskdeck's staging-to-production deployment workflow. All release processes must follow this workflow unless an emergency hotfix override is explicitly authorized by the release owner.
+> **⚠️ Reference-only — parked by the 2026-06-13 archive pivot.** This blue/green + canary workflow implements **ADR-0028**, whose multi-instance / hosted-deployment premise is de-scoped. Taskdeck's personal run path is the self-contained exe plus the `release-desktop.yml` release smoke — **not** this staged cloud workflow. Retained as a historical record, not a mandatory process. See `docs/STATUS.md`.
+
+This document **was** the canonical reference for Taskdeck's staging-to-production deployment workflow on the de-scoped hosted / multi-instance track. _(Historical: it is no longer a mandatory process.)_ With the 2026-06-13 archive pivot, the personal run path is the self-contained exe plus the `release-desktop.yml` release smoke — this staged staging-to-production workflow no longer governs releases.
 
 ## Overview
 
@@ -270,7 +272,7 @@ Taskdeck uses EF Core auto-migration on API startup. When blue and green slots s
 - **Migration order**: The idle slot starts first and applies any pending migrations. If the migration fails, the idle slot will not become healthy and the deployment is blocked at Phase 3 step 4 (health check).
 - **Shared database risk**: During the canary window, both slots read/write the same database. If the new migration alters behavior for existing data, ensure the active slot can still function with the migrated schema.
 
-If blue and green are deployed on separate hosts with separate databases (e.g., in a future multi-node topology), migration safety is simplified since each slot has its own schema lifecycle.
+If blue and green are deployed on separate hosts with separate databases (e.g., in a hypothetical multi-node topology; not planned — single-instance is permanent per the 2026-06-13 archive pivot), migration safety is simplified since each slot has its own schema lifecycle.
 
 ## Emergency Hotfix Override
 
@@ -287,6 +289,8 @@ Emergency overrides must still pass Phase 1 (CI build) and Phase 2 (staging smok
 ## GitHub Actions Integration
 
 The `cd-staging-gate.yml` workflow automates Phase 1 and Phase 2 gates:
+
+> ⚠️ _(Parked by the 2026-06-13 archive pivot — staged cloud deployment de-scoped. The workflow **still auto-triggers on `release: published`** and then waits on a `production` environment that does not exist for the personal build, so the optional archival release would **hang** it. Disabling/gating that trigger is tracked in **#1228** — see `docs/ops/README.md`.)_
 
 - Triggers on release publish or manual dispatch
 - Builds and verifies container images

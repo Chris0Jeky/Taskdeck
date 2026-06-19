@@ -1,7 +1,9 @@
 # Orchestration State
 
 Last Updated: 2026-05-17
-Status: ACTIVE
+Status: SUPERSEDED (2026-06-13 archive pivot)
+
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This autonomous-loop execution queue is stale: it is a point-in-time snapshot in which **some items were since delivered and ship live** (e.g. `#982`/`#983`/`#984` via `#1078`/`#1079`/`#1080`) while others sequence de-scoped external-product work (e.g. `#546` demo video, `#550` brand/domain, `#548` privacy policy). The active direction is finish-for-personal-use → archive; current sequencing follows the archive-pivot **waves** in the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`, **not** the queue below. Do not resume work from this file's queue.
 
 ## Purpose
 
@@ -27,7 +29,7 @@ This file is the persistent memory and execution state for Claude Code's autonom
 6. **Review Round 2**: Fresh adversarial review of the fixes. Post findings. Fix everything. Push.
 7. **Bot Check**: Read ALL PR comments (Gemini Code Assist, Dependabot, any bot). Address anything found.
 8. **Verify**: Run tests again post-fix. Confirm CI passes (check via `gh pr checks <PR#>`).
-9. **Merge gate**: Leave PRs open unless the active user request explicitly authorizes merging after the normal review, bot-comment, test, and CI gates. Current cleanup session is merge-authorized after those gates.
+9. **Merge gate**: Leave PRs open unless the active user request explicitly authorizes merging after the normal review, bot-comment, test, and CI gates. _(The 2026-05-17 cleanup session WAS merge-authorized after those gates; that authorization was session-scoped and is historical.)_
 10. **Stack if needed**: If the next issue depends on this PR, branch from the PR branch.
 
 ### Parallel Subagent Protocol:
@@ -53,23 +55,24 @@ This file is the persistent memory and execution state for Claude Code's autonom
 - [x] Commit docs cleanup work as PR #1075 — DONE 2026-05-16
 
 ### Tier 1: Quick Wins
-- [ ] #1070 TST-63: MFA setup 409-Conflict test (small, isolated)
+- [x] #1070 TST-63: MFA setup 409-Conflict test — **delivered** (merged #1076)
 
 ### Tier 2: Feature Delivery
-- [ ] #1001 PAPER-05: Board/Kanban surface in Paper (frontend, clear spec)
-- [ ] #982 RFAI-10: PWA share-target quick capture (Priority III)
-- [ ] #983 RFAI-11: Ambient channel hardening decision (Priority IV)
-- [ ] #984 RFAI-12: Learning loop UI + beta gate (depends on #983)
+_(Point-in-time snapshot — several items below were **subsequently delivered** and ship live; do not re-pick them. See `docs/STATUS.md`.)_
+- [x] #1001 PAPER-05: Board/Kanban surface in Paper — **delivered** (merged #1083; Paper board surface ships live)
+- [x] #982 RFAI-10: PWA share-target quick capture — **delivered** (merged `#1078`; PWA share-target ships live)
+- [x] #983 RFAI-11: Ambient channel hardening decision — **delivered** (merged `#1079`; VS Code/ambient prototype, ADR-0033)
+- [x] #984 RFAI-12: Learning loop UI + beta gate — **delivered** (merged `#1080`; learning-loop UI + Ollama + ProvenanceDrawer). Only the onward beta-gate/distribution is de-scoped.
 
 ### Tier 3: Infrastructure & Hardening
 - [ ] #655 MCP-04: MCP production hardening
 - [ ] Audit pass: find and seed new issues from code/test gaps
 
-### Tier 4: Strategy & External (lower priority)
-- [ ] #546 GTM-02: Demo video
-- [ ] #550 BRAND-01: Domain/logo
-- [ ] #548 LEGAL-01: Privacy policy
-- [ ] #219 CAP-21: Voice capture (Priority IV)
+### Tier 4: Strategy & External (lower priority) — **DE-SCOPED by the 2026-06-13 archive pivot; do not action**
+- [ ] ~~#546 GTM-02: Demo video~~ — **DE-SCOPED (GTM, archive pivot)**
+- [ ] ~~#550 BRAND-01: Domain/logo~~ — **DE-SCOPED (branding/GTM, archive pivot)**
+- [ ] ~~#548 LEGAL-01: Privacy policy~~ — **DE-SCOPED (hosted-instance legal, archive pivot)**
+- [ ] #219 CAP-21: Voice capture (Priority IV) — **DEFERRED, not de-scoped**: the `useVoiceCapture` prototype exists (STATUS) but isn't wired into the UI. Voice capture is a capture-friction improvement (not GTM/cloud/mobile), so the remaining UI integration stays a legitimate deferred follow-on — do not close as de-scoped without an explicit maintainer decision.
 
 ## Current Work
 
@@ -101,7 +104,7 @@ User authorized merging PRs only after green CI/tests, bot comments addressed, e
 #983 RFAI-11 (ambient channel)
   └── #984 RFAI-12 (learning loop + beta gate) [also depends on #977✓, #980✓, #981✓]
 
-#1001 PAPER-05 (board surface) [blocked by PAPER-01✓, PAPER-02✓, PAPER-03✓]
+#1001 PAPER-05 (board surface) ✓ DELIVERED (#1083) [was blocked by PAPER-01✓, PAPER-02✓, PAPER-03✓]
 
 All others: independent
 ```

@@ -2,7 +2,9 @@
 
 **Date:** 2026-03-29
 **Scope:** Hosted solution, shared boards, multi-device access, and SaaS evolution path
-**Status:** Strategic planning document — not yet executed
+**Status:** SUPERSEDED / historical (2026-06-13 archive pivot) — cloud / collaboration / multi-tenancy / PostgreSQL permanently de-scoped; retained as a record of parked plans (never executed).
+
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The distribution / cloud / mobile / GTM tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial, general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
 
 ---
 
@@ -186,7 +188,7 @@ This is far simpler than CRDTs and sufficient for board/card/column operations. 
 
 ### 4.1 Current State
 
-The ADR at `docs/analysis/2026-02-22_multi-tenancy-strategy-adr.md` already selected **shared-schema + TenantId** as the approach, with a promotion path to database-per-tenant for high-isolation tiers.
+The ADR at `docs/analysis/2026-02-22_multi-tenancy-strategy-adr.md` selected **shared-schema + TenantId** as the **(now-parked) pre-pivot** approach, with a promotion path to database-per-tenant for high-isolation tiers. _(Multi-org / multi-tenancy / `TenantId` is **permanently de-scoped** by the 2026-06-13 archive pivot — there is no `TenantId` in the codebase; cross-user isolation is via per-`UserId` / board-access only. See ADR-0004, which records this. The referenced analysis ADR predates the pivot and is itself historical.)_
 
 ### 4.2 What Needs to Happen
 
@@ -360,6 +362,8 @@ Local users bring their own LLM API keys. Cloud users expect it to "just work."
 ---
 
 ## 9. Collaboration Feature Roadmap
+
+> **⚠️ PARKED (2026-06-13 archive pivot).** The **hosted-cloud / multi-user-server collaboration plan** below — across **Immediate**, **Near-Term**, and **Medium-Term** — is **de-scoped**; the "Immediate / Near-Term / Medium-Term" labels describe the abandoned pre-pivot plan only and no longer represent active or planned work — do not action. **Carve-out:** the underlying single-instance primitives some items lean on **already ship and stay live** — board sharing via board-access grants (`BoardAccessController`, `/workspace/settings/access`) and real-time board updates (`BoardsHub` SignalR) are present and used in the local app (STATUS records board-access + SignalR as live). What is parked is *hosting/operating them as a shared cloud service*, not the shipped board-access/realtime code.
 
 ### 9.1 Immediate (Hosted Cloud, No New Features)
 

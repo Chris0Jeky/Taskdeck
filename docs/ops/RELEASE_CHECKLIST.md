@@ -4,6 +4,8 @@ Last Updated: 2026-04-09
 Issue: `#101` OPS-09 staged deployment with blue/green and canary release policy
 Workflow: `docs/ops/DEPLOYMENT_WORKFLOW.md`
 
+> **⚠️ PARKED — 2026-06-13 archive pivot.** This is the staged (blue/green/canary) hosted-deployment smoke checklist (OPS-09 `#101`). It requires staging/prod URLs, container images, and rollback slots — **none of which apply to the personal local-run path**, which is de-scoped from distribution by the archive pivot. The staging/canary/production steps below are **reference-only historical record — do not action**. See `docs/STATUS.md` and `docs/ops/README.md`.
+
 This checklist defines the smoke verification steps tied to each release transition. All automated checks are implemented in `scripts/deploy/smoke-test.sh`. Manual checks are performed by the release owner during staging validation.
 
 ## Pre-Deployment Checks

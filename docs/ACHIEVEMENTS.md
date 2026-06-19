@@ -211,9 +211,11 @@ Provider-registry architecture: `IExternalImportAdapter` + `IExternalImportServi
 ## Strategic Planning
 
 ### Platform Expansion Strategy
+_(Superseded by the 2026-06-13 archive pivot — distribution/cloud/mobile/GTM tracks are de-scoped; see docs/STATUS.md. Retained as a record of past planning.)_
 Four-pillar roadmap: market adoption, packaging/distribution, cloud/collaboration, mobile platform. Version milestones: v0.1.0 (exe) → v0.2.0 (cloud) → v0.3.0 (PWA) → v0.4.0 (collaboration) → v0.5.0 (maturity) → v1.0.0 (GA). Master tracker at #531.
 
 ### Multi-Tenancy Strategy
+_(Archive pivot 2026-06-13: the `TenantId` shared-schema design was **never implemented** and multi-org tenancy is permanently de-scoped; live cross-user isolation is enforced by per-`UserId`/board-access predicates. See ADR-0004. Retained as a record of past planning.)_
 ADR for shared-schema + TenantId as immediate target with promotion path to database-per-tenant for high-isolation tiers. Phased migration plan and tenant-isolation readiness checklist.
 
 ### Architecture Decision Records
@@ -223,7 +225,9 @@ ADR for shared-schema + TenantId as immediate target with promotion path to data
 
 ## By the Numbers
 
-| Metric | Count |
+> _(⚠️ Counts below are a snapshot **as of 2026-03-31** and are now stale — e.g. ADRs are 40 (ADR-0001..0040) not 17, and tests are far higher. For current totals see `docs/STATUS.md` (source of truth) and `docs/decisions/INDEX.md`. Retained as a historical chronicle, not current state.)_
+
+| Metric | Count (as of 2026-03-31) |
 |--------|-------|
 | Backend tests | 1,668+ |
 | Frontend unit tests | 1,174+ |

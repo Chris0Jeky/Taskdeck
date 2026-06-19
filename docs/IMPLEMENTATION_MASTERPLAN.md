@@ -2,7 +2,7 @@
 
 Last Updated: 2026-06-13
 <br>
-Planning Horizon: Next 8 to 12 weeks
+Planning Horizon: the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive), then archival — _(historical: this was an open "Next 8 to 12 weeks" release horizon before the 2026-06-13 archive pivot)_
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -12,11 +12,24 @@ Companion Active Docs:
 
 ## Purpose
 
-This is the active execution guide for sequencing past, current, and future implementation.
+This is the active execution guide for sequencing past, current, and the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive) that remain before archival.
 `docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
 Update this file at the end of each meaningful delivery cycle or when new work is seeded.
 
+## Direction (2026-06-13, maintainer-decided): finish-for-personal-use → archive
+
+**Taskdeck will not be distributed.** The maintainer's decision is to finish it as a personal-use tool, then archive it as a completed project. This **supersedes** both the 2026-06-05 ship-first framing (v0.1.0 → … → v1.0.0 GA) and the 2026-03-29 platform-expansion "four pillars" framing. Goals, in order:
+
+1. **Finish + activate the Paper UI** as canonical (ADR-0038 ratified). The default-theme flip to `paper` is the **final** step, gated behind the remaining activation prerequisites — the `#1161` File-away dismiss affordance (reviewed/green/aged, **merge held** by maintainer, `#1219`), the reachable in-app theme toggle / Legacy escape hatch (reviewed/green/aged, **merge held**, `#1221`), and the remaining Paper-review de-stubs — not the only remaining step.
+2. **Trivially easy to run** locally — one-command dev-up plus a self-contained exe as the canonical personal run path.
+3. **General quality** — backend correctness + usability, proactively found.
+4. **Archive cleanly** — docs reflect the final state; de-scoped trackers closed with dated pivot notes.
+
+**De-scoped permanently** (closed as not-planned or parked during archive closeout, with dated notes): distribution & code-signing (`#1167`), GTM/marketing (`#544`/`#546`/`#550`), cloud & collaboration (`#537`/`#548`), mobile (`#540`), beta intake, multi-DB *production* support (the production runtime is SQLite-only forever; the PostgreSQL Testcontainers compatibility lane in CI — `Taskdeck.Integration.Tests` / `reusable-container-integration.yml` — remains as a legacy regression guard, not a product direction), and multi-user scale work. The platform-expansion strategy docs under `docs/strategy/` and the cloud/platform ADRs **0014, 0020, 0023, 0026–0028** are retained as historical records of parked tracks, not active plans. Three ADRs in the 0023–0029 range decide behaviour that is **still live** in the single-instance app — only their multi-instance/enterprise premise is parked: **ADR-0024** (the `ICacheService` cache-aside abstraction, in-memory by default), **ADR-0025** (the `AddTaskdeckSignalR` Redis-backplane wiring, config-gated and dormant in the single-instance default), and **ADR-0029** (optional TOTP MFA + OIDC/OAuth). Likewise the single-self-contained-executable packaging path in `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md` stays the active personal run path; only its installer / cross-platform-distribution / GTM framing is parked. **ADR-0004** (shared-schema multi-tenancy) also stays **live** for its cross-user-isolation behaviour — enforced today by per-`UserId` and board-access predicates rather than a `TenantId` column (no `TenantId` symbol exists in `backend/src`, `backend/tests`, or the frontend), with the `403`/`404` existence policy enforced in the running app (consistent with GP-02 Claims-First Identity and GP-03 Stable Error Contracts); only its multi-organization / hosted-SaaS expansion premise (including any `TenantId`-keyed shared-schema tenancy) is parked — agents must neither park the live cross-user isolation security model nor resurrect multi-org tenancy work. The planning principles below remain valid for the *product* (review-first, capture-friction, novice legibility) even though the *distribution* roadmap is retired.
+
 ## Planning Principles
+
+> **Precedence note (2026-06-13):** The ordered goals in the **Direction** section above take precedence wherever these principles conflict. In particular, "Security and identity convergence remains the highest-priority engineering track" and the "package the shipped substrate into stakeholder-legible business workflows" / "ship to first users" framing reflect the pre-pivot product phase and are **historical** — the active priorities are now Paper-canonical, easy local run, general quality, then archive. The review-first / capture-friction / novice-legibility principles remain valid.
 
 - `docs/STATUS.md` is authoritative for current shipped reality.
 - Product north star: make capture nearly free and keep automation safe through review-first proposals.
@@ -40,6 +53,13 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+Archive-pivot delivery wave (2026-06-13, **17 PRs merged** across Waves 0–2 — **Wave 2 still in progress**, including 2 dependabot bumps; full review gate per PR — 2 independent adversarial reviews, all-severity findings fixed, bot threads resolved, fresh green CI + aging). This wave completed Waves 0–1 of the archive-pivot plan and the bulk of Wave 2 (clear the PR deck → ratify Paper-canonical + cheap foundations → Paper-activation prerequisites + backend quality), with Wave-2 stragglers still open (see **Net** below):
+- **Decision/foundation:** **ADR-0038** ratifies Paper as the canonical UI with Legacy frozen (`#1207`); **ADR-0039** moves the backend to Central Package Management with a pinned SDK and 8.x dependency alignment (`#1196`, carrying the `#1203` NuGet bumps into `Directory.Packages.props`); **ADR-0040** adds a global UTC DateTime materialization convention for SQLite (`#1201`). `*.migrate.lock` is now gitignored (`#1204`); the docker-compose quickstart documents both required secrets (`#1205`, `#1139` AC1).
+- **Paper activation prerequisites:** the shared review-actionability composable (`#1217`) extracts `isProposalApply/Reject/Approve/Dismissable` + `isProposalStale` as pure functions so Paper and Legacy can no longer drift at the 24h-stale / Approved+expired boundaries (collapsing the `#1124` double-fix), and removes fabricated author metadata in favour of the real `/confidence` value; paper-night straggler tokens + a full-opacity WCAG focus ring landed (`#1216`, `#1135`; seeded `#1218`). The `#1161` "File away" dismiss affordance that builds on this foundation is reviewed/green/aged with merge held by the maintainer (`#1219`).
+- **Backend + run-story quality:** dead `ProposalGeneratorV1`/`IProposalGenerator` removed as never-consumed code (`#1198`/`#1214`, `FieldVerifier`/`DeterministicPreExtractor` retained for a future V2 per `#1215`); Redis distributed-lock starvation fixed (`#1213`, `#1189`); the queue-claim raw-SQL path now reloads so the DTO isn't a stale identity-map entity (`#1200`, seeded `#1209`); automation-chat composable continuation guarded against dispose (`#1199`); the false-green E2E specs were re-enabled on real Paper selectors (`#1197`); and the one-command `dev-up` + `clean-workspace` scripts shipped (`#1208`, `#1140`) — the canonical personal run path's biggest ergonomics gap.
+- **Dependency hygiene:** group npm/nuget bumps (`#1202`/`#1203` in-wave, `#1211`/`#1212` follow-on).
+- **Net:** Wave 0 (clear the PR deck) and Wave 1 (Paper-canonical decision + cheap foundations) are complete, and Wave 2 (Paper-activation prerequisites) is **substantially delivered but not yet finished** — the shared review-actionability foundation landed, while the reachable settings theme toggle (`#1221`) and the `#1161` File-away dismiss affordance (`#1219`) are both reviewed/green/aged with **merges held by the maintainer**, and the remaining Paper-review de-stubs are still open. Those Wave-2 stragglers must land before the Wave-3 default-theme flip; Paper polish (Wave 4) and the independent run-story (Wave 5) and backend-quality (Wave 6) tracks interleave in the meantime.
 
 Security gate + hardening epic (2026-06-05/06, 5 PRs merged; 2 independent adversarial reviews per PR plus Gemini/Codex bot reviews, all findings of every severity fixed or tracked):
 - **#1132 security gate + config hardening** delivered across 4 PRs: ≥32 JWT secret floor + fail-fast registration + Production CORS fail-closed (`#1169`, AC2/AC3); secret/dependency/SAST scans + bundle-size promoted into the required PR merge gate with **phased enforcement** per **ADR-0035** (`#1170`, AC1/AC5, fixed the pre-existing Semgrep `setuptools-82` crash); global default-deny `FallbackPolicy` + `[AllowAnonymous]` audit per **ADR-0036** (`#1176`, AC4).
@@ -880,12 +900,14 @@ Implementation carry-forward from the full source audit:
 
 ## Roadmap by Horizon
 
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This entire block — the RFAI v4 roadmap (Tracker `#972`, slices `#973`–`#984` and their `#986`/`#989`–`#994` execution sequence) plus every week-numbered / Post-R1 / Post-R2 horizon below (Horizons A–F) — is **historical**. It is retained as a delivery record, not an active plan. The active sequence is the finite archive-pivot **waves** in the **Direction** section above (Paper UI activation → easy local run → general quality → archive). The RFAI track is **complete (12/12 slices delivered)** — including RFAI-10/11/12 (`#982`/`#983`/`#984`), which **were delivered and ship live** (merged `#1078`/`#1079`/`#1080`): PWA share-target capture, the VS Code / browser-extension prototype, the Ollama provider, and the ProvenanceDrawer all remain in the codebase (consistent with STATUS.md, the source of truth). What the archive pivot retires is only their **onward productization** — extension-store publishing, the public beta gate, and ambient-channel hardening beyond prototype — **not the shipped code**, which stays live for personal use. Items annotated *delivered* below remain accurate as history; un-delivered week-numbered work is either complete-as-history or de-scoped (distribution/beta only). **Blanket rule:** any `Focus:` / `remaining` / future-tense ("add …") bullet in the horizons below that describes functionality STATUS.md records as **shipped** has in fact been delivered — the forward phrasing is the original pre-delivery plan preserved as a record, not current outstanding work. When this block and STATUS.md disagree on whether something shipped, **STATUS.md wins** (it is the source of truth).
+
 ### Roadmap v4 Adoption: Review-First AI Without the Rewrite (Tracker `#972`)
 
-Active source:
+Historical source _(was the active source pre-pivot)_:
 - `taskdeck-12-week-roadmap-v4.md`
 
-Execution sequence:
+Execution sequence _(historical — RFAI is complete 12/12; RFAI-10/11/12 (`#982`/`#983`/`#984`) shipped live via `#1078`/`#1079`/`#1080`, and only their onward distribution/beta/hardening is de-scoped per the archive pivot — the delivered code stays)_:
 1. `#973` RFAI-01: Safety invariants, IA cut, eval seed, and recertification (`Priority I`) — **delivered** (`#986`)
 2. `#974` RFAI-02: IntentEnvelopeV1, IChatClient adapter, and schema spike (`Priority I`) — **delivered** (`#989`)
 3. `#975` RFAI-03: Proposal generator V1 with verified provenance and outcomes ledger (`Priority I`) — **delivered** (foundational slice, `#993`)
@@ -945,7 +967,7 @@ Focus:
   - resume point
 - remaining follow-through for this horizon:
   - richer contextual help and in-product teaching on top of the shipped board-centered loop
-  - broader telemetry and release-gate follow-through beyond the shipped first-run guardrail
+  - broader telemetry beyond the shipped first-run guardrail _(the telemetry recording surface shipped opt-in/off-by-default; the **release-gate** portion is de-scoped by the 2026-06-13 archive pivot — no public release)_
 
 Exit Criteria:
 - the `capture -> review -> board` loop is visible and coherent inside the product
@@ -979,17 +1001,17 @@ Exit Criteria:
 ### Horizon D (Post-R1): Agent Substrate Foundation
 
 Focus:
-- add `AgentProfile`, `AgentRun`, and `AgentRunEvent` as first-class runtime primitives
+- ~~add `AgentProfile`, `AgentRun`, and `AgentRunEvent` as first-class runtime primitives~~ (delivered, `#336` — entities ship live)
 - ~~add a tool registry abstraction and policy evaluator~~ (delivered in AGT-02, `#337`)
 - ~~add a first bounded agent template~~ (delivered: `InboxTriageAssistant` in AGT-02)
-- add inspectable run traces
-- expose agent mode views only after the substrate is real
+- ~~add inspectable run traces~~ (delivered: `AgentRunDetailView` run-event timeline, AGT-03 `#338`)
+- ~~expose agent mode views only after the substrate is real~~ (delivered: `AgentsView`/`AgentRunsView` under `/workspace/agents`, AGT-03 `#338`)
 
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
 - LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); `#651` delivered (Phase 3 refinements: cost tracking, `LlmToolCalling:Enabled` feature flag, `TruncateToolResult` byte budget with binary search — 17 new tests, PR `#773`); ~~`#673`~~ delivered (argument replay — `Arguments` field on `ToolCallResult`, OpenAI/Gemini replay uses real arguments, 6 new tests, PR `#770`)
 - MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; ~~`#653`~~ delivered (full inventory — 9 resources + 11 tools, PR `#739`); ~~`#654`~~ delivered (HTTP transport + API key auth, PR `#792`/`#819`); remaining: `#655` (production hardening, deferred)
-- remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
+- ~~remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail~~ — **all delivered**: the `AgentProfile`/`AgentRun`/`AgentRunEvent` entities ship (`#336` foundation), and AGT-03 (`#338`) delivered the `AgentsView`/`AgentRunsView`/`AgentRunDetailView` surfaces with an inspectable run-event timeline (STATUS.md records AGT-03 `#338` delivered). Horizon D's substrate is complete; nothing here is outstanding.
 
 Exit Criteria:
 - runs are first-class and inspectable
@@ -1000,11 +1022,11 @@ Exit Criteria:
 
 ### Horizon E (Post-R2): Knowledge and Integrations Surface
 
-Focus:
-- add local-first knowledge documents/notes and SQLite FTS-backed search
-- add note/transcript/clip-style intake paths that feed capture or knowledge flows
-- add integrations registry/management view so imports and webhooks have a coherent home
-- keep connector behavior capture-first and review-safe by default
+Focus _(all delivered — see STATUS.md; retained as the original pre-delivery plan)_:
+- ~~add local-first knowledge documents/notes and SQLite FTS-backed search~~ (delivered, `#339`/KNW: `KnowledgeDocument`/`KnowledgeChunk` + `KnowledgeFtsSearchService` FTS5)
+- ~~add note/transcript/clip-style intake paths that feed capture or knowledge flows~~ (delivered, INT-05 `#334` `NoteImportService`)
+- ~~add integrations registry/management view so imports and webhooks have a coherent home~~ (delivered, INT-06 `#340`: `IntegrationConnector` + `IntegrationRegistryService` + `IntegrationsView` at `/workspace/integrations`)
+- keep connector behavior capture-first and review-safe by default (held — inbound connectors route through capture per GP-06)
 
 Exit Criteria:
 - durable searchable context exists without external vector infrastructure
@@ -1080,6 +1102,8 @@ Master tracker: `#531`.
 
 ### Feature Milestones (Original)
 
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** The `R1`→`v0.1.0`/`v0.2.0`, `R2`→`v1.0.0+`, `R3`→`post-v1.0.0` ladder and its beta/alpha framing are **retired** — there is no distribution, no public beta/alpha, and no `v0.x`→`v1.0.0` release ladder. This is kept only as a historical map of which capability cohorts were delivered. Active sequencing is the archive-pivot **waves** in the **Direction** section above.
+
 - `R1` novice-first beta (largely delivered — maps to v0.1.0/v0.2.0):
   - `Home`, `Today`, `Review`, onboarding/help coherence
   - readable proposals, board-centered action rails
@@ -1097,9 +1121,11 @@ Master tracker: `#531`.
 
 ## Active Backlog (Priority-Labeled)
 
+> **Archive-pivot note (2026-06-13):** The `Priority I`–`V` / "Phase 4" tranche framing below is the **pre-pivot** priority model, retained for historical traceability. Active sequencing now follows the archive-pivot **waves** in the Direction section above (Paper UI activation → easy local run → general quality → archive); most items below are already annotated *(delivered)*, and the distribution/cloud/mobile/GTM tranches are de-scoped.
+
 ### Priority I (Current Phase 4 Completion Path)
 
-- **Security bug**: `#722` (SEC-20) — `ChangePassword` does not verify caller identity; any authenticated user can change another user's password. Discovered during 2026-04-03 test audit. Must be resolved before external onboarding.
+- ~~**Security bug**: `#722` (SEC-20) — `ChangePassword` does not verify caller identity; any authenticated user can change another user's password. Discovered during 2026-04-03 test audit.~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `AuthController.ChangePassword` derives `userId` from the JWT and `ChangePasswordApiTests` guard it; STATUS records the fix. (Historical backlog entry retained for context.)
 - Security and policy convergence: `#33`, `#34`, `#44`
 - Final cross-user policy convergence follow-through: `#152`
 - Starter packs foundation: `#48`, `#49`, `#50`, `#51` (delivered)
@@ -1177,6 +1203,8 @@ Master tracker: `#531`.
 
 ### Platform Expansion Wave (2026-03-29 — Priority II)
 
+> **⚠️ SUPERSEDED 2026-06-13 — archive pivot.** This entire wave (packaging/distribution, cloud/collaboration, mobile, GTM) is **de-scoped** and retained as a historical record only. The `v0.1.0 → … → v1.0.0 GA` execution order below is **no longer the roadmap** — see the Direction section above and the SUPERSEDED Platform Release Plan. The self-contained-exe *personal* run path survives this de-scoping (only its *distribution* framing is parked; see `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md`).
+
 Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents.
 
 - Master strategy tracker: `#531`
@@ -1186,7 +1214,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 - Market adoption and GTM wave: `#544` → `#545` (README polish), `#546` (demo video), `#547` (LICENSE)
 - Cross-cutting: `#548` (legal/privacy), `#549` (analytics/error tracking), `#550` (brand/domain)
 - Reuse anchors: `#95` (PWA readiness), `#87` (mobile E2E), `#111` (cloud topology), `#105` (SignalR scale-out), `#216` (GTM execution), `#341` (telemetry)
-- Execution order: `v0.1.0` packaging → `v0.2.0` cloud → `v0.3.0` mobile → `v0.4.0` collab → `v0.5.0` maturity → `v1.0.0` GA
+- Execution order (**historical — superseded by the archive pivot, not the active roadmap**): `v0.1.0` packaging → `v0.2.0` cloud → `v0.3.0` mobile → `v0.4.0` collab → `v0.5.0` maturity → `v1.0.0` GA
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
@@ -1240,7 +1268,7 @@ Covered by seeded issues:
 - Developer MCP baseline and Docker Marketplace setup hardening: delivered (2026-02-20 local ops cycle)
 - MCP operator wiring + verification workflow: `#140` (delivered via `#144`)
 - MCP integration smoke/regression harness: `#141` (delivered)
-- Staged rollout policy (blue/green/canary): `#101`
+- Staged rollout policy (blue/green/canary): `#101` — **parked** _(historical — cloud/hosted deploy de-scoped by the 2026-06-13 archive pivot; the personal run path is local dev-up + self-contained exe, so blue/green/canary rollout has no live target)_
 - SBOM/release provenance: `#103`
 - Cost guardrails: `#104` (delivered 2026-04-09): cloud cost observability framework, feature cost hotspot registry, budget breach runbook, ADR-0026
 - Backup/restore disaster recovery: `#86`
@@ -1253,7 +1281,7 @@ Covered by seeded issues:
   - reusable dependency-security signal workflow now normalizes backend/frontend scan results for PR/manual, nightly, and release contexts; remaining follow-through is limited to future automation escalation (for example auto-ticketing or stricter PR gating) rather than baseline policy definition
 - Secrets/configuration management baseline: `#110`
 - DB migration strategy and cache strategy: `#84`, `#85`
-- Cloud target topology and autoscaling ADR: `#111` (delivered — ADR-0023 defines ECS Fargate topology with ALB, RDS PostgreSQL, ElastiCache Redis, CloudFront CDN; autoscaling policy with CPU/request-rate/connection thresholds; health check contract; SLO targets; cost estimates; companion reference architecture at `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`)
+- Cloud target topology and autoscaling ADR: `#111` (delivered — **ADR-0027** defines ECS Fargate topology with ALB, RDS PostgreSQL, ElastiCache Redis, CloudFront CDN; autoscaling policy with CPU/request-rate/connection thresholds; health check contract; SLO targets; cost estimates; companion reference architecture at `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`)
 - CI workflow topology expansion/governance baseline: `#168`
 
 Outstanding strategy-level gap to monitor:
@@ -1261,9 +1289,11 @@ Outstanding strategy-level gap to monitor:
 
 ## ARCH-01 Follow-Through Stages (Post-ADR)
 
-1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76` delivered).
-2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`, `#85`).
-3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#86`, `#101`, `#111`).
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** The multi-tenant / hosted-SaaS premise that motivated Stages B and C is **de-scoped**. The **live cross-user isolation behaviour** delivered in Stage A stays intact — enforced today by per-`UserId` and board-access predicates with the `403`/`404` existence policy (no `TenantId` column), consistent with **ADR-0004** as reframed in the **Direction** section. Stages B and C are **parked** below; only their multi-instance/multi-org expansion is retired, not the running app's isolation guarantees or the **live local backup/restore** path.
+
+1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76` delivered). _(The cross-user isolation behaviour delivered here remains **live** in the single-instance app.)_
+2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`) — **parked** _(historical — the multi-tenant data-plane / production-Postgres premise is de-scoped by the archive pivot; production stays SQLite-only single-instance)_. **`#85` (distributed cache strategy) is NOT parked** — its deliverable, the `ICacheService` cache-aside abstraction (ADR-0024, `InMemoryCacheService` default), **shipped and stays live** in the personal build; only its Redis/distributed framing is parked.
+3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#101`, `#111`) — **parked** _(historical — tenant-aware DR / staged rollout / cloud topology is de-scoped with the cloud premise)_. **`#86` (local backup/restore disaster-recovery) is NOT parked** — local backup/restore (`DatabaseFileExportImportService`) **remains relevant** to the personal build (STATUS keeps `#86` out of the parked cloud bundle); only the tenant-aware / hosted-DR framing is parked.
 4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81` delivered; `#82`, `#83` delivered, `#110` pending).
 
 
@@ -1421,25 +1451,27 @@ Tracker: `#570`. Improvement tiers:
 
 Analysis: `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
 
-## Active Blockers (2026-03-29 Manual Test Session)
+## Active Blockers (2026-03-29 Manual Test Session) — ✅ RESOLVED (historical)
 
-Two P0 bugs discovered in fresh-registration manual testing must be resolved before Phase 4 can be signed off or any external user onboarding begins. These are data correctness/security failures, not UX polish:
+> **Both P0 bugs below were fixed** (regression coverage per `#777`; see STATUS.md). This section is retained as a historical record. The "before Phase 4 sign-off / external user onboarding" framing is also moot under the 2026-06-13 archive pivot (finish-for-personal-use → archive; no external onboarding).
 
-- **`#508`** — Queue list endpoint not scoped to the authenticated user: a fresh-registered account sees all historical queue items from other sessions. Add a `userId` predicate to the LLM queue list query and add a cross-user isolation integration test.
-- **`#509`** — Board view auto-switches between boards every few seconds: `boardStore` overwrites `activeBoardId` on each `fetchBoards` response. Add a `preserveSelection` guard so the active board is not reset while it still exists in the refreshed list.
+- ~~**`#508`** — Queue list endpoint not scoped to the authenticated user~~ — **RESOLVED**: `LlmQueueService.GetUserQueueAsync(userId)` scopes the queue via `LlmQueue.GetByUserAsync(userId)`; cross-user isolation regression tests cover it.
+- ~~**`#509`** — Board view auto-switches between boards~~ — **RESOLVED**: `boardStore` preserves `activeBoardId` across `fetchBoards` when it still exists; regression test covers the auto-switch.
 
 Additional P1 issues from the same session (tracked in `#510`–`#515`) cover excessive board polling, the missing Inbox capture button, chat not emitting proposals, delete-card without confirmation, dark-mode theming gaps on three surfaces, and text-selected cards being non-draggable. Full findings at `docs/analysis/2026-03-29_manual_testing_consolidated_findings.md`.
 
 ## Next Best Steps (Immediate)
 
-Current active order (2026-04-25):
+> **⚠️ SUPERSEDED 2026-06-13 — archive pivot.** The "Current active order (2026-04-25)" RFAI roadmap below (`#973`→`#984`, Stage 8, tracker `#972`) is **no longer the active sequence**. Current execution order is the archive-pivot **waves** in the Direction section at the top of this file (Paper UI activation → easy local run → general quality → archive). The list below is retained only as historical continuity — do not restart the RFAI/Stage-8 roadmap from it.
+
+Current active order (2026-04-25) — **HISTORICAL, superseded by the archive pivot**:
 1. Start the RFAI roadmap through `#973` first: safety invariants, IA cut, eval seed, and recertification.
 2. Continue in dependency order through `#974` -> `#975` -> `#976` before starting confidence, retrieval, agents, or ambient capture work.
 3. Treat `#980` (egress disclosure/eval/privacy) as a required dependency before `#981` agent runtime hardening and before any ambient source is promoted beyond prototype.
 4. Keep `#982` and `#983` behind the proposal/provenance/edit/egress foundation; store publishing remains post-beta.
 5. Use `#970` for measured test-total recertification rather than editing counts from estimates.
 
-Historical next-step list below is retained for continuity with earlier waves. Use Stage 8 in `docs/ISSUE_EXECUTION_GUIDE.md` and tracker `#972` as the current execution order.
+Historical next-step list below is retained for continuity with earlier waves. The Stage 8 sequence in `docs/ISSUE_EXECUTION_GUIDE.md` and tracker `#972` it referenced is **historical and no longer the active execution order** — the current execution order is the archive-pivot waves in the **Direction** section at the top of this file.
 
 1. **Resolve `#508` and `#509` (P0 blockers above) before any other backlog work.**
 2. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
@@ -1458,7 +1490,7 @@ Historical next-step list below is retained for continuity with earlier waves. U
 17. **Security + testing + MCP wave (2026-04-04)**: 8 issues across 8 PRs (`#732`–`#739`) with two rounds of adversarial self-review. ~300 new tests added. Key deliveries: SEC-20 ChangePassword identity bypass fix (`#722`/`#732`), golden-path capture→board integration test (`#703`/`#735`), cross-user data isolation tests (`#704`/`#733` — 38 tests, 3 false-positive tests caught in review), worker integration tests (`#700`/`#734` — 24 tests, fake repo status-tracking fixed in review), controller HTTP tests (`#702`/`#738` — 67 tests, 6 controllers, 2 pre-existing bugs found), proposal lifecycle edge cases (`#708`/`#736` — 74 tests, clock-flakiness fixed in review), OAuth/auth edge cases (`#707`/`#737` — 44 tests, found+fixed `ExternalLoginAsync` Substring overflow production bug), MCP full inventory (`#653`/`#739` — 9 resources + 11 tools, user-scoping gap found+fixed in review). Test expansion wave (`#721`) progress: 7 of 22 issues now delivered (`#699`, `#700`, `#702`, `#703`, `#704`, `#707`, `#708`); remaining 15 open.
 18. **Tech-debt, security, and feature hardening wave (2026-04-04)**: 7 issues across 7 PRs (`#765`–`#770`, `#776`) with two rounds of adversarial review per PR (~65 new tests: 32 backend + 33 frontend). Key deliveries: Agent API 500 fix (`#758`/`#776` — `DateTimeOffset` ORDER BY in SQLite, `AgentRunRepository` upgraded to `IsSqlite()` SQL-level pattern, round 2 caught load-all-before-limit perf bug), DataExport exception logging (`#759`/`#766` — `ILogger` added to `DataExportService`/`AccountDeletionService`, round 2 added `OperationCanceledException` filter + `CancellationToken.None` rollback), streaming chat token usage (`#763`/`#768` — `LlmTokenEvent` extended, all 3 providers populated, `StreamResponseAsync` now persists messages + records quota), EF Core version alignment (`#760`/`#767` — 9.0.14→8.0.14, EF9-only API removed, `FrameworkReference` swap, round 2 added `PrivateAssets`), frontend HTTP interceptor/auth guard tests (`#725`/`#765` — 33 tests, round 2 fixed ESLint `no-import-assign` CI breaker), OAuth token lifecycle tests (`#723`/`#769` — 19 tests covering auth code store + JWT lifecycle + SignalR auth, round 2 fixed `HttpClient` leak + misleading test names), tool argument replay (`#673`/`#770` — `Arguments` field on `ToolCallResult`, OpenAI/Gemini replay now uses real arguments). Test expansion wave (`#721`) progress: 23 of 25 issues now delivered (waves 4+5 added `#711`, `#712`, `#716`, `#720`, `#723`, `#725`); remaining 2 open (`#705`, `#717`).
 19. **Feature, analytics, MCP, chat, testing, and UX expansion wave (2026-04-08)**: 7 issues across 7 PRs (`#787`–`#793`) with two rounds of adversarial review per PR (~390+ new tests). Key deliveries: exportable analytics CSV (`#78`/`#787` — `MetricsExportService` with CSV injection protection, `ADR-0022` deferring PDF, 29 tests, adversarial review caught embedded-newline injection HIGH), forecasting service (`#79`/`#790` — heuristic `ForecastingService` with rolling-average throughput, std-dev confidence bands, frontend MetricsView section, 32 tests, adversarial review caught throughput double-counting HIGH + history window bug), MCP HTTP transport + API key auth (`#654`/`#792` — `ApiKey` entity with SHA-256, `ApiKeyMiddleware`, `HttpUserContextProvider`, `MapMcp()`, REST key management, rate limiting, 31 tests, adversarial review caught key-existence oracle + modulo bias), conversational refinement loop (`#576`/`#791` — `ClarificationDetector` with strong/weak signal split, max 2 rounds + skip, Mock simulation, frontend badge + skip button, 41 tests, adversarial review caught false-positive heuristic HIGH), concurrency stress tests (`#705`/`#793` — 13 `SemaphoreSlim`-barrier stress tests for queue claims, card conflicts, proposal races, rate limiting, multi-user), property-based adversarial tests (`#717`/`#789` — 211 FsCheck + fast-check tests across domain/API/frontend, no 500s from any input), inbox premium primitives (`#249`/`#788` — `TdSkeleton`/`TdInlineAlert`/`TdEmptyState`/`TdBadge` rework, 7 tests). Test expansion wave (`#721`) progress: 25 of 25 issues now delivered (this wave closed `#705` and `#717`). Additional issues closed: `#78`, `#79`, `#249`, `#576`, `#654`.
-10. Treat `#107` as the closed historical wave index; keep active roadmap tracker `#972` synchronized and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+10. Treat `#107` **and the RFAI roadmap tracker `#972`** as closed/historical (RFAI complete 2026-05-29, superseded by the archive-pivot waves in the Direction section — `#972` is no longer the active execution order); maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 12. Test suite baseline counts recertified 2026-04-09: backend ~3,600+ passing, frontend ~1,984+ passing, combined ~5,600+. Rigorous test expansion wave (`#721`) fully delivered (25/25 issues).
 13. **Mutation testing pilot** (`#90`): Stryker.NET (backend Domain) and Stryker JS (frontend captureStore/boardStore) configured with non-blocking weekly CI lane; policy at `docs/testing/MUTATION_TESTING_POLICY.md`; scope expansion to Application layer and additional stores planned after baseline calibration from first 3-4 runs.

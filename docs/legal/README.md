@@ -1,4 +1,4 @@
-# Taskdeck Legal Documents (Pre-Launch Drafts)
+# Taskdeck Legal Documents (Parked Hosted-Instance Drafts — NOT IN USE)
 
 > **Status: DRAFT — NOT LEGALLY BINDING**
 > These documents are pre-launch working drafts written by contributors to anchor
@@ -8,6 +8,8 @@
 > documents for any hosted Taskdeck instance without review by qualified legal
 > counsel. Sections containing placeholder or unverified claims are explicitly
 > marked `[LEGAL REVIEW REQUIRED]`.
+
+> **⚠️ NOT IN USE — parked by the 2026-06-13 archive pivot.** This hosted-instance legal package is no longer planned — Taskdeck is personal-use only, never distributed or hosted as a service. Retained only as a template; any self-hosted deployment is the operator’s sole responsibility. See `docs/STATUS.md`.
 
 ## Contents
 
@@ -32,9 +34,7 @@ This directory is intentionally narrow:
 
 ### For Taskdeck contributors
 
-- When a change touches data collection, retention, or a new sub-processor, update
-  the relevant file here in the same PR. Treat these files like living documentation
-  of the platform's privacy surface, not a one-off deliverable.
+- _(Parked per the 2026-06-13 archive pivot — **not a required update path.**)_ These drafts apply only to a hosted Taskdeck instance, which is not shipping. Feature work that touches data collection, retention, or sub-processors does **not** need to update these files in the same PR. Only if a hosted instance is ever revived should they be updated (and then treated as living documentation of the platform's privacy surface).
 - Do not add claims you cannot point at in code. If it is aspirational, mark it
   `[LEGAL REVIEW REQUIRED]` or `[NOT YET IMPLEMENTED]`.
 - Do not copy text verbatim from other companies' policies — write original drafts
@@ -75,11 +75,11 @@ This directory is intentionally narrow:
 - `docs/platform/CONFIGURATION_REFERENCE.md` — which config toggles gate optional
   sub-processors (OpenAI, Gemini, OAuth providers).
 - `docs/strategy/03_CLOUD_COLLABORATION_STRATEGY.md` — hosted-cloud evolution plan
-  that motivates this draft.
+  that originally motivated this draft. _(That strategy doc is itself SUPERSEDED / de-scoped by the 2026-06-13 archive pivot — no hosted-cloud evolution is planned.)_
 
 ## Status
 
-- **Status:** Pre-launch draft.
+- **Status:** **Parked / NOT IN USE** (de-scoped by the 2026-06-13 archive pivot). Retained as a template only — no hosted Taskdeck instance is shipping.
 - **Last updated:** 2026-04-23.
-- **Tracking issue:** `#548` (LEGAL-01).
-- **Legal review:** not yet performed.
+- **Tracking issue:** `#548` (LEGAL-01) — **de-scoped; not active work.**
+- **Legal review:** not performed and **not planned** (no hosted instance to govern).

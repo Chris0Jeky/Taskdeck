@@ -1,6 +1,9 @@
 # ADR-0029: OIDC/SSO Integration with Optional TOTP MFA
 
-- **Status**: Accepted
+- **Status**: Accepted (MFA/OIDC behaviour live; enterprise/SSO/multi-org premise parked — archive pivot)
+
+> **Archive-pivot note (2026-06-13):** The *hosted / enterprise / multi-org adoption* premise behind this decision is de-scoped — Taskdeck is personal-use only per the archive pivot (see ADR-0038 and `docs/STATUS.md`). The **MFA + OIDC/OAuth behaviour this ADR decides remains live**: TOTP MFA (`MfaSetup`, `MfaChallengeModal`) and GitHub OAuth (`exchangeOidcCode`) are implemented and exposed. Only the enterprise-adoption rationale is parked.
+
 - **Date**: 2026-04-09
 - **Deciders**: Project maintainers
 
@@ -52,7 +55,7 @@ Both OIDC and GitHub OAuth share the same short-lived authorization code pattern
 - **WebAuthn/FIDO2**: Superior security but significantly higher implementation complexity and requires client-side credential storage. Deferred to a future phase -- the TOTP infrastructure can coexist with WebAuthn later.
 - **Session-based MFA (cookie)**: Would require session state infrastructure that conflicts with the JWT-stateless design. Rejected.
 - **Auto-link OIDC accounts by email**: Tempting for UX but creates an account takeover vector since OIDC providers may not verify email ownership with sufficient rigor. Rejected (consistent with ADR-0002 claims-first security posture).
-- **Single OIDC provider hardcoded**: Simpler but forces re-deployment to change providers. The pluggable array approach supports multi-tenant scenarios.
+- **Single OIDC provider hardcoded**: Simpler but forces re-deployment to change providers. The pluggable array approach was chosen to support the _(now-parked)_ multi-org scenario. _(The MFA + OIDC/OAuth behaviour this ADR decides remains live; only the multi-org/enterprise-adoption rationale is parked.)_
 
 ## Consequences
 

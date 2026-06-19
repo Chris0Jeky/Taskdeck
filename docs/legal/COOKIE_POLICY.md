@@ -9,6 +9,8 @@
 > revise before publishing. Placeholder sections are marked
 > `[LEGAL REVIEW REQUIRED]`.
 
+> **⚠️ NOT IN USE — parked by the 2026-06-13 archive pivot.** Like the rest of the `docs/legal/` package, this draft is no longer planned — Taskdeck is personal-use only, never distributed or hosted as a service. Retained only as a template; any self-hosted deployment is the operator's sole responsibility. See `docs/legal/README.md` and `docs/STATUS.md`.
+
 **Last updated:** 2026-04-23 (draft)
 **Tracking issue:** `#548` (LEGAL-01)
 

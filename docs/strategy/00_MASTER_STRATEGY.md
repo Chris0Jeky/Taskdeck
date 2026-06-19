@@ -2,7 +2,9 @@
 
 **Date:** 2026-03-29
 **Scope:** Unified strategy covering market adoption, packaging, cloud, mobile, and everything in between
-**Status:** Strategic planning document — the north star for the next 12 months
+**Status:** **SUPERSEDED / historical (2026-06-13 archive pivot — see banner below).** Was framed as the north star for 2026; now retained only as a record of parked distribution/cloud/mobile/GTM plans.
+
+> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The distribution / cloud / mobile / GTM tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial, general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
 
 ---
 
@@ -408,8 +410,8 @@ You've built the engine. Now turn the key.
 
 These are valid ideas that should NOT be prioritized in the next 3 months:
 
-- Agent substrate (AgentProfile/Run/Event) — no user has asked for this yet
-- Knowledge/FTS surface — build when users need cross-board search
+- Agent substrate (AgentProfile/Run/Event) — no user has asked for this yet _(historical note: this was subsequently **built and ships live** — `AgentProfile`/`AgentRun`/`AgentRunEvent` entities + Agents/Runs surfaces — via the RFAI roadmap; see `docs/STATUS.md`. This appendix reflects the pre-pivot 2026-03-29 framing.)_
+- Knowledge/FTS surface — build when users need cross-board search _(historical note: also **built and ships live** — `KnowledgeDocument`/`KnowledgeChunk` + `KnowledgeService`; see `docs/STATUS.md`.)_
 - Plugin/extension architecture — premature abstraction
 - CQRS/MediatR refactor — architectural astronautics unless app layer becomes unmanageable
 - Calendar/timeline views — nice to have, not core

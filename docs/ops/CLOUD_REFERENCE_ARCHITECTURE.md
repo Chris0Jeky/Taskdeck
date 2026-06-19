@@ -2,13 +2,15 @@
 
 Last Updated: 2026-04-09
 Issue: `#111` OPS-14 Cloud target topology and autoscaling reference architecture
-ADR: `docs/decisions/ADR-0023-cloud-target-topology-autoscaling.md`
+ADR: `docs/decisions/ADR-0027-cloud-target-topology-autoscaling.md`
+
+> **⚠️ REFERENCE ONLY — cloud / multi-instance track de-scoped 2026-06-13.** Taskdeck is being finished as a single-instance, SQLite-based, personal-use tool (archive pivot) and will not be distributed or scaled out. The cloud / scale-out / PostgreSQL procedures below are retained as historical reference, not active plans. SQLite + single-instance + local-first are the permanent architecture. See `docs/STATUS.md`.
 
 ---
 
 ## Overview
 
-This document is a companion to ADR-0023. It provides operational detail for deploying Taskdeck to a cloud environment with horizontal scaling, managed dependencies, and production-grade health monitoring.
+This document is a companion to ADR-0027. It provides operational detail for deploying Taskdeck to a cloud environment with horizontal scaling, managed dependencies, and production-grade health monitoring.
 
 The target topology replaces the current single-node Docker Compose stack with a distributed, container-based architecture on AWS (ECS Fargate). The same application containers are used; the infrastructure wrapping changes.
 
@@ -307,7 +309,7 @@ Extend the existing observability baseline (`docs/ops/OBSERVABILITY_BASELINE.md`
 
 ## Related Documents
 
-- `docs/decisions/ADR-0023-cloud-target-topology-autoscaling.md` — architectural decision record
+- `docs/decisions/ADR-0027-cloud-target-topology-autoscaling.md` — architectural decision record
 - `docs/ops/DEPLOYMENT_CONTAINERS.md` — current Docker Compose deployment baseline
 - `docs/ops/DEPLOYMENT_TERRAFORM_BASELINE.md` — current single-node Terraform baseline
 - `docs/ops/DISASTER_RECOVERY_RUNBOOK.md` — current SQLite backup/restore procedures

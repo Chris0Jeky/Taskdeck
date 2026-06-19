@@ -2,6 +2,8 @@
 
 Last Updated: 2026-03-27
 
+> **⚠️ NOT IN USE — parked by the 2026-06-13 archive pivot.** This is GTM / beta-launch material for distributing Taskdeck as a product, which is permanently de-scoped (Taskdeck is personal-use only, never distributed). Retained as a historical record, not an active workstream. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
+
 ## Purpose
 
 Define the process for acquiring, onboarding, and retaining early beta users. This is an operator document — it describes what the maintainer does, not what users see.
@@ -15,14 +17,18 @@ Define the process for acquiring, onboarding, and retaining early beta users. Th
 
 ## Intake Channels
 
-| Channel | Status | Owner Action |
+_The "Status" column below describes the **original (parked) beta plan**, not current work — no channel is being staffed or implemented under the archive pivot._
+
+| Channel | Status _(historical — parked)_ | Owner Action |
 | --- | --- | --- |
-| GitHub Discussions (beta-interest thread) | Recommended first channel | Pin a "Beta Interest" discussion, respond within 48h |
-| Direct outreach (classmates, dev communities) | Active | Personal message with install link + demo video |
-| Landing page email capture | Future | Implement when landing page ships |
-| Hacker News / Reddit | Deferred | Only after demo recording is solid and 5+ beta users are active |
+| GitHub Discussions (beta-interest thread) | ~~Recommended first channel~~ _(parked plan)_ | Pin a "Beta Interest" discussion, respond within 48h |
+| Direct outreach (classmates, dev communities) | ~~Active~~ _(parked plan — not currently active)_ | Personal message with install link + demo video |
+| Landing page email capture | ~~Future~~ _(parked plan — no landing page is shipping)_ | Implement when landing page ships |
+| Hacker News / Reddit | ~~Deferred~~ _(parked plan)_ | Only after demo recording is solid and 5+ beta users are active |
 
 ## Intake Process
+
+_(⚠️ Historical / parked — the imperative steps and cadences below describe the **original beta plan**, not current operator duties. Nothing here is being staffed under the archive pivot; read "the owner does X" as "the plan was for the owner to do X.")_
 
 ### Step 1: Interest Signal
 
@@ -106,6 +112,8 @@ Share this with beta users after their first week:
 - If they disengage, record the reason and move on (do not pressure)
 
 ## Graduation Criteria
+
+_(⚠️ Historical / parked — these graduation criteria and the "broader channels" step below are de-scoped GTM steps; there is no public launch under the archive pivot.)_
 
 Beta is "working" when:
 - 5+ users have completed the capture-to-board loop independently

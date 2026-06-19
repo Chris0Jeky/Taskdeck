@@ -10,7 +10,7 @@ Stable reference material belongs in topical subfolders.
 - `STATUS.md`
   - Current shipped reality, verified state, current focus, and active constraints.
 - `IMPLEMENTATION_MASTERPLAN.md`
-  - Forward execution roadmap, horizons, release framing, and priority-labeled backlog map.
+  - Delivery history, the archive-pivot direction (finish-for-personal-use → archive), and the priority-labeled backlog map. *(The forward "horizons" / "release framing" / priority tranches are historical pre-pivot framing; the active sequence is the Direction-section waves.)*
 - `GOLDEN_PRINCIPLES.md`
   - Stable repository invariants and decision rules.
 - `ISSUE_EXECUTION_GUIDE.md`
@@ -40,7 +40,7 @@ Stable reference material belongs in topical subfolders.
   - `START_HERE.md` -> `manual/02_home_and_today.md` -> `manual/03_projects_and_cards.md` -> `manual/08_recipes.md`
 - Maintainer or planner:
   - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
-  - current roadmap input: root `taskdeck-12-week-roadmap-v4.md`, reconciled through tracker `#972`
+  - active execution order: the archive-pivot **waves** in the Direction section of `IMPLEMENTATION_MASTERPLAN.md` (Paper UI activation → easy local run → general quality → archive). *Historical* roadmap input: root `taskdeck-12-week-roadmap-v4.md`, tracker `#972` (RFAI complete 2026-05-29, superseded by the archive pivot)
 - Contributor or agent:
   - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `GOLDEN_PRINCIPLES.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `MCP_TOOLING_GUIDE.md` -> `../autodoc/AGENT_INDEX.md` -> `agentic/SKILL_REGISTRY.md`
 - Demo operator:

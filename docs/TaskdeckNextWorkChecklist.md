@@ -1,10 +1,13 @@
 # Taskdeck Next Work Checklist
 
 Last Updated: 2026-04-25
+
+> **⚠️ SUPERSEDED 2026-06-13 — archive pivot.** The active execution order is now the archive-pivot **waves** in the **Direction** section of `docs/IMPLEMENTATION_MASTERPLAN.md` / `docs/STATUS.md` (Paper UI activation → easy local run → general quality → archive). The RFAI roadmap (tracker `#972`, weeks `#973`–`#984`) listed below is **complete (2026-05-29) and superseded** — do not restart it. Only the generic promotion / thesis-alignment gates below remain useful.
+
 Source of truth for issue-level execution is now:
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
-- Active roadmap tracker: `#972`
+- Historical roadmap tracker: `#972` (RFAI complete 2026-05-29, superseded by the archive pivot)
 - Historical wave index: `#107`
 
 This checklist is now a lightweight promotion checklist (not a duplicate issue catalog).
@@ -25,7 +28,9 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Slice identifies outbound data-flow implications when LLM, MCP, integration, agent, telemetry, voice, browser, or IDE channels are involved.
 - [ ] Slice includes provenance/error-policy implications where relevant.
 
-## Active Near-Horizon Roadmap (RFAI Wave)
+## Historical RFAI Wave (complete 2026-05-29 — superseded by the archive pivot)
+
+> Delivered 12-of-12 and retired; retained for continuity only. **Not active work** — see the archive-pivot waves in `IMPLEMENTATION_MASTERPLAN.md`. The checkboxes below are historical.
 
 - [ ] Tracker `#972`: 12-week review-first AI roadmap.
 - [ ] Week 1 foundation: `#973` safety invariants, IA cut, eval seed, recertification.
@@ -41,14 +46,18 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Week 11 ambient channel: `#983`, reusing `#219` if voice is selected.
 - [ ] Week 12 beta gate: `#984` learning loop, provenance drawer, Ollama flag, recertification.
 
-## Current Priority I Completion Tranche
+## Current Priority I Completion Tranche _(historical — superseded by the archive pivot; not active work)_
+
+> _(These issue tranches describe the pre-pivot backlog. The active execution order is the archive-pivot waves in `IMPLEMENTATION_MASTERPLAN.md` — do not pick these up as current work.)_
 
 - [ ] Security/policy convergence: `#33`, `#34`, `#44`
 - [ ] UX reliability tranche: `#35`, `#45`, `#36`, `#37`, `#38`, `#46`
 - [ ] Automation/provider tranche: `#39`, `#40`, `#57`
 - [ ] Starter-packs/debt blockers: `#47` to `#54`
 
-## Future Expansion Waves (Seeded)
+## Future Expansion Waves (Seeded) _(historical — superseded by the archive pivot; not active work)_
+
+> _(Pre-pivot expansion backlog, retained as a record. Distribution/cloud/mobile/analytics expansion is de-scoped; do not pick these up.)_
 
 - [ ] Wave A/B foundation: `#67` to `#76` (`Priority II`)
 - [ ] Wave C analytics/security/compliance: `#77` to `#83`, `#106`, `#110` (`Priority III`)
@@ -58,7 +67,7 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave H outreach CRM deferred expansion: `#262` to `#268` (`Priority IV`)
 - [x] Meta index maintenance: `#107` (`Priority V`, closed historical index)
 
-## MVP Expansion Productization (Wave P Seeded)
+## MVP Expansion Productization (Wave P Seeded) _(historical — superseded by the archive pivot; not active work)_
 
 Detailed reconciliation:
 - `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
@@ -108,6 +117,8 @@ Secondary lower-priority follow-through wave seeded from the audit:
 
 ## Out-of-Code and Configuration Actions Coverage
 
+> _(historical — superseded by the archive pivot; not active work. The cloud / distribution items here — staged rollout `#101`, IaC `#102`, cost guardrails `#104`, cloud topology/autoscaling `#111` — are **de-scoped** (no distribution/cloud). Do not pick these up as a cloud track. Several items here are **delivered, live general-quality/security baselines — NOT parked cloud work** (do not under-read them as de-scoped): SBOM/provenance (`#103`, `reusable-sbom-provenance.yml`), local backup/restore (`#86`, `DatabaseFileExportImportService`), secrets/config baseline (`#110`, `SECRETS_MANAGEMENT_BASELINE.md`), OWASP + rate-limiting (`#80`/`#81`), dependency scanning (`#106`), observability baseline (`#68`), and the perf/concurrency harness (`#70`) — all delivered per `docs/ISSUE_EXECUTION_GUIDE.md`. Only the genuinely-cloud items (`#101`/`#102`/`#104`/`#111`) are de-scoped; evaluate the rest on their own merits, not as part of the retired cloud track. Any genuinely general-quality concerns are folded into the archive-pivot general-quality wave, not this pre-pivot list.)_
+
 - [x] Containerized runtime + reverse proxy + compression: `#69`
 - [ ] Staged rollout strategy: `#101`
 - [ ] Infrastructure as Code baseline: `#102`
@@ -121,6 +132,8 @@ Secondary lower-priority follow-through wave seeded from the audit:
 - [ ] Cloud topology/autoscaling ADR: `#111`
 
 ## WIP Discipline (Execution)
+
+> _(historical — superseded by the archive pivot; not active work. There are no "release activities" under finish-for-personal-use → archive.)_
 
 - [ ] Max 1 major issue in `Now`
 - [ ] Max 1 issue in `Review`

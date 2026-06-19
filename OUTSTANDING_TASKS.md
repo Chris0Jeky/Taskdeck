@@ -9,7 +9,7 @@
 4. **Add new outstanding tasks here** when the maintainer asks you to remember something, or when substantial work is deferred. Keep entries short with a one-line "how" and a link to the GitHub issue/PR that holds the detail.
 5. Keep this file lean and scannable. Detail lives in the linked issues, not here.
 
-Last reviewed: 2026-06-05
+Last reviewed: 2026-06-19
 
 ---
 
@@ -35,24 +35,26 @@ Last reviewed: 2026-06-05
 
 ## C. Strategic / larger tracks (seeded under tracker #1142)
 
-- [ ] **#1123** — Ship & validate **v0.1.0** (the #1 blocker to usefulness): add release smoke test to `release-desktop.yml`, build+smoke each RID on a clean VM, push the `v0.1.0` tag. *Most important strategic item.*
+- [ ] **#1123** — v0.1.0 release: now an **optional archival item** (archive pivot 2026-06-13 — no distribution). The self-contained exe is the personal run path; pushing a `v0.1.0` tag is a maintainer end-of-project decision, not a usefulness blocker. The release smoke step already landed in `release-desktop.yml`. *(Was "the #1 blocker" under ship-first; re-scoped by the pivot.)*
 - [ ] **#1132** — Make the required PR gate enforce security: gitleaks/SAST/dependency scan + CORS fail-closed + single ≥32 JWT floor + global `FallbackPolicy` + bundle-size in the required lane.
 - [x] **#1130** — SQLite local concurrency: enable WAL + `busy_timeout`, fix per-process `Migrate()` race (UI + MCP + CLI share one DB → `SQLITE_BUSY`). *(closed 2026-06-05; ACs 1+3 shipped in PR #1165 / da764b92. AC2 cross-process `Migrate()` serialization → #1164; export/import redesign → #1166.)*
 - [ ] **#1131** — CLI hardening: fresh-machine bootstrap (it crashes without `Connectors:EncryptionKey`) + route CLI mutations through board-access authorization.
 - [x] **#1124** — Core-loop polish: false-green expiry regression test (now asserts a real 409) + #678 dismiss gap (Approved+expired) + #680 provenance-404 console noise. *(closed 2026-06-05; all three fixed in PR #1162 / 77162b2d. Paper-view dismiss affordance → #1161.)*
-- [ ] **#1161** — Paper review dismiss affordance (carries #1124's Paper remainder; maintainer 2026-06-05: take it, design-first — propose the affordance before building).
-- [ ] **#1164** — Serialize cross-process `Database.Migrate()` (advisory/single-owner lock; carries #1130 AC2).
+- [x] **#1161** — Paper review dismiss affordance (carries #1124's Paper remainder; maintainer 2026-06-05: take it, design-first — propose the affordance before building). *(Maintainer check-off 2026-06-19; delivered via PR #1219 — in review/ready, merge held per maintainer.)*
+- [x] **#1164** — Serialize cross-process `Database.Migrate()` (advisory/single-owner lock; carries #1130 AC2). *(Maintainer check-off 2026-06-19; closed on GitHub via PR #1186 / SerializedMigrator.)*
 - [ ] **#1166** — Harden dev-sandbox export/import via the SQLite backup API (carries #1130's export/import follow-up).
 - [ ] **#1138** (rest) — Split the 1300+ line `STATUS.md` into a lean current-reality head + `docs/archive/status-history/`; add a rotation rule; recertify TESTING_GUIDE totals from a green CI run; add a markdown link-checker to nightly.
 - [ ] **#1136** (remainder) — ADR decision **delivered** (ADR-0038, Paper canonical / Legacy frozen; STATUS states the canonical stack) via PR #1207. **Still open:** remove/quarantine the dead paper composables (AC3) — scheduled for the Paper polish wave.
-- [ ] **#1137** — Refocus strategy/roadmap on shipping to first users; freeze new feature/re-skin tracks until v0.1.0 ships.
-- [ ] **#1135 / #1140 / #1141 / #1139** — Code-health guardrails + oversized-view decomposition; workspace hygiene + one-command dev-up; i18n/a11y ADR; deployment docs (docker quickstart secret, desktop run docs).
+- [ ] **#1137** — Refocus strategy/roadmap. **Effectively satisfied by the 2026-06-13 archive pivot** (strategy is now finish-for-personal-use → archive; distribution/GTM/cloud/mobile tracks de-scoped). Pending maintainer check-off / close as not-planned during archive closeout.
+- [ ] **#1135 / #1140 / #1141 / #1139** — Code-health guardrails + oversized-view decomposition; workspace hygiene + one-command dev-up; i18n/a11y ADR; deployment docs (docker quickstart secret, desktop run docs). *(2026-06-19: **#1135 partial** — paper-night straggler tokens (PR #1216) — checked off by maintainer; guardrail/decomposition half + #1140/#1141/#1139 remain open.)*
 
 > Full audit context and the complete gap inventory: **GitHub issue #1142** (master tracker).
 
 ---
 
 ## Changelog
+- 2026-06-19: **Maintainer check-offs confirmed** — **#1161** (Paper File-away dismiss, PR #1219), **#1164** (cross-process Migrate, PR #1186), **#1189** (Redis lock starvation, PR #1213), **#1198** (dead `ProposalGeneratorV1` removed, PR #1214), and **#1135 partial** (paper-night straggler tokens, PR #1216) marked done. Also: PR #1223 (npm group) merged; PR #1224 (nuget) closed (framework-major bumps rejected per ADR-0039 net8.0 pin); PR #1225 opened (StackExchange.Redis major cap). PRs #1219/#1220/#1221 fully reviewed + green + aged but **merges held by maintainer**. Maintainer decision: revisit net8.0 framework-major upgrade later (issue seeded). ADR-0004 stays "Accepted" with the never-implemented note (TenantId never built; isolation is per-UserId/board-access).
+- 2026-06-13: **Archive-pivot wave (Waves 0–2) merged — 17 PRs** (see STATUS.md "Archive-pivot delivery wave"). Direction is now **finish-for-personal-use → archive** (supersedes ship-first); distribution tracks (#1167 code-signing, #544/#546/#550 GTM, #537/#548 cloud, #540 mobile) are de-scoped and will be closed not-planned in archive closeout. **Maintainer check-off pending** for items this wave appears to deliver: **#1140** (dev-up + clean-workspace scripts, PR #1208), **#1139** AC1 (compose-secret quickstart docs, PR #1205), **#1135** partial (paper-night straggler tokens, PR #1216 — guardrail/decomposition half still open), **#1189** (Redis lock starvation, PR #1213), **#1198** (dead `ProposalGeneratorV1` removed, PR #1214 — follow-up #1215 seeded). Not auto-checked per rule 3. **#1161** (Paper "File away" dismiss) built on the #1217 shared-actionability foundation and is in review as PR #1219 (awaiting CI/aging). New issues seeded: #1209, #1215, #1218.
 - 2026-06-05: Maintainer directive — **ship-first**: prioritise the v0.1.0 release-blockers (#1123, #1131, #1132) ahead of #1154 (deferred). Closed #1124 and #1130 as substantially delivered (PRs #1162/#1165); remainders carried by #1161/#1164/#1166. Merge autonomy retained (full adversarial-review + green-CI + aging gate). #1161 to be taken design-first.
 - 2026-05-31 (post-audit): Checked off §A (PRs #1143–#1147 confirmed merged), §B #1126/#1134-first-slice (PRs #1153/#1155 merged). Added §B2 with correctness-sweep findings (cohort stub, Ollama pseudo-streaming, #1134 remaining). Correctness sweep: 31 PRs audited, 0 corruption, 2 issues + 9 nitpicks fixed.
 - 2026-05-31: File created. Seeded from the 2026-05-31 deep audit (tracker #1142). #972 (RFAI tracker) closed; PR #1122 merged; PRs #1143–#1147 opened.

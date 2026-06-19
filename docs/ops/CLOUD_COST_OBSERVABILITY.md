@@ -4,11 +4,13 @@ Last Updated: 2026-04-09
 Issue: `#104` OPS-12 Cloud cost observability and budget-guardrail automation
 ADR: ADR-0026
 
+> **⚠️ Reference-only — parked by the 2026-06-13 archive pivot.** Companion guidance for **ADR-0026** (cloud cost observability), whose hosted / multi-instance premise is de-scoped — Taskdeck is personal-use only (SQLite + single-instance, never hosted). Retained as a historical record, not active ops guidance. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
+
 ---
 
 ## Purpose
 
-Define the cost telemetry dimensions, budget alert thresholds, monthly review workflow, and anomaly triage process for Taskdeck cloud deployments. This framework applies once Taskdeck moves beyond local-first operation into hosted environments (v0.2.0+).
+Define the cost telemetry dimensions, budget alert thresholds, monthly review workflow, and anomaly triage process for Taskdeck cloud deployments. _(Historical: this framework was designed for a hosted future — "once Taskdeck moves beyond local-first operation into hosted environments (v0.2.0+)" — that the **2026-06-13 archive pivot de-scoped**. Taskdeck stays local-first / single-instance / never hosted, so this framework is reference only and does not apply.)_
 
 ---
 
@@ -114,7 +116,7 @@ These are starting points for a small-team deployment. Adjust after the first 2-
 
 ### Alert Owners
 
-**For the current solo-operator deployment, the operator owns all cost dimensions directly.** The table below applies when the team scales to multiple roles:
+**For the current solo-operator deployment, the operator owns all cost dimensions directly.** _(The table below was a de-scoped hypothetical for if the team scaled to multiple roles — multi-role scale-out is not planned under the 2026-06-13 archive pivot.)_
 
 | Cost dimension | Primary owner | Escalation |
 |---|---|---|
@@ -200,7 +202,9 @@ Deploy alongside the existing observability dashboard (see `docs/ops/OBSERVABILI
 5. **Storage growth** — line chart of database file size and S3 total object size over time.
 6. **Logging ingestion volume** — line chart of daily log bytes ingested.
 
-### Implementation Path
+### Implementation Path _(historical — never built)_
+
+_(The phased path below described the pre-pivot hosted plan and was **never built**; the 2026-06-13 archive pivot de-scoped cloud / scale-out. Retained as historical record only.)_
 
 Phase 1 (v0.2.0 launch): AWS Budgets + manual monthly review using AWS Cost Explorer.
 Phase 2 (post-launch): Grafana dashboard pulling from CloudWatch Metrics and application-level metrics via OTLP.

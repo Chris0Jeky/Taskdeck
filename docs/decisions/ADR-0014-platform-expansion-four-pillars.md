@@ -1,6 +1,9 @@
 # ADR-0014: Platform Expansion Strategy — Four Pillars
 
-- **Status**: Proposed (roadmap)
+- **Status**: Proposed — PARKED (de-scoped by the 2026-06-13 archive pivot; see ADR-0038)
+
+> **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
+
 - **Date**: 2026-03-29
 - **Deciders**: Project maintainers
 
@@ -35,7 +38,7 @@ Version roadmap:
 
 - **Positive**: Clear sequencing prevents scope creep; each pillar has an owner tracker; version milestones create natural release boundaries.
 - **Negative**: Four-pillar scope is ambitious; risk of spreading effort too thin.
-- **Neutral**: Strategy docs live in `docs/strategy/`; master tracker at `#531`.
+- **Neutral**: Strategy docs live in `docs/strategy/`; the _(now-parked)_ master tracker was `#531`.
 
 ## References
 
