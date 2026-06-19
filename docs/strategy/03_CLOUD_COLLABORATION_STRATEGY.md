@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-29
 **Scope:** Hosted solution, shared boards, multi-device access, and SaaS evolution path
-**Status:** Strategic planning document — not yet executed
+**Status:** SUPERSEDED / historical (2026-06-13 archive pivot) — cloud / collaboration / multi-tenancy / PostgreSQL permanently de-scoped; retained as a record of parked plans (never executed).
 
 > **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This document predates the maintainer's decision to finish Taskdeck for personal use and then archive it. The distribution / cloud / mobile / GTM tracks it describes are **permanently de-scoped** and are retained here only as a historical record of parked plans. Current scope: finish + activate the Paper UI (canonical per ADR-0038), make local one-command run trivial, general quality, then archive. See `docs/STATUS.md` and the Direction section of `docs/IMPLEMENTATION_MASTERPLAN.md`.
 
@@ -362,6 +362,8 @@ Local users bring their own LLM API keys. Cloud users expect it to "just work."
 ---
 
 ## 9. Collaboration Feature Roadmap
+
+> **⚠️ PARKED (2026-06-13 archive pivot).** Every item below — across **Immediate**, **Near-Term**, and **Medium-Term** — is **de-scoped**. The "Immediate / Near-Term / Medium-Term" labels describe the abandoned pre-pivot plan only and no longer represent active, current, or planned work — do not action.
 
 ### 9.1 Immediate (Hosted Cloud, No New Features)
 
