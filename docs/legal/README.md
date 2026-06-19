@@ -1,4 +1,4 @@
-# Taskdeck Legal Documents (Pre-Launch Drafts)
+# Taskdeck Legal Documents (Parked Hosted-Instance Drafts — NOT IN USE)
 
 > **Status: DRAFT — NOT LEGALLY BINDING**
 > These documents are pre-launch working drafts written by contributors to anchor
@@ -77,11 +77,11 @@ This directory is intentionally narrow:
 - `docs/platform/CONFIGURATION_REFERENCE.md` — which config toggles gate optional
   sub-processors (OpenAI, Gemini, OAuth providers).
 - `docs/strategy/03_CLOUD_COLLABORATION_STRATEGY.md` — hosted-cloud evolution plan
-  that motivates this draft.
+  that originally motivated this draft. _(That strategy doc is itself SUPERSEDED / de-scoped by the 2026-06-13 archive pivot — no hosted-cloud evolution is planned.)_
 
 ## Status
 
-- **Status:** Pre-launch draft.
+- **Status:** **Parked / NOT IN USE** (de-scoped by the 2026-06-13 archive pivot). Retained as a template only — no hosted Taskdeck instance is shipping.
 - **Last updated:** 2026-04-23.
-- **Tracking issue:** `#548` (LEGAL-01).
-- **Legal review:** not yet performed.
+- **Tracking issue:** `#548` (LEGAL-01) — **de-scoped; not active work.**
+- **Legal review:** not performed and **not planned** (no hosted instance to govern).
