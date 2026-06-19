@@ -1,6 +1,6 @@
 # Taskdeck 12-week roadmap (v4): review-first AI without the rewrite
 
-> **Note (2026-06-13):** This roadmap is a historical planning record. Direction has since changed to finish-for-personal-use → archive (see `docs/STATUS.md`); some interfaces named here (e.g. `IProposalGenerator`/`ProposalGeneratorV1`) were removed as dead code.
+> **⚠️ SUPERSEDED / DELIVERED — historical record, do NOT action the week-by-week plan as future work.** This 12-week roadmap (RFAI-01..RFAI-12) was **DELIVERED** 2026-05-29 (tracker `#972`; slices merged across `#986`/`#989`–`#994` and `#1078`/`#1079`/`#1080`) and then **SUPERSEDED** by the 2026-06-13 archive pivot (finish-for-personal-use → archive; see `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md` for what actually shipped). The entire body below — Section 1 "Top 10 highest-leverage investments", the Section 4 week-by-week phased plan, and every "Build…/Adopt…/Ship…/Gate:" instruction — is **historical** and must not be turned into issues or next steps. Most of it shipped; some pieces shipped then were later removed as dead code (e.g. `IProposalGenerator`/`ProposalGeneratorV1`, `#1198`). The PWA share-target / browser-extension / ambient-channel / learning-loop items it describes (RFAI-10/11/12) **shipped live and remain in the codebase** — only their onward distribution/beta/store-publishing is de-scoped, not the delivered code.
 
 **This is v4. It corrects four things v3 still got wrong** (a second-LLM critique pass caught the first two; the rest are polish):
 
@@ -44,6 +44,8 @@ These twelve tests are the security model. Output-guardrails frameworks (NeMo, G
 ---
 
 ## 1. Top 10 highest-leverage investments
+
+_(⚠️ Historical — delivered then superseded; see the banner at the top. Do not action as future work.)_
 
 1. **Build the typed `IntentEnvelopeV1 → ProposalBatchV1` domain pipeline as the product's spine.** This is product architecture, not provider plumbing. Every surface (Capture, Chat, MCP, Integrations, Agents, scheduled triggers, browser/IDE/voice intake) emits an `IntentEnvelope`; every output is a typed `ProposalBatch` that compiles to `AutomationProposal` + `AutomationProposalOperation` rows. Records: `IntentEnvelopeV1`, `IntentSourceRef`, `SourceBlock`, `SourceSpan`, `IntentCandidate`, `EvidenceLink`, `ProposalBatchV1`, `ProposalOperationDraft`, `ProposalRevision`, `ProposalDecisionEvent`. Closes the most strategic gap — different surfaces evolving different intelligence paths — and is the precondition for every other recommendation in this document. No new infra.
 2. **Adopt `Microsoft.Extensions.AI` as the `IChatClient` adapter that sits behind the existing `ILlmProvider`.** This is implementation plumbing for #1, not the architecture itself. It buys a unified surface across Mock/OpenAI/Gemini/Ollama, free OpenTelemetry GenAI instrumentation, free distributed cache, free function-invocation, and forward compatibility. MIT-licensed and .NET 8-supported on current versions. Track latest stable; pin in lockfile after the Week 2 spike confirms .NET 8 runtime compatibility. One week of plumbing.
@@ -246,6 +248,8 @@ The retriever feeds the proposal generator with **`EvidenceLink` records carryin
 ---
 
 ## 4. 12-week phased plan
+
+_(⚠️ Historical — this week-by-week plan was delivered (RFAI-01..RFAI-12) then superseded by the archive pivot; see the banner at the top. The "Build…/Ship…/Gate:" steps below are a record, not a backlog.)_
 
 Each week assumes one engineer ~half-time; double up where staffing allows. Spike-first: every week ships a measurable artifact behind a flag.
 
