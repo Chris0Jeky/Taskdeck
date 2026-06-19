@@ -381,6 +381,8 @@ Required: `page: string`, `reason: string` — `no_data`, `load_failed`, `filter
 
 ## Launch Gate Telemetry Anchors
 
+> **⚠️ DE-SCOPED — 2026-06-13 archive pivot.** The `R1` / `R2` / `R3` beta/alpha **launch gates** are retired (GTM/public-release de-scoped — finish-for-personal-use then archive). The signal groupings below are a **historical record**, not active release criteria; the taxonomy's *naming/event* reference above stays useful, but there is **no release gate to promote to**. Do not action these as gating requirements.
+
 Each release gate has a set of telemetry signals that constitute evidence of product coherence. These are the minimum signals that should be flowing before promoting to a release gate.
 
 ### R1 — Novice-First Beta
