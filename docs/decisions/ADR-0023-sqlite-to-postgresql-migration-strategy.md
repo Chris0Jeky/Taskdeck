@@ -1,6 +1,6 @@
 # ADR-0023: SQLite-to-PostgreSQL Production Migration Strategy
 
-- **Status**: Accepted
+- **Status**: Accepted — PARKED (PostgreSQL target de-scoped; SQLite permanent)
 
 > **Archive-pivot note (2026-06-13):** The cloud / distribution / multi-instance / enterprise premise behind this decision was de-scoped when Taskdeck pivoted to finish-for-personal-use then archive (see ADR-0038 and `docs/STATUS.md`). SQLite + single-instance + local-first are now permanent; this ADR is retained as a historical record and is not active.
 
@@ -23,11 +23,11 @@ The project needs a clear provider choice, a migration path, and a compatibility
 
 ## Decision
 
-**Adopt PostgreSQL as the target production database provider.** SQLite remains the default for local development, self-contained single-user deployments, and CI test runs.
+_(Parked — historical record. This ADR **had adopted** PostgreSQL as the target production database provider; the 2026-06-13 archive pivot de-scoped that target, so **SQLite is now the permanent** persistence provider. SQLite remained the default for local development, self-contained single-user deployments, and CI test runs even before the pivot.)_
 
 The migration strategy is:
 
-1. **Provider target decision now, runtime switch later**: PostgreSQL is the production target, but the current application runtime still hard-wires `UseSqlite()` in `Taskdeck.Infrastructure.DependencyInjection`. Adding runtime provider selection and Npgsql registration is follow-up implementation work, not something this ADR PR ships.
+1. **Provider target decision now, runtime switch later**: PostgreSQL _was_ the production target _(now parked — SQLite is permanent)_, but the application runtime hard-wires `UseSqlite()` in `Taskdeck.Infrastructure.DependencyInjection`. Adding runtime provider selection and Npgsql registration was follow-up implementation work that this ADR PR did not ship — and is **no longer planned** after the archive pivot.
 
 2. **SQLite-backed compatibility baseline first**: `DatabaseProviderCompatibilityTests` establishes the persistence behaviors that PostgreSQL support must preserve. Today those tests run against SQLite only. A future follow-up can add a provider-switching test factory and opt-in PostgreSQL execution once the runtime path exists.
 
