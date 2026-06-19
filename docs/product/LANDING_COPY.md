@@ -78,7 +78,7 @@ We are looking for developers and small-team leads who manage their own boards a
 
 ## What Taskdeck Is NOT
 
-- Not a cloud-hosted SaaS (yet — local-first is the current posture)
+- Not a cloud-hosted SaaS — local-first is the permanent posture; personal-use tool, never hosted.
 - Not a team collaboration platform (single-user with local SignalR for dev)
 - Not an autonomous AI agent (review-first means you stay in control)
 
