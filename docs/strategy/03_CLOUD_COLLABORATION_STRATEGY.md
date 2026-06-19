@@ -363,7 +363,7 @@ Local users bring their own LLM API keys. Cloud users expect it to "just work."
 
 ## 9. Collaboration Feature Roadmap
 
-> **⚠️ PARKED (2026-06-13 archive pivot).** Every item below — across **Immediate**, **Near-Term**, and **Medium-Term** — is **de-scoped**. The "Immediate / Near-Term / Medium-Term" labels describe the abandoned pre-pivot plan only and no longer represent active, current, or planned work — do not action.
+> **⚠️ PARKED (2026-06-13 archive pivot).** The **hosted-cloud / multi-user-server collaboration plan** below — across **Immediate**, **Near-Term**, and **Medium-Term** — is **de-scoped**; the "Immediate / Near-Term / Medium-Term" labels describe the abandoned pre-pivot plan only and no longer represent active or planned work — do not action. **Carve-out:** the underlying single-instance primitives some items lean on **already ship and stay live** — board sharing via board-access grants (`BoardAccessController`, `/workspace/settings/access`) and real-time board updates (`BoardsHub` SignalR) are present and used in the local app (STATUS records board-access + SignalR as live). What is parked is *hosting/operating them as a shared cloud service*, not the shipped board-access/realtime code.
 
 ### 9.1 Immediate (Hosted Cloud, No New Features)
 
