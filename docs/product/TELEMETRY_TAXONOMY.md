@@ -273,7 +273,9 @@ A route-level page loaded successfully.
 
 Required: `page: string` — current route-level values: `home`, `today`, `inbox`, `review`, `board`, `metrics`, `settings`
 
-Reserved/future values (do not emit until the corresponding router surface exists and instrumentation is wired): `agents`, `agent_run_detail`, `knowledge`, `help` (tracked via #341, #77)
+Reserved values (do not emit until instrumentation is wired — telemetry is opt-in/off and not yet fully instrumented):
+- **Surface shipped, instrumentation not yet wired:** `agents`, `agent_run_detail` (the `workspace-agents` / `workspace-agent-run-detail` routes + `AgentsView`/`AgentRunDetailView` ship live, AGT-03 `#338`; also `integrations` via `workspace-integrations`).
+- **Surface not yet built:** `knowledge` (backend-only `#339`, no `KnowledgeView` frontend), `help`. (Tracked via #341, #77.)
 Optional: `load_duration_ms: number`
 
 ### `page.load_failed`
