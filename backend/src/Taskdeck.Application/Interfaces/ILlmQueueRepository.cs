@@ -12,20 +12,35 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns all requests with the given status, newest-first. Used by snapshot/count
-    /// callers (health backlog gauge, ops listing) that need the full set — do NOT add a
-    /// default cap here or those callers silently under-count.
+    /// Returns all requests with the given status, newest-first, unbounded. Callers that need the
+    /// full set rely on this (the health backlog gauge and the ops queue listing count/inspect every
+    /// row), so do NOT add a default cap here. Bounded background work-drains must use the type-aware
+    /// <c>GetOldest*</c> methods below, which bound the read at the database.
     /// </summary>
     Task<IEnumerable<LlmRequest>> GetByStatusAsync(RequestStatus status, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns at most <paramref name="limit"/> requests with the given status, oldest-first
-    /// (FIFO work-drain order), bounding the query at the database. Background workers use this
-    /// to avoid materializing an unbounded backlog before applying their own batch cap; oldest-first
-    /// guarantees the longest-waiting items are drained first rather than starved under backlog.
+    /// Returns at most <paramref name="limit"/> Pending non-capture (automation) requests, oldest-first,
+    /// with the non-capture predicate applied IN the query and bounded at the database. The predicate must
+    /// live in the query, not in a post-fetch filter: untriaged capture requests also sit in the Pending
+    /// queue and, being older, would otherwise fill an oldest-first window and starve automation work.
     /// </summary>
     /// <param name="limit">Maximum rows to return; must be at least 1.</param>
-    Task<IEnumerable<LlmRequest>> GetByStatusAsync(RequestStatus status, int limit, CancellationToken cancellationToken = default);
+    Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns at most <paramref name="limit"/> Processing capture-triage requests, oldest-first, with the
+    /// capture predicate applied in the query and bounded at the database (same anti-starvation reasoning as
+    /// <see cref="GetOldestPendingNonCaptureAsync"/>: non-capture requests also transit Processing).
+    /// </summary>
+    /// <param name="limit">Maximum rows to return; must be at least 1.</param>
+    Task<IEnumerable<LlmRequest>> GetOldestProcessingCaptureAsync(int limit, CancellationToken cancellationToken = default);
+
+    /// <summary>Counts Pending non-capture (automation) requests for backlog telemetry, without materializing rows.</summary>
+    Task<int> CountPendingNonCaptureAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Counts Processing capture-triage requests for backlog telemetry, without materializing rows.</summary>
+    Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default);
     Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default);
     Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default);
