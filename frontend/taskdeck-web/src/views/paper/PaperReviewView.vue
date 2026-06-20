@@ -666,6 +666,9 @@ async function onPreviewDiff() {
   previewDiffProposalId.value = p.id
   previewDiff.value = null
   previewDiffLoading.value = true
+  // Scroll to the loading state immediately so a slow `/diff` doesn't look like a
+  // no-op on a long review surface (the final result re-scrolls when it lands).
+  scrollDiffIntoView()
 
   try {
     const diff = await automationApi.getProposalDiff(p.id)
