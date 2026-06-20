@@ -93,6 +93,11 @@ generates the key first and then passes validation.
   auto-generated in headless Production because an ephemeral one would cause data loss, not just re-login.
 - **At rest, the key file is only `0600`-restricted on Unix; on Windows it inherits default NTFS ACLs**
   (tracked in #1241). For the single-user desktop target this relies on the user's profile security.
+- **The key persists next to the exe (`AppContext.BaseDirectory`), not in the app-data directory where
+  the database lives.** Moving or upgrading the exe to a *different folder* therefore orphans the key
+  while the database (in `%LOCALAPPDATA%/Taskdeck`) is reused — the new exe regenerates a different key and
+  cannot decrypt the reused credentials. Until this is addressed (relocate persisted secrets to the durable
+  app-data location, tracked in #1242), back up `appsettings.local.json` and prefer in-place upgrades.
 - **Staging (and any non-Production environment) auto-generates the key and is never validated**
   (`ValidateProductionSecrets` early-returns for non-Production). So a cloud Staging container does **not**
   behave like Production — it relies on its local `appsettings.local.json` persisting, with the same
