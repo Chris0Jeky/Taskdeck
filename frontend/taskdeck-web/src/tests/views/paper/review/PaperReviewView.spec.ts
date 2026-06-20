@@ -745,16 +745,138 @@ describe('PaperReviewView', () => {
     expect(mocks.infoToast).toHaveBeenCalledWith('Report queued for this suggestion.')
   })
 
-  it('surfaces feedback when preview diff is invoked before visible diff UI exists', async () => {
-    const wrapper = await mountView([makeProposal()])
+  it('loads and renders the proposal diff inline when preview diff is invoked', async () => {
+    mocks.getProposalDiff.mockResolvedValueOnce('--- before\n+++ after\n+Add column "Done"')
+    const wrapper = await mountView([makeProposal({ id: 'diff-001' })])
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
     await flushPromises()
 
-    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
-    expect(mocks.infoToast).toHaveBeenCalledWith(
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-001')
+    const diffPre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+    expect(diffPre.exists()).toBe(true)
+    expect(diffPre.text()).toContain('Add column "Done"')
+    // No stub toast — the diff is wired now.
+    expect(mocks.infoToast).not.toHaveBeenCalledWith(
       'Preview diff is not wired yet; no diff was loaded.',
     )
+
+    wrapper.unmount()
+  })
+
+  it('hides the inline diff when preview diff is invoked again for the same proposal', async () => {
+    mocks.getProposalDiff.mockResolvedValueOnce('--- before\n+++ after\n+Add column "Done"')
+    const wrapper = await mountView([makeProposal({ id: 'diff-002' })])
+
+    // First press: load + render the diff.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
+    expect(mocks.getProposalDiff).toHaveBeenCalledTimes(1)
+
+    // Second press: toggle the diff off (no re-fetch).
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(false)
+    expect(mocks.getProposalDiff).toHaveBeenCalledTimes(1)
+
+    wrapper.unmount()
+  })
+
+  it('renders an empty-diff state when the proposal has no changes to preview', async () => {
+    mocks.getProposalDiff.mockResolvedValueOnce('')
+    const wrapper = await mountView([makeProposal({ id: 'diff-empty' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-empty')
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(false)
+    const empty = wrapper.find('[data-testid="paper-review-diff-empty"]')
+    expect(empty.exists()).toBe(true)
+    expect(empty.text()).toContain('No changes to preview')
+
+    wrapper.unmount()
+  })
+
+  it('surfaces a toast and does not crash when the diff request fails', async () => {
+    mocks.getProposalDiff.mockRejectedValueOnce(new Error('boom'))
+    const wrapper = await mountView([makeProposal({ id: 'diff-err' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-err')
+    expect(mocks.errorToast).toHaveBeenCalledWith('boom')
+    // The inline diff surface is torn back down on error — no stale region.
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(false)
+    // The view is still mounted and interactive.
+    expect(wrapper.find('[data-testid="paper-review-view"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('shows the empty-diff state without fetching for a no-operation proposal', async () => {
+    const wrapper = await mountView([
+      makeProposal({ id: 'diff-noop', diffPreview: null, operations: [] }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    // No diffPreview + no operations → the backend `/diff` would 404, so the view
+    // shows the empty state directly without firing the request.
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-empty"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('shows a revision caveat in the diff preview when a saved revision exists', async () => {
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'diff-rev',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    mocks.getProposalDiff.mockResolvedValueOnce('--- before\n+++ after\n+x')
+    const wrapper = await mountView([makeProposal({ id: 'diff-rev' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
+    // The preview reflects the ORIGINAL proposal, so a pending saved revision must
+    // be flagged (the diff does not reflect the revision that Apply will run).
+    const caveat = wrapper.find('[data-testid="paper-review-diff-revision-caveat"]')
+    expect(caveat.exists()).toBe(true)
+    expect(caveat.text()).toContain('original')
+
+    wrapper.unmount()
+  })
+
+  it('surfaces an error (not an empty diff) when a 404 occurs for an operations-bearing proposal', async () => {
+    // A proposal with operations bypasses the no-op guard and fetches; a 404 here
+    // means the proposal was deleted/dismissed elsewhere, so it must error rather
+    // than silently render an empty diff.
+    mocks.getProposalDiff.mockRejectedValueOnce({
+      response: { data: { errorCode: 'NotFound', message: 'Proposal not found' } },
+    })
+    const wrapper = await mountView([makeProposal({ id: 'diff-gone' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-gone')
+    expect(mocks.errorToast).toHaveBeenCalledWith('Proposal not found')
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(false)
 
     wrapper.unmount()
   })
