@@ -113,7 +113,13 @@ public static class FirstRunBootstrapper
         // ValidateProductionSecrets enforces. See ADR-0041.
         if (ShouldAutoGenerateConnectorKey(builder.Environment.IsProduction(), IsHeadlessEnvironment()))
         {
-            EnsureConnectorEncryptionKey(builder.Configuration, logger);
+            // In non-headless Production (the desktop exe) the key MUST persist across restarts: a failed
+            // write has to be fatal, not silently degraded to an ephemeral in-memory key that the next
+            // launch replaces -- which would make stored connector credentials unrecoverable.
+            EnsureConnectorEncryptionKey(
+                builder.Configuration,
+                logger,
+                requirePersistence: builder.Environment.IsProduction());
         }
 
         // Remaining first-run checks are for the self-hosted packaged
@@ -169,7 +175,9 @@ public static class FirstRunBootstrapper
                 "SECURITY: The Connectors:EncryptionKey is not configured. " +
                 "Generate a base64-encoded 256-bit key with 'openssl rand -base64 32' and set it via the " +
                 "Connectors__EncryptionKey environment variable. The application cannot start without a " +
-                "real encryption key in Production.");
+                $"real encryption key in Production. (If this used to run as a desktop install, an existing " +
+                $"key may already be in {LocalConfigPath} -- reuse that value rather than generating a new " +
+                "one, or stored connector credentials will become unrecoverable.)");
         }
 
         logger.LogInformation("Production secret validation passed.");
@@ -240,7 +248,10 @@ public static class FirstRunBootstrapper
         }
     }
 
-    private static void EnsureConnectorEncryptionKey(IConfiguration configuration, ILogger logger)
+    private static void EnsureConnectorEncryptionKey(
+        IConfiguration configuration,
+        ILogger logger,
+        bool requirePersistence = false)
     {
         var configured = configuration["Connectors:EncryptionKey"] ?? string.Empty;
 
@@ -259,19 +270,36 @@ public static class FirstRunBootstrapper
             }
 
             logger.LogInformation(
-                "First-run: Connector encryption key was not configured. A random key has been " +
-                "generated and saved to {ConfigFile}.", LocalConfigPath);
+                "First-run: Connector encryption key was not configured. A random key has been generated " +
+                "and saved to {ConfigFile}. BACK UP THIS FILE alongside your database -- it is required to " +
+                "decrypt stored connector credentials; losing it makes them unrecoverable.", LocalConfigPath);
         }
         catch (IOException ex)
         {
+            if (requirePersistence)
+            {
+                // A desktop (non-headless Production) install must persist the key. An in-memory key would
+                // be lost on the next launch, which would then generate a different one and silently lose
+                // the ability to decrypt previously-stored connector credentials. Fail loudly instead.
+                throw new InvalidOperationException(
+                    $"First-run: Could not persist the connector encryption key to {LocalConfigPath} " +
+                    $"({ex.Message}). A run-once in-memory key would be lost on restart and make stored " +
+                    "connector credentials unrecoverable. Ensure the application directory is writable, or " +
+                    "set a stable key via the Connectors__EncryptionKey environment variable.", ex);
+            }
+
+            // Non-Production (dev/staging/test): a transient in-memory key is acceptable -- these do not
+            // carry credentials that must survive a restart, and parallel test harnesses can lock the file.
+            configuration["Connectors:EncryptionKey"] = generated;
             logger.LogWarning(
                 "First-run: Could not persist connector encryption key to {ConfigFile} ({Error}). " +
                 "A transient in-memory key has been generated instead.",
                 LocalConfigPath, ex.Message);
+            return;
         }
 
-        // Always set in-memory as a fallback: the file-based reload may not
-        // propagate through all configuration providers (e.g. in test harnesses).
+        // Set in-memory as a fallback: the file-based reload may not propagate through all
+        // configuration providers (e.g. in test harnesses).
         if (string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]))
         {
             configuration["Connectors:EncryptionKey"] = generated;
