@@ -693,18 +693,31 @@ public class LlmQueueToProposalWorkerTests
             return Task.FromResult<IEnumerable<LlmRequest>>(result);
         }
 
-        public Task<IEnumerable<LlmRequest>> GetByStatusAsync(
-            RequestStatus status,
-            int limit,
-            CancellationToken cancellationToken = default)
+        public Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default)
         {
             var result = _allItems
-                .Where(i => i.Status == status)
+                .Where(i => i.Status == RequestStatus.Pending && !CaptureRequestContract.IsCaptureRequestType(i.RequestType))
                 .OrderBy(i => i.CreatedAt)
                 .Take(limit)
                 .ToList();
             return Task.FromResult<IEnumerable<LlmRequest>>(result);
         }
+
+        public Task<IEnumerable<LlmRequest>> GetOldestProcessingCaptureAsync(int limit, CancellationToken cancellationToken = default)
+        {
+            var result = _allItems
+                .Where(i => i.Status == RequestStatus.Processing && CaptureRequestContract.IsCaptureRequestType(i.RequestType))
+                .OrderBy(i => i.CreatedAt)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult<IEnumerable<LlmRequest>>(result);
+        }
+
+        public Task<int> CountPendingNonCaptureAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(_allItems.Count(i => i.Status == RequestStatus.Pending && !CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
+
+        public Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(_allItems.Count(i => i.Status == RequestStatus.Processing && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         {
