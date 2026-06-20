@@ -143,6 +143,32 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IEnumerable<LlmRequest>> GetByStatusAsync(RequestStatus status, int limit, CancellationToken cancellationToken = default)
+    {
+        if (limit < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), limit, "Limit must be at least 1.");
+        }
+
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.LlmRequests
+                .FromSqlInterpolated(
+                    $"SELECT * FROM LlmRequests WHERE Status = {(int)status} ORDER BY CreatedAt ASC LIMIT {limit}")
+                .Include(lr => lr.User)
+                .Include(lr => lr.Board)
+                .ToListAsync(cancellationToken);
+        }
+
+        return await _context.LlmRequests
+            .Include(lr => lr.User)
+            .Include(lr => lr.Board)
+            .Where(lr => lr.Status == status)
+            .OrderBy(lr => lr.CreatedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
     {
         if (_context.Database.IsSqlite())
