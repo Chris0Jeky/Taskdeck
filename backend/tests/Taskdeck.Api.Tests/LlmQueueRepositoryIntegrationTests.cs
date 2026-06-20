@@ -325,6 +325,44 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task GetCapturesByUserAsync_StablePaging_AcrossCreatedAtTieAtPageBoundary()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("cap-tie", "cap-tie@example.com", "hash");
+            db.Users.Add(user);
+
+            var newest = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"k\":\"newest\"}");
+            var tieA = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"k\":\"tieA\"}");
+            var tieB = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"k\":\"tieB\"}");
+            var oldest = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"k\":\"oldest\"}");
+            db.LlmRequests.AddRange(newest, tieA, tieB, oldest);
+            await db.SaveChangesAsync();
+
+            var t = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            db.Entry(newest).Property(nameof(Entity.CreatedAt)).CurrentValue = t.AddSeconds(3);
+            db.Entry(tieA).Property(nameof(Entity.CreatedAt)).CurrentValue = t.AddSeconds(2); // tie
+            db.Entry(tieB).Property(nameof(Entity.CreatedAt)).CurrentValue = t.AddSeconds(2); // tie
+            db.Entry(oldest).Property(nameof(Entity.CreatedAt)).CurrentValue = t.AddSeconds(1);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var page1 = (await repo.GetCapturesByUserAsync(user.Id, 2, 0)).Select(r => r.Id).ToList();
+            var page2 = (await repo.GetCapturesByUserAsync(user.Id, 2, 2)).Select(r => r.Id).ToList();
+
+            // The tie (tieA/tieB at t+2s) straddles the page-1/page-2 boundary. The (CreatedAt desc, Id-as-text)
+            // total order must keep the concatenation globally ordered with no skip or duplicate -- this is the
+            // case where a Guid.CompareTo tie-break would diverge from SQLite's TEXT Id ordering.
+            var tieByIdAsc = new[] { tieA, tieB }
+                .OrderBy(x => x.Id.ToString(), StringComparer.Ordinal)
+                .Select(x => x.Id)
+                .ToList();
+            page1.Concat(page2).Should().Equal(newest.Id, tieByIdAsc[0], tieByIdAsc[1], oldest.Id);
+            page1.Concat(page2).Should().OnlyHaveUniqueItems();
+        });
+    }
+
+    [Fact]
     public async Task GetCapturesByUserAsync_WithInvalidPaging_Throws()
     {
         await WithSqliteRepoAsync(async (_, repo) =>
