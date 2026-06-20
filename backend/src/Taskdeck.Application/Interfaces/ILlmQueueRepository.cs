@@ -12,6 +12,18 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns a single newest-first page of the user's capture requests (request type
+    /// <c>inbox.capture.*</c>), bounded at the database with <c>LIMIT</c>/<c>OFFSET</c>. The capture
+    /// predicate is applied in the query so the page is not diluted by non-capture rows, and a stable
+    /// total order (CreatedAt desc, then Id) guarantees no row is skipped or duplicated across pages.
+    /// Callers that need a user's full request history (GDPR export/delete) must keep using the
+    /// unbounded <see cref="GetByUserAsync"/>; this method is for paged capture listings only.
+    /// </summary>
+    /// <param name="limit">Page size; must be at least 1.</param>
+    /// <param name="offset">Rows to skip; must be non-negative.</param>
+    Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns all requests with the given status, newest-first, unbounded. Callers that need the
     /// full set rely on this (the health backlog gauge and the ops queue listing count/inspect every
     /// row), so do NOT add a default cap here. Bounded background work-drains must use the type-aware
