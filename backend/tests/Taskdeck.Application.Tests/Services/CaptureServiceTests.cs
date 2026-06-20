@@ -35,6 +35,26 @@ public class CaptureServiceTests
         _service = new CaptureService(_unitOfWorkMock.Object, _authorizationServiceMock.Object);
     }
 
+    /// <summary>
+    /// Models the real <see cref="ILlmQueueRepository.GetCapturesByUserAsync"/>: capture-only,
+    /// newest-first (CreatedAt desc, then Id), paged by the requested limit/offset. ListAsync now
+    /// relies on the repository for the capture filter + paging, so the mock must apply both.
+    /// </summary>
+    private void SetupCapturePage(Guid userId, IEnumerable<LlmRequest> requests)
+    {
+        var all = requests.ToList();
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetCapturesByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), default))
+            .Returns((Guid _, int limit, int offset, CancellationToken _) =>
+                Task.FromResult<IEnumerable<LlmRequest>>(
+                    all.Where(x => CaptureRequestContract.IsCaptureRequestType(x.RequestType))
+                       .OrderByDescending(x => x.CreatedAt)
+                       .ThenBy(x => x.Id)
+                       .Skip(offset)
+                       .Take(limit)
+                       .ToList()));
+    }
+
     [Fact]
     public async Task CreateAsync_ShouldPersistCaptureRequestAndReturnDetail()
     {
@@ -125,9 +145,7 @@ public class CaptureServiceTests
         captureCancelled.Cancel();
         var nonCapture = new LlmRequest(userId, "summarize", "queue payload");
 
-        _llmQueueRepositoryMock
-            .Setup(r => r.GetByUserAsync(userId, default))
-            .ReturnsAsync(new[] { capturePending, captureCancelled, nonCapture });
+        SetupCapturePage(userId, new[] { capturePending, captureCancelled, nonCapture });
 
         var result = await _service.ListAsync(
             userId,
@@ -147,9 +165,7 @@ public class CaptureServiceTests
             .Select(i => new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, $"capture payload {i}"))
             .ToList();
 
-        _llmQueueRepositoryMock
-            .Setup(r => r.GetByUserAsync(userId, default))
-            .ReturnsAsync(items);
+        SetupCapturePage(userId, items);
 
         var result = await _service.ListAsync(
             userId,
@@ -178,9 +194,7 @@ public class CaptureServiceTests
         captureRequest.MarkAsProcessing();
         captureRequest.MarkAsCompleted();
 
-        _llmQueueRepositoryMock
-            .Setup(r => r.GetByUserAsync(userId, default))
-            .ReturnsAsync(new[] { captureRequest });
+        SetupCapturePage(userId, new[] { captureRequest });
 
         var result = await _service.ListAsync(userId, new CaptureListFilterDto());
 
@@ -208,9 +222,7 @@ public class CaptureServiceTests
         captureRequest.MarkAsProcessing();
         captureRequest.MarkAsCompleted();
 
-        _llmQueueRepositoryMock
-            .Setup(r => r.GetByUserAsync(userId, default))
-            .ReturnsAsync(new[] { captureRequest });
+        SetupCapturePage(userId, new[] { captureRequest });
 
         var result = await _service.ListAsync(userId, new CaptureListFilterDto());
 
@@ -240,9 +252,7 @@ public class CaptureServiceTests
         captureRequest.MarkAsProcessing();
         captureRequest.MarkAsCompleted();
 
-        _llmQueueRepositoryMock
-            .Setup(r => r.GetByUserAsync(userId, default))
-            .ReturnsAsync(new[] { captureRequest });
+        SetupCapturePage(userId, new[] { captureRequest });
 
         var result = await _service.ListAsync(userId, new CaptureListFilterDto());
 
@@ -287,9 +297,7 @@ public class CaptureServiceTests
                 triageRunId: Guid.NewGuid(),
                 proposalId: proposal.Id)));
 
-        _llmQueueRepositoryMock
-            .Setup(r => r.GetByUserAsync(userId, default))
-            .ReturnsAsync(new[] { captureRequest });
+        SetupCapturePage(userId, new[] { captureRequest });
         _automationProposalRepositoryMock
             .Setup(r => r.GetByIdsAsync(
                 It.Is<IEnumerable<Guid>>(ids => ids.SequenceEqual(new[] { proposal.Id })),
@@ -348,9 +356,7 @@ public class CaptureServiceTests
         firstCapture.MarkAsProcessing();
         firstCapture.MarkAsCompleted();
 
-        _llmQueueRepositoryMock
-            .Setup(r => r.GetByUserAsync(userId, default))
-            .ReturnsAsync(new[] { laterCapture, firstCapture });
+        SetupCapturePage(userId, new[] { laterCapture, firstCapture });
         _automationProposalRepositoryMock
             .Setup(r => r.GetByIdsAsync(
                 It.Is<IEnumerable<Guid>>(ids => ids.SequenceEqual(new[] { firstProposalId })),
