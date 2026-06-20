@@ -51,6 +51,26 @@ public class FirstRunBootstrapperTests
         Assert.Equal(secrets.Count, distinct.Count);
     }
 
+    // ---- ShouldAutoGenerateConnectorKey --------------------------------------
+
+    [Theory]
+    // Non-Production (dev/staging) always generates, regardless of headless.
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    // Production + NOT headless = the desktop exe: generate so the self-contained exe is runnable
+    // without manually supplying Connectors__EncryptionKey (the generated key persists locally).
+    [InlineData(true, false, true)]
+    // Production + headless = CI / cloud container: do NOT generate -- a generated key may be
+    // ephemeral there, so these deployments must supply a stable key.
+    [InlineData(true, true, false)]
+    public void ShouldAutoGenerateConnectorKey_GeneratesExceptInHeadlessProduction(
+        bool isProduction, bool isHeadless, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            FirstRunBootstrapper.ShouldAutoGenerateConnectorKey(isProduction, isHeadless));
+    }
+
     // ---- GetAppDataPath ------------------------------------------------------
 
     [Fact]
