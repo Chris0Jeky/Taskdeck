@@ -15,6 +15,12 @@ WORKDIR /app
 
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ASPNETCORE_URLS=http://+:8080
+# Mark every container built from this image as a headless deployment. This makes the first-run
+# bootstrapper REQUIRE an operator-supplied Connectors__EncryptionKey (it does not auto-generate one),
+# so a container cannot silently create an ephemeral key that is lost on recreate and would make stored
+# connector credentials unrecoverable. Only the self-contained desktop exe (not built from this image)
+# auto-generates and persists the key locally. See ADR-0041.
+ENV TASKDECK_HEADLESS=true
 
 # Install curl for HEALTHCHECK probes. aspnet:8.0 is Debian-based and has no
 # HTTP client by default. util-linux (for setpriv) is already in the base
