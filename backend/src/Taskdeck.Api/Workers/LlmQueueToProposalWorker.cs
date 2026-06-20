@@ -66,11 +66,16 @@ public class LlmQueueToProposalWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var pendingItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct))
+        // Bound each status read at the DB instead of materializing the whole backlog.
+        // The 2x headroom over MaxBatchSize absorbs the in-memory request-type filter below
+        // (a status read mixes capture and non-capture rows), so the fair-batch builder still
+        // has at least MaxBatchSize candidates of the kind it wants in the common case.
+        var fetchLimit = Math.Max(1, _settings.MaxBatchSize) * 2;
+        var pendingItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, fetchLimit, ct))
             .Where(item => !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
             .OrderBy(item => item.CreatedAt)
             .ToList();
-        var triagingCaptureItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Processing, ct))
+        var triagingCaptureItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Processing, fetchLimit, ct))
             .Where(item => CaptureRequestContract.IsCaptureRequestType(item.RequestType))
             .OrderBy(item => item.CreatedAt)
             .ToList();
