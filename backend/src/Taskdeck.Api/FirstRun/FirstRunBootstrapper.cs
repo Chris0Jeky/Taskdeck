@@ -274,8 +274,10 @@ public static class FirstRunBootstrapper
                 "and saved to {ConfigFile}. BACK UP THIS FILE alongside your database -- it is required to " +
                 "decrypt stored connector credentials; losing it makes them unrecoverable.", LocalConfigPath);
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // PersistValue can throw UnauthorizedAccessException (e.g. a read-only install dir such as
+            // Program Files) as well as IOException (locked file, disk full, lock unavailable).
             if (requirePersistence)
             {
                 // A desktop (non-headless Production) install must persist the key. An in-memory key would
