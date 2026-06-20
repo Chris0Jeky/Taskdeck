@@ -110,7 +110,7 @@ public class WorkerResilienceTests
         // Arrange: the worker has nothing to process; we test clean cancellation.
         var mockLlmQueue = new Mock<ILlmQueueRepository>();
         mockLlmQueue
-            .Setup(q => q.GetByStatusAsync(It.IsAny<RequestStatus>(), It.IsAny<CancellationToken>()))
+            .Setup(q => q.GetByStatusAsync(It.IsAny<RequestStatus>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
 
         var mockUnitOfWork = new Mock<IUnitOfWork>();
@@ -155,12 +155,58 @@ public class WorkerResilienceTests
     }
 
     [Fact]
+    public async Task LlmWorker_BoundsStatusReadsAtTwiceMaxBatchSize()
+    {
+        // Arrange: capture the limit the worker passes to the bounded status read so we can
+        // assert it stops materializing the entire backlog (#1195).
+        var capturedLimits = new System.Collections.Concurrent.ConcurrentBag<int>();
+        var mockLlmQueue = new Mock<ILlmQueueRepository>();
+        mockLlmQueue
+            .Setup(q => q.GetByStatusAsync(It.IsAny<RequestStatus>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<RequestStatus, int, CancellationToken>((_, limit, _) => capturedLimits.Add(limit))
+            .ReturnsAsync(Enumerable.Empty<LlmRequest>());
+
+        var mockUnitOfWork = new Mock<IUnitOfWork>();
+        mockUnitOfWork.Setup(u => u.LlmQueue).Returns(mockLlmQueue.Object);
+
+        var scopeFactory = CreateScopeFactoryWithUnitOfWork(mockUnitOfWork.Object);
+        var logger = new InMemoryLogger<LlmQueueToProposalWorker>();
+        const int maxBatchSize = 7;
+        var settings = new WorkerSettings
+        {
+            QueuePollIntervalSeconds = 1,
+            EnableAutoQueueProcessing = true,
+            MaxBatchSize = maxBatchSize,
+            MaxConcurrency = 1,
+            RetryBackoffSeconds = new[] { 0 }
+        };
+        var heartbeat = new WorkerHeartbeatRegistry();
+        var worker = new LlmQueueToProposalWorker(scopeFactory, settings, heartbeat, logger);
+
+        using var cts = new CancellationTokenSource();
+        await worker.StartAsync(cts.Token);
+
+        // Poll until the worker has run at least one batch (bounded by a generous timeout).
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (capturedLimits.IsEmpty && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+        }
+
+        await worker.StopAsync(CancellationToken.None);
+
+        // Assert: every status read was bounded at MaxBatchSize * 2, never unbounded.
+        capturedLimits.Should().NotBeEmpty("the worker should have performed at least one bounded status read");
+        capturedLimits.Should().OnlyContain(limit => limit == maxBatchSize * 2);
+    }
+
+    [Fact]
     public async Task LlmWorker_WhenAutoQueueProcessingDisabled_SkipsProcessingButStillReportsHeartbeat()
     {
         var mockLlmQueue = new Mock<ILlmQueueRepository>();
         var processCallCount = 0;
         mockLlmQueue
-            .Setup(q => q.GetByStatusAsync(It.IsAny<RequestStatus>(), It.IsAny<CancellationToken>()))
+            .Setup(q => q.GetByStatusAsync(It.IsAny<RequestStatus>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Callback(() => processCallCount++)
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
 
