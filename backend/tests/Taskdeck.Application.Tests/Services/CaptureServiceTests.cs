@@ -474,6 +474,39 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_DeduplicatesRows_WhenOffsetPagingRefetchesABoundaryRow()
+    {
+        var userId = Guid.NewGuid();
+        var boardB = Guid.NewGuid();
+        var a = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "a", Guid.NewGuid()); // non-matching board
+        var b = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "b", boardB);
+        var c = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "c", boardB);
+        var d = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "d", boardB);
+
+        // Simulate a concurrent insert between page reads: the offset-3 page re-surfaces `c`
+        // (a boundary row already returned on the offset-0 page).
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetCapturesByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), default))
+            .Returns((Guid _, int limit, int offset, CancellationToken _) =>
+            {
+                IEnumerable<LlmRequest> page = offset switch
+                {
+                    0 => new[] { a, b, c },
+                    3 => new[] { c, d },
+                    _ => Array.Empty<LlmRequest>(),
+                };
+                return Task.FromResult(page);
+            });
+
+        var result = await _service.ListAsync(userId, new CaptureListFilterDto(BoardId: boardB, Limit: 3));
+
+        result.IsSuccess.Should().BeTrue();
+        // `c` is returned twice across pages but must appear once -- the dedup guard drops the re-surfaced row.
+        result.Value.Select(s => s.Id).Should().Equal(b.Id, c.Id, d.Id);
+        result.Value.Select(s => s.Id).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
     public async Task GetByIdAsync_ShouldIncludeProvenance_WhenCapturePayloadContainsLinkedProposal()
     {
         var userId = Guid.NewGuid();
