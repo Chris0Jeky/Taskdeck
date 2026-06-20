@@ -112,6 +112,11 @@ services:
       Jwt__Issuer: $${TASKDECK_JWT_ISSUER}
       Jwt__Audience: $${TASKDECK_JWT_AUDIENCE}
       Jwt__ExpirationMinutes: $${TASKDECK_JWT_EXPIRATION_MINUTES}
+      # The container image is headless (ENV TASKDECK_HEADLESS=true), so the bootstrapper will NOT
+      # auto-generate a connector key -- it must be supplied and kept STABLE across instance replacement
+      # (a changing key makes stored connector credentials unrecoverable). Provision it like the JWT secret
+      # (e.g. from SSM into /opt/taskdeck/.env) before enabling connectors. See ADR-0041.
+      Connectors__EncryptionKey: $${TASKDECK_CONNECTORS_ENCRYPTION_KEY}
       DevelopmentSandbox__Enabled: "false"
     volumes:
       - /var/lib/taskdeck:/app/data
