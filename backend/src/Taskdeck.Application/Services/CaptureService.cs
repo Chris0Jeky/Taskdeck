@@ -102,7 +102,9 @@ public class CaptureService : ICaptureService
         // request. Board/status filters and applied-conversion provenance can only be evaluated after
         // the per-item resolution below, so we keep fetching pages until `limit` matching summaries are
         // collected or the captures are exhausted -- a bound on the first page alone would silently
-        // under-fill filtered queries. The common (unfiltered) case is satisfied by a single page.
+        // under-fill filtered queries. The common (unfiltered) case is satisfied by a single page; a sparse
+        // board/status filter still scans the user's captures page-by-page (same total work as before, no
+        // worse) -- pushing those filters into SQL to cut round-trips is tracked in #1239.
         var summaries = new List<CaptureItemSummaryDto>(limit);
         var offset = 0;
         while (summaries.Count < limit)
