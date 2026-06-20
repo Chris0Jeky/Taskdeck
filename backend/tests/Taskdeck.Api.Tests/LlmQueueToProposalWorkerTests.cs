@@ -693,6 +693,19 @@ public class LlmQueueToProposalWorkerTests
             return Task.FromResult<IEnumerable<LlmRequest>>(result);
         }
 
+        public Task<IEnumerable<LlmRequest>> GetByStatusAsync(
+            RequestStatus status,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            var result = _allItems
+                .Where(i => i.Status == status)
+                .OrderBy(i => i.CreatedAt)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult<IEnumerable<LlmRequest>>(result);
+        }
+
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         {
             var item = _allItems.FirstOrDefault(i => i.Id == id);
