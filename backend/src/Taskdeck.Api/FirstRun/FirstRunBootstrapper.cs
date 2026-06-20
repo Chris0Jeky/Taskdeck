@@ -104,10 +104,14 @@ public static class FirstRunBootstrapper
         // so that no hardcoded secret is required in appsettings.Development.json.
         EnsureJwtSecret(builder.Configuration, logger);
 
-        // Connector key auto-generation is skipped in Production to avoid
-        // ephemeral keys that cause data loss on container restart.
-        // Production must supply a stable key; ValidateProductionSecrets enforces this.
-        if (!builder.Environment.IsProduction())
+        // Auto-generate the connector encryption key unless this is a headless Production deployment
+        // (CI / cloud container). A desktop install persists the generated key to appsettings.local.json
+        // next to the exe, so it is stable across restarts and the self-contained exe is runnable without
+        // manually supplying Connectors__EncryptionKey. Headless Production is excluded: there the key may
+        // not survive a restart, so an auto-generated one would be ephemeral and silently lose the ability
+        // to decrypt stored connector credentials -- those deployments must supply a stable key, which
+        // ValidateProductionSecrets enforces. See ADR-0041.
+        if (ShouldAutoGenerateConnectorKey(builder.Environment.IsProduction(), IsHeadlessEnvironment()))
         {
             EnsureConnectorEncryptionKey(builder.Configuration, logger);
         }
@@ -188,6 +192,16 @@ public static class FirstRunBootstrapper
 
     internal static string GenerateSecret()
         => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+    /// <summary>
+    /// Decides whether to auto-generate the connector encryption key when it is not configured.
+    /// Enabled everywhere EXCEPT a headless Production deployment (CI / cloud container), where a
+    /// generated key may not survive a restart and would lose the ability to decrypt stored connector
+    /// credentials. A non-headless Production deployment (the desktop exe) persists the key locally,
+    /// so generation is safe and makes the self-contained exe runnable without a supplied key.
+    /// </summary>
+    internal static bool ShouldAutoGenerateConnectorKey(bool isProduction, bool isHeadless)
+        => !isProduction || !isHeadless;
 
     private static void EnsureJwtSecret(IConfiguration configuration, ILogger logger)
     {
