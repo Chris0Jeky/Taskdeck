@@ -47,11 +47,20 @@ internal static bool ShouldAutoGenerateConnectorKey(bool isProduction, bool isHe
 ```
 
 - **Desktop exe (Production, NOT headless):** generate a 256-bit key and persist it to
-  `appsettings.local.json` (created `0600` on Unix before the secret is written; reloaded on the next
-  launch via `AddLocalConfigFile`). The exe becomes runnable with no manual configuration.
+  `appsettings.local.json`, reloaded on the next launch via `AddLocalConfigFile`. The exe becomes
+  runnable with no manual configuration. On Unix the file is created `0600` before the secret is written;
+  **on Windows (the primary desktop target) the file is NOT permission-restricted** — at-rest protection
+  relies on the user-profile / disk security. Hardening the Windows ACL is tracked in #1241. If the write
+  fails (e.g. a read-only install directory), startup **fails loudly** (throws) rather than running with
+  an ephemeral in-memory key that would be lost on restart and orphan stored connector credentials.
 - **Headless Production (CI / cloud container):** detected via `CI` / `TF_BUILD` / `GITHUB_ACTIONS` /
   `TASKDECK_HEADLESS`. The key is **not** generated; the deployment must supply a stable key, and
-  `ValidateProductionSecrets` hard-fails (throws) if it is missing — unchanged behavior.
+  `ValidateProductionSecrets` hard-fails (throws) if it is missing — unchanged behavior. Because the
+  CI-marker set does not by itself identify a server/container, **the container image
+  (`deploy/docker/backend.Dockerfile`) sets `TASKDECK_HEADLESS=true`**, so every container — bare
+  `docker run`, compose, or terraform — is classified headless and cannot auto-generate an ephemeral key.
+  A desktop machine with an ambient `CI` variable is likewise treated as headless and will hard-fail
+  (fail-safe, not silent) until a key is supplied or `CI` is unset.
 - **Non-Production (Development/Staging/Test):** generate as before — unchanged behavior.
 
 `RunFirstRunChecks` runs before `ValidateProductionSecrets` in `Program.cs`, so a desktop launch
@@ -77,8 +86,17 @@ generates the key first and then passes validation.
   trivially easy to run).
 - The generated connector key lives in `appsettings.local.json` next to the exe. **Operationally:** that
   file must be backed up alongside the SQLite database — deleting it makes previously-stored connector
-  credentials undecryptable (the encrypted data remains but cannot be read). This is the same trade-off
-  that already applies to the auto-generated JWT secret.
+  credentials undecryptable (the encrypted data remains but cannot be read). The runtime log emitted at
+  generation states this. The JWT secret shares the same persistence/backup model, **but not the headless
+  behavior:** `EnsureJwtSecret` runs unconditionally (it auto-generates even in headless Production, where
+  an ephemeral JWT secret only forces re-login), whereas the connector key is deliberately *not*
+  auto-generated in headless Production because an ephemeral one would cause data loss, not just re-login.
+- **At rest, the key file is only `0600`-restricted on Unix; on Windows it inherits default NTFS ACLs**
+  (tracked in #1241). For the single-user desktop target this relies on the user's profile security.
+- **Staging (and any non-Production environment) auto-generates the key and is never validated**
+  (`ValidateProductionSecrets` early-returns for non-Production). So a cloud Staging container does **not**
+  behave like Production — it relies on its local `appsettings.local.json` persisting, with the same
+  backup caveat. This is unchanged by this ADR but worth stating explicitly.
 - Cloud/CI behavior is unchanged: headless Production still requires a supplied stable key and hard-fails
   without one.
 - A desktop deployment intentionally run headless (operator sets `TASKDECK_HEADLESS`) opts into the
