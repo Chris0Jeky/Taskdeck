@@ -421,6 +421,9 @@ public class WorkerResilienceTests
         public Task<IEnumerable<LlmRequest>> GetByStatusAsync(
             RequestStatus status, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<IEnumerable<LlmRequest>> GetByStatusAsync(
+            RequestStatus status, int limit, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -470,6 +473,17 @@ public class WorkerResilienceTests
             var all = _pending.Concat(_processing).ToList();
             return Task.FromResult<IEnumerable<LlmRequest>>(
                 all.Where(i => i.Status == status).ToList());
+        }
+
+        public Task<IEnumerable<LlmRequest>> GetByStatusAsync(
+            RequestStatus status, int limit, CancellationToken cancellationToken = default)
+        {
+            var all = _pending.Concat(_processing).ToList();
+            return Task.FromResult<IEnumerable<LlmRequest>>(
+                all.Where(i => i.Status == status)
+                   .OrderBy(i => i.CreatedAt)
+                   .Take(limit)
+                   .ToList());
         }
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
