@@ -88,6 +88,57 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task GetByStatusAsync_WithLimit_ReturnsOldestRequestsBounded()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var user = new User("llm-bounded-user", "llm-bounded@example.com", "hash");
+        db.Users.Add(user);
+
+        // Year-1990 timestamps make these the globally-oldest Failed rows in the shared
+        // test database, so the oldest-first bounded read is deterministic regardless of
+        // rows seeded by sibling test classes via the IClassFixture.
+        var baseTime = new DateTimeOffset(1990, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var requests = new List<LlmRequest>();
+        for (var i = 0; i < 5; i++)
+        {
+            var request = new LlmRequest(user.Id, "test.bounded.read", $"{{\"i\":{i}}}");
+            request.MarkAsFailed("seed");
+            db.LlmRequests.Add(request);
+            requests.Add(request);
+        }
+        await db.SaveChangesAsync();
+
+        for (var i = 0; i < requests.Count; i++)
+        {
+            db.Entry(requests[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(i);
+        }
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = (await repo.GetByStatusAsync(RequestStatus.Failed, 3)).ToList();
+
+        // Bound is enforced at the database, not after materializing the full set.
+        result.Should().HaveCount(3);
+        // Oldest-first: the three oldest Failed rows are ours, in ascending CreatedAt order.
+        result.Select(r => r.Id).Should().Equal(requests[0].Id, requests[1].Id, requests[2].Id);
+        // The two newest seeded rows are excluded -- guards against a newest-first (DESC) regression.
+        result.Should().NotContain(r => r.Id == requests[3].Id || r.Id == requests[4].Id);
+    }
+
+    [Fact]
+    public async Task GetByStatusAsync_WithLimitBelowOne_Throws()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        await repo.Invoking(r => r.GetByStatusAsync(RequestStatus.Pending, 0))
+            .Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
     public async Task TryClaimProcessingCaptureAsync_ShouldSucceedOnFirstClaim_FailOnSecond()
     {
         using var scope = _factory.Services.CreateScope();
