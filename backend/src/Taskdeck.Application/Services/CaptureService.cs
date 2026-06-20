@@ -106,6 +106,7 @@ public class CaptureService : ICaptureService
         // board/status filter still scans the user's captures page-by-page (same total work as before, no
         // worse) -- pushing those filters into SQL to cut round-trips is tracked in #1239.
         var summaries = new List<CaptureItemSummaryDto>(limit);
+        var seenIds = new HashSet<Guid>();
         var offset = 0;
         while (summaries.Count < limit)
         {
@@ -119,6 +120,13 @@ public class CaptureService : ICaptureService
             var batch = new List<(LlmRequest Item, CapturePayloadV1 Payload)>(page.Count);
             foreach (var item in page)
             {
+                // Guard against OFFSET paging re-surfacing a boundary row: if a capture is inserted
+                // between page reads, the next OFFSET can return a row already seen on the prior page.
+                if (!seenIds.Add(item.Id))
+                {
+                    continue;
+                }
+
                 if (filter.BoardId.HasValue && item.BoardId.HasValue && item.BoardId != filter.BoardId.Value)
                 {
                     continue;
