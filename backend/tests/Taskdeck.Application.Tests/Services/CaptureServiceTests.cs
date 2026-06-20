@@ -436,6 +436,44 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_PagesUntilEnoughMatches_WhenFilterUnderfillsEarlyPages()
+    {
+        var userId = Guid.NewGuid();
+        var boardA = Guid.NewGuid();
+        var boardB = Guid.NewGuid();
+
+        // Newest-first; only the two oldest match the boardB filter, so the loop must advance through
+        // multiple limit-sized pages to collect them.
+        var captures = new List<LlmRequest>
+        {
+            new(userId, CaptureRequestContract.RequestTypeV1, "newest", boardA),
+            new(userId, CaptureRequestContract.RequestTypeV1, "second", boardA),
+            new(userId, CaptureRequestContract.RequestTypeV1, "third", boardA),
+            new(userId, CaptureRequestContract.RequestTypeV1, "fourth", boardB),
+            new(userId, CaptureRequestContract.RequestTypeV1, "oldest", boardB),
+        };
+
+        var requestedOffsets = new List<int>();
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetCapturesByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), default))
+            .Returns((Guid _, int limit, int offset, CancellationToken _) =>
+            {
+                requestedOffsets.Add(offset);
+                return Task.FromResult<IEnumerable<LlmRequest>>(captures.Skip(offset).Take(limit).ToList());
+            });
+
+        var result = await _service.ListAsync(userId, new CaptureListFilterDto(BoardId: boardB, Limit: 2));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+        result.Value.Select(s => s.BoardId).Should().AllBeEquivalentTo(boardB);
+        // Newest-first across the in-service page boundary; no row skipped or duplicated.
+        result.Value.Select(s => s.Id).Should().Equal(captures[3].Id, captures[4].Id);
+        // Offset advanced by the returned page size each iteration (0 -> 2 -> 4) until enough matches.
+        requestedOffsets.Should().Equal(0, 2, 4);
+    }
+
+    [Fact]
     public async Task GetByIdAsync_ShouldIncludeProvenance_WhenCapturePayloadContainsLinkedProposal()
     {
         var userId = Guid.NewGuid();
