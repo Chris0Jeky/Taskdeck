@@ -52,7 +52,7 @@ jobs:
       image_tag: ${{ steps.resolve-tag.outputs.tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Resolve image tag
         id: resolve-tag
@@ -132,7 +132,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Build container images
         run: |

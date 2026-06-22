@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Validate compose baseline
         run: TASKDECK_JWT_SECRET=ci-placeholder-secret TASKDECK_CONNECTORS_ENCRYPTION_KEY=ci-placeholder-key docker compose -f deploy/docker-compose.yml --profile baseline config > /tmp/taskdeck-compose.resolved.yml
