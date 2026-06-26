@@ -245,4 +245,24 @@ if ($Sqlite3) {
     Write-Host "Post-restore integrity check: ok"
 }
 
+# ---------------------------------------------------------------------------
+# Step 6: Restore the paired connector encryption key (if the backup has one)
+# ---------------------------------------------------------------------------
+# backup.sh writes a sibling <backup>.connector-encryption.key alongside the .db for deployments that keep
+# the key on the data volume. The restored DB's connector credentials are encrypted under THAT key, so it
+# must be restored next to the DB -- otherwise the app runs with a different/missing key and the credentials
+# are undecryptable.
+$PairedKey = ($BackupFile -replace '\.db$', '') + ".connector-encryption.key"
+$LiveKey   = Join-Path $DbDir "connector-encryption.key"
+if (Test-Path $PairedKey -PathType Leaf) {
+    if (Test-Path $LiveKey -PathType Leaf) {
+        $SafetyKey = Join-Path $SafetyDir "connector-encryption-pre-restore-$Timestamp.key"
+        Copy-Item $LiveKey $SafetyKey -Force -ErrorAction SilentlyContinue
+    }
+    Copy-Item $PairedKey $LiveKey -Force
+    Write-Host "Restored connector key: $PairedKey -> $LiveKey"
+} elseif (Test-Path $LiveKey -PathType Leaf) {
+    Write-Warning "The backup has no paired connector key, but one exists at $LiveKey. If the restored database was encrypted under a different key, its connector credentials will be undecryptable. Ensure the correct connector-encryption.key is in place."
+}
+
 Write-Host "Done. Restart the Taskdeck API to pick up the restored database."

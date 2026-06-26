@@ -270,4 +270,27 @@ if command -v sqlite3 &>/dev/null; then
     echo "Post-restore integrity check: ok"
 fi
 
+# ---------------------------------------------------------------------------
+# Step 6: Restore the paired connector encryption key (if the backup has one)
+# ---------------------------------------------------------------------------
+# backup.sh writes a sibling <backup>.connector-encryption.key alongside the .db for deployments that keep
+# the key on the data volume. The restored DB's connector credentials are encrypted under THAT key, so it
+# must be restored next to the DB -- otherwise the app runs with a different/missing key and the credentials
+# are undecryptable.
+PAIRED_KEY="${BACKUP_FILE%.db}.connector-encryption.key"
+LIVE_KEY="${DB_DIR}/connector-encryption.key"
+if [[ -f "$PAIRED_KEY" ]]; then
+    if [[ -f "$LIVE_KEY" ]]; then
+        SAFETY_KEY="${SAFETY_DIR}/connector-encryption-pre-restore-${TIMESTAMP}.key"
+        cp "$LIVE_KEY" "$SAFETY_KEY" 2>/dev/null && chmod 600 "$SAFETY_KEY" 2>/dev/null || true
+    fi
+    cp "$PAIRED_KEY" "$LIVE_KEY"
+    chmod 600 "$LIVE_KEY"
+    echo "Restored connector key: $PAIRED_KEY -> $LIVE_KEY"
+elif [[ -f "$LIVE_KEY" ]]; then
+    echo "WARNING: the backup has no paired connector key, but one exists at $LIVE_KEY." >&2
+    echo "         If the restored database was encrypted under a different key, its connector credentials" >&2
+    echo "         will be undecryptable. Ensure the correct connector-encryption.key is in place." >&2
+fi
+
 echo "Done. Restart the Taskdeck API to pick up the restored database."
