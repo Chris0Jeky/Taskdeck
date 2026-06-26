@@ -261,6 +261,7 @@ if (Test-Path $PairedKey -PathType Leaf) {
     }
     Copy-Item $PairedKey $LiveKey -Force
     Write-Host "Restored connector key: $PairedKey -> $LiveKey"
+    Write-Warning "If this deployment INJECTS the connector key via an environment file or secret store (container/Compose deployments read Connectors__EncryptionKey from the environment, not from this file), update that injected value to match the restored key and RECREATE the service -- a plain restart keeps using the stale key and leaves restored credentials undecryptable."
 } elseif (Test-Path $LiveKey -PathType Leaf) {
     Write-Warning "The backup has no paired connector key, but one exists at $LiveKey. If the restored database was encrypted under a different key, its connector credentials will be undecryptable. Ensure the correct connector-encryption.key is in place."
 }

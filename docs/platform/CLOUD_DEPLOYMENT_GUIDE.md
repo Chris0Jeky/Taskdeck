@@ -254,6 +254,12 @@ Cloud platform volumes are not automatically backed up. Implement a backup strat
 > makes the app generate a *different* key, leaving every stored connector credential
 > undecryptable. `scripts/backup.sh` copies a sibling `connector-encryption.key` automatically;
 > the manual `sqlite3 .backup` steps below do **not**, so copy the key file yourself.
+>
+> **On restore**, the container reads `Connectors__EncryptionKey` from its *environment* (injected at
+> deploy time), not from the key file. So after restoring the paired key, you must also update the
+> injected value (`.env` / secret) to the restored key and **recreate** the service — a plain restart
+> keeps using the stale key. `scripts/restore.sh` / `restore.ps1` restore the key file and print this
+> reminder; on the AWS Terraform path, replacing the instance re-renders `.env` from the restored key file.
 
 1. **Railway**: Use the Railway CLI to open a shell, then run:
    ```bash

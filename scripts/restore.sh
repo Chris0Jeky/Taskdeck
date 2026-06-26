@@ -287,6 +287,10 @@ if [[ -f "$PAIRED_KEY" ]]; then
     cp "$PAIRED_KEY" "$LIVE_KEY"
     chmod 600 "$LIVE_KEY"
     echo "Restored connector key: $PAIRED_KEY -> $LIVE_KEY"
+    echo "NOTE: if this deployment INJECTS the connector key via an environment file or secret store" >&2
+    echo "      (container/Compose deployments read Connectors__EncryptionKey from the environment, not from" >&2
+    echo "      this file), update that injected value to match the restored key and RECREATE the service --" >&2
+    echo "      a plain restart keeps using the stale key and leaves restored credentials undecryptable." >&2
 elif [[ -f "$LIVE_KEY" ]]; then
     echo "WARNING: the backup has no paired connector key, but one exists at $LIVE_KEY." >&2
     echo "         If the restored database was encrypted under a different key, its connector credentials" >&2
