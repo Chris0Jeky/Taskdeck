@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-06-19
+Last Updated: 2026-06-26
 <br>
 Planning Horizon: the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive), then archival — _(historical: this was an open "Next 8 to 12 weeks" release horizon before the 2026-06-13 archive pivot)_
 Companion Active Docs:
@@ -53,6 +53,11 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+Wave-6 backend + run-story delivery (2026-06-26, **3 PRs merged** — `#1236`(`#1195`), `#1238`(`#1193`), `#1240`(`#1131`); full review gate per PR — independent adversarial reviews, all-severity findings fixed, Codex bot threads resolved, fresh green CI + aging):
+- **Backend query bounds (Wave 6):** `#1236`(`#1195`) bounded the `LlmQueueToProposalWorker` status reads with type-aware in-query reads (`GetOldestPendingNonCaptureAsync` / `GetOldestProcessingCaptureAsync` + count methods for true telemetry) after review caught a HIGH starvation regression in the naive generic-limit design; `#1238`(`#1193`) paged `CaptureService.ListAsync` via a capture-only `GetCapturesByUserAsync(limit, offset)` with an OFFSET-boundary dedup guard. Both keep the unbounded `GetByUserAsync` for GDPR delete/export. Seeded `#1237` (remaining unbounded Pending reads) and `#1239` (push capture filters into SQL).
+- **Run-story (Wave 5):** `#1240`(`#1131`) makes the self-contained desktop exe runnable with no manual key — `ShouldAutoGenerateConnectorKey(isProd, isHeadless) => !isProd || !isHeadless` auto-generates + persists the connector key for the desktop (Production, not headless) while headless Production (CI / container / Terraform, via `TASKDECK_HEADLESS=true` in `backend.Dockerfile`) still hard-fails without a supplied stable key. The AWS Terraform `user_data` generates+persists the key on the durable data volume (with an existing-DB upgrade guard), and `backup.sh`/`restore.sh`/`restore.ps1` keep it paired with the database. A deep review loop (1 HIGH + many P2 across 6 Codex rounds + a 2-lens adversarial sweep) hardened the persistence path against silent key loss: reuse a masked persisted key instead of overwriting it, self-heal a corrupt local config, case-insensitive + provider-lenient reads, read-vs-parse error separation, and owner-only ACL on the restored key. **ADR-0041** records the decision.
+- **ADR added:** `ADR-0041` (desktop connector-key auto-generation; headless Production excluded).
 
 Archive-pivot delivery wave (2026-06-13, **17 PRs merged** across Waves 0–2 — **Wave 2 nearly finished** after the **+4 follow-on PRs merged 2026-06-19** (`#1219`/`#1220`/`#1221`/`#1225`; **21 total**), including 2 dependabot bumps; full review gate per PR — 2 independent adversarial reviews, all-severity findings fixed, bot threads resolved, fresh green CI + aging). This wave completed Waves 0–1 of the archive-pivot plan and the bulk of Wave 2 (clear the PR deck → ratify Paper-canonical + cheap foundations → Paper-activation prerequisites + backend quality); the one remaining Wave-2 straggler is the Paper-review de-stubs (see **Net** below):
 - **Decision/foundation:** **ADR-0038** ratifies Paper as the canonical UI with Legacy frozen (`#1207`); **ADR-0039** moves the backend to Central Package Management with a pinned SDK and 8.x dependency alignment (`#1196`, carrying the `#1203` NuGet bumps into `Directory.Packages.props`); **ADR-0040** adds a global UTC DateTime materialization convention for SQLite (`#1201`). `*.migrate.lock` is now gitignored (`#1204`); the docker-compose quickstart documents both required secrets (`#1205`, `#1139` AC1).
