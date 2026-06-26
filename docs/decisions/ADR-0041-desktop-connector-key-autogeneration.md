@@ -106,6 +106,11 @@ generates the key first and then passes validation.
   *differently* — which would orphan connector credentials saved this run. The remediation (unset the empty
   variable or set a real key) is named in the exception. `ResolveConnectorKeyPersistOutcome` is unit-tested
   over the visible / masked-in-Production / masked-in-harness cases.
+- **A corrupt `appsettings.local.json` is preserved, not silently overwritten.** If the file exists but is
+  unparsable (an interrupted write or a hand-edit), it may still hold the only recoverable copy of the
+  connector key. `PersistValue` now copies it to a timestamped `.corrupt-*` sibling before rewriting, so an
+  operator can recover the old key rather than have it replaced by a freshly generated one (which would
+  orphan credentials in the reused database).
 - **Staging (and any non-Production environment) auto-generates the key and is never validated**
   (`ValidateProductionSecrets` early-returns for non-Production). So a cloud Staging container does **not**
   behave like Production — it relies on its local `appsettings.local.json` persisting, with the same
