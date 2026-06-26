@@ -89,7 +89,9 @@ fi
 # data volume so it survives instance replacement together with the database it protects -- one failure
 # domain: if the volume is ever lost, both the SQLite DB and this key are gone together, so no connector
 # credential is ever left orphaned-but-undecryptable. The format matches the app convention
-# (base64-encoded 256-bit, i.e. `openssl rand -base64 32`).
+# (base64-encoded 256-bit, i.e. `openssl rand -base64 32`). BACK UP this file with taskdeck.db --
+# scripts/backup.sh copies it automatically, but a DB-only restore onto a fresh volume regenerates a
+# different key and orphans stored connector credentials (see docs/platform/CLOUD_DEPLOYMENT_GUIDE.md).
 connector_key_file="/var/lib/taskdeck/connector-encryption.key"
 if [ ! -s "$connector_key_file" ]; then
   ( umask 077; openssl rand -base64 32 > "$connector_key_file" )

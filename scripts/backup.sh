@@ -170,6 +170,26 @@ fi
 echo "Backup written: $BACKUP_FILE"
 
 # ---------------------------------------------------------------------------
+# Connector encryption key (container / Terraform deployments)
+# ---------------------------------------------------------------------------
+# Deployments that generate the connector key onto the data volume keep it as a
+# sibling of the database -- e.g. the AWS single-node Terraform module writes
+# /var/lib/taskdeck/connector-encryption.key next to taskdeck.db. That key is
+# REQUIRED to decrypt stored connector credentials, so a DB-only backup would
+# restore credentials that can no longer be read. Copy it alongside the DB
+# backup (paired by timestamp) whenever it is present next to the database.
+# (Desktop installs keep the key in appsettings.local.json instead -- back that
+# up separately; it is not a sibling of the DB so nothing is copied here.)
+DB_DIR="$(dirname "$DB_PATH")"
+CONNECTOR_KEY_FILE="${DB_DIR}/connector-encryption.key"
+if [[ -f "$CONNECTOR_KEY_FILE" ]]; then
+    KEY_BACKUP_FILE="${BACKUP_FILE%.db}.connector-encryption.key"
+    cp "$CONNECTOR_KEY_FILE" "$KEY_BACKUP_FILE"
+    chmod 600 "$KEY_BACKUP_FILE"
+    echo "Connector key backed up: $KEY_BACKUP_FILE"
+fi
+
+# ---------------------------------------------------------------------------
 # Retention: keep only the N most-recent backups; delete older ones
 # ---------------------------------------------------------------------------
 # List backups sorted newest-first (ls -t); delete all but the first $RETAIN entries.
@@ -188,6 +208,8 @@ if [[ "$TOTAL" -gt "$RETAIN" ]]; then
     for (( i = RETAIN; i < TOTAL; i++ )); do
         VICTIM="${ALL_BACKUPS[$i]}"
         rm -f "$VICTIM"
+        # Remove the paired connector-key copy, if any, so retention keeps DB+key pairs together.
+        rm -f "${VICTIM%.db}.connector-encryption.key"
         echo "Removed old backup: $VICTIM"
     done
     echo "Retention: kept $RETAIN of $TOTAL backups, removed $DELETE_COUNT."

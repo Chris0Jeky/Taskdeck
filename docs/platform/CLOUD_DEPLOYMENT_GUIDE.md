@@ -245,6 +245,16 @@ Cloud platform volumes are not automatically backed up. Implement a backup strat
 > incomplete backup. Use the `sqlite3 .backup` command instead, which is safe
 > for online backups regardless of journal mode.
 
+> **Critical — back up the connector encryption key with the database.** The key that
+> decrypts stored connector credentials must be restored *unchanged*. If it is supplied via
+> `Connectors__EncryptionKey` (environment or secret store), keep that value safe. If the
+> deployment generated the key onto the data volume instead — the AWS single-node Terraform
+> module writes `connector-encryption.key` next to `taskdeck.db` — **that file must be backed
+> up and restored alongside the database**. Restoring only `taskdeck.db` onto a fresh volume
+> makes the app generate a *different* key, leaving every stored connector credential
+> undecryptable. `scripts/backup.sh` copies a sibling `connector-encryption.key` automatically;
+> the manual `sqlite3 .backup` steps below do **not**, so copy the key file yourself.
+
 1. **Railway**: Use the Railway CLI to open a shell, then run:
    ```bash
    sqlite3 /app/data/taskdeck.db ".backup /tmp/taskdeck-backup.db"
