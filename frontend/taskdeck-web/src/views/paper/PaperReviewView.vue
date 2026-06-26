@@ -89,6 +89,7 @@ const {
   bulkDismissBusy,
   handleApproveProposal,
   handleRejectProposal,
+  handleDeferProposal,
   handleExecuteProposal,
   handleDismissProposal,
   handleDismissApplied,
@@ -625,11 +626,20 @@ function onRequestEdit() {
 }
 
 function onDefer() {
-  // Defer is a UI-only action until the backend supports a "defer 1h"
-  // endpoint (see backend-gap follow-up). For now we leave the proposal in
-  // place; the toast confirms intent so testing can wire to a stub later.
-  // TODO(#1002): call automationApi.deferProposal once available.
-  toast.info('Defer is not wired yet; the proposal is still in your queue.')
+  const p = activeProposal.value
+  if (!p) return
+  if (revisionBusy.value) {
+    toast.info('Save or cancel the revision before deferring this proposal.')
+    return
+  }
+  // Another action is already in flight (approve/reject/defer/dismiss/bulk).
+  if (busy.value) return
+  // Defer shares Reject's precondition: a live, non-expired PendingReview proposal.
+  if (!isRejectActionable(p)) {
+    toast.info('This proposal can no longer be deferred.')
+    return
+  }
+  void handleDeferProposal(p.id)
 }
 
 function onToggleProvenance() {

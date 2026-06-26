@@ -23,6 +23,15 @@ export const automationApi = {
     return data
   },
 
+  async deferProposal(id: string, durationMinutes?: number): Promise<Proposal> {
+    const body = durationMinutes != null ? { durationMinutes } : undefined
+    const { data } = await http.post<Proposal>(
+      `/automation/proposals/${encodeURIComponent(id)}/defer`,
+      body,
+    )
+    return data
+  },
+
   async executeProposal(id: string, idempotencyKey: string): Promise<Proposal> {
     const { data } = await http.post<Proposal>(
       `/automation/proposals/${encodeURIComponent(id)}/execute`,

@@ -9,9 +9,11 @@ const mocks = vi.hoisted(() => ({
   getProposal: vi.fn(),
   approveProposal: vi.fn(),
   rejectProposal: vi.fn(),
+  deferProposal: vi.fn(),
   executeProposal: vi.fn(),
   getProposalDiff: vi.fn(),
   dismissProposals: vi.fn(),
+  reportBadSuggestion: vi.fn(),
   getProvenance: vi.fn(),
   getConfidence: vi.fn(),
   getSideEffects: vi.fn(),
@@ -34,9 +36,11 @@ vi.mock('../../../../api/automationApi', () => ({
     getProposal: mocks.getProposal,
     approveProposal: mocks.approveProposal,
     rejectProposal: mocks.rejectProposal,
+    deferProposal: mocks.deferProposal,
     executeProposal: mocks.executeProposal,
     getProposalDiff: mocks.getProposalDiff,
     dismissProposals: mocks.dismissProposals,
+    reportBadSuggestion: mocks.reportBadSuggestion,
   },
 }))
 
@@ -631,14 +635,56 @@ describe('PaperReviewView', () => {
     }
   })
 
-  it('surfaces feedback when defer is invoked before backend support exists', async () => {
-    const wrapper = await mountView([makeProposal()])
+  it('snoozes the active proposal when defer is clicked and shows a success toast', async () => {
+    const deferred = makeProposal({
+      id: 'proposal-001',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    })
+    mocks.deferProposal.mockResolvedValueOnce(deferred)
+    const wrapper = await mountView([makeProposal({ id: 'proposal-001' })])
 
     await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
 
-    expect(mocks.infoToast).toHaveBeenCalledWith(
-      'Defer is not wired yet; the proposal is still in your queue.',
+    expect(mocks.deferProposal).toHaveBeenCalledWith('proposal-001')
+    expect(mocks.successToast).toHaveBeenCalledWith(
+      'Snoozed for 1 hour — it will return to your queue.',
     )
+  })
+
+  it('removes a snoozed proposal from the visible queue after defer resolves', async () => {
+    const deferred = makeProposal({
+      id: 'snooze-me',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    })
+    mocks.deferProposal.mockResolvedValueOnce(deferred)
+    const wrapper = await mountView([
+      makeProposal({ id: 'snooze-me', summary: 'Snooze candidate' }),
+      makeProposal({ id: 'keep-me', summary: 'Stays visible' }),
+    ])
+
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain(
+      'Snooze candidate',
+    )
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+
+    const railText = wrapper.find('[data-testid="paper-review-queue-rail"]').text()
+    expect(railText).not.toContain('Snooze candidate')
+    expect(railText).toContain('Stays visible')
+  })
+
+  it('surfaces a toast and keeps the proposal when defer fails', async () => {
+    mocks.deferProposal.mockRejectedValueOnce(new Error('snooze boom'))
+    const wrapper = await mountView([makeProposal({ id: 'defer-err', summary: 'Defer error' })])
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.errorToast).toHaveBeenCalledWith('snooze boom')
+    // The proposal stays in the queue (no optimistic removal on failure).
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Defer error')
   })
 
   it('does not send reject transitions for already approved proposals', async () => {

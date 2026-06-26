@@ -65,6 +65,21 @@ export function useReviewActions(
     }
   }
 
+  async function handleDeferProposal(proposalId: string) {
+    try {
+      proposalActionBusyId.value = proposalId
+      const updated = await automationApi.deferProposal(proposalId)
+      // Map the returned proposal in place so its new deferredUntil/expiresAt are live;
+      // the ~60s review clock then resurfaces it when the snooze window elapses.
+      proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
+      toast.success('Snoozed for 1 hour — it will return to your queue.')
+    } catch (e: unknown) {
+      toast.error(getErrorDisplay(e, 'Failed to snooze proposal').message)
+    } finally {
+      proposalActionBusyId.value = null
+    }
+  }
+
   async function handleExecuteProposal(proposalId: string) {
     if (!confirm('Apply this approved proposal to the board now?')) return
 
@@ -164,6 +179,7 @@ export function useReviewActions(
     selectedDiff,
     handleApproveProposal,
     handleRejectProposal,
+    handleDeferProposal,
     handleExecuteProposal,
     handleToggleDiff,
     handleDismissProposal,

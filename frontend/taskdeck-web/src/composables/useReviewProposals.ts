@@ -148,12 +148,26 @@ export function useReviewProposals() {
     return isProposalStale(proposal, nowMs.value)
   }
 
+  // A proposal is "deferred" (snoozed) only while it is a PendingReview proposal whose
+  // deferredUntil is still in the future. The status gate keeps a decided/terminal proposal
+  // that retained a stale snooze value from ever being hidden. The 60s `nowMs` clock
+  // auto-resurfaces it in-session once the window elapses; the backend filter resurfaces
+  // it cross-session.
+  function isProposalDeferred(proposal: ApiProposal): boolean {
+    return (
+      !!proposal.deferredUntil &&
+      new Date(proposal.deferredUntil).getTime() > nowMs.value &&
+      normalizeProposalStatus(proposal.status) === 'PendingReview'
+    )
+  }
+
   const visibleProposals = computed(() =>
     proposals.value.filter((proposal) => {
       if (!matchesActiveBoardFilter(proposal.boardId)) return false
       const status = normalizeProposalStatus(proposal.status)
       if (status === 'Dismissed') return false
       if (isProposalExpired(proposal)) return true
+      if (isProposalDeferred(proposal)) return false
       if (!showCompleted.value && completedStatuses.has(status)) return false
       return true
     }),
@@ -428,6 +442,7 @@ export function useReviewProposals() {
     isApplyActionable,
     isRejectActionable,
     isProposalDismissable,
+    isProposalDeferred,
     isStaleProposal,
     loadProposals,
     loadBoardOptions,
