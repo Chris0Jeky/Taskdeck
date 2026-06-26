@@ -5,6 +5,19 @@ namespace Taskdeck.Domain.Entities;
 
 public class AutomationProposal : Entity
 {
+    /// <summary>Default snooze window applied when the caller does not supply an override.</summary>
+    public const int DefaultDeferMinutes = 60;
+
+    /// <summary>Upper bound (24h) on a single defer window; the override is clamped to this.</summary>
+    public const int MaxDeferMinutes = 1440;
+
+    /// <summary>
+    /// Grace period added on top of <see cref="DeferredUntil"/> when pushing out
+    /// <see cref="ExpiresAt"/>, so a snoozed proposal can never silently expire while
+    /// it is still snoozed (review-first / no-silent-expiry).
+    /// </summary>
+    public static readonly TimeSpan DeferExpiryGrace = TimeSpan.FromHours(24);
+
     public ProposalSourceType SourceType { get; private set; }
     public string? SourceReferenceId { get; private set; }
     public Guid? BoardId { get; private set; }
@@ -15,6 +28,7 @@ public class AutomationProposal : Entity
     public string? DiffPreview { get; private set; }
     public string? ValidationIssues { get; private set; }
     public DateTime ExpiresAt { get; private set; }
+    public DateTime? DeferredUntil { get; private set; }
     public DateTime? DecidedAt { get; private set; }
     public Guid? DecidedByUserId { get; private set; }
     public DateTime? AppliedAt { get; private set; }
@@ -85,6 +99,8 @@ public class AutomationProposal : Entity
         Status = ProposalStatus.Approved;
         DecidedByUserId = decidedByUserId;
         DecidedAt = DateTime.UtcNow;
+        // A decided proposal must never carry a stale snooze that would hide it from list reads.
+        DeferredUntil = null;
         Touch();
     }
 
@@ -103,6 +119,8 @@ public class AutomationProposal : Entity
         DecidedByUserId = decidedByUserId;
         DecidedAt = DateTime.UtcNow;
         FailureReason = reason;
+        // A decided proposal must never carry a stale snooze that would hide it from list reads.
+        DeferredUntil = null;
         Touch();
     }
 
@@ -113,6 +131,32 @@ public class AutomationProposal : Entity
 
         Status = ProposalStatus.Applied;
         AppliedAt = DateTime.UtcNow;
+        // Terminal proposal: clear any residual snooze so list reads never hide it.
+        DeferredUntil = null;
+        Touch();
+    }
+
+    /// <summary>
+    /// Snoozes a pending proposal for <paramref name="duration"/>. Defer is a timing
+    /// control, not a status change: the proposal stays <see cref="ProposalStatus.PendingReview"/>
+    /// and undecided. <see cref="ExpiresAt"/> is pushed beyond <see cref="DeferredUntil"/>
+    /// (plus <see cref="DeferExpiryGrace"/>) so a snoozed proposal cannot silently expire.
+    /// Re-deferring is intentionally unbounded (each call resets the window).
+    /// </summary>
+    public void Defer(TimeSpan duration)
+    {
+        if (duration <= TimeSpan.Zero || duration > TimeSpan.FromMinutes(MaxDeferMinutes))
+            throw new DomainException(ErrorCodes.ValidationError, $"Defer duration must be between 1 minute and {MaxDeferMinutes} minutes");
+        if (Status != ProposalStatus.PendingReview)
+            throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot defer proposal in status {Status}");
+        if (DateTime.UtcNow > ExpiresAt)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Cannot defer expired proposal");
+
+        var now = DateTime.UtcNow;
+        DeferredUntil = now + duration;
+        var floor = DeferredUntil.Value + DeferExpiryGrace;
+        if (ExpiresAt < floor)
+            ExpiresAt = floor;
         Touch();
     }
 
@@ -134,6 +178,8 @@ public class AutomationProposal : Entity
             throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot expire proposal in status {Status}");
 
         Status = ProposalStatus.Expired;
+        // Terminal proposal: clear any residual snooze so list reads never hide it.
+        DeferredUntil = null;
         Touch();
     }
 
@@ -141,6 +187,11 @@ public class AutomationProposal : Entity
     /// True when the proposal's expiry time has passed, regardless of the current status.
     /// </summary>
     public bool IsExpired => DateTime.UtcNow > ExpiresAt;
+
+    /// <summary>
+    /// True when the proposal is currently snoozed (a future <see cref="DeferredUntil"/> is set).
+    /// </summary>
+    public bool IsDeferred => DeferredUntil.HasValue && DateTime.UtcNow < DeferredUntil.Value;
 
     /// <summary>
     /// True when the proposal is in a state that allows dismissal.
@@ -157,6 +208,8 @@ public class AutomationProposal : Entity
             throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot dismiss proposal in status {Status}");
 
         Status = ProposalStatus.Dismissed;
+        // Terminal proposal: clear any residual snooze so list reads never hide it.
+        DeferredUntil = null;
         Touch();
     }
 
