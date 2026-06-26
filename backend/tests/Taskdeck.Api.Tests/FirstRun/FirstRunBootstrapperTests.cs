@@ -71,31 +71,82 @@ public class FirstRunBootstrapperTests
             FirstRunBootstrapper.ShouldAutoGenerateConnectorKey(isProduction, isHeadless));
     }
 
-    // ---- ResolveConnectorKeyPersistOutcome -----------------------------------
+    // ---- TryReadPersistedConnectorKey (masked-key reuse: never overwrite a persisted key) ----------
 
-    // `expected` is the ConnectorKeyPersistOutcome name (the enum is internal, so a public [Theory] cannot
-    // take it directly -- compare on .ToString()).
-    [Theory]
-    // A visible (non-empty) effective value means the persisted key surfaced -- done, regardless of mode.
-    [InlineData("a-real-persisted-key", true, "Effective")]
-    [InlineData("a-real-persisted-key", false, "Effective")]
-    // A desktop Production install (requirePersistence) whose persisted key is masked by an empty/whitespace
-    // higher-priority value must fail closed -- otherwise the next launch regenerates a different key and
-    // orphans connector credentials saved this run.
-    [InlineData("", true, "FailClosed")]
-    [InlineData("   ", true, "FailClosed")]
-    [InlineData(null, true, "FailClosed")]
-    // A non-Production harness tolerates a process-local in-memory fallback when the file reload did not
-    // propagate through every provider.
-    [InlineData("", false, "InMemoryFallback")]
-    [InlineData("   ", false, "InMemoryFallback")]
-    [InlineData(null, false, "InMemoryFallback")]
-    public void ResolveConnectorKeyPersistOutcome_FailsClosedOnlyWhenMaskedInProduction(
-        string? effectiveValue, bool requirePersistence, string expected)
+    [Fact]
+    public void TryReadPersistedConnectorKey_ReturnsPersistedKey_WhenFileHasOne()
     {
-        Assert.Equal(
-            expected,
-            FirstRunBootstrapper.ResolveConnectorKeyPersistOutcome(effectiveValue, requirePersistence).ToString());
+        var path = Path.Combine(Path.GetTempPath(), $"td-connkey-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\"Connectors\":{\"EncryptionKey\":\"K1-persisted\"},\"Jwt\":{\"SecretKey\":\"j\"}}");
+        try
+        {
+            Assert.True(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+            Assert.Equal("K1-persisted", key);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void TryReadPersistedConnectorKey_ReturnsFalse_WhenFileMissing()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-connkey-missing-{Guid.NewGuid():N}.json");
+        Assert.False(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+        Assert.Null(key);
+    }
+
+    [Theory]
+    [InlineData("not json at all {{{")]                          // unparsable -> not a clean key
+    [InlineData("[]")]                                           // non-object root
+    [InlineData("{\"Connectors\":{\"EncryptionKey\":\"\"}}")]    // empty value
+    [InlineData("{\"Connectors\":{\"EncryptionKey\":\"   \"}}")] // whitespace value
+    [InlineData("{\"Jwt\":{\"SecretKey\":\"j\"}}")]              // key absent
+    public void TryReadPersistedConnectorKey_ReturnsFalse_ForUnusableContent(string content)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-connkey-bad-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, content);
+        try
+        {
+            Assert.False(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+            Assert.True(string.IsNullOrWhiteSpace(key));
+        }
+        finally { File.Delete(path); }
+    }
+
+    // ---- QuarantineCorruptLocalConfigAt (corrupt-config self-heal) ----------
+
+    [Fact]
+    public void QuarantineCorruptLocalConfigAt_PreservesAndRemovesACorruptFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-corrupt-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{ this is : not valid json");
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(path);
+
+            Assert.False(File.Exists(path),
+                "the corrupt original must be removed so the optional config source loads as missing");
+            var preserved = Directory.GetFiles(
+                Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*");
+            Assert.Single(preserved);
+            Assert.Contains("not valid json", File.ReadAllText(preserved[0]));
+            File.Delete(preserved[0]);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void QuarantineCorruptLocalConfigAt_LeavesAValidObjectFileUntouched()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-valid-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\"Connectors\":{\"EncryptionKey\":\"K1\"}}");
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(path);
+            Assert.True(File.Exists(path), "a valid JSON object file must be left in place");
+            Assert.Empty(Directory.GetFiles(
+                Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*"));
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
     }
 
     // ---- GetAppDataPath ------------------------------------------------------

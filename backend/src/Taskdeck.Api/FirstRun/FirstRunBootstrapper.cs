@@ -41,6 +41,13 @@ public static class FirstRunBootstrapper
     /// </remarks>
     public static WebApplicationBuilder AddLocalConfigFile(this WebApplicationBuilder builder)
     {
+        // A present-but-unparsable appsettings.local.json would throw the moment the configuration is built
+        // (JsonConfigurationSource.Optional only suppresses a MISSING file, not a malformed one), crashing
+        // startup before the first-run checks ever run. Quarantine it first: preserve the corrupt file (it
+        // may hold a recoverable key) and remove the original so the optional source loads as "missing" and
+        // the desktop install self-heals instead of failing to launch on every restart.
+        QuarantineCorruptLocalConfig();
+
         var sources = builder.Configuration.Sources;
 
         // Find the first EnvironmentVariablesConfigurationSource so we can
@@ -75,6 +82,46 @@ public static class FirstRunBootstrapper
         }
 
         return builder;
+    }
+
+    /// <summary>
+    /// If the persisted local config file exists but does not parse as a JSON object, preserve it to a
+    /// <c>.corrupt-*</c> sibling (it may hold a recoverable key) and remove the original, so the optional
+    /// config source loads as "missing" instead of throwing at config-build time. This lets a desktop install
+    /// self-heal from a corrupt <c>appsettings.local.json</c> rather than crash on every launch. Best-effort:
+    /// a file that cannot be removed is reported to stderr.
+    /// </summary>
+    internal static void QuarantineCorruptLocalConfig() => QuarantineCorruptLocalConfigAt(LocalConfigPath);
+
+    /// <summary>Path-parameterized core of <see cref="QuarantineCorruptLocalConfig"/> (testable seam).</summary>
+    internal static void QuarantineCorruptLocalConfigAt(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            // JsonConfigurationProvider requires a JSON OBJECT at the root; AsObject() throws otherwise
+            // (and Parse throws on empty/truncated/invalid content), matching what would crash config build.
+            _ = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            return; // Parses as a JSON object -> usable, leave it alone.
+        }
+        catch (Exception ex)
+        {
+            PreserveCorruptConfig(path, ex);
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception delEx)
+            {
+                Console.Error.WriteLine(
+                    $"[FirstRun] WARNING: {path} is corrupt and could not be removed ({delEx.Message}); " +
+                    "startup may fail until it is deleted manually.");
+            }
+        }
     }
 
     /// <summary>
@@ -211,39 +258,35 @@ public static class FirstRunBootstrapper
     internal static bool ShouldAutoGenerateConnectorKey(bool isProduction, bool isHeadless)
         => !isProduction || !isHeadless;
 
-    /// <summary>The outcome of verifying that a freshly persisted connector key is the effective value.</summary>
-    internal enum ConnectorKeyPersistOutcome
-    {
-        /// <summary>The persisted (or already-present) key is the effective value — nothing more to do.</summary>
-        Effective,
-        /// <summary>A desktop install's persisted key is masked by a higher-priority empty value — fail loudly.</summary>
-        FailClosed,
-        /// <summary>A non-Production harness where the file reload did not propagate — patch the value in memory.</summary>
-        InMemoryFallback
-    }
-
     /// <summary>
-    /// After a generated connector key is persisted, decides the outcome from the key's effective
-    /// configuration value. A non-empty effective value means the persisted key is visible (the only
-    /// higher-priority source we could have had was empty/whitespace, since a real one would have
-    /// short-circuited generation). An empty/whitespace value means a higher-priority source — most likely
-    /// an empty <c>Connectors__EncryptionKey</c> environment variable — is masking the file we just wrote:
-    /// a desktop Production install must fail closed (the next launch would regenerate a DIFFERENT key and
-    /// orphan stored connector credentials), whereas a non-Production harness tolerates a process-local
-    /// in-memory value because the file-based reload may not propagate through every provider there.
+    /// Reads the connector encryption key directly from the persisted local config file at
+    /// <paramref name="path"/>, bypassing configuration-source precedence. This lets the bootstrapper
+    /// detect a key that a higher-priority empty/whitespace source (e.g. an empty
+    /// <c>Connectors__EncryptionKey</c> environment variable) is masking, so it can be REUSED rather than
+    /// overwritten by a freshly generated one. Returns <c>true</c> only when the file holds a non-empty key;
+    /// returns <c>false</c> for a missing, unparsable, non-object, or empty value (a corrupt file is handled
+    /// separately by <see cref="QuarantineCorruptLocalConfig"/>).
     /// </summary>
-    internal static ConnectorKeyPersistOutcome ResolveConnectorKeyPersistOutcome(
-        string? effectiveValue,
-        bool requirePersistence)
+    internal static bool TryReadPersistedConnectorKey(string path, out string? key)
     {
-        if (!string.IsNullOrWhiteSpace(effectiveValue))
+        key = null;
+        if (!File.Exists(path))
         {
-            return ConnectorKeyPersistOutcome.Effective;
+            return false;
         }
 
-        return requirePersistence
-            ? ConnectorKeyPersistOutcome.FailClosed
-            : ConnectorKeyPersistOutcome.InMemoryFallback;
+        try
+        {
+            var node = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            key = node?["Connectors"]?.AsObject()?["EncryptionKey"]?.GetValue<string>();
+            return !string.IsNullOrWhiteSpace(key);
+        }
+        catch
+        {
+            // Missing/unparsable/non-object/non-string: treat as "no recoverable key persisted".
+            key = null;
+            return false;
+        }
     }
 
     private static void EnsureJwtSecret(IConfiguration configuration, ILogger logger)
@@ -295,6 +338,24 @@ public static class FirstRunBootstrapper
             return;
         }
 
+        // The effective value is empty. Before generating a new key (which PersistValue would write OVER the
+        // file in place, destroying any key already there), check whether a key is already persisted on disk.
+        // If so, a higher-priority empty/whitespace source -- most likely an empty Connectors__EncryptionKey
+        // environment variable -- is masking it. REUSE the persisted key instead of generating: regenerating
+        // would permanently destroy the only copy of the key the stored connector credentials were encrypted
+        // with. Reuse is stable across restarts (the next launch reads the same persisted key) and keeps the
+        // app working despite the misconfigured empty variable.
+        if (TryReadPersistedConnectorKey(LocalConfigPath, out var persisted))
+        {
+            configuration["Connectors:EncryptionKey"] = persisted;
+            logger.LogWarning(
+                "First-run: A higher-priority configuration source (likely an empty Connectors__EncryptionKey " +
+                "environment variable) is masking the connector key persisted in {ConfigFile}. Reusing the " +
+                "persisted key so stored connector credentials stay decryptable; unset the empty variable to " +
+                "silence this warning.", LocalConfigPath);
+            return;
+        }
+
         var generated = GenerateSecret();
         try
         {
@@ -335,28 +396,25 @@ public static class FirstRunBootstrapper
             return;
         }
 
-        // After persist+reload, the generated key should be the effective configuration value. If it is not
-        // visible, a higher-priority source -- most likely an empty Connectors__EncryptionKey environment
-        // variable from a copied env/service template -- is masking the file we just wrote. A desktop
-        // Production install (requirePersistence) must fail closed: the in-memory fallback below only fixes
-        // THIS process, so the next launch would regenerate a DIFFERENT key and silently orphan connector
-        // credentials saved this run. A non-Production harness instead patches the value in memory, because
-        // the file-based reload legitimately may not propagate through every provider there.
-        switch (ResolveConnectorKeyPersistOutcome(configuration["Connectors:EncryptionKey"], requirePersistence))
+        // The key is now persisted on disk. Make sure it is also the effective in-process value: a reload may
+        // not propagate through every provider (test harnesses), and an empty higher-priority source could
+        // mask the freshly written file. Either way the key IS persisted and recoverable -- the next launch
+        // reads it back (and reuses it via TryReadPersistedConnectorKey if still masked) -- so an in-memory
+        // value here is safe (no data loss), unlike overwriting an existing key would have been.
+        if (string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]))
         {
-            case ConnectorKeyPersistOutcome.Effective:
-                break;
-            case ConnectorKeyPersistOutcome.FailClosed:
-                throw new InvalidOperationException(
-                    $"First-run: A connector encryption key was generated and persisted to {LocalConfigPath}, " +
-                    "but it is not the effective configuration value -- a higher-priority source (most likely " +
-                    "an empty 'Connectors__EncryptionKey' environment variable) is masking it. Each launch " +
-                    "would then generate a different key and make previously-stored connector credentials " +
-                    "unrecoverable. Unset the empty 'Connectors__EncryptionKey' environment variable, or set " +
-                    "it to a real, stable key.");
-            case ConnectorKeyPersistOutcome.InMemoryFallback:
-                configuration["Connectors:EncryptionKey"] = generated;
-                break;
+            configuration["Connectors:EncryptionKey"] = generated;
+            if (requirePersistence)
+            {
+                // In Production the only way the just-persisted key is not the effective value is a
+                // higher-priority empty source masking it. The key is safe on disk and will be reused on the
+                // next launch; surface the misconfiguration so the operator can clear it.
+                logger.LogWarning(
+                    "First-run: The connector key was persisted to {ConfigFile} but a higher-priority " +
+                    "configuration source (likely an empty Connectors__EncryptionKey environment variable) is " +
+                    "masking it. The persisted key will be reused on the next launch; unset the empty variable.",
+                    LocalConfigPath);
+            }
         }
     }
 
