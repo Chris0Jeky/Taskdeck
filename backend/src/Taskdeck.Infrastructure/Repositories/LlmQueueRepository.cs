@@ -143,6 +143,81 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
+    public Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default)
+        => GetOldestByStatusAndCaptureKindAsync(RequestStatus.Pending, capture: false, limit, cancellationToken);
+
+    public Task<IEnumerable<LlmRequest>> GetOldestProcessingCaptureAsync(int limit, CancellationToken cancellationToken = default)
+        => GetOldestByStatusAndCaptureKindAsync(RequestStatus.Processing, capture: true, limit, cancellationToken);
+
+    private async Task<IEnumerable<LlmRequest>> GetOldestByStatusAndCaptureKindAsync(
+        RequestStatus status,
+        bool capture,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (limit < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), limit, "Limit must be at least 1.");
+        }
+
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite's EF provider cannot translate ORDER BY on a DateTimeOffset column, so the order +
+            // LIMIT live in raw SQL. FromSqlInterpolated + Include wraps this in a subquery that does not
+            // guarantee the raw ORDER BY survives to the final result (see GetByUserAsync); the inner LIMIT
+            // still selects the correct oldest-N rows, so re-sort in memory to make oldest-first a contract.
+            var rawQuery = capture
+                ? _context.LlmRequests.FromSqlInterpolated(
+                    $"SELECT * FROM LlmRequests WHERE Status = {(int)status} AND RequestType LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt ASC LIMIT {limit}")
+                : _context.LlmRequests.FromSqlInterpolated(
+                    $"SELECT * FROM LlmRequests WHERE Status = {(int)status} AND RequestType NOT LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt ASC LIMIT {limit}");
+
+            var rows = await rawQuery
+                .Include(lr => lr.User)
+                .Include(lr => lr.Board)
+                .ToListAsync(cancellationToken);
+            return rows.OrderBy(lr => lr.CreatedAt).ToList();
+        }
+
+        // Non-SQLite providers (e.g. the Postgres Testcontainer path) translate the predicate + OrderBy +
+        // Take into a single bounded query with guaranteed ordering.
+        var query = _context.LlmRequests
+            .Include(lr => lr.User)
+            .Include(lr => lr.Board)
+            .Where(lr => lr.Status == status);
+
+        query = capture
+            ? query.Where(lr => EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike))
+            : query.Where(lr => !EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike));
+
+        return await query
+            .OrderBy(lr => lr.CreatedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<int> CountPendingNonCaptureAsync(CancellationToken cancellationToken = default)
+        => CountByStatusAndCaptureKindAsync(RequestStatus.Pending, capture: false, cancellationToken);
+
+    public Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default)
+        => CountByStatusAndCaptureKindAsync(RequestStatus.Processing, capture: true, cancellationToken);
+
+    private async Task<int> CountByStatusAndCaptureKindAsync(
+        RequestStatus status,
+        bool capture,
+        CancellationToken cancellationToken)
+    {
+        var query = _context.LlmRequests
+            .AsNoTracking()
+            .Where(lr => lr.Status == status);
+
+        query = capture
+            ? query.Where(lr => EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike))
+            : query.Where(lr => !EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike));
+
+        return await query.CountAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
     {
         if (_context.Database.IsSqlite())

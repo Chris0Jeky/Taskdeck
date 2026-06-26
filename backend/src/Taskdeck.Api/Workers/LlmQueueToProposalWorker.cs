@@ -66,20 +66,28 @@ public class LlmQueueToProposalWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var pendingItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct))
-            .Where(item => !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+        // Bound each read at the database to the work one tick can consume (BuildFairBatchItems emits at
+        // most MaxBatchSize items total, so it never needs more than MaxBatchSize of either kind). The
+        // capture/non-capture predicate is applied in-query by these methods, so the bound never fills with
+        // rows the worker would discard -- bounding raw status before an in-memory type filter could let
+        // older untriaged capture rows starve non-capture automation work (and vice-versa on Processing).
+        var fetchLimit = Math.Max(1, _settings.MaxBatchSize);
+        var pendingItems = (await unitOfWork.LlmQueue.GetOldestPendingNonCaptureAsync(fetchLimit, ct))
             .OrderBy(item => item.CreatedAt)
             .ToList();
-        var triagingCaptureItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Processing, ct))
-            .Where(item => CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+        var triagingCaptureItems = (await unitOfWork.LlmQueue.GetOldestProcessingCaptureAsync(fetchLimit, ct))
             .OrderBy(item => item.CreatedAt)
             .ToList();
 
+        // Backlog gauges report TRUE depth via count queries; recording the bounded lists' Count would
+        // saturate the gauge at the fetch limit and hide backlog growth -- the exact signal operators need.
+        var pendingBacklog = await unitOfWork.LlmQueue.CountPendingNonCaptureAsync(ct);
+        var captureBacklog = await unitOfWork.LlmQueue.CountProcessingCaptureAsync(ct);
         TaskdeckTelemetry.AutomationQueueBacklog.Record(
-            pendingItems.Count,
+            pendingBacklog,
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, QueueNameLlm));
         TaskdeckTelemetry.AutomationQueueBacklog.Record(
-            triagingCaptureItems.Count,
+            captureBacklog,
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, QueueNameCaptureTriage));
 
         var workBatch = BuildFairBatchItems(triagingCaptureItems, pendingItems, _settings.MaxBatchSize);

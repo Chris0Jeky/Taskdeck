@@ -1,11 +1,17 @@
+using System.Collections.Concurrent;
+using System.Data.Common;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Infrastructure.Repositories;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -85,6 +91,156 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         var result = (await repo.GetPendingAsync(limit: 2)).ToList();
 
         result.Count.Should().BeLessThanOrEqualTo(2);
+    }
+
+    // The bounded work-drain reads target Pending-non-capture and Processing-capture rows -- exactly the
+    // rows the live worker claims. These tests therefore use an isolated, worker-free SQLite context
+    // (no web host) so the background worker cannot mutate the rows mid-assertion.
+
+    [Fact]
+    public async Task GetOldestPendingNonCaptureAsync_ReturnsOldestNonCaptureBounded_ExcludesCapturesAndBoundsAtSql()
+    {
+        var interceptor = new CapturingReaderInterceptor();
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-pending-noncap", "llm-pending-noncap@example.com", "hash");
+            db.Users.Add(user);
+
+            // Capture rows are OLDER than the automation rows. A naive bound on raw Pending status
+            // (oldest-first) would return only these, and a post-fetch non-capture filter would then
+            // yield nothing -- starving automation work. The in-query predicate must exclude them.
+            var captures = new List<LlmRequest>();
+            for (var i = 0; i < 3; i++)
+            {
+                var c = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, $"{{\"c\":{i}}}");
+                db.LlmRequests.Add(c);
+                captures.Add(c);
+            }
+            var automation = new List<LlmRequest>();
+            for (var i = 0; i < 5; i++)
+            {
+                var a = new LlmRequest(user.Id, "automation.command", $"{{\"a\":{i}}}");
+                db.LlmRequests.Add(a);
+                automation.Add(a);
+            }
+            // A non-capture row in another status must not leak into the Pending read.
+            var completed = new LlmRequest(user.Id, "automation.command", "{\"done\":true}");
+            completed.MarkAsProcessing();
+            completed.MarkAsCompleted();
+            db.LlmRequests.Add(completed);
+            await db.SaveChangesAsync();
+
+            var olderCapture = new DateTimeOffset(1990, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            var newerAutomation = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            for (var i = 0; i < captures.Count; i++)
+                db.Entry(captures[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = olderCapture.AddSeconds(i);
+            for (var i = 0; i < automation.Count; i++)
+                db.Entry(automation[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = newerAutomation.AddSeconds(i);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+            interceptor.Clear();
+
+            var result = (await repo.GetOldestPendingNonCaptureAsync(3)).ToList();
+
+            result.Should().HaveCount(3);
+            result.Should().OnlyContain(r => !CaptureRequestContract.IsCaptureRequestType(r.RequestType));
+            // Oldest-first among NON-capture Pending rows; the older captures are excluded in-query
+            // (anti-starvation) and the Completed row is excluded by status.
+            result.Select(r => r.Id).Should().Equal(automation[0].Id, automation[1].Id, automation[2].Id);
+
+            // The bound is enforced at the database (LIMIT), not by materializing then slicing in memory.
+            interceptor.CapturedCommands
+                .Where(sql => sql.Contains("LlmRequests", StringComparison.OrdinalIgnoreCase)
+                              && sql.Contains("SELECT", StringComparison.OrdinalIgnoreCase))
+                .Should().Contain(sql => sql.Contains("LIMIT", StringComparison.OrdinalIgnoreCase),
+                    "the bounded read must push LIMIT into SQL");
+        }, interceptor);
+    }
+
+    [Fact]
+    public async Task GetOldestProcessingCaptureAsync_ReturnsOldestCaptureBounded_ExcludesNonCapture()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-proc-cap", "llm-proc-cap@example.com", "hash");
+            db.Users.Add(user);
+
+            // Non-capture Processing rows are OLDER; the in-query capture predicate must exclude them so
+            // capture-triage is not starved behind claimed/orphaned non-capture Processing rows.
+            var nonCapture = new List<LlmRequest>();
+            for (var i = 0; i < 3; i++)
+            {
+                var r = new LlmRequest(user.Id, "automation.command", $"{{\"n\":{i}}}");
+                r.MarkAsProcessing();
+                db.LlmRequests.Add(r);
+                nonCapture.Add(r);
+            }
+            var captures = new List<LlmRequest>();
+            for (var i = 0; i < 5; i++)
+            {
+                var c = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, $"{{\"c\":{i}}}");
+                c.MarkAsProcessing();
+                db.LlmRequests.Add(c);
+                captures.Add(c);
+            }
+            await db.SaveChangesAsync();
+
+            var older = new DateTimeOffset(1990, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            var newer = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            for (var i = 0; i < nonCapture.Count; i++)
+                db.Entry(nonCapture[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = older.AddSeconds(i);
+            for (var i = 0; i < captures.Count; i++)
+                db.Entry(captures[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = newer.AddSeconds(i);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var result = (await repo.GetOldestProcessingCaptureAsync(3)).ToList();
+
+            result.Should().HaveCount(3);
+            result.Should().OnlyContain(r => CaptureRequestContract.IsCaptureRequestType(r.RequestType));
+            result.Select(r => r.Id).Should().Equal(captures[0].Id, captures[1].Id, captures[2].Id);
+        });
+    }
+
+    [Fact]
+    public async Task GetOldestWorkReads_WithLimitBelowOne_Throw()
+    {
+        await WithSqliteRepoAsync(async (_, repo) =>
+        {
+            await repo.Invoking(r => r.GetOldestPendingNonCaptureAsync(0))
+                .Should().ThrowAsync<ArgumentOutOfRangeException>();
+            await repo.Invoking(r => r.GetOldestProcessingCaptureAsync(-1))
+                .Should().ThrowAsync<ArgumentOutOfRangeException>();
+        });
+    }
+
+    [Fact]
+    public async Task BacklogCounts_CountOnlyMatchingKind_Unbounded()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-counts", "llm-counts@example.com", "hash");
+            db.Users.Add(user);
+
+            for (var i = 0; i < 4; i++)
+                db.LlmRequests.Add(new LlmRequest(user.Id, "automation.command", "{}")); // Pending non-capture
+            for (var i = 0; i < 2; i++)
+                db.LlmRequests.Add(new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}")); // Pending capture
+            for (var i = 0; i < 3; i++)
+            {
+                var c = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}"); // Processing capture
+                c.MarkAsProcessing();
+                db.LlmRequests.Add(c);
+            }
+            var n = new LlmRequest(user.Id, "automation.command", "{}"); // Processing non-capture
+            n.MarkAsProcessing();
+            db.LlmRequests.Add(n);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            (await repo.CountPendingNonCaptureAsync()).Should().Be(4);
+            (await repo.CountProcessingCaptureAsync()).Should().Be(3);
+        });
     }
 
     [Fact]
@@ -504,5 +660,74 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         retrieved.Should().NotBeNull();
         retrieved!.Id.Should().Be(originalId);
         retrieved.UserId.Should().Be(user.Id);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="body"/> against a fresh, isolated SQLite database with NO web host (and thus
+    /// no background worker), so tests that seed worker-claimable rows are deterministic. Each call uses a
+    /// unique temp file and migrates the real schema, then cleans up the db/wal/shm/journal files.
+    /// </summary>
+    private static async Task WithSqliteRepoAsync(
+        Func<TaskdeckDbContext, LlmQueueRepository, Task> body,
+        DbCommandInterceptor? interceptor = null)
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-llmqueue-bound-{Guid.NewGuid():N}.db");
+        try
+        {
+            var builder = new DbContextOptionsBuilder<TaskdeckDbContext>()
+                .UseSqlite($"Data Source={dbPath}");
+            if (interceptor != null)
+            {
+                builder.AddInterceptors(interceptor);
+            }
+
+            await using var db = new TaskdeckDbContext(builder.Options);
+            await db.Database.MigrateAsync();
+            await body(db, new LlmQueueRepository(db));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
+            {
+                var path = dbPath + suffix;
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+
+                try { File.Delete(path); }
+                catch (IOException) { /* best-effort cleanup */ }
+            }
+        }
+    }
+
+    /// <summary>Captures the SQL text of every reader command, so tests can assert LIMIT pushdown.</summary>
+    private sealed class CapturingReaderInterceptor : DbCommandInterceptor
+    {
+        private readonly ConcurrentQueue<string> _commands = new();
+
+        public IReadOnlyCollection<string> CapturedCommands => _commands;
+
+        public void Clear() => _commands.Clear();
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result)
+        {
+            _commands.Enqueue(command.CommandText);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            _commands.Enqueue(command.CommandText);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 }

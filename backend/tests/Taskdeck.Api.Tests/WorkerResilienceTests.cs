@@ -421,6 +421,14 @@ public class WorkerResilienceTests
         public Task<IEnumerable<LlmRequest>> GetByStatusAsync(
             RequestStatus status, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<IEnumerable<LlmRequest>> GetOldestProcessingCaptureAsync(int limit, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<int> CountPendingNonCaptureAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -471,6 +479,32 @@ public class WorkerResilienceTests
             return Task.FromResult<IEnumerable<LlmRequest>>(
                 all.Where(i => i.Status == status).ToList());
         }
+
+        public Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default)
+        {
+            var all = _pending.Concat(_processing);
+            return Task.FromResult<IEnumerable<LlmRequest>>(
+                all.Where(i => i.Status == RequestStatus.Pending && !CaptureRequestContract.IsCaptureRequestType(i.RequestType))
+                   .OrderBy(i => i.CreatedAt)
+                   .Take(limit)
+                   .ToList());
+        }
+
+        public Task<IEnumerable<LlmRequest>> GetOldestProcessingCaptureAsync(int limit, CancellationToken cancellationToken = default)
+        {
+            var all = _pending.Concat(_processing);
+            return Task.FromResult<IEnumerable<LlmRequest>>(
+                all.Where(i => i.Status == RequestStatus.Processing && CaptureRequestContract.IsCaptureRequestType(i.RequestType))
+                   .OrderBy(i => i.CreatedAt)
+                   .Take(limit)
+                   .ToList());
+        }
+
+        public Task<int> CountPendingNonCaptureAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(_pending.Concat(_processing).Count(i => i.Status == RequestStatus.Pending && !CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
+
+        public Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(_pending.Concat(_processing).Count(i => i.Status == RequestStatus.Processing && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.Concat(_processing).FirstOrDefault(i => i.Id == id));
