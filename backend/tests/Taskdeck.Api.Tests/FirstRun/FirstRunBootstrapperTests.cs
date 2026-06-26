@@ -222,6 +222,19 @@ public class FirstRunBootstrapperTests
         Assert.Contains("!OperatingSystem.IsWindows()", source);
     }
 
+    [Fact]
+    public void PersistValue_PreservesCorruptConfigBeforeOverwriting_StructuralCheck()
+    {
+        // A corrupt appsettings.local.json may hold the only copy of a previously-generated key (the
+        // connector key in particular). Before the file is rewritten it must be backed up to a
+        // timestamped .corrupt-* sibling for operator recovery -- not silently discarded.
+        var source = File.ReadAllText(
+            FindSourceFile("FirstRunBootstrapper.cs"));
+
+        Assert.Contains("PreserveCorruptConfig", source);
+        Assert.Contains(".corrupt-", source);
+    }
+
     private static string FindSourceFile(string fileName)
     {
         // Walk up from the test output directory to find the repo source.

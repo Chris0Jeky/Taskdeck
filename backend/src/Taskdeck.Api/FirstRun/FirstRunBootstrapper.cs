@@ -448,6 +448,30 @@ public static class FirstRunBootstrapper
         }
     }
 
+    /// <summary>
+    /// Backs up an unparsable config file to a timestamped <c>.corrupt-*</c> sibling before it is rewritten,
+    /// so a previously-generated secret it may still hold (the connector key in particular) is recoverable
+    /// by an operator instead of being silently overwritten. Best-effort: failure to copy is logged, not fatal.
+    /// </summary>
+    private static void PreserveCorruptConfig(string path, Exception parseError)
+    {
+        var backupPath = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
+        try
+        {
+            File.Copy(path, backupPath, overwrite: false);
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}). A copy was " +
+                $"preserved at {backupPath} for recovery -- it may hold a previously-generated key -- and the " +
+                "file will be rewritten.");
+        }
+        catch (Exception copyEx)
+        {
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}) and could NOT be " +
+                $"backed up ({copyEx.Message}); it will be overwritten.");
+        }
+    }
+
     private static void PersistValue(string section, string key, string value)
     {
         var path = LocalConfigPath;
@@ -503,11 +527,12 @@ public static class FirstRunBootstrapper
                 }
                 catch (Exception ex)
                 {
-                    // Logger is not available at this pre-DI stage; warn to stderr and start fresh
-                    // rather than silently discarding the corrupt file.
-                    Console.Error.WriteLine(
-                        $"[FirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
-                        $"Details: {ex.Message}");
+                    // The file is unparsable (e.g. an interrupted write or a hand-edit). It may still hold
+                    // the ONLY copy of a previously-generated secret -- losing the connector key in
+                    // particular orphans stored connector credentials -- so preserve it for operator recovery
+                    // before starting fresh, rather than silently overwriting it. Logger is not available at
+                    // this pre-DI stage, so warn to stderr.
+                    PreserveCorruptConfig(path, ex);
                     root = new JsonObject();
                 }
             }
