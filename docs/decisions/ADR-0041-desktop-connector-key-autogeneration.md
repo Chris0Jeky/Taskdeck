@@ -104,6 +104,15 @@ generates the key first and then passes validation.
   backup caveat. This is unchanged by this ADR but worth stating explicitly.
 - Cloud/CI behavior is unchanged: headless Production still requires a supplied stable key and hard-fails
   without one.
+- **The bundled AWS single-node Terraform module supplies that stable key itself.** `user_data.sh.tftpl`
+  generates the connector key once (`openssl rand -base64 32`) and persists it to
+  `/var/lib/taskdeck/connector-encryption.key` on the durable EBS data volume — the same volume that holds
+  the SQLite database — then injects it into the container via `.env`. The key therefore survives instance
+  replacement (with `user_data_replace_on_change`) alongside the credentials it protects: one failure
+  domain, so the volume can never be retained with an undecryptable database, nor the key orphaned from it.
+  Unlike the JWT secret (sourced from SSM/KMS for central rotation), the connector key's natural lifecycle
+  is tied to the data volume, so co-locating it there is both simpler and avoids the empty-value crash that
+  an unprovisioned `Connectors__EncryptionKey` would otherwise cause once the image is headless.
 - A desktop deployment intentionally run headless (operator sets `TASKDECK_HEADLESS`) opts into the
   supply-your-own-key contract — an explicit, documented trade-off.
 - `ShouldAutoGenerateConnectorKey` is covered by a unit test over all four `(isProduction, isHeadless)`
