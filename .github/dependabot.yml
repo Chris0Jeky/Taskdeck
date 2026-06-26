@@ -104,6 +104,19 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # @types/node must track the pinned Node RUNTIME major, not float ahead of
+      # it. The frontend pins Node to the 24.x line (package.json engines
+      # ">=24.13.1 <25", .nvmrc 24.13.1, every CI job on node-version 24.13.1).
+      # @types/node's major tracks the Node major it describes, so on Node 24 the
+      # correct types line is 24.x. Without this cap dependabot drifted it to 25.x
+      # (one major ahead) and then proposed 26.0.0 (two ahead, PR #1230), widening
+      # the gap between the typed and the executed Node API surface. This is the
+      # frontend analog of the runtime-coupled NuGet caps (ADR-0034/ADR-0039):
+      # block the major, let 24.x minor/patch flow. Remove only when the Node
+      # runtime pin is deliberately moved to a new major (engines + .nvmrc + CI).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "deps(npm)"
 

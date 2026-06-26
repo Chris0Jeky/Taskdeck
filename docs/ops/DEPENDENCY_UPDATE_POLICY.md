@@ -1,6 +1,6 @@
 # Dependency Update Policy
 
-Last Updated: 2026-06-13
+Last Updated: 2026-06-26
 Owner: Repository maintainers
 Linked issue: `#148` (OPS-18)
 
@@ -136,6 +136,7 @@ coordinated migration), not incidentally.
 | `Microsoft.AspNetCore.SignalR.Client`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Http.Polly`, `Microsoft.Extensions.Logging.Abstractions` | major bumps blocked (stay on 8.x) | These had drifted to 10.0.8 while the backend targets `net8.0`. CPM aligned them to the 8.0.x family (#1127, ADR-0039); without major caps the next weekly Dependabot run re-proposes 9.x/10.x and reverts the alignment. | The backend is migrated off `net8.0` as one coordinated migration. |
 | `FluentAssertions` | major bumps blocked (stay on 7.x) | FluentAssertions 8.x+ requires a paid commercial license (Xceed); 7.x is the last free line. Maintainer decision on #1088. | The project purchases the Xceed license, or migrates to a free assertion library. |
 | `StackExchange.Redis`, `Microsoft.AspNetCore.SignalR.StackExchangeRedis` | major bumps blocked | Both direct Redis packages back the SignalR backplane (ADR-0025) and the optional Redis cache service (`RedisCacheService`), both config-gated and **dormant** in the single-instance default (`Cache:Provider=InMemory`, empty `SignalR:Redis` connection string). Under the archive pivot a major bump carries breaking-change risk on never-exercised runtime paths with no benefit (PR #1224 closed for proposing `StackExchange.Redis` 3.0.0); the backplane package is capped alongside the client so its own major can't reopen the same churn (#1225). | Redis is ever deliberately activated (multi-instance scale-out or Redis cache), as a coordinated change. |
+| `@types/node` (npm, frontend) | major bumps blocked (stay on 24.x) | `@types/node` must track the pinned Node **runtime** major, not float ahead of it. The frontend pins Node to the 24.x line (`engines: ">=24.13.1 <25"`, `.nvmrc` `24.13.1`, every CI job on `node-version: 24.13.1`); `@types/node`'s major tracks the Node major it describes, so on Node 24 the correct types line is `24.x`. Without the cap dependabot drifted it to 25.x (one major ahead) and then proposed 26.0.0 (two ahead, PR #1230 — closed in favour of this cap), widening the gap between the typed and the executed Node API surface. This is the frontend analog of the runtime-coupled NuGet caps below/above (ADR-0034). Minor/patch within 24.x still flow. | The Node runtime pin is deliberately moved to a new major — update `engines`, `.nvmrc`, and the CI `node-version` together, then realign `@types/node` to match. |
 
 ## Central Package Management (backend NuGet)
 

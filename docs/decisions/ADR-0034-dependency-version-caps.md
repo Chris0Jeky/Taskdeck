@@ -67,10 +67,27 @@ is discoverable and removed deliberately rather than incidentally.
 - Caps are intentionally narrow (named packages, major-only) to avoid masking other
   legitimate updates.
 
+## Amendments
+
+- **2026-06-26 — extended to npm (`@types/node` ↔ Node runtime pin).** The same
+  cap mechanism now applies to the frontend npm ecosystem, not only backend NuGet.
+  `@types/node` is capped to **major-only `ignore`** so it tracks the pinned Node
+  **runtime** major (24.x: `engines ">=24.13.1 <25"`, `.nvmrc 24.13.1`, every CI job
+  on `node-version 24.13.1`) instead of floating ahead of it. `@types/node`'s major
+  tracks the Node major it describes, so on Node 24 the correct types line is 24.x;
+  dependabot had drifted it to 25.x and then proposed 26.0.0 (PR #1230 — closed in
+  favour of this cap), widening the gap between the typed and the executed Node API
+  surface. The decision and removal condition (only when the Node runtime pin moves
+  to a new major — `engines` + `.nvmrc` + CI `node-version` together) are recorded in
+  the `DEPENDENCY_UPDATE_POLICY.md` cap table alongside the NuGet caps. This is the
+  same pattern (narrow, major-only, declarative) applied to a runtime-coupled
+  **dev-time** type package; the rationale mirrors the runtime-pin caps of ADR-0039.
+
 ## References
 
 - `.github/dependabot.yml` (the `ignore` rules)
 - `docs/ops/DEPENDENCY_UPDATE_POLICY.md` (Pinned / version-capped dependencies table)
-- PRs: #1102, #1106 (EF pins), #1112 (EF ignore rule), #1088 (FluentAssertions 7.x), #1118 (FluentAssertions ignore rule); #1117 (closed v8 bump)
+- PRs: #1102, #1106 (EF pins), #1112 (EF ignore rule), #1088 (FluentAssertions 7.x), #1118 (FluentAssertions ignore rule); #1117 (closed v8 bump); #1230 (closed `@types/node` 26 bump superseded by the npm cap)
 - Prior EF pin rationale: #760/#767
+- Runtime-pin caps and CPM/SDK pin rationale: ADR-0039
 - `docs/agentic/FAILURE_LEDGER.md` (2026-05-29 entries)
