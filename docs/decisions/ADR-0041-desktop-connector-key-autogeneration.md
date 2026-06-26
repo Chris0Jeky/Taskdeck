@@ -98,19 +98,24 @@ generates the key first and then passes validation.
   while the database (in `%LOCALAPPDATA%/Taskdeck`) is reused — the new exe regenerates a different key and
   cannot decrypt the reused credentials. Until this is addressed (relocate persisted secrets to the durable
   app-data location, tracked in #1242), back up `appsettings.local.json` and prefer in-place upgrades.
-- **An empty higher-priority `Connectors__EncryptionKey` fails closed — it does not silently churn keys.**
-  Because `appsettings.local.json` loads *before* environment variables (so env vars win), an env var set to
-  an empty/whitespace value (e.g. a copied service/env template) would mask the persisted key. The desktop
-  generate path verifies the persisted key is the effective value after reload and, when it is not, **throws**
-  in Production rather than running on a process-local in-memory key that the next launch would regenerate
-  *differently* — which would orphan connector credentials saved this run. The remediation (unset the empty
-  variable or set a real key) is named in the exception. `ResolveConnectorKeyPersistOutcome` is unit-tested
-  over the visible / masked-in-Production / masked-in-harness cases.
-- **A corrupt `appsettings.local.json` is preserved, not silently overwritten.** If the file exists but is
-  unparsable (an interrupted write or a hand-edit), it may still hold the only recoverable copy of the
-  connector key. `PersistValue` now copies it to a timestamped `.corrupt-*` sibling before rewriting, so an
-  operator can recover the old key rather than have it replaced by a freshly generated one (which would
-  orphan credentials in the reused database).
+- **An empty higher-priority `Connectors__EncryptionKey` reuses the persisted key — it never overwrites or
+  churns it.** Because `appsettings.local.json` loads *before* environment variables (so env vars win), an
+  env var set to an empty/whitespace value (e.g. a copied service/env template) would mask the persisted key.
+  Critically, the generate path must not regenerate in that case: `PersistValue` overwrites the file in
+  place, so a new key would *destroy* the masked one before any after-the-fact check could fire. Instead,
+  before generating, the bootstrapper reads the key directly from the file
+  (`TryReadPersistedConnectorKey`, bypassing source precedence) and, when one exists, **reuses it** for this
+  process — so the original key (and the credentials it protects) is never destroyed and the app keeps
+  working across restarts despite the misconfigured variable. A warning names the remediation (unset the
+  empty variable). `TryReadPersistedConnectorKey` is unit-tested over present/missing/corrupt/empty content.
+- **A corrupt `appsettings.local.json` self-heals; the corrupt file is preserved, not silently discarded.**
+  If the file exists but is unparsable (an interrupted write or a hand-edit) it may still hold the only
+  recoverable copy of the connector key — *and* a malformed optional JSON source throws at config-build time,
+  which would crash startup on every launch. `AddLocalConfigFile` therefore quarantines it first
+  (`QuarantineCorruptLocalConfig`): it copies the file to a timestamped `.corrupt-*` sibling for operator
+  recovery, then removes the original so the optional source loads as "missing" and the app starts fresh
+  (regenerating a key) rather than failing to launch. The same preservation also guards an in-process
+  overwrite in `PersistValue`.
 - **Staging (and any non-Production environment) auto-generates the key and is never validated**
   (`ValidateProductionSecrets` early-returns for non-Production). So a cloud Staging container does **not**
   behave like Production — it relies on its local `appsettings.local.json` persisting, with the same
