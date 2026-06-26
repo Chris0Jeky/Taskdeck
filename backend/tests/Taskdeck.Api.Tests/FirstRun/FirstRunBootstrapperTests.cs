@@ -149,6 +149,37 @@ public class FirstRunBootstrapperTests
         finally { if (File.Exists(path)) File.Delete(path); }
     }
 
+    [Fact]
+    public void QuarantineCorruptLocalConfigAt_LeavesACommentedTrailingCommaFileUntouched()
+    {
+        // The JSON configuration provider accepts comments and trailing commas, so a hand-edited but
+        // loadable file must NOT be quarantined (doing so would delete a recoverable connector key).
+        var path = Path.Combine(Path.GetTempPath(), $"td-lenient-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\n  // hand-edited\n  \"Connectors\": { \"EncryptionKey\": \"K1\", },\n}");
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(path);
+            Assert.True(File.Exists(path),
+                "a comment / trailing-comma file the config provider accepts must be left in place");
+            Assert.Empty(Directory.GetFiles(
+                Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*"));
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void TryReadPersistedConnectorKey_ReadsKey_FromCommentedTrailingCommaFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-lenient-key-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\n  // hand-edited\n  \"Connectors\": { \"EncryptionKey\": \"K1-lenient\", },\n}");
+        try
+        {
+            Assert.True(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+            Assert.Equal("K1-lenient", key);
+        }
+        finally { File.Delete(path); }
+    }
+
     // ---- GetAppDataPath ------------------------------------------------------
 
     [Fact]

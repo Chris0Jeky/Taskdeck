@@ -26,6 +26,15 @@ public static class FirstRunBootstrapper
             "CHANGE_ME_GENERATE_WITH_openssl_rand_base64_48"
         };
 
+    // Match the leniency of the JSON configuration provider (JsonConfigurationFileParser allows comments
+    // and trailing commas) so a hand-edited but provider-loadable appsettings.local.json is read the same
+    // way here -- and is NOT wrongly treated as corrupt (which would quarantine it) or as missing a key.
+    private static readonly System.Text.Json.JsonDocumentOptions LocalConfigJsonOptions = new()
+    {
+        CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+        AllowTrailingCommas = true
+    };
+
     /// <summary>
     /// Registers <c>appsettings.local.json</c> as an optional configuration
     /// source so that previously generated secrets are picked up.
@@ -105,7 +114,8 @@ public static class FirstRunBootstrapper
         {
             // JsonConfigurationProvider requires a JSON OBJECT at the root; AsObject() throws otherwise
             // (and Parse throws on empty/truncated/invalid content), matching what would crash config build.
-            _ = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            // Use the provider's leniency (comments / trailing commas) so a loadable file is not quarantined.
+            _ = JsonNode.Parse(File.ReadAllText(path), nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject();
             return; // Parses as a JSON object -> usable, leave it alone.
         }
         catch (Exception ex)
@@ -277,7 +287,7 @@ public static class FirstRunBootstrapper
 
         try
         {
-            var node = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            var node = JsonNode.Parse(File.ReadAllText(path), nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject();
             key = node?["Connectors"]?.AsObject()?["EncryptionKey"]?.GetValue<string>();
             return !string.IsNullOrWhiteSpace(key);
         }
