@@ -93,7 +93,17 @@ fi
 # scripts/backup.sh copies it automatically, but a DB-only restore onto a fresh volume regenerates a
 # different key and orphans stored connector credentials (see docs/platform/CLOUD_DEPLOYMENT_GUIDE.md).
 connector_key_file="/var/lib/taskdeck/connector-encryption.key"
+connector_db_file="/var/lib/taskdeck/taskdeck.db"
 if [ ! -s "$connector_key_file" ]; then
+  if [ -s "$connector_db_file" ]; then
+    # An existing database is present but no connector key sits on the volume. This is an UPGRADE from a
+    # deployment that supplied the key another way (e.g. a manual TASKDECK_CONNECTORS_ENCRYPTION_KEY in
+    # /opt/taskdeck/.env before this module generated one). Generating a fresh key here would orphan the
+    # connector credentials already encrypted under the old key. Refuse and require the operator to migrate
+    # the existing key onto the volume.
+    echo "A Taskdeck database exists at $connector_db_file but no connector key at $connector_key_file. Generating a new key would make existing connector credentials unrecoverable. Place the deployment's existing connector encryption key at $connector_key_file (chmod 600) and re-apply, or remove the database to start fresh." >&2
+    exit 1
+  fi
   ( umask 077; openssl rand -base64 32 > "$connector_key_file" )
 fi
 chmod 600 "$connector_key_file"
