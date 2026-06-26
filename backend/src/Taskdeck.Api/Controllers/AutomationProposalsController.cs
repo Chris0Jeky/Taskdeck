@@ -209,6 +209,33 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Snoozes a pending automation proposal so it temporarily leaves the review queue.
+    /// Defer is a write action (it mutates the proposal's timing), so it requires write access.
+    /// A missing/empty body applies the default window; an explicit DurationMinutes is clamped
+    /// to [1, 1440]. No Idempotency-Key header: re-deferring is intentionally idempotent in effect.
+    /// </summary>
+    [HttpPost("{id}/defer")]
+    public async Task<IActionResult> DeferProposal(
+        Guid id,
+        [FromBody] DeferProposalRequestDto? request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: true, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var minutes = Math.Clamp(
+            request?.DurationMinutes ?? AutomationProposal.DefaultDeferMinutes,
+            1,
+            AutomationProposal.MaxDeferMinutes);
+        var result = await _proposalService.DeferProposalAsync(id, TimeSpan.FromMinutes(minutes), cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Executes an approved automation proposal through the automation executor.
     /// </summary>
     [HttpPost("{id}/execute")]
