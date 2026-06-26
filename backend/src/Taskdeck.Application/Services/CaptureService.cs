@@ -98,22 +98,35 @@ public class CaptureService : ICaptureService
 
         var limit = Math.Min(filter.Limit == 0 ? DefaultListLimit : filter.Limit, MaxListLimit);
 
-        var items = await _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken);
-        var captureItems = items
-            .Where(item => CaptureRequestContract.IsCaptureRequestType(item.RequestType))
-            .OrderByDescending(item => item.CreatedAt)
-            .ToList();
-
+        // Page the user's captures from the database (newest-first) instead of materializing every
+        // request. Board/status filters and applied-conversion provenance can only be evaluated after
+        // the per-item resolution below, so we keep fetching pages until `limit` matching summaries are
+        // collected or the captures are exhausted -- a bound on the first page alone would silently
+        // under-fill filtered queries. The common (unfiltered) case is satisfied by a single page; a sparse
+        // board/status filter still scans the user's captures page-by-page (same total work as before, no
+        // worse) -- pushing those filters into SQL to cut round-trips is tracked in #1239.
         var summaries = new List<CaptureItemSummaryDto>(limit);
-        for (var startIndex = 0; startIndex < captureItems.Count && summaries.Count < limit;)
+        var seenIds = new HashSet<Guid>();
+        var offset = 0;
+        while (summaries.Count < limit)
         {
-            var remaining = limit - summaries.Count;
-            var batchSize = Math.Max(remaining, 1);
-            var batch = new List<(LlmRequest Item, CapturePayloadV1 Payload)>(batchSize);
-
-            while (startIndex < captureItems.Count && batch.Count < batchSize)
+            var page = (await _unitOfWork.LlmQueue.GetCapturesByUserAsync(userId, limit, offset, cancellationToken)).ToList();
+            if (page.Count == 0)
             {
-                var item = captureItems[startIndex++];
+                break;
+            }
+            offset += page.Count;
+
+            var batch = new List<(LlmRequest Item, CapturePayloadV1 Payload)>(page.Count);
+            foreach (var item in page)
+            {
+                // Guard against OFFSET paging re-surfacing a boundary row: if a capture is inserted
+                // between page reads, the next OFFSET can return a row already seen on the prior page.
+                if (!seenIds.Add(item.Id))
+                {
+                    continue;
+                }
+
                 if (filter.BoardId.HasValue && item.BoardId.HasValue && item.BoardId != filter.BoardId.Value)
                 {
                     continue;
@@ -122,39 +135,43 @@ public class CaptureService : ICaptureService
                 batch.Add((item, ParsePayload(item)));
             }
 
-            if (batch.Count == 0)
+            if (batch.Count > 0)
             {
-                continue;
+                var appliedProposalLookup = await LoadAppliedProposalLookupAsync(batch, cancellationToken);
+                foreach (var candidate in batch)
+                {
+                    var item = candidate.Item;
+                    var (effectivePayload, effectiveBoardId, _) = await ResolveAppliedConversionProvenanceAsync(
+                        item,
+                        candidate.Payload,
+                        persistChanges: false,
+                        cancellationToken,
+                        GetAppliedProposal(appliedProposalLookup, candidate.Payload),
+                        allowFallbackLookup: false);
+
+                    if (filter.BoardId.HasValue && effectiveBoardId != filter.BoardId.Value)
+                    {
+                        continue;
+                    }
+
+                    var summary = MapToSummaryDto(item, effectivePayload, effectiveBoardId);
+                    if (filter.Status.HasValue && summary.Status != filter.Status.Value)
+                    {
+                        continue;
+                    }
+
+                    summaries.Add(summary);
+                    if (summaries.Count >= limit)
+                    {
+                        break;
+                    }
+                }
             }
 
-            var appliedProposalLookup = await LoadAppliedProposalLookupAsync(batch, cancellationToken);
-            foreach (var candidate in batch)
+            // The repository returned a short page -- the captures are exhausted.
+            if (page.Count < limit)
             {
-                var item = candidate.Item;
-                var (effectivePayload, effectiveBoardId, _) = await ResolveAppliedConversionProvenanceAsync(
-                    item,
-                    candidate.Payload,
-                    persistChanges: false,
-                    cancellationToken,
-                    GetAppliedProposal(appliedProposalLookup, candidate.Payload),
-                    allowFallbackLookup: false);
-
-                if (filter.BoardId.HasValue && effectiveBoardId != filter.BoardId.Value)
-                {
-                    continue;
-                }
-
-                var summary = MapToSummaryDto(item, effectivePayload, effectiveBoardId);
-                if (filter.Status.HasValue && summary.Status != filter.Status.Value)
-                {
-                    continue;
-                }
-
-                summaries.Add(summary);
-                if (summaries.Count >= limit)
-                {
-                    break;
-                }
+                break;
             }
         }
 

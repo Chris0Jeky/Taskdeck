@@ -124,6 +124,49 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default)
+    {
+        if (limit < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), limit, "Limit must be at least 1.");
+        }
+
+        if (offset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset), offset, "Offset cannot be negative.");
+        }
+
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate ORDER BY on a DateTimeOffset column from LINQ, so the ordering +
+            // LIMIT/OFFSET live in raw SQL. The (CreatedAt desc, Id) total order keeps paging stable so no
+            // row is skipped or duplicated across pages. The re-sort defensively re-establishes that order
+            // in case EF reshapes the query; the tie-break uses Id.ToString() with an ordinal comparison so
+            // it matches SQLite's TEXT comparison of the stored Guid exactly (the raw SQL's `ORDER BY Id`),
+            // rather than Guid.CompareTo, which orders by a different key. No Include: the only caller
+            // (CaptureService.ListAsync) reads the scalar BoardId, never the Board navigation.
+            var rows = await _context.LlmRequests
+                .FromSqlInterpolated(
+                    $"SELECT * FROM LlmRequests WHERE UserId = {userId} AND RequestType LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt DESC, Id LIMIT {limit} OFFSET {offset}")
+                .ToListAsync(cancellationToken);
+            return rows
+                .OrderByDescending(lr => lr.CreatedAt)
+                .ThenBy(lr => lr.Id.ToString(), StringComparer.Ordinal)
+                .ToList();
+        }
+
+        // Non-SQLite providers (e.g. the Postgres Testcontainer path) order in the database. EF.Functions.Like
+        // mirrors the capture predicate used across this repository (e.g. GetCaptureSummaryByUserAsync); on a
+        // case-sensitive provider it is stricter than IsCaptureRequestType, but production is SQLite-only.
+        return await _context.LlmRequests
+            .Where(lr => lr.UserId == userId && EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike))
+            .OrderByDescending(lr => lr.CreatedAt)
+            .ThenBy(lr => lr.Id)
+            .Skip(offset)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<LlmRequest>> GetByStatusAsync(RequestStatus status, CancellationToken cancellationToken = default)
     {
         if (_context.Database.IsSqlite())

@@ -244,6 +244,138 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task GetCapturesByUserAsync_ReturnsCaptureOnlyPage_NewestFirst_PerUser_BoundedAtSql()
+    {
+        var interceptor = new CapturingReaderInterceptor();
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var userA = new User("cap-page-a", "cap-page-a@example.com", "hash");
+            var userB = new User("cap-page-b", "cap-page-b@example.com", "hash");
+            db.Users.AddRange(userA, userB);
+
+            var baseTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            var captures = new List<LlmRequest>();
+            for (var i = 0; i < 3; i++)
+            {
+                var c = new LlmRequest(userA.Id, CaptureRequestContract.RequestTypeV1, $"{{\"i\":{i}}}");
+                db.LlmRequests.Add(c);
+                captures.Add(c);
+            }
+            // Same user, non-capture rows must be excluded; other user's capture must be excluded.
+            db.LlmRequests.Add(new LlmRequest(userA.Id, "automation.command", "{}"));
+            db.LlmRequests.Add(new LlmRequest(userA.Id, "automation.command", "{}"));
+            db.LlmRequests.Add(new LlmRequest(userB.Id, CaptureRequestContract.RequestTypeV1, "{}"));
+            await db.SaveChangesAsync();
+
+            for (var i = 0; i < captures.Count; i++)
+                db.Entry(captures[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(i);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+            interceptor.Clear();
+
+            var result = (await repo.GetCapturesByUserAsync(userA.Id, 10, 0)).ToList();
+
+            result.Should().HaveCount(3);
+            result.Should().OnlyContain(r => r.UserId == userA.Id && CaptureRequestContract.IsCaptureRequestType(r.RequestType));
+            // Newest-first: captures[2] (latest CreatedAt) first.
+            result.Select(r => r.Id).Should().Equal(captures[2].Id, captures[1].Id, captures[0].Id);
+
+            interceptor.CapturedCommands
+                .Where(sql => sql.Contains("LlmRequests", StringComparison.OrdinalIgnoreCase)
+                              && sql.Contains("SELECT", StringComparison.OrdinalIgnoreCase))
+                .Should().Contain(
+                    sql => sql.Contains("LIMIT", StringComparison.OrdinalIgnoreCase)
+                           && sql.Contains("OFFSET", StringComparison.OrdinalIgnoreCase),
+                    "the paged read must push LIMIT and OFFSET into SQL");
+        }, interceptor);
+    }
+
+    [Fact]
+    public async Task GetCapturesByUserAsync_PagesStably_NoOverlapOrSkip()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("cap-paging", "cap-paging@example.com", "hash");
+            db.Users.Add(user);
+
+            var baseTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            var captures = new List<LlmRequest>();
+            for (var i = 0; i < 5; i++)
+            {
+                var c = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, $"{{\"i\":{i}}}");
+                db.LlmRequests.Add(c);
+                captures.Add(c);
+            }
+            await db.SaveChangesAsync();
+            for (var i = 0; i < captures.Count; i++)
+                db.Entry(captures[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(i);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var page1 = (await repo.GetCapturesByUserAsync(user.Id, 2, 0)).Select(r => r.Id).ToList();
+            var page2 = (await repo.GetCapturesByUserAsync(user.Id, 2, 2)).Select(r => r.Id).ToList();
+            var page3 = (await repo.GetCapturesByUserAsync(user.Id, 2, 4)).Select(r => r.Id).ToList();
+
+            // Newest-first across pages, no row skipped or duplicated.
+            page1.Should().Equal(captures[4].Id, captures[3].Id);
+            page2.Should().Equal(captures[2].Id, captures[1].Id);
+            page3.Should().Equal(captures[0].Id);
+            page1.Concat(page2).Concat(page3).Should().OnlyHaveUniqueItems().And.HaveCount(5);
+        });
+    }
+
+    [Fact]
+    public async Task GetCapturesByUserAsync_StablePaging_AcrossCreatedAtTieAtPageBoundary()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("cap-tie", "cap-tie@example.com", "hash");
+            db.Users.Add(user);
+
+            var newest = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"k\":\"newest\"}");
+            var tieA = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"k\":\"tieA\"}");
+            var tieB = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"k\":\"tieB\"}");
+            var oldest = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"k\":\"oldest\"}");
+            db.LlmRequests.AddRange(newest, tieA, tieB, oldest);
+            await db.SaveChangesAsync();
+
+            var t = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            db.Entry(newest).Property(nameof(Entity.CreatedAt)).CurrentValue = t.AddSeconds(3);
+            db.Entry(tieA).Property(nameof(Entity.CreatedAt)).CurrentValue = t.AddSeconds(2); // tie
+            db.Entry(tieB).Property(nameof(Entity.CreatedAt)).CurrentValue = t.AddSeconds(2); // tie
+            db.Entry(oldest).Property(nameof(Entity.CreatedAt)).CurrentValue = t.AddSeconds(1);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var page1 = (await repo.GetCapturesByUserAsync(user.Id, 2, 0)).Select(r => r.Id).ToList();
+            var page2 = (await repo.GetCapturesByUserAsync(user.Id, 2, 2)).Select(r => r.Id).ToList();
+
+            // The tie (tieA/tieB at t+2s) straddles the page-1/page-2 boundary. The (CreatedAt desc, Id-as-text)
+            // total order must keep the concatenation globally ordered with no skip or duplicate -- this is the
+            // case where a Guid.CompareTo tie-break would diverge from SQLite's TEXT Id ordering.
+            var tieByIdAsc = new[] { tieA, tieB }
+                .OrderBy(x => x.Id.ToString(), StringComparer.Ordinal)
+                .Select(x => x.Id)
+                .ToList();
+            page1.Concat(page2).Should().Equal(newest.Id, tieByIdAsc[0], tieByIdAsc[1], oldest.Id);
+            page1.Concat(page2).Should().OnlyHaveUniqueItems();
+        });
+    }
+
+    [Fact]
+    public async Task GetCapturesByUserAsync_WithInvalidPaging_Throws()
+    {
+        await WithSqliteRepoAsync(async (_, repo) =>
+        {
+            var userId = Guid.NewGuid();
+            await repo.Invoking(r => r.GetCapturesByUserAsync(userId, 0, 0))
+                .Should().ThrowAsync<ArgumentOutOfRangeException>();
+            await repo.Invoking(r => r.GetCapturesByUserAsync(userId, 5, -1))
+                .Should().ThrowAsync<ArgumentOutOfRangeException>();
+        });
+    }
+
+    [Fact]
     public async Task TryClaimProcessingCaptureAsync_ShouldSucceedOnFirstClaim_FailOnSecond()
     {
         using var scope = _factory.Services.CreateScope();
