@@ -98,6 +98,14 @@ generates the key first and then passes validation.
   while the database (in `%LOCALAPPDATA%/Taskdeck`) is reused — the new exe regenerates a different key and
   cannot decrypt the reused credentials. Until this is addressed (relocate persisted secrets to the durable
   app-data location, tracked in #1242), back up `appsettings.local.json` and prefer in-place upgrades.
+- **An empty higher-priority `Connectors__EncryptionKey` fails closed — it does not silently churn keys.**
+  Because `appsettings.local.json` loads *before* environment variables (so env vars win), an env var set to
+  an empty/whitespace value (e.g. a copied service/env template) would mask the persisted key. The desktop
+  generate path verifies the persisted key is the effective value after reload and, when it is not, **throws**
+  in Production rather than running on a process-local in-memory key that the next launch would regenerate
+  *differently* — which would orphan connector credentials saved this run. The remediation (unset the empty
+  variable or set a real key) is named in the exception. `ResolveConnectorKeyPersistOutcome` is unit-tested
+  over the visible / masked-in-Production / masked-in-harness cases.
 - **Staging (and any non-Production environment) auto-generates the key and is never validated**
   (`ValidateProductionSecrets` early-returns for non-Production). So a cloud Staging container does **not**
   behave like Production — it relies on its local `appsettings.local.json` persisting, with the same
