@@ -44,6 +44,25 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Restrict a file to the current owner only (no inherited/other-user access). Used for the restored DB,
+# the connector key, and their safety copies so a multi-user data directory does not expose secrets.
+function Set-OwnerOnlyAcl {
+    param([string]$Path)
+    try {
+        $acl = Get-Acl $Path
+        $acl.SetAccessRuleProtection($true, $false)
+        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) | Out-Null }
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+            "FullControl", "None", "None", "Allow"
+        )
+        $acl.AddAccessRule($rule)
+        Set-Acl $Path $acl
+    } catch {
+        Write-Warning "Could not restrict ACL on ${Path}: $_"
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Validate backup file exists
 # ---------------------------------------------------------------------------
@@ -243,6 +262,29 @@ if ($Sqlite3) {
         Write-Error "Post-restore integrity check FAILED: $Integrity`n  Safety copy is at: $SafetyFile"
     }
     Write-Host "Post-restore integrity check: ok"
+}
+
+# ---------------------------------------------------------------------------
+# Step 6: Restore the paired connector encryption key (if the backup has one)
+# ---------------------------------------------------------------------------
+# backup.sh writes a sibling <backup>.connector-encryption.key alongside the .db for deployments that keep
+# the key on the data volume. The restored DB's connector credentials are encrypted under THAT key, so it
+# must be restored next to the DB -- otherwise the app runs with a different/missing key and the credentials
+# are undecryptable.
+$PairedKey = ($BackupFile -replace '\.db$', '') + ".connector-encryption.key"
+$LiveKey   = Join-Path $DbDir "connector-encryption.key"
+if (Test-Path $PairedKey -PathType Leaf) {
+    if (Test-Path $LiveKey -PathType Leaf) {
+        $SafetyKey = Join-Path $SafetyDir "connector-encryption-pre-restore-$Timestamp.key"
+        Copy-Item $LiveKey $SafetyKey -Force -ErrorAction SilentlyContinue
+        if (Test-Path $SafetyKey -PathType Leaf) { Set-OwnerOnlyAcl $SafetyKey }
+    }
+    Copy-Item $PairedKey $LiveKey -Force
+    Set-OwnerOnlyAcl $LiveKey
+    Write-Host "Restored connector key: $PairedKey -> $LiveKey"
+    Write-Warning "If this deployment INJECTS the connector key via an environment file or secret store (container/Compose deployments read Connectors__EncryptionKey from the environment, not from this file), update that injected value to match the restored key and RECREATE the service -- a plain restart keeps using the stale key and leaves restored credentials undecryptable."
+} elseif (Test-Path $LiveKey -PathType Leaf) {
+    Write-Warning "The backup has no paired connector key, but one exists at $LiveKey. If the restored database was encrypted under a different key, its connector credentials will be undecryptable. Ensure the correct connector-encryption.key is in place."
 }
 
 Write-Host "Done. Restart the Taskdeck API to pick up the restored database."

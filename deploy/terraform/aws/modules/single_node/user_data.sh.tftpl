@@ -4,7 +4,7 @@ set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
-apt-get install -y ca-certificates curl gnupg unzip
+apt-get install -y ca-certificates curl gnupg unzip openssl
 
 arch="$(uname -m)"
 if [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; then
@@ -83,6 +83,36 @@ if ! JWT_SECRET="$(aws ssm get-parameter --name '${jwt_secret_ssm_parameter_name
   exit 1
 fi
 
+# Connector encryption key. The container image is headless (ENV TASKDECK_HEADLESS=true), so the API will
+# NOT auto-generate this key: a key that changed on each boot would silently lose the ability to decrypt
+# previously-stored connector credentials (see ADR-0041). Generate it ONCE and persist it on the durable
+# data volume so it survives instance replacement together with the database it protects -- one failure
+# domain: if the volume is ever lost, both the SQLite DB and this key are gone together, so no connector
+# credential is ever left orphaned-but-undecryptable. The format matches the app convention
+# (base64-encoded 256-bit, i.e. `openssl rand -base64 32`). BACK UP this file with taskdeck.db --
+# scripts/backup.sh copies it automatically, but a DB-only restore onto a fresh volume regenerates a
+# different key and orphans stored connector credentials (see docs/platform/CLOUD_DEPLOYMENT_GUIDE.md).
+connector_key_file="/var/lib/taskdeck/connector-encryption.key"
+connector_db_file="/var/lib/taskdeck/taskdeck.db"
+if [ ! -s "$connector_key_file" ]; then
+  if [ -s "$connector_db_file" ]; then
+    # An existing database is present but no connector key sits on the volume. This is an UPGRADE from a
+    # deployment that supplied the key another way (e.g. a manual TASKDECK_CONNECTORS_ENCRYPTION_KEY in
+    # /opt/taskdeck/.env before this module generated one). Generating a fresh key here would orphan the
+    # connector credentials already encrypted under the old key. Refuse and require the operator to migrate
+    # the existing key onto the volume.
+    echo "A Taskdeck database exists at $connector_db_file but no connector key at $connector_key_file. Generating a new key would make existing connector credentials unrecoverable. Place the deployment's existing connector encryption key at $connector_key_file (chmod 600) and re-apply, or remove the database to start fresh." >&2
+    exit 1
+  fi
+  ( umask 077; openssl rand -base64 32 > "$connector_key_file" )
+fi
+chmod 600 "$connector_key_file"
+CONNECTORS_ENCRYPTION_KEY="$(cat "$connector_key_file")"
+if [ -z "$CONNECTORS_ENCRYPTION_KEY" ]; then
+  echo "Failed to load or generate the Taskdeck connector encryption key at $connector_key_file" >&2
+  exit 1
+fi
+
 install -m 0600 /dev/null /opt/taskdeck/.env
 cat > /opt/taskdeck/.env <<'EOF'
 TASKDECK_PROXY_PORT=${proxy_port}
@@ -93,8 +123,9 @@ TASKDECK_AWS_REGION=${aws_region}
 TASKDECK_BACKUP_BUCKET=${backup_bucket_name}
 EOF
 printf 'TASKDECK_JWT_SECRET=%s\n' "$JWT_SECRET" >> /opt/taskdeck/.env
+printf 'TASKDECK_CONNECTORS_ENCRYPTION_KEY=%s\n' "$CONNECTORS_ENCRYPTION_KEY" >> /opt/taskdeck/.env
 chmod 600 /opt/taskdeck/.env
-unset JWT_SECRET
+unset JWT_SECRET CONNECTORS_ENCRYPTION_KEY
 set -x
 
 cat > /opt/taskdeck/docker-compose.yml <<'EOF'
@@ -112,6 +143,12 @@ services:
       Jwt__Issuer: $${TASKDECK_JWT_ISSUER}
       Jwt__Audience: $${TASKDECK_JWT_AUDIENCE}
       Jwt__ExpirationMinutes: $${TASKDECK_JWT_EXPIRATION_MINUTES}
+      # The container image is headless (ENV TASKDECK_HEADLESS=true), so the bootstrapper will NOT
+      # auto-generate a connector key -- it must be supplied and kept STABLE across instance replacement
+      # (a changing key makes stored connector credentials unrecoverable). user_data above generates one
+      # ONCE and persists it on the durable data volume (/var/lib/taskdeck/connector-encryption.key), then
+      # injects it via TASKDECK_CONNECTORS_ENCRYPTION_KEY in .env. See ADR-0041.
+      Connectors__EncryptionKey: $${TASKDECK_CONNECTORS_ENCRYPTION_KEY}
       DevelopmentSandbox__Enabled: "false"
     volumes:
       - /var/lib/taskdeck:/app/data

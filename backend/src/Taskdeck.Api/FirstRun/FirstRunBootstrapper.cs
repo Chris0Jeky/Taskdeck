@@ -26,6 +26,15 @@ public static class FirstRunBootstrapper
             "CHANGE_ME_GENERATE_WITH_openssl_rand_base64_48"
         };
 
+    // Match the leniency of the JSON configuration provider (JsonConfigurationFileParser allows comments
+    // and trailing commas) so a hand-edited but provider-loadable appsettings.local.json is read the same
+    // way here -- and is NOT wrongly treated as corrupt (which would quarantine it) or as missing a key.
+    private static readonly System.Text.Json.JsonDocumentOptions LocalConfigJsonOptions = new()
+    {
+        CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+        AllowTrailingCommas = true
+    };
+
     /// <summary>
     /// Registers <c>appsettings.local.json</c> as an optional configuration
     /// source so that previously generated secrets are picked up.
@@ -41,6 +50,13 @@ public static class FirstRunBootstrapper
     /// </remarks>
     public static WebApplicationBuilder AddLocalConfigFile(this WebApplicationBuilder builder)
     {
+        // A present-but-unparsable appsettings.local.json would throw the moment the configuration is built
+        // (JsonConfigurationSource.Optional only suppresses a MISSING file, not a malformed one), crashing
+        // startup before the first-run checks ever run. Quarantine it first: preserve the corrupt file (it
+        // may hold a recoverable key) and remove the original so the optional source loads as "missing" and
+        // the desktop install self-heals instead of failing to launch on every restart.
+        QuarantineCorruptLocalConfig();
+
         var sources = builder.Configuration.Sources;
 
         // Find the first EnvironmentVariablesConfigurationSource so we can
@@ -78,6 +94,66 @@ public static class FirstRunBootstrapper
     }
 
     /// <summary>
+    /// If the persisted local config file exists but does not parse as a JSON object, preserve it to a
+    /// <c>.corrupt-*</c> sibling (it may hold a recoverable key) and remove the original, so the optional
+    /// config source loads as "missing" instead of throwing at config-build time. This lets a desktop install
+    /// self-heal from a corrupt <c>appsettings.local.json</c> rather than crash on every launch. Best-effort:
+    /// a file that cannot be removed is reported to stderr.
+    /// </summary>
+    internal static void QuarantineCorruptLocalConfig() => QuarantineCorruptLocalConfigAt(LocalConfigPath);
+
+    /// <summary>Path-parameterized core of <see cref="QuarantineCorruptLocalConfig"/> (testable seam).</summary>
+    internal static void QuarantineCorruptLocalConfigAt(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        // Separate the READ from the PARSE: a present-but-temporarily-unreadable file (transient I/O / share
+        // violation / permission glitch) may be perfectly valid and hold the only connector key, so it must
+        // NOT be quarantined/deleted -- only a genuine JSON parse failure means the file would crash config
+        // build and should be quarantined.
+        string content;
+        try
+        {
+            content = File.ReadAllText(path);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: could not read {path} ({ex.Message}); leaving it in place (not " +
+                "quarantining -- it may be a valid file holding the connector key).");
+            return;
+        }
+
+        try
+        {
+            // JsonConfigurationProvider requires a JSON OBJECT at the root; AsObject() throws otherwise
+            // (and Parse throws on empty/truncated/invalid content), matching what would crash config build.
+            // Use the provider's leniency (comments / trailing commas) so a loadable file is not quarantined.
+            _ = JsonNode.Parse(content, nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject();
+            return; // Parses as a JSON object -> usable, leave it alone.
+        }
+        catch (Exception ex)
+        {
+            // Genuine parse failure (malformed JSON / non-object root). Preserve for recovery, then remove
+            // so the optional config source loads as "missing" and the app self-heals.
+            PreserveCorruptConfig(path, ex);
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception delEx)
+            {
+                Console.Error.WriteLine(
+                    $"[FirstRun] WARNING: {path} is corrupt and could not be removed ({delEx.Message}); " +
+                    "startup may fail until it is deleted manually.");
+            }
+        }
+    }
+
+    /// <summary>
     /// Runs the first-run checks. Must be called after
     /// <see cref="AddLocalConfigFile"/> and after the standard
     /// <c>appsettings.json</c> / <c>appsettings.{env}.json</c> files have been
@@ -104,12 +180,22 @@ public static class FirstRunBootstrapper
         // so that no hardcoded secret is required in appsettings.Development.json.
         EnsureJwtSecret(builder.Configuration, logger);
 
-        // Connector key auto-generation is skipped in Production to avoid
-        // ephemeral keys that cause data loss on container restart.
-        // Production must supply a stable key; ValidateProductionSecrets enforces this.
-        if (!builder.Environment.IsProduction())
+        // Auto-generate the connector encryption key unless this is a headless Production deployment
+        // (CI / cloud container). A desktop install persists the generated key to appsettings.local.json
+        // next to the exe, so it is stable across restarts and the self-contained exe is runnable without
+        // manually supplying Connectors__EncryptionKey. Headless Production is excluded: there the key may
+        // not survive a restart, so an auto-generated one would be ephemeral and silently lose the ability
+        // to decrypt stored connector credentials -- those deployments must supply a stable key, which
+        // ValidateProductionSecrets enforces. See ADR-0041.
+        if (ShouldAutoGenerateConnectorKey(builder.Environment.IsProduction(), IsHeadlessEnvironment()))
         {
-            EnsureConnectorEncryptionKey(builder.Configuration, logger);
+            // In non-headless Production (the desktop exe) the key MUST persist across restarts: a failed
+            // write has to be fatal, not silently degraded to an ephemeral in-memory key that the next
+            // launch replaces -- which would make stored connector credentials unrecoverable.
+            EnsureConnectorEncryptionKey(
+                builder.Configuration,
+                logger,
+                requirePersistence: builder.Environment.IsProduction());
         }
 
         // Remaining first-run checks are for the self-hosted packaged
@@ -165,7 +251,9 @@ public static class FirstRunBootstrapper
                 "SECURITY: The Connectors:EncryptionKey is not configured. " +
                 "Generate a base64-encoded 256-bit key with 'openssl rand -base64 32' and set it via the " +
                 "Connectors__EncryptionKey environment variable. The application cannot start without a " +
-                "real encryption key in Production.");
+                $"real encryption key in Production. (If this used to run as a desktop install, an existing " +
+                $"key may already be in {LocalConfigPath} -- reuse that value rather than generating a new " +
+                "one, or stored connector credentials will become unrecoverable.)");
         }
 
         logger.LogInformation("Production secret validation passed.");
@@ -188,6 +276,52 @@ public static class FirstRunBootstrapper
 
     internal static string GenerateSecret()
         => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+    /// <summary>
+    /// Decides whether to auto-generate the connector encryption key when it is not configured.
+    /// Enabled everywhere EXCEPT a headless Production deployment (CI / cloud container), where a
+    /// generated key may not survive a restart and would lose the ability to decrypt stored connector
+    /// credentials. A non-headless Production deployment (the desktop exe) persists the key locally,
+    /// so generation is safe and makes the self-contained exe runnable without a supplied key.
+    /// </summary>
+    internal static bool ShouldAutoGenerateConnectorKey(bool isProduction, bool isHeadless)
+        => !isProduction || !isHeadless;
+
+    /// <summary>
+    /// Reads the connector encryption key directly from the persisted local config file at
+    /// <paramref name="path"/>, bypassing configuration-source precedence. This lets the bootstrapper
+    /// detect a key that a higher-priority empty/whitespace source (e.g. an empty
+    /// <c>Connectors__EncryptionKey</c> environment variable) is masking, so it can be REUSED rather than
+    /// overwritten by a freshly generated one. Returns <c>true</c> only when the file holds a non-empty key;
+    /// returns <c>false</c> for a missing, unparsable, non-object, or empty value (a corrupt file is handled
+    /// separately by <see cref="QuarantineCorruptLocalConfig"/>).
+    /// </summary>
+    internal static bool TryReadPersistedConnectorKey(string path, out string? key)
+    {
+        key = null;
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            // Read through a throwaway configuration builder so the lookup matches the REAL provider exactly:
+            // case-insensitive section/key names AND the comment/trailing-comma leniency. A direct JsonNode
+            // walk would miss a provider-valid case variant (e.g. "connectors": { "encryptionkey": ... }).
+            var config = new ConfigurationBuilder()
+                .AddJsonFile(path, optional: true, reloadOnChange: false)
+                .Build();
+            key = config["Connectors:EncryptionKey"];
+            return !string.IsNullOrWhiteSpace(key);
+        }
+        catch
+        {
+            // Unparsable / unreadable: treat as "no recoverable key persisted".
+            key = null;
+            return false;
+        }
+    }
 
     private static void EnsureJwtSecret(IConfiguration configuration, ILogger logger)
     {
@@ -226,12 +360,33 @@ public static class FirstRunBootstrapper
         }
     }
 
-    private static void EnsureConnectorEncryptionKey(IConfiguration configuration, ILogger logger)
+    private static void EnsureConnectorEncryptionKey(
+        IConfiguration configuration,
+        ILogger logger,
+        bool requirePersistence = false)
     {
         var configured = configuration["Connectors:EncryptionKey"] ?? string.Empty;
 
         if (!string.IsNullOrWhiteSpace(configured))
         {
+            return;
+        }
+
+        // The effective value is empty. Before generating a new key (which PersistValue would write OVER the
+        // file in place, destroying any key already there), check whether a key is already persisted on disk.
+        // If so, a higher-priority empty/whitespace source -- most likely an empty Connectors__EncryptionKey
+        // environment variable -- is masking it. REUSE the persisted key instead of generating: regenerating
+        // would permanently destroy the only copy of the key the stored connector credentials were encrypted
+        // with. Reuse is stable across restarts (the next launch reads the same persisted key) and keeps the
+        // app working despite the misconfigured empty variable.
+        if (TryReadPersistedConnectorKey(LocalConfigPath, out var persisted))
+        {
+            configuration["Connectors:EncryptionKey"] = persisted;
+            logger.LogWarning(
+                "First-run: A higher-priority configuration source (likely an empty Connectors__EncryptionKey " +
+                "environment variable) is masking the connector key persisted in {ConfigFile}. Reusing the " +
+                "persisted key so stored connector credentials stay decryptable; unset the empty variable to " +
+                "silence this warning.", LocalConfigPath);
             return;
         }
 
@@ -245,22 +400,55 @@ public static class FirstRunBootstrapper
             }
 
             logger.LogInformation(
-                "First-run: Connector encryption key was not configured. A random key has been " +
-                "generated and saved to {ConfigFile}.", LocalConfigPath);
+                "First-run: Connector encryption key was not configured. A random key has been generated " +
+                "and saved to {ConfigFile}. BACK UP THIS FILE alongside your database -- it is required to " +
+                "decrypt stored connector credentials; losing it makes them unrecoverable.", LocalConfigPath);
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // PersistValue can throw UnauthorizedAccessException (e.g. a read-only install dir such as
+            // Program Files) as well as IOException (locked file, disk full, lock unavailable).
+            if (requirePersistence)
+            {
+                // A desktop (non-headless Production) install must persist the key. An in-memory key would
+                // be lost on the next launch, which would then generate a different one and silently lose
+                // the ability to decrypt previously-stored connector credentials. Fail loudly instead.
+                throw new InvalidOperationException(
+                    $"First-run: Could not persist the connector encryption key to {LocalConfigPath} " +
+                    $"({ex.Message}). A run-once in-memory key would be lost on restart and make stored " +
+                    "connector credentials unrecoverable. Ensure the application directory is writable, or " +
+                    "set a stable key via the Connectors__EncryptionKey environment variable.", ex);
+            }
+
+            // Non-Production (dev/staging/test): a transient in-memory key is acceptable -- these do not
+            // carry credentials that must survive a restart, and parallel test harnesses can lock the file.
+            configuration["Connectors:EncryptionKey"] = generated;
             logger.LogWarning(
                 "First-run: Could not persist connector encryption key to {ConfigFile} ({Error}). " +
                 "A transient in-memory key has been generated instead.",
                 LocalConfigPath, ex.Message);
+            return;
         }
 
-        // Always set in-memory as a fallback: the file-based reload may not
-        // propagate through all configuration providers (e.g. in test harnesses).
+        // The key is now persisted on disk. Make sure it is also the effective in-process value: a reload may
+        // not propagate through every provider (test harnesses), and an empty higher-priority source could
+        // mask the freshly written file. Either way the key IS persisted and recoverable -- the next launch
+        // reads it back (and reuses it via TryReadPersistedConnectorKey if still masked) -- so an in-memory
+        // value here is safe (no data loss), unlike overwriting an existing key would have been.
         if (string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]))
         {
             configuration["Connectors:EncryptionKey"] = generated;
+            if (requirePersistence)
+            {
+                // In Production the only way the just-persisted key is not the effective value is a
+                // higher-priority empty source masking it. The key is safe on disk and will be reused on the
+                // next launch; surface the misconfiguration so the operator can clear it.
+                logger.LogWarning(
+                    "First-run: The connector key was persisted to {ConfigFile} but a higher-priority " +
+                    "configuration source (likely an empty Connectors__EncryptionKey environment variable) is " +
+                    "masking it. The persisted key will be reused on the next launch; unset the empty variable.",
+                    LocalConfigPath);
+            }
         }
     }
 
@@ -352,6 +540,30 @@ public static class FirstRunBootstrapper
         }
     }
 
+    /// <summary>
+    /// Backs up an unparsable config file to a timestamped <c>.corrupt-*</c> sibling before it is rewritten,
+    /// so a previously-generated secret it may still hold (the connector key in particular) is recoverable
+    /// by an operator instead of being silently overwritten. Best-effort: failure to copy is logged, not fatal.
+    /// </summary>
+    private static void PreserveCorruptConfig(string path, Exception parseError)
+    {
+        var backupPath = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
+        try
+        {
+            File.Copy(path, backupPath, overwrite: false);
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}). A copy was " +
+                $"preserved at {backupPath} for recovery -- it may hold a previously-generated key -- and the " +
+                "file will be rewritten.");
+        }
+        catch (Exception copyEx)
+        {
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}) and could NOT be " +
+                $"backed up ({copyEx.Message}); it will be overwritten.");
+        }
+    }
+
     private static void PersistValue(string section, string key, string value)
     {
         var path = LocalConfigPath;
@@ -402,16 +614,21 @@ public static class FirstRunBootstrapper
             {
                 try
                 {
+                    // Parse with the config provider's leniency (comments / trailing commas). A hand-edited
+                    // but provider-loadable file must round-trip here -- a strict parse would treat it as
+                    // corrupt and drop its existing sections (e.g. the Connectors key) when a later first-run
+                    // write (EnsureDbPath / JWT) rewrites the file, orphaning stored connector credentials.
                     var existing = File.ReadAllText(path);
-                    root = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
+                    root = JsonNode.Parse(existing, nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject() ?? new JsonObject();
                 }
                 catch (Exception ex)
                 {
-                    // Logger is not available at this pre-DI stage; warn to stderr and start fresh
-                    // rather than silently discarding the corrupt file.
-                    Console.Error.WriteLine(
-                        $"[FirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
-                        $"Details: {ex.Message}");
+                    // The file is genuinely unparsable (not even provider-loadable -- e.g. an interrupted
+                    // write). It may still hold the ONLY copy of a previously-generated secret -- losing the
+                    // connector key in particular orphans stored connector credentials -- so preserve it for
+                    // operator recovery before starting fresh, rather than silently overwriting it. Logger is
+                    // not available at this pre-DI stage, so warn to stderr.
+                    PreserveCorruptConfig(path, ex);
                     root = new JsonObject();
                 }
             }

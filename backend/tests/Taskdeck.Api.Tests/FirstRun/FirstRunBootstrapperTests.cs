@@ -51,6 +51,150 @@ public class FirstRunBootstrapperTests
         Assert.Equal(secrets.Count, distinct.Count);
     }
 
+    // ---- ShouldAutoGenerateConnectorKey --------------------------------------
+
+    [Theory]
+    // Non-Production (dev/staging) always generates, regardless of headless.
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    // Production + NOT headless = the desktop exe: generate so the self-contained exe is runnable
+    // without manually supplying Connectors__EncryptionKey (the generated key persists locally).
+    [InlineData(true, false, true)]
+    // Production + headless = CI / cloud container: do NOT generate -- a generated key may be
+    // ephemeral there, so these deployments must supply a stable key.
+    [InlineData(true, true, false)]
+    public void ShouldAutoGenerateConnectorKey_GeneratesExceptInHeadlessProduction(
+        bool isProduction, bool isHeadless, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            FirstRunBootstrapper.ShouldAutoGenerateConnectorKey(isProduction, isHeadless));
+    }
+
+    // ---- TryReadPersistedConnectorKey (masked-key reuse: never overwrite a persisted key) ----------
+
+    [Fact]
+    public void TryReadPersistedConnectorKey_ReturnsPersistedKey_WhenFileHasOne()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-connkey-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\"Connectors\":{\"EncryptionKey\":\"K1-persisted\"},\"Jwt\":{\"SecretKey\":\"j\"}}");
+        try
+        {
+            Assert.True(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+            Assert.Equal("K1-persisted", key);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void TryReadPersistedConnectorKey_ReturnsFalse_WhenFileMissing()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-connkey-missing-{Guid.NewGuid():N}.json");
+        Assert.False(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+        Assert.Null(key);
+    }
+
+    [Theory]
+    [InlineData("not json at all {{{")]                          // unparsable -> not a clean key
+    [InlineData("[]")]                                           // non-object root
+    [InlineData("{\"Connectors\":{\"EncryptionKey\":\"\"}}")]    // empty value
+    [InlineData("{\"Connectors\":{\"EncryptionKey\":\"   \"}}")] // whitespace value
+    [InlineData("{\"Jwt\":{\"SecretKey\":\"j\"}}")]              // key absent
+    public void TryReadPersistedConnectorKey_ReturnsFalse_ForUnusableContent(string content)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-connkey-bad-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, content);
+        try
+        {
+            Assert.False(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+            Assert.True(string.IsNullOrWhiteSpace(key));
+        }
+        finally { File.Delete(path); }
+    }
+
+    // ---- QuarantineCorruptLocalConfigAt (corrupt-config self-heal) ----------
+
+    [Fact]
+    public void QuarantineCorruptLocalConfigAt_PreservesAndRemovesACorruptFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-corrupt-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{ this is : not valid json");
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(path);
+
+            Assert.False(File.Exists(path),
+                "the corrupt original must be removed so the optional config source loads as missing");
+            var preserved = Directory.GetFiles(
+                Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*");
+            Assert.Single(preserved);
+            Assert.Contains("not valid json", File.ReadAllText(preserved[0]));
+            File.Delete(preserved[0]);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void QuarantineCorruptLocalConfigAt_LeavesAValidObjectFileUntouched()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-valid-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\"Connectors\":{\"EncryptionKey\":\"K1\"}}");
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(path);
+            Assert.True(File.Exists(path), "a valid JSON object file must be left in place");
+            Assert.Empty(Directory.GetFiles(
+                Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*"));
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void QuarantineCorruptLocalConfigAt_LeavesACommentedTrailingCommaFileUntouched()
+    {
+        // The JSON configuration provider accepts comments and trailing commas, so a hand-edited but
+        // loadable file must NOT be quarantined (doing so would delete a recoverable connector key).
+        var path = Path.Combine(Path.GetTempPath(), $"td-lenient-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\n  // hand-edited\n  \"Connectors\": { \"EncryptionKey\": \"K1\", },\n}");
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(path);
+            Assert.True(File.Exists(path),
+                "a comment / trailing-comma file the config provider accepts must be left in place");
+            Assert.Empty(Directory.GetFiles(
+                Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*"));
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void TryReadPersistedConnectorKey_ReadsKey_FromCommentedTrailingCommaFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-lenient-key-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\n  // hand-edited\n  \"Connectors\": { \"EncryptionKey\": \"K1-lenient\", },\n}");
+        try
+        {
+            Assert.True(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+            Assert.Equal("K1-lenient", key);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void TryReadPersistedConnectorKey_ReadsKey_CaseInsensitively()
+    {
+        // The configuration provider matches keys case-insensitively, so a provider-valid case variant must
+        // be found -- otherwise a masked key would be missed and a different one regenerated.
+        var path = Path.Combine(Path.GetTempPath(), $"td-connkey-case-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\"connectors\":{\"encryptionkey\":\"K1-lower\"}}");
+        try
+        {
+            Assert.True(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+            Assert.Equal("K1-lower", key);
+        }
+        finally { File.Delete(path); }
+    }
+
     // ---- GetAppDataPath ------------------------------------------------------
 
     [Fact]
@@ -173,6 +317,33 @@ public class FirstRunBootstrapperTests
         Assert.Contains("SetUnixFileMode", source);
         Assert.Contains("UnixFileMode.UserRead | UnixFileMode.UserWrite", source);
         Assert.Contains("!OperatingSystem.IsWindows()", source);
+    }
+
+    [Fact]
+    public void PersistValue_PreservesCorruptConfigBeforeOverwriting_StructuralCheck()
+    {
+        // A corrupt appsettings.local.json may hold the only copy of a previously-generated key (the
+        // connector key in particular). Before the file is rewritten it must be backed up to a
+        // timestamped .corrupt-* sibling for operator recovery -- not silently discarded.
+        var source = File.ReadAllText(
+            FindSourceFile("FirstRunBootstrapper.cs"));
+
+        Assert.Contains("PreserveCorruptConfig", source);
+        Assert.Contains(".corrupt-", source);
+    }
+
+    [Fact]
+    public void PersistValue_ParsesExistingConfigLeniently_StructuralCheck()
+    {
+        // The read-modify-write must parse an existing appsettings.local.json with the config provider's
+        // leniency (LocalConfigJsonOptions), so a hand-edited comment / trailing-comma file is preserved --
+        // a strict parse would treat it as corrupt and rewrite the file WITHOUT its existing sections,
+        // dropping the connector key. Guards against a regression back to the strict single-arg parse.
+        var source = File.ReadAllText(
+            FindSourceFile("FirstRunBootstrapper.cs"));
+
+        Assert.Contains("LocalConfigJsonOptions", source);
+        Assert.DoesNotContain("JsonNode.Parse(existing)", source);
     }
 
     private static string FindSourceFile(string fileName)

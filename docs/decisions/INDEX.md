@@ -42,3 +42,4 @@
 | [0038](ADR-0038-paper-ui-canonical.md) | Paper UI Is the Canonical Frontend (Legacy Frozen) | Accepted | 2026-06-13 |
 | [0039](ADR-0039-central-package-management-sdk-pin.md) | Central Package Management, SDK Pin, and 8.x Dependency Alignment | Accepted | 2026-06-13 |
 | [0040](ADR-0040-utc-datetime-materialization-convention.md) | Global UTC DateTime Materialization Convention for SQLite | Accepted | 2026-06-13 |
+| [0041](ADR-0041-desktop-connector-key-autogeneration.md) | Auto-Generate the Connector Encryption Key for the Desktop Exe (Headless Production Excluded) | Accepted | 2026-06-20 |
