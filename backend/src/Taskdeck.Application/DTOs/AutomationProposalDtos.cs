@@ -31,6 +31,12 @@ public record ProposalDto(
     /// This allows the frontend to distinguish approved-but-expired proposals from executable ones.
     /// </summary>
     public bool IsExpired { get; init; }
+
+    /// <summary>
+    /// When set and in the future, the proposal is snoozed until this UTC instant. Exposed so the
+    /// client clock can resurface it in-session and a re-snooze toast can confirm the new window.
+    /// </summary>
+    public DateTime? DeferredUntil { get; init; }
 }
 
 public record ProposalPresentationDto(
@@ -95,6 +101,12 @@ public record CreateProposalOperationDto(
 public record UpdateProposalStatusDto(
     string? Reason = null
 );
+
+/// <summary>
+/// Request body for the snooze (defer) endpoint. A null DurationMinutes applies the
+/// default window; an override is clamped to [1, 1440] at the API boundary.
+/// </summary>
+public record DeferProposalRequestDto(int? DurationMinutes = null);
 
 public record ProposalFilterDto(
     ProposalStatus? Status = null,

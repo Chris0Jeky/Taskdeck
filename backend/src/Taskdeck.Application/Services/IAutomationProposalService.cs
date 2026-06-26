@@ -32,6 +32,12 @@ public interface IAutomationProposalService
     Task<Result<ProposalDto>> RejectProposalAsync(Guid id, Guid decidedByUserId, UpdateProposalStatusDto dto, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Snoozes a pending proposal for the given duration. Defer is a timing control,
+    /// not a decision: the proposal stays PendingReview and no outcome/notification is written.
+    /// </summary>
+    Task<Result<ProposalDto>> DeferProposalAsync(Guid id, TimeSpan duration, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Marks an approved proposal as applied.
     /// </summary>
     Task<Result<ProposalDto>> MarkAsAppliedAsync(Guid id, CancellationToken cancellationToken = default);
