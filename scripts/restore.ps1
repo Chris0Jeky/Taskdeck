@@ -44,6 +44,25 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Restrict a file to the current owner only (no inherited/other-user access). Used for the restored DB,
+# the connector key, and their safety copies so a multi-user data directory does not expose secrets.
+function Set-OwnerOnlyAcl {
+    param([string]$Path)
+    try {
+        $acl = Get-Acl $Path
+        $acl.SetAccessRuleProtection($true, $false)
+        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) | Out-Null }
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+            "FullControl", "None", "None", "Allow"
+        )
+        $acl.AddAccessRule($rule)
+        Set-Acl $Path $acl
+    } catch {
+        Write-Warning "Could not restrict ACL on ${Path}: $_"
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Validate backup file exists
 # ---------------------------------------------------------------------------
@@ -258,8 +277,10 @@ if (Test-Path $PairedKey -PathType Leaf) {
     if (Test-Path $LiveKey -PathType Leaf) {
         $SafetyKey = Join-Path $SafetyDir "connector-encryption-pre-restore-$Timestamp.key"
         Copy-Item $LiveKey $SafetyKey -Force -ErrorAction SilentlyContinue
+        if (Test-Path $SafetyKey -PathType Leaf) { Set-OwnerOnlyAcl $SafetyKey }
     }
     Copy-Item $PairedKey $LiveKey -Force
+    Set-OwnerOnlyAcl $LiveKey
     Write-Host "Restored connector key: $PairedKey -> $LiveKey"
     Write-Warning "If this deployment INJECTS the connector key via an environment file or secret store (container/Compose deployments read Connectors__EncryptionKey from the environment, not from this file), update that injected value to match the restored key and RECREATE the service -- a plain restart keeps using the stale key and leaves restored credentials undecryptable."
 } elseif (Test-Path $LiveKey -PathType Leaf) {
