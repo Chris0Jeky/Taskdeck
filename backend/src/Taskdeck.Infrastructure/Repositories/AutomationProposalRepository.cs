@@ -29,11 +29,18 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
 
     public async Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        var now = DateTime.UtcNow;
         return await _dbSet
             .AsNoTracking()
             .Where(proposal =>
                 proposal.RequestedByUserId == userId &&
                 proposal.Status == ProposalStatus.PendingReview)
+            // Hide currently-snoozed pending proposals so the Today/Home badge matches
+            // the visible review queue. Same status-gated filter as the list reads.
+            .Where(proposal =>
+                proposal.Status != ProposalStatus.PendingReview ||
+                proposal.DeferredUntil == null ||
+                proposal.DeferredUntil <= now)
             .CountAsync(cancellationToken);
     }
 
@@ -327,8 +334,16 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         int limit,
         CancellationToken cancellationToken)
     {
+        var now = DateTime.UtcNow;
         var boundedLimit = limit <= 0 ? DefaultLimit : limit;
         var topProposalIds = await baseQuery
+            // Hide snoozed PENDING proposals (DeferredUntil in the future), but never hide a
+            // decided/terminal proposal that happens to retain a stale snooze value. The
+            // status gate keeps Approved/Rejected/etc. visible regardless of DeferredUntil.
+            .Where(p =>
+                p.Status != ProposalStatus.PendingReview ||
+                p.DeferredUntil == null ||
+                p.DeferredUntil <= now)
             .OrderByDescending(p => p.ExpiresAt)
             .Take(boundedLimit)
             .Select(p => p.Id)

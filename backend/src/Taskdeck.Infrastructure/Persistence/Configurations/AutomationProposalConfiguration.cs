@@ -48,6 +48,11 @@ public class AutomationProposalConfiguration : IEntityTypeConfiguration<Automati
         builder.Property(ap => ap.ExpiresAt)
             .IsRequired();
 
+        // Nullable snooze timestamp. No composite index is added: the OR-IS-NULL list
+        // filter cannot use one, and the existing single-column Status/ExpiresAt indexes
+        // already cover the hot list paths.
+        builder.Property(ap => ap.DeferredUntil);
+
         builder.Property(ap => ap.DecidedAt);
 
         builder.Property(ap => ap.DecidedByUserId)
