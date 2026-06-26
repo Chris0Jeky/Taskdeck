@@ -180,6 +180,21 @@ public class FirstRunBootstrapperTests
         finally { File.Delete(path); }
     }
 
+    [Fact]
+    public void TryReadPersistedConnectorKey_ReadsKey_CaseInsensitively()
+    {
+        // The configuration provider matches keys case-insensitively, so a provider-valid case variant must
+        // be found -- otherwise a masked key would be missed and a different one regenerated.
+        var path = Path.Combine(Path.GetTempPath(), $"td-connkey-case-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{\"connectors\":{\"encryptionkey\":\"K1-lower\"}}");
+        try
+        {
+            Assert.True(FirstRunBootstrapper.TryReadPersistedConnectorKey(path, out var key));
+            Assert.Equal("K1-lower", key);
+        }
+        finally { File.Delete(path); }
+    }
+
     // ---- GetAppDataPath ------------------------------------------------------
 
     [Fact]

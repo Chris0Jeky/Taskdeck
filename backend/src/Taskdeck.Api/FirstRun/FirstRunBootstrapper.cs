@@ -110,16 +110,35 @@ public static class FirstRunBootstrapper
             return;
         }
 
+        // Separate the READ from the PARSE: a present-but-temporarily-unreadable file (transient I/O / share
+        // violation / permission glitch) may be perfectly valid and hold the only connector key, so it must
+        // NOT be quarantined/deleted -- only a genuine JSON parse failure means the file would crash config
+        // build and should be quarantined.
+        string content;
+        try
+        {
+            content = File.ReadAllText(path);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: could not read {path} ({ex.Message}); leaving it in place (not " +
+                "quarantining -- it may be a valid file holding the connector key).");
+            return;
+        }
+
         try
         {
             // JsonConfigurationProvider requires a JSON OBJECT at the root; AsObject() throws otherwise
             // (and Parse throws on empty/truncated/invalid content), matching what would crash config build.
             // Use the provider's leniency (comments / trailing commas) so a loadable file is not quarantined.
-            _ = JsonNode.Parse(File.ReadAllText(path), nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject();
+            _ = JsonNode.Parse(content, nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject();
             return; // Parses as a JSON object -> usable, leave it alone.
         }
         catch (Exception ex)
         {
+            // Genuine parse failure (malformed JSON / non-object root). Preserve for recovery, then remove
+            // so the optional config source loads as "missing" and the app self-heals.
             PreserveCorruptConfig(path, ex);
             try
             {
@@ -287,13 +306,18 @@ public static class FirstRunBootstrapper
 
         try
         {
-            var node = JsonNode.Parse(File.ReadAllText(path), nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject();
-            key = node?["Connectors"]?.AsObject()?["EncryptionKey"]?.GetValue<string>();
+            // Read through a throwaway configuration builder so the lookup matches the REAL provider exactly:
+            // case-insensitive section/key names AND the comment/trailing-comma leniency. A direct JsonNode
+            // walk would miss a provider-valid case variant (e.g. "connectors": { "encryptionkey": ... }).
+            var config = new ConfigurationBuilder()
+                .AddJsonFile(path, optional: true, reloadOnChange: false)
+                .Build();
+            key = config["Connectors:EncryptionKey"];
             return !string.IsNullOrWhiteSpace(key);
         }
         catch
         {
-            // Missing/unparsable/non-object/non-string: treat as "no recoverable key persisted".
+            // Unparsable / unreadable: treat as "no recoverable key persisted".
             key = null;
             return false;
         }
