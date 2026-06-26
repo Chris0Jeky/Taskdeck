@@ -71,6 +71,33 @@ public class FirstRunBootstrapperTests
             FirstRunBootstrapper.ShouldAutoGenerateConnectorKey(isProduction, isHeadless));
     }
 
+    // ---- ResolveConnectorKeyPersistOutcome -----------------------------------
+
+    // `expected` is the ConnectorKeyPersistOutcome name (the enum is internal, so a public [Theory] cannot
+    // take it directly -- compare on .ToString()).
+    [Theory]
+    // A visible (non-empty) effective value means the persisted key surfaced -- done, regardless of mode.
+    [InlineData("a-real-persisted-key", true, "Effective")]
+    [InlineData("a-real-persisted-key", false, "Effective")]
+    // A desktop Production install (requirePersistence) whose persisted key is masked by an empty/whitespace
+    // higher-priority value must fail closed -- otherwise the next launch regenerates a different key and
+    // orphans connector credentials saved this run.
+    [InlineData("", true, "FailClosed")]
+    [InlineData("   ", true, "FailClosed")]
+    [InlineData(null, true, "FailClosed")]
+    // A non-Production harness tolerates a process-local in-memory fallback when the file reload did not
+    // propagate through every provider.
+    [InlineData("", false, "InMemoryFallback")]
+    [InlineData("   ", false, "InMemoryFallback")]
+    [InlineData(null, false, "InMemoryFallback")]
+    public void ResolveConnectorKeyPersistOutcome_FailsClosedOnlyWhenMaskedInProduction(
+        string? effectiveValue, bool requirePersistence, string expected)
+    {
+        Assert.Equal(
+            expected,
+            FirstRunBootstrapper.ResolveConnectorKeyPersistOutcome(effectiveValue, requirePersistence).ToString());
+    }
+
     // ---- GetAppDataPath ------------------------------------------------------
 
     [Fact]

@@ -211,6 +211,41 @@ public static class FirstRunBootstrapper
     internal static bool ShouldAutoGenerateConnectorKey(bool isProduction, bool isHeadless)
         => !isProduction || !isHeadless;
 
+    /// <summary>The outcome of verifying that a freshly persisted connector key is the effective value.</summary>
+    internal enum ConnectorKeyPersistOutcome
+    {
+        /// <summary>The persisted (or already-present) key is the effective value — nothing more to do.</summary>
+        Effective,
+        /// <summary>A desktop install's persisted key is masked by a higher-priority empty value — fail loudly.</summary>
+        FailClosed,
+        /// <summary>A non-Production harness where the file reload did not propagate — patch the value in memory.</summary>
+        InMemoryFallback
+    }
+
+    /// <summary>
+    /// After a generated connector key is persisted, decides the outcome from the key's effective
+    /// configuration value. A non-empty effective value means the persisted key is visible (the only
+    /// higher-priority source we could have had was empty/whitespace, since a real one would have
+    /// short-circuited generation). An empty/whitespace value means a higher-priority source — most likely
+    /// an empty <c>Connectors__EncryptionKey</c> environment variable — is masking the file we just wrote:
+    /// a desktop Production install must fail closed (the next launch would regenerate a DIFFERENT key and
+    /// orphan stored connector credentials), whereas a non-Production harness tolerates a process-local
+    /// in-memory value because the file-based reload may not propagate through every provider there.
+    /// </summary>
+    internal static ConnectorKeyPersistOutcome ResolveConnectorKeyPersistOutcome(
+        string? effectiveValue,
+        bool requirePersistence)
+    {
+        if (!string.IsNullOrWhiteSpace(effectiveValue))
+        {
+            return ConnectorKeyPersistOutcome.Effective;
+        }
+
+        return requirePersistence
+            ? ConnectorKeyPersistOutcome.FailClosed
+            : ConnectorKeyPersistOutcome.InMemoryFallback;
+    }
+
     private static void EnsureJwtSecret(IConfiguration configuration, ILogger logger)
     {
         var configured = configuration["Jwt:SecretKey"] ?? string.Empty;
@@ -300,11 +335,28 @@ public static class FirstRunBootstrapper
             return;
         }
 
-        // Set in-memory as a fallback: the file-based reload may not propagate through all
-        // configuration providers (e.g. in test harnesses).
-        if (string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]))
+        // After persist+reload, the generated key should be the effective configuration value. If it is not
+        // visible, a higher-priority source -- most likely an empty Connectors__EncryptionKey environment
+        // variable from a copied env/service template -- is masking the file we just wrote. A desktop
+        // Production install (requirePersistence) must fail closed: the in-memory fallback below only fixes
+        // THIS process, so the next launch would regenerate a DIFFERENT key and silently orphan connector
+        // credentials saved this run. A non-Production harness instead patches the value in memory, because
+        // the file-based reload legitimately may not propagate through every provider there.
+        switch (ResolveConnectorKeyPersistOutcome(configuration["Connectors:EncryptionKey"], requirePersistence))
         {
-            configuration["Connectors:EncryptionKey"] = generated;
+            case ConnectorKeyPersistOutcome.Effective:
+                break;
+            case ConnectorKeyPersistOutcome.FailClosed:
+                throw new InvalidOperationException(
+                    $"First-run: A connector encryption key was generated and persisted to {LocalConfigPath}, " +
+                    "but it is not the effective configuration value -- a higher-priority source (most likely " +
+                    "an empty 'Connectors__EncryptionKey' environment variable) is masking it. Each launch " +
+                    "would then generate a different key and make previously-stored connector credentials " +
+                    "unrecoverable. Unset the empty 'Connectors__EncryptionKey' environment variable, or set " +
+                    "it to a real, stable key.");
+            case ConnectorKeyPersistOutcome.InMemoryFallback:
+                configuration["Connectors:EncryptionKey"] = generated;
+                break;
         }
     }
 
