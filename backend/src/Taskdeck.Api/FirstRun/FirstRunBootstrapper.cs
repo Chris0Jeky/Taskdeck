@@ -590,16 +590,20 @@ public static class FirstRunBootstrapper
             {
                 try
                 {
+                    // Parse with the config provider's leniency (comments / trailing commas). A hand-edited
+                    // but provider-loadable file must round-trip here -- a strict parse would treat it as
+                    // corrupt and drop its existing sections (e.g. the Connectors key) when a later first-run
+                    // write (EnsureDbPath / JWT) rewrites the file, orphaning stored connector credentials.
                     var existing = File.ReadAllText(path);
-                    root = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
+                    root = JsonNode.Parse(existing, nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject() ?? new JsonObject();
                 }
                 catch (Exception ex)
                 {
-                    // The file is unparsable (e.g. an interrupted write or a hand-edit). It may still hold
-                    // the ONLY copy of a previously-generated secret -- losing the connector key in
-                    // particular orphans stored connector credentials -- so preserve it for operator recovery
-                    // before starting fresh, rather than silently overwriting it. Logger is not available at
-                    // this pre-DI stage, so warn to stderr.
+                    // The file is genuinely unparsable (not even provider-loadable -- e.g. an interrupted
+                    // write). It may still hold the ONLY copy of a previously-generated secret -- losing the
+                    // connector key in particular orphans stored connector credentials -- so preserve it for
+                    // operator recovery before starting fresh, rather than silently overwriting it. Logger is
+                    // not available at this pre-DI stage, so warn to stderr.
                     PreserveCorruptConfig(path, ex);
                     root = new JsonObject();
                 }

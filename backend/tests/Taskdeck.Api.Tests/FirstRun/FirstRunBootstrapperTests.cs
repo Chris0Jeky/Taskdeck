@@ -317,6 +317,20 @@ public class FirstRunBootstrapperTests
         Assert.Contains(".corrupt-", source);
     }
 
+    [Fact]
+    public void PersistValue_ParsesExistingConfigLeniently_StructuralCheck()
+    {
+        // The read-modify-write must parse an existing appsettings.local.json with the config provider's
+        // leniency (LocalConfigJsonOptions), so a hand-edited comment / trailing-comma file is preserved --
+        // a strict parse would treat it as corrupt and rewrite the file WITHOUT its existing sections,
+        // dropping the connector key. Guards against a regression back to the strict single-arg parse.
+        var source = File.ReadAllText(
+            FindSourceFile("FirstRunBootstrapper.cs"));
+
+        Assert.Contains("LocalConfigJsonOptions", source);
+        Assert.DoesNotContain("JsonNode.Parse(existing)", source);
+    }
+
     private static string FindSourceFile(string fileName)
     {
         // Walk up from the test output directory to find the repo source.
