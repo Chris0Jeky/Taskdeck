@@ -93,6 +93,51 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         result.Count.Should().BeLessThanOrEqualTo(2);
     }
 
+    [Fact]
+    public async Task GetByStatusForDisplayAsync_BoundsAtSql_NewestFirst_IncludesAllTypes()
+    {
+        // The display read (#1237) is for the ops queue listing: bounded at the database, newest-first,
+        // and -- unlike the work-drain GetOldest* reads -- it must NOT exclude capture rows.
+        var interceptor = new CapturingReaderInterceptor();
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-display", "llm-display@example.com", "hash");
+            db.Users.Add(user);
+
+            var capture = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"c\":1}");
+            var oldAutomation = new LlmRequest(user.Id, "automation.command", "{\"a\":0}");
+            var midAutomation = new LlmRequest(user.Id, "automation.command", "{\"a\":1}");
+            var newestAutomation = new LlmRequest(user.Id, "automation.command", "{\"a\":2}");
+            db.LlmRequests.AddRange(capture, oldAutomation, midAutomation, newestAutomation);
+            await db.SaveChangesAsync();
+
+            var t0 = new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            db.Entry(oldAutomation).Property(nameof(Entity.CreatedAt)).CurrentValue = t0;
+            db.Entry(capture).Property(nameof(Entity.CreatedAt)).CurrentValue = t0.AddSeconds(1);
+            db.Entry(midAutomation).Property(nameof(Entity.CreatedAt)).CurrentValue = t0.AddSeconds(2);
+            db.Entry(newestAutomation).Property(nameof(Entity.CreatedAt)).CurrentValue = t0.AddSeconds(3);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+            interceptor.Clear();
+
+            // Bounded to 2, newest-first -- the newest two regardless of type.
+            var bounded = (await repo.GetByStatusForDisplayAsync(RequestStatus.Pending, limit: 2)).ToList();
+            bounded.Select(r => r.Id).Should().Equal(newestAutomation.Id, midAutomation.Id);
+
+            // The bound is pushed to SQL (LIMIT), not sliced in memory.
+            interceptor.CapturedCommands
+                .Where(sql => sql.Contains("LlmRequests", StringComparison.OrdinalIgnoreCase)
+                              && sql.Contains("SELECT", StringComparison.OrdinalIgnoreCase))
+                .Should().Contain(sql => sql.Contains("LIMIT", StringComparison.OrdinalIgnoreCase),
+                    "the display read must push LIMIT into SQL");
+
+            // A generous limit returns all four, INCLUDING the capture row (display is type-agnostic).
+            var all = (await repo.GetByStatusForDisplayAsync(RequestStatus.Pending, limit: 100)).ToList();
+            all.Should().HaveCount(4);
+            all.Should().Contain(r => CaptureRequestContract.IsCaptureRequestType(r.RequestType));
+        }, interceptor);
+    }
+
     // The bounded work-drain reads target Pending-non-capture and Processing-capture rows -- exactly the
     // rows the live worker claims. These tests therefore use an isolated, worker-free SQLite context
     // (no web host) so the background worker cannot mutate the rows mid-assertion.
@@ -210,6 +255,8 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
             await repo.Invoking(r => r.GetOldestPendingNonCaptureAsync(0))
                 .Should().ThrowAsync<ArgumentOutOfRangeException>();
             await repo.Invoking(r => r.GetOldestProcessingCaptureAsync(-1))
+                .Should().ThrowAsync<ArgumentOutOfRangeException>();
+            await repo.Invoking(r => r.GetByStatusForDisplayAsync(RequestStatus.Pending, 0))
                 .Should().ThrowAsync<ArgumentOutOfRangeException>();
         });
     }
