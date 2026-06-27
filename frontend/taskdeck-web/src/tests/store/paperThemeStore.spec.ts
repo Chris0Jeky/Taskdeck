@@ -105,6 +105,7 @@ describe('paperThemeStore', () => {
       const store = usePaperThemeStore()
       expect(store.mode).toBe('auto')
       expect(window.localStorage.getItem(STORAGE_KEY)).toBe('auto')
+      expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull()
     })
 
     it('treats a legacy off (the pre-flip default / never-opted-in) as the new paper default, dropping the old key', () => {
