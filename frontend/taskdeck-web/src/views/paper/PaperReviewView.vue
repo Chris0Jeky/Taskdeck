@@ -187,6 +187,8 @@ const previewDiffProposalId = ref<string | null>(null)
 const previewDiffLoading = ref(false)
 const previewDiffSection = ref<HTMLElement | null>(null)
 let latestDiffRequestId = 0
+// Guards against a double-click firing two feedback POSTs (the backend is idempotent as a backstop).
+const reportingProposalId = ref<string | null>(null)
 
 // Space can be pressed while the reviewer is looking at the top of a long
 // review surface; the diff renders below the (often tall) deep-review content,
@@ -702,12 +704,24 @@ async function onPreviewDiff() {
   }
 }
 
-function onReportBadSuggestion(proposalId: string) {
+async function onReportBadSuggestion(proposalId: string) {
   if (!proposalId) {
     toast.error('No proposal is selected to report.')
     return
   }
-  toast.info('Report queued for this suggestion.')
+  // Don't double-submit while a report for this proposal is already in flight.
+  if (reportingProposalId.value === proposalId) return
+
+  reportingProposalId.value = proposalId
+  try {
+    await automationApi.reportBadSuggestion(proposalId)
+    // Pure feedback: the proposal stays exactly where it was (review-first, no decision).
+    toast.success('Feedback recorded for this suggestion.')
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to record feedback').message)
+  } finally {
+    reportingProposalId.value = null
+  }
 }
 
 useReviewKeymap(

@@ -32,6 +32,13 @@ export const automationApi = {
     return data
   },
 
+  async reportBadSuggestion(proposalId: string, reason?: string): Promise<void> {
+    // Content-free negative feedback. Returns 204; nothing to map back into board state.
+    await http.post(`/automation/proposals/${encodeURIComponent(proposalId)}/feedback`, {
+      reason: reason ?? null,
+    })
+  },
+
   async executeProposal(id: string, idempotencyKey: string): Promise<Proposal> {
     const { data } = await http.post<Proposal>(
       `/automation/proposals/${encodeURIComponent(id)}/execute`,
