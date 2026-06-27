@@ -15,4 +15,12 @@ public interface IProposalFeedbackRepository : IRepository<ProposalFeedback>
     /// Gets a user's feedback rows, newest first, capped for cohort reads.
     /// </summary>
     Task<IReadOnlyList<ProposalFeedback>> GetAllByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the COMPLETE set of a user's feedback rows, newest first and UNCAPPED, for the
+    /// data-portability export. The cohort read (<see cref="GetAllByUserIdAsync"/>) is capped at a
+    /// 1000-row sample, which would silently truncate a heavy reporter's export; portability must
+    /// be complete, so this read carries no limit.
+    /// </summary>
+    Task<IReadOnlyList<ProposalFeedback>> GetAllByUserIdForExportAsync(Guid userId, CancellationToken cancellationToken = default);
 }

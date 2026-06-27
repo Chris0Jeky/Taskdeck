@@ -70,7 +70,7 @@ public class GdprDataExportRoundTripTests
         _unitOfWorkMock.Setup(u => u.UserPreferences).Returns(_userPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.NotificationPreferences).Returns(_notifPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
-        _feedbackRepoMock.Setup(r => r.GetAllByUserIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ProposalFeedback>());
 
         _historyServiceMock

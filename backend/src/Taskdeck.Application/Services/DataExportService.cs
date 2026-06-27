@@ -52,8 +52,9 @@ public class DataExportService : IDataExportService
             var preferencesTask = _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken);
             var notificationPrefsTask = _unitOfWork.NotificationPreferences.GetByUserIdAsync(userId, cancellationToken);
             // Content-free per-user quality-feedback signals (#1245 review): user-scoped data that
-            // the export must include for portability.
-            var feedbackTask = _unitOfWork.ProposalFeedbacks.GetAllByUserIdAsync(userId, cancellationToken);
+            // the export must include for portability. Use the uncapped export read -- the cohort
+            // helper's 1000-row cap would silently truncate a heavy reporter's export.
+            var feedbackTask = _unitOfWork.ProposalFeedbacks.GetAllByUserIdForExportAsync(userId, cancellationToken);
 
             await Task.WhenAll(
                 boardAccessesTask, notificationsTask, capturesTask,
@@ -335,9 +336,10 @@ public class DataExportService : IDataExportService
             writer.WriteEndArray();
             await writer.FlushAsync(cancellationToken);
 
-            // proposal feedback — content-free signals, bounded per-user set (#1245 review)
+            // proposal feedback — content-free signals, COMPLETE per-user set (#1245 review):
+            // the uncapped export read so a heavy reporter's portability export isn't truncated.
             writer.WriteStartArray("proposalFeedback");
-            foreach (var f in await _unitOfWork.ProposalFeedbacks.GetAllByUserIdAsync(userId, cancellationToken))
+            foreach (var f in await _unitOfWork.ProposalFeedbacks.GetAllByUserIdForExportAsync(userId, cancellationToken))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 writer.WriteStartObject();

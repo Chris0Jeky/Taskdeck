@@ -61,7 +61,7 @@ public class DataExportServiceTests
         _unitOfWorkMock.Setup(u => u.UserPreferences).Returns(_userPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.NotificationPreferences).Returns(_notifPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
-        _feedbackRepoMock.Setup(r => r.GetAllByUserIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ProposalFeedback>());
 
         _testUser = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
@@ -183,7 +183,7 @@ public class DataExportServiceTests
         var feedback = new ProposalFeedback(proposalId, _userId, ProposalFeedbackReason.Irrelevant);
 
         _feedbackRepoMock
-            .Setup(r => r.GetAllByUserIdAsync(_userId, default))
+            .Setup(r => r.GetAllByUserIdForExportAsync(_userId, default))
             .ReturnsAsync(new[] { feedback });
 
         var result = await _service.ExportUserDataAsync(_userId);
@@ -446,7 +446,7 @@ public class DataExportServiceStreamingTests
         _unitOfWorkMock.Setup(u => u.UserPreferences).Returns(_userPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.NotificationPreferences).Returns(_notifPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
-        _feedbackRepoMock.Setup(r => r.GetAllByUserIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ProposalFeedback>());
 
         _testUser = new User("streamuser", "stream@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));

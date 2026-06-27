@@ -87,9 +87,13 @@ insert race; cascade-delete of feedback relies on the Microsoft.Data.Sqlite fore
   than retried, to avoid an optimistic-retry loop on a non-critical telemetry write.
 - **Data portability.** A user's feedback rows are content-free user-scoped data, so they are
   included in the GDPR data export (both the in-memory `ExportUserDataAsync` and the streaming path)
-  as `UserDataExportProposalFeedbackDto` (proposal id, reason, reported-at). The export read goes
-  through `GetAllByUserIdAsync`, whose SQLite ordering was fixed (raw-SQL `ORDER BY CreatedAt DESC`)
-  when the export became its first real-SQLite caller (#1245 review).
+  as `UserDataExportProposalFeedbackDto` (proposal id, reason, reported-at). The export reads through
+  a dedicated **uncapped** `GetAllByUserIdForExportAsync`, deliberately distinct from the cohort
+  read `GetAllByUserIdAsync`, which caps at a 1000-row sample (for the future reported-bad-rate
+  metric). Reusing the capped cohort read would silently truncate a heavy reporter's portability
+  export (#1245 Codex review). The export read sorts newest-first in memory (it materializes the
+  whole set anyway), sidestepping SQLite's inability to `ORDER BY` a `DateTimeOffset` column in
+  LINQ — the same landmine that forced the cohort read onto a raw-SQL `ORDER BY CreatedAt DESC`.
 - **Account-deletion retention.** `ProposalFeedback` is **not** swept by `AccountDeletionService`,
   matching the existing treatment of `AutomationProposal` (also retained): the FK is to
   `AutomationProposals`, not `Users`, and the `User` row is anonymized on deletion so the retained

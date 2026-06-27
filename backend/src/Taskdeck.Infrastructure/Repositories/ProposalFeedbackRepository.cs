@@ -43,4 +43,19 @@ public class ProposalFeedbackRepository : Repository<ProposalFeedback>, IProposa
             .Take(MaxLimit)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<ProposalFeedback>> GetAllByUserIdForExportAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        // Data-portability export: the COMPLETE user-scoped set, deliberately uncapped (the cohort
+        // read's 1000-row cap would silently truncate a heavy reporter's export). No SQL ORDER BY:
+        // SQLite's EF provider can't ORDER BY a DateTimeOffset column in LINQ, and the export
+        // materializes the whole set anyway, so we sort newest-first in memory and avoid the
+        // raw-SQL path entirely. The (ReportedByUserId) filter is index-covered.
+        var rows = await _dbSet
+            .AsNoTracking()
+            .Where(f => f.ReportedByUserId == userId)
+            .ToListAsync(cancellationToken);
+
+        return rows.OrderByDescending(f => f.CreatedAt).ToList();
+    }
 }
