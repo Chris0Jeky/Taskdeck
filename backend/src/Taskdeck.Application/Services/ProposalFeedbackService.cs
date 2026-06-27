@@ -54,6 +54,14 @@ public class ProposalFeedbackService : IProposalFeedbackService
             // A racing concurrent first-report collides on the UNIQUE (ProposalId, ReportedByUserId)
             // index; UnitOfWork maps that to DomainException(Conflict). The row is identical by
             // construction, so treat the race as success -- the signal is already recorded.
+            //
+            // The same Conflict path also covers a concurrent reason REFINEMENT (two requests from
+            // the one user upgrading the same Unspecified row to two different specific reasons at
+            // once): the first commit wins on the UpdatedAt concurrency token and the second is a
+            // benign no-op here. So the precise contract is "last-specific-wins for SEQUENTIAL
+            // re-reports; first-committed-wins under simultaneous distinct reasons" -- a negligible
+            // edge for a single-user signal, and the row's integrity is preserved either way
+            // (see ADR-0043).
             if (ex.ErrorCode == ErrorCodes.Conflict)
                 return Result.Success();
 
