@@ -421,6 +421,8 @@ public class WorkerResilienceTests
         public Task<IEnumerable<LlmRequest>> GetByStatusAsync(
             RequestStatus status, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<IEnumerable<LlmRequest>> GetByStatusForDisplayAsync(RequestStatus status, int limit, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
         public Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
         public Task<IEnumerable<LlmRequest>> GetOldestProcessingCaptureAsync(int limit, CancellationToken cancellationToken = default)
@@ -480,6 +482,13 @@ public class WorkerResilienceTests
             var all = _pending.Concat(_processing).ToList();
             return Task.FromResult<IEnumerable<LlmRequest>>(
                 all.Where(i => i.Status == status).ToList());
+        }
+
+        public Task<IEnumerable<LlmRequest>> GetByStatusForDisplayAsync(RequestStatus status, int limit, CancellationToken cancellationToken = default)
+        {
+            var all = _pending.Concat(_processing).ToList();
+            return Task.FromResult<IEnumerable<LlmRequest>>(
+                all.Where(i => i.Status == status).OrderByDescending(i => i.CreatedAt).Take(limit).ToList());
         }
 
         public Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default)

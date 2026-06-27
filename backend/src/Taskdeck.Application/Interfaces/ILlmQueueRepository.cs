@@ -24,12 +24,21 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns all requests with the given status, newest-first, unbounded. Callers that need the
-    /// full set rely on this (the health backlog gauge and the ops queue listing count/inspect every
-    /// row), so do NOT add a default cap here. Bounded background work-drains must use the type-aware
-    /// <c>GetOldest*</c> methods below, which bound the read at the database.
+    /// Returns all requests with the given status, newest-first, unbounded. The health backlog gauge
+    /// currently inspects every row through this (it should move to count primitives — tracked in #1251),
+    /// so do NOT add a default cap here. Bounded background work-drains must use the type-aware
+    /// <c>GetOldest*</c> methods below; a bounded DISPLAY listing must use
+    /// <see cref="GetByStatusForDisplayAsync"/>.
     /// </summary>
     Task<IEnumerable<LlmRequest>> GetByStatusAsync(RequestStatus status, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns at most <paramref name="limit"/> requests in a status, newest-first, bounded at the
+    /// database — for DISPLAY / diagnostics (the CLI ops queue listing). Claim/processing paths must NOT
+    /// use this: they require the type-aware <c>GetOldest*</c> primitives so bounding never starves
+    /// non-capture work (#1195).
+    /// </summary>
+    Task<IEnumerable<LlmRequest>> GetByStatusForDisplayAsync(RequestStatus status, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns at most <paramref name="limit"/> Pending non-capture (automation) requests, oldest-first,
