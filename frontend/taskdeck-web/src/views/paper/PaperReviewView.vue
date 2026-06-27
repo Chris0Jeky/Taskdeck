@@ -628,7 +628,7 @@ function onRequestEdit() {
   startRevisionEditing()
 }
 
-function onDefer() {
+async function onDefer() {
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
@@ -642,11 +642,13 @@ function onDefer() {
     toast.info('This proposal can no longer be deferred.')
     return
   }
-  void handleDeferProposal(p.id)
-  // If we reached this proposal via a #proposal-<id> deep link, snoozing it must drop it from
-  // the queue. Clear the hash so the visibleProposals carve-out stops exempting it from the
-  // deferred filter (otherwise it lingers with live buttons until navigation/refresh).
-  void clearProposalDeepLink(p.id)
+  const deferred = await handleDeferProposal(p.id)
+  // Only on SUCCESS: if we reached this proposal via a #proposal-<id> deep link, snoozing it must
+  // drop it from the queue, so clear the hash (the visibleProposals carve-out then stops exempting
+  // it from the deferred filter). On FAILURE we must NOT clear the hash — an already-snoozed
+  // deep-linked proposal whose re-defer failed would otherwise vanish (its prior deferredUntil is
+  // still in effect) with no retry path, despite the error toast.
+  if (deferred) void clearProposalDeepLink(p.id)
 }
 
 function onToggleProvenance() {

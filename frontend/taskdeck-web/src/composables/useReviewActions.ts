@@ -65,7 +65,10 @@ export function useReviewActions(
     }
   }
 
-  async function handleDeferProposal(proposalId: string) {
+  // Returns true only when the snooze actually persisted, so the caller can decide whether to
+  // drop a deep-link hash. On failure the proposal is left untouched (a prior snooze stays in
+  // effect), so the caller must NOT hide it.
+  async function handleDeferProposal(proposalId: string): Promise<boolean> {
     try {
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.deferProposal(proposalId)
@@ -73,8 +76,10 @@ export function useReviewActions(
       // the ~60s review clock then resurfaces it when the snooze window elapses.
       proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
       toast.success('Snoozed for 1 hour — it will return to your queue.')
+      return true
     } catch (e: unknown) {
       toast.error(getErrorDisplay(e, 'Failed to snooze proposal').message)
+      return false
     } finally {
       proposalActionBusyId.value = null
     }

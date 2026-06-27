@@ -687,6 +687,60 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Defer error')
   })
 
+  it('keeps an already-snoozed deep-linked proposal visible when extending its snooze fails', async () => {
+    // #1245 adversarial sweep: onDefer must clear the deep-link hash ONLY on success. An
+    // already-snoozed proposal reached via #proposal-<id> is kept visible by the carve-out; if the
+    // user re-defers it and the request FAILS, clearing the hash would hide it (its prior snooze
+    // still stands) with no retry path. The hash — and the proposal — must survive the failure.
+    mocks.deferProposal.mockRejectedValueOnce(new Error('snooze boom'))
+    const wrapper = await mountView(
+      [makeProposal({
+        id: 'already-snoozed',
+        summary: 'Already snoozed',
+        deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+        expiresAt: new Date(Date.now() + 25 * 60 * 60_000).toISOString(),
+      })],
+      '/workspace/review#proposal-already-snoozed',
+    )
+
+    // The deep link keeps the snoozed proposal visible via the carve-out.
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Already snoozed')
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.errorToast).toHaveBeenCalledWith('snooze boom')
+    // Failure must NOT clear the deep link → the proposal stays visible and retryable.
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Already snoozed')
+  })
+
+  it('clears the deep link and hides a deep-linked proposal once its snooze succeeds', async () => {
+    // The success counterpart: snoozing a deep-linked proposal drops the hash so the deferred
+    // filter hides it (the carve-out no longer applies).
+    const deferred = makeProposal({
+      id: 'deep-snooze',
+      summary: 'Deep snooze',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    })
+    mocks.deferProposal.mockResolvedValueOnce(deferred)
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'deep-snooze', summary: 'Deep snooze' }),
+        makeProposal({ id: 'keep-me', summary: 'Stays visible' }),
+      ],
+      '/workspace/review#proposal-deep-snooze',
+    )
+
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Deep snooze')
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+
+    const railText = wrapper.find('[data-testid="paper-review-queue-rail"]').text()
+    expect(railText).not.toContain('Deep snooze')
+    expect(railText).toContain('Stays visible')
+  })
+
   it('does not send reject transitions for already approved proposals', async () => {
     const wrapper = await mountView([makeProposal({ status: 'Approved' })])
 
