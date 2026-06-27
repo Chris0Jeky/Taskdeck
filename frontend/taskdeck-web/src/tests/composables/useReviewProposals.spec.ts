@@ -208,6 +208,26 @@ describe('useReviewProposals', () => {
       expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['snoozed', 'live'])
     })
 
+    it('keeps a deep-linked (hash-targeted) snoozed proposal visible while still hiding other snoozed ones', () => {
+      const rp = useReviewProposals()
+      const base = new Date('2026-06-13T12:00:00.000Z').getTime()
+      rp.nowMs.value = base
+      const deferredUntil = new Date(base + 60 * 60_000).toISOString() // 1h ahead
+      rp.proposals.value = [
+        { ...makeProposal({ id: 'snoozed', status: 'PendingReview' }), deferredUntil },
+        { ...makeProposal({ id: 'other-snoozed', status: 'PendingReview' }), deferredUntil },
+        makeProposal({ id: 'live', status: 'PendingReview' }),
+      ] as any
+
+      // No hash → both snoozed proposals are hidden.
+      mockRoute.hash = ''
+      expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['live'])
+
+      // Deep link to the snoozed proposal → it renders; the OTHER snoozed proposal stays hidden.
+      mockRoute.hash = '#proposal-snoozed'
+      expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['snoozed', 'live'])
+    })
+
     it('never treats a decided proposal with a stale deferredUntil as deferred', () => {
       const rp = useReviewProposals()
       const base = new Date('2026-06-13T12:00:00.000Z').getTime()

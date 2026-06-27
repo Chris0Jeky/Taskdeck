@@ -161,17 +161,22 @@ export function useReviewProposals() {
     )
   }
 
-  const visibleProposals = computed(() =>
-    proposals.value.filter((proposal) => {
+  const visibleProposals = computed(() => {
+    // A deep-linked (hash-targeted) snoozed proposal must stay visible so the deep link renders it
+    // — the backend serves deferred proposals by id (openProposalFromHash fetches + upserts it).
+    // Without this carve-out the unconditional deferred filter would hide the very proposal the
+    // hash points at, leaving an empty or unrelated review item.
+    const hashTargetId = getProposalIdFromHash(route.hash)
+    return proposals.value.filter((proposal) => {
       if (!matchesActiveBoardFilter(proposal.boardId)) return false
       const status = normalizeProposalStatus(proposal.status)
       if (status === 'Dismissed') return false
       if (isProposalExpired(proposal)) return true
-      if (isProposalDeferred(proposal)) return false
+      if (isProposalDeferred(proposal) && proposal.id !== hashTargetId) return false
       if (!showCompleted.value && completedStatuses.has(status)) return false
       return true
-    }),
-  )
+    })
+  })
 
   function captureSourceReference(proposal: ApiProposal): string | null {
     if (normalizeProposalSourceType(proposal.sourceType) !== 'Queue') return null
