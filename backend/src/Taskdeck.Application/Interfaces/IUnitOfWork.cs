@@ -34,6 +34,7 @@ public interface IUnitOfWork
     IConnectorEventRepository ConnectorEvents { get; }
     IConnectorCredentialRepository ConnectorCredentials { get; }
     IProposalRevisionRepository ProposalRevisions { get; }
+    IProposalFeedbackRepository ProposalFeedbacks { get; }
     IDailySnapshotRepository DailySnapshots { get; }
     ITomorrowNoteRepository TomorrowNotes { get; }
     IMcpToolHashRepository McpToolHashes { get; }
