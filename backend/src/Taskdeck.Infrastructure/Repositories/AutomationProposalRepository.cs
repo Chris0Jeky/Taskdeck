@@ -36,9 +36,9 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
                 proposal.RequestedByUserId == userId &&
                 proposal.Status == ProposalStatus.PendingReview)
             // Hide currently-snoozed pending proposals so the Today/Home badge matches
-            // the visible review queue. Same status-gated filter as the list reads.
+            // the visible review queue. Status is already gated to PendingReview above,
+            // so only the snooze window needs checking here.
             .Where(proposal =>
-                proposal.Status != ProposalStatus.PendingReview ||
                 proposal.DeferredUntil == null ||
                 proposal.DeferredUntil <= now)
             .CountAsync(cancellationToken);
