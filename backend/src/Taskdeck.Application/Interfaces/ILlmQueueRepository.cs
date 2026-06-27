@@ -62,6 +62,9 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
 
     /// <summary>Counts Processing capture-triage requests for backlog telemetry, without materializing rows.</summary>
     Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Counts Pending capture-triage requests for the readiness gauge, without materializing rows.</summary>
+    Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default);
     Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default);
     Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default);

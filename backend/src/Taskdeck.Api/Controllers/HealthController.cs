@@ -80,10 +80,12 @@ public class HealthController : ControllerBase
         {
             using var scope = _serviceProvider.CreateScope();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-            var pending = await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct);
-            var pendingList = pending.ToList();
-            var queueDepth = pendingList.Count(item => !CaptureRequestContract.IsCaptureRequestType(item.RequestType));
-            var captureDepth = pendingList.Count - queueDepth;
+            // Count primitives instead of materializing every Pending row on this frequently-polled
+            // readiness probe (#1251): queueDepth = Pending non-capture (the automation backlog the
+            // threshold gates on), captureDepth = Pending capture-triage, totalDepth = their sum.
+            var queueDepth = await unitOfWork.LlmQueue.CountPendingNonCaptureAsync(ct);
+            var captureDepth = await unitOfWork.LlmQueue.CountPendingCaptureAsync(ct);
+            var totalDepth = queueDepth + captureDepth;
             var queueThreshold = Math.Max(_workerSettings.MaxBatchSize * 20, 100);
             var queueHealthy = queueDepth <= queueThreshold;
 
@@ -91,7 +93,7 @@ public class HealthController : ControllerBase
             {
                 status = queueHealthy ? "Healthy" : "Degraded",
                 depth = queueDepth,
-                totalDepth = pendingList.Count,
+                totalDepth,
                 captureDepth,
                 threshold = queueThreshold
             };

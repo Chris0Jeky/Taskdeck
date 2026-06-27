@@ -270,6 +270,9 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
     public Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default)
         => CountByStatusAndCaptureKindAsync(RequestStatus.Processing, capture: true, cancellationToken);
 
+    public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
+        => CountByStatusAndCaptureKindAsync(RequestStatus.Pending, capture: true, cancellationToken);
+
     private async Task<int> CountByStatusAndCaptureKindAsync(
         RequestStatus status,
         bool capture,
