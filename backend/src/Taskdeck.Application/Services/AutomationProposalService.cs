@@ -180,7 +180,8 @@ public class AutomationProposalService : IAutomationProposalService
         // Apply filters in order of specificity
         if (filter.UserId.HasValue)
         {
-            proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(filter.UserId.Value, limit, cancellationToken);
+            // Review-queue read: keep the default includeDeferred:false so snoozed pending proposals stay hidden.
+            proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(filter.UserId.Value, limit, cancellationToken: cancellationToken);
         }
         else if (filter.BoardId.HasValue)
         {

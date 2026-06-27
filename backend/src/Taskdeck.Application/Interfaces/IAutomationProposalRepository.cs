@@ -9,7 +9,10 @@ public interface IAutomationProposalRepository : IRepository<AutomationProposal>
     Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default);
-    Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default);
+    // includeDeferred:false (default) hides currently-snoozed pending proposals for review-queue
+    // reads; completeness-sensitive callers (GDPR data export) pass includeDeferred:true so a
+    // snoozed proposal is never silently dropped from the user's complete data set.
+    Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default);
     Task<AutomationProposal?> GetBySourceReferenceAsync(ProposalSourceType sourceType, string referenceId, CancellationToken cancellationToken = default);
     Task<AutomationProposal?> GetByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default);

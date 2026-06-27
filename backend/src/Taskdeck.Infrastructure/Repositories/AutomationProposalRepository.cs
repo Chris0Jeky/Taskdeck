@@ -58,6 +58,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         return await GetLimitedWithOperationsAsync(
             _dbSet.Where(p => p.Status == status),
             limit,
+            includeDeferred: false,
             cancellationToken);
     }
 
@@ -83,14 +84,16 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         return await GetLimitedWithOperationsAsync(
             _dbSet.Where(p => p.BoardId == boardId),
             limit,
+            includeDeferred: false,
             cancellationToken);
     }
 
-    public async Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(
             _dbSet.Where(p => p.RequestedByUserId == userId),
             limit,
+            includeDeferred,
             cancellationToken);
     }
 
@@ -99,6 +102,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         return await GetLimitedWithOperationsAsync(
             _dbSet.Where(p => p.RiskLevel == riskLevel),
             limit,
+            includeDeferred: false,
             cancellationToken);
     }
 
@@ -332,18 +336,26 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
     private async Task<IReadOnlyList<AutomationProposal>> GetLimitedWithOperationsAsync(
         IQueryable<AutomationProposal> baseQuery,
         int limit,
+        bool includeDeferred,
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
         var boundedLimit = limit <= 0 ? DefaultLimit : limit;
-        var topProposalIds = await baseQuery
-            // Hide snoozed PENDING proposals (DeferredUntil in the future), but never hide a
-            // decided/terminal proposal that happens to retain a stale snooze value. The
-            // status gate keeps Approved/Rejected/etc. visible regardless of DeferredUntil.
-            .Where(p =>
+
+        if (!includeDeferred)
+        {
+            // Hide snoozed PENDING proposals (DeferredUntil in the future) from review-queue
+            // reads, but never hide a decided/terminal proposal that happens to retain a stale
+            // snooze value. The status gate keeps Approved/Rejected/etc. visible regardless of
+            // DeferredUntil. Completeness-sensitive callers (the GDPR data export) opt out with
+            // includeDeferred:true so a snoozed proposal is never silently dropped.
+            baseQuery = baseQuery.Where(p =>
                 p.Status != ProposalStatus.PendingReview ||
                 p.DeferredUntil == null ||
-                p.DeferredUntil <= now)
+                p.DeferredUntil <= now);
+        }
+
+        var topProposalIds = await baseQuery
             .OrderByDescending(p => p.ExpiresAt)
             .Take(boundedLimit)
             .Select(p => p.Id)

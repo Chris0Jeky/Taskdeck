@@ -44,7 +44,9 @@ public class DataExportService : IDataExportService
             var boardAccessesTask = _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
             var notificationsTask = _unitOfWork.Notifications.GetByUserIdAsync(userId, limit: 10000, cancellationToken: cancellationToken);
             var capturesTask = _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken);
-            var proposalsTask = _unitOfWork.AutomationProposals.GetByUserIdAsync(userId, limit: 10000, cancellationToken: cancellationToken);
+            // includeDeferred:true — a complete export must include the user's currently-snoozed
+            // proposals, which review-queue reads hide.
+            var proposalsTask = _unitOfWork.AutomationProposals.GetByUserIdAsync(userId, limit: 10000, includeDeferred: true, cancellationToken: cancellationToken);
             var chatSessionsTask = _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 10000, cancellationToken: cancellationToken);
             var auditLogsTask = _unitOfWork.AuditLogs.GetByUserAsync(userId, limit: 10000, cancellationToken: cancellationToken);
             var preferencesTask = _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken);
@@ -415,7 +417,7 @@ public class DataExportService : IDataExportService
         // the cap. The repo's NormalizeLimit guard only triggers for limit <= 0 and leaves
         // positive values unchanged.
         var all = await _unitOfWork.AutomationProposals.GetByUserIdAsync(
-            userId, limit: int.MaxValue, cancellationToken: cancellationToken);
+            userId, limit: int.MaxValue, includeDeferred: true, cancellationToken: cancellationToken);
 
         foreach (var p in all)
         {
