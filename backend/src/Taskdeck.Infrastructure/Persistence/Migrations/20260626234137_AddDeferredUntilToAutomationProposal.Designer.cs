@@ -2,17 +2,20 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace Taskdeck.Infrastructure.Migrations
+namespace Taskdeck.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260626234137_AddDeferredUntilToAutomationProposal")]
+    partial class AddDeferredUntilToAutomationProposal
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.28");
@@ -1719,40 +1722,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("OutboundWebhookSubscriptions", (string)null);
                 });
 
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalFeedback", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("ProposalId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Reason")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("ReportedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("ReportedByUserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .IsConcurrencyToken()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProposalId", "ReportedByUserId")
-                        .IsUnique();
-
-                    b.HasIndex("ReportedByUserId", "CreatedAt");
-
-                    b.ToTable("ProposalFeedbacks", (string)null);
-                });
-
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalOutcome", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2430,15 +2399,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Board");
 
                     b.Navigation("CreatedByUser");
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalFeedback", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.AutomationProposal", null)
-                        .WithMany()
-                        .HasForeignKey("ProposalId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProposalOutcome", b =>

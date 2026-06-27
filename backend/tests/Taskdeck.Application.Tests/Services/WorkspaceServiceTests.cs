@@ -30,7 +30,7 @@ public class WorkspaceServiceTests
         _unitOfWorkMock.Setup(unitOfWork => unitOfWork.SaveChangesAsync(default)).ReturnsAsync(1);
 
         _proposalRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(It.IsAny<Guid>(), int.MaxValue, default))
+            .Setup(repository => repository.GetByUserIdAsync(It.IsAny<Guid>(), int.MaxValue, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         _proposalRepositoryMock
             .Setup(repository => repository.CountPendingReviewByUserIdAsync(It.IsAny<Guid>(), default))
@@ -110,7 +110,7 @@ public class WorkspaceServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.UserId.Should().Be(userId);
-        _proposalRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, int.MaxValue, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, int.MaxValue, It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         _boardRepositoryMock.Verify(repository => repository.GetReadableByUserIdAsync(userId, false, default), Times.Never);
         _cardRepositoryMock.Verify(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default), Times.Never);
         _llmQueueRepositoryMock.Verify(repository => repository.GetByUserAsync(userId, default), Times.Never);
@@ -206,7 +206,7 @@ public class WorkspaceServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.WorkspaceMode.Should().Be(WorkspaceModeContract.Agent);
-        _proposalRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, int.MaxValue, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, int.MaxValue, It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         _boardRepositoryMock.Verify(repository => repository.GetReadableByUserIdAsync(userId, false, default), Times.Never);
         _cardRepositoryMock.Verify(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default), Times.Never);
         _llmQueueRepositoryMock.Verify(repository => repository.GetByUserAsync(userId, default), Times.Never);
@@ -397,7 +397,7 @@ public class WorkspaceServiceTests
         result.Value.DueTodayCards.Should().ContainSingle(card => card.Title == "Due today");
         result.Value.BlockedCards.Should().ContainSingle(card => card.BlockReason == "Waiting on dependency");
         preference.OnboardingCompletedAt.Should().NotBeNull();
-        _proposalRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, int.MaxValue, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, int.MaxValue, It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         _cardRepositoryMock.Verify(repository => repository.GetByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default), Times.Never);
         _unitOfWorkMock.Verify(unitOfWork => unitOfWork.SaveChangesAsync(default), Times.Once);
     }

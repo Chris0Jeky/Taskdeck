@@ -46,6 +46,37 @@ public class ProposalHousekeepingWorkerTests
         entry.Message.Should().Contain("Cannot expire proposal in status Approved");
     }
 
+    [Fact]
+    public async Task ExpireStaleProposalsAsync_ShouldNotExpire_DeferredProposalWhoseOriginalExpiryHasPassed()
+    {
+        // A proposal that would have expired in 10 minutes, then snoozed for an hour:
+        // Defer pushes ExpiresAt well beyond now, so the next housekeeping cycle must
+        // leave it PendingReview (the snooze keeps it alive).
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Snoozed near-expiry proposal stays alive",
+            RiskLevel.Low,
+            "proposal-housekeeping-defer",
+            expiryMinutes: 10);
+        proposal.Defer(TimeSpan.FromHours(1));
+
+        var repository = new FakeAutomationProposalRepository([proposal]);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var logger = new InMemoryLogger<ProposalHousekeepingWorker>();
+        var worker = new ProposalHousekeepingWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new WorkerSettings(),
+            new WorkerHeartbeatRegistry(),
+            logger);
+
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        proposal.DeferredUntil.Should().NotBeNull();
+    }
+
     private static ServiceProvider BuildServiceProvider(IUnitOfWork unitOfWork)
     {
         var services = new ServiceCollection();
@@ -146,7 +177,7 @@ public class ProposalHousekeepingWorkerTests
             throw new NotSupportedException();
         }
 
-        public Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
+        public Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }
@@ -239,6 +270,7 @@ public class ProposalHousekeepingWorkerTests
         public IConnectorEventRepository ConnectorEvents => null!;
         public IConnectorCredentialRepository ConnectorCredentials => null!;
         public IProposalRevisionRepository ProposalRevisions => null!;
+        public IProposalFeedbackRepository ProposalFeedbacks => null!;
         public IDailySnapshotRepository DailySnapshots => null!;
         public ITomorrowNoteRepository TomorrowNotes => null!;
         public IMcpToolHashRepository McpToolHashes => null!;

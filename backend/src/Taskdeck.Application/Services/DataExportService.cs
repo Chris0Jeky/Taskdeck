@@ -44,16 +44,22 @@ public class DataExportService : IDataExportService
             var boardAccessesTask = _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
             var notificationsTask = _unitOfWork.Notifications.GetByUserIdAsync(userId, limit: 10000, cancellationToken: cancellationToken);
             var capturesTask = _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken);
-            var proposalsTask = _unitOfWork.AutomationProposals.GetByUserIdAsync(userId, limit: 10000, cancellationToken: cancellationToken);
+            // includeDeferred:true — a complete export must include the user's currently-snoozed
+            // proposals, which review-queue reads hide.
+            var proposalsTask = _unitOfWork.AutomationProposals.GetByUserIdAsync(userId, limit: 10000, includeDeferred: true, cancellationToken: cancellationToken);
             var chatSessionsTask = _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 10000, cancellationToken: cancellationToken);
             var auditLogsTask = _unitOfWork.AuditLogs.GetByUserAsync(userId, limit: 10000, cancellationToken: cancellationToken);
             var preferencesTask = _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken);
             var notificationPrefsTask = _unitOfWork.NotificationPreferences.GetByUserIdAsync(userId, cancellationToken);
+            // Content-free per-user quality-feedback signals (#1245 review): user-scoped data that
+            // the export must include for portability. Use the uncapped export read -- the cohort
+            // helper's 1000-row cap would silently truncate a heavy reporter's export.
+            var feedbackTask = _unitOfWork.ProposalFeedbacks.GetAllByUserIdForExportAsync(userId, cancellationToken);
 
             await Task.WhenAll(
                 boardAccessesTask, notificationsTask, capturesTask,
                 proposalsTask, chatSessionsTask, auditLogsTask,
-                preferencesTask, notificationPrefsTask);
+                preferencesTask, notificationPrefsTask, feedbackTask);
 
             var boardAccesses = await boardAccessesTask;
             var notifications = await notificationsTask;
@@ -63,6 +69,7 @@ public class DataExportService : IDataExportService
             var auditLogs = await auditLogsTask;
             var preferences = await preferencesTask;
             var notificationPrefs = await notificationPrefsTask;
+            var proposalFeedback = await feedbackTask;
 
             // Resolve board names for accessible boards
             var boardIds = boardAccesses.Select(ba => ba.BoardId).Distinct().ToList();
@@ -103,7 +110,8 @@ public class DataExportService : IDataExportService
                 p.Status.ToString(),
                 p.Summary,
                 p.BoardId,
-                p.CreatedAt)).ToList();
+                p.CreatedAt,
+                p.DeferredUntil)).ToList();
 
             // Count messages per session in a single batched query (avoids N+1)
             var sessionIds = chatSessions.Select(s => s.Id).ToList();
@@ -145,6 +153,11 @@ public class DataExportService : IDataExportService
                 user.DefaultRole.ToString(),
                 user.CreatedAt);
 
+            var exportFeedback = proposalFeedback.Select(f => new UserDataExportProposalFeedbackDto(
+                f.ProposalId,
+                f.Reason.ToString(),
+                f.ReportedAt)).ToList();
+
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -153,7 +166,8 @@ public class DataExportService : IDataExportService
                 exportChatSessions,
                 exportAuditEntries,
                 exportPreferences,
-                exportNotificationPrefs);
+                exportNotificationPrefs,
+                exportFeedback);
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -287,6 +301,11 @@ public class DataExportService : IDataExportService
                 else
                     writer.WriteNull("boardId");
                 writer.WriteString("createdAt", p.CreatedAt);
+                // Active snooze deadline (#1245 Codex review) — null unless the proposal is deferred.
+                if (p.DeferredUntil.HasValue)
+                    writer.WriteString("deferredUntil", p.DeferredUntil.Value);
+                else
+                    writer.WriteNull("deferredUntil");
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -318,6 +337,21 @@ public class DataExportService : IDataExportService
                 writer.WriteString("entityId", a.EntityId.ToString());
                 writer.WriteString("action", a.Action.ToString());
                 writer.WriteString("timestamp", a.Timestamp);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            // proposal feedback — content-free signals, COMPLETE per-user set (#1245 review):
+            // the uncapped export read so a heavy reporter's portability export isn't truncated.
+            writer.WriteStartArray("proposalFeedback");
+            foreach (var f in await _unitOfWork.ProposalFeedbacks.GetAllByUserIdForExportAsync(userId, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                writer.WriteStartObject();
+                writer.WriteString("proposalId", f.ProposalId.ToString());
+                writer.WriteString("reason", f.Reason.ToString());
+                writer.WriteString("reportedAt", f.ReportedAt);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -415,7 +449,7 @@ public class DataExportService : IDataExportService
         // the cap. The repo's NormalizeLimit guard only triggers for limit <= 0 and leaves
         // positive values unchanged.
         var all = await _unitOfWork.AutomationProposals.GetByUserIdAsync(
-            userId, limit: int.MaxValue, cancellationToken: cancellationToken);
+            userId, limit: int.MaxValue, includeDeferred: true, cancellationToken: cancellationToken);
 
         foreach (var p in all)
         {

@@ -43,3 +43,5 @@
 | [0039](ADR-0039-central-package-management-sdk-pin.md) | Central Package Management, SDK Pin, and 8.x Dependency Alignment | Accepted | 2026-06-13 |
 | [0040](ADR-0040-utc-datetime-materialization-convention.md) | Global UTC DateTime Materialization Convention for SQLite | Accepted | 2026-06-13 |
 | [0041](ADR-0041-desktop-connector-key-autogeneration.md) | Auto-Generate the Connector Encryption Key for the Desktop Exe (Headless Production Excluded) | Accepted | 2026-06-20 |
+| [0042](ADR-0042-proposal-deferral-snooze.md) | Proposal Deferral (Snooze) via DeferredUntil with Expiry Protection | Accepted | 2026-06-27 |
+| [0043](ADR-0043-proposal-quality-feedback-signal.md) | Proposal Quality Feedback as a Separate Content-Free Signal | Accepted | 2026-06-27 |

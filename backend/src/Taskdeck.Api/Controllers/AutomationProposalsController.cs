@@ -8,6 +8,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Confidence;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using BoardAuthorizationService = Taskdeck.Application.Services.IAuthorizationService;
 
@@ -35,6 +36,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly ICardHistoryService _cardHistoryService;
     private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
     private readonly IProposalRevisionService _revisionService;
+    private readonly IProposalFeedbackService _feedbackService;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
@@ -47,6 +49,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         ICardHistoryService cardHistoryService,
         ISideEffectAnalyzer sideEffectAnalyzer,
         IProposalRevisionService revisionService,
+        IProposalFeedbackService feedbackService,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
@@ -59,6 +62,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         _cardHistoryService = cardHistoryService;
         _sideEffectAnalyzer = sideEffectAnalyzer;
         _revisionService = revisionService;
+        _feedbackService = feedbackService;
     }
 
     /// <summary>
@@ -206,6 +210,78 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
         var result = await _proposalService.RejectProposalAsync(id, decidedByUserId, dto, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Snoozes a pending automation proposal so it temporarily leaves the review queue.
+    /// Defer is a write action (it mutates the proposal's timing), so it requires write access.
+    /// A missing/empty body applies the default window; an explicit DurationMinutes is clamped
+    /// to [1, 1440]. No Idempotency-Key header: re-deferring is intentionally idempotent in effect.
+    /// </summary>
+    [HttpPost("{id}/defer")]
+    public async Task<IActionResult> DeferProposal(
+        Guid id,
+        [FromBody] DeferProposalRequestDto? request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: true, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var minutes = Math.Clamp(
+            request?.DurationMinutes ?? AutomationProposal.DefaultDeferMinutes,
+            1,
+            AutomationProposal.MaxDeferMinutes);
+        var result = await _proposalService.DeferProposalAsync(id, TimeSpan.FromMinutes(minutes), cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Records a content-free "bad suggestion" feedback signal for a proposal. This is
+    /// orthogonal telemetry: it never changes the proposal's status, and anyone who can READ
+    /// the proposal may flag it. Idempotent per (proposal, caller): a repeat is a benign no-op.
+    /// </summary>
+    [HttpPost("{id}/feedback")]
+    public async Task<IActionResult> ReportFeedback(
+        Guid id,
+        [FromBody] ReportProposalFeedbackDto? request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        // Read access: feedback mutates nothing on the board or the proposal, so a read-only
+        // reviewer's quality signal must not be silenced. AuthorizeProposalAsync still 404s an
+        // unknown id and 403s a caller with no access.
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var reason = ProposalFeedbackReason.Unspecified;
+        if (!string.IsNullOrWhiteSpace(request?.Reason))
+        {
+            // Validate against the EXACT declared member names. Enum.TryParse is too lax for a
+            // public input: a numeric string ("3") binds straight to the underlying value, and a
+            // comma-composite flags combination ("Irrelevant, Incorrect" -> 1|2 == 3) parses to a
+            // *defined* member, so a follow-on Enum.IsDefined check would wave both through and
+            // record an unrelated category (Duplicate here), polluting the quality signal. Match
+            // the trimmed input to a member name (case-insensitive) instead -- otherwise 400.
+            var match = Enum.GetNames<ProposalFeedbackReason>()
+                .FirstOrDefault(name => string.Equals(name, request.Reason.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                return Result.Failure(ErrorCodes.ValidationError, $"Unknown feedback reason '{request.Reason}'.")
+                    .ToErrorActionResult();
+            }
+
+            reason = Enum.Parse<ProposalFeedbackReason>(match);
+        }
+
+        var result = await _feedbackService.ReportBadSuggestionAsync(id, callerUserId, reason, cancellationToken);
+        return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 
     /// <summary>

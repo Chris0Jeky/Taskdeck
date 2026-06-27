@@ -180,7 +180,8 @@ public class AutomationProposalService : IAutomationProposalService
         // Apply filters in order of specificity
         if (filter.UserId.HasValue)
         {
-            proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(filter.UserId.Value, limit, cancellationToken);
+            // Review-queue read: keep the default includeDeferred:false so snoozed pending proposals stay hidden.
+            proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(filter.UserId.Value, limit, cancellationToken: cancellationToken);
         }
         else if (filter.BoardId.HasValue)
         {
@@ -260,6 +261,32 @@ public class AutomationProposalService : IAutomationProposalService
         }
         catch (DomainException ex)
         {
+            return Result.Failure<ProposalDto>(ex.ErrorCode, ex.Message);
+        }
+    }
+
+    public async Task<Result<ProposalDto>> DeferProposalAsync(Guid id, TimeSpan duration, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(id, cancellationToken);
+            if (proposal == null)
+                return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
+
+            proposal.Defer(duration);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // Defer is a self-initiated timing control, not a decision: deliberately no
+            // ProposalOutcome (outcomes are terminal-decision telemetry) and no notification
+            // (a snooze the reviewer initiated is noise, not news).
+            return Result.Success(MapToDto(proposal));
+        }
+        catch (DomainException ex)
+        {
+            // Domain guards surface here as ValidationError (400) / InvalidOperation (409).
+            // A concurrent decide+defer or double-submit collides on the UpdatedAt concurrency
+            // token; UnitOfWork.SaveChangesAsync maps that DbUpdateConcurrencyException to
+            // DomainException(Conflict) → 409, so it never escapes as a 500.
             return Result.Failure<ProposalDto>(ex.ErrorCode, ex.Message);
         }
     }
@@ -447,7 +474,8 @@ public class AutomationProposalService : IAutomationProposalService
         )
         {
             Presentation = BuildPresentation(proposal),
-            IsExpired = proposal.IsExpired
+            IsExpired = proposal.IsExpired,
+            DeferredUntil = proposal.DeferredUntil
         };
     }
 

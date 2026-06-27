@@ -3,9 +3,11 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -553,6 +555,334 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         var error = await response.Content.ReadFromJsonAsync<JsonElement>();
         error.GetProperty("errorCode").GetString().Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public async Task DeferProposal_WithEmptyBody_ShouldSnoozeDefaultWindow_AndKeepPending()
+    {
+        var userId = await AuthenticateAsync("automation-defer-default");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var before = DateTime.UtcNow;
+        var deferResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/defer", null);
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deferred = await deferResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        deferred.Should().NotBeNull();
+        deferred!.Status.Should().Be(ProposalStatus.PendingReview);
+        deferred.DecidedByUserId.Should().BeNull();
+        deferred.DeferredUntil.Should().NotBeNull();
+        // Default window is ~60 minutes.
+        deferred.DeferredUntil!.Value.Should().BeOnOrAfter(before.AddMinutes(60));
+        deferred.DeferredUntil!.Value.Should().BeOnOrBefore(DateTime.UtcNow.AddMinutes(60).AddSeconds(5));
+
+        // Still reachable by id (deep-link) even while snoozed.
+        var getResponse = await _client.GetAsync($"/api/automation/proposals/{proposal.Id}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task DeferProposal_WithExplicitDuration_ShouldHonorIt()
+    {
+        var userId = await AuthenticateAsync("automation-defer-explicit");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var before = DateTime.UtcNow;
+        var deferResponse = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/defer",
+            new DeferProposalRequestDto(DurationMinutes: 10));
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deferred = await deferResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        deferred!.DeferredUntil.Should().NotBeNull();
+        deferred.DeferredUntil!.Value.Should().BeOnOrAfter(before.AddMinutes(10));
+        deferred.DeferredUntil!.Value.Should().BeOnOrBefore(DateTime.UtcNow.AddMinutes(10).AddSeconds(5));
+    }
+
+    [Fact]
+    public async Task DeferProposal_WithOverlongDuration_ShouldClampToMax()
+    {
+        var userId = await AuthenticateAsync("automation-defer-clamp");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var before = DateTime.UtcNow;
+        var deferResponse = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/defer",
+            new DeferProposalRequestDto(DurationMinutes: 100000));
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deferred = await deferResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        deferred!.DeferredUntil.Should().NotBeNull();
+        // Clamped to the 1440-minute (24h) maximum, not the requested 100000.
+        deferred.DeferredUntil!.Value.Should().BeOnOrAfter(before.AddMinutes(1440));
+        deferred.DeferredUntil!.Value.Should().BeOnOrBefore(DateTime.UtcNow.AddMinutes(1440).AddSeconds(5));
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldReturnUnauthorized_WhenNotAuthenticated()
+    {
+        _client.DefaultRequestHeaders.Authorization = null;
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/defer", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-defer-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-defer-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-defer-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.PostAsync($"/api/automation/proposals/{proposal.Id}/defer", null);
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldReturnNotFound_WhenProposalDoesNotExist()
+    {
+        await AuthenticateAsync("automation-defer-notfound");
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/defer", null);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var error = await response.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldReturnConflict_WhenProposalAlreadyApproved()
+    {
+        var userId = await AuthenticateAsync("automation-defer-approved");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var approveResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deferResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/defer", null);
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldDisappearFromList_ThenReappearAfterWindow()
+    {
+        var userId = await AuthenticateAsync("automation-defer-list");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var deferResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/defer", null);
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Snoozed: it leaves the board-scoped list.
+        var hiddenList = await GetBoardProposalsAsync(boardId);
+        hiddenList.Should().NotContain(p => p.Id == proposal.Id);
+
+        // Elapse the snooze window directly in the database, then it reappears.
+        var pastDeferredUntil = DateTime.UtcNow.AddMinutes(-1);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE AutomationProposals SET DeferredUntil = {pastDeferredUntil} WHERE Id = {proposal.Id}");
+        }
+
+        var visibleList = await GetBoardProposalsAsync(boardId);
+        visibleList.Should().Contain(p => p.Id == proposal.Id);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn204_WithEmptyBody()
+    {
+        var userId = await AuthenticateAsync("automation-feedback-basic");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/feedback", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldBeIdempotent_AndRecordOneRow()
+    {
+        var userId = await AuthenticateAsync("automation-feedback-idem");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var first = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/feedback", null);
+        var second = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/feedback", null);
+        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        second.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var count = await db.ProposalFeedbacks.CountAsync(f => f.ProposalId == proposal.Id);
+        count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldPersistReason_AndReporterFromClaims()
+    {
+        var userId = await AuthenticateAsync("automation-feedback-reason");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("TooRisky"));
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var feedback = await db.ProposalFeedbacks.SingleAsync(f => f.ProposalId == proposal.Id);
+        feedback.Reason.Should().Be(ProposalFeedbackReason.TooRisky);
+        feedback.ReportedByUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task GetAllByUserIdAsync_ReturnsUserFeedbackNewestFirst_OnSqlite()
+    {
+        // Regression guard (#1245 review): GetAllByUserIdAsync orders by a DateTimeOffset column,
+        // which SQLite's EF provider can't ORDER BY in LINQ -- it must run without throwing and
+        // return newest-first. This is the real-SQLite read path the GDPR export depends on.
+        var userId = await AuthenticateAsync("automation-feedback-getall");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var older = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+        var newer = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        (await _client.PostAsJsonAsync($"/api/automation/proposals/{older.Id}/feedback",
+            new ReportProposalFeedbackDto("Irrelevant"))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await _client.PostAsJsonAsync($"/api/automation/proposals/{newer.Id}/feedback",
+            new ReportProposalFeedbackDto("Incorrect"))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var scope = _factory.Services.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<IProposalFeedbackRepository>();
+        var all = await repo.GetAllByUserIdAsync(userId);
+
+        all.Should().HaveCount(2);
+        all.Select(f => f.ProposalId).Should().Equal(newer.Id, older.Id); // newest-first
+    }
+
+    [Fact]
+    public async Task GetAllByUserIdForExportAsync_ReturnsAllRowsUncapped_WhileCohortReadCaps()
+    {
+        // #1245 Codex P2: the data-portability export must return the COMPLETE feedback set, not the
+        // capped 1000-row cohort sample (a heavy reporter would otherwise lose older rows from the
+        // export). Seed just past the cap and assert the two reads diverge: the export read returns
+        // everything; the cohort read stays bounded. Seed directly via the DbContext -- 1005 API
+        // round-trips would be needlessly slow, and AutomationProposal has no required parent FK.
+        const int cohortCap = 1000; // mirrors ProposalFeedbackRepository.MaxLimit
+        const int seedCount = cohortCap + 5;
+        var userId = Guid.NewGuid();
+
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            for (var i = 0; i < seedCount; i++)
+            {
+                var proposal = new AutomationProposal(
+                    ProposalSourceType.Chat, userId, $"export-cap proposal {i}",
+                    RiskLevel.Low, Guid.NewGuid().ToString());
+                db.AutomationProposals.Add(proposal);
+                db.ProposalFeedbacks.Add(new ProposalFeedback(proposal.Id, userId, ProposalFeedbackReason.Unspecified));
+            }
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = _factory.Services.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<IProposalFeedbackRepository>();
+
+        var exported = await repo.GetAllByUserIdForExportAsync(userId);
+        var cohort = await repo.GetAllByUserIdAsync(userId);
+
+        exported.Should().HaveCount(seedCount);   // uncapped — the complete export
+        cohort.Should().HaveCount(cohortCap);     // cohort sample stays bounded
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn404_ForUnknownProposal()
+    {
+        await AuthenticateAsync("automation-feedback-404");
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/feedback", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn400_ForUnknownReason()
+    {
+        var userId = await AuthenticateAsync("automation-feedback-badreason");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        // Exact-name validation rejects every non-member form. Beyond the obvious junk/out-of-range
+        // numeric, the subtle ones (#1245 Codex P2) are inputs Enum.TryParse would coerce to a
+        // *defined* member and silently mis-record: a comma-composite flags combination
+        // ("Irrelevant, Incorrect" -> 1|2 == 3 == Duplicate) and an in-range numeric string
+        // ("3" == Duplicate). All four must be 400, never a recorded Duplicate.
+        var numeric = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("999"));
+        var junk = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("definitely-not-a-reason"));
+        var composite = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("Irrelevant, Incorrect"));
+        var inRangeNumeric = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("3"));
+
+        numeric.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        junk.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        composite.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        inRangeNumeric.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // And nothing was persisted by the rejected coercions.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.ProposalFeedbacks.AnyAsync(f => f.ProposalId == proposal.Id)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn403_ForUserWithoutBoardAccess()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-feedback-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-feedback-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-feedback-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.PostAsync($"/api/automation/proposals/{proposal.Id}/feedback", null);
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn401_WhenUnauthenticated()
+    {
+        var anon = _factory.CreateClient();
+
+        var response = await anon.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/feedback", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    private async Task<List<ProposalDto>> GetBoardProposalsAsync(Guid boardId)
+    {
+        var response = await _client.GetAsync($"/api/automation/proposals?boardId={boardId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<List<ProposalDto>>())!;
     }
 
     private async Task<ProposalDto> CreateTestProposal(Guid userId, Guid boardId, RiskLevel riskLevel)

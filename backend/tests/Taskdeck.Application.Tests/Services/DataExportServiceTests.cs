@@ -26,6 +26,7 @@ public class DataExportServiceTests
     private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly Mock<IUserPreferenceRepository> _userPrefRepoMock;
     private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
+    private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
     private readonly DataExportService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -46,6 +47,7 @@ public class DataExportServiceTests
         _auditLogRepoMock = new Mock<IAuditLogRepository>();
         _userPrefRepoMock = new Mock<IUserPreferenceRepository>();
         _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
+        _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -58,6 +60,9 @@ public class DataExportServiceTests
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.UserPreferences).Returns(_userPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.NotificationPreferences).Returns(_notifPrefRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
+        _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<ProposalFeedback>());
 
         _testUser = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -167,6 +172,54 @@ public class DataExportServiceTests
     }
 
     [Fact]
+    public async Task ExportUserDataAsync_IncludesProposalFeedback()
+    {
+        // #1245 review: a user's content-free quality-feedback signals are user-scoped data and
+        // must appear in the portability export (the new ProposalFeedbacks table was previously omitted).
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var proposalId = Guid.NewGuid();
+        var feedback = new ProposalFeedback(proposalId, _userId, ProposalFeedbackReason.Irrelevant);
+
+        _feedbackRepoMock
+            .Setup(r => r.GetAllByUserIdForExportAsync(_userId, default))
+            .ReturnsAsync(new[] { feedback });
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Data.ProposalFeedback.Should().HaveCount(1);
+        result.Value.Data.ProposalFeedback[0].ProposalId.Should().Be(proposalId);
+        result.Value.Data.ProposalFeedback[0].Reason.Should().Be(nameof(ProposalFeedbackReason.Irrelevant));
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_IncludesDeferredUntilForSnoozedProposals()
+    {
+        // #1245 Codex review: a snoozed proposal's DeferredUntil is what determines why it is
+        // hidden from the review queue, so the portability export must carry the snooze timestamp,
+        // not just the proposal row.
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, _userId, "snoozed proposal", RiskLevel.Low, Guid.NewGuid().ToString());
+        proposal.Defer(TimeSpan.FromHours(1));
+        proposal.DeferredUntil.Should().NotBeNull();
+
+        _proposalRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
+            .ReturnsAsync(new[] { proposal });
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Data.Proposals.Should().HaveCount(1);
+        result.Value.Data.Proposals[0].DeferredUntil.Should().Be(proposal.DeferredUntil);
+    }
+
+    [Fact]
     public async Task ExportUserDataAsync_LogsExportAction()
     {
         // Arrange
@@ -203,7 +256,7 @@ public class DataExportServiceTests
         _llmQueueRepoMock.Verify(
             r => r.GetByUserAsync(_userId, default), Times.Once);
         _proposalRepoMock.Verify(
-            r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default), Times.Once);
+            r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default), Times.Once);
         _chatSessionRepoMock.Verify(
             r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default), Times.Once);
         _auditLogRepoMock.Verify(
@@ -270,7 +323,7 @@ public class DataExportServiceTests
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         _proposalRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
@@ -348,7 +401,7 @@ public class DataExportServiceTests
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         _proposalRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
@@ -383,6 +436,7 @@ public class DataExportServiceStreamingTests
     private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly Mock<IUserPreferenceRepository> _userPrefRepoMock;
     private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
+    private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
     private readonly DataExportService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -403,6 +457,7 @@ public class DataExportServiceStreamingTests
         _auditLogRepoMock = new Mock<IAuditLogRepository>();
         _userPrefRepoMock = new Mock<IUserPreferenceRepository>();
         _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
+        _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -415,6 +470,9 @@ public class DataExportServiceStreamingTests
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.UserPreferences).Returns(_userPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.NotificationPreferences).Returns(_notifPrefRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
+        _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<ProposalFeedback>());
 
         _testUser = new User("streamuser", "stream@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -517,7 +575,7 @@ public class DataExportServiceStreamingTests
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         _proposalRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
 
         _chatSessionRepoMock
@@ -601,7 +659,7 @@ public class DataExportServiceStreamingTests
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         _proposalRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))

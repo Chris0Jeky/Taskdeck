@@ -483,6 +483,134 @@ public class AutomationProposalServiceTests
 
     #endregion
 
+    #region DeferProposalAsync Tests
+
+    [Fact]
+    public async Task DeferProposalAsync_ShouldReturnSuccess_AndSetDeferredUntil_KeepingPendingReview()
+    {
+        // Arrange
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Test proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.DeferProposalAsync(proposalId, TimeSpan.FromMinutes(60));
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(ProposalStatus.PendingReview);
+        result.Value.DeferredUntil.Should().NotBeNull();
+        result.Value.DecidedByUserId.Should().BeNull();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        // Defer is not a decision: no notification and no outcome are written.
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task DeferProposalAsync_ShouldReturnNotFound_WhenProposalMissing()
+    {
+        // Arrange
+        var proposalId = Guid.NewGuid();
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync((AutomationProposal?)null);
+
+        // Act
+        var result = await _service.DeferProposalAsync(proposalId, TimeSpan.FromMinutes(60));
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeferProposalAsync_ShouldReturnInvalidOperation_WhenNotPendingReview()
+    {
+        // Arrange
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Test proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+        proposal.Approve(Guid.NewGuid());
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.DeferProposalAsync(proposalId, TimeSpan.FromMinutes(60));
+
+        // Assert (InvalidOperation -> 409)
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeferProposalAsync_ShouldReturnValidationError_WhenDurationOutOfRange()
+    {
+        // Arrange
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Test proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act (zero duration -> domain ValidationError -> 400)
+        var result = await _service.DeferProposalAsync(proposalId, TimeSpan.Zero);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeferProposalAsync_ShouldMapConcurrencyConflictTo409_NotUnhandled()
+    {
+        // Arrange — a concurrent decide+defer/double-submit collides on the UpdatedAt
+        // concurrency token. UnitOfWork.SaveChangesAsync converts the underlying
+        // DbUpdateConcurrencyException into DomainException(Conflict); the service's
+        // DomainException catch then returns a 409-class failure rather than a 500.
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Test proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default))
+            .ThrowsAsync(new DomainException(ErrorCodes.Conflict, "Record was updated by another session. Refresh and retry your action."));
+
+        // Act
+        var result = await _service.DeferProposalAsync(proposalId, TimeSpan.FromMinutes(60));
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+    }
+
+    #endregion
+
     #region MarkAsAppliedAsync Tests
 
     [Fact]
@@ -1016,7 +1144,7 @@ public class AutomationProposalServiceTests
         var approved = new AutomationProposal(ProposalSourceType.Chat, userId, "Approved", RiskLevel.Low, Guid.NewGuid().ToString());
         approved.Approve(Guid.NewGuid());
 
-        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, 10, default))
+        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, 10, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { pending, approved });
 
         // Act
@@ -1025,7 +1153,7 @@ public class AutomationProposalServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().ContainSingle(p => p.Id == pending.Id);
-        _proposalRepoMock.Verify(r => r.GetByUserIdAsync(userId, 10, default), Times.Once);
+        _proposalRepoMock.Verify(r => r.GetByUserIdAsync(userId, 10, It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         _proposalRepoMock.Verify(r => r.GetByStatusAsync(It.IsAny<ProposalStatus>(), It.IsAny<int>(), default), Times.Never);
     }
 

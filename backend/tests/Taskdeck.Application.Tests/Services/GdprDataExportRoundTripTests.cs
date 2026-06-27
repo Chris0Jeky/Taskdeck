@@ -38,6 +38,7 @@ public class GdprDataExportRoundTripTests
     private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly Mock<IUserPreferenceRepository> _userPrefRepoMock;
     private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
+    private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
     private readonly DataExportService _service;
 
     public GdprDataExportRoundTripTests()
@@ -55,6 +56,7 @@ public class GdprDataExportRoundTripTests
         _auditLogRepoMock = new Mock<IAuditLogRepository>();
         _userPrefRepoMock = new Mock<IUserPreferenceRepository>();
         _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
+        _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -67,6 +69,9 @@ public class GdprDataExportRoundTripTests
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.UserPreferences).Returns(_userPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.NotificationPreferences).Returns(_notifPrefRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
+        _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<ProposalFeedback>());
 
         _historyServiceMock
             .Setup(h => h.LogActionAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
@@ -98,7 +103,7 @@ public class GdprDataExportRoundTripTests
 
         _llmQueueRepoMock.Setup(r => r.GetByUserAsync(userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
-        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
+        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
             .ReturnsAsync(Enumerable.Empty<ChatSession>());
@@ -298,7 +303,7 @@ public class GdprDataExportRoundTripTests
             .ReturnsAsync(Enumerable.Empty<Notification>());
         _llmQueueRepoMock.Setup(r => r.GetByUserAsync(userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
-        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
+        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
             .ReturnsAsync(Enumerable.Empty<ChatSession>());
@@ -316,7 +321,7 @@ public class GdprDataExportRoundTripTests
             .ReturnsAsync(Enumerable.Empty<Notification>());
         _llmQueueRepoMock.Setup(r => r.GetByUserAsync(userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
-        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
+        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
             .ReturnsAsync(Enumerable.Empty<ChatSession>());

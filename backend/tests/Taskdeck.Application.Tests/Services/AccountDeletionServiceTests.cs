@@ -90,6 +90,26 @@ public class AccountDeletionServiceTests
     }
 
     [Fact]
+    public async Task DeleteAccountAsync_DeliberatelyRetainsProposalFeedback()
+    {
+        // ADR-0043 (verified against this service): ProposalFeedback is content-free
+        // (proposalId, reportedByUserId GUID, reason enum, timestamps) and its FK is to
+        // AutomationProposals — which account deletion intentionally RETAINS untouched. The user
+        // record is anonymized (PII scrubbed) in step 8, so the retained ReportedByUserId GUID
+        // resolves only to scrubbed data. Deletion must therefore not touch ProposalFeedbacks;
+        // this locks that deliberate decision (a future change that sweeps proposals must add
+        // feedback alongside them, per the ADR).
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var result = await _service.DeleteAccountAsync(
+            _userId, new AccountDeletionRequest(_password, "DELETE MY ACCOUNT"));
+
+        result.IsSuccess.Should().BeTrue();
+        _unitOfWorkMock.VerifyGet(u => u.ProposalFeedbacks, Times.Never);
+    }
+
+    [Fact]
     public async Task DeleteAccountAsync_ReturnsError_WhenPasswordIsWrong()
     {
         // Arrange

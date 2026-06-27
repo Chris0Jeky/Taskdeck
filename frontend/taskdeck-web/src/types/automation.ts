@@ -56,6 +56,8 @@ export interface Proposal {
   presentation?: ProposalPresentation
   /** True when the proposal's expiry time has passed (server-authoritative). */
   isExpired?: boolean
+  /** When set and in the future, the proposal is snoozed (deferred) until this UTC instant. */
+  deferredUntil?: string | null
 }
 
 export interface ProposalFilters {

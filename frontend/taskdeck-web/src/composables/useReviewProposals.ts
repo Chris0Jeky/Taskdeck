@@ -148,16 +148,35 @@ export function useReviewProposals() {
     return isProposalStale(proposal, nowMs.value)
   }
 
-  const visibleProposals = computed(() =>
-    proposals.value.filter((proposal) => {
+  // A proposal is "deferred" (snoozed) only while it is a PendingReview proposal whose
+  // deferredUntil is still in the future. The status gate keeps a decided/terminal proposal
+  // that retained a stale snooze value from ever being hidden. The 60s `nowMs` clock
+  // auto-resurfaces it in-session once the window elapses; the backend filter resurfaces
+  // it cross-session.
+  function isProposalDeferred(proposal: ApiProposal): boolean {
+    return (
+      !!proposal.deferredUntil &&
+      new Date(proposal.deferredUntil).getTime() > nowMs.value &&
+      normalizeProposalStatus(proposal.status) === 'PendingReview'
+    )
+  }
+
+  const visibleProposals = computed(() => {
+    // A deep-linked (hash-targeted) snoozed proposal must stay visible so the deep link renders it
+    // — the backend serves deferred proposals by id (openProposalFromHash fetches + upserts it).
+    // Without this carve-out the unconditional deferred filter would hide the very proposal the
+    // hash points at, leaving an empty or unrelated review item.
+    const hashTargetId = getProposalIdFromHash(route.hash)
+    return proposals.value.filter((proposal) => {
       if (!matchesActiveBoardFilter(proposal.boardId)) return false
       const status = normalizeProposalStatus(proposal.status)
       if (status === 'Dismissed') return false
       if (isProposalExpired(proposal)) return true
+      if (isProposalDeferred(proposal) && proposal.id !== hashTargetId) return false
       if (!showCompleted.value && completedStatuses.has(status)) return false
       return true
-    }),
-  )
+    })
+  })
 
   function captureSourceReference(proposal: ApiProposal): string | null {
     if (normalizeProposalSourceType(proposal.sourceType) !== 'Queue') return null
@@ -302,6 +321,18 @@ export function useReviewProposals() {
     }
   }
 
+  // After a user action removes a deep-linked proposal from the queue (a SUCCESSFUL snooze via
+  // Defer), drop the hash so the visibleProposals carve-out stops exempting it from the deferred
+  // filter. Without this, a just-snoozed proposal you reached via #proposal-<id> stays visible —
+  // with live action buttons — until the next navigation/refresh, contradicting the snooze.
+  // Callers MUST gate this on success: clearing the hash for a proposal whose defer FAILED would
+  // hide an already-snoozed deep-linked target (its prior deferredUntil still in effect) with no
+  // retry path.
+  async function clearProposalDeepLink(proposalId: string) {
+    if (getProposalIdFromHash(route.hash) !== proposalId) return
+    await safeReplace({ name: 'workspace-review', query: route.query })
+  }
+
   async function loadProposals() {
     reviewLoadPerf.start()
     const requestId = ++latestProposalLoadRequestId
@@ -428,7 +459,9 @@ export function useReviewProposals() {
     isApplyActionable,
     isRejectActionable,
     isProposalDismissable,
+    isProposalDeferred,
     isStaleProposal,
+    clearProposalDeepLink,
     loadProposals,
     loadBoardOptions,
     startClock,

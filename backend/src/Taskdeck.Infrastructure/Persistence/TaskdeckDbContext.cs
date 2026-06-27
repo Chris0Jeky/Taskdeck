@@ -49,6 +49,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<ConnectorCredential> ConnectorCredentials => Set<ConnectorCredential>();
     public DbSet<ProposalRevision> ProposalRevisions => Set<ProposalRevision>();
     public DbSet<ProposalOutcome> ProposalOutcomes => Set<ProposalOutcome>();
+    public DbSet<ProposalFeedback> ProposalFeedbacks => Set<ProposalFeedback>();
     public DbSet<ProposalProvenance> ProposalProvenances => Set<ProposalProvenance>();
     public DbSet<ProvenanceField> ProvenanceFields => Set<ProvenanceField>();
     public DbSet<ProvenanceEvidenceLink> ProvenanceEvidenceLinks => Set<ProvenanceEvidenceLink>();

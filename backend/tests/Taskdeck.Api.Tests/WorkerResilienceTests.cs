@@ -666,7 +666,7 @@ public class WorkerResilienceTests
             => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
-        public Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
+        public Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -719,6 +719,7 @@ public class WorkerResilienceTests
         public IConnectorEventRepository ConnectorEvents => null!;
         public IConnectorCredentialRepository ConnectorCredentials => null!;
         public IProposalRevisionRepository ProposalRevisions => null!;
+        public IProposalFeedbackRepository ProposalFeedbacks => null!;
         public IDailySnapshotRepository DailySnapshots => null!;
         public ITomorrowNoteRepository TomorrowNotes => null!;
         public IMcpToolHashRepository McpToolHashes => null!;
@@ -764,6 +765,7 @@ public class WorkerResilienceTests
         public IConnectorEventRepository ConnectorEvents => null!;
         public IConnectorCredentialRepository ConnectorCredentials => null!;
         public IProposalRevisionRepository ProposalRevisions => null!;
+        public IProposalFeedbackRepository ProposalFeedbacks => null!;
         public IDailySnapshotRepository DailySnapshots => null!;
         public ITomorrowNoteRepository TomorrowNotes => null!;
         public IMcpToolHashRepository McpToolHashes => null!;

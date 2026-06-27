@@ -50,6 +50,7 @@ public class UnitOfWork : IUnitOfWork
         IConnectorEventRepository connectorEvents,
         IConnectorCredentialRepository connectorCredentials,
         IProposalRevisionRepository proposalRevisions,
+        IProposalFeedbackRepository proposalFeedbacks,
         IDailySnapshotRepository dailySnapshots,
         ITomorrowNoteRepository tomorrowNotes,
         IMcpToolHashRepository mcpToolHashes)
@@ -87,6 +88,7 @@ public class UnitOfWork : IUnitOfWork
         ConnectorEvents = connectorEvents;
         ConnectorCredentials = connectorCredentials;
         ProposalRevisions = proposalRevisions;
+        ProposalFeedbacks = proposalFeedbacks;
         DailySnapshots = dailySnapshots;
         TomorrowNotes = tomorrowNotes;
         McpToolHashes = mcpToolHashes;
@@ -124,6 +126,7 @@ public class UnitOfWork : IUnitOfWork
     public IConnectorEventRepository ConnectorEvents { get; }
     public IConnectorCredentialRepository ConnectorCredentials { get; }
     public IProposalRevisionRepository ProposalRevisions { get; }
+    public IProposalFeedbackRepository ProposalFeedbacks { get; }
     public IDailySnapshotRepository DailySnapshots { get; }
     public ITomorrowNoteRepository TomorrowNotes { get; }
     public IMcpToolHashRepository McpToolHashes { get; }
@@ -196,6 +199,15 @@ public class UnitOfWork : IUnitOfWork
                 throw new DomainException(
                     ErrorCodes.Conflict,
                     "An automation operation with this idempotency key already exists.",
+                    ex);
+            }
+            catch (DbUpdateException ex) when (IsProposalFeedbackUniqueViolation(ex))
+            {
+                // A second feedback row for the same (proposal, user) raced in. The signal is
+                // already recorded; the feedback service treats this Conflict as a benign success.
+                throw new DomainException(
+                    ErrorCodes.Conflict,
+                    "Feedback for this proposal was already recorded by this user.",
                     ex);
             }
             catch (DbUpdateException ex) when (!resolvedRecoverableUniqueConflict && TryResolveRecoverableUniqueConflicts(ex))
@@ -382,6 +394,19 @@ public class UnitOfWork : IUnitOfWork
             StringComparison.OrdinalIgnoreCase)
             || exception.InnerException.Message.Contains(
                 "IX_ProposalRevisions_ProposalId_RevisionNumber",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsProposalFeedbackUniqueViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is null)
+            return false;
+
+        return exception.InnerException.Message.Contains(
+            "ProposalFeedbacks.ProposalId, ProposalFeedbacks.ReportedByUserId",
+            StringComparison.OrdinalIgnoreCase)
+            || exception.InnerException.Message.Contains(
+                "IX_ProposalFeedbacks_ProposalId_ReportedByUserId",
                 StringComparison.OrdinalIgnoreCase);
     }
 

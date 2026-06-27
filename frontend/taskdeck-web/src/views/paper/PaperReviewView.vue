@@ -61,6 +61,7 @@ const {
   isRejectActionable,
   isProposalDismissable,
   isStaleProposal,
+  clearProposalDeepLink,
   loadProposals,
   loadBoardOptions,
   startClock,
@@ -89,6 +90,7 @@ const {
   bulkDismissBusy,
   handleApproveProposal,
   handleRejectProposal,
+  handleDeferProposal,
   handleExecuteProposal,
   handleDismissProposal,
   handleDismissApplied,
@@ -186,6 +188,8 @@ const previewDiffProposalId = ref<string | null>(null)
 const previewDiffLoading = ref(false)
 const previewDiffSection = ref<HTMLElement | null>(null)
 let latestDiffRequestId = 0
+// Guards against a double-click firing two feedback POSTs (the backend is idempotent as a backstop).
+const reportingProposalId = ref<string | null>(null)
 
 // Space can be pressed while the reviewer is looking at the top of a long
 // review surface; the diff renders below the (often tall) deep-review content,
@@ -624,12 +628,27 @@ function onRequestEdit() {
   startRevisionEditing()
 }
 
-function onDefer() {
-  // Defer is a UI-only action until the backend supports a "defer 1h"
-  // endpoint (see backend-gap follow-up). For now we leave the proposal in
-  // place; the toast confirms intent so testing can wire to a stub later.
-  // TODO(#1002): call automationApi.deferProposal once available.
-  toast.info('Defer is not wired yet; the proposal is still in your queue.')
+async function onDefer() {
+  const p = activeProposal.value
+  if (!p) return
+  if (revisionBusy.value) {
+    toast.info('Save or cancel the revision before deferring this proposal.')
+    return
+  }
+  // Another action is already in flight (approve/reject/defer/dismiss/bulk).
+  if (busy.value) return
+  // Defer shares Reject's precondition: a live, non-expired PendingReview proposal.
+  if (!isRejectActionable(p)) {
+    toast.info('This proposal can no longer be deferred.')
+    return
+  }
+  const deferred = await handleDeferProposal(p.id)
+  // Only on SUCCESS: if we reached this proposal via a #proposal-<id> deep link, snoozing it must
+  // drop it from the queue, so clear the hash (the visibleProposals carve-out then stops exempting
+  // it from the deferred filter). On FAILURE we must NOT clear the hash — an already-snoozed
+  // deep-linked proposal whose re-defer failed would otherwise vanish (its prior deferredUntil is
+  // still in effect) with no retry path, despite the error toast.
+  if (deferred) void clearProposalDeepLink(p.id)
 }
 
 function onToggleProvenance() {
@@ -692,12 +711,24 @@ async function onPreviewDiff() {
   }
 }
 
-function onReportBadSuggestion(proposalId: string) {
+async function onReportBadSuggestion(proposalId: string) {
   if (!proposalId) {
     toast.error('No proposal is selected to report.')
     return
   }
-  toast.info('Report queued for this suggestion.')
+  // Don't double-submit while a report for this proposal is already in flight.
+  if (reportingProposalId.value === proposalId) return
+
+  reportingProposalId.value = proposalId
+  try {
+    await automationApi.reportBadSuggestion(proposalId)
+    // Pure feedback: the proposal stays exactly where it was (review-first, no decision).
+    toast.success('Feedback recorded for this suggestion.')
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to record feedback').message)
+  } finally {
+    reportingProposalId.value = null
+  }
 }
 
 useReviewKeymap(

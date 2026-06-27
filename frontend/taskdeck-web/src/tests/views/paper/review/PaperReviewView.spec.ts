@@ -9,9 +9,11 @@ const mocks = vi.hoisted(() => ({
   getProposal: vi.fn(),
   approveProposal: vi.fn(),
   rejectProposal: vi.fn(),
+  deferProposal: vi.fn(),
   executeProposal: vi.fn(),
   getProposalDiff: vi.fn(),
   dismissProposals: vi.fn(),
+  reportBadSuggestion: vi.fn(),
   getProvenance: vi.fn(),
   getConfidence: vi.fn(),
   getSideEffects: vi.fn(),
@@ -34,9 +36,11 @@ vi.mock('../../../../api/automationApi', () => ({
     getProposal: mocks.getProposal,
     approveProposal: mocks.approveProposal,
     rejectProposal: mocks.rejectProposal,
+    deferProposal: mocks.deferProposal,
     executeProposal: mocks.executeProposal,
     getProposalDiff: mocks.getProposalDiff,
     dismissProposals: mocks.dismissProposals,
+    reportBadSuggestion: mocks.reportBadSuggestion,
   },
 }))
 
@@ -631,14 +635,110 @@ describe('PaperReviewView', () => {
     }
   })
 
-  it('surfaces feedback when defer is invoked before backend support exists', async () => {
-    const wrapper = await mountView([makeProposal()])
+  it('snoozes the active proposal when defer is clicked and shows a success toast', async () => {
+    const deferred = makeProposal({
+      id: 'proposal-001',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    })
+    mocks.deferProposal.mockResolvedValueOnce(deferred)
+    const wrapper = await mountView([makeProposal({ id: 'proposal-001' })])
 
     await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
 
-    expect(mocks.infoToast).toHaveBeenCalledWith(
-      'Defer is not wired yet; the proposal is still in your queue.',
+    expect(mocks.deferProposal).toHaveBeenCalledWith('proposal-001')
+    expect(mocks.successToast).toHaveBeenCalledWith(
+      'Snoozed for 1 hour — it will return to your queue.',
     )
+  })
+
+  it('removes a snoozed proposal from the visible queue after defer resolves', async () => {
+    const deferred = makeProposal({
+      id: 'snooze-me',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    })
+    mocks.deferProposal.mockResolvedValueOnce(deferred)
+    const wrapper = await mountView([
+      makeProposal({ id: 'snooze-me', summary: 'Snooze candidate' }),
+      makeProposal({ id: 'keep-me', summary: 'Stays visible' }),
+    ])
+
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain(
+      'Snooze candidate',
+    )
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+
+    const railText = wrapper.find('[data-testid="paper-review-queue-rail"]').text()
+    expect(railText).not.toContain('Snooze candidate')
+    expect(railText).toContain('Stays visible')
+  })
+
+  it('surfaces a toast and keeps the proposal when defer fails', async () => {
+    mocks.deferProposal.mockRejectedValueOnce(new Error('snooze boom'))
+    const wrapper = await mountView([makeProposal({ id: 'defer-err', summary: 'Defer error' })])
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.errorToast).toHaveBeenCalledWith('snooze boom')
+    // The proposal stays in the queue (no optimistic removal on failure).
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Defer error')
+  })
+
+  it('keeps an already-snoozed deep-linked proposal visible when extending its snooze fails', async () => {
+    // #1245 adversarial sweep: onDefer must clear the deep-link hash ONLY on success. An
+    // already-snoozed proposal reached via #proposal-<id> is kept visible by the carve-out; if the
+    // user re-defers it and the request FAILS, clearing the hash would hide it (its prior snooze
+    // still stands) with no retry path. The hash — and the proposal — must survive the failure.
+    mocks.deferProposal.mockRejectedValueOnce(new Error('snooze boom'))
+    const wrapper = await mountView(
+      [makeProposal({
+        id: 'already-snoozed',
+        summary: 'Already snoozed',
+        deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+        expiresAt: new Date(Date.now() + 25 * 60 * 60_000).toISOString(),
+      })],
+      '/workspace/review#proposal-already-snoozed',
+    )
+
+    // The deep link keeps the snoozed proposal visible via the carve-out.
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Already snoozed')
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.errorToast).toHaveBeenCalledWith('snooze boom')
+    // Failure must NOT clear the deep link → the proposal stays visible and retryable.
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Already snoozed')
+  })
+
+  it('clears the deep link and hides a deep-linked proposal once its snooze succeeds', async () => {
+    // The success counterpart: snoozing a deep-linked proposal drops the hash so the deferred
+    // filter hides it (the carve-out no longer applies).
+    const deferred = makeProposal({
+      id: 'deep-snooze',
+      summary: 'Deep snooze',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    })
+    mocks.deferProposal.mockResolvedValueOnce(deferred)
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'deep-snooze', summary: 'Deep snooze' }),
+        makeProposal({ id: 'keep-me', summary: 'Stays visible' }),
+      ],
+      '/workspace/review#proposal-deep-snooze',
+    )
+
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Deep snooze')
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+
+    const railText = wrapper.find('[data-testid="paper-review-queue-rail"]').text()
+    expect(railText).not.toContain('Deep snooze')
+    expect(railText).toContain('Stays visible')
   })
 
   it('does not send reject transitions for already approved proposals', async () => {
@@ -734,15 +834,53 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('surfaces feedback when the provenance report action is clicked', async () => {
-    const wrapper = await mountView([makeProposal()])
+  it('records feedback and keeps the proposal in the queue when report is clicked', async () => {
+    mocks.reportBadSuggestion.mockResolvedValueOnce(undefined)
+    const wrapper = await mountView([makeProposal({ id: 'proposal-001', summary: 'Report me' })])
 
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
-    await reportButton.click()
+    reportButton.click()
+    await flushPromises()
 
-    expect(mocks.infoToast).toHaveBeenCalledWith('Report queued for this suggestion.')
+    expect(mocks.reportBadSuggestion).toHaveBeenCalledWith('proposal-001')
+    expect(mocks.successToast).toHaveBeenCalledWith('Feedback recorded for this suggestion.')
+    // Pure feedback: the proposal is not removed from the queue.
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Report me')
+  })
+
+  it('surfaces an error toast and keeps the proposal when report fails', async () => {
+    mocks.reportBadSuggestion.mockRejectedValueOnce(new Error('feedback boom'))
+    const wrapper = await mountView([makeProposal({ id: 'report-err', summary: 'Report error' })])
+
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await wrapper.vm.$nextTick()
+    const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
+    reportButton.click()
+    await flushPromises()
+
+    expect(mocks.errorToast).toHaveBeenCalledWith('feedback boom')
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Report error')
+  })
+
+  it('does not double-submit feedback when report is clicked twice in quick succession', async () => {
+    let resolveReport: (() => void) | undefined
+    mocks.reportBadSuggestion.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { resolveReport = resolve }),
+    )
+    const wrapper = await mountView([makeProposal({ id: 'proposal-001' })])
+
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await wrapper.vm.$nextTick()
+    const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
+    reportButton.click()
+    reportButton.click()
+
+    expect(mocks.reportBadSuggestion).toHaveBeenCalledTimes(1)
+
+    resolveReport?.()
+    await flushPromises()
   })
 
   it('loads and renders the proposal diff inline when preview diff is invoked', async () => {

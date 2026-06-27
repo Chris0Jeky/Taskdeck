@@ -25,7 +25,8 @@ public record UserDataExportContentDto(
     IReadOnlyList<UserDataExportChatSessionDto> ChatSessions,
     IReadOnlyList<UserDataExportAuditEntryDto> AuditTrail,
     UserDataExportPreferencesDto? Preferences,
-    UserDataExportNotificationPreferencesDto? NotificationPreferences);
+    UserDataExportNotificationPreferencesDto? NotificationPreferences,
+    IReadOnlyList<UserDataExportProposalFeedbackDto> ProposalFeedback);
 
 public record UserDataExportBoardDto(
     Guid BoardId,
@@ -54,13 +55,26 @@ public record UserDataExportProposalDto(
     string Status,
     string? Summary,
     Guid? BoardId,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    // The active snooze deadline (#1245 Codex review): a deferred proposal is hidden from the
+    // review queue until this time, so the export must carry it to represent the proposal's
+    // current state. Null when the proposal is not snoozed.
+    DateTime? DeferredUntil = null);
 
 public record UserDataExportChatSessionDto(
     Guid Id,
     string Status,
     int MessageCount,
     DateTimeOffset CreatedAt);
+
+/// <summary>
+/// A content-free quality-feedback signal the user reported on a proposal (reason category only,
+/// no free text). Included for data portability (#1245 review).
+/// </summary>
+public record UserDataExportProposalFeedbackDto(
+    Guid ProposalId,
+    string Reason,
+    DateTimeOffset ReportedAt);
 
 public record UserDataExportAuditEntryDto(
     Guid Id,
