@@ -8,6 +8,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Confidence;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using BoardAuthorizationService = Taskdeck.Application.Services.IAuthorizationService;
 
@@ -35,6 +36,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly ICardHistoryService _cardHistoryService;
     private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
     private readonly IProposalRevisionService _revisionService;
+    private readonly IProposalFeedbackService _feedbackService;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
@@ -47,6 +49,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         ICardHistoryService cardHistoryService,
         ISideEffectAnalyzer sideEffectAnalyzer,
         IProposalRevisionService revisionService,
+        IProposalFeedbackService feedbackService,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
@@ -59,6 +62,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         _cardHistoryService = cardHistoryService;
         _sideEffectAnalyzer = sideEffectAnalyzer;
         _revisionService = revisionService;
+        _feedbackService = feedbackService;
     }
 
     /// <summary>
@@ -233,6 +237,46 @@ public class AutomationProposalsController : AuthenticatedControllerBase
             AutomationProposal.MaxDeferMinutes);
         var result = await _proposalService.DeferProposalAsync(id, TimeSpan.FromMinutes(minutes), cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Records a content-free "bad suggestion" feedback signal for a proposal. This is
+    /// orthogonal telemetry: it never changes the proposal's status, and anyone who can READ
+    /// the proposal may flag it. Idempotent per (proposal, caller): a repeat is a benign no-op.
+    /// </summary>
+    [HttpPost("{id}/feedback")]
+    public async Task<IActionResult> ReportFeedback(
+        Guid id,
+        [FromBody] ReportProposalFeedbackDto? request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        // Read access: feedback mutates nothing on the board or the proposal, so a read-only
+        // reviewer's quality signal must not be silenced. AuthorizeProposalAsync still 404s an
+        // unknown id and 403s a caller with no access.
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var reason = ProposalFeedbackReason.Unspecified;
+        if (!string.IsNullOrWhiteSpace(request?.Reason))
+        {
+            // Enum.TryParse accepts ANY numeric string (e.g. "999") and binds it to an undefined
+            // value, so require the parsed result to be a DEFINED member -- otherwise 400, not 500.
+            if (!Enum.TryParse(request.Reason, ignoreCase: true, out ProposalFeedbackReason parsed) ||
+                !Enum.IsDefined(parsed))
+            {
+                return Result.Failure(ErrorCodes.ValidationError, $"Unknown feedback reason '{request.Reason}'.")
+                    .ToErrorActionResult();
+            }
+
+            reason = parsed;
+        }
+
+        var result = await _feedbackService.ReportBadSuggestionAsync(id, callerUserId, reason, cancellationToken);
+        return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 
     /// <summary>

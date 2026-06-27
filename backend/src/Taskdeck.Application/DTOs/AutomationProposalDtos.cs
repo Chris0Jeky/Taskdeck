@@ -108,6 +108,12 @@ public record UpdateProposalStatusDto(
 /// </summary>
 public record DeferProposalRequestDto(int? DurationMinutes = null);
 
+/// <summary>
+/// Request body for the report-bad-suggestion endpoint. Reason is an OPTIONAL
+/// ProposalFeedbackReason enum NAME (never free text); null/empty maps to Unspecified.
+/// </summary>
+public record ReportProposalFeedbackDto(string? Reason = null);
+
 public record ProposalFilterDto(
     ProposalStatus? Status = null,
     Guid? BoardId = null,
