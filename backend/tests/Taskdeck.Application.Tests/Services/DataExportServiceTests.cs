@@ -195,6 +195,31 @@ public class DataExportServiceTests
     }
 
     [Fact]
+    public async Task ExportUserDataAsync_IncludesDeferredUntilForSnoozedProposals()
+    {
+        // #1245 Codex review: a snoozed proposal's DeferredUntil is what determines why it is
+        // hidden from the review queue, so the portability export must carry the snooze timestamp,
+        // not just the proposal row.
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, _userId, "snoozed proposal", RiskLevel.Low, Guid.NewGuid().ToString());
+        proposal.Defer(TimeSpan.FromHours(1));
+        proposal.DeferredUntil.Should().NotBeNull();
+
+        _proposalRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
+            .ReturnsAsync(new[] { proposal });
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Data.Proposals.Should().HaveCount(1);
+        result.Value.Data.Proposals[0].DeferredUntil.Should().Be(proposal.DeferredUntil);
+    }
+
+    [Fact]
     public async Task ExportUserDataAsync_LogsExportAction()
     {
         // Arrange

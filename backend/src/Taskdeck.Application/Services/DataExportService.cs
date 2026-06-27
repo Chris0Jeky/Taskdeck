@@ -110,7 +110,8 @@ public class DataExportService : IDataExportService
                 p.Status.ToString(),
                 p.Summary,
                 p.BoardId,
-                p.CreatedAt)).ToList();
+                p.CreatedAt,
+                p.DeferredUntil)).ToList();
 
             // Count messages per session in a single batched query (avoids N+1)
             var sessionIds = chatSessions.Select(s => s.Id).ToList();
@@ -300,6 +301,11 @@ public class DataExportService : IDataExportService
                 else
                     writer.WriteNull("boardId");
                 writer.WriteString("createdAt", p.CreatedAt);
+                // Active snooze deadline (#1245 Codex review) — null unless the proposal is deferred.
+                if (p.DeferredUntil.HasValue)
+                    writer.WriteString("deferredUntil", p.DeferredUntil.Value);
+                else
+                    writer.WriteNull("deferredUntil");
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();

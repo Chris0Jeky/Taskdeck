@@ -55,7 +55,11 @@ public record UserDataExportProposalDto(
     string Status,
     string? Summary,
     Guid? BoardId,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    // The active snooze deadline (#1245 Codex review): a deferred proposal is hidden from the
+    // review queue until this time, so the export must carry it to represent the proposal's
+    // current state. Null when the proposal is not snoozed.
+    DateTime? DeferredUntil = null);
 
 public record UserDataExportChatSessionDto(
     Guid Id,
