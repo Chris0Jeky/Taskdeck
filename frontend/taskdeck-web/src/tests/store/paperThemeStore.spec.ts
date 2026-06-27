@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { resolveBodyClass, usePaperThemeStore } from '../../store/paperThemeStore'
 
-const STORAGE_KEY = 'td.paper.mode'
+const STORAGE_KEY = 'td.paper.mode.v2'
+const LEGACY_STORAGE_KEY = 'td.paper.mode'
 
 function setMatchMediaDark(isDark: boolean) {
   let currentMatches = isDark
@@ -70,11 +71,11 @@ describe('paperThemeStore', () => {
     document.body.classList.remove('paper', 'paper-night')
   })
 
-  it('defaults to off when nothing stored', () => {
+  it('defaults to paper when nothing stored (Paper is canonical — ADR-0038)', () => {
     const store = usePaperThemeStore()
-    expect(store.mode).toBe('off')
-    expect(store.isOn).toBe(false)
-    expect(store.activeClass).toBeNull()
+    expect(store.mode).toBe('paper')
+    expect(store.isOn).toBe(true)
+    expect(store.activeClass).toBe('paper')
   })
 
   it('restores mode from localStorage', () => {
@@ -84,10 +85,43 @@ describe('paperThemeStore', () => {
     expect(store.activeClass).toBe('paper-night')
   })
 
-  it('ignores invalid stored values', () => {
+  it('falls back to the paper default for an invalid stored value', () => {
     window.localStorage.setItem(STORAGE_KEY, 'midnight')
     const store = usePaperThemeStore()
-    expect(store.mode).toBe('off')
+    expect(store.mode).toBe('paper')
+  })
+
+  describe('storage-key v2 migration (ADR-0038 flip)', () => {
+    it('carries a deliberate non-off legacy choice over to v2 and clears the old key', () => {
+      window.localStorage.setItem(LEGACY_STORAGE_KEY, 'paper-night')
+      const store = usePaperThemeStore()
+      expect(store.mode).toBe('paper-night')
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBe('paper-night')
+      expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull()
+    })
+
+    it('carries over a legacy auto choice', () => {
+      window.localStorage.setItem(LEGACY_STORAGE_KEY, 'auto')
+      const store = usePaperThemeStore()
+      expect(store.mode).toBe('auto')
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBe('auto')
+    })
+
+    it('treats a legacy off (the pre-flip default / never-opted-in) as the new paper default, dropping the old key', () => {
+      window.localStorage.setItem(LEGACY_STORAGE_KEY, 'off')
+      const store = usePaperThemeStore()
+      expect(store.mode).toBe('paper')
+      // 'off' is dropped (not carried to v2); the old key is cleared so it can't be re-read.
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull()
+      expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull()
+    })
+
+    it('lets a v2 value take precedence over the legacy key (no migration when v2 is set)', () => {
+      window.localStorage.setItem(LEGACY_STORAGE_KEY, 'paper-night')
+      window.localStorage.setItem(STORAGE_KEY, 'off')
+      const store = usePaperThemeStore()
+      expect(store.mode).toBe('off')
+    })
   })
 
   it('applies the paper class to <body> on apply()', () => {
@@ -130,6 +164,7 @@ describe('paperThemeStore', () => {
 
   it('toggleNight from off enables paper light first', () => {
     const store = usePaperThemeStore()
+    store.setMode('off') // default is now 'paper'; this test exercises the from-off path explicitly
     store.toggleNight()
     expect(store.mode).toBe('paper')
   })
