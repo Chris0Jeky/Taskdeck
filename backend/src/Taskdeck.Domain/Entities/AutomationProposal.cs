@@ -153,8 +153,9 @@ public class AutomationProposal : Entity
             throw new DomainException(ErrorCodes.InvalidOperation, "Cannot defer expired proposal");
 
         var now = DateTime.UtcNow;
-        DeferredUntil = now + duration;
-        var floor = DeferredUntil.Value + DeferExpiryGrace;
+        var deferredUntil = now + duration;
+        DeferredUntil = deferredUntil;
+        var floor = deferredUntil + DeferExpiryGrace;
         if (ExpiresAt < floor)
             ExpiresAt = floor;
         Touch();
