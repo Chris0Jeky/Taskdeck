@@ -772,6 +772,42 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task GetAllByUserIdForExportAsync_ReturnsAllRowsUncapped_WhileCohortReadCaps()
+    {
+        // #1245 Codex P2: the data-portability export must return the COMPLETE feedback set, not the
+        // capped 1000-row cohort sample (a heavy reporter would otherwise lose older rows from the
+        // export). Seed just past the cap and assert the two reads diverge: the export read returns
+        // everything; the cohort read stays bounded. Seed directly via the DbContext -- 1005 API
+        // round-trips would be needlessly slow, and AutomationProposal has no required parent FK.
+        const int cohortCap = 1000; // mirrors ProposalFeedbackRepository.MaxLimit
+        const int seedCount = cohortCap + 5;
+        var userId = Guid.NewGuid();
+
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            for (var i = 0; i < seedCount; i++)
+            {
+                var proposal = new AutomationProposal(
+                    ProposalSourceType.Chat, userId, $"export-cap proposal {i}",
+                    RiskLevel.Low, Guid.NewGuid().ToString());
+                db.AutomationProposals.Add(proposal);
+                db.ProposalFeedbacks.Add(new ProposalFeedback(proposal.Id, userId, ProposalFeedbackReason.Unspecified));
+            }
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = _factory.Services.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<IProposalFeedbackRepository>();
+
+        var exported = await repo.GetAllByUserIdForExportAsync(userId);
+        var cohort = await repo.GetAllByUserIdAsync(userId);
+
+        exported.Should().HaveCount(seedCount);   // uncapped — the complete export
+        cohort.Should().HaveCount(cohortCap);     // cohort sample stays bounded
+    }
+
+    [Fact]
     public async Task ReportFeedback_ShouldReturn404_ForUnknownProposal()
     {
         await AuthenticateAsync("automation-feedback-404");
@@ -788,16 +824,33 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         var boardId = await CreateOwnedBoardAsync(userId);
         var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
 
-        // Enum.TryParse would bind a numeric string to an undefined value; Enum.IsDefined rejects it.
+        // Exact-name validation rejects every non-member form. Beyond the obvious junk/out-of-range
+        // numeric, the subtle ones (#1245 Codex P2) are inputs Enum.TryParse would coerce to a
+        // *defined* member and silently mis-record: a comma-composite flags combination
+        // ("Irrelevant, Incorrect" -> 1|2 == 3 == Duplicate) and an in-range numeric string
+        // ("3" == Duplicate). All four must be 400, never a recorded Duplicate.
         var numeric = await _client.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/feedback",
             new ReportProposalFeedbackDto("999"));
         var junk = await _client.PostAsJsonAsync(
             $"/api/automation/proposals/{proposal.Id}/feedback",
             new ReportProposalFeedbackDto("definitely-not-a-reason"));
+        var composite = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("Irrelevant, Incorrect"));
+        var inRangeNumeric = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("3"));
 
         numeric.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         junk.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        composite.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        inRangeNumeric.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // And nothing was persisted by the rejected coercions.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.ProposalFeedbacks.AnyAsync(f => f.ProposalId == proposal.Id)).Should().BeFalse();
     }
 
     [Fact]

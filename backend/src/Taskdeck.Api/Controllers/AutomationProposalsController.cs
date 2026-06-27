@@ -263,16 +263,21 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         var reason = ProposalFeedbackReason.Unspecified;
         if (!string.IsNullOrWhiteSpace(request?.Reason))
         {
-            // Enum.TryParse accepts ANY numeric string (e.g. "999") and binds it to an undefined
-            // value, so require the parsed result to be a DEFINED member -- otherwise 400, not 500.
-            if (!Enum.TryParse(request.Reason, ignoreCase: true, out ProposalFeedbackReason parsed) ||
-                !Enum.IsDefined(parsed))
+            // Validate against the EXACT declared member names. Enum.TryParse is too lax for a
+            // public input: a numeric string ("3") binds straight to the underlying value, and a
+            // comma-composite flags combination ("Irrelevant, Incorrect" -> 1|2 == 3) parses to a
+            // *defined* member, so a follow-on Enum.IsDefined check would wave both through and
+            // record an unrelated category (Duplicate here), polluting the quality signal. Match
+            // the trimmed input to a member name (case-insensitive) instead -- otherwise 400.
+            var match = Enum.GetNames<ProposalFeedbackReason>()
+                .FirstOrDefault(name => string.Equals(name, request.Reason.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (match is null)
             {
                 return Result.Failure(ErrorCodes.ValidationError, $"Unknown feedback reason '{request.Reason}'.")
                     .ToErrorActionResult();
             }
 
-            reason = parsed;
+            reason = Enum.Parse<ProposalFeedbackReason>(match);
         }
 
         var result = await _feedbackService.ReportBadSuggestionAsync(id, callerUserId, reason, cancellationToken);
