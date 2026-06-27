@@ -536,7 +536,200 @@ public class AutomationProposalTests
             .WithMessage("Cannot dismiss proposal in status PendingReview");
     }
 
-    private AutomationProposal CreateProposal(RiskLevel riskLevel = RiskLevel.Medium)
+    // --- Defer (snooze) ---------------------------------------------------
+
+    [Fact]
+    public void Defer_ShouldSetDeferredUntil_AndKeepPendingReview()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        var originalUpdatedAt = proposal.UpdatedAt;
+        var before = DateTime.UtcNow;
+
+        // Act
+        proposal.Defer(TimeSpan.FromMinutes(60));
+
+        // Assert
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        proposal.DeferredUntil.Should().NotBeNull();
+        proposal.DeferredUntil!.Value.Should().BeOnOrAfter(before.AddMinutes(60));
+        proposal.DeferredUntil!.Value.Should().BeOnOrBefore(DateTime.UtcNow.AddMinutes(60).AddSeconds(1));
+        proposal.IsDeferred.Should().BeTrue();
+        proposal.DecidedByUserId.Should().BeNull();
+        proposal.DecidedAt.Should().BeNull();
+        proposal.UpdatedAt.Should().BeOnOrAfter(originalUpdatedAt);
+    }
+
+    [Fact]
+    public void Defer_ShouldPushExpiresAtBeyondDeferredUntil_ForNearExpiryProposal()
+    {
+        // Arrange: a proposal that would otherwise expire in 10 minutes.
+        var proposal = CreateProposal(expiryMinutes: 10);
+
+        // Act
+        proposal.Defer(TimeSpan.FromMinutes(60));
+
+        // Assert: ExpiresAt is pushed strictly beyond DeferredUntil (+ grace), so the
+        // snoozed proposal cannot silently expire and can still be approved.
+        proposal.ExpiresAt.Should().BeAfter(proposal.DeferredUntil!.Value);
+        proposal.ExpiresAt.Should().BeOnOrAfter(proposal.DeferredUntil!.Value + AutomationProposal.DeferExpiryGrace);
+        proposal.IsExpired.Should().BeFalse();
+        var approve = () => proposal.Approve(Guid.NewGuid());
+        approve.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Defer_ShouldNotShortenExpiresAt_WhenAlreadyBeyondDeferFloor()
+    {
+        // Arrange: an expiry (26h) already beyond defer(60min) + 24h grace (= 25h),
+        // so the floor cannot push it out.
+        var proposal = CreateProposal(expiryMinutes: 1560);
+        var originalExpiresAt = proposal.ExpiresAt;
+
+        // Act
+        proposal.Defer(TimeSpan.FromMinutes(60));
+
+        // Assert: the far-future ExpiresAt is preserved (never pulled in or pushed out).
+        proposal.ExpiresAt.Should().Be(originalExpiresAt);
+    }
+
+    [Fact]
+    public void Defer_ShouldUpdateInPlace_OnRepeatedCalls_NotStack()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        proposal.Defer(TimeSpan.FromMinutes(30));
+
+        // Act: re-snooze with a longer window.
+        var before = DateTime.UtcNow;
+        proposal.Defer(TimeSpan.FromMinutes(60));
+
+        // Assert: the window resets to the latest defer (not 30+60).
+        proposal.DeferredUntil!.Value.Should().BeOnOrAfter(before.AddMinutes(60));
+        proposal.DeferredUntil!.Value.Should().BeOnOrBefore(DateTime.UtcNow.AddMinutes(60).AddSeconds(1));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    [InlineData(AutomationProposal.MaxDeferMinutes + 1)]
+    [InlineData(100000)]
+    public void Defer_ShouldThrowValidationError_WhenDurationOutOfRange(int minutes)
+    {
+        // Arrange
+        var proposal = CreateProposal();
+
+        // Act
+        var act = () => proposal.Defer(TimeSpan.FromMinutes(minutes));
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .Where(ex => ex.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Defer_ShouldThrowInvalidOperation_WhenProposalIsExpired()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        SetPrivateDateTime(proposal, "ExpiresAt", DateTime.UtcNow.AddMinutes(-1));
+
+        // Act
+        var act = () => proposal.Defer(TimeSpan.FromMinutes(60));
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .Where(ex => ex.ErrorCode == ErrorCodes.InvalidOperation)
+            .WithMessage("Cannot defer expired proposal");
+    }
+
+    [Theory]
+    [InlineData(ProposalStatus.Approved)]
+    [InlineData(ProposalStatus.Rejected)]
+    [InlineData(ProposalStatus.Applied)]
+    [InlineData(ProposalStatus.Failed)]
+    [InlineData(ProposalStatus.Expired)]
+    [InlineData(ProposalStatus.Dismissed)]
+    public void Defer_ShouldThrowInvalidOperation_WhenNotPendingReview(ProposalStatus status)
+    {
+        // Arrange
+        var proposal = CreateProposalInStatus(status);
+
+        // Act
+        var act = () => proposal.Defer(TimeSpan.FromMinutes(60));
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .Where(ex => ex.ErrorCode == ErrorCodes.InvalidOperation);
+    }
+
+    [Fact]
+    public void Approve_ShouldClearDeferredUntil()
+    {
+        var proposal = CreateProposal();
+        proposal.Defer(TimeSpan.FromMinutes(60));
+        proposal.DeferredUntil.Should().NotBeNull();
+
+        proposal.Approve(Guid.NewGuid());
+
+        proposal.DeferredUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public void Reject_ShouldClearDeferredUntil()
+    {
+        var proposal = CreateProposal(riskLevel: RiskLevel.Low);
+        proposal.Defer(TimeSpan.FromMinutes(60));
+
+        proposal.Reject(Guid.NewGuid(), "Not needed");
+
+        proposal.DeferredUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public void Expire_ShouldClearDeferredUntil()
+    {
+        var proposal = CreateProposal();
+        proposal.Defer(TimeSpan.FromMinutes(60));
+
+        proposal.Expire();
+
+        proposal.DeferredUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public void Dismiss_ShouldClearDeferredUntil()
+    {
+        var proposal = CreateProposal();
+        proposal.Defer(TimeSpan.FromMinutes(60));
+        proposal.Expire();
+        // Re-confirm Expire cleared it, then dismiss from the terminal state.
+        proposal.DeferredUntil.Should().BeNull();
+
+        proposal.Dismiss();
+
+        proposal.DeferredUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public void MarkAsApplied_ShouldClearDeferredUntil()
+    {
+        // Arrange: defer, then approve (which clears it), then re-set a residual snooze
+        // via reflection to prove MarkAsApplied also clears it defensively.
+        var proposal = CreateProposal();
+        proposal.Approve(Guid.NewGuid());
+        var property = typeof(AutomationProposal).GetProperty("DeferredUntil");
+        property!.SetValue(proposal, DateTime.UtcNow.AddMinutes(60));
+        proposal.DeferredUntil.Should().NotBeNull();
+
+        // Act
+        proposal.MarkAsApplied();
+
+        // Assert
+        proposal.DeferredUntil.Should().BeNull();
+    }
+
+    private AutomationProposal CreateProposal(RiskLevel riskLevel = RiskLevel.Medium, int expiryMinutes = 1440)
     {
         return new AutomationProposal(
             ProposalSourceType.Queue,
@@ -544,7 +737,43 @@ public class AutomationProposalTests
             "Create a task",
             riskLevel,
             "corr-test",
-            _boardId);
+            _boardId,
+            expiryMinutes: expiryMinutes);
+    }
+
+    private AutomationProposal CreateProposalInStatus(ProposalStatus status)
+    {
+        var proposal = CreateProposal(riskLevel: RiskLevel.Low);
+        switch (status)
+        {
+            case ProposalStatus.PendingReview:
+                break;
+            case ProposalStatus.Approved:
+                proposal.Approve(Guid.NewGuid());
+                break;
+            case ProposalStatus.Rejected:
+                proposal.Reject(Guid.NewGuid(), "Not needed");
+                break;
+            case ProposalStatus.Applied:
+                proposal.Approve(Guid.NewGuid());
+                proposal.MarkAsApplied();
+                break;
+            case ProposalStatus.Failed:
+                proposal.Approve(Guid.NewGuid());
+                proposal.MarkAsFailed("boom");
+                break;
+            case ProposalStatus.Expired:
+                proposal.Expire();
+                break;
+            case ProposalStatus.Dismissed:
+                proposal.Expire();
+                proposal.Dismiss();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(status), status, null);
+        }
+
+        return proposal;
     }
 
     private static void SetPrivateDateTime(object target, string propertyName, DateTime value)

@@ -555,6 +555,154 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         error.GetProperty("errorCode").GetString().Should().Be("ValidationError");
     }
 
+    [Fact]
+    public async Task DeferProposal_WithEmptyBody_ShouldSnoozeDefaultWindow_AndKeepPending()
+    {
+        var userId = await AuthenticateAsync("automation-defer-default");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var before = DateTime.UtcNow;
+        var deferResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/defer", null);
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deferred = await deferResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        deferred.Should().NotBeNull();
+        deferred!.Status.Should().Be(ProposalStatus.PendingReview);
+        deferred.DecidedByUserId.Should().BeNull();
+        deferred.DeferredUntil.Should().NotBeNull();
+        // Default window is ~60 minutes.
+        deferred.DeferredUntil!.Value.Should().BeOnOrAfter(before.AddMinutes(60));
+        deferred.DeferredUntil!.Value.Should().BeOnOrBefore(DateTime.UtcNow.AddMinutes(60).AddSeconds(5));
+
+        // Still reachable by id (deep-link) even while snoozed.
+        var getResponse = await _client.GetAsync($"/api/automation/proposals/{proposal.Id}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task DeferProposal_WithExplicitDuration_ShouldHonorIt()
+    {
+        var userId = await AuthenticateAsync("automation-defer-explicit");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var before = DateTime.UtcNow;
+        var deferResponse = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/defer",
+            new DeferProposalRequestDto(DurationMinutes: 10));
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deferred = await deferResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        deferred!.DeferredUntil.Should().NotBeNull();
+        deferred.DeferredUntil!.Value.Should().BeOnOrAfter(before.AddMinutes(10));
+        deferred.DeferredUntil!.Value.Should().BeOnOrBefore(DateTime.UtcNow.AddMinutes(10).AddSeconds(5));
+    }
+
+    [Fact]
+    public async Task DeferProposal_WithOverlongDuration_ShouldClampToMax()
+    {
+        var userId = await AuthenticateAsync("automation-defer-clamp");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var before = DateTime.UtcNow;
+        var deferResponse = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/defer",
+            new DeferProposalRequestDto(DurationMinutes: 100000));
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deferred = await deferResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        deferred!.DeferredUntil.Should().NotBeNull();
+        // Clamped to the 1440-minute (24h) maximum, not the requested 100000.
+        deferred.DeferredUntil!.Value.Should().BeOnOrAfter(before.AddMinutes(1440));
+        deferred.DeferredUntil!.Value.Should().BeOnOrBefore(DateTime.UtcNow.AddMinutes(1440).AddSeconds(5));
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldReturnUnauthorized_WhenNotAuthenticated()
+    {
+        _client.DefaultRequestHeaders.Authorization = null;
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/defer", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-defer-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-defer-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-defer-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.PostAsync($"/api/automation/proposals/{proposal.Id}/defer", null);
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldReturnNotFound_WhenProposalDoesNotExist()
+    {
+        await AuthenticateAsync("automation-defer-notfound");
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/defer", null);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var error = await response.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldReturnConflict_WhenProposalAlreadyApproved()
+    {
+        var userId = await AuthenticateAsync("automation-defer-approved");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var approveResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deferResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/defer", null);
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task DeferProposal_ShouldDisappearFromList_ThenReappearAfterWindow()
+    {
+        var userId = await AuthenticateAsync("automation-defer-list");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var deferResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/defer", null);
+        deferResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Snoozed: it leaves the board-scoped list.
+        var hiddenList = await GetBoardProposalsAsync(boardId);
+        hiddenList.Should().NotContain(p => p.Id == proposal.Id);
+
+        // Elapse the snooze window directly in the database, then it reappears.
+        var pastDeferredUntil = DateTime.UtcNow.AddMinutes(-1);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE AutomationProposals SET DeferredUntil = {pastDeferredUntil} WHERE Id = {proposal.Id}");
+        }
+
+        var visibleList = await GetBoardProposalsAsync(boardId);
+        visibleList.Should().Contain(p => p.Id == proposal.Id);
+    }
+
+    private async Task<List<ProposalDto>> GetBoardProposalsAsync(Guid boardId)
+    {
+        var response = await _client.GetAsync($"/api/automation/proposals?boardId={boardId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<List<ProposalDto>>())!;
+    }
+
     private async Task<ProposalDto> CreateTestProposal(Guid userId, Guid boardId, RiskLevel riskLevel)
     {
         return await CreateTestProposalAsync(_client, userId, boardId, riskLevel);

@@ -425,10 +425,170 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         results.Should().NotContain(p => p.Id == expired.Id);
     }
 
+    [Fact]
+    public async Task GetByStatusAsync_PendingReview_ExcludesSnoozed_AndReincludesAfterWindow()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User($"ap-defer-{Guid.NewGuid():N}", $"ap-defer-{Guid.NewGuid():N}@example.com", "hash");
+        db.Users.Add(user);
+
+        var snoozed = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Snoozed pending", RiskLevel.Low,
+            $"corr-snz-{Guid.NewGuid():N}");
+        snoozed.Defer(TimeSpan.FromMinutes(60)); // DeferredUntil in the future
+
+        var live = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Live pending", RiskLevel.Low,
+            $"corr-live-{Guid.NewGuid():N}");
+
+        // A snoozed proposal whose ExpiresAt was forced into the past must STILL stay hidden
+        // (DeferredUntil>now wins): a snoozed proposal never resurfaces just because it expired.
+        var snoozedButExpired = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Snoozed but forced-expired", RiskLevel.Low,
+            $"corr-snzexp-{Guid.NewGuid():N}");
+        snoozedButExpired.Defer(TimeSpan.FromMinutes(60));
+        SetExpiresAt(snoozedButExpired, DateTime.UtcNow.AddMinutes(-5));
+
+        db.AutomationProposals.AddRange(snoozed, live, snoozedButExpired);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var whileSnoozed = (await repo.GetByStatusAsync(ProposalStatus.PendingReview)).ToList();
+        whileSnoozed.Should().Contain(p => p.Id == live.Id);
+        whileSnoozed.Should().NotContain(p => p.Id == snoozed.Id);
+        whileSnoozed.Should().NotContain(p => p.Id == snoozedButExpired.Id);
+
+        // Elapse the snooze window for `snoozed`: it must re-enter the pending queue.
+        SetDeferredUntil(snoozed, DateTime.UtcNow.AddMinutes(-1));
+        db.AutomationProposals.Update(snoozed);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var afterWindow = (await repo.GetByStatusAsync(ProposalStatus.PendingReview)).ToList();
+        afterWindow.Should().Contain(p => p.Id == snoozed.Id);
+    }
+
+    [Fact]
+    public async Task GetByStatusAsync_Approved_StillReturnsDecidedProposal_WithStaleDeferredUntil()
+    {
+        // Regression for Fix A: the list filter is status-gated, so a decided proposal that
+        // somehow retained a future DeferredUntil is never hidden.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User($"ap-stale-{Guid.NewGuid():N}", $"ap-stale-{Guid.NewGuid():N}@example.com", "hash");
+        db.Users.Add(user);
+
+        var approved = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Approved with stale snooze", RiskLevel.Low,
+            $"corr-stale-{Guid.NewGuid():N}");
+        approved.Approve(user.Id);
+        // Force a stale residual snooze that should NOT hide a decided proposal.
+        SetDeferredUntil(approved, DateTime.UtcNow.AddMinutes(60));
+
+        db.AutomationProposals.Add(approved);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var approvedResults = (await repo.GetByStatusAsync(ProposalStatus.Approved)).ToList();
+        approvedResults.Should().Contain(p => p.Id == approved.Id);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_StillReturnsDeferredProposal()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User($"ap-defid-{Guid.NewGuid():N}", $"ap-defid-{Guid.NewGuid():N}@example.com", "hash");
+        db.Users.Add(user);
+
+        var snoozed = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Snoozed but fetchable", RiskLevel.Low,
+            $"corr-defid-{Guid.NewGuid():N}");
+        snoozed.Defer(TimeSpan.FromMinutes(60));
+        db.AutomationProposals.Add(snoozed);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        // A snoozed proposal must still be reachable by id / deep-link.
+        var result = await repo.GetByIdAsync(snoozed.Id);
+        result.Should().NotBeNull();
+        result!.DeferredUntil.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CountPendingReviewByUserIdAsync_ExcludesSnoozed()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User($"ap-defcount-{Guid.NewGuid():N}", $"ap-defcount-{Guid.NewGuid():N}@example.com", "hash");
+        db.Users.Add(user);
+
+        var live = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Live pending", RiskLevel.Low,
+            $"corr-cl-{Guid.NewGuid():N}");
+        var snoozed = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Snoozed pending", RiskLevel.Low,
+            $"corr-cs-{Guid.NewGuid():N}");
+        snoozed.Defer(TimeSpan.FromMinutes(60));
+
+        db.AutomationProposals.AddRange(live, snoozed);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        // The badge count must match the visible queue: snoozed is excluded.
+        var count = await repo.CountPendingReviewByUserIdAsync(user.Id);
+        count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetPendingByOperationTargetAsync_StillReturnsDeferredProposal()
+    {
+        // Fix D: a snoozed pending change still claims its target card, so conflict detection
+        // must keep seeing it.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User($"ap-deftgt-{Guid.NewGuid():N}", $"ap-deftgt-{Guid.NewGuid():N}@example.com", "hash");
+        db.Users.Add(user);
+
+        var targetId = Guid.NewGuid();
+        var snoozed = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Snoozed claims target", RiskLevel.Low,
+            $"corr-deftgt-{Guid.NewGuid():N}");
+        snoozed.AddOperation(new AutomationProposalOperation(
+            snoozed.Id, 0, "update", "card", "{\"title\":\"Updated\"}",
+            $"key-deftgt-{Guid.NewGuid():N}", targetId: targetId.ToString()));
+        snoozed.Defer(TimeSpan.FromMinutes(60));
+
+        db.AutomationProposals.Add(snoozed);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var results = await repo.GetPendingByOperationTargetAsync("card", targetId.ToString());
+        results.Should().Contain(p => p.Id == snoozed.Id);
+    }
+
     private static void SetExpiresAt(AutomationProposal proposal, DateTime expiresAt)
     {
         typeof(AutomationProposal)
             .GetProperty(nameof(AutomationProposal.ExpiresAt))!
             .SetValue(proposal, expiresAt);
+    }
+
+    private static void SetDeferredUntil(AutomationProposal proposal, DateTime deferredUntil)
+    {
+        typeof(AutomationProposal)
+            .GetProperty(nameof(AutomationProposal.DeferredUntil))!
+            .SetValue(proposal, deferredUntil);
     }
 }
