@@ -215,6 +215,8 @@ describe('ReviewView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    // Wave-3 (ADR-0038): default is now 'paper'; pin Legacy so this spec keeps asserting Legacy DOM.
+    localStorage.setItem('td.paper.mode.v2', 'off')
     originalScrollIntoView = HTMLElement.prototype.scrollIntoView
     originalPrompt = window.prompt
     mocks.getProposals.mockResolvedValue([])

@@ -181,6 +181,7 @@ describe('ReviewView — approve and apply actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    localStorage.setItem('td.paper.mode.v2', 'off') // Wave-3 (ADR-0038): keep Legacy DOM after the reset
     originalPrompt = window.prompt
     mocks.getProposals.mockResolvedValue([])
     mocks.getBoards.mockResolvedValue([
@@ -329,6 +330,7 @@ describe('ReviewView — summary cards', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    localStorage.setItem('td.paper.mode.v2', 'off') // Wave-3 (ADR-0038): keep Legacy DOM after the reset
     originalPrompt = window.prompt
     mocks.getBoards.mockResolvedValue([
       { id: 'board-1', name: 'Engineering Sprint' },
@@ -399,6 +401,7 @@ describe('ReviewView — risk level indicators', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    localStorage.setItem('td.paper.mode.v2', 'off') // Wave-3 (ADR-0038): keep Legacy DOM after the reset
     originalPrompt = window.prompt
     mocks.getBoards.mockResolvedValue([{ id: 'board-1', name: 'Sprint' }])
     mocks.approveProposal.mockResolvedValue(buildProposal({ status: 'Approved' }))
@@ -446,6 +449,7 @@ describe('ReviewView — loading and error on proposals fetch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    localStorage.setItem('td.paper.mode.v2', 'off') // Wave-3 (ADR-0038): keep Legacy DOM after the reset
     originalPrompt = window.prompt
     mocks.getBoards.mockResolvedValue([])
     mocks.createRequestId.mockReturnValue('request-1')

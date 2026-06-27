@@ -222,6 +222,8 @@ describe('InboxView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    // Wave-3 (ADR-0038): default is now 'paper'; pin Legacy so this spec keeps asserting Legacy DOM.
+    localStorage.setItem('td.paper.mode.v2', 'off')
     escapeHandlers.splice(0, escapeHandlers.length)
     mockCaptureStore.detailById = {}
     mockCaptureStore.loadingList = false
