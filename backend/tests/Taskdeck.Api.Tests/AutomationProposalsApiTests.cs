@@ -697,6 +697,109 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         visibleList.Should().Contain(p => p.Id == proposal.Id);
     }
 
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn204_WithEmptyBody()
+    {
+        var userId = await AuthenticateAsync("automation-feedback-basic");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/feedback", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldBeIdempotent_AndRecordOneRow()
+    {
+        var userId = await AuthenticateAsync("automation-feedback-idem");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var first = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/feedback", null);
+        var second = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/feedback", null);
+        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        second.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var count = await db.ProposalFeedbacks.CountAsync(f => f.ProposalId == proposal.Id);
+        count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldPersistReason_AndReporterFromClaims()
+    {
+        var userId = await AuthenticateAsync("automation-feedback-reason");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("TooRisky"));
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var feedback = await db.ProposalFeedbacks.SingleAsync(f => f.ProposalId == proposal.Id);
+        feedback.Reason.Should().Be(ProposalFeedbackReason.TooRisky);
+        feedback.ReportedByUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn404_ForUnknownProposal()
+    {
+        await AuthenticateAsync("automation-feedback-404");
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/feedback", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn400_ForUnknownReason()
+    {
+        var userId = await AuthenticateAsync("automation-feedback-badreason");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        // Enum.TryParse would bind a numeric string to an undefined value; Enum.IsDefined rejects it.
+        var numeric = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("999"));
+        var junk = await _client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/feedback",
+            new ReportProposalFeedbackDto("definitely-not-a-reason"));
+
+        numeric.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        junk.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn403_ForUserWithoutBoardAccess()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-feedback-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-feedback-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-feedback-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.PostAsync($"/api/automation/proposals/{proposal.Id}/feedback", null);
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task ReportFeedback_ShouldReturn401_WhenUnauthenticated()
+    {
+        var anon = _factory.CreateClient();
+
+        var response = await anon.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/feedback", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     private async Task<List<ProposalDto>> GetBoardProposalsAsync(Guid boardId)
     {
         var response = await _client.GetAsync($"/api/automation/proposals?boardId={boardId}");

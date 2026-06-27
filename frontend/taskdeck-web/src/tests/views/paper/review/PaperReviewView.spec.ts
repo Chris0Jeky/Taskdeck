@@ -780,15 +780,53 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('surfaces feedback when the provenance report action is clicked', async () => {
-    const wrapper = await mountView([makeProposal()])
+  it('records feedback and keeps the proposal in the queue when report is clicked', async () => {
+    mocks.reportBadSuggestion.mockResolvedValueOnce(undefined)
+    const wrapper = await mountView([makeProposal({ id: 'proposal-001', summary: 'Report me' })])
 
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
-    await reportButton.click()
+    reportButton.click()
+    await flushPromises()
 
-    expect(mocks.infoToast).toHaveBeenCalledWith('Report queued for this suggestion.')
+    expect(mocks.reportBadSuggestion).toHaveBeenCalledWith('proposal-001')
+    expect(mocks.successToast).toHaveBeenCalledWith('Feedback recorded for this suggestion.')
+    // Pure feedback: the proposal is not removed from the queue.
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Report me')
+  })
+
+  it('surfaces an error toast and keeps the proposal when report fails', async () => {
+    mocks.reportBadSuggestion.mockRejectedValueOnce(new Error('feedback boom'))
+    const wrapper = await mountView([makeProposal({ id: 'report-err', summary: 'Report error' })])
+
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await wrapper.vm.$nextTick()
+    const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
+    reportButton.click()
+    await flushPromises()
+
+    expect(mocks.errorToast).toHaveBeenCalledWith('feedback boom')
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Report error')
+  })
+
+  it('does not double-submit feedback when report is clicked twice in quick succession', async () => {
+    let resolveReport: (() => void) | undefined
+    mocks.reportBadSuggestion.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { resolveReport = resolve }),
+    )
+    const wrapper = await mountView([makeProposal({ id: 'proposal-001' })])
+
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await wrapper.vm.$nextTick()
+    const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
+    reportButton.click()
+    reportButton.click()
+
+    expect(mocks.reportBadSuggestion).toHaveBeenCalledTimes(1)
+
+    resolveReport?.()
+    await flushPromises()
   })
 
   it('loads and renders the proposal diff inline when preview diff is invoked', async () => {

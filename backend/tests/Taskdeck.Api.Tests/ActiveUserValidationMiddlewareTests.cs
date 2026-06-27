@@ -307,6 +307,7 @@ public class ActiveUserValidationMiddlewareTests
         public IConnectorEventRepository ConnectorEvents => throw new NotImplementedException();
         public IConnectorCredentialRepository ConnectorCredentials => throw new NotImplementedException();
         public IProposalRevisionRepository ProposalRevisions => throw new NotImplementedException();
+        public IProposalFeedbackRepository ProposalFeedbacks => throw new NotImplementedException();
         public IDailySnapshotRepository DailySnapshots => throw new NotImplementedException();
         public ITomorrowNoteRepository TomorrowNotes => throw new NotImplementedException();
         public IMcpToolHashRepository McpToolHashes => throw new NotImplementedException();
