@@ -179,6 +179,40 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
     }
 
     [Fact]
+    public async Task GetByUserIdAsync_HidesSnoozedByDefault_ButIncludesThemWhenIncludeDeferred()
+    {
+        // C1 (#1245 review): the snooze filter must hide a deferred proposal from review-queue
+        // reads (the default) yet NOT drop it from the GDPR data export, which opts in with
+        // includeDeferred:true so a snoozed proposal is never silently missing from the export.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User("ap-export-snooze", "ap-export-snooze@example.com", "hash");
+        db.Users.Add(user);
+
+        var live = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Live pending", RiskLevel.Low,
+            $"corr-live-{Guid.NewGuid():N}");
+        var snoozed = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Snoozed pending", RiskLevel.Low,
+            $"corr-snooze-{Guid.NewGuid():N}");
+        snoozed.Defer(TimeSpan.FromMinutes(60)); // DeferredUntil in the future
+        db.AutomationProposals.AddRange(live, snoozed);
+        await db.SaveChangesAsync();
+
+        // Default review-queue read hides the snoozed proposal.
+        var queueView = (await repo.GetByUserIdAsync(user.Id)).ToList();
+        queueView.Should().Contain(p => p.Id == live.Id);
+        queueView.Should().NotContain(p => p.Id == snoozed.Id);
+
+        // The completeness-sensitive export read still includes it.
+        var exportView = (await repo.GetByUserIdAsync(user.Id, includeDeferred: true)).ToList();
+        exportView.Should().Contain(p => p.Id == live.Id);
+        exportView.Should().Contain(p => p.Id == snoozed.Id);
+    }
+
+    [Fact]
     public async Task GetByBoardIdAsync_ShouldFilterByBoard()
     {
         using var scope = _factory.Services.CreateScope();

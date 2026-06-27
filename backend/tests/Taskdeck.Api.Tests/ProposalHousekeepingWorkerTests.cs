@@ -177,7 +177,7 @@ public class ProposalHousekeepingWorkerTests
             throw new NotSupportedException();
         }
 
-        public Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
+        public Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }

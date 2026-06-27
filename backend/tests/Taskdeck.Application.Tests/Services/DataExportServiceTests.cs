@@ -203,7 +203,7 @@ public class DataExportServiceTests
         _llmQueueRepoMock.Verify(
             r => r.GetByUserAsync(_userId, default), Times.Once);
         _proposalRepoMock.Verify(
-            r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default), Times.Once);
+            r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default), Times.Once);
         _chatSessionRepoMock.Verify(
             r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default), Times.Once);
         _auditLogRepoMock.Verify(
@@ -270,7 +270,7 @@ public class DataExportServiceTests
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         _proposalRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
@@ -348,7 +348,7 @@ public class DataExportServiceTests
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         _proposalRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
@@ -517,7 +517,7 @@ public class DataExportServiceStreamingTests
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         _proposalRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
 
         _chatSessionRepoMock
@@ -601,7 +601,7 @@ public class DataExportServiceStreamingTests
             .Setup(r => r.GetByUserAsync(_userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         _proposalRepoMock
-            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), It.IsAny<bool>(), default))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))

@@ -1144,7 +1144,7 @@ public class AutomationProposalServiceTests
         var approved = new AutomationProposal(ProposalSourceType.Chat, userId, "Approved", RiskLevel.Low, Guid.NewGuid().ToString());
         approved.Approve(Guid.NewGuid());
 
-        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, 10, default))
+        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, 10, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { pending, approved });
 
         // Act
@@ -1153,7 +1153,7 @@ public class AutomationProposalServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().ContainSingle(p => p.Id == pending.Id);
-        _proposalRepoMock.Verify(r => r.GetByUserIdAsync(userId, 10, default), Times.Once);
+        _proposalRepoMock.Verify(r => r.GetByUserIdAsync(userId, 10, It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         _proposalRepoMock.Verify(r => r.GetByStatusAsync(It.IsAny<ProposalStatus>(), It.IsAny<int>(), default), Times.Never);
     }
 

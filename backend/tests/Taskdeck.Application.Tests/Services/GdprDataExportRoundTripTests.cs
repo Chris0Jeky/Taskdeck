@@ -98,7 +98,7 @@ public class GdprDataExportRoundTripTests
 
         _llmQueueRepoMock.Setup(r => r.GetByUserAsync(userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
-        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
+        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
             .ReturnsAsync(Enumerable.Empty<ChatSession>());
@@ -298,7 +298,7 @@ public class GdprDataExportRoundTripTests
             .ReturnsAsync(Enumerable.Empty<Notification>());
         _llmQueueRepoMock.Setup(r => r.GetByUserAsync(userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
-        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
+        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
             .ReturnsAsync(Enumerable.Empty<ChatSession>());
@@ -316,7 +316,7 @@ public class GdprDataExportRoundTripTests
             .ReturnsAsync(Enumerable.Empty<Notification>());
         _llmQueueRepoMock.Setup(r => r.GetByUserAsync(userId, default))
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
-        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
+        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
         _chatSessionRepoMock.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<int>(), default))
             .ReturnsAsync(Enumerable.Empty<ChatSession>());
