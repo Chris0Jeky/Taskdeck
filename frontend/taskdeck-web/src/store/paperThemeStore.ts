@@ -2,21 +2,44 @@ import { defineStore } from 'pinia'
 
 export type PaperMode = 'off' | 'paper' | 'paper-night' | 'auto'
 
-const STORAGE_KEY = 'td.paper.mode'
+// Bumped to v2 for the canonical-Paper flip (ADR-0038). The default is now 'paper', so a
+// pre-flip stored 'off' — which was BOTH the old default AND a deliberate opt-out — must not be
+// read as an opt-out under the new regime. A fresh key + the one-time migration below disambiguate.
+const STORAGE_KEY = 'td.paper.mode.v2'
+const LEGACY_STORAGE_KEY = 'td.paper.mode'
+
+// Paper is the canonical UI (ADR-0038): default ON, in light Paper.
+const DEFAULT_MODE: PaperMode = 'paper'
 
 const VALID_MODES: ReadonlyArray<PaperMode> = ['off', 'paper', 'paper-night', 'auto']
 
+// Reads the persisted mode, performing the one-time v2 migration inline (ADR-0038). The migration
+// runs only while v2 is unset: a DELIBERATE pre-flip choice (paper / paper-night / auto) is carried
+// over to v2 verbatim, while a stored 'off' — indistinguishable from the old default, i.e. "never
+// opted into Paper" — and an absent/invalid value are dropped so they resolve to the new 'paper'
+// default. The legacy key is cleared either way, so the migration runs at most once and does not
+// linger. (Migrating here rather than in a separate pass avoids a redundant startup getItem.)
 function readStoredMode(): PaperMode {
-  if (typeof window === 'undefined') return 'off'
+  if (typeof window === 'undefined') return DEFAULT_MODE
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    let raw = window.localStorage.getItem(STORAGE_KEY)
+    if (raw === null) {
+      const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY)
+      if (legacy !== null) {
+        if (legacy === 'paper' || legacy === 'paper-night' || legacy === 'auto') {
+          raw = legacy
+          window.localStorage.setItem(STORAGE_KEY, legacy)
+        }
+        window.localStorage.removeItem(LEGACY_STORAGE_KEY)
+      }
+    }
     if (raw && (VALID_MODES as readonly string[]).includes(raw)) {
       return raw as PaperMode
     }
   } catch {
     // localStorage may throw in private mode; fall through to default
   }
-  return 'off'
+  return DEFAULT_MODE
 }
 
 function prefersDark(): boolean {

@@ -4,7 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import AppearanceSettingsView from '../../views/AppearanceSettingsView.vue'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 
-const STORAGE_KEY = 'td.paper.mode'
+const STORAGE_KEY = 'td.paper.mode.v2'
 
 // Select by the stable data-mode hook rather than label text, so the tests are
 // resilient to label wording changes.
@@ -33,10 +33,10 @@ describe('AppearanceSettingsView', () => {
     expect(labels.some((l) => l.includes('Auto (match system)'))).toBe(true)
   })
 
-  it('reflects the current mode via aria-pressed (default off)', () => {
+  it('reflects the current mode via aria-pressed (default paper — ADR-0038)', () => {
     const wrapper = mount(AppearanceSettingsView)
-    expect(segmentByMode(wrapper, 'off').attributes('aria-pressed')).toBe('true')
-    expect(segmentByMode(wrapper, 'paper').attributes('aria-pressed')).toBe('false')
+    expect(segmentByMode(wrapper, 'paper').attributes('aria-pressed')).toBe('true')
+    expect(segmentByMode(wrapper, 'off').attributes('aria-pressed')).toBe('false')
     expect(segmentByMode(wrapper, 'auto').attributes('aria-pressed')).toBe('false')
   })
 

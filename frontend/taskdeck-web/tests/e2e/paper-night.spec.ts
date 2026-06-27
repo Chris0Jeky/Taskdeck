@@ -68,7 +68,7 @@ test.describe('Paper at Night — foundation + shell', () => {
     })
 
     await page.addInitScript(() => {
-      window.localStorage.setItem('td.paper.mode', 'paper-night')
+      window.localStorage.setItem('td.paper.mode.v2', 'paper-night')
     })
 
     await page.goto('/styleguide/paper')
@@ -91,7 +91,7 @@ test.describe('Paper at Night — foundation + shell', () => {
 
   test('styleguide light mode does not leak night ember', async ({ page }) => {
     await page.addInitScript(() => {
-      window.localStorage.setItem('td.paper.mode', 'paper')
+      window.localStorage.setItem('td.paper.mode.v2', 'paper')
     })
     await page.goto('/styleguide/paper')
     await expect(page.locator('body')).toHaveClass(PAPER_LIGHT_CLASS)
