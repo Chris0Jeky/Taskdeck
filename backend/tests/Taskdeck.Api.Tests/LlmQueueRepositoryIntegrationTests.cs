@@ -287,6 +287,9 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
 
             (await repo.CountPendingNonCaptureAsync()).Should().Be(4);
             (await repo.CountProcessingCaptureAsync()).Should().Be(3);
+            // #1251: the readiness gauge's captureDepth — Pending capture only (not the 3 Processing
+            // captures, not the 4 Pending non-captures).
+            (await repo.CountPendingCaptureAsync()).Should().Be(2);
         });
     }
 

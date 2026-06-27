@@ -725,6 +725,9 @@ public class LlmQueueToProposalWorkerTests
         public Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(_allItems.Count(i => i.Status == RequestStatus.Processing && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
 
+        public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(_allItems.Count(i => i.Status == RequestStatus.Pending && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
+
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         {
             var item = _allItems.FirstOrDefault(i => i.Id == id);
