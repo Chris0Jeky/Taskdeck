@@ -71,6 +71,31 @@ public class OpsCliServiceTests
     }
 
     [Fact]
+    public async Task RunCommandAsync_QueuePending_UsesBoundedDisplayRead_CappedAtFifty()
+    {
+        // #1250 review: lock the queue.pending listing to the bounded display read (cap 50) so the
+        // limit constant can't silently drift back to the unbounded full-backlog GetByStatusAsync.
+        var userId = Guid.NewGuid();
+        var adminUser = new User("admin", "admin-queue@example.com", "hash", UserRole.Admin);
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(adminUser);
+
+        var newest = new LlmRequest(userId, "automation.command", "{\"n\":1}");
+        var older = new LlmRequest(userId, "automation.command", "{\"o\":1}");
+        _queueRepoMock
+            .Setup(r => r.GetByStatusForDisplayAsync(RequestStatus.Pending, 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { newest, older });
+
+        var result = await _service.RunCommandAsync(userId, new RunCommandDto("queue.pending"), default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OutputPreview.Should().Contain("Pending queue items: 2");
+        result.Value.OutputPreview.Should().Contain(newest.Id.ToString());
+        // The bounded display read is used; the unbounded full-backlog read is never called.
+        _queueRepoMock.Verify(r => r.GetByStatusForDisplayAsync(RequestStatus.Pending, 50, It.IsAny<CancellationToken>()), Times.Once);
+        _queueRepoMock.Verify(r => r.GetByStatusAsync(It.IsAny<RequestStatus>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task RunCommandAsync_ShouldReturnValidationError_ForUnknownTemplateParameter()
     {
         var userId = Guid.NewGuid();
