@@ -79,6 +79,18 @@ insert race; cascade-delete of feedback relies on the Microsoft.Data.Sqlite fore
   is `Unspecified`, so the index has no selectivity yet).
 - The no-PII guarantee depends on the entity never gaining a text field; a future "add a comment"
   request would reintroduce PII risk and must be revisited here.
+- **Concurrency contract for reason refinement.** The precise guarantee is "last-specific-wins for
+  *sequential* re-reports; first-committed-wins under *simultaneous distinct* reasons." If one user
+  fires two requests upgrading the same `Unspecified` row to two different specific reasons at once,
+  the first commit wins on the `UpdatedAt` concurrency token and the second is mapped Conflict→benign
+  success. This is accepted (negligible for a single-user signal; row integrity is preserved) rather
+  than retried, to avoid an optimistic-retry loop on a non-critical telemetry write.
+- **Account-deletion retention.** `ProposalFeedback` is **not** swept by `AccountDeletionService`,
+  matching the existing treatment of `AutomationProposal` (also retained): the FK is to
+  `AutomationProposals`, not `Users`, and the `User` row is anonymized on deletion so the retained
+  `ReportedByUserId` GUID resolves only to scrubbed data. Feedback therefore follows the same
+  pseudonymized-GUID retention model as proposals — a deliberate decision, not an oversight; if
+  proposals are ever added to the deletion sweep, feedback must be added alongside them.
 
 ## References
 

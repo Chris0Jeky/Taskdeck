@@ -37,7 +37,11 @@ Model deferral as a **timing control, not a new status**. Add a nullable `Deferr
 
 3. **Default 60 minutes, with an optional override clamped to [1, 1440].** Matches the literal
    "Defer 1h" keymap (the frontend sends no body) while leaving room for a future "defer until
-   tomorrow" without an API break.
+   tomorrow" without an API break. An out-of-range `DurationMinutes` is **intentionally coerced
+   (clamped), not rejected with 400** — consistent with the codebase's clamp house-style for
+   bounded read/write parameters (e.g. the notification-paging negative-clamp guard) and benign
+   for a snooze window. The domain `Defer()` still validates `[1, 1440]` as defense-in-depth for
+   any non-HTTP caller.
 
 4. **Re-deferral is unbounded and idempotent in effect.** Each `Defer` recomputes `DeferredUntil`
    from "now" (never stacks), so retries and double-presses are safe. There is no cap on the number
@@ -48,7 +52,8 @@ Model deferral as a **timing control, not a new status**. Add a nullable `Deferr
    is accepted because no destructive change ever occurs and the snooze is always user-initiated.
 
 5. **`DeferredUntil` is cleared on every exit from `PendingReview`** (Approve/Reject/Expire/Dismiss/
-   MarkAsApplied), and the queue read filter is status-gated
+   MarkAsApplied — and `MarkAsFailed` for invariant uniformity, even though it is reached only via
+   Approved where the snooze is already null), and the queue read filter is status-gated
    (`Status != PendingReview || DeferredUntil == null || DeferredUntil <= now`), so a decided
    proposal can never be hidden by a stale snooze value.
 
@@ -79,6 +84,12 @@ detection even while hidden from the queue.
 - A deferred proposal is still fetchable by id / deep-link (`GetByIdAsync` is not filtered).
 - A repeatedly-deferred proposal can outlive the 24h auto-expiry window; this is intentional and
   visible, not silent.
+- Because `Defer` inflates `ExpiresAt`, a resurfaced deferred proposal sorts to the top of the
+  `OrderByDescending(ExpiresAt)` selection window and — only if a user's pending set ever exceeds
+  the list limit (impossible in the current single-user deployment) — could displace a fresher
+  pending proposal out of the returned page. Tracked in **#1247** (fix = raw-SQL `CreatedAt`-ordered
+  bounded selection, deferred because `CreatedAt` is a `DateTimeOffset` SQLite cannot `ORDER BY` in
+  LINQ; disproportionate for an unreachable LOW).
 - Migration `AddDeferredUntilToAutomationProposal` is additive (one nullable column, no backfill).
 
 ## References
