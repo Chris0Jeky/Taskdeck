@@ -147,16 +147,22 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             // (CaptureService.ListAsync) reads the scalar BoardId, never the Board navigation.
             // #1239: when a board filter is supplied, keep captures whose raw BoardId matches OR is
             // NULL (null-board captures may still resolve to the target board via provenance, resolved
-            // in the service). This excludes other boards' captures from the scan at the database.
-            var rows = boardId.HasValue
-                ? await _context.LlmRequests
-                    .FromSqlInterpolated(
-                        $"SELECT * FROM LlmRequests WHERE UserId = {userId} AND RequestType LIKE {CaptureRequestTypeLike} AND (BoardId IS NULL OR BoardId = {boardId.Value}) ORDER BY CreatedAt DESC, Id LIMIT {limit} OFFSET {offset}")
-                    .ToListAsync(cancellationToken)
-                : await _context.LlmRequests
-                    .FromSqlInterpolated(
-                        $"SELECT * FROM LlmRequests WHERE UserId = {userId} AND RequestType LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt DESC, Id LIMIT {limit} OFFSET {offset}")
-                    .ToListAsync(cancellationToken);
+            // in the service). This excludes other boards' captures from the scan at the database. The
+            // interpolation holes are parameterized by FromSqlInterpolated (no SQL injection).
+            // if/else (not a ternary): each branch must be target-typed to FormattableString so the
+            // interpolation holes stay parameters; a ternary would infer string and lose parameterization.
+            FormattableString sql;
+            if (boardId.HasValue)
+            {
+                sql = $"SELECT * FROM LlmRequests WHERE UserId = {userId} AND RequestType LIKE {CaptureRequestTypeLike} AND (BoardId IS NULL OR BoardId = {boardId.Value}) ORDER BY CreatedAt DESC, Id LIMIT {limit} OFFSET {offset}";
+            }
+            else
+            {
+                sql = $"SELECT * FROM LlmRequests WHERE UserId = {userId} AND RequestType LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt DESC, Id LIMIT {limit} OFFSET {offset}";
+            }
+            var rows = await _context.LlmRequests
+                .FromSqlInterpolated(sql)
+                .ToListAsync(cancellationToken);
             return rows
                 .OrderByDescending(lr => lr.CreatedAt)
                 .ThenBy(lr => lr.Id.ToString(), StringComparer.Ordinal)
