@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -744,6 +745,30 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         var feedback = await db.ProposalFeedbacks.SingleAsync(f => f.ProposalId == proposal.Id);
         feedback.Reason.Should().Be(ProposalFeedbackReason.TooRisky);
         feedback.ReportedByUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task GetAllByUserIdAsync_ReturnsUserFeedbackNewestFirst_OnSqlite()
+    {
+        // Regression guard (#1245 review): GetAllByUserIdAsync orders by a DateTimeOffset column,
+        // which SQLite's EF provider can't ORDER BY in LINQ -- it must run without throwing and
+        // return newest-first. This is the real-SQLite read path the GDPR export depends on.
+        var userId = await AuthenticateAsync("automation-feedback-getall");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var older = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+        var newer = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        (await _client.PostAsJsonAsync($"/api/automation/proposals/{older.Id}/feedback",
+            new ReportProposalFeedbackDto("Irrelevant"))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await _client.PostAsJsonAsync($"/api/automation/proposals/{newer.Id}/feedback",
+            new ReportProposalFeedbackDto("Incorrect"))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var scope = _factory.Services.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<IProposalFeedbackRepository>();
+        var all = await repo.GetAllByUserIdAsync(userId);
+
+        all.Should().HaveCount(2);
+        all.Select(f => f.ProposalId).Should().Equal(newer.Id, older.Id); // newest-first
     }
 
     [Fact]
