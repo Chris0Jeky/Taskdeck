@@ -85,6 +85,11 @@ insert race; cascade-delete of feedback relies on the Microsoft.Data.Sqlite fore
   the first commit wins on the `UpdatedAt` concurrency token and the second is mapped Conflict→benign
   success. This is accepted (negligible for a single-user signal; row integrity is preserved) rather
   than retried, to avoid an optimistic-retry loop on a non-critical telemetry write.
+- **Data portability.** A user's feedback rows are content-free user-scoped data, so they are
+  included in the GDPR data export (both the in-memory `ExportUserDataAsync` and the streaming path)
+  as `UserDataExportProposalFeedbackDto` (proposal id, reason, reported-at). The export read goes
+  through `GetAllByUserIdAsync`, whose SQLite ordering was fixed (raw-SQL `ORDER BY CreatedAt DESC`)
+  when the export became its first real-SQLite caller (#1245 review).
 - **Account-deletion retention.** `ProposalFeedback` is **not** swept by `AccountDeletionService`,
   matching the existing treatment of `AutomationProposal` (also retained): the FK is to
   `AutomationProposals`, not `Users`, and the `User` row is anonymized on deletion so the retained
