@@ -99,7 +99,10 @@ insert race; cascade-delete of feedback relies on the Microsoft.Data.Sqlite fore
   `AutomationProposals`, not `Users`, and the `User` row is anonymized on deletion so the retained
   `ReportedByUserId` GUID resolves only to scrubbed data. Feedback therefore follows the same
   pseudonymized-GUID retention model as proposals — a deliberate decision, not an oversight; if
-  proposals are ever added to the deletion sweep, feedback must be added alongside them.
+  proposals are ever added to the deletion sweep, feedback must be added alongside them. This
+  decision is locked by `AccountDeletionServiceTests.DeleteAccountAsync_DeliberatelyRetainsProposalFeedback`
+  (asserts the service never touches `ProposalFeedbacks`), so a future change to delete it must
+  consciously update both the test and this ADR.
 
 ## References
 
