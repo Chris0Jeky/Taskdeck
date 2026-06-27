@@ -192,8 +192,10 @@ public class OpsCliService : IOpsCliService
 
     private async Task<string> ExecuteQueuePendingAsync(CancellationToken ct)
     {
-        var pending = await _unitOfWork.LlmQueue.GetByStatusAsync(Domain.Enums.RequestStatus.Pending, ct);
-        var pendingList = pending.Take(50).ToList();
+        // Bounded at the database (display-only; #1237) instead of materializing the full Pending
+        // backlog and taking 50 in memory. Newest-first, capped at 50.
+        var pendingList = (await _unitOfWork.LlmQueue.GetByStatusForDisplayAsync(
+            Domain.Enums.RequestStatus.Pending, limit: 50, ct)).ToList();
         return $"Pending queue items: {pendingList.Count}\n" + string.Join("\n", pendingList.Select(r => $"- {r.Id}: {r.RequestType} (created: {r.CreatedAt})"));
     }
 
