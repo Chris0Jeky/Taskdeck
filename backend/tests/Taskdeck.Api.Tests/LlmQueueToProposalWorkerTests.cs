@@ -693,6 +693,12 @@ public class LlmQueueToProposalWorkerTests
             return Task.FromResult<IEnumerable<LlmRequest>>(result);
         }
 
+        public Task<IEnumerable<LlmRequest>> GetByStatusForDisplayAsync(RequestStatus status, int limit, CancellationToken cancellationToken = default)
+        {
+            var result = _allItems.Where(i => i.Status == status).OrderByDescending(i => i.CreatedAt).Take(limit).ToList();
+            return Task.FromResult<IEnumerable<LlmRequest>>(result);
+        }
+
         public Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default)
         {
             var result = _allItems

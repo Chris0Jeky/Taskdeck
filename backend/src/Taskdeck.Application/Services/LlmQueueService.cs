@@ -13,6 +13,12 @@ public class LlmQueueService : ILlmQueueService
     private readonly IAuthorizationService _authorizationService;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
 
+    // ProcessNextRequestAsync claims the single oldest claimable non-capture request, so it only
+    // needs the oldest N candidates — not the full Pending backlog. Bounds the claim-scan window
+    // (#1237). 100 leaves ample headroom for lost optimistic-claim races before falling through to
+    // "no pending requests" (the caller retries).
+    private const int ClaimScanLimit = 100;
+
     public LlmQueueService(
         IUnitOfWork unitOfWork,
         IAuthorizationService authorizationService,
@@ -115,11 +121,9 @@ public class LlmQueueService : ILlmQueueService
     {
         try
         {
-            var pendingRequests = await _unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending);
-            var candidates = pendingRequests
-                .Where(candidate => !CaptureRequestContract.IsCaptureRequestType(candidate.RequestType))
-                .OrderBy(candidate => candidate.CreatedAt)
-                .ToList();
+            // Bounded, type-aware, oldest-first at the database (reuses the #1236 primitive) instead
+            // of loading the entire Pending backlog and filtering/sorting non-capture in memory (#1237).
+            var candidates = await _unitOfWork.LlmQueue.GetOldestPendingNonCaptureAsync(ClaimScanLimit);
 
             foreach (var candidate in candidates)
             {

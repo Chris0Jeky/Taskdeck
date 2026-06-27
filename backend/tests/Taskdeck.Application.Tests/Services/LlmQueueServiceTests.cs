@@ -361,7 +361,9 @@ public class LlmQueueServiceTests
         var request = new LlmRequest(userId, "voicenote", "payload text");
         var pendingUpdatedAt = request.UpdatedAt;
 
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+        // The repository now returns the bounded, oldest-first, NON-capture candidates at the
+        // database (#1237); the service just claims the first claimable one.
+        _llmQueueRepoMock.Setup(r => r.GetOldestPendingNonCaptureAsync(It.IsAny<int>(), default))
             .ReturnsAsync(new[] { request });
 
         // Per the ILlmQueueRepository contract, a successful claim refreshes the
@@ -377,13 +379,16 @@ public class LlmQueueServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Status.Should().Be(RequestStatus.Processing);
         _llmQueueRepoMock.Verify(r => r.TryClaimProcessingAsync(request.Id, pendingUpdatedAt, default), Times.Once);
+        // Bounded, type-aware read -- never the unbounded full-backlog GetByStatusAsync.
+        _llmQueueRepoMock.Verify(r => r.GetOldestPendingNonCaptureAsync(It.IsAny<int>(), default), Times.Once);
+        _llmQueueRepoMock.Verify(r => r.GetByStatusAsync(It.IsAny<RequestStatus>(), default), Times.Never);
     }
 
     [Fact]
     public async Task ProcessNextRequestAsync_ShouldReturnNotFound_WhenQueueIsEmpty()
     {
         // Arrange
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+        _llmQueueRepoMock.Setup(r => r.GetOldestPendingNonCaptureAsync(It.IsAny<int>(), default))
             .ReturnsAsync(Array.Empty<LlmRequest>());
 
         // Act
@@ -395,36 +400,36 @@ public class LlmQueueServiceTests
     }
 
     [Fact]
-    public async Task ProcessNextRequestAsync_ShouldSkipCaptureRequests()
+    public async Task ProcessNextRequestAsync_UsesNonCapturePrimitive_SoCaptureRequestsAreNeverClaimed()
     {
-        var userId = Guid.NewGuid();
-        var captureRequest = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
-
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
-            .ReturnsAsync(new[] { captureRequest });
+        // Capture-skipping now lives IN the query: the service calls GetOldestPendingNonCaptureAsync,
+        // which excludes capture rows at the database (#1236/#1237). When only capture work is pending,
+        // that bounded read returns empty, so nothing is claimed -- and GetByStatusAsync is never used.
+        _llmQueueRepoMock.Setup(r => r.GetOldestPendingNonCaptureAsync(It.IsAny<int>(), default))
+            .ReturnsAsync(Array.Empty<LlmRequest>());
 
         var result = await _service.ProcessNextRequestAsync();
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
-        captureRequest.Status.Should().Be(RequestStatus.Pending);
         _llmQueueRepoMock.Verify(r => r.TryClaimProcessingAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), default), Times.Never);
+        _llmQueueRepoMock.Verify(r => r.GetOldestPendingNonCaptureAsync(It.IsAny<int>(), default), Times.Once);
+        _llmQueueRepoMock.Verify(r => r.GetByStatusAsync(It.IsAny<RequestStatus>(), default), Times.Never);
     }
 
     [Fact]
-    public async Task ProcessNextRequestAsync_ShouldPreserveFifo_WhenSkippingCaptureRequests()
+    public async Task ProcessNextRequestAsync_ShouldClaimOldest_InTheOrderReturned()
     {
+        // The repository returns non-capture candidates oldest-first; the service claims the first claimable.
         var userId = Guid.NewGuid();
         var oldestNonCapture = new LlmRequest(userId, "summarize", "oldest non-capture");
-        var captureRequest = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
         var newestNonCapture = new LlmRequest(userId, "summarize", "newest non-capture");
         var baseTime = DateTimeOffset.UtcNow;
         SetCreatedAt(oldestNonCapture, baseTime);
-        SetCreatedAt(captureRequest, baseTime.AddMilliseconds(1));
         SetCreatedAt(newestNonCapture, baseTime.AddMilliseconds(2));
 
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
-            .ReturnsAsync(new[] { newestNonCapture, captureRequest, oldestNonCapture });
+        _llmQueueRepoMock.Setup(r => r.GetOldestPendingNonCaptureAsync(It.IsAny<int>(), default))
+            .ReturnsAsync(new[] { oldestNonCapture, newestNonCapture });
         _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(oldestNonCapture.Id, oldestNonCapture.UpdatedAt, default))
             .Callback(() => oldestNonCapture.MarkAsProcessing())
             .ReturnsAsync(true);
@@ -443,7 +448,7 @@ public class LlmQueueServiceTests
         var userId = Guid.NewGuid();
         var request = new LlmRequest(userId, "voicenote", "payload text");
 
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+        _llmQueueRepoMock.Setup(r => r.GetOldestPendingNonCaptureAsync(It.IsAny<int>(), default))
             .ReturnsAsync(new[] { request });
         _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(request.Id, request.UpdatedAt, default))
             .ReturnsAsync(false);
@@ -467,7 +472,7 @@ public class LlmQueueServiceTests
         SetCreatedAt(first, baseTime);
         SetCreatedAt(second, baseTime.AddMilliseconds(1));
 
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+        _llmQueueRepoMock.Setup(r => r.GetOldestPendingNonCaptureAsync(It.IsAny<int>(), default))
             .ReturnsAsync(new[] { first, second });
         _llmQueueRepoMock.Setup(r => r.TryClaimProcessingAsync(first.Id, first.UpdatedAt, default))
             .ReturnsAsync(false);

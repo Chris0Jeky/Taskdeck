@@ -167,23 +167,48 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<LlmRequest>> GetByStatusAsync(RequestStatus status, CancellationToken cancellationToken = default)
+    public Task<IEnumerable<LlmRequest>> GetByStatusAsync(RequestStatus status, CancellationToken cancellationToken = default)
+        => GetByStatusCoreAsync(status, limit: null, cancellationToken);
+
+    public Task<IEnumerable<LlmRequest>> GetByStatusForDisplayAsync(RequestStatus status, int limit, CancellationToken cancellationToken = default)
+    {
+        if (limit < 1)
+            throw new ArgumentOutOfRangeException(nameof(limit), limit, "Limit must be at least 1.");
+        return GetByStatusCoreAsync(status, limit, cancellationToken);
+    }
+
+    private async Task<IEnumerable<LlmRequest>> GetByStatusCoreAsync(RequestStatus status, int? limit, CancellationToken cancellationToken)
     {
         if (_context.Database.IsSqlite())
         {
-            return await _context.LlmRequests
-                .FromSqlInterpolated($"SELECT * FROM LlmRequests WHERE Status = {(int)status} ORDER BY CreatedAt DESC")
+            // SQLite's EF provider can't ORDER BY a DateTimeOffset column in LINQ, so the order
+            // (and the optional display bound) live in raw SQL.
+            FormattableString sql;
+            if (limit is int n)
+                sql = $"SELECT * FROM LlmRequests WHERE Status = {(int)status} ORDER BY CreatedAt DESC LIMIT {n}";
+            else
+                sql = $"SELECT * FROM LlmRequests WHERE Status = {(int)status} ORDER BY CreatedAt DESC";
+
+            var rows = await _context.LlmRequests
+                .FromSqlInterpolated(sql)
                 .Include(lr => lr.User)
                 .Include(lr => lr.Board)
                 .ToListAsync(cancellationToken);
+            // FromSqlInterpolated + Include wraps the raw SQL in a subquery whose outer ORDER BY is
+            // not guaranteed to survive to the final result; re-sort newest-first in memory so the
+            // documented contract holds (same workaround as GetOldestByStatusAndCaptureKindAsync).
+            return rows.OrderByDescending(lr => lr.CreatedAt).ToList();
         }
 
-        return await _context.LlmRequests
+        var query = _context.LlmRequests
             .Include(lr => lr.User)
             .Include(lr => lr.Board)
             .Where(lr => lr.Status == status)
-            .OrderByDescending(lr => lr.CreatedAt)
-            .ToListAsync(cancellationToken);
+            .OrderByDescending(lr => lr.CreatedAt);
+
+        return limit is int take
+            ? await query.Take(take).ToListAsync(cancellationToken)
+            : await query.ToListAsync(cancellationToken);
     }
 
     public Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default)
