@@ -426,6 +426,43 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task GetCapturesByUserAsync_BoardFilter_KeepsTargetAndNullBoard_ExcludesOtherBoards()
+    {
+        // #1239: the raw-board pre-filter keeps captures whose BoardId matches OR is NULL (null-board
+        // rows may resolve to the target board via provenance, resolved in the service), and excludes
+        // captures belonging to other boards at the database.
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("cap-board-filter", "cap-board-filter@example.com", "hash");
+            db.Users.Add(user);
+            // Real boards: LlmRequest.BoardId is an enforced FK, so the target/other boards must exist.
+            var boardXEntity = new Board("Board X", ownerId: user.Id);
+            var boardYEntity = new Board("Board Y", ownerId: user.Id);
+            db.Boards.AddRange(boardXEntity, boardYEntity);
+            var boardX = boardXEntity.Id;
+            var boardY = boardYEntity.Id;
+
+            var x1 = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}", boardX);
+            var x2 = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}", boardX);
+            var y1 = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}", boardY);
+            var n1 = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}"); // null board
+            var n2 = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}"); // null board
+            db.LlmRequests.AddRange(x1, x2, y1, n1, n2);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var filtered = (await repo.GetCapturesByUserAsync(user.Id, 50, 0, boardId: boardX)).ToList();
+
+            // boardX (2) + null-board (2) kept; boardY (1) excluded at the database.
+            filtered.Select(r => r.Id).Should().BeEquivalentTo(new[] { x1.Id, x2.Id, n1.Id, n2.Id });
+            filtered.Should().NotContain(r => r.Id == y1.Id);
+
+            // Unfiltered read still returns all 5 (regression guard that boardId is genuinely optional).
+            (await repo.GetCapturesByUserAsync(user.Id, 50, 0)).Should().HaveCount(5);
+        });
+    }
+
+    [Fact]
     public async Task TryClaimProcessingCaptureAsync_ShouldSucceedOnFirstClaim_FailOnSecond()
     {
         using var scope = _factory.Services.CreateScope();

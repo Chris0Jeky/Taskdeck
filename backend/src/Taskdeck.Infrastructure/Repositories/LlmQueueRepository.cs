@@ -124,7 +124,7 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, Guid? boardId = null, CancellationToken cancellationToken = default)
     {
         if (limit < 1)
         {
@@ -145,10 +145,18 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             // it matches SQLite's TEXT comparison of the stored Guid exactly (the raw SQL's `ORDER BY Id`),
             // rather than Guid.CompareTo, which orders by a different key. No Include: the only caller
             // (CaptureService.ListAsync) reads the scalar BoardId, never the Board navigation.
-            var rows = await _context.LlmRequests
-                .FromSqlInterpolated(
-                    $"SELECT * FROM LlmRequests WHERE UserId = {userId} AND RequestType LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt DESC, Id LIMIT {limit} OFFSET {offset}")
-                .ToListAsync(cancellationToken);
+            // #1239: when a board filter is supplied, keep captures whose raw BoardId matches OR is
+            // NULL (null-board captures may still resolve to the target board via provenance, resolved
+            // in the service). This excludes other boards' captures from the scan at the database.
+            var rows = boardId.HasValue
+                ? await _context.LlmRequests
+                    .FromSqlInterpolated(
+                        $"SELECT * FROM LlmRequests WHERE UserId = {userId} AND RequestType LIKE {CaptureRequestTypeLike} AND (BoardId IS NULL OR BoardId = {boardId.Value}) ORDER BY CreatedAt DESC, Id LIMIT {limit} OFFSET {offset}")
+                    .ToListAsync(cancellationToken)
+                : await _context.LlmRequests
+                    .FromSqlInterpolated(
+                        $"SELECT * FROM LlmRequests WHERE UserId = {userId} AND RequestType LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt DESC, Id LIMIT {limit} OFFSET {offset}")
+                    .ToListAsync(cancellationToken);
             return rows
                 .OrderByDescending(lr => lr.CreatedAt)
                 .ThenBy(lr => lr.Id.ToString(), StringComparer.Ordinal)
@@ -158,8 +166,14 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
         // Non-SQLite providers (e.g. the Postgres Testcontainer path) order in the database. EF.Functions.Like
         // mirrors the capture predicate used across this repository (e.g. GetCaptureSummaryByUserAsync); on a
         // case-sensitive provider it is stricter than IsCaptureRequestType, but production is SQLite-only.
-        return await _context.LlmRequests
-            .Where(lr => lr.UserId == userId && EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike))
+        var query = _context.LlmRequests
+            .Where(lr => lr.UserId == userId && EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike));
+        if (boardId.HasValue)
+        {
+            // Same raw-board pre-filter as the SQLite path (#1239): match the board or keep null-board rows.
+            query = query.Where(lr => lr.BoardId == null || lr.BoardId == boardId.Value);
+        }
+        return await query
             .OrderByDescending(lr => lr.CreatedAt)
             .ThenBy(lr => lr.Id)
             .Skip(offset)

@@ -451,7 +451,7 @@ public class WorkerResilienceTests
             => throw new NotSupportedException();
         public Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
-        public Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default)
+        public Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, Guid? boardId = null, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -539,9 +539,10 @@ public class WorkerResilienceTests
             => Task.FromResult<IEnumerable<LlmRequest>>(_pending.Where(i => i.Status == RequestStatus.Pending).Take(limit).ToList());
         public Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.Concat(_processing).Where(i => i.UserId == userId));
-        public Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default)
+        public Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, Guid? boardId = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IEnumerable<LlmRequest>>(_pending.Concat(_processing)
                 .Where(i => i.UserId == userId && CaptureRequestContract.IsCaptureRequestType(i.RequestType))
+                .Where(i => !boardId.HasValue || i.BoardId == null || i.BoardId == boardId.Value)
                 .OrderByDescending(i => i.CreatedAt).ThenBy(i => i.Id)
                 .Skip(offset).Take(limit).ToList());
         public Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
