@@ -59,6 +59,12 @@ export async function attachSessionToPage(page: Page, auth: AuthResult): Promise
       newAutomation: true,
       newArchive: true,
     }))
+    // Wave-3 flip (ADR-0038): Paper is the DEFAULT theme now. The legacy `.td-*`-selector E2E
+    // specs assume Legacy DOM, so pin Legacy here. Conditional so it never clobbers a paper value
+    // a Paper spec seeds for this session — and so it survives reloads (addInitScript re-runs).
+    if (!localStorage.getItem('td.paper.mode.v2')) {
+      localStorage.setItem('td.paper.mode.v2', 'off')
+    }
   }, payload)
 }
 

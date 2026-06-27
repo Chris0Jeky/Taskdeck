@@ -5,7 +5,7 @@ import type { APIRequestContext } from '@playwright/test'
 
 async function enablePaperMode(page: Page) {
   await page.addInitScript(() => {
-    window.localStorage.setItem('td.paper.mode', 'paper')
+    window.localStorage.setItem('td.paper.mode.v2', 'paper')
   })
 }
 
