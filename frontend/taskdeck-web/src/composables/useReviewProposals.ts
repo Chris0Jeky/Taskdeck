@@ -321,6 +321,17 @@ export function useReviewProposals() {
     }
   }
 
+  // After a user action removes a deep-linked proposal from the queue (snoozing it via Defer),
+  // drop the hash so the visibleProposals carve-out stops exempting it from the deferred filter.
+  // Without this, a just-snoozed proposal you reached via #proposal-<id> stays visible — with
+  // live action buttons — until the next navigation/refresh, contradicting the snooze. Safe
+  // regardless of the defer's outcome: if the defer failed the proposal isn't deferred, so it
+  // stays visible through normal filtering and only loses its (now-stale) scroll anchor.
+  async function clearProposalDeepLink(proposalId: string) {
+    if (getProposalIdFromHash(route.hash) !== proposalId) return
+    await safeReplace({ name: 'workspace-review', query: route.query })
+  }
+
   async function loadProposals() {
     reviewLoadPerf.start()
     const requestId = ++latestProposalLoadRequestId
@@ -449,6 +460,7 @@ export function useReviewProposals() {
     isProposalDismissable,
     isProposalDeferred,
     isStaleProposal,
+    clearProposalDeepLink,
     loadProposals,
     loadBoardOptions,
     startClock,

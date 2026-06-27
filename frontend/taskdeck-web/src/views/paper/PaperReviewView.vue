@@ -61,6 +61,7 @@ const {
   isRejectActionable,
   isProposalDismissable,
   isStaleProposal,
+  clearProposalDeepLink,
   loadProposals,
   loadBoardOptions,
   startClock,
@@ -642,6 +643,10 @@ function onDefer() {
     return
   }
   void handleDeferProposal(p.id)
+  // If we reached this proposal via a #proposal-<id> deep link, snoozing it must drop it from
+  // the queue. Clear the hash so the visibleProposals carve-out stops exempting it from the
+  // deferred filter (otherwise it lingers with live buttons until navigation/refresh).
+  void clearProposalDeepLink(p.id)
 }
 
 function onToggleProvenance() {

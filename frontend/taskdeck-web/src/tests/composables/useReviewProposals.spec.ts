@@ -228,6 +228,38 @@ describe('useReviewProposals', () => {
       expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['snoozed', 'live'])
     })
 
+    it('clearProposalDeepLink drops the hash for the matching proposal so a just-snoozed deep link leaves the queue', async () => {
+      const rp = useReviewProposals()
+      const base = new Date('2026-06-13T12:00:00.000Z').getTime()
+      rp.nowMs.value = base
+      const deferredUntil = new Date(base + 60 * 60_000).toISOString()
+      rp.proposals.value = [
+        { ...makeProposal({ id: 'snoozed', status: 'PendingReview' }), deferredUntil },
+        makeProposal({ id: 'live', status: 'PendingReview' }),
+      ] as any
+
+      // Deep-linked + snoozed → the carve-out keeps it visible.
+      mockRoute.hash = '#proposal-snoozed'
+      expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['snoozed', 'live'])
+
+      // Snoozing it clears the hash (replace to the hashless review route)...
+      await rp.clearProposalDeepLink('snoozed')
+      expect(mockRouter.replace).toHaveBeenCalledTimes(1)
+      expect(mockRouter.replace).toHaveBeenCalledWith({ name: 'workspace-review', query: {} })
+
+      // ...and once the hash is gone the deferred filter hides it again.
+      mockRoute.hash = ''
+      expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['live'])
+    })
+
+    it('clearProposalDeepLink is a no-op when the hash points at a different proposal', async () => {
+      const rp = useReviewProposals()
+      mockRoute.hash = '#proposal-snoozed'
+
+      await rp.clearProposalDeepLink('some-other-id')
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+    })
+
     it('never treats a decided proposal with a stale deferredUntil as deferred', () => {
       const rp = useReviewProposals()
       const base = new Date('2026-06-13T12:00:00.000Z').getTime()
