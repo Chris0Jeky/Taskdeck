@@ -24,10 +24,11 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns all requests with the given status, newest-first, unbounded. Callers that genuinely need
-    /// the full set rely on this (the health backlog gauge measures total depth), so do NOT add a default
-    /// cap here. Bounded background work-drains must use the type-aware <c>GetOldest*</c> methods below;
-    /// a bounded DISPLAY listing must use <see cref="GetByStatusForDisplayAsync"/>.
+    /// Returns all requests with the given status, newest-first, unbounded. The health backlog gauge
+    /// currently inspects every row through this (it should move to count primitives — tracked in #1251),
+    /// so do NOT add a default cap here. Bounded background work-drains must use the type-aware
+    /// <c>GetOldest*</c> methods below; a bounded DISPLAY listing must use
+    /// <see cref="GetByStatusForDisplayAsync"/>.
     /// </summary>
     Task<IEnumerable<LlmRequest>> GetByStatusAsync(RequestStatus status, CancellationToken cancellationToken = default);
 

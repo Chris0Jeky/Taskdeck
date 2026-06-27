@@ -189,11 +189,15 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             else
                 sql = $"SELECT * FROM LlmRequests WHERE Status = {(int)status} ORDER BY CreatedAt DESC";
 
-            return await _context.LlmRequests
+            var rows = await _context.LlmRequests
                 .FromSqlInterpolated(sql)
                 .Include(lr => lr.User)
                 .Include(lr => lr.Board)
                 .ToListAsync(cancellationToken);
+            // FromSqlInterpolated + Include wraps the raw SQL in a subquery whose outer ORDER BY is
+            // not guaranteed to survive to the final result; re-sort newest-first in memory so the
+            // documented contract holds (same workaround as GetOldestByStatusAndCaptureKindAsync).
+            return rows.OrderByDescending(lr => lr.CreatedAt).ToList();
         }
 
         var query = _context.LlmRequests
