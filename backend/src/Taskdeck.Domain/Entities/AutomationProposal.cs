@@ -170,6 +170,9 @@ public class AutomationProposal : Entity
 
         Status = ProposalStatus.Failed;
         FailureReason = failureReason;
+        // Terminal proposal: clear any residual snooze so list reads never hide it. Uniform with
+        // every other terminal/decided transition (Approve/Reject/Apply/Expire/Dismiss).
+        DeferredUntil = null;
         Touch();
     }
 
