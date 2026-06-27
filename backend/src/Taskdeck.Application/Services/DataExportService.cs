@@ -51,11 +51,14 @@ public class DataExportService : IDataExportService
             var auditLogsTask = _unitOfWork.AuditLogs.GetByUserAsync(userId, limit: 10000, cancellationToken: cancellationToken);
             var preferencesTask = _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken);
             var notificationPrefsTask = _unitOfWork.NotificationPreferences.GetByUserIdAsync(userId, cancellationToken);
+            // Content-free per-user quality-feedback signals (#1245 review): user-scoped data that
+            // the export must include for portability.
+            var feedbackTask = _unitOfWork.ProposalFeedbacks.GetAllByUserIdAsync(userId, cancellationToken);
 
             await Task.WhenAll(
                 boardAccessesTask, notificationsTask, capturesTask,
                 proposalsTask, chatSessionsTask, auditLogsTask,
-                preferencesTask, notificationPrefsTask);
+                preferencesTask, notificationPrefsTask, feedbackTask);
 
             var boardAccesses = await boardAccessesTask;
             var notifications = await notificationsTask;
@@ -65,6 +68,7 @@ public class DataExportService : IDataExportService
             var auditLogs = await auditLogsTask;
             var preferences = await preferencesTask;
             var notificationPrefs = await notificationPrefsTask;
+            var proposalFeedback = await feedbackTask;
 
             // Resolve board names for accessible boards
             var boardIds = boardAccesses.Select(ba => ba.BoardId).Distinct().ToList();
@@ -147,6 +151,11 @@ public class DataExportService : IDataExportService
                 user.DefaultRole.ToString(),
                 user.CreatedAt);
 
+            var exportFeedback = proposalFeedback.Select(f => new UserDataExportProposalFeedbackDto(
+                f.ProposalId,
+                f.Reason.ToString(),
+                f.ReportedAt)).ToList();
+
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -155,7 +164,8 @@ public class DataExportService : IDataExportService
                 exportChatSessions,
                 exportAuditEntries,
                 exportPreferences,
-                exportNotificationPrefs);
+                exportNotificationPrefs,
+                exportFeedback);
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -320,6 +330,20 @@ public class DataExportService : IDataExportService
                 writer.WriteString("entityId", a.EntityId.ToString());
                 writer.WriteString("action", a.Action.ToString());
                 writer.WriteString("timestamp", a.Timestamp);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            // proposal feedback — content-free signals, bounded per-user set (#1245 review)
+            writer.WriteStartArray("proposalFeedback");
+            foreach (var f in await _unitOfWork.ProposalFeedbacks.GetAllByUserIdAsync(userId, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                writer.WriteStartObject();
+                writer.WriteString("proposalId", f.ProposalId.ToString());
+                writer.WriteString("reason", f.Reason.ToString());
+                writer.WriteString("reportedAt", f.ReportedAt);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();

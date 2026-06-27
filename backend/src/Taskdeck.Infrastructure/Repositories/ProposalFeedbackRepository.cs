@@ -23,8 +23,19 @@ public class ProposalFeedbackRepository : Repository<ProposalFeedback>, IProposa
 
     public async Task<IReadOnlyList<ProposalFeedback>> GetAllByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        // Order before the cap so the bounded sample is deterministic (newest-first), not an
-        // arbitrary slice -- the (ReportedByUserId, CreatedAt) index covers this.
+        // Order before the cap so the bounded sample is deterministic (newest-first); the
+        // (ReportedByUserId, CreatedAt) index covers this. SQLite's EF provider can't ORDER BY a
+        // DateTimeOffset column in LINQ, so the order + LIMIT live in raw SQL there (no Includes,
+        // so the ORDER BY survives; the in-memory re-sort is a cheap belt-and-suspenders).
+        if (_context.Database.IsSqlite())
+        {
+            var rows = await _dbSet
+                .FromSqlInterpolated($"SELECT * FROM ProposalFeedbacks WHERE ReportedByUserId = {userId} ORDER BY CreatedAt DESC LIMIT {MaxLimit}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            return rows.OrderByDescending(f => f.CreatedAt).ToList();
+        }
+
         return await _dbSet
             .AsNoTracking()
             .Where(f => f.ReportedByUserId == userId)
