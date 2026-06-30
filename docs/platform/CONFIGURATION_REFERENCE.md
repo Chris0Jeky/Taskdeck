@@ -265,7 +265,7 @@ Bound to `WorkerSettings`. Registered in
 | `Workers:MaxConcurrency` | `int` | `2` | Max concurrent worker slots. | No |
 | `Workers:MaxRetries` | `int` | `3` | Max retries before a queue item is failed. | No |
 | `Workers:RetryBackoffSeconds` | `int[]` | `[10, 30, 90]` | Delay per retry attempt. Length should be at least `MaxRetries`. | No |
-| `Workers:ProcessingLeaseSeconds` | `int` | `120` | Visibility lease held by a worker while processing a queue item. | No |
+| `Workers:ProcessingLeaseSeconds` | `int` | `120` | Visibility lease held by a worker while processing a queue item. Also the threshold (floored at 30s) after which a non-capture queue item left in `Processing` by a crashed worker is reclaimed — returned to `Pending` while retry budget remains, else `Failed` (#1209). Capture-triage items self-heal via their re-claim path and are not swept. | No |
 | `Workers:ProposalExpiryMinutes` | `int` | `1440` (24h) | How long pending proposals remain before being marked expired by the housekeeping worker. | No |
 | `Workers:EnableAutoQueueProcessing` | `bool` | `true` | When false, the background queue worker is registered but does not pull work (manual/CI scenarios). | No |
 
