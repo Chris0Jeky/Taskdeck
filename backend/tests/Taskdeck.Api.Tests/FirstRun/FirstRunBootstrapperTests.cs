@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Xunit;
@@ -344,6 +346,52 @@ public class FirstRunBootstrapperTests
 
         Assert.Contains("LocalConfigJsonOptions", source);
         Assert.DoesNotContain("JsonNode.Parse(existing)", source);
+    }
+
+    [Fact]
+    public void RestrictFileToCurrentUser_LocksFileToCurrentUserOnly()
+    {
+        // Behavioral test for the #1241 secret-file lockdown. Runs on both platforms (each CI runner covers
+        // its own branch): on Unix it asserts 0600; on Windows it asserts the DACL is protected (inheritance
+        // disabled) with the current user as the only granted principal.
+        var path = Path.Combine(Path.GetTempPath(), $"td-acl-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.Create(path).Dispose();
+
+            FirstRunBootstrapper.RestrictFileToCurrentUser(path);
+
+            if (OperatingSystem.IsWindows())
+            {
+                var security = new FileInfo(path).GetAccessControl();
+                Assert.True(
+                    security.AreAccessRulesProtected,
+                    "inheritance should be disabled so the directory's default ACEs do not apply");
+
+                var currentSid = WindowsIdentity.GetCurrent().User;
+                var rules = security.GetAccessRules(
+                    includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier));
+
+                // Iterate inside the OperatingSystem.IsWindows() guard (not a lambda) so the platform
+                // analyzer recognizes the guard for the Windows-only rule members.
+                Assert.True(rules.Count > 0, "the file should have at least one explicit access rule");
+                foreach (FileSystemAccessRule rule in rules)
+                {
+                    Assert.Equal(AccessControlType.Allow, rule.AccessControlType);
+                    Assert.Equal(currentSid, rule.IdentityReference);
+                }
+            }
+            else
+            {
+                Assert.Equal(
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                    File.GetUnixFileMode(path));
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     private static string FindSourceFile(string fileName)

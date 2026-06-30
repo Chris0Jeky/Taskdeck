@@ -1,4 +1,7 @@
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -656,19 +659,15 @@ public static class FirstRunBootstrapper
             Directory.CreateDirectory(dir);
             var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
 
-            if (!OperatingSystem.IsWindows())
-            {
-                // Create the file empty and restrict to 0600 BEFORE writing the payload,
-                // eliminating the TOCTOU window where secrets would be world-readable
-                // under the default umask (022).
-                File.Create(tempPath).Dispose();
-                File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                File.WriteAllText(tempPath, payload);
-            }
-            else
-            {
-                File.WriteAllText(tempPath, payload);
-            }
+            // Create the file empty and lock it to the current user BEFORE writing the secret payload,
+            // eliminating the TOCTOU window where the JWT secret + connector key would be readable by other
+            // local users: under the Unix default umask (022) the file would be 0644, and on Windows it would
+            // inherit the directory's default ACL (e.g. BUILTIN\Users read). #1241. If the file cannot be
+            // locked down, RestrictFileToCurrentUser throws (as IOException) and the secret is never written
+            // to it -- the caller falls back to an in-memory value rather than leaving it world-readable.
+            File.Create(tempPath).Dispose();
+            RestrictFileToCurrentUser(tempPath);
+            File.WriteAllText(tempPath, payload);
 
             try
             {
@@ -690,6 +689,60 @@ public static class FirstRunBootstrapper
             }
             mutex?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Restricts a freshly-created (still-empty) file to the current user only, BEFORE secrets are written
+    /// into it, so <c>appsettings.local.json</c> (JWT secret + connector key) is never readable by other
+    /// local users (#1241). On Unix this is <c>0600</c>; on Windows it replaces the DACL with a single
+    /// owner-only ACE and disables inheritance (so the directory's default ACEs -- e.g. BUILTIN\Users read --
+    /// do not apply). Any failure is normalized to <see cref="IOException"/> so the first-run callers'
+    /// existing <c>catch (IOException)</c> falls back to an in-memory value -- the secret is never written to
+    /// a file we could not lock down.
+    /// </summary>
+    internal static void RestrictFileToCurrentUser(string path)
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                return;
+            }
+
+            RestrictFileToCurrentUserWindows(path);
+        }
+        catch (IOException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Normalize (e.g. UnauthorizedAccessException, PlatformNotSupportedException) so the callers'
+            // catch(IOException) handles it uniformly -- never leave the plaintext secret in an unprotected file.
+            throw new IOException(
+                $"Could not restrict {path} to the current user; refusing to write the secret to it.", ex);
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void RestrictFileToCurrentUserWindows(string path)
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var owner = identity.User;
+        if (owner is null)
+        {
+            // Without a resolvable SID we cannot scope the ACL; fail loudly (normalized to IOException by the
+            // caller) rather than leave the secret with the inherited, potentially world-readable ACL.
+            throw new InvalidOperationException(
+                "Could not resolve the current Windows user SID to restrict the secrets file.");
+        }
+
+        var security = new FileSecurity();
+        // Drop inherited ACEs and grant the current user full control -- the only ACE on the file.
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(owner, FileSystemRights.FullControl, AccessControlType.Allow));
+        new FileInfo(path).SetAccessControl(security);
     }
 
     private static void ReplaceFileWithRetry(string tempPath, string path)
