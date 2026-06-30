@@ -170,6 +170,8 @@ public class WorkerResilienceTests
             .ReturnsAsync(Enumerable.Empty<LlmRequest>());
         mockLlmQueue.Setup(q => q.CountPendingNonCaptureAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
         mockLlmQueue.Setup(q => q.CountProcessingCaptureAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        mockLlmQueue.Setup(q => q.GetStuckProcessingNonCaptureAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<LlmRequest>());
 
         var mockUnitOfWork = new Mock<IUnitOfWork>();
         mockUnitOfWork.Setup(u => u.LlmQueue).Returns(mockLlmQueue.Object);
@@ -319,5 +321,7 @@ public class WorkerResilienceTests
 
         mockLlmQueue.Setup(q => q.CountPendingNonCaptureAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
         mockLlmQueue.Setup(q => q.CountProcessingCaptureAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        mockLlmQueue.Setup(q => q.GetStuckProcessingNonCaptureAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<LlmRequest>());
     }
 }

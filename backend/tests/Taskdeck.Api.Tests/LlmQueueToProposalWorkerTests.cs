@@ -666,6 +666,128 @@ public class LlmQueueToProposalWorkerTests
 
     #endregion
 
+    #region Stuck-Processing recovery (#1209)
+
+    private static async Task InvokeRecoverStuckProcessingItemsAsync(
+        LlmQueueToProposalWorker worker,
+        CancellationToken ct)
+    {
+        var method = typeof(LlmQueueToProposalWorker).GetMethod(
+            "RecoverStuckProcessingItemsAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        method.Should().NotBeNull("RecoverStuckProcessingItemsAsync must exist");
+        var task = method!.Invoke(worker, [ct]);
+        task.Should().NotBeNull();
+        await (Task)task!;
+    }
+
+    private static void BackdateUpdatedAt(LlmRequest item, DateTimeOffset updatedAt)
+    {
+        typeof(LlmRequest)
+            .GetProperty(nameof(LlmRequest.UpdatedAt))!
+            .SetValue(item, updatedAt);
+    }
+
+    /// <summary>
+    /// Builds a non-capture request left in Processing (as if a worker claimed it then crashed), with
+    /// <paramref name="retryCount"/> prior failures driven through the real transitions and its UpdatedAt
+    /// backdated <paramref name="ageSeconds"/> into the past so it is older than the recovery lease.
+    /// </summary>
+    private static LlmRequest CreateStuckProcessingNonCaptureItem(int retryCount = 0, int ageSeconds = 10_000)
+    {
+        var item = CreatePendingItem();
+        for (var i = 0; i < retryCount; i++)
+        {
+            item.MarkAsProcessing();
+            item.MarkAsFailed("prior failure");
+            item.ResetForRetry();
+        }
+        item.MarkAsProcessing();
+        BackdateUpdatedAt(item, DateTimeOffset.UtcNow.AddSeconds(-ageSeconds));
+        return item;
+    }
+
+    [Fact]
+    public async Task RecoverStuck_NonCaptureStuckInProcessing_WithRetryBudget_ReturnsToPendingAndConsumesBudget()
+    {
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 0);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Pending, "a stuck item with retry budget remaining is re-enqueued");
+        item.RetryCount.Should().Be(1, "recovery counts against the retry budget so a repeatedly-crashing item cannot loop forever");
+    }
+
+    [Fact]
+    public async Task RecoverStuck_NonCaptureStuckInProcessing_BudgetExhausted_MarkedFailed()
+    {
+        // MaxRetries=3, RetryCount=2 -> 2 + 1 < 3 is false -> no budget left -> permanent failure.
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 2);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Failed, "a stuck item with no retry budget left fails permanently");
+        item.RetryCount.Should().Be(3);
+        item.ErrorMessage.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task RecoverStuck_FreshProcessingItem_NotSwept()
+    {
+        // A non-capture item just claimed (UpdatedAt = now) is still legitimately in flight and must not
+        // be reclaimed mid-processing.
+        var item = CreatePendingItem();
+        item.MarkAsProcessing();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Processing, "a fresh Processing item is within its lease and must be left alone");
+        item.RetryCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RecoverStuck_CaptureItemStuckInProcessing_NotSwept()
+    {
+        // Capture-triage items self-heal via the Processing re-claim path, so the non-capture recovery
+        // sweep must never touch them.
+        var captureItem = CreateCaptureTriageItem();
+        BackdateUpdatedAt(captureItem, DateTimeOffset.UtcNow.AddSeconds(-10_000));
+        var queueRepo = new FakeLlmQueueRepository([], [captureItem]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        captureItem.Status.Should().Be(RequestStatus.Processing, "capture items are excluded from the non-capture recovery sweep");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_StuckNonCaptureItem_RecoveredAndReprocessedToCompletion()
+    {
+        // End-to-end (#1209 acceptance): a non-capture item abandoned in Processing is recovered to Pending
+        // and then drained by the same tick, proving the item is eventually reclaimed rather than lost.
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 0);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var planner = new FakeAutomationPlannerService();
+        using var sp = BuildServiceProvider(queueRepo, planner);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed, "the recovered item is re-enqueued and processed to completion within the tick");
+    }
+
+    #endregion
+
     #region Fakes
 
     private sealed class FakeLlmQueueRepository : ILlmQueueRepository
@@ -727,6 +849,18 @@ public class LlmQueueToProposalWorkerTests
 
         public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(_allItems.Count(i => i.Status == RequestStatus.Pending && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
+
+        public Task<IReadOnlyList<LlmRequest>> GetStuckProcessingNonCaptureAsync(DateTimeOffset staleBefore, int limit, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<LlmRequest> result = _allItems
+                .Where(i => i.Status == RequestStatus.Processing
+                    && !CaptureRequestContract.IsCaptureRequestType(i.RequestType)
+                    && i.UpdatedAt <= staleBefore)
+                .OrderBy(i => i.UpdatedAt)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult(result);
+        }
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         {

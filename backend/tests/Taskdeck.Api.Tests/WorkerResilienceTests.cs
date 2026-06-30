@@ -433,6 +433,8 @@ public class WorkerResilienceTests
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
         public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<IReadOnlyList<LlmRequest>> GetStuckProcessingNonCaptureAsync(DateTimeOffset staleBefore, int limit, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -521,6 +523,18 @@ public class WorkerResilienceTests
 
         public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.Concat(_processing).Count(i => i.Status == RequestStatus.Pending && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
+
+        public Task<IReadOnlyList<LlmRequest>> GetStuckProcessingNonCaptureAsync(DateTimeOffset staleBefore, int limit, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<LlmRequest> result = _pending.Concat(_processing)
+                .Where(i => i.Status == RequestStatus.Processing
+                    && !CaptureRequestContract.IsCaptureRequestType(i.RequestType)
+                    && i.UpdatedAt <= staleBefore)
+                .OrderBy(i => i.UpdatedAt)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult(result);
+        }
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.Concat(_processing).FirstOrDefault(i => i.Id == id));
