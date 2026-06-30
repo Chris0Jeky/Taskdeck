@@ -887,6 +887,36 @@ public class LlmQueueToProposalWorkerTests
         planner.CallCount.Should().Be(0, "the existing-proposal guard must short-circuit before the planner");
     }
 
+    [Theory]
+    [InlineData(0)] // retry budget remains
+    [InlineData(2)] // retry budget exhausted (MaxRetries=3): the Codex-flagged case -- must complete, not fail
+    public async Task RecoverStuck_ProposalAlreadyExists_CompletesRegardlessOfBudget(int retryCount)
+    {
+        // #1209 review round 2 (Codex): if the crashed attempt already committed the proposal, the request
+        // succeeded; recovery must complete it even on its last attempt, rather than marking it Failed (which
+        // would mislabel a successful request and bypass the drain's completion guard).
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: retryCount);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var existing = new AutomationProposal(
+            ProposalSourceType.Queue,
+            item.UserId,
+            "Existing proposal from the crashed attempt",
+            RiskLevel.Low,
+            item.Id.ToString(),
+            boardId: null,
+            sourceReferenceId: item.Id.ToString());
+        var proposals = new Mock<IAutomationProposalRepository>();
+        proposals
+            .Setup(p => p.GetBySourceReferenceAsync(ProposalSourceType.Queue, item.Id.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+        using var sp = BuildServiceProvider(queueRepo, automationProposals: proposals.Object);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed, "an already-created proposal means the request succeeded; recovery completes it regardless of retry budget");
+    }
+
     #endregion
 
     #region Fakes

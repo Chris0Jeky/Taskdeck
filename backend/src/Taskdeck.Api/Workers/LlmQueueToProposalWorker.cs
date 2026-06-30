@@ -186,10 +186,25 @@ public class LlmQueueToProposalWorker : BackgroundService
             return;
         }
 
+        var completed = 0;
         var requeued = 0;
         var failedPermanently = 0;
         foreach (var item in stuckItems)
         {
+            // If the crashed attempt already committed this request's proposal, the work actually succeeded
+            // -- only the completing status flip was lost. Complete it regardless of the retry budget,
+            // rather than requeueing (which the drain's guard would complete anyway, after a wasted cycle)
+            // or, on the last attempt, failing it -- which would mislabel a request that DID produce its
+            // proposal as Failed and never route it through the drain's completion guard.
+            var existingProposal = await unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+                ProposalSourceType.Queue, item.Id.ToString(), ct);
+            if (existingProposal != null)
+            {
+                item.MarkAsCompleted();
+                completed++;
+                continue;
+            }
+
             // Recovery counts against the retry budget so a request that repeatedly crashes the worker
             // eventually fails permanently instead of looping forever. MarkAsFailed (Processing -> Failed,
             // RetryCount++) then ResetForRetry (Failed -> Pending) reuses the same transitions and the same
@@ -214,12 +229,17 @@ public class LlmQueueToProposalWorker : BackgroundService
         await unitOfWork.SaveChangesAsync(ct);
 
         _logger.LogWarning(
-            "Recovered {StuckCount} non-capture queue item(s) stuck in Processing beyond {LeaseSeconds}s: {RequeuedCount} returned to Pending, {FailedCount} failed (retry budget exhausted).",
+            "Recovered {StuckCount} non-capture queue item(s) stuck in Processing beyond {LeaseSeconds}s: {CompletedCount} already had a proposal and were completed, {RequeuedCount} returned to Pending, {FailedCount} failed (retry budget exhausted).",
             stuckItems.Count,
             leaseSeconds,
+            completed,
             requeued,
             failedPermanently);
 
+        if (completed > 0)
+        {
+            RecordRecoveryMetrics(completed, "recovered_stuck_completed");
+        }
         if (requeued > 0)
         {
             RecordRecoveryMetrics(requeued, "recovered_stuck_requeued");
