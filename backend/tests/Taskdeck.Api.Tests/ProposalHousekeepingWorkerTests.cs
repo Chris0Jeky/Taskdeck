@@ -222,7 +222,10 @@ public class ProposalHousekeepingWorkerTests
 
         public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
         {
-            throw new NotSupportedException();
+            // Mirror the real query's ExpiresAt filter; intentionally ignore status (like GetByStatusAsync
+            // above) so a non-PendingReview proposal still reaches the worker's Expire() catch path.
+            return Task.FromResult<IEnumerable<AutomationProposal>>(
+                _proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList());
         }
 
         public Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(string actionType, Guid? boardId, Guid userId, int limit = 100, CancellationToken cancellationToken = default)

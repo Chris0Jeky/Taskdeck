@@ -106,12 +106,42 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         repository.SaveChangesCalled.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task ExpireStaleProposals_ShouldExpireProposalsBeyondTheBoundedListWindow()
+    {
+        // #1259: the worker must expire ALL expired proposals via the unbounded GetExpiredAsync, not just
+        // those in the first display-order page. Place an expired proposal AFTER 100 fresh ones — the prior
+        // bounded GetByStatusAsync(limit 100) path would never have loaded it, leaving it un-expired.
+        var proposals = new List<AutomationProposal>();
+        for (var i = 0; i < 100; i++)
+        {
+            var fresh = CreatePendingProposal();
+            SetExpiresAt(fresh, DateTime.UtcNow.AddHours(1)); // not expired
+            proposals.Add(fresh);
+        }
+        var expiredBeyondWindow = CreatePendingProposal();
+        SetExpiresAt(expiredBeyondWindow, DateTime.UtcNow.AddMinutes(-5)); // expired, at position 101
+        proposals.Add(expiredBeyondWindow);
+
+        var repository = new TrackingProposalRepository(proposals);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        var (worker, sp) = CreateWorkerWithProvider(unitOfWork);
+        using (sp)
+        {
+            await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+        }
+
+        expiredBeyondWindow.Status.Should().Be(ProposalStatus.Expired,
+            "GetExpiredAsync is unbounded, so an expired proposal beyond the first 100 is still expired");
+        proposals.Take(100).Should().AllSatisfy(p => p.Status.Should().Be(ProposalStatus.PendingReview));
+    }
+
     #endregion
 
     #region Database Error Resilience
 
     [Fact]
-    public async Task ExpireStaleProposals_ShouldPropagateDbError_WhenGetByStatusThrows()
+    public async Task ExpireStaleProposals_ShouldPropagateDbError_WhenGetExpiredThrows()
     {
         var repository = new ThrowingProposalRepository();
         var unitOfWork = new FakeUnitOfWork(repository);
@@ -119,7 +149,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         var (worker, sp) = CreateWorkerWithProvider(unitOfWork, logger);
         using (sp)
         {
-            // ExpireStaleProposalsAsync doesn't catch DB errors in the fetch path;
+            // ExpireStaleProposalsAsync doesn't catch DB errors in the fetch path (now GetExpiredAsync);
             // the ExecuteAsync loop handles that. Verify it propagates cleanly.
             var act = () => InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
             await act.Should().ThrowAsync<InvalidOperationException>();
@@ -280,7 +310,10 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public Task<AutomationProposal?> GetLatestByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal?> GetLatestByOperationTargetAsync(string targetType, string targetId, string actionType, ProposalSourceType sourceType, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        // Mirror the real query's ExpiresAt filter; intentionally ignore status (like GetByStatusAsync) so a
+        // non-PendingReview proposal still reaches the worker's Expire() catch path.
+        public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IEnumerable<AutomationProposal>>(_proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList());
         public Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(string actionType, Guid? boardId, Guid userId, int limit = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
@@ -288,6 +321,9 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
     {
         public Task<IEnumerable<AutomationProposal>> GetByStatusAsync(
             ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database connection failed");
+
+        public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database connection failed");
 
         public Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -306,7 +342,6 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public Task<AutomationProposal?> GetLatestByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal?> GetLatestByOperationTargetAsync(string targetType, string targetId, string actionType, ProposalSourceType sourceType, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(string actionType, Guid? boardId, Guid userId, int limit = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
