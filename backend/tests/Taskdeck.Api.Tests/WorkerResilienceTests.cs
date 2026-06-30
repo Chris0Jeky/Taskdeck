@@ -662,10 +662,11 @@ public class WorkerResilienceTests
 
         public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(
             CancellationToken cancellationToken = default)
+            // Mirror the real query's ExpiresAt filter; intentionally ignore status (like GetByStatusAsync
+            // above) so a non-PendingReview proposal still reaches the worker's Expire() catch path, which is
+            // exactly what the housekeeping resilience tests exercise.
             => Task.FromResult<IEnumerable<AutomationProposal>>(
-                _proposals.Where(p =>
-                    p.ExpiresAt < DateTime.UtcNow &&
-                    p.Status == ProposalStatus.PendingReview).ToList());
+                _proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList());
 
         public Task<AutomationProposal?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult(_proposals.SingleOrDefault(p => p.Id == id));
