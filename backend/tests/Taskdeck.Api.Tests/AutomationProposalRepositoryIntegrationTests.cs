@@ -179,6 +179,89 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
     }
 
     [Fact]
+    public async Task GetByUserIdAsync_ResurfacedDeferredProposal_DoesNotEvictFresherPendingFromFullPage()
+    {
+        // #1247: the bounded top-N selection must order by CreatedAt (the display order), not the
+        // defer-inflated ExpiresAt. A resurfaced deferred proposal (ADR-0042 pushed its ExpiresAt far out)
+        // must not occupy a top slot and push a fresher pending proposal out of a full page.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User("ap-defer-order", "ap-defer-order@example.com", "hash");
+        db.Users.Add(user);
+
+        var now = DateTime.UtcNow;
+        var nowOffset = DateTimeOffset.UtcNow;
+
+        // OLD proposal that was deferred and has resurfaced (DeferredUntil in the past -> passes the
+        // visibility filter), but whose ExpiresAt is inflated far into the future.
+        var resurfacedDeferred = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Old resurfaced deferred", RiskLevel.Low,
+            $"corr-deferred-{Guid.NewGuid():N}");
+        var fresh1 = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Fresh pending 1", RiskLevel.Low,
+            $"corr-fresh1-{Guid.NewGuid():N}");
+        var fresh2 = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Fresh pending 2", RiskLevel.Low,
+            $"corr-fresh2-{Guid.NewGuid():N}");
+        db.AutomationProposals.AddRange(resurfacedDeferred, fresh1, fresh2);
+
+        // The deferred proposal is the OLDEST by CreatedAt; the two fresh ones are newer.
+        db.Entry(resurfacedDeferred).Property("CreatedAt").CurrentValue = nowOffset.AddDays(-3);
+        db.Entry(fresh1).Property("CreatedAt").CurrentValue = nowOffset.AddHours(-2);
+        db.Entry(fresh2).Property("CreatedAt").CurrentValue = nowOffset.AddHours(-1);
+
+        // The deferred proposal has the HIGHEST ExpiresAt (would win under the old ExpiresAt ordering);
+        // the fresh ones carry a normal ~24h TTL.
+        SetExpiresAt(resurfacedDeferred, now.AddDays(10));
+        SetExpiresAt(fresh1, now.AddHours(22));
+        SetExpiresAt(fresh2, now.AddHours(23));
+        SetDeferredUntil(resurfacedDeferred, now.AddHours(-1)); // resurfaced: snooze has elapsed
+
+        await db.SaveChangesAsync();
+
+        // A full page of 2 from 3 candidates must return the two FRESHEST by CreatedAt, not the inflated
+        // deferred one.
+        var page = (await repo.GetByUserIdAsync(user.Id, limit: 2)).ToList();
+
+        page.Should().HaveCount(2);
+        page.Select(p => p.Id).Should().BeEquivalentTo(new[] { fresh1.Id, fresh2.Id });
+        page.Should().NotContain(p => p.Id == resurfacedDeferred.Id,
+            "the bounded window orders by CreatedAt, so a resurfaced deferred proposal cannot evict a fresher pending one");
+    }
+
+    [Fact]
+    public async Task GetByUserIdAsync_EqualCreatedAt_SelectsDeterministicallyViaIdTiebreaker()
+    {
+        // #1247 (Id tiebreaker): proposals created in the same batch share CreatedAt to the tick. Without a
+        // secondary sort key the bounded-window boundary is nondeterministic; with ORDER BY CreatedAt, Id the
+        // same query returns the same row every time.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User("ap-tie", "ap-tie@example.com", "hash");
+        db.Users.Add(user);
+
+        var sharedCreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var p1 = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Tie 1", RiskLevel.Low, $"corr-tie1-{Guid.NewGuid():N}");
+        var p2 = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Tie 2", RiskLevel.Low, $"corr-tie2-{Guid.NewGuid():N}");
+        db.AutomationProposals.AddRange(p1, p2);
+        db.Entry(p1).Property("CreatedAt").CurrentValue = sharedCreatedAt;
+        db.Entry(p2).Property("CreatedAt").CurrentValue = sharedCreatedAt; // identical CreatedAt
+        await db.SaveChangesAsync();
+
+        var first = (await repo.GetByUserIdAsync(user.Id, limit: 1)).Single();
+        var second = (await repo.GetByUserIdAsync(user.Id, limit: 1)).Single();
+
+        first.Id.Should().Be(second.Id,
+            "the Id tiebreaker makes the bounded top-N deterministic when two proposals share a CreatedAt");
+    }
+
+    [Fact]
     public async Task GetByUserIdAsync_HidesSnoozedByDefault_ButIncludesThemWhenIncludeDeferred()
     {
         // C1 (#1245 review): the snooze filter must hide a deferred proposal from review-queue

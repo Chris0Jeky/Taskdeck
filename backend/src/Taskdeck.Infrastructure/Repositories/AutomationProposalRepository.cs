@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -56,7 +57,8 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
     public async Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(
-            _dbSet.Where(p => p.Status == status),
+            nameof(AutomationProposal.Status),
+            status,
             limit,
             includeDeferred: false,
             cancellationToken);
@@ -82,7 +84,8 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
     public async Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(
-            _dbSet.Where(p => p.BoardId == boardId),
+            nameof(AutomationProposal.BoardId),
+            boardId,
             limit,
             includeDeferred: false,
             cancellationToken);
@@ -91,7 +94,8 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
     public async Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(
-            _dbSet.Where(p => p.RequestedByUserId == userId),
+            nameof(AutomationProposal.RequestedByUserId),
+            userId,
             limit,
             includeDeferred,
             cancellationToken);
@@ -100,7 +104,8 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
     public async Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(
-            _dbSet.Where(p => p.RiskLevel == riskLevel),
+            nameof(AutomationProposal.RiskLevel),
+            riskLevel,
             limit,
             includeDeferred: false,
             cancellationToken);
@@ -333,44 +338,106 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .ToList();
     }
 
+    // Single-column equality filters behind the bounded list reads. The column name reaches raw SQL, so it
+    // MUST be a fixed property/column constant (never user input); the value is always a bound parameter.
+    private static readonly HashSet<string> AllowedFilterColumns =
+    [
+        nameof(AutomationProposal.RequestedByUserId),
+        nameof(AutomationProposal.BoardId),
+        nameof(AutomationProposal.Status),
+        nameof(AutomationProposal.RiskLevel),
+    ];
+
+    /// <summary>
+    /// Returns up to <paramref name="boundedLimit"/> proposals matching a single-column equality filter,
+    /// newest-first by <c>CreatedAt</c> (with <c>Id</c> as a deterministic tiebreaker), with their
+    /// operations included.
+    /// </summary>
+    /// <remarks>
+    /// Ordering keys on <c>CreatedAt</c> -- the display order -- NOT on <c>ExpiresAt</c>: ADR-0042 pushes a
+    /// deferred proposal's <c>ExpiresAt</c> to <c>DeferredUntil + 24h grace</c> (beyond the normal TTL), so a
+    /// resurfaced deferred proposal (<c>DeferredUntil &lt;= now</c>, passing the visibility filter) carries an
+    /// inflated <c>ExpiresAt</c> and, under the old <c>ExpiresAt</c> ordering, could occupy a top slot and
+    /// evict a fresher pending proposal from a full page (#1247). The top-N is bounded at the database (no
+    /// over-fetch): <c>CreatedAt</c> is a <c>DateTimeOffset</c>, which EF Core + SQLite cannot translate in a
+    /// LINQ <c>ORDER BY</c> (ADR-0023; <c>ExpiresAt</c> is a <c>DateTime</c>, which is why the old ordering
+    /// translated), so the SQLite path pushes <c>ORDER BY CreatedAt DESC, Id LIMIT</c> into raw SQL -- the
+    /// same in-DB pattern as <see cref="NotificationRepository"/> / AgentRunRepository -- and re-sorts in
+    /// memory because the <c>Include</c> wrapper does not guarantee the raw ORDER BY survives.
+    /// </remarks>
     private async Task<IReadOnlyList<AutomationProposal>> GetLimitedWithOperationsAsync(
-        IQueryable<AutomationProposal> baseQuery,
+        string filterColumn,
+        object filterValue,
         int limit,
         bool includeDeferred,
         CancellationToken cancellationToken)
     {
+        if (!AllowedFilterColumns.Contains(filterColumn))
+            throw new ArgumentOutOfRangeException(nameof(filterColumn), filterColumn, "Unsupported filter column.");
+
         var now = DateTime.UtcNow;
         var boundedLimit = limit <= 0 ? DefaultLimit : limit;
 
+        if (_context.Database.IsSqlite())
+        {
+            // filterColumn is validated against AllowedFilterColumns above (fixed constants), so interpolating
+            // it as an identifier is injection-safe; every value is a {N} bound parameter. Enums are stored as
+            // int, so coerce them for the equality bind.
+            var boundValue = filterValue is Enum enumValue ? Convert.ToInt32(enumValue) : filterValue;
+            var sql = new StringBuilder($"SELECT * FROM AutomationProposals WHERE {filterColumn} = {{0}}");
+            var parameters = new List<object> { boundValue };
+
+            if (!includeDeferred)
+            {
+                // Hide snoozed PENDING proposals (DeferredUntil in the future), but keep decided/terminal
+                // proposals visible regardless of a stale snooze value. GDPR export opts out (includeDeferred).
+                sql.Append(" AND (Status != {").Append(parameters.Count).Append('}');
+                parameters.Add((int)ProposalStatus.PendingReview);
+                sql.Append(" OR DeferredUntil IS NULL OR DeferredUntil <= {").Append(parameters.Count).Append("})");
+                parameters.Add(now);
+            }
+
+            sql.Append(" ORDER BY CreatedAt DESC, Id LIMIT {").Append(parameters.Count).Append('}');
+            parameters.Add(boundedLimit);
+
+            var rows = await _dbSet
+                .FromSqlRaw(sql.ToString(), parameters.ToArray())
+                .Include(p => p.Operations)
+                .ToListAsync(cancellationToken);
+
+            // The FromSqlRaw + Include subquery does not guarantee the inner ORDER BY survives to the outer
+            // result (see GetByUserAsync); the LIMIT still selected the correct top-N, so re-sort for display.
+            // Use ordinal Id.ToString() (not Guid.CompareTo) so the in-memory tiebreak matches the raw SQL's
+            // `ORDER BY ... Id` (SQLite TEXT comparison of the stored Guid), mirroring GetCapturesByUserAsync.
+            return rows
+                .OrderByDescending(p => p.CreatedAt)
+                .ThenBy(p => p.Id.ToString(), StringComparer.Ordinal)
+                .ToList();
+        }
+
+        // Non-SQLite providers (e.g. the Postgres Testcontainer path) translate DateTimeOffset ordering
+        // natively, so keep the strongly-typed LINQ query and push ORDER BY + Take into SQL.
+        var query = filterColumn switch
+        {
+            nameof(AutomationProposal.RequestedByUserId) => _dbSet.Where(p => p.RequestedByUserId == (Guid)filterValue),
+            nameof(AutomationProposal.BoardId) => _dbSet.Where(p => p.BoardId == (Guid)filterValue),
+            nameof(AutomationProposal.Status) => _dbSet.Where(p => p.Status == (ProposalStatus)filterValue),
+            _ => _dbSet.Where(p => p.RiskLevel == (RiskLevel)filterValue),
+        };
+
         if (!includeDeferred)
         {
-            // Hide snoozed PENDING proposals (DeferredUntil in the future) from review-queue
-            // reads, but never hide a decided/terminal proposal that happens to retain a stale
-            // snooze value. The status gate keeps Approved/Rejected/etc. visible regardless of
-            // DeferredUntil. Completeness-sensitive callers (the GDPR data export) opt out with
-            // includeDeferred:true so a snoozed proposal is never silently dropped.
-            baseQuery = baseQuery.Where(p =>
+            query = query.Where(p =>
                 p.Status != ProposalStatus.PendingReview ||
                 p.DeferredUntil == null ||
                 p.DeferredUntil <= now);
         }
 
-        var topProposalIds = await baseQuery
-            .OrderByDescending(p => p.ExpiresAt)
-            .Take(boundedLimit)
-            .Select(p => p.Id)
-            .ToListAsync(cancellationToken);
-
-        if (topProposalIds.Count == 0)
-            return Array.Empty<AutomationProposal>();
-
-        var proposals = await _dbSet
+        return await query
             .Include(p => p.Operations)
-            .Where(p => topProposalIds.Contains(p.Id))
-            .ToListAsync(cancellationToken);
-
-        return proposals
             .OrderByDescending(p => p.CreatedAt)
-            .ToList();
+            .ThenBy(p => p.Id)
+            .Take(boundedLimit)
+            .ToListAsync(cancellationToken);
     }
 }
