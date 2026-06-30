@@ -54,10 +54,6 @@
 
     <!-- ── Security / Crypto ───────────────────────────────────── -->
     <PackageVersion Include="BCrypt.Net-Next" Version="4.2.0" />
-    <!-- Windows NTFS ACL APIs (FileSecurity / SetAccessControl) for owner-only secret files (#1241).
-         Windows-only at runtime; calls are guarded by OperatingSystem.IsWindows(). 5.0.0 is the final
-         version of this compat package (the types are in-box only for windows-specific TFMs, not net8.0). -->
-    <PackageVersion Include="System.IO.FileSystem.AccessControl" Version="5.0.0" />
 
     <!-- ── Serialization ───────────────────────────────────────── -->
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
