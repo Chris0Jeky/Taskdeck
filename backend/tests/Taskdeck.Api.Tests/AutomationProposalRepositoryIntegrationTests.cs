@@ -232,6 +232,36 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
     }
 
     [Fact]
+    public async Task GetByUserIdAsync_EqualCreatedAt_SelectsDeterministicallyViaIdTiebreaker()
+    {
+        // #1247 (Id tiebreaker): proposals created in the same batch share CreatedAt to the tick. Without a
+        // secondary sort key the bounded-window boundary is nondeterministic; with ORDER BY CreatedAt, Id the
+        // same query returns the same row every time.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User("ap-tie", "ap-tie@example.com", "hash");
+        db.Users.Add(user);
+
+        var sharedCreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var p1 = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Tie 1", RiskLevel.Low, $"corr-tie1-{Guid.NewGuid():N}");
+        var p2 = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Tie 2", RiskLevel.Low, $"corr-tie2-{Guid.NewGuid():N}");
+        db.AutomationProposals.AddRange(p1, p2);
+        db.Entry(p1).Property("CreatedAt").CurrentValue = sharedCreatedAt;
+        db.Entry(p2).Property("CreatedAt").CurrentValue = sharedCreatedAt; // identical CreatedAt
+        await db.SaveChangesAsync();
+
+        var first = (await repo.GetByUserIdAsync(user.Id, limit: 1)).Single();
+        var second = (await repo.GetByUserIdAsync(user.Id, limit: 1)).Single();
+
+        first.Id.Should().Be(second.Id,
+            "the Id tiebreaker makes the bounded top-N deterministic when two proposals share a CreatedAt");
+    }
+
+    [Fact]
     public async Task GetByUserIdAsync_HidesSnoozedByDefault_ButIncludesThemWhenIncludeDeferred()
     {
         // C1 (#1245 review): the snooze filter must hide a deferred proposal from review-queue
