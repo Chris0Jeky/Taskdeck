@@ -355,11 +355,25 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
                 p.DeferredUntil <= now);
         }
 
-        var topProposalIds = await baseQuery
-            .OrderByDescending(p => p.ExpiresAt)
-            .Take(boundedLimit)
-            .Select(p => p.Id)
+        // Select the freshest N by CreatedAt -- the SAME order as the final display sort below -- so the
+        // bounded window is consistent. The previous ORDER BY ExpiresAt let a resurfaced deferred proposal
+        // win a top slot and evict a fresher pending one: ADR-0042 pushes a deferred proposal's ExpiresAt to
+        // DeferredUntil + 24h grace (> the normal TTL), so once it resurfaces (DeferredUntil <= now, passing
+        // the filter above) it still carries an inflated ExpiresAt and sorts above newer proposals (#1247).
+        // CreatedAt is a DateTimeOffset, which EF Core + SQLite cannot ORDER BY in LINQ (the landmine handled
+        // via raw SQL in #1238/#1239; ExpiresAt is a DateTime, which is why the old ordering translated), so
+        // fetch the lightweight (Id, CreatedAt) projection and order in memory. The over-fetch is just two
+        // columns and is negligible at single-user scale; the heavy Include(Operations) read below stays
+        // bounded to the selected N.
+        var candidates = await baseQuery
+            .Select(p => new { p.Id, p.CreatedAt })
             .ToListAsync(cancellationToken);
+
+        var topProposalIds = candidates
+            .OrderByDescending(c => c.CreatedAt)
+            .Take(boundedLimit)
+            .Select(c => c.Id)
+            .ToList();
 
         if (topProposalIds.Count == 0)
             return Array.Empty<AutomationProposal>();
