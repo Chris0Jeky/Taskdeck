@@ -44,10 +44,12 @@ public class CaptureServiceTests
     {
         var all = requests.ToList();
         _llmQueueRepositoryMock
-            .Setup(r => r.GetCapturesByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), default))
-            .Returns((Guid _, int limit, int offset, CancellationToken _) =>
+            .Setup(r => r.GetCapturesByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid _, int limit, int offset, Guid? boardId, CancellationToken _) =>
                 Task.FromResult<IEnumerable<LlmRequest>>(
                     all.Where(x => CaptureRequestContract.IsCaptureRequestType(x.RequestType))
+                       // Mirror the repo's #1239 raw-board pre-filter: match the board or keep null-board rows.
+                       .Where(x => !boardId.HasValue || x.BoardId == null || x.BoardId == boardId.Value)
                        .OrderByDescending(x => x.CreatedAt)
                        .ThenBy(x => x.Id)
                        .Skip(offset)
@@ -439,27 +441,31 @@ public class CaptureServiceTests
     public async Task ListAsync_PagesUntilEnoughMatches_WhenFilterUnderfillsEarlyPages()
     {
         var userId = Guid.NewGuid();
-        var boardA = Guid.NewGuid();
         var boardB = Guid.NewGuid();
 
-        // Newest-first; only the two oldest match the boardB filter, so the loop must advance through
-        // multiple limit-sized pages to collect them.
+        // Newest-first; the three newest have a NULL raw board, so they pass the repo's #1239 board
+        // pre-filter (null-board rows are kept for provenance) but fail the in-service effective-board
+        // check (no applied proposal -> effective board null != boardB). Only the two oldest actually
+        // match, so the loop must still advance through multiple limit-sized pages to collect them.
         var captures = new List<LlmRequest>
         {
-            new(userId, CaptureRequestContract.RequestTypeV1, "newest", boardA),
-            new(userId, CaptureRequestContract.RequestTypeV1, "second", boardA),
-            new(userId, CaptureRequestContract.RequestTypeV1, "third", boardA),
+            new(userId, CaptureRequestContract.RequestTypeV1, "newest"),
+            new(userId, CaptureRequestContract.RequestTypeV1, "second"),
+            new(userId, CaptureRequestContract.RequestTypeV1, "third"),
             new(userId, CaptureRequestContract.RequestTypeV1, "fourth", boardB),
             new(userId, CaptureRequestContract.RequestTypeV1, "oldest", boardB),
         };
 
         var requestedOffsets = new List<int>();
         _llmQueueRepositoryMock
-            .Setup(r => r.GetCapturesByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), default))
-            .Returns((Guid _, int limit, int offset, CancellationToken _) =>
+            .Setup(r => r.GetCapturesByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid _, int limit, int offset, Guid? boardId, CancellationToken _) =>
             {
                 requestedOffsets.Add(offset);
-                return Task.FromResult<IEnumerable<LlmRequest>>(captures.Skip(offset).Take(limit).ToList());
+                // null-board + boardB rows all pass the board pre-filter; the service filters the null ones.
+                return Task.FromResult<IEnumerable<LlmRequest>>(
+                    captures.Where(x => !boardId.HasValue || x.BoardId == null || x.BoardId == boardId.Value)
+                            .Skip(offset).Take(limit).ToList());
             });
 
         var result = await _service.ListAsync(userId, new CaptureListFilterDto(BoardId: boardB, Limit: 2));
@@ -478,7 +484,10 @@ public class CaptureServiceTests
     {
         var userId = Guid.NewGuid();
         var boardB = Guid.NewGuid();
-        var a = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "a", Guid.NewGuid()); // non-matching board
+        // `a` has a NULL raw board: it passes the repo's #1239 board pre-filter (kept for provenance)
+        // but the service filters it out (effective board null != boardB), so it pads the first page
+        // without contributing a match -- the same role the old non-matching-board row played.
+        var a = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "a");
         var b = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "b", boardB);
         var c = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "c", boardB);
         var d = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "d", boardB);
@@ -486,8 +495,8 @@ public class CaptureServiceTests
         // Simulate a concurrent insert between page reads: the offset-3 page re-surfaces `c`
         // (a boundary row already returned on the offset-0 page).
         _llmQueueRepositoryMock
-            .Setup(r => r.GetCapturesByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), default))
-            .Returns((Guid _, int limit, int offset, CancellationToken _) =>
+            .Setup(r => r.GetCapturesByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid _, int limit, int offset, Guid? boardId, CancellationToken _) =>
             {
                 IEnumerable<LlmRequest> page = offset switch
                 {

@@ -21,7 +21,14 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     /// </summary>
     /// <param name="limit">Page size; must be at least 1.</param>
     /// <param name="offset">Rows to skip; must be non-negative.</param>
-    Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default);
+    /// <param name="boardId">
+    /// Optional raw-board pre-filter (#1239). When supplied, the scan keeps only captures whose raw
+    /// <c>BoardId</c> equals it OR is NULL — null-board captures are retained because they may still
+    /// resolve to the target board via applied-conversion provenance, which is computed in the
+    /// service layer. This sharply narrows board-filtered scans by excluding other boards' captures
+    /// at the database. The effective-board (provenance) and status filters remain in the service.
+    /// </param>
+    Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, Guid? boardId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns all requests with the given status, newest-first, unbounded. The health backlog gauge

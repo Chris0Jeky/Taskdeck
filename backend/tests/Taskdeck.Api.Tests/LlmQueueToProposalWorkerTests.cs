@@ -784,9 +784,10 @@ public class LlmQueueToProposalWorkerTests
         public Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult<IEnumerable<LlmRequest>>([]);
 
-        public Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default)
+        public Task<IEnumerable<LlmRequest>> GetCapturesByUserAsync(Guid userId, int limit, int offset, Guid? boardId = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IEnumerable<LlmRequest>>(_allItems
                 .Where(i => i.UserId == userId && CaptureRequestContract.IsCaptureRequestType(i.RequestType))
+                .Where(i => !boardId.HasValue || i.BoardId == null || i.BoardId == boardId.Value)
                 .OrderByDescending(i => i.CreatedAt).ThenBy(i => i.Id)
                 .Skip(offset).Take(limit).ToList());
 

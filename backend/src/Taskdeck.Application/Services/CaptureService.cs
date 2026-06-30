@@ -99,18 +99,18 @@ public class CaptureService : ICaptureService
         var limit = Math.Min(filter.Limit == 0 ? DefaultListLimit : filter.Limit, MaxListLimit);
 
         // Page the user's captures from the database (newest-first) instead of materializing every
-        // request. Board/status filters and applied-conversion provenance can only be evaluated after
+        // request. The raw-board pre-filter is pushed into SQL (#1239): a board-filtered query scans only
+        // the target board's captures plus null-board captures (which may still resolve to that board via
+        // applied-conversion provenance). The effective-board (provenance) and status filters still need
         // the per-item resolution below, so we keep fetching pages until `limit` matching summaries are
         // collected or the captures are exhausted -- a bound on the first page alone would silently
-        // under-fill filtered queries. The common (unfiltered) case is satisfied by a single page; a sparse
-        // board/status filter still scans the user's captures page-by-page (same total work as before, no
-        // worse) -- pushing those filters into SQL to cut round-trips is tracked in #1239.
+        // under-fill filtered queries. The common (unfiltered) case is satisfied by a single page.
         var summaries = new List<CaptureItemSummaryDto>(limit);
         var seenIds = new HashSet<Guid>();
         var offset = 0;
         while (summaries.Count < limit)
         {
-            var page = (await _unitOfWork.LlmQueue.GetCapturesByUserAsync(userId, limit, offset, cancellationToken)).ToList();
+            var page = (await _unitOfWork.LlmQueue.GetCapturesByUserAsync(userId, limit, offset, filter.BoardId, cancellationToken)).ToList();
             if (page.Count == 0)
             {
                 break;
@@ -127,11 +127,8 @@ public class CaptureService : ICaptureService
                     continue;
                 }
 
-                if (filter.BoardId.HasValue && item.BoardId.HasValue && item.BoardId != filter.BoardId.Value)
-                {
-                    continue;
-                }
-
+                // The raw-board mismatch (item.BoardId set and != filter.BoardId) is already excluded by
+                // the SQL pre-filter above; the effective-board check happens post-provenance below.
                 batch.Add((item, ParsePayload(item)));
             }
 
