@@ -13,6 +13,11 @@ public class LlmQueueToProposalWorker : BackgroundService
     private const string QueueNameLlm = "llm";
     private const string QueueNameCaptureTriage = "capture-triage";
 
+    // Floor on the stuck-recovery lease so an aggressively-low ProcessingLeaseSeconds can never sweep a
+    // request that was claimed seconds ago and is still legitimately in flight. Mirrors the floor the
+    // OutboundWebhookDeliveryWorker recovery sweep uses.
+    private const int MinStuckRecoveryLeaseSeconds = 30;
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly WorkerSettings _settings;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
@@ -64,6 +69,12 @@ public class LlmQueueToProposalWorker : BackgroundService
 
     private async Task ProcessBatchAsync(CancellationToken ct)
     {
+        // Reclaim non-capture requests abandoned in Processing by a crashed worker before draining the
+        // queue (#1209), so a recovered item becomes eligible again within this same tick. Capture-triage
+        // items self-heal via the Processing re-claim path below, so the sweep targets non-capture work
+        // only -- the one kind read solely from Pending and otherwise stuck forever.
+        await RecoverStuckProcessingItemsAsync(ct);
+
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         // Bound each read at the database to the work one tick can consume (BuildFairBatchItems emits at
@@ -136,6 +147,72 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
 
         await Task.WhenAll(tasks);
+    }
+
+    private async Task RecoverStuckProcessingItemsAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        // A non-capture request that has sat in Processing longer than the processing lease is treated as
+        // abandoned: the worker that claimed it (stamping UpdatedAt to now) never reached a terminal
+        // transition. Re-claiming a live, just-claimed request is prevented because its UpdatedAt is fresh.
+        var leaseSeconds = Math.Max(MinStuckRecoveryLeaseSeconds, _settings.ProcessingLeaseSeconds);
+        var staleBefore = DateTimeOffset.UtcNow.AddSeconds(-leaseSeconds);
+        var fetchLimit = Math.Max(1, _settings.MaxBatchSize);
+
+        var stuckItems = await unitOfWork.LlmQueue.GetStuckProcessingNonCaptureAsync(staleBefore, fetchLimit, ct);
+        if (stuckItems.Count == 0)
+        {
+            return;
+        }
+
+        var requeued = 0;
+        var failedPermanently = 0;
+        foreach (var item in stuckItems)
+        {
+            // Recovery counts against the retry budget so a request that repeatedly crashes the worker
+            // eventually fails permanently instead of looping forever. MarkAsFailed (Processing -> Failed,
+            // RetryCount++) then ResetForRetry (Failed -> Pending) reuses the same transitions and budget
+            // check as HandleFailureWithRetryAsync, keeping recovery and in-band failure consistent.
+            var budgetRemains = item.RetryCount + 1 < _settings.MaxRetries;
+            item.MarkAsFailed("Recovered from a stale Processing state; the worker that claimed this request did not complete it.");
+            if (budgetRemains)
+            {
+                item.ResetForRetry();
+                requeued++;
+            }
+            else
+            {
+                failedPermanently++;
+            }
+        }
+
+        await unitOfWork.SaveChangesAsync(ct);
+
+        _logger.LogWarning(
+            "Recovered {StuckCount} non-capture queue item(s) stuck in Processing beyond {LeaseSeconds}s: {RequeuedCount} returned to Pending, {FailedCount} failed (retry budget exhausted).",
+            stuckItems.Count,
+            leaseSeconds,
+            requeued,
+            failedPermanently);
+
+        if (requeued > 0)
+        {
+            RecordRecoveryMetrics(requeued, "recovered_stuck_requeued");
+        }
+        if (failedPermanently > 0)
+        {
+            RecordRecoveryMetrics(failedPermanently, "recovered_stuck_failed");
+        }
+    }
+
+    private static void RecordRecoveryMetrics(int count, string outcome)
+    {
+        TaskdeckTelemetry.WorkerItemsProcessed.Add(
+            count,
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker)),
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, outcome));
     }
 
     private async Task ProcessSingleItemAsync(Guid itemId, DateTimeOffset expectedUpdatedAt, CancellationToken ct)
