@@ -1,6 +1,7 @@
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.DTOs;
@@ -88,10 +89,11 @@ public class LlmQueueToProposalWorkerTests
     private static ServiceProvider BuildServiceProvider(
         FakeLlmQueueRepository queueRepo,
         FakeAutomationPlannerService? planner = null,
-        FakeCaptureTriageService? triageService = null)
+        FakeCaptureTriageService? triageService = null,
+        IAutomationProposalRepository? automationProposals = null)
     {
         var services = new ServiceCollection();
-        var unitOfWork = new FakeUnitOfWork(queueRepo);
+        var unitOfWork = new FakeUnitOfWork(queueRepo, automationProposals);
         services.AddSingleton<IUnitOfWork>(unitOfWork);
         services.AddSingleton<IAutomationPlannerService>(planner ?? new FakeAutomationPlannerService());
         services.AddSingleton<ICaptureTriageService>(triageService ?? new FakeCaptureTriageService());
@@ -850,6 +852,41 @@ public class LlmQueueToProposalWorkerTests
         item.Status.Should().Be(RequestStatus.Completed, "the recovered item is re-enqueued and processed to completion within the tick");
     }
 
+    [Fact]
+    public async Task ProcessSingleItem_WithExistingQueueProposal_CompletesWithoutReprocessing()
+    {
+        // #1209 review (Codex): a prior attempt created + committed the proposal then crashed before the
+        // request was marked completed. Reprocessing would create a DUPLICATE PendingReview proposal, so the
+        // worker must complete the request without calling the planner when a Queue-sourced proposal already
+        // exists for it.
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var existing = new AutomationProposal(
+            ProposalSourceType.Queue,
+            item.UserId,
+            "Existing proposal from the crashed attempt",
+            RiskLevel.Low,
+            item.Id.ToString(),
+            boardId: null,
+            sourceReferenceId: item.Id.ToString());
+        var proposals = new Mock<IAutomationProposalRepository>();
+        proposals
+            .Setup(p => p.GetBySourceReferenceAsync(ProposalSourceType.Queue, item.Id.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+        // The planner would FAIL if called -> proves the guard short-circuits before reprocessing.
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ => Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, "planner must not be called")
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner, automationProposals: proposals.Object);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed, "the request already produced its proposal, so it is completed not reprocessed");
+        planner.CallCount.Should().Be(0, "the existing-proposal guard must short-circuit before the planner");
+    }
+
     #endregion
 
     #region Fakes
@@ -1099,9 +1136,12 @@ public class LlmQueueToProposalWorkerTests
 
     private sealed class FakeUnitOfWork : IUnitOfWork
     {
-        public FakeUnitOfWork(ILlmQueueRepository llmQueue)
+        public FakeUnitOfWork(ILlmQueueRepository llmQueue, IAutomationProposalRepository? automationProposals = null)
         {
             LlmQueue = llmQueue;
+            // Default to a loose mock whose GetBySourceReferenceAsync returns null, so the worker's
+            // existing-proposal idempotency guard is a no-op for the normal (first-time) drain path.
+            AutomationProposals = automationProposals ?? Mock.Of<IAutomationProposalRepository>();
         }
 
         public IBoardRepository Boards => null!;
@@ -1113,7 +1153,7 @@ public class LlmQueueToProposalWorkerTests
         public IBoardAccessRepository BoardAccesses => null!;
         public IAuditLogRepository AuditLogs => null!;
         public ILlmQueueRepository LlmQueue { get; }
-        public IAutomationProposalRepository AutomationProposals => null!;
+        public IAutomationProposalRepository AutomationProposals { get; }
         public IArchiveItemRepository ArchiveItems => null!;
         public IChatSessionRepository ChatSessions => null!;
         public IChatMessageRepository ChatMessages => null!;
