@@ -60,6 +60,13 @@ public static class FirstRunBootstrapper
         // the desktop install self-heals instead of failing to launch on every restart.
         QuarantineCorruptLocalConfig();
 
+        // Forward remediation (#1241): an install upgraded from a pre-#1241 build may already have a
+        // world-readable appsettings.local.json on disk (the first-run writers return early when the secrets
+        // are already present, so PersistValue never re-runs to lock it down). Best-effort re-restrict the
+        // existing file to the current user on every startup so existing exposure is healed, not just future
+        // writes. Idempotent; never fatal (logged to stderr at this pre-DI stage if it fails).
+        RestrictExistingLocalConfigFile();
+
         var sources = builder.Configuration.Sources;
 
         // Find the first EnvironmentVariablesConfigurationSource so we can
@@ -419,8 +426,10 @@ public static class FirstRunBootstrapper
                 throw new InvalidOperationException(
                     $"First-run: Could not persist the connector encryption key to {LocalConfigPath} " +
                     $"({ex.Message}). A run-once in-memory key would be lost on restart and make stored " +
-                    "connector credentials unrecoverable. Ensure the application directory is writable, or " +
-                    "set a stable key via the Connectors__EncryptionKey environment variable.", ex);
+                    "connector credentials unrecoverable. Ensure the application directory is writable AND on " +
+                    "a filesystem that supports owner-only file permissions (NTFS / a POSIX filesystem; " +
+                    "FAT32/exFAT or some network shares cannot lock the secret down), or set a stable key via " +
+                    "the Connectors__EncryptionKey environment variable.", ex);
             }
 
             // Non-Production (dev/staging/test): a transient in-memory key is acceptable -- these do not
@@ -665,17 +674,18 @@ public static class FirstRunBootstrapper
             // inherit the directory's default ACL (e.g. BUILTIN\Users read). #1241. If the file cannot be
             // locked down, RestrictFileToCurrentUser throws (as IOException) and the secret is never written
             // to it -- the caller falls back to an in-memory value rather than leaving it world-readable.
-            File.Create(tempPath).Dispose();
-            RestrictFileToCurrentUser(tempPath);
-            File.WriteAllText(tempPath, payload);
-
+            // The whole create -> restrict -> write -> move sequence is inside the try so any failure (incl. a
+            // failed restrict) deletes the staged temp file rather than leaking it.
             try
             {
+                File.Create(tempPath).Dispose();
+                RestrictFileToCurrentUser(tempPath);
+                File.WriteAllText(tempPath, payload);
                 ReplaceFileWithRetry(tempPath, path);
             }
             catch
             {
-                // Best-effort cleanup; the main write path's exception will propagate.
+                // Best-effort cleanup; the original exception propagates.
                 try { File.Delete(tempPath); } catch { /* ignore */ }
                 throw;
             }
@@ -700,6 +710,31 @@ public static class FirstRunBootstrapper
     /// existing <c>catch (IOException)</c> falls back to an in-memory value -- the secret is never written to
     /// a file we could not lock down.
     /// </summary>
+    /// <summary>
+    /// Best-effort re-restriction of an existing persisted local config to the current user (#1241 forward
+    /// remediation). Heals installs upgraded from a build that wrote the file world-readable. Never throws:
+    /// at this pre-DI stage a failure is reported to stderr and startup continues.
+    /// </summary>
+    internal static void RestrictExistingLocalConfigFile()
+    {
+        var path = LocalConfigPath;
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            RestrictFileToCurrentUser(path);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: could not re-restrict permissions on the existing {path} " +
+                $"({ex.Message}); it may remain readable by other local users until permissions are fixed.");
+        }
+    }
+
     internal static void RestrictFileToCurrentUser(string path)
     {
         try
