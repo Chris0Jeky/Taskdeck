@@ -407,9 +407,11 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
 
             // The FromSqlRaw + Include subquery does not guarantee the inner ORDER BY survives to the outer
             // result (see GetByUserAsync); the LIMIT still selected the correct top-N, so re-sort for display.
+            // Use ordinal Id.ToString() (not Guid.CompareTo) so the in-memory tiebreak matches the raw SQL's
+            // `ORDER BY ... Id` (SQLite TEXT comparison of the stored Guid), mirroring GetCapturesByUserAsync.
             return rows
                 .OrderByDescending(p => p.CreatedAt)
-                .ThenBy(p => p.Id)
+                .ThenBy(p => p.Id.ToString(), StringComparer.Ordinal)
                 .ToList();
         }
 
