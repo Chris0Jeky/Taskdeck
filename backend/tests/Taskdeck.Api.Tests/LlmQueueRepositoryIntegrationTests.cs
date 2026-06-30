@@ -495,6 +495,38 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task GetStuckProcessingNonCaptureAsync_ReturnsOldestFirstAndRespectsLimit()
+    {
+        // #1209: proves the raw-SQL DateTimeOffset comparison across DISTINCT timestamps, the
+        // ORDER BY UpdatedAt ASC contract (incl. the in-memory re-sort guard), and that LIMIT bounds the
+        // sweep to the OLDEST rows -- so a bounded sweep never drops the oldest abandoned work.
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("stuck-order", "stuck-order@example.com", "hash");
+            db.Users.Add(user);
+            var oldest = new LlmRequest(user.Id, "instruction", "{}");
+            oldest.MarkAsProcessing();
+            var middle = new LlmRequest(user.Id, "instruction", "{}");
+            middle.MarkAsProcessing();
+            var newest = new LlmRequest(user.Id, "instruction", "{}");
+            newest.MarkAsProcessing();
+            db.LlmRequests.AddRange(oldest, middle, newest);
+            // Distinct UpdatedAt values so oldest-first ordering and LIMIT are genuinely discriminated.
+            var t0 = DateTimeOffset.UtcNow.AddHours(-3);
+            db.Entry(oldest).Property(nameof(Entity.UpdatedAt)).CurrentValue = t0;
+            db.Entry(middle).Property(nameof(Entity.UpdatedAt)).CurrentValue = t0.AddMinutes(30);
+            db.Entry(newest).Property(nameof(Entity.UpdatedAt)).CurrentValue = t0.AddMinutes(60);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var stuck = await repo.GetStuckProcessingNonCaptureAsync(DateTimeOffset.UtcNow, limit: 2);
+
+            // LIMIT 2 returns the two OLDEST, in ascending UpdatedAt order (newest excluded).
+            stuck.Select(r => r.Id).Should().Equal(oldest.Id, middle.Id);
+        });
+    }
+
+    [Fact]
     public async Task GetStuckProcessingNonCaptureAsync_ExcludesRowsNewerThanThreshold()
     {
         // A freshly-claimed Processing row (UpdatedAt ~ now) is within the lease and must not be swept.

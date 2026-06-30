@@ -59,7 +59,8 @@ public class LlmQueueToProposalWorkerTests
         int maxBatchSize = 10,
         int maxConcurrency = 1,
         int maxRetries = 3,
-        int[]? retryBackoff = null)
+        int[]? retryBackoff = null,
+        int processingLeaseSeconds = 120)
     {
         return new WorkerSettings
         {
@@ -68,7 +69,8 @@ public class LlmQueueToProposalWorkerTests
             MaxBatchSize = maxBatchSize,
             MaxConcurrency = maxConcurrency,
             MaxRetries = maxRetries,
-            RetryBackoffSeconds = retryBackoff ?? [0]
+            RetryBackoffSeconds = retryBackoff ?? [0],
+            ProcessingLeaseSeconds = processingLeaseSeconds
         };
     }
 
@@ -768,6 +770,68 @@ public class LlmQueueToProposalWorkerTests
         await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
 
         captureItem.Status.Should().Be(RequestStatus.Processing, "capture items are excluded from the non-capture recovery sweep");
+    }
+
+    [Theory]
+    // ProcessingLeaseSeconds is floored at 30s: a 10s lease still protects an item only 20s old, while a
+    // 40s-old item exceeds the floor and is swept -- proving the floor branch (#1209 AC4).
+    [InlineData(10, 20, false)]
+    [InlineData(10, 40, true)]
+    // A larger lease genuinely raises the threshold: a 150s-old item (which the default 120s lease WOULD
+    // sweep) is protected at 300s, while a 400s-old item is swept -- proving the threshold tracks the setting.
+    [InlineData(300, 150, false)]
+    [InlineData(300, 400, true)]
+    public async Task RecoverStuck_HonorsProcessingLeaseThresholdAndFloor(int processingLeaseSeconds, int itemAgeSeconds, bool expectedSwept)
+    {
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 0, ageSeconds: itemAgeSeconds);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, processingLeaseSeconds: processingLeaseSeconds));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(
+            expectedSwept ? RequestStatus.Pending : RequestStatus.Processing,
+            "the effective lease is Math.Max(30, ProcessingLeaseSeconds={0}) and the item is {1}s old",
+            processingLeaseSeconds,
+            itemAgeSeconds);
+    }
+
+    [Fact]
+    public async Task RecoverStuck_RunTwice_DoesNotDoubleConsumeBudget()
+    {
+        // A second sweep must be idempotent: after the first sweep the item is Pending (not Processing), so
+        // it is excluded from the next sweep and its retry budget is not consumed twice.
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 0);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+        item.RetryCount.Should().Be(1);
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Pending);
+        item.RetryCount.Should().Be(1, "the already-requeued item is no longer in Processing, so the second sweep is a no-op");
+    }
+
+    [Fact]
+    public async Task RecoverStuck_MixedCaptureAndNonCapture_OnlyNonCaptureSwept()
+    {
+        var nonCapture = CreateStuckProcessingNonCaptureItem(retryCount: 0);
+        var capture = CreateCaptureTriageItem();
+        BackdateUpdatedAt(capture, DateTimeOffset.UtcNow.AddSeconds(-10_000));
+        var queueRepo = new FakeLlmQueueRepository([], [nonCapture, capture]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        nonCapture.Status.Should().Be(RequestStatus.Pending, "the non-capture stuck item is recovered");
+        capture.Status.Should().Be(RequestStatus.Processing, "the stuck capture item is excluded from the non-capture sweep");
     }
 
     [Fact]
