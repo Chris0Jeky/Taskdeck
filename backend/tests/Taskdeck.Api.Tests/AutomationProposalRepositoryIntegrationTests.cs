@@ -83,7 +83,16 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
             ProposalSourceType.Queue, user.Id, "Not expired yet", RiskLevel.Low,
             $"corr-notexp-{Guid.NewGuid():N}", expiryMinutes: 60);
 
-        db.AutomationProposals.AddRange(expired, notExpired);
+        // Approved AND past ExpiresAt: must be EXCLUDED by the Status == PendingReview filter (a decided
+        // proposal is never re-expired). Approve while still fresh, then backdate ExpiresAt. #1259 makes the
+        // worker rely on this query, so the status filter is asserted directly.
+        var approvedExpired = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Approved then expired", RiskLevel.Low,
+            $"corr-apprexp-{Guid.NewGuid():N}", expiryMinutes: 60);
+        approvedExpired.Approve(user.Id);
+        SetExpiresAt(approvedExpired, DateTime.UtcNow.AddDays(-1));
+
+        db.AutomationProposals.AddRange(expired, notExpired, approvedExpired);
         await db.SaveChangesAsync();
 
         // Clear the change tracker so the subsequent query reads fresh data from the database
@@ -94,6 +103,8 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
 
         results.Should().Contain(p => p.Id == expired.Id);
         results.Should().NotContain(p => p.Id == notExpired.Id);
+        results.Should().NotContain(p => p.Id == approvedExpired.Id,
+            "GetExpiredAsync only returns PendingReview proposals; a decided (Approved) one is never re-expired");
     }
 
     [Fact]

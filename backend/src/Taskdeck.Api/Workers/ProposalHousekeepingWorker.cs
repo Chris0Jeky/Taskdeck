@@ -1,7 +1,6 @@
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Api.Telemetry;
-using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Api.Workers;
 
@@ -77,9 +76,12 @@ public class ProposalHousekeepingWorker : BackgroundService
 
             try
             {
-                // GetExpiredAsync already filtered to expired PendingReview rows, but a proposal can be
-                // approved/rejected between the query and here (TOCTOU). Expire() throws on a non-PendingReview
-                // status, so log and skip rather than crash the sweep.
+                // GetExpiredAsync already filtered to expired PendingReview rows, and this materialized entity
+                // keeps that status, so Expire() normally succeeds; this catch is defensive against any Expire()
+                // precondition failure. A genuine concurrent approve/reject does NOT mutate this in-memory
+                // entity -- it surfaces as a DbUpdateConcurrencyException at SaveChangesAsync below (UpdatedAt is
+                // the concurrency token), handled by the outer ExecuteAsync loop, so a decision is never silently
+                // overwritten and the rest expire on the next cycle.
                 proposal.Expire();
                 expiredCount++;
             }
