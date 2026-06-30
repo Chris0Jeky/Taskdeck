@@ -1,6 +1,7 @@
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.DTOs;
@@ -59,7 +60,8 @@ public class LlmQueueToProposalWorkerTests
         int maxBatchSize = 10,
         int maxConcurrency = 1,
         int maxRetries = 3,
-        int[]? retryBackoff = null)
+        int[]? retryBackoff = null,
+        int processingLeaseSeconds = 120)
     {
         return new WorkerSettings
         {
@@ -68,7 +70,8 @@ public class LlmQueueToProposalWorkerTests
             MaxBatchSize = maxBatchSize,
             MaxConcurrency = maxConcurrency,
             MaxRetries = maxRetries,
-            RetryBackoffSeconds = retryBackoff ?? [0]
+            RetryBackoffSeconds = retryBackoff ?? [0],
+            ProcessingLeaseSeconds = processingLeaseSeconds
         };
     }
 
@@ -86,10 +89,11 @@ public class LlmQueueToProposalWorkerTests
     private static ServiceProvider BuildServiceProvider(
         FakeLlmQueueRepository queueRepo,
         FakeAutomationPlannerService? planner = null,
-        FakeCaptureTriageService? triageService = null)
+        FakeCaptureTriageService? triageService = null,
+        IAutomationProposalRepository? automationProposals = null)
     {
         var services = new ServiceCollection();
-        var unitOfWork = new FakeUnitOfWork(queueRepo);
+        var unitOfWork = new FakeUnitOfWork(queueRepo, automationProposals);
         services.AddSingleton<IUnitOfWork>(unitOfWork);
         services.AddSingleton<IAutomationPlannerService>(planner ?? new FakeAutomationPlannerService());
         services.AddSingleton<ICaptureTriageService>(triageService ?? new FakeCaptureTriageService());
@@ -666,6 +670,255 @@ public class LlmQueueToProposalWorkerTests
 
     #endregion
 
+    #region Stuck-Processing recovery (#1209)
+
+    private static async Task InvokeRecoverStuckProcessingItemsAsync(
+        LlmQueueToProposalWorker worker,
+        CancellationToken ct)
+    {
+        var method = typeof(LlmQueueToProposalWorker).GetMethod(
+            "RecoverStuckProcessingItemsAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        method.Should().NotBeNull("RecoverStuckProcessingItemsAsync must exist");
+        var task = method!.Invoke(worker, [ct]);
+        task.Should().NotBeNull();
+        await (Task)task!;
+    }
+
+    private static void BackdateUpdatedAt(LlmRequest item, DateTimeOffset updatedAt)
+    {
+        typeof(LlmRequest)
+            .GetProperty(nameof(LlmRequest.UpdatedAt))!
+            .SetValue(item, updatedAt);
+    }
+
+    /// <summary>
+    /// Builds a non-capture request left in Processing (as if a worker claimed it then crashed), with
+    /// <paramref name="retryCount"/> prior failures driven through the real transitions and its UpdatedAt
+    /// backdated <paramref name="ageSeconds"/> into the past so it is older than the recovery lease.
+    /// </summary>
+    private static LlmRequest CreateStuckProcessingNonCaptureItem(int retryCount = 0, int ageSeconds = 10_000)
+    {
+        var item = CreatePendingItem();
+        for (var i = 0; i < retryCount; i++)
+        {
+            item.MarkAsProcessing();
+            item.MarkAsFailed("prior failure");
+            item.ResetForRetry();
+        }
+        item.MarkAsProcessing();
+        BackdateUpdatedAt(item, DateTimeOffset.UtcNow.AddSeconds(-ageSeconds));
+        return item;
+    }
+
+    [Fact]
+    public async Task RecoverStuck_NonCaptureStuckInProcessing_WithRetryBudget_ReturnsToPendingAndConsumesBudget()
+    {
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 0);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Pending, "a stuck item with retry budget remaining is re-enqueued");
+        item.RetryCount.Should().Be(1, "recovery counts against the retry budget so a repeatedly-crashing item cannot loop forever");
+    }
+
+    [Fact]
+    public async Task RecoverStuck_NonCaptureStuckInProcessing_BudgetExhausted_MarkedFailed()
+    {
+        // MaxRetries=3, RetryCount=2 -> 2 + 1 < 3 is false -> no budget left -> permanent failure.
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 2);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Failed, "a stuck item with no retry budget left fails permanently");
+        item.RetryCount.Should().Be(3);
+        item.ErrorMessage.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task RecoverStuck_FreshProcessingItem_NotSwept()
+    {
+        // A non-capture item just claimed (UpdatedAt = now) is still legitimately in flight and must not
+        // be reclaimed mid-processing.
+        var item = CreatePendingItem();
+        item.MarkAsProcessing();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Processing, "a fresh Processing item is within its lease and must be left alone");
+        item.RetryCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RecoverStuck_CaptureItemStuckInProcessing_NotSwept()
+    {
+        // Capture-triage items self-heal via the Processing re-claim path, so the non-capture recovery
+        // sweep must never touch them.
+        var captureItem = CreateCaptureTriageItem();
+        BackdateUpdatedAt(captureItem, DateTimeOffset.UtcNow.AddSeconds(-10_000));
+        var queueRepo = new FakeLlmQueueRepository([], [captureItem]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        captureItem.Status.Should().Be(RequestStatus.Processing, "capture items are excluded from the non-capture recovery sweep");
+    }
+
+    [Theory]
+    // ProcessingLeaseSeconds is floored at 30s: a 10s lease still protects an item only 20s old, while a
+    // 40s-old item exceeds the floor and is swept -- proving the floor branch (#1209 AC4).
+    [InlineData(10, 20, false)]
+    [InlineData(10, 40, true)]
+    // A larger lease genuinely raises the threshold: a 150s-old item (which the default 120s lease WOULD
+    // sweep) is protected at 300s, while a 400s-old item is swept -- proving the threshold tracks the setting.
+    [InlineData(300, 150, false)]
+    [InlineData(300, 400, true)]
+    public async Task RecoverStuck_HonorsProcessingLeaseThresholdAndFloor(int processingLeaseSeconds, int itemAgeSeconds, bool expectedSwept)
+    {
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 0, ageSeconds: itemAgeSeconds);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, processingLeaseSeconds: processingLeaseSeconds));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(
+            expectedSwept ? RequestStatus.Pending : RequestStatus.Processing,
+            "the effective lease is Math.Max(30, ProcessingLeaseSeconds={0}) and the item is {1}s old",
+            processingLeaseSeconds,
+            itemAgeSeconds);
+    }
+
+    [Fact]
+    public async Task RecoverStuck_RunTwice_DoesNotDoubleConsumeBudget()
+    {
+        // A second sweep must be idempotent: after the first sweep the item is Pending (not Processing), so
+        // it is excluded from the next sweep and its retry budget is not consumed twice.
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 0);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+        item.RetryCount.Should().Be(1);
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Pending);
+        item.RetryCount.Should().Be(1, "the already-requeued item is no longer in Processing, so the second sweep is a no-op");
+    }
+
+    [Fact]
+    public async Task RecoverStuck_MixedCaptureAndNonCapture_OnlyNonCaptureSwept()
+    {
+        var nonCapture = CreateStuckProcessingNonCaptureItem(retryCount: 0);
+        var capture = CreateCaptureTriageItem();
+        BackdateUpdatedAt(capture, DateTimeOffset.UtcNow.AddSeconds(-10_000));
+        var queueRepo = new FakeLlmQueueRepository([], [nonCapture, capture]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        nonCapture.Status.Should().Be(RequestStatus.Pending, "the non-capture stuck item is recovered");
+        capture.Status.Should().Be(RequestStatus.Processing, "the stuck capture item is excluded from the non-capture sweep");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_StuckNonCaptureItem_RecoveredAndReprocessedToCompletion()
+    {
+        // End-to-end (#1209 acceptance): a non-capture item abandoned in Processing is recovered to Pending
+        // and then drained by the same tick, proving the item is eventually reclaimed rather than lost.
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: 0);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var planner = new FakeAutomationPlannerService();
+        using var sp = BuildServiceProvider(queueRepo, planner);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed, "the recovered item is re-enqueued and processed to completion within the tick");
+    }
+
+    [Fact]
+    public async Task ProcessSingleItem_WithExistingQueueProposal_CompletesWithoutReprocessing()
+    {
+        // #1209 review (Codex): a prior attempt created + committed the proposal then crashed before the
+        // request was marked completed. Reprocessing would create a DUPLICATE PendingReview proposal, so the
+        // worker must complete the request without calling the planner when a Queue-sourced proposal already
+        // exists for it.
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var existing = new AutomationProposal(
+            ProposalSourceType.Queue,
+            item.UserId,
+            "Existing proposal from the crashed attempt",
+            RiskLevel.Low,
+            item.Id.ToString(),
+            boardId: null,
+            sourceReferenceId: item.Id.ToString());
+        var proposals = new Mock<IAutomationProposalRepository>();
+        proposals
+            .Setup(p => p.GetBySourceReferenceAsync(ProposalSourceType.Queue, item.Id.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+        // The planner would FAIL if called -> proves the guard short-circuits before reprocessing.
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ => Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, "planner must not be called")
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner, automationProposals: proposals.Object);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed, "the request already produced its proposal, so it is completed not reprocessed");
+        planner.CallCount.Should().Be(0, "the existing-proposal guard must short-circuit before the planner");
+    }
+
+    [Theory]
+    [InlineData(0)] // retry budget remains
+    [InlineData(2)] // retry budget exhausted (MaxRetries=3): the Codex-flagged case -- must complete, not fail
+    public async Task RecoverStuck_ProposalAlreadyExists_CompletesRegardlessOfBudget(int retryCount)
+    {
+        // #1209 review round 2 (Codex): if the crashed attempt already committed the proposal, the request
+        // succeeded; recovery must complete it even on its last attempt, rather than marking it Failed (which
+        // would mislabel a successful request and bypass the drain's completion guard).
+        var item = CreateStuckProcessingNonCaptureItem(retryCount: retryCount);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var existing = new AutomationProposal(
+            ProposalSourceType.Queue,
+            item.UserId,
+            "Existing proposal from the crashed attempt",
+            RiskLevel.Low,
+            item.Id.ToString(),
+            boardId: null,
+            sourceReferenceId: item.Id.ToString());
+        var proposals = new Mock<IAutomationProposalRepository>();
+        proposals
+            .Setup(p => p.GetBySourceReferenceAsync(ProposalSourceType.Queue, item.Id.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+        using var sp = BuildServiceProvider(queueRepo, automationProposals: proposals.Object);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3));
+
+        await InvokeRecoverStuckProcessingItemsAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed, "an already-created proposal means the request succeeded; recovery completes it regardless of retry budget");
+    }
+
+    #endregion
+
     #region Fakes
 
     private sealed class FakeLlmQueueRepository : ILlmQueueRepository
@@ -727,6 +980,18 @@ public class LlmQueueToProposalWorkerTests
 
         public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(_allItems.Count(i => i.Status == RequestStatus.Pending && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
+
+        public Task<IReadOnlyList<LlmRequest>> GetStuckProcessingNonCaptureAsync(DateTimeOffset staleBefore, int limit, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<LlmRequest> result = _allItems
+                .Where(i => i.Status == RequestStatus.Processing
+                    && !CaptureRequestContract.IsCaptureRequestType(i.RequestType)
+                    && i.UpdatedAt <= staleBefore)
+                .OrderBy(i => i.UpdatedAt)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult(result);
+        }
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         {
@@ -901,9 +1166,12 @@ public class LlmQueueToProposalWorkerTests
 
     private sealed class FakeUnitOfWork : IUnitOfWork
     {
-        public FakeUnitOfWork(ILlmQueueRepository llmQueue)
+        public FakeUnitOfWork(ILlmQueueRepository llmQueue, IAutomationProposalRepository? automationProposals = null)
         {
             LlmQueue = llmQueue;
+            // Default to a loose mock whose GetBySourceReferenceAsync returns null, so the worker's
+            // existing-proposal idempotency guard is a no-op for the normal (first-time) drain path.
+            AutomationProposals = automationProposals ?? Mock.Of<IAutomationProposalRepository>();
         }
 
         public IBoardRepository Boards => null!;
@@ -915,7 +1183,7 @@ public class LlmQueueToProposalWorkerTests
         public IBoardAccessRepository BoardAccesses => null!;
         public IAuditLogRepository AuditLogs => null!;
         public ILlmQueueRepository LlmQueue { get; }
-        public IAutomationProposalRepository AutomationProposals => null!;
+        public IAutomationProposalRepository AutomationProposals { get; }
         public IArchiveItemRepository ArchiveItems => null!;
         public IChatSessionRepository ChatSessions => null!;
         public IChatMessageRepository ChatMessages => null!;

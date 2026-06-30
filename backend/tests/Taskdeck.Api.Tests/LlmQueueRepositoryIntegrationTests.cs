@@ -463,6 +463,102 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task GetStuckProcessingNonCaptureAsync_ReturnsOnlyNonCaptureProcessingRowsAtOrBeforeThreshold()
+    {
+        // #1209: the recovery query selects non-capture requests stuck in Processing past the lease and
+        // excludes (a) capture-triage rows (they self-heal), (b) Pending/terminal rows, all at the database.
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("stuck-recovery", "stuck-recovery@example.com", "hash");
+            db.Users.Add(user);
+
+            var stuck1 = new LlmRequest(user.Id, "instruction", "{}");
+            stuck1.MarkAsProcessing();
+            var stuck2 = new LlmRequest(user.Id, "instruction", "{}");
+            stuck2.MarkAsProcessing();
+            var pending = new LlmRequest(user.Id, "instruction", "{}"); // non-capture, Pending -> excluded
+            var completed = new LlmRequest(user.Id, "instruction", "{}");
+            completed.MarkAsProcessing();
+            completed.MarkAsCompleted(); // terminal -> excluded
+            var captureProcessing = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}");
+            captureProcessing.MarkAsProcessing(); // capture in Processing -> excluded (self-heals)
+            db.LlmRequests.AddRange(stuck1, stuck2, pending, completed, captureProcessing);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            // staleBefore in the future, so every current Processing row counts as "older than" the cutoff.
+            var staleBefore = DateTimeOffset.UtcNow.AddMinutes(1);
+            var stuck = await repo.GetStuckProcessingNonCaptureAsync(staleBefore, 50);
+
+            stuck.Select(r => r.Id).Should().BeEquivalentTo(new[] { stuck1.Id, stuck2.Id });
+        });
+    }
+
+    [Fact]
+    public async Task GetStuckProcessingNonCaptureAsync_ReturnsOldestFirstAndRespectsLimit()
+    {
+        // #1209: proves the raw-SQL DateTimeOffset comparison across DISTINCT timestamps, the
+        // ORDER BY UpdatedAt ASC contract (incl. the in-memory re-sort guard), and that LIMIT bounds the
+        // sweep to the OLDEST rows -- so a bounded sweep never drops the oldest abandoned work.
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("stuck-order", "stuck-order@example.com", "hash");
+            db.Users.Add(user);
+            var oldest = new LlmRequest(user.Id, "instruction", "{}");
+            oldest.MarkAsProcessing();
+            var middle = new LlmRequest(user.Id, "instruction", "{}");
+            middle.MarkAsProcessing();
+            var newest = new LlmRequest(user.Id, "instruction", "{}");
+            newest.MarkAsProcessing();
+            db.LlmRequests.AddRange(oldest, middle, newest);
+            // Distinct UpdatedAt values so oldest-first ordering and LIMIT are genuinely discriminated.
+            var t0 = DateTimeOffset.UtcNow.AddHours(-3);
+            db.Entry(oldest).Property(nameof(Entity.UpdatedAt)).CurrentValue = t0;
+            db.Entry(middle).Property(nameof(Entity.UpdatedAt)).CurrentValue = t0.AddMinutes(30);
+            db.Entry(newest).Property(nameof(Entity.UpdatedAt)).CurrentValue = t0.AddMinutes(60);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var stuck = await repo.GetStuckProcessingNonCaptureAsync(DateTimeOffset.UtcNow, limit: 2);
+
+            // LIMIT 2 returns the two OLDEST, in ascending UpdatedAt order (newest excluded).
+            stuck.Select(r => r.Id).Should().Equal(oldest.Id, middle.Id);
+        });
+    }
+
+    [Fact]
+    public async Task GetStuckProcessingNonCaptureAsync_ExcludesRowsNewerThanThreshold()
+    {
+        // A freshly-claimed Processing row (UpdatedAt ~ now) is within the lease and must not be swept.
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("fresh-processing", "fresh-processing@example.com", "hash");
+            db.Users.Add(user);
+            var fresh = new LlmRequest(user.Id, "instruction", "{}");
+            fresh.MarkAsProcessing();
+            db.LlmRequests.Add(fresh);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            // staleBefore in the past, so the just-updated row is newer than the cutoff and is excluded.
+            var staleBefore = DateTimeOffset.UtcNow.AddMinutes(-1);
+            var stuck = await repo.GetStuckProcessingNonCaptureAsync(staleBefore, 50);
+
+            stuck.Should().BeEmpty();
+        });
+    }
+
+    [Fact]
+    public async Task GetStuckProcessingNonCaptureAsync_RejectsNonPositiveLimit()
+    {
+        await WithSqliteRepoAsync(async (_, repo) =>
+        {
+            var act = async () => await repo.GetStuckProcessingNonCaptureAsync(DateTimeOffset.UtcNow, 0);
+            await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        });
+    }
+
+    [Fact]
     public async Task TryClaimProcessingCaptureAsync_ShouldSucceedOnFirstClaim_FailOnSecond()
     {
         using var scope = _factory.Services.CreateScope();

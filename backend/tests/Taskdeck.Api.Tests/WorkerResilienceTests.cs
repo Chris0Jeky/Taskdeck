@@ -433,6 +433,8 @@ public class WorkerResilienceTests
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
         public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<IReadOnlyList<LlmRequest>> GetStuckProcessingNonCaptureAsync(DateTimeOffset staleBefore, int limit, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -521,6 +523,18 @@ public class WorkerResilienceTests
 
         public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.Concat(_processing).Count(i => i.Status == RequestStatus.Pending && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
+
+        public Task<IReadOnlyList<LlmRequest>> GetStuckProcessingNonCaptureAsync(DateTimeOffset staleBefore, int limit, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<LlmRequest> result = _pending.Concat(_processing)
+                .Where(i => i.Status == RequestStatus.Processing
+                    && !CaptureRequestContract.IsCaptureRequestType(i.RequestType)
+                    && i.UpdatedAt <= staleBefore)
+                .OrderBy(i => i.UpdatedAt)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult(result);
+        }
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.Concat(_processing).FirstOrDefault(i => i.Id == id));
@@ -677,7 +691,7 @@ public class WorkerResilienceTests
         public Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<AutomationProposal?> GetBySourceReferenceAsync(ProposalSourceType sourceType, string referenceId, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+            => Task.FromResult(_proposals.FirstOrDefault(p => p.SourceType == sourceType && p.SourceReferenceId == referenceId));
         public Task<AutomationProposal?> GetByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<AutomationProposal?> GetLatestByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default)
@@ -702,7 +716,8 @@ public class WorkerResilienceTests
         public IBoardAccessRepository BoardAccesses => null!;
         public IAuditLogRepository AuditLogs => null!;
         public ILlmQueueRepository LlmQueue { get; }
-        public IAutomationProposalRepository AutomationProposals => null!;
+        // Empty proposal repo so the drain's existing-proposal idempotency guard returns null (no duplicate).
+        public IAutomationProposalRepository AutomationProposals { get; } = new FakeAutomationProposalRepository([]);
         public IArchiveItemRepository ArchiveItems => null!;
         public IChatSessionRepository ChatSessions => null!;
         public IChatMessageRepository ChatMessages => null!;

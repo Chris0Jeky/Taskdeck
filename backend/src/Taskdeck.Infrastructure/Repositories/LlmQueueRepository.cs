@@ -309,6 +309,47 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
         return await query.CountAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<LlmRequest>> GetStuckProcessingNonCaptureAsync(
+        DateTimeOffset staleBefore,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), limit, "Limit must be at least 1.");
+        }
+
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite's EF provider cannot translate WHERE/ORDER BY on a DateTimeOffset column, so the
+            // staleness comparison + order + LIMIT live in raw SQL. The TEXT comparison is chronological
+            // because every UpdatedAt writer (Entity ctor/Touch and the raw claim UPDATEs) and staleBefore
+            // are all DateTimeOffset.UtcNow, so they share a fixed-width "+00:00" offset and lexical order
+            // equals chronological order -- the same shape the shipped
+            // OutboundWebhookDeliveryRepository.GetStuckProcessingAsync relies on.
+            // FromSqlInterpolated + Include wraps this in a subquery that does not guarantee the raw
+            // ORDER BY survives (see GetByUserAsync); the inner LIMIT still selects the correct oldest-N
+            // rows, so re-sort oldest-first in memory to make the ordering a contract.
+            // No Include: the recovery sweep only mutates scalar fields (Status/ErrorMessage/RetryCount/
+            // UpdatedAt) and never reads the User/Board navigations, so loading them is wasted work.
+            var rows = await _context.LlmRequests
+                .FromSqlInterpolated(
+                    $"SELECT * FROM LlmRequests WHERE Status = {(int)RequestStatus.Processing} AND RequestType NOT LIKE {CaptureRequestTypeLike} AND UpdatedAt <= {staleBefore} ORDER BY UpdatedAt ASC LIMIT {limit}")
+                .ToListAsync(cancellationToken);
+            return rows.OrderBy(lr => lr.UpdatedAt).ToList();
+        }
+
+        // Non-SQLite providers (e.g. the Postgres Testcontainer path) translate the predicate + OrderBy +
+        // Take into a single bounded query with guaranteed ordering. No Include (see SQLite path above).
+        return await _context.LlmRequests
+            .Where(lr => lr.Status == RequestStatus.Processing
+                && !EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike)
+                && lr.UpdatedAt <= staleBefore)
+            .OrderBy(lr => lr.UpdatedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
     {
         if (_context.Database.IsSqlite())

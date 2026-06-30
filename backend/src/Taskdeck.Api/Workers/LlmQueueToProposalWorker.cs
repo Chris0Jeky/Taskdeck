@@ -13,6 +13,11 @@ public class LlmQueueToProposalWorker : BackgroundService
     private const string QueueNameLlm = "llm";
     private const string QueueNameCaptureTriage = "capture-triage";
 
+    // Floor on the stuck-recovery lease so an aggressively-low ProcessingLeaseSeconds can never sweep a
+    // request that was claimed seconds ago and is still legitimately in flight. Mirrors the floor the
+    // OutboundWebhookDeliveryWorker recovery sweep uses.
+    private const int MinStuckRecoveryLeaseSeconds = 30;
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly WorkerSettings _settings;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
@@ -64,6 +69,27 @@ public class LlmQueueToProposalWorker : BackgroundService
 
     private async Task ProcessBatchAsync(CancellationToken ct)
     {
+        // Reclaim non-capture requests abandoned in Processing by a crashed worker before draining the
+        // queue (#1209), so a recovered item becomes eligible again within this same tick. Capture-triage
+        // items self-heal via the Processing re-claim path below, so the sweep targets non-capture work
+        // only -- the one kind read solely from Pending and otherwise stuck forever. The sweep is isolated
+        // in its own try/catch so a recovery hiccup (e.g. a transient SaveChanges failure) can never starve
+        // the tick's normal queue draining; the failure is logged and retried on the next poll.
+        try
+        {
+            await RecoverStuckProcessingItemsAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                "Stuck-Processing recovery sweep failed; continuing with normal queue draining. {ExceptionSummary}",
+                SensitiveDataRedactor.SummarizeException(ex));
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         // Bound each read at the database to the work one tick can consume (BuildFairBatchItems emits at
@@ -138,6 +164,100 @@ public class LlmQueueToProposalWorker : BackgroundService
         await Task.WhenAll(tasks);
     }
 
+    private async Task RecoverStuckProcessingItemsAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        // A non-capture request that has sat in Processing longer than the processing lease is treated as
+        // abandoned: the worker that claimed it (stamping UpdatedAt to now) never reached a terminal
+        // transition. Re-claiming a live, just-claimed request is prevented because its UpdatedAt is fresh,
+        // and because ProcessBatchAsync runs this sweep before -- and is awaited sequentially with -- the
+        // batch drain, so a single worker process can never sweep its own in-flight work. The sweep assumes
+        // a single worker process (the local-first deployment): like the webhook recovery sweep it has no
+        // optimistic-concurrency guard, so two processes against one DB could double-recover a row.
+        var leaseSeconds = Math.Max(MinStuckRecoveryLeaseSeconds, _settings.ProcessingLeaseSeconds);
+        var staleBefore = DateTimeOffset.UtcNow.AddSeconds(-leaseSeconds);
+        var fetchLimit = Math.Max(1, _settings.MaxBatchSize);
+
+        var stuckItems = await unitOfWork.LlmQueue.GetStuckProcessingNonCaptureAsync(staleBefore, fetchLimit, ct);
+        if (stuckItems.Count == 0)
+        {
+            return;
+        }
+
+        var completed = 0;
+        var requeued = 0;
+        var failedPermanently = 0;
+        foreach (var item in stuckItems)
+        {
+            // If the crashed attempt already committed this request's proposal, the work actually succeeded
+            // -- only the completing status flip was lost. Complete it regardless of the retry budget,
+            // rather than requeueing (which the drain's guard would complete anyway, after a wasted cycle)
+            // or, on the last attempt, failing it -- which would mislabel a request that DID produce its
+            // proposal as Failed and never route it through the drain's completion guard.
+            var existingProposal = await unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+                ProposalSourceType.Queue, item.Id.ToString(), ct);
+            if (existingProposal != null)
+            {
+                item.MarkAsCompleted();
+                completed++;
+                continue;
+            }
+
+            // Recovery counts against the retry budget so a request that repeatedly crashes the worker
+            // eventually fails permanently instead of looping forever. MarkAsFailed (Processing -> Failed,
+            // RetryCount++) then ResetForRetry (Failed -> Pending) reuses the same transitions and the same
+            // pre-increment budget check (RetryCount + 1 < MaxRetries) as HandleFailureWithRetryAsync. It
+            // deliberately omits that path's IsTransientFailure gate: a stale-Processing row means the
+            // worker crashed mid-flight (no error code to classify), which we always treat as retryable.
+            // The lease itself spaces successive recoveries of a poison-pill payload >= the lease apart, so
+            // no explicit retry backoff is needed here.
+            var budgetRemains = item.RetryCount + 1 < _settings.MaxRetries;
+            item.MarkAsFailed("Recovered from a stale Processing state; the worker that claimed this request did not complete it.");
+            if (budgetRemains)
+            {
+                item.ResetForRetry();
+                requeued++;
+            }
+            else
+            {
+                failedPermanently++;
+            }
+        }
+
+        await unitOfWork.SaveChangesAsync(ct);
+
+        _logger.LogWarning(
+            "Recovered {StuckCount} non-capture queue item(s) stuck in Processing beyond {LeaseSeconds}s: {CompletedCount} already had a proposal and were completed, {RequeuedCount} returned to Pending, {FailedCount} failed (retry budget exhausted).",
+            stuckItems.Count,
+            leaseSeconds,
+            completed,
+            requeued,
+            failedPermanently);
+
+        if (completed > 0)
+        {
+            RecordRecoveryMetrics(completed, "recovered_stuck_completed");
+        }
+        if (requeued > 0)
+        {
+            RecordRecoveryMetrics(requeued, "recovered_stuck_requeued");
+        }
+        if (failedPermanently > 0)
+        {
+            RecordRecoveryMetrics(failedPermanently, "recovered_stuck_failed");
+        }
+    }
+
+    private static void RecordRecoveryMetrics(int count, string outcome)
+    {
+        TaskdeckTelemetry.WorkerItemsProcessed.Add(
+            count,
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker)),
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, outcome));
+    }
+
     private async Task ProcessSingleItemAsync(Guid itemId, DateTimeOffset expectedUpdatedAt, CancellationToken ct)
     {
         using var activity = TaskdeckTelemetry.ActivitySource.StartActivity(
@@ -185,6 +305,27 @@ public class LlmQueueToProposalWorker : BackgroundService
         if (item.BoardId.HasValue)
         {
             activity?.SetTag(TaskdeckTelemetryTags.BoardId, item.BoardId.Value.ToString());
+        }
+
+        // Idempotency guard (#1209 review): a prior attempt may have created and committed the proposal,
+        // then crashed (or failed mid-save and been requeued) before this request was marked completed.
+        // Re-running the planner would create a DUPLICATE PendingReview proposal (proposal creation is not
+        // idempotent on SourceReferenceId), so if a Queue-sourced proposal already exists for this request,
+        // complete it instead of reprocessing. Mirrors the capture path's existing-proposal short-circuit.
+        var existingProposal = await unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+            ProposalSourceType.Queue, item.Id.ToString(), ct);
+        if (existingProposal != null)
+        {
+            item.MarkAsCompleted();
+            await unitOfWork.SaveChangesAsync(ct);
+            _logger.LogInformation(
+                "Queue item {ItemId} already linked to proposal {ProposalId}; marking completed without reprocessing",
+                item.Id,
+                existingProposal.Id);
+            outcome = "completed_existing";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+            return;
         }
 
         try

@@ -72,6 +72,21 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
 
     /// <summary>Counts Pending capture-triage requests for the readiness gauge, without materializing rows.</summary>
     Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns at most <paramref name="limit"/> NON-capture (automation) requests stuck in
+    /// <see cref="RequestStatus.Processing"/> whose <c>UpdatedAt</c> is at or before
+    /// <paramref name="staleBefore"/>, oldest-first, bounded at the database. These are requests a worker
+    /// claimed (flipping them to Processing) but never completed or failed — typically because the worker
+    /// crashed mid-flight — so nothing re-enqueues them and they are otherwise abandoned forever (#1209).
+    /// Capture-triage requests are excluded by the in-query predicate: they are read from Processing every
+    /// poll and re-claimed, so they self-heal; only non-capture work (read solely from Pending) needs a
+    /// recovery sweep. The predicate must live in the query, not a post-fetch filter, so the bound never
+    /// fills with rows the sweeper would discard.
+    /// </summary>
+    /// <param name="staleBefore">Only rows with <c>UpdatedAt &lt;= staleBefore</c> are returned.</param>
+    /// <param name="limit">Maximum rows to return; must be at least 1.</param>
+    Task<IReadOnlyList<LlmRequest>> GetStuckProcessingNonCaptureAsync(DateTimeOffset staleBefore, int limit, CancellationToken cancellationToken = default);
     Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default);
     Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default);
