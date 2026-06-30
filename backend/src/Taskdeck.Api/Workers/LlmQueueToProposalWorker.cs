@@ -72,8 +72,23 @@ public class LlmQueueToProposalWorker : BackgroundService
         // Reclaim non-capture requests abandoned in Processing by a crashed worker before draining the
         // queue (#1209), so a recovered item becomes eligible again within this same tick. Capture-triage
         // items self-heal via the Processing re-claim path below, so the sweep targets non-capture work
-        // only -- the one kind read solely from Pending and otherwise stuck forever.
-        await RecoverStuckProcessingItemsAsync(ct);
+        // only -- the one kind read solely from Pending and otherwise stuck forever. The sweep is isolated
+        // in its own try/catch so a recovery hiccup (e.g. a transient SaveChanges failure) can never starve
+        // the tick's normal queue draining; the failure is logged and retried on the next poll.
+        try
+        {
+            await RecoverStuckProcessingItemsAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                "Stuck-Processing recovery sweep failed; continuing with normal queue draining. {ExceptionSummary}",
+                SensitiveDataRedactor.SummarizeException(ex));
+        }
 
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
@@ -156,7 +171,11 @@ public class LlmQueueToProposalWorker : BackgroundService
 
         // A non-capture request that has sat in Processing longer than the processing lease is treated as
         // abandoned: the worker that claimed it (stamping UpdatedAt to now) never reached a terminal
-        // transition. Re-claiming a live, just-claimed request is prevented because its UpdatedAt is fresh.
+        // transition. Re-claiming a live, just-claimed request is prevented because its UpdatedAt is fresh,
+        // and because ProcessBatchAsync runs this sweep before -- and is awaited sequentially with -- the
+        // batch drain, so a single worker process can never sweep its own in-flight work. The sweep assumes
+        // a single worker process (the local-first deployment): like the webhook recovery sweep it has no
+        // optimistic-concurrency guard, so two processes against one DB could double-recover a row.
         var leaseSeconds = Math.Max(MinStuckRecoveryLeaseSeconds, _settings.ProcessingLeaseSeconds);
         var staleBefore = DateTimeOffset.UtcNow.AddSeconds(-leaseSeconds);
         var fetchLimit = Math.Max(1, _settings.MaxBatchSize);
@@ -173,8 +192,12 @@ public class LlmQueueToProposalWorker : BackgroundService
         {
             // Recovery counts against the retry budget so a request that repeatedly crashes the worker
             // eventually fails permanently instead of looping forever. MarkAsFailed (Processing -> Failed,
-            // RetryCount++) then ResetForRetry (Failed -> Pending) reuses the same transitions and budget
-            // check as HandleFailureWithRetryAsync, keeping recovery and in-band failure consistent.
+            // RetryCount++) then ResetForRetry (Failed -> Pending) reuses the same transitions and the same
+            // pre-increment budget check (RetryCount + 1 < MaxRetries) as HandleFailureWithRetryAsync. It
+            // deliberately omits that path's IsTransientFailure gate: a stale-Processing row means the
+            // worker crashed mid-flight (no error code to classify), which we always treat as retryable.
+            // The lease itself spaces successive recoveries of a poison-pill payload >= the lease apart, so
+            // no explicit retry backoff is needed here.
             var budgetRemains = item.RetryCount + 1 < _settings.MaxRetries;
             item.MarkAsFailed("Recovered from a stale Processing state; the worker that claimed this request did not complete it.");
             if (budgetRemains)

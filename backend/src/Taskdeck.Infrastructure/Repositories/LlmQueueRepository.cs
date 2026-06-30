@@ -322,9 +322,11 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
         if (_context.Database.IsSqlite())
         {
             // SQLite's EF provider cannot translate WHERE/ORDER BY on a DateTimeOffset column, so the
-            // staleness comparison + order + LIMIT live in raw SQL (UpdatedAt is stamped from UtcNow and
-            // materializes UTC per ADR-0040, so its stored TEXT compares chronologically -- the same
-            // shape the shipped OutboundWebhookDeliveryRepository.GetStuckProcessingAsync relies on).
+            // staleness comparison + order + LIMIT live in raw SQL. The TEXT comparison is chronological
+            // because every UpdatedAt writer (Entity ctor/Touch and the raw claim UPDATEs) and staleBefore
+            // are all DateTimeOffset.UtcNow, so they share a fixed-width "+00:00" offset and lexical order
+            // equals chronological order -- the same shape the shipped
+            // OutboundWebhookDeliveryRepository.GetStuckProcessingAsync relies on.
             // FromSqlInterpolated + Include wraps this in a subquery that does not guarantee the raw
             // ORDER BY survives (see GetByUserAsync); the inner LIMIT still selects the correct oldest-N
             // rows, so re-sort oldest-first in memory to make the ordering a contract.
