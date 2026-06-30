@@ -63,32 +63,32 @@ public class ProposalHousekeepingWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        var pendingProposals = (await unitOfWork.AutomationProposals.GetByStatusAsync(
-            ProposalStatus.PendingReview,
-            cancellationToken: ct)).ToList();
-        var now = DateTime.UtcNow;
-        var pendingCount = pendingProposals.Count;
+        // Use the purpose-built unbounded expiry query (Status == PendingReview AND ExpiresAt < now) rather
+        // than a bounded display-order page (#1259): the prior GetByStatusAsync(limit 100) + in-memory
+        // ExpiresAt filter could leave genuinely-expired proposals un-expired once the pending backlog
+        // exceeded the page (the bottom of the window — typically the oldest/stalest — was dropped).
+        var expiredProposals = (await unitOfWork.AutomationProposals.GetExpiredAsync(ct)).ToList();
         var expiredCount = 0;
-        activity?.SetTag("taskdeck.proposals.pending_count", pendingCount);
+        activity?.SetTag("taskdeck.proposals.expired_candidate_count", expiredProposals.Count);
 
-        foreach (var proposal in pendingProposals)
+        foreach (var proposal in expiredProposals)
         {
             if (ct.IsCancellationRequested) break;
 
-            if (proposal.ExpiresAt <= now)
+            try
             {
-                try
-                {
-                    proposal.Expire();
-                    expiredCount++;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        "Failed to expire proposal {ProposalId}. {ExceptionSummary}",
-                        proposal.Id,
-                        SensitiveDataRedactor.SummarizeException(ex));
-                }
+                // GetExpiredAsync already filtered to expired PendingReview rows, but a proposal can be
+                // approved/rejected between the query and here (TOCTOU). Expire() throws on a non-PendingReview
+                // status, so log and skip rather than crash the sweep.
+                proposal.Expire();
+                expiredCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    "Failed to expire proposal {ProposalId}. {ExceptionSummary}",
+                    proposal.Id,
+                    SensitiveDataRedactor.SummarizeException(ex));
             }
         }
 
