@@ -330,20 +330,18 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             // FromSqlInterpolated + Include wraps this in a subquery that does not guarantee the raw
             // ORDER BY survives (see GetByUserAsync); the inner LIMIT still selects the correct oldest-N
             // rows, so re-sort oldest-first in memory to make the ordering a contract.
+            // No Include: the recovery sweep only mutates scalar fields (Status/ErrorMessage/RetryCount/
+            // UpdatedAt) and never reads the User/Board navigations, so loading them is wasted work.
             var rows = await _context.LlmRequests
                 .FromSqlInterpolated(
                     $"SELECT * FROM LlmRequests WHERE Status = {(int)RequestStatus.Processing} AND RequestType NOT LIKE {CaptureRequestTypeLike} AND UpdatedAt <= {staleBefore} ORDER BY UpdatedAt ASC LIMIT {limit}")
-                .Include(lr => lr.User)
-                .Include(lr => lr.Board)
                 .ToListAsync(cancellationToken);
             return rows.OrderBy(lr => lr.UpdatedAt).ToList();
         }
 
         // Non-SQLite providers (e.g. the Postgres Testcontainer path) translate the predicate + OrderBy +
-        // Take into a single bounded query with guaranteed ordering.
+        // Take into a single bounded query with guaranteed ordering. No Include (see SQLite path above).
         return await _context.LlmRequests
-            .Include(lr => lr.User)
-            .Include(lr => lr.Board)
             .Where(lr => lr.Status == RequestStatus.Processing
                 && !EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike)
                 && lr.UpdatedAt <= staleBefore)

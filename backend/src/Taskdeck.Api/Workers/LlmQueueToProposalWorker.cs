@@ -287,6 +287,27 @@ public class LlmQueueToProposalWorker : BackgroundService
             activity?.SetTag(TaskdeckTelemetryTags.BoardId, item.BoardId.Value.ToString());
         }
 
+        // Idempotency guard (#1209 review): a prior attempt may have created and committed the proposal,
+        // then crashed (or failed mid-save and been requeued) before this request was marked completed.
+        // Re-running the planner would create a DUPLICATE PendingReview proposal (proposal creation is not
+        // idempotent on SourceReferenceId), so if a Queue-sourced proposal already exists for this request,
+        // complete it instead of reprocessing. Mirrors the capture path's existing-proposal short-circuit.
+        var existingProposal = await unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+            ProposalSourceType.Queue, item.Id.ToString(), ct);
+        if (existingProposal != null)
+        {
+            item.MarkAsCompleted();
+            await unitOfWork.SaveChangesAsync(ct);
+            _logger.LogInformation(
+                "Queue item {ItemId} already linked to proposal {ProposalId}; marking completed without reprocessing",
+                item.Id,
+                existingProposal.Id);
+            outcome = "completed_existing";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+            return;
+        }
+
         try
         {
             var proposalResult = await planner.ParseInstructionAsync(
