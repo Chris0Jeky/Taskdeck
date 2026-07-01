@@ -563,17 +563,33 @@ public static class FirstRunBootstrapper
         try
         {
             File.Copy(path, backupPath, overwrite: false);
-            Console.Error.WriteLine(
-                $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}). A copy was " +
-                $"preserved at {backupPath} for recovery -- it may hold a previously-generated key -- and the " +
-                "file will be rewritten.");
         }
         catch (Exception copyEx)
         {
             Console.Error.WriteLine(
                 $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}) and could NOT be " +
                 $"backed up ({copyEx.Message}); it will be overwritten.");
+            return;
         }
+
+        // The .corrupt-* backup holds the same secrets as the original (the connector key in particular), so
+        // lock it to the current user too -- otherwise recovery-preservation would re-expose it via the
+        // directory's default ACL (#1241). Best-effort: a failed restriction warns but keeps the backup.
+        try
+        {
+            RestrictFileToCurrentUser(backupPath);
+        }
+        catch (Exception aclEx)
+        {
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: preserved {backupPath} but could not restrict its permissions " +
+                $"({aclEx.Message}); it may be readable by other local users until fixed.");
+        }
+
+        Console.Error.WriteLine(
+            $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}). A copy was " +
+            $"preserved at {backupPath} for recovery -- it may hold a previously-generated key -- and the " +
+            "file will be rewritten.");
     }
 
     private static void PersistValue(string section, string key, string value)

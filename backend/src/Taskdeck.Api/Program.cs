@@ -62,6 +62,10 @@ if (args.Contains("--mcp"))
         var mcpHttpBuilder = WebApplication.CreateBuilder(args);
 
         // Load appsettings.local.json for locally-generated secrets (mirrors stdio mode).
+        // Repair the file's permissions first (#1241): the MCP path loads it directly rather than via
+        // AddLocalConfigFile, so an install upgraded from a pre-#1241 build would otherwise keep a
+        // world-readable secrets file when launched only in MCP mode. Best-effort; never fatal.
+        FirstRunBootstrapper.RestrictExistingLocalConfigFile();
         mcpHttpBuilder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
 
         mcpHttpBuilder.WebHost.UseUrls($"http://{mcpBindHost}:{mcpPort}");
