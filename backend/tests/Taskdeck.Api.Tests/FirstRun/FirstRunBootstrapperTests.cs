@@ -309,16 +309,38 @@ public class FirstRunBootstrapperTests
     }
 
     [Fact]
-    public void PersistValue_SetsUnixFileMode_StructuralCheck()
+    public void PersistValue_WritesSecretsViaAtomicRestrictedCreate_StructuralCheck()
     {
-        // Verify that the temp file gets 0600 permissions on Unix before being
-        // moved into place, matching the CLI's CliFirstRunBootstrapper pattern.
+        // #1264 load-bearing wiring: the behavioral tests cannot distinguish atomic create-with-permissions
+        // from a regression back to create-then-restrict (the final file state is identical on NTFS), so pin
+        // the construction structurally. PersistValue's temp file AND the corrupt-config backup must go
+        // through WriteRestrictedFile; the helper must create with the permissions supplied at creation
+        // (UnixCreateMode / FileSecurity passed to Create) rather than restrict post-hoc.
         var source = File.ReadAllText(
             FindSourceFile("FirstRunBootstrapper.cs"));
 
-        Assert.Contains("SetUnixFileMode", source);
-        Assert.Contains("UnixFileMode.UserRead | UnixFileMode.UserWrite", source);
-        Assert.Contains("!OperatingSystem.IsWindows()", source);
+        Assert.Contains("WriteRestrictedFile(tempPath, payload)", source);
+        Assert.Contains("WriteRestrictedFile(backupPath", source);
+        Assert.Contains("UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite", source);
+        Assert.Contains("BuildOwnerOnlyFileSecurity())", source);
+        // The pre-#1264 sequence must not come back.
+        Assert.DoesNotContain("File.Create(tempPath)", source);
+        Assert.DoesNotContain("RestrictFileToCurrentUser(tempPath)", source);
+    }
+
+    [Fact]
+    public void WriteRestrictedFile_FailsClosedOnNonAclFilesystems_StructuralCheck()
+    {
+        // On FAT32/exFAT/some SMB shares CreateFileW silently IGNORES the supplied security descriptor, and
+        // on non-POSIX mounts open(2)'s mode is ignored -- where the pre-#1264 restrict calls FAILED
+        // (fail-closed). Pin the two post-create guards that restore that contract: the Windows DACL
+        // read-back through the open handle and the Unix exact-mode pin (also umask-proof) through the
+        // open handle.
+        var source = File.ReadAllText(
+            FindSourceFile("FirstRunBootstrapper.cs"));
+
+        Assert.Contains("AreAccessRulesProtected", source);
+        Assert.Contains("File.SetUnixFileMode(stream.SafeFileHandle", source);
     }
 
     [Fact]
@@ -396,12 +418,13 @@ public class FirstRunBootstrapperTests
     }
 
     [Fact]
-    public void RestrictFileToCurrentUser_LockdownSurvivesAtomicMove()
+    public void WriteRestrictedFile_LockdownSurvivesAtomicMove()
     {
-        // #1241 load-bearing property: PersistValue restricts a temp file, then File.Move(overwrite)s it onto
-        // the target. This asserts the owner-only lockdown survives that same-directory atomic rename. A
-        // regression to copy-then-delete or File.Replace (which preserves the DESTINATION's ACL) would
-        // silently defeat the fix; the in-isolation helper test would not catch it.
+        // #1241/#1264 load-bearing property: PersistValue atomically creates a restricted temp file, then
+        // File.Move(overwrite)s it onto the target. This asserts the owner-only lockdown survives that
+        // same-directory atomic rename. A regression to copy-then-delete or File.Replace (which preserves
+        // the DESTINATION's ACL) would silently defeat the fix; the in-isolation helper test would not
+        // catch it.
         var dir = Path.Combine(Path.GetTempPath(), $"td-acl-move-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);
         var tempPath = Path.Combine(dir, ".secrets.tmp");
@@ -411,9 +434,7 @@ public class FirstRunBootstrapperTests
             // Pre-seed an existing (unrestricted) target so the move is a real overwrite.
             File.WriteAllText(targetPath, "{}");
 
-            File.Create(tempPath).Dispose();
-            FirstRunBootstrapper.RestrictFileToCurrentUser(tempPath);
-            File.WriteAllText(tempPath, "{\"secret\":\"x\"}");
+            FirstRunBootstrapper.WriteRestrictedFile(tempPath, "{\"secret\":\"x\"}");
             File.Move(tempPath, targetPath, overwrite: true);
 
             if (OperatingSystem.IsWindows())
@@ -439,6 +460,118 @@ public class FirstRunBootstrapperTests
                 Assert.Equal(
                     UnixFileMode.UserRead | UnixFileMode.UserWrite,
                     File.GetUnixFileMode(targetPath));
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    [Fact]
+    public void WriteRestrictedFile_CreatesFileAtomicallyLockedToCurrentUser()
+    {
+        // #1264 behavioral test (each CI runner covers its own platform branch): the file must be BORN with
+        // owner-only permissions -- Unix 0600 via FileStreamOptions.UnixCreateMode, Windows via the
+        // protected owner-only DACL supplied to CreateFile -- and hold the exact written content.
+        var path = Path.Combine(Path.GetTempPath(), $"td-atomic-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            FirstRunBootstrapper.WriteRestrictedFile(path, "{\"secret\":\"atomic\"}");
+
+            Assert.Equal("{\"secret\":\"atomic\"}", File.ReadAllText(path));
+            if (OperatingSystem.IsWindows())
+            {
+                var security = new FileInfo(path).GetAccessControl();
+                Assert.True(
+                    security.AreAccessRulesProtected,
+                    "inheritance should be disabled so the directory's default ACEs do not apply");
+
+                using var identity = WindowsIdentity.GetCurrent();
+                var currentSid = identity.User;
+                var rules = security.GetAccessRules(
+                    includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier));
+                Assert.True(rules.Count > 0, "the file should have at least one explicit access rule");
+                foreach (FileSystemAccessRule rule in rules)
+                {
+                    Assert.Equal(AccessControlType.Allow, rule.AccessControlType);
+                    Assert.Equal(currentSid, rule.IdentityReference);
+                }
+            }
+            else
+            {
+                Assert.Equal(
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                    File.GetUnixFileMode(path));
+            }
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void WriteRestrictedFile_RefusesToAdoptAPreExistingFile()
+    {
+        // #1264: FileMode.CreateNew must fail on an already-occupied path rather than write the secret into
+        // a file someone else created (whose handle/permissions we do not control) -- and it must not
+        // delete or overwrite that pre-existing file.
+        var path = Path.Combine(Path.GetTempPath(), $"td-preexist-{Guid.NewGuid():N}.tmp");
+        File.WriteAllText(path, "pre-existing");
+        try
+        {
+            Assert.Throws<IOException>(() => FirstRunBootstrapper.WriteRestrictedFile(path, "secret"));
+
+            Assert.True(File.Exists(path), "the pre-existing file must not be deleted on a refused create");
+            Assert.Equal("pre-existing", File.ReadAllText(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void QuarantineCorruptLocalConfigAt_BackupIsRestrictedToCurrentUser()
+    {
+        // #1241/#1264: the .corrupt-* backup holds the same secrets as the original, so it must be created
+        // with owner-only permissions (atomically, not copy-then-restrict) and stay byte-faithful for key
+        // recovery.
+        var dir = Path.Combine(Path.GetTempPath(), $"td-corrupt-acl-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "appsettings.local.json");
+        File.WriteAllText(path, "{ corrupt but holds : the only key copy");
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(path);
+
+            var preserved = Directory.GetFiles(dir, "appsettings.local.json.corrupt-*");
+            Assert.Single(preserved);
+            Assert.Equal("{ corrupt but holds : the only key copy", File.ReadAllText(preserved[0]));
+            if (OperatingSystem.IsWindows())
+            {
+                var security = new FileInfo(preserved[0]).GetAccessControl();
+                Assert.True(
+                    security.AreAccessRulesProtected,
+                    "the backup must carry the protected (non-inherited) owner-only DACL");
+
+                using var identity = WindowsIdentity.GetCurrent();
+                var currentSid = identity.User;
+                var rules = security.GetAccessRules(
+                    includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier));
+                Assert.True(rules.Count > 0);
+                foreach (FileSystemAccessRule rule in rules)
+                {
+                    Assert.Equal(AccessControlType.Allow, rule.AccessControlType);
+                    Assert.Equal(currentSid, rule.IdentityReference);
+                }
+            }
+            else
+            {
+                Assert.Equal(
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                    File.GetUnixFileMode(preserved[0]));
             }
         }
         finally
