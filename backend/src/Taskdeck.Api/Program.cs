@@ -65,8 +65,11 @@ if (args.Contains("--mcp"))
         // Repair the file's permissions first (#1241): the MCP path loads it directly rather than via
         // AddLocalConfigFile, so an install upgraded from a pre-#1241 build would otherwise keep a
         // world-readable secrets file when launched only in MCP mode. Best-effort; never fatal.
+        // Load by the same ABSOLUTE path the repair (and FirstRunBootstrapper's writer) targets: MCP
+        // servers are often launched from an arbitrary working directory, so a relative path could
+        // read a different file than the one that was just restricted -- or miss the secrets entirely.
         FirstRunBootstrapper.RestrictExistingLocalConfigFile();
-        mcpHttpBuilder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
+        mcpHttpBuilder.Configuration.AddJsonFile(FirstRunBootstrapper.LocalConfigPath, optional: true, reloadOnChange: false);
 
         mcpHttpBuilder.WebHost.UseUrls($"http://{mcpBindHost}:{mcpPort}");
 
@@ -152,12 +155,17 @@ if (args.Contains("--mcp"))
     // ── MCP stdio mode ──────────────────────────────────────────────────────
     // This path intentionally skips JWT, CORS, SignalR, rate limiting, and the
     // HTTP pipeline — none of those are meaningful over a local stdio connection.
+    // Repair the persisted secrets file's permissions before loading it (#1241), and load it by the
+    // same ABSOLUTE path: stdio MCP servers are typically launched by an MCP client from the client's
+    // own working directory, so a relative "appsettings.local.json" could miss the exe-adjacent file
+    // FirstRunBootstrapper writes -- and the ACL repair must target the file actually being consumed.
+    FirstRunBootstrapper.RestrictExistingLocalConfigFile();
     var mcpHost = Host.CreateDefaultBuilder(args)
         .ConfigureAppConfiguration((_, config) =>
         {
             config.AddJsonFile("appsettings.json", optional: true);
             config.AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true);
-            config.AddJsonFile("appsettings.local.json", optional: true);
+            config.AddJsonFile(FirstRunBootstrapper.LocalConfigPath, optional: true);
             config.AddEnvironmentVariables();
         })
         .ConfigureLogging(logging =>
