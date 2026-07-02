@@ -11,6 +11,10 @@ Stable reference material belongs in topical subfolders.
   - Current shipped reality, verified state, current focus, and active constraints.
 - `IMPLEMENTATION_MASTERPLAN.md`
   - Delivery history, the archive-pivot direction (finish-for-personal-use → archive), and the priority-labeled backlog map. *(The forward "horizons" / "release framing" / priority tranches are historical pre-pivot framing; the active sequence is the Direction-section waves.)*
+- `PROJECT_TRAJECTORY.md`
+  - 2026-07-02 whole-project analysis, part 1: what the project genuinely does well, the four pivot goals honestly scored, and the effective remaining path (adversarially verified evidence; closeout wave tracker `#1278`).
+- `COURSE_CORRECTION.md`
+  - 2026-07-02 whole-project analysis, part 2: the central strategic and execution problems, fix-vs-write-off calls, the ordered closeout plan with completion conditions, and the proposed archive exit criteria (ratification via `#1278`).
 - `GOLDEN_PRINCIPLES.md`
   - Stable repository invariants and decision rules.
 - `ISSUE_EXECUTION_GUIDE.md`
@@ -39,7 +43,7 @@ Stable reference material belongs in topical subfolders.
 - Regular product user:
   - `START_HERE.md` -> `manual/02_home_and_today.md` -> `manual/03_projects_and_cards.md` -> `manual/08_recipes.md`
 - Maintainer or planner:
-  - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
+  - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `PROJECT_TRAJECTORY.md` -> `COURSE_CORRECTION.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
   - active execution order: the archive-pivot **waves** in the Direction section of `IMPLEMENTATION_MASTERPLAN.md` (Paper UI activation → easy local run → general quality → archive). *Historical* roadmap input: root `taskdeck-12-week-roadmap-v4.md`, tracker `#972` (RFAI complete 2026-05-29, superseded by the archive pivot)
 - Contributor or agent:
   - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `GOLDEN_PRINCIPLES.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `MCP_TOOLING_GUIDE.md` -> `../autodoc/AGENT_INDEX.md` -> `agentic/SKILL_REGISTRY.md`
