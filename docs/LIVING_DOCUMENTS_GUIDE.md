@@ -60,6 +60,24 @@ High-churn sections:
 - MVP expansion wave carry-forward
 - out-of-code/configuration coverage
 
+### `docs/PROJECT_TRAJECTORY.md`
+
+Root placement rationale: passes the promotion rule below ("a recurring truth needed every session") — it scores the archive-pivot goals and carries the closeout sequencing that steers every remaining session until archive. End-of-life: at ARCHIVE-09 (#1277) it is annotated as final/historical (or moved to `docs/analysis/`) — it does not outlive the closeout as a living doc.
+
+Update when:
+- a pivot-goal score materially changes (e.g. Paper coverage re-pointed, run path validated)
+- the closeout sequencing or wave membership changes
+- an archive exit criterion is met
+
+### `docs/COURSE_CORRECTION.md`
+
+Root placement rationale: same as `PROJECT_TRAJECTORY.md` — it carries the ordered closeout plan and the proposed archive exit criteria (ratification via `#1278`). End-of-life: same ARCHIVE-09 rule.
+
+Update when:
+- the exit criteria are ratified or amended (mark §5 Accepted with a date)
+- a plan step completes (record the date against its completion condition)
+- a fix-vs-write-off call is reversed by the maintainer
+
 ### `docs/GOLDEN_PRINCIPLES.md`
 
 Update when:
