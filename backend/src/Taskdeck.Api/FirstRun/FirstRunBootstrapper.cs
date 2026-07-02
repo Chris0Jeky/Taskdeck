@@ -685,11 +685,14 @@ public static class FirstRunBootstrapper
             var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
 
             // Create the file empty and lock it to the current user BEFORE writing the secret payload,
-            // eliminating the TOCTOU window where the JWT secret + connector key would be readable by other
+            // closing the window where the JWT secret + connector key would sit on disk readable by other
             // local users: under the Unix default umask (022) the file would be 0644, and on Windows it would
-            // inherit the directory's default ACL (e.g. BUILTIN\Users read). #1241. If the file cannot be
-            // locked down, RestrictFileToCurrentUser throws (as IOException) and the secret is never written
-            // to it -- the caller falls back to an in-memory value rather than leaving it world-readable.
+            // inherit the directory's default ACL (e.g. BUILTIN\Users read). #1241. A narrow race remains:
+            // the empty temp file briefly exists with default permissions, so a racer could pre-open a read
+            // handle that survives the restriction (tightening ACLs does not revoke open handles) -- creating
+            // the file atomically WITH the restricted ACL closes that too and is tracked in #1264. If the file
+            // cannot be locked down, RestrictFileToCurrentUser throws (as IOException) and the secret is never
+            // written to it -- the caller falls back to an in-memory value rather than leaving it world-readable.
             // The whole create -> restrict -> write -> move sequence is inside the try so any failure (incl. a
             // failed restrict) deletes the staged temp file rather than leaking it.
             try
@@ -718,15 +721,6 @@ public static class FirstRunBootstrapper
     }
 
     /// <summary>
-    /// Restricts a freshly-created (still-empty) file to the current user only, BEFORE secrets are written
-    /// into it, so <c>appsettings.local.json</c> (JWT secret + connector key) is never readable by other
-    /// local users (#1241). On Unix this is <c>0600</c>; on Windows it replaces the DACL with a single
-    /// owner-only ACE and disables inheritance (so the directory's default ACEs -- e.g. BUILTIN\Users read --
-    /// do not apply). Any failure is normalized to <see cref="IOException"/> so the first-run callers'
-    /// existing <c>catch (IOException)</c> falls back to an in-memory value -- the secret is never written to
-    /// a file we could not lock down.
-    /// </summary>
-    /// <summary>
     /// Best-effort re-restriction of an existing persisted local config to the current user (#1241 forward
     /// remediation). Heals installs upgraded from a build that wrote the file world-readable. Never throws:
     /// at this pre-DI stage a failure is reported to stderr and startup continues.
@@ -751,6 +745,15 @@ public static class FirstRunBootstrapper
         }
     }
 
+    /// <summary>
+    /// Restricts a freshly-created (still-empty) file to the current user only, BEFORE secrets are written
+    /// into it, so <c>appsettings.local.json</c> (JWT secret + connector key) is never readable by other
+    /// local users (#1241). On Unix this is <c>0600</c>; on Windows it replaces the DACL with a single
+    /// owner-only ACE and disables inheritance (so the directory's default ACEs -- e.g. BUILTIN\Users read --
+    /// do not apply). Any failure is normalized to <see cref="IOException"/> so the first-run callers'
+    /// existing <c>catch (IOException)</c> falls back to an in-memory value -- the secret is never written to
+    /// a file we could not lock down.
+    /// </summary>
     internal static void RestrictFileToCurrentUser(string path)
     {
         try
