@@ -82,7 +82,7 @@ defineEmits<{
         id="card-is-blocked"
         v-model="isBlocked"
         type="checkbox"
-        class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary"
+        class="w-4 h-4 text-primary border-outline-variant rounded"
       />
       <label for="card-is-blocked" class="ml-2 text-sm font-medium text-on-surface-variant">
         Mark as blocked

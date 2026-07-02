@@ -155,7 +155,7 @@ const hasActiveFilters = computed(() => {
               v-model="localFilters.showBlockedOnly"
               @change="updateFilters"
               type="checkbox"
-              class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary"
+              class="w-4 h-4 text-primary border-outline-variant rounded"
             />
             <span class="ml-2 text-sm text-on-surface">Show blocked only</span>
           </label>
@@ -181,7 +181,7 @@ const hasActiveFilters = computed(() => {
                 :checked="isLabelSelected(label.id)"
                 @change="toggleLabel(label.id)"
                 type="checkbox"
-                class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary"
+                class="w-4 h-4 text-primary border-outline-variant rounded"
               />
               <span
                 class="ml-2 px-2 py-0.5 rounded text-xs font-medium text-white td-dynamic-bg"

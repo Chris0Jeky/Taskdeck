@@ -134,7 +134,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 id="column-has-wip-limit"
                 v-model="hasWipLimit"
                 type="checkbox"
-                class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary"
+                class="w-4 h-4 text-primary border-outline-variant rounded"
               />
               <label for="column-has-wip-limit" class="ml-2 text-sm font-medium text-on-surface-variant">
                 Set WIP limit
