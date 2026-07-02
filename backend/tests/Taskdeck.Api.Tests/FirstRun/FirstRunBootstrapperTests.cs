@@ -309,16 +309,38 @@ public class FirstRunBootstrapperTests
     }
 
     [Fact]
-    public void PersistValue_SetsUnixFileMode_StructuralCheck()
+    public void PersistValue_WritesSecretsViaAtomicRestrictedCreate_StructuralCheck()
     {
-        // Verify that the temp file gets 0600 permissions on Unix before being
-        // moved into place, matching the CLI's CliFirstRunBootstrapper pattern.
+        // #1264 load-bearing wiring: the behavioral tests cannot distinguish atomic create-with-permissions
+        // from a regression back to create-then-restrict (the final file state is identical on NTFS), so pin
+        // the construction structurally. PersistValue's temp file AND the corrupt-config backup must go
+        // through WriteRestrictedFile; the helper must create with the permissions supplied at creation
+        // (UnixCreateMode / FileSecurity passed to Create) rather than restrict post-hoc.
         var source = File.ReadAllText(
             FindSourceFile("FirstRunBootstrapper.cs"));
 
-        Assert.Contains("SetUnixFileMode", source);
-        Assert.Contains("UnixFileMode.UserRead | UnixFileMode.UserWrite", source);
-        Assert.Contains("!OperatingSystem.IsWindows()", source);
+        Assert.Contains("WriteRestrictedFile(tempPath, payload)", source);
+        Assert.Contains("WriteRestrictedFile(backupPath", source);
+        Assert.Contains("UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite", source);
+        Assert.Contains("BuildOwnerOnlyFileSecurity())", source);
+        // The pre-#1264 sequence must not come back.
+        Assert.DoesNotContain("File.Create(tempPath)", source);
+        Assert.DoesNotContain("RestrictFileToCurrentUser(tempPath)", source);
+    }
+
+    [Fact]
+    public void WriteRestrictedFile_FailsClosedOnNonAclFilesystems_StructuralCheck()
+    {
+        // On FAT32/exFAT/some SMB shares CreateFileW silently IGNORES the supplied security descriptor, and
+        // on non-POSIX mounts open(2)'s mode is ignored -- where the pre-#1264 restrict calls FAILED
+        // (fail-closed). Pin the two post-create guards that restore that contract: the Windows DACL
+        // read-back through the open handle and the Unix exact-mode pin (also umask-proof) through the
+        // open handle.
+        var source = File.ReadAllText(
+            FindSourceFile("FirstRunBootstrapper.cs"));
+
+        Assert.Contains("AreAccessRulesProtected", source);
+        Assert.Contains("File.SetUnixFileMode(stream.SafeFileHandle", source);
     }
 
     [Fact]
