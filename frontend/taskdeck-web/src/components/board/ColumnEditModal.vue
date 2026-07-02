@@ -122,7 +122,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
               v-model="name"
               type="text"
               required
-              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="To Do"
             />
           </div>
@@ -134,7 +134,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 id="column-has-wip-limit"
                 v-model="hasWipLimit"
                 type="checkbox"
-                class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
+                class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary"
               />
               <label for="column-has-wip-limit" class="ml-2 text-sm font-medium text-on-surface-variant">
                 Set WIP limit
@@ -150,7 +150,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 type="number"
                 min="1"
                 required
-                class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="e.g., 3"
               />
               <p class="mt-1 text-xs text-on-surface-variant">

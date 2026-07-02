@@ -128,7 +128,7 @@ const hasActiveFilters = computed(() => {
             @input="updateFilters"
             type="text"
             placeholder="Search cards..."
-            class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-lg text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
+            class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-lg text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary text-sm"
           />
         </div>
 
@@ -138,7 +138,7 @@ const hasActiveFilters = computed(() => {
             id="filter-due-date"
             v-model="localFilters.dueDateFilter"
             @change="updateFilters"
-            class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-lg text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
+            class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-lg text-on-surface focus:outline-none focus:ring-2 focus:ring-primary text-sm"
           >
             <option value="all">All cards</option>
             <option value="overdue">Overdue</option>
@@ -155,7 +155,7 @@ const hasActiveFilters = computed(() => {
               v-model="localFilters.showBlockedOnly"
               @change="updateFilters"
               type="checkbox"
-              class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
+              class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary"
             />
             <span class="ml-2 text-sm text-on-surface">Show blocked only</span>
           </label>
@@ -181,7 +181,7 @@ const hasActiveFilters = computed(() => {
                 :checked="isLabelSelected(label.id)"
                 @change="toggleLabel(label.id)"
                 type="checkbox"
-                class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
+                class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary"
               />
               <span
                 class="ml-2 px-2 py-0.5 rounded text-xs font-medium text-white td-dynamic-bg"

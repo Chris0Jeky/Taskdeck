@@ -158,7 +158,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 v-model="labelName"
                 type="text"
                 required
-                class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="e.g., Bug, Feature, Priority"
               />
             </div>
@@ -194,7 +194,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                   v-model="labelColor"
                   type="text"
                   pattern="^#[0-9A-Fa-f]{6}$"
-                  class="flex-1 px-3 py-1.5 bg-surface-container-high border border-outline-variant/40 rounded-md text-sm text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  class="flex-1 px-3 py-1.5 bg-surface-container-high border border-outline-variant/40 rounded-md text-sm text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
                   placeholder="#3B82F6"
                 />
               </div>

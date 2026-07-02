@@ -30,7 +30,7 @@ const selectedLabelIds = defineModel<string[]>('selectedLabelIds', { required: t
           v-model="selectedLabelIds"
           type="checkbox"
           :value="label.id"
-          class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
+          class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary"
         />
         <!-- Color swatch always visible so users can identify labels before selecting -->
         <span
