@@ -776,7 +776,7 @@ public static class FirstRunBootstrapper
     /// best-effort deleted so callers never observe a half-written secret file.
     /// </summary>
     internal static void WriteRestrictedFile(string path, string contents)
-        => WriteRestrictedFile(path, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(contents));
+        => WriteRestrictedFile(path, Encoding.UTF8.GetBytes(contents));
 
     internal static void WriteRestrictedFile(string path, byte[] contents)
     {
