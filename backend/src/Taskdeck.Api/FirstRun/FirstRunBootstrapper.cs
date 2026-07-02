@@ -562,28 +562,41 @@ public static class FirstRunBootstrapper
         var backupPath = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
         try
         {
-            File.Copy(path, backupPath, overwrite: false);
+            // The .corrupt-* backup holds the same secrets as the original (the connector key in
+            // particular), so create it ATOMICALLY with owner-only permissions (#1241/#1264) -- a
+            // copy-then-restrict sequence would briefly expose it via the directory's default ACL
+            // (File.Copy does not carry the source's security descriptor). Byte-faithful read: the file is
+            // unparsable, possibly from an interrupted write, so no text decoding is applied.
+            WriteRestrictedFile(backupPath, File.ReadAllBytes(path));
         }
-        catch (Exception copyEx)
+        catch (Exception ex)
         {
-            Console.Error.WriteLine(
-                $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}) and could NOT be " +
-                $"backed up ({copyEx.Message}); it will be overwritten.");
-            return;
-        }
+            // Recovery-first fallback: a failed restricted create must not cost the ONLY copy of a
+            // possibly-recoverable key. Fall back to the plain copy + best-effort restriction, warning
+            // that the backup may be readable by other local users until fixed.
+            try
+            {
+                File.Copy(path, backupPath, overwrite: false);
+            }
+            catch (Exception copyEx)
+            {
+                Console.Error.WriteLine(
+                    $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}) and could NOT be " +
+                    $"backed up (restricted create: {ex.Message}; fallback copy: {copyEx.Message}); it will be " +
+                    "overwritten.");
+                return;
+            }
 
-        // The .corrupt-* backup holds the same secrets as the original (the connector key in particular), so
-        // lock it to the current user too -- otherwise recovery-preservation would re-expose it via the
-        // directory's default ACL (#1241). Best-effort: a failed restriction warns but keeps the backup.
-        try
-        {
-            RestrictFileToCurrentUser(backupPath);
-        }
-        catch (Exception aclEx)
-        {
-            Console.Error.WriteLine(
-                $"[FirstRun] WARNING: preserved {backupPath} but could not restrict its permissions " +
-                $"({aclEx.Message}); it may be readable by other local users until fixed.");
+            try
+            {
+                RestrictFileToCurrentUser(backupPath);
+            }
+            catch (Exception aclEx)
+            {
+                Console.Error.WriteLine(
+                    $"[FirstRun] WARNING: preserved {backupPath} but could not restrict its permissions " +
+                    $"({aclEx.Message}); it may be readable by other local users until fixed.");
+            }
         }
 
         Console.Error.WriteLine(
@@ -684,22 +697,20 @@ public static class FirstRunBootstrapper
             Directory.CreateDirectory(dir);
             var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
 
-            // Create the file empty and lock it to the current user BEFORE writing the secret payload,
-            // closing the window where the JWT secret + connector key would sit on disk readable by other
-            // local users: under the Unix default umask (022) the file would be 0644, and on Windows it would
-            // inherit the directory's default ACL (e.g. BUILTIN\Users read). #1241. A narrow race remains:
-            // the empty temp file briefly exists with default permissions, so a racer could pre-open a read
-            // handle that survives the restriction (tightening ACLs does not revoke open handles) -- creating
-            // the file atomically WITH the restricted ACL closes that too and is tracked in #1264. If the file
-            // cannot be locked down, RestrictFileToCurrentUser throws (as IOException) and the secret is never
-            // written to it -- the caller falls back to an in-memory value rather than leaving it world-readable.
-            // The whole create -> restrict -> write -> move sequence is inside the try so any failure (incl. a
-            // failed restrict) deletes the staged temp file rather than leaking it.
+            // Create the temp file ATOMICALLY with owner-only permissions and FileShare.None (#1241/#1264):
+            // under the Unix default umask (022) a plainly-created file would be 0644, and on Windows it
+            // would inherit the directory's default ACL (e.g. BUILTIN\Users read). Supplying the restrictive
+            // mode/DACL at creation leaves no instant where the file is openable by another local user --
+            // the previous create-then-restrict sequence had a window where a racer's pre-opened handle on
+            // the empty file survived the tightened ACL (ACL changes do not revoke open handles) and could
+            // read the later-written secret. FileMode.CreateNew also refuses to adopt a pre-created file.
+            // If the restricted create fails, WriteRestrictedFile throws (normalized to IOException) and the
+            // secret is never written -- the caller falls back to an in-memory value rather than leaving it
+            // world-readable. The create+write -> move sequence is inside the try so any failure deletes the
+            // staged temp file rather than leaking it.
             try
             {
-                File.Create(tempPath).Dispose();
-                RestrictFileToCurrentUser(tempPath);
-                File.WriteAllText(tempPath, payload);
+                WriteRestrictedFile(tempPath, payload);
                 ReplaceFileWithRetry(tempPath, path);
             }
             catch
@@ -746,13 +757,89 @@ public static class FirstRunBootstrapper
     }
 
     /// <summary>
-    /// Restricts a freshly-created (still-empty) file to the current user only, BEFORE secrets are written
-    /// into it, so <c>appsettings.local.json</c> (JWT secret + connector key) is never readable by other
-    /// local users (#1241). On Unix this is <c>0600</c>; on Windows it replaces the DACL with a single
-    /// owner-only ACE and disables inheritance (so the directory's default ACEs -- e.g. BUILTIN\Users read --
-    /// do not apply). Any failure is normalized to <see cref="IOException"/> so the first-run callers'
-    /// existing <c>catch (IOException)</c> falls back to an in-memory value -- the secret is never written to
-    /// a file we could not lock down.
+    /// Creates <paramref name="path"/> ATOMICALLY with owner-only permissions and
+    /// <see cref="FileShare.None"/>, then writes <paramref name="contents"/> through that same handle
+    /// (#1264). On Unix the file is born <c>0600</c> (<see cref="FileStreamOptions.UnixCreateMode"/>); on
+    /// Windows the protected owner-only DACL is supplied to <c>CreateFile</c> itself. Unlike
+    /// create-then-restrict there is no instant at which another local user can open the file, and no
+    /// pre-opened handle can survive into the written secret; <see cref="FileMode.CreateNew"/> additionally
+    /// refuses to adopt a file someone pre-created at the path. Any failure is normalized to
+    /// <see cref="IOException"/> (matching <see cref="RestrictFileToCurrentUser"/>) so first-run callers'
+    /// <c>catch (IOException)</c> falls back to an in-memory value; a partially-written file is
+    /// best-effort deleted so callers never observe a half-written secret file.
+    /// </summary>
+    internal static void WriteRestrictedFile(string path, string contents)
+        => WriteRestrictedFile(path, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(contents));
+
+    internal static void WriteRestrictedFile(string path, byte[] contents)
+    {
+        FileStream stream;
+        try
+        {
+            stream = OperatingSystem.IsWindows()
+                ? CreateOwnerOnlyFileWindows(path)
+                : new FileStream(path, new FileStreamOptions
+                {
+                    Mode = FileMode.CreateNew,
+                    Access = FileAccess.Write,
+                    Share = FileShare.None,
+                    UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                });
+        }
+        catch (IOException)
+        {
+            // Creation failed -> nothing of ours exists at the path; never delete what we did not create
+            // (CreateNew fails precisely when the path is already occupied).
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Normalize (e.g. UnauthorizedAccessException, PlatformNotSupportedException) so the callers'
+            // catch(IOException) handles it uniformly -- the secret is never written to an unprotected file.
+            throw new IOException(
+                $"Could not create {path} restricted to the current user; refusing to write the secret to it.", ex);
+        }
+
+        try
+        {
+            using (stream)
+            {
+                stream.Write(contents, 0, contents.Length);
+            }
+        }
+        catch (Exception ex)
+        {
+            // We created the file, so a failed/partial write cleans it up (it was restricted from birth, so
+            // this is consistency hygiene, not exposure). Best-effort; the original failure propagates.
+            try { File.Delete(path); } catch { /* ignore */ }
+            if (ex is IOException)
+            {
+                throw;
+            }
+
+            throw new IOException(
+                $"Could not write the restricted file {path}; refusing to leave a partial secret file.", ex);
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static FileStream CreateOwnerOnlyFileWindows(string path)
+        => new FileInfo(path).Create(
+            FileMode.CreateNew,
+            FileSystemRights.Write,
+            FileShare.None,
+            bufferSize: 4096,
+            FileOptions.None,
+            BuildOwnerOnlyFileSecurity());
+
+    /// <summary>
+    /// Restricts an EXISTING file to the current user only (#1241). On Unix this is <c>0600</c>; on Windows
+    /// it replaces the DACL with a single owner-only ACE and disables inheritance (so the directory's
+    /// default ACEs -- e.g. BUILTIN\Users read -- do not apply). Used for forward remediation of files that
+    /// already exist (<see cref="RestrictExistingLocalConfigFile"/>, the corrupt-backup fallback); NEW
+    /// secret files are instead created atomically restricted via <see cref="WriteRestrictedFile"/> (#1264).
+    /// Any failure is normalized to <see cref="IOException"/> so callers'
+    /// <c>catch (IOException)</c> handle it uniformly.
     /// </summary>
     internal static void RestrictFileToCurrentUser(string path)
     {
@@ -764,7 +851,7 @@ public static class FirstRunBootstrapper
                 return;
             }
 
-            RestrictFileToCurrentUserWindows(path);
+            new FileInfo(path).SetAccessControl(BuildOwnerOnlyFileSecurity());
         }
         catch (IOException)
         {
@@ -780,7 +867,7 @@ public static class FirstRunBootstrapper
     }
 
     [SupportedOSPlatform("windows")]
-    private static void RestrictFileToCurrentUserWindows(string path)
+    private static FileSecurity BuildOwnerOnlyFileSecurity()
     {
         using var identity = WindowsIdentity.GetCurrent();
         var owner = identity.User;
@@ -796,7 +883,7 @@ public static class FirstRunBootstrapper
         // Drop inherited ACEs and grant the current user full control -- the only ACE on the file.
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         security.AddAccessRule(new FileSystemAccessRule(owner, FileSystemRights.FullControl, AccessControlType.Allow));
-        new FileInfo(path).SetAccessControl(security);
+        return security;
     }
 
     private static void ReplaceFileWithRetry(string tempPath, string path)
