@@ -20,7 +20,7 @@ const selectedLabelIds = defineModel<string[]>('selectedLabelIds', { required: t
         class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer"
         :class="[
           selectedLabelIds.includes(label.id)
-            ? 'text-white ring-2 ring-offset-2 ring-primary/50 td-dynamic-bg'
+            ? 'text-white ring-2 ring-offset-2 ring-primary td-dynamic-bg'
             : 'text-on-surface bg-surface-container-high hover:bg-surface-container-highest',
         ]"
         :style="selectedLabelIds.includes(label.id) ? { '--td-dynamic-color': label.colorHex } : undefined"
@@ -30,7 +30,7 @@ const selectedLabelIds = defineModel<string[]>('selectedLabelIds', { required: t
           v-model="selectedLabelIds"
           type="checkbox"
           :value="label.id"
-          class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
+          class="w-4 h-4 text-primary border-outline-variant rounded"
         />
         <!-- Color swatch always visible so users can identify labels before selecting -->
         <span

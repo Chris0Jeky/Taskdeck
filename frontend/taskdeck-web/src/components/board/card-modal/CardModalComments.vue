@@ -36,7 +36,7 @@ function updateReplyDraft(commentId: string, value: string) {
         id="new-card-comment"
         v-model="newCommentContent"
         rows="2"
-        class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+        class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
         placeholder="Write a comment... Use @username to mention teammates."
       ></textarea>
       <div class="flex justify-end">
@@ -92,7 +92,7 @@ function updateReplyDraft(commentId: string, value: string) {
             :value="editingCommentContent"
             aria-label="Edit comment"
             rows="2"
-            class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
             @input="$emit('update:editingCommentContent', ($event.target as HTMLTextAreaElement).value)"
           ></textarea>
           <div class="flex justify-end gap-2">
@@ -146,7 +146,7 @@ function updateReplyDraft(commentId: string, value: string) {
               :value="replyDraftByParent[comment.id] ?? ''"
               aria-label="Reply to comment"
               rows="2"
-              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="Reply..."
               @input="updateReplyDraft(comment.id, ($event.target as HTMLTextAreaElement).value)"
             ></textarea>

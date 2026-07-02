@@ -29,7 +29,7 @@ defineEmits<{
       v-model="title"
       type="text"
       required
-      class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+      class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
       placeholder="Card title"
     />
   </div>
@@ -43,7 +43,7 @@ defineEmits<{
       id="card-description"
       v-model="description"
       rows="4"
-      class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+      class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
       placeholder="Add a more detailed description..."
     ></textarea>
   </div>
@@ -58,7 +58,7 @@ defineEmits<{
         id="card-due-date"
         v-model="dueDate"
         type="date"
-        class="flex-1 px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
+        class="flex-1 px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
       />
       <button
         v-if="dueDate"
@@ -82,7 +82,7 @@ defineEmits<{
         id="card-is-blocked"
         v-model="isBlocked"
         type="checkbox"
-        class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
+        class="w-4 h-4 text-primary border-outline-variant rounded"
       />
       <label for="card-is-blocked" class="ml-2 text-sm font-medium text-on-surface-variant">
         Mark as blocked
@@ -97,7 +97,7 @@ defineEmits<{
         v-model="blockReason"
         rows="2"
         required
-        class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+        class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
         placeholder="Why is this card blocked?"
       ></textarea>
     </div>
