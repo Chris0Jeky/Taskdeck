@@ -571,9 +571,13 @@ public static class FirstRunBootstrapper
         }
         catch (Exception ex)
         {
-            // Recovery-first fallback: a failed restricted create must not cost the ONLY copy of a
-            // possibly-recoverable key. Fall back to the plain copy + best-effort restriction, warning
-            // that the backup may be readable by other local users until fixed.
+            // Recovery-first fallback: a failed primary backup must not cost the ONLY copy of a
+            // possibly-recoverable key. Fall back to a plain copy + best-effort restriction, warning that
+            // the backup may be readable by other local users until fixed. Copy to a DISTINCT name: if the
+            // primary attempt's best-effort cleanup could not remove its partial file (e.g. an AV/indexer
+            // held a same-user handle), overwrite:false on the same name would always fail here even though
+            // the source is still perfectly readable.
+            backupPath = $"{backupPath}.fallback";
             try
             {
                 File.Copy(path, backupPath, overwrite: false);
@@ -582,7 +586,7 @@ public static class FirstRunBootstrapper
             {
                 Console.Error.WriteLine(
                     $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}) and could NOT be " +
-                    $"backed up (restricted create: {ex.Message}; fallback copy: {copyEx.Message}); it will be " +
+                    $"backed up (primary backup: {ex.Message}; fallback copy: {copyEx.Message}); it will be " +
                     "overwritten.");
                 return;
             }
@@ -759,11 +763,14 @@ public static class FirstRunBootstrapper
     /// <summary>
     /// Creates <paramref name="path"/> ATOMICALLY with owner-only permissions and
     /// <see cref="FileShare.None"/>, then writes <paramref name="contents"/> through that same handle
-    /// (#1264). On Unix the file is born <c>0600</c> (<see cref="FileStreamOptions.UnixCreateMode"/>); on
-    /// Windows the protected owner-only DACL is supplied to <c>CreateFile</c> itself. Unlike
-    /// create-then-restrict there is no instant at which another local user can open the file, and no
-    /// pre-opened handle can survive into the written secret; <see cref="FileMode.CreateNew"/> additionally
-    /// refuses to adopt a file someone pre-created at the path. Any failure is normalized to
+    /// (#1264). On Unix the file is born <c>0600</c> (<see cref="FileStreamOptions.UnixCreateMode"/>) and
+    /// the exact mode is then pinned through the open handle (umask-proof); on Windows the protected
+    /// owner-only DACL is supplied to <c>CreateFile</c> itself and read back through the open handle, so a
+    /// filesystem that silently ignores security descriptors (FAT32/exFAT, some SMB shares) fails closed
+    /// instead of persisting the secret unprotected. Unlike create-then-restrict there is no instant at
+    /// which another local user can open the file, and no pre-opened handle can survive into the written
+    /// secret; <see cref="FileMode.CreateNew"/> additionally refuses to adopt a file someone pre-created at
+    /// the path. Any failure is normalized to
     /// <see cref="IOException"/> (matching <see cref="RestrictFileToCurrentUser"/>) so first-run callers'
     /// <c>catch (IOException)</c> falls back to an in-memory value; a partially-written file is
     /// best-effort deleted so callers never observe a half-written secret file.
@@ -776,20 +783,13 @@ public static class FirstRunBootstrapper
         FileStream stream;
         try
         {
-            stream = OperatingSystem.IsWindows()
-                ? CreateOwnerOnlyFileWindows(path)
-                : new FileStream(path, new FileStreamOptions
-                {
-                    Mode = FileMode.CreateNew,
-                    Access = FileAccess.Write,
-                    Share = FileShare.None,
-                    UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
-                });
+            stream = CreateRestrictedNewFile(path);
         }
         catch (IOException)
         {
-            // Creation failed -> nothing of ours exists at the path; never delete what we did not create
-            // (CreateNew fails precisely when the path is already occupied).
+            // Creation failed -> nothing of ours remains at the path (CreateRestrictedNewFile removes its
+            // own file when the post-create lockdown pin/verification fails); never delete what we did not
+            // create (CreateNew fails precisely when the path is already occupied).
             throw;
         }
         catch (Exception ex)
@@ -822,22 +822,87 @@ public static class FirstRunBootstrapper
         }
     }
 
+    private static FileStream CreateRestrictedNewFile(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return CreateOwnerOnlyFileWindows(path);
+        }
+
+        var stream = new FileStream(path, new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+        });
+        try
+        {
+            // open(2)'s mode argument is umask-masked (the mask can only STRIP bits from 0600, never widen
+            // it) and is silently ignored on non-POSIX filesystems (e.g. vfat). Pin exactly 0600 through the
+            // open handle (fchmod -- race-free): this restores the exact-mode guarantee regardless of umask,
+            // and it FAILS on filesystems that cannot store the mode exactly where the pre-#1264
+            // SetUnixFileMode(path) call failed -- keeping the fail-closed contract instead of silently
+            // persisting the secret with whatever mode the mount dictates.
+            File.SetUnixFileMode(stream.SafeFileHandle, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            return stream;
+        }
+        catch
+        {
+            // We created this file; a failed lockdown must not leave it behind. Best-effort; the original
+            // exception propagates (normalized to IOException by the caller).
+            stream.Dispose();
+            try { File.Delete(path); } catch { /* ignore */ }
+            throw;
+        }
+    }
+
     [SupportedOSPlatform("windows")]
     private static FileStream CreateOwnerOnlyFileWindows(string path)
-        => new FileInfo(path).Create(
+    {
+        // ReadPermissions (READ_CONTROL) is requested alongside Write so the DACL VERIFICATION below can
+        // read the security descriptor back through this same exclusive handle.
+        var stream = new FileInfo(path).Create(
             FileMode.CreateNew,
-            FileSystemRights.Write,
+            FileSystemRights.Write | FileSystemRights.ReadPermissions,
             FileShare.None,
             bufferSize: 4096,
             FileOptions.None,
             BuildOwnerOnlyFileSecurity());
+        try
+        {
+            // CreateFileW silently IGNORES the supplied security descriptor on filesystems without ACL
+            // support (FAT32/exFAT, some SMB shares): the create succeeds and the file is world-readable.
+            // The pre-#1264 SetAccessControl path FAILED there (fail-closed). Read the DACL back through the
+            // open handle to restore that contract -- on NTFS this merely confirms the atomically-applied
+            // descriptor; on a non-ACL volume it throws or reports an unprotected DACL and we refuse.
+            var applied = stream.GetAccessControl();
+            if (!applied.AreAccessRulesProtected)
+            {
+                throw new IOException(
+                    $"The filesystem hosting {path} did not honor the owner-only ACL (FAT32/exFAT and some " +
+                    "network shares cannot store it); refusing to write the secret to an unprotected file.");
+            }
+
+            return stream;
+        }
+        catch
+        {
+            // We created this file; a failed lockdown verification must not leave it behind. Best-effort;
+            // the original exception propagates (normalized to IOException by the caller).
+            stream.Dispose();
+            try { File.Delete(path); } catch { /* ignore */ }
+            throw;
+        }
+    }
 
     /// <summary>
     /// Restricts an EXISTING file to the current user only (#1241). On Unix this is <c>0600</c>; on Windows
     /// it replaces the DACL with a single owner-only ACE and disables inheritance (so the directory's
     /// default ACEs -- e.g. BUILTIN\Users read -- do not apply). Used for forward remediation of files that
     /// already exist (<see cref="RestrictExistingLocalConfigFile"/>, the corrupt-backup fallback); NEW
-    /// secret files are instead created atomically restricted via <see cref="WriteRestrictedFile"/> (#1264).
+    /// secret files are instead created atomically restricted via
+    /// <see cref="WriteRestrictedFile(string, string)"/> (#1264).
     /// Any failure is normalized to <see cref="IOException"/> so callers'
     /// <c>catch (IOException)</c> handle it uniformly.
     /// </summary>
