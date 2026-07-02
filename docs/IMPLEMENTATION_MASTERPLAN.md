@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-06-30
+Last Updated: 2026-07-02
 <br>
 Planning Horizon: the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive), then archival — _(historical: this was an open "Next 8 to 12 weeks" release horizon before the 2026-06-13 archive pivot)_
 Companion Active Docs:
@@ -53,6 +53,10 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
+
+Security + a11y quality slices (2026-07-02, **2 PRs merged** — `#1263` (`#1241`), `#1265` (`#1218`); full review gate per PR — independent adversarial reviews, all-severity findings fixed or tracked, Gemini/Copilot bot rounds resolved (+Codex rounds on `#1263`), fresh green CI + aging):
+- **Windows secrets-at-rest ACL:** `#1263` (`#1241`) locks `appsettings.local.json` (JWT secret + connector encryption key) to the current user — `RestrictFileToCurrentUser` (Unix `0600` / Windows protected owner-only DACL, dependency-free on net8.0) runs create→restrict→write in `PersistValue`, fail-closed (an unrestrictable file is never written; callers fall back in-memory), with startup forward remediation for pre-`#1241` installs and a locked-down `.corrupt-*` backup. Review rounds also hardened the **MCP launch paths**: both MCP modes now load the local config via the same hardened path as the web API (absolute exe-adjacent path — MCP clients launch stdio servers from arbitrary CWDs; corrupt-file quarantine; env-vars keep priority over the file). Seeded: `#1262` (CLI bootstrapper sibling), `#1264` (atomic create-with-ACL — in flight as `#1267`).
+- **WCAG focus-ring contrast sweep:** `#1265` (`#1218`) resolves all 19 remaining `ring-primary/50` sites (0 left repo-wide): 13 rendered focus rings + the selected-label state ring lifted to the full-opacity treatment (`#1216` precedent) — from a marginal 3.0–3.5:1 to 8.4–10.1:1 on every adjacent surface across all shipped themes — and 5 compile-proven dead checkbox `focus:ring-primary` classes removed (no ring-width utility, so they never painted; the global `*:focus-visible` rule already covers those checkboxes at 4.52:1). Seeded: `#1266` (pre-existing white ring-offset halo on the selected-label state).
 
 Wave-3 default-theme flip — Paper is now the DEFAULT UI (2026-06-27, `#1252`): `paperThemeStore` default `'off'`→`'paper'` (Paper canonical per ADR-0038), with the storage key bumped to `td.paper.mode.v2` and a one-time migration (a deliberate pre-flip `paper`/`paper-night`/`auto` choice carries over and the legacy key is cleared; a stored `'off'` — the old default / never-opted-in — or absent/invalid resolves to the new `'paper'` default). Legacy stays reachable through the Appearance toggle and is pinned in the test suites: the E2E `authSession` helper and a global vitest `setup.ts` hook both pin `td.paper.mode.v2='off'` so the ~19 legacy `.td-*` E2E specs and the Legacy-DOM unit specs keep asserting Legacy, while Paper-variant specs opt in explicitly. Review: a 2-lens adversarial sweep (0 confirmed) + Gemini round (migration inlined into `readStoredMode`); CI caught a 112-spec blast radius (the view shells render Paper by default) → fixed with the global off-pin; full FE suite green (3,752 tests).
 
