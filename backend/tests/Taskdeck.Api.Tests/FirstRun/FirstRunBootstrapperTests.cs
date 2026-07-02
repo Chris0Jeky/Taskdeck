@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Xunit;
@@ -344,6 +346,105 @@ public class FirstRunBootstrapperTests
 
         Assert.Contains("LocalConfigJsonOptions", source);
         Assert.DoesNotContain("JsonNode.Parse(existing)", source);
+    }
+
+    [Fact]
+    public void RestrictFileToCurrentUser_LocksFileToCurrentUserOnly()
+    {
+        // Behavioral test for the #1241 secret-file lockdown. Runs on both platforms (each CI runner covers
+        // its own branch): on Unix it asserts 0600; on Windows it asserts the DACL is protected (inheritance
+        // disabled) with the current user as the only granted principal.
+        var path = Path.Combine(Path.GetTempPath(), $"td-acl-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.Create(path).Dispose();
+
+            FirstRunBootstrapper.RestrictFileToCurrentUser(path);
+
+            if (OperatingSystem.IsWindows())
+            {
+                var security = new FileInfo(path).GetAccessControl();
+                Assert.True(
+                    security.AreAccessRulesProtected,
+                    "inheritance should be disabled so the directory's default ACEs do not apply");
+
+                using var identity = WindowsIdentity.GetCurrent();
+                var currentSid = identity.User;
+                var rules = security.GetAccessRules(
+                    includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier));
+
+                // Iterate inside the OperatingSystem.IsWindows() guard (not a lambda) so the platform
+                // analyzer recognizes the guard for the Windows-only rule members.
+                Assert.True(rules.Count > 0, "the file should have at least one explicit access rule");
+                foreach (FileSystemAccessRule rule in rules)
+                {
+                    Assert.Equal(AccessControlType.Allow, rule.AccessControlType);
+                    Assert.Equal(currentSid, rule.IdentityReference);
+                }
+            }
+            else
+            {
+                Assert.Equal(
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                    File.GetUnixFileMode(path));
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void RestrictFileToCurrentUser_LockdownSurvivesAtomicMove()
+    {
+        // #1241 load-bearing property: PersistValue restricts a temp file, then File.Move(overwrite)s it onto
+        // the target. This asserts the owner-only lockdown survives that same-directory atomic rename. A
+        // regression to copy-then-delete or File.Replace (which preserves the DESTINATION's ACL) would
+        // silently defeat the fix; the in-isolation helper test would not catch it.
+        var dir = Path.Combine(Path.GetTempPath(), $"td-acl-move-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var tempPath = Path.Combine(dir, ".secrets.tmp");
+        var targetPath = Path.Combine(dir, "appsettings.local.json");
+        try
+        {
+            // Pre-seed an existing (unrestricted) target so the move is a real overwrite.
+            File.WriteAllText(targetPath, "{}");
+
+            File.Create(tempPath).Dispose();
+            FirstRunBootstrapper.RestrictFileToCurrentUser(tempPath);
+            File.WriteAllText(tempPath, "{\"secret\":\"x\"}");
+            File.Move(tempPath, targetPath, overwrite: true);
+
+            if (OperatingSystem.IsWindows())
+            {
+                var security = new FileInfo(targetPath).GetAccessControl();
+                Assert.True(
+                    security.AreAccessRulesProtected,
+                    "the moved file must keep the protected (non-inherited) owner-only DACL");
+
+                using var identity = WindowsIdentity.GetCurrent();
+                var currentSid = identity.User;
+                var rules = security.GetAccessRules(
+                    includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier));
+                Assert.True(rules.Count > 0);
+                foreach (FileSystemAccessRule rule in rules)
+                {
+                    Assert.Equal(AccessControlType.Allow, rule.AccessControlType);
+                    Assert.Equal(currentSid, rule.IdentityReference);
+                }
+            }
+            else
+            {
+                Assert.Equal(
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                    File.GetUnixFileMode(targetPath));
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* best-effort */ }
+        }
     }
 
     private static string FindSourceFile(string fileName)

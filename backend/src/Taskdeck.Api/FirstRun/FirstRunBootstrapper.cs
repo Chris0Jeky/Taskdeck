@@ -1,4 +1,7 @@
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -56,6 +59,13 @@ public static class FirstRunBootstrapper
         // may hold a recoverable key) and remove the original so the optional source loads as "missing" and
         // the desktop install self-heals instead of failing to launch on every restart.
         QuarantineCorruptLocalConfig();
+
+        // Forward remediation (#1241): an install upgraded from a pre-#1241 build may already have a
+        // world-readable appsettings.local.json on disk (the first-run writers return early when the secrets
+        // are already present, so PersistValue never re-runs to lock it down). Best-effort re-restrict the
+        // existing file to the current user on every startup so existing exposure is healed, not just future
+        // writes. Idempotent; never fatal (logged to stderr at this pre-DI stage if it fails).
+        RestrictExistingLocalConfigFile();
 
         var sources = builder.Configuration.Sources;
 
@@ -416,8 +426,10 @@ public static class FirstRunBootstrapper
                 throw new InvalidOperationException(
                     $"First-run: Could not persist the connector encryption key to {LocalConfigPath} " +
                     $"({ex.Message}). A run-once in-memory key would be lost on restart and make stored " +
-                    "connector credentials unrecoverable. Ensure the application directory is writable, or " +
-                    "set a stable key via the Connectors__EncryptionKey environment variable.", ex);
+                    "connector credentials unrecoverable. Ensure the application directory is writable AND on " +
+                    "a filesystem that supports owner-only file permissions (NTFS / a POSIX filesystem; " +
+                    "FAT32/exFAT or some network shares cannot lock the secret down), or set a stable key via " +
+                    "the Connectors__EncryptionKey environment variable.", ex);
             }
 
             // Non-Production (dev/staging/test): a transient in-memory key is acceptable -- these do not
@@ -551,17 +563,33 @@ public static class FirstRunBootstrapper
         try
         {
             File.Copy(path, backupPath, overwrite: false);
-            Console.Error.WriteLine(
-                $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}). A copy was " +
-                $"preserved at {backupPath} for recovery -- it may hold a previously-generated key -- and the " +
-                "file will be rewritten.");
         }
         catch (Exception copyEx)
         {
             Console.Error.WriteLine(
                 $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}) and could NOT be " +
                 $"backed up ({copyEx.Message}); it will be overwritten.");
+            return;
         }
+
+        // The .corrupt-* backup holds the same secrets as the original (the connector key in particular), so
+        // lock it to the current user too -- otherwise recovery-preservation would re-expose it via the
+        // directory's default ACL (#1241). Best-effort: a failed restriction warns but keeps the backup.
+        try
+        {
+            RestrictFileToCurrentUser(backupPath);
+        }
+        catch (Exception aclEx)
+        {
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: preserved {backupPath} but could not restrict its permissions " +
+                $"({aclEx.Message}); it may be readable by other local users until fixed.");
+        }
+
+        Console.Error.WriteLine(
+            $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}). A copy was " +
+            $"preserved at {backupPath} for recovery -- it may hold a previously-generated key -- and the " +
+            "file will be rewritten.");
     }
 
     private static void PersistValue(string section, string key, string value)
@@ -656,27 +684,27 @@ public static class FirstRunBootstrapper
             Directory.CreateDirectory(dir);
             var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
 
-            if (!OperatingSystem.IsWindows())
-            {
-                // Create the file empty and restrict to 0600 BEFORE writing the payload,
-                // eliminating the TOCTOU window where secrets would be world-readable
-                // under the default umask (022).
-                File.Create(tempPath).Dispose();
-                File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                File.WriteAllText(tempPath, payload);
-            }
-            else
-            {
-                File.WriteAllText(tempPath, payload);
-            }
-
+            // Create the file empty and lock it to the current user BEFORE writing the secret payload,
+            // closing the window where the JWT secret + connector key would sit on disk readable by other
+            // local users: under the Unix default umask (022) the file would be 0644, and on Windows it would
+            // inherit the directory's default ACL (e.g. BUILTIN\Users read). #1241. A narrow race remains:
+            // the empty temp file briefly exists with default permissions, so a racer could pre-open a read
+            // handle that survives the restriction (tightening ACLs does not revoke open handles) -- creating
+            // the file atomically WITH the restricted ACL closes that too and is tracked in #1264. If the file
+            // cannot be locked down, RestrictFileToCurrentUser throws (as IOException) and the secret is never
+            // written to it -- the caller falls back to an in-memory value rather than leaving it world-readable.
+            // The whole create -> restrict -> write -> move sequence is inside the try so any failure (incl. a
+            // failed restrict) deletes the staged temp file rather than leaking it.
             try
             {
+                File.Create(tempPath).Dispose();
+                RestrictFileToCurrentUser(tempPath);
+                File.WriteAllText(tempPath, payload);
                 ReplaceFileWithRetry(tempPath, path);
             }
             catch
             {
-                // Best-effort cleanup; the main write path's exception will propagate.
+                // Best-effort cleanup; the original exception propagates.
                 try { File.Delete(tempPath); } catch { /* ignore */ }
                 throw;
             }
@@ -690,6 +718,85 @@ public static class FirstRunBootstrapper
             }
             mutex?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Best-effort re-restriction of an existing persisted local config to the current user (#1241 forward
+    /// remediation). Heals installs upgraded from a build that wrote the file world-readable. Never throws:
+    /// at this pre-DI stage a failure is reported to stderr and startup continues.
+    /// </summary>
+    internal static void RestrictExistingLocalConfigFile()
+    {
+        var path = LocalConfigPath;
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            RestrictFileToCurrentUser(path);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                $"[FirstRun] WARNING: could not re-restrict permissions on the existing {path} " +
+                $"({ex.Message}); it may remain readable by other local users until permissions are fixed.");
+        }
+    }
+
+    /// <summary>
+    /// Restricts a freshly-created (still-empty) file to the current user only, BEFORE secrets are written
+    /// into it, so <c>appsettings.local.json</c> (JWT secret + connector key) is never readable by other
+    /// local users (#1241). On Unix this is <c>0600</c>; on Windows it replaces the DACL with a single
+    /// owner-only ACE and disables inheritance (so the directory's default ACEs -- e.g. BUILTIN\Users read --
+    /// do not apply). Any failure is normalized to <see cref="IOException"/> so the first-run callers'
+    /// existing <c>catch (IOException)</c> falls back to an in-memory value -- the secret is never written to
+    /// a file we could not lock down.
+    /// </summary>
+    internal static void RestrictFileToCurrentUser(string path)
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                return;
+            }
+
+            RestrictFileToCurrentUserWindows(path);
+        }
+        catch (IOException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Normalize (e.g. UnauthorizedAccessException, PlatformNotSupportedException) so the callers'
+            // catch(IOException) handles it uniformly -- never leave the plaintext secret in an unprotected file.
+            throw new IOException(
+                $"Could not restrict {path} to the current user; refusing to write the secret to it.", ex);
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void RestrictFileToCurrentUserWindows(string path)
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var owner = identity.User;
+        if (owner is null)
+        {
+            // Without a resolvable SID we cannot scope the ACL; fail loudly (normalized to IOException by the
+            // caller) rather than leave the secret with the inherited, potentially world-readable ACL.
+            throw new InvalidOperationException(
+                "Could not resolve the current Windows user SID to restrict the secrets file.");
+        }
+
+        var security = new FileSecurity();
+        // Drop inherited ACEs and grant the current user full control -- the only ACE on the file.
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(owner, FileSystemRights.FullControl, AccessControlType.Allow));
+        new FileInfo(path).SetAccessControl(security);
     }
 
     private static void ReplaceFileWithRetry(string tempPath, string path)
