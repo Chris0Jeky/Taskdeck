@@ -30,7 +30,7 @@ Every database on the machine was inspected. The canonical dev DB (`%LOCALAPPDAT
 
 ### 1.3 The backlog self-replenishes at ~1:1 and nothing has ever been closed as not-planned (HIGH — adjusted)
 
-Since the pivot: 21 issues created, 19 closed, open count 43 → 45. All 19 closures were COMPLETED — **zero not-planned closures in 19 days**, meaning the plan's own terminal de-scope mechanism has never fired. The intake source is the review gate itself: substantive PRs seed ~0.75 review-surfaced follow-ups each (verifiable in the issue chains #1240→#1241→#1263→#1264→#1267→{#1262, #1242} and #1265→#1266), and goal 3's "proactively found" legitimizes unlimited intake.
+At analysis time (2026-07-02, before this analysis seeded the closeout wave): 21 issues created since the pivot, 19 closed, open count 43 → 45. All 19 closures were COMPLETED — **zero not-planned closures in 19 days**, meaning the plan's own terminal de-scope mechanism has never fired. The intake source is the review gate itself: substantive PRs seed ~0.75 review-surfaced follow-ups each (verifiable in the issue chains #1240→#1241→#1263→#1264→#1267→{#1262, #1242} and #1265→#1266), and goal 3's "proactively found" legitimizes unlimited intake.
 
 **Why this blocks finishing:** a backlog that refills as fast as it drains has no finish line regardless of velocity. The fix is not working harder — it is a written severity bar for seeding new issues (data loss, silent corruption, security exposure real under the single-user threat model), with everything below the bar fixed in-PR or recorded as dated accepted-risk.
 
@@ -38,7 +38,7 @@ Since the pivot: 21 issues created, 19 closed, open count 43 → 45. All 19 clos
 
 ### 1.4 The backlog contradicts the pivot: ~31% of open issues are already decided (MEDIUM — adjusted, one hour to fix)
 
-14 of 45 open issues are items the plan has already decided to close: 12 de-scoped trackers (#531/#532/#537/#540/#544/#546/#548/#550/#1167/#655/#219/#217), #1137 ("effectively satisfied… pending close"), and #1194 (planned wontfix — SQLite-only forever). None of the 12 carries an on-issue pivot marker; six still carry Priority II labels; #531's body still says "multi-platform product." The authoritative docs *are* honest about the de-scope, so this is staleness rather than dishonesty — but the raw GitHub surface misleads, and the open-issue count is useless as a progress meter while a third of it is dead weight.
+At analysis time, 14 of the 45 open issues (pre-seeding count, 2026-07-02) were items the plan has already decided to close: 12 de-scoped trackers (#531/#532/#537/#540/#544/#546/#548/#550/#1167/#655/#219/#217), #1137 ("effectively satisfied… pending close"), and #1194 (planned wontfix — SQLite-only forever). None of the 12 carries an on-issue pivot marker; six still carry Priority II labels; #531's body still says "multi-platform product." The authoritative docs *are* honest about the de-scope, so this is staleness rather than dishonesty — but the raw GitHub surface misleads, and the open-issue count is useless as a progress meter while a third of it is dead weight.
 
 **Remediation:** #1270 (ARCHIVE-02) — about an hour of closures, maintainer sign-off is the gate.
 
