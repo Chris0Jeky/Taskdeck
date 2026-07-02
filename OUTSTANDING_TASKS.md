@@ -65,7 +65,7 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 - [ ] **#1276** — ARCHIVE-08: dead-surface removal — ink-bleed decision, orphaned Paper code, cohorts stub, voice capture, Ollama marking.
 - [ ] **#1277** — ARCHIVE-09: final archive pass — README banner, final doc entries, tag decision, exit-criteria done-check.
 - [ ] **#1235** (re-scoped) — top engineering priority: revision-aware proposal diff (preview must equal what Apply executes).
-- [ ] Re-scope comments posted on: #996, #1123/#1139, #1128, #1134 (+#1154 decision), #1135, #1138, #1173, #1175 (+#1174), #1210, #1215, #1222 (+#1227), #1228 — each carries updated finish-or-close ACs.
+- *(Record, already done 2026-07-02:)* re-scope comments posted on #996, #1123/#1139, #1128, #1134 (+#1154 decision), #1135, #1138, #1173, #1175 (+#1174), #1210, #1215, #1222 (+#1227), #1228 — each carries updated finish-or-close ACs.
 
 ---
 
