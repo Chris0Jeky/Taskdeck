@@ -52,16 +52,17 @@ When you use managed-key LLM features, Taskdeck transmits information to the con
 
 ### What is sent to the provider
 
-- The text content of your chat messages, capture items, and triage prompts
+- The text content of your Automation Chat messages (and any non-capture LLM queue request you submit)
 - A pseudonymous user token derived from your Taskdeck user ID (not your actual user ID, email, or name)
 - Attribution metadata headers (`x-taskdeck-*`) identifying the request surface and correlation context
 
 ### What is NOT sent to the provider
 
+- **Your capture text or board context during capture triage** — triage is deterministic and offline; it never calls the provider
 - Your Taskdeck password or authentication credentials
 - Your email address or display name
 - Your raw Taskdeck user ID
-- Board content beyond what you explicitly submit for triage or chat
+- Board content beyond what you explicitly submit for Automation Chat
 
 ### What Taskdeck records locally
 
