@@ -117,4 +117,4 @@ Use the advanced paths when you specifically need diagnostics, collaboration evi
 
 ## Managed-Key LLM Mode Notice
 
-If your Taskdeck instance uses a platform-managed LLM provider key (rather than your own), fair-use limits and privacy disclosures apply to Chat and capture triage features. See `docs/security/MANAGED_KEY_USAGE_POLICY.md` for the full policy.
+If your Taskdeck instance uses a platform-managed LLM provider key (rather than your own), fair-use limits and privacy disclosures apply to Automation Chat and other LLM features. (Capture triage is deterministic and offline — it never calls a provider — so it is exempt.) See `docs/security/MANAGED_KEY_USAGE_POLICY.md` for the full policy.

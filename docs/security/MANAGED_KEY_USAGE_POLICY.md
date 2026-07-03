@@ -14,7 +14,7 @@ When Taskdeck operates with a platform-managed LLM provider key (managed-key mod
 - prohibited abuse patterns
 - enforcement consequences (throttle, restrict, block)
 
-This policy applies only when users consume LLM features (Automation Chat, capture triage, queue processing) through a managed key. Users who supply their own provider keys (BYOK) are not subject to these managed-key limits.
+This policy applies only when users consume LLM features (Automation Chat, LLM queue processing) through a managed key. Users who supply their own provider keys (BYOK) are not subject to these managed-key limits. Note: **capture triage is deterministic and offline — it never invokes a provider**, so it is not a managed-key LLM feature and consumes no managed-key quota.
 
 ## Fair-Use Boundaries
 
@@ -37,11 +37,11 @@ These values are operator-configurable and may be adjusted based on deployment s
 ### What counts toward quota
 
 - Each Automation Chat message that triggers a provider completion
-- Each capture triage operation that invokes the LLM provider
-- Each LLM queue processing request
+- Each LLM queue processing request that invokes the provider
 
 ### What does not count
 
+- Capture triage — deterministic and offline; it never invokes a provider
 - Requests served by the Mock provider
 - Read-only operations (viewing chat history, checking quota status, health checks without `?probe=true`)
 - Board operations, card edits, and other non-LLM features

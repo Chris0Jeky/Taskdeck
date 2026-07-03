@@ -53,13 +53,16 @@ should decide whether to prohibit specific data categories in `TERMS_OF_SERVICE.
 
 ### 2.3 Capture, proposal, and LLM data
 
-Taskdeck's core flow involves capturing short notes and letting an LLM propose
+Taskdeck's core flow involves capturing short notes, turning them into proposed
 structured changes to a board, which you then review and approve. This means:
 
 - Captures and inbox items you create are stored until you dismiss or process them.
-- If an LLM provider is enabled (see Section 4), the text of your captures and
-  relevant board context (column names, card titles, card IDs) may be sent to
-  that provider to generate proposals. **LLM providers are disabled by default**
+- **Capture triage is deterministic and offline in every mode**: turning a capture
+  into a proposal is performed by a local rule-based extractor that never sends your
+  capture text or board context to an LLM provider.
+- Separately, if you use **Automation Chat** and an LLM provider is enabled (see
+  Section 4), the text you send and relevant board context (column names, card titles,
+  card IDs) may be sent to that provider. **LLM providers are disabled by default**
   (the shipped default is a deterministic local "Mock" provider) and must be
   turned on explicitly in configuration.
 - Proposals, chat sessions, chat messages, tool-call metadata, and the audit
