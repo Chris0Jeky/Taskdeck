@@ -970,7 +970,7 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('shows a revision caveat in the diff preview when a saved revision exists', async () => {
+  it('notes that the diff reflects the saved revision when one exists', async () => {
     const now = new Date().toISOString()
     mocks.getRevisions.mockResolvedValue([
       {
@@ -991,11 +991,12 @@ describe('PaperReviewView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
-    // The preview reflects the ORIGINAL proposal, so a pending saved revision must
-    // be flagged (the diff does not reflect the revision that Apply will run).
+    // The backend now returns the revision-aware diff (#1235), so the note confirms
+    // the preview reflects the saved edit and equals what Apply will execute.
     const caveat = wrapper.find('[data-testid="paper-review-diff-revision-caveat"]')
     expect(caveat.exists()).toBe(true)
-    expect(caveat.text()).toContain('original')
+    expect(caveat.text()).toContain('saved edit')
+    expect(caveat.text()).toContain('Apply will execute')
 
     wrapper.unmount()
   })

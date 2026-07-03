@@ -671,8 +671,10 @@ async function onPreviewDiff() {
   // No-op proposals: the backend `/diff` (GetProposalDiffAsync) returns 404 when
   // there is no stored DiffPreview AND no operations. The view already renders a
   // "No operation preview" change section for that state, so show the empty-diff
-  // surface directly rather than firing a request that 404s.
-  if (!p.diffPreview && (p.operations?.length ?? 0) === 0) {
+  // surface directly rather than firing a request that 404s. A saved revision
+  // always carries operations and the backend renders it revision-aware (#1235),
+  // so never short-circuit when one exists.
+  if (!p.diffPreview && (p.operations?.length ?? 0) === 0 && revisionCount.value === 0) {
     latestDiffRequestId += 1
     previewDiffProposalId.value = p.id
     previewDiff.value = ''
@@ -831,9 +833,8 @@ function onQueueFilterChange(filter: QueueFilter) {
           class="paper-review-deep__diff-caveat tk-meta"
           data-testid="paper-review-diff-revision-caveat"
         >
-          ⚠ This preview shows the <strong>original</strong> proposal. A saved edit
-          (revision) will be applied instead, so the diff below may not reflect your
-          pending change (revision-aware diff tracked in #1235).
+          ✎ This preview reflects your <strong>saved edit</strong> — it is exactly
+          what Apply will execute.
         </p>
         <div class="card paper-review-deep__diff-card">
           <p
