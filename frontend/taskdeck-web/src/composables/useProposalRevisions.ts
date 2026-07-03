@@ -15,6 +15,10 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
   const saving = ref(false)
   const revisionCount = ref(0)
   const latestRevision = ref<ProposalRevision | null>(null)
+  // False until the revision list for the active proposal has settled (success or
+  // failure). Consumers must not treat a still-loading revisionCount of 0 as
+  // "no revision" — a proposal with a saved edit renders a revision-aware diff (#1235).
+  const revisionsLoaded = ref(false)
   let loadGeneration = 0
   let saveGeneration = 0
 
@@ -28,10 +32,12 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
         revisions.length > 0
           ? revisions.reduce((a, b) => (a.revisionNumber > b.revisionNumber ? a : b))
           : null
+      revisionsLoaded.value = true
     } catch (e: unknown) {
       if (gen !== loadGeneration || activeProposal.value?.id !== proposalId) return
       revisionCount.value = 0
       latestRevision.value = null
+      revisionsLoaded.value = true
       toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
     }
   }
@@ -45,6 +51,7 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
       saving.value = false
       revisionCount.value = 0
       latestRevision.value = null
+      revisionsLoaded.value = false
       if (id) {
         void loadRevisionState(id)
       }
@@ -89,6 +96,7 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
     editing,
     saving,
     revisionCount,
+    revisionsLoaded,
     latestRevision,
     startEditing,
     cancelEditing,

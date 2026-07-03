@@ -219,10 +219,12 @@ const {
   editing: revisionEditing,
   saving: revisionSaving,
   revisionCount,
+  revisionsLoaded,
   latestRevision,
   startEditing: startRevisionEditing,
   cancelEditing: cancelRevisionEditing,
   saveRevision,
+  loadRevisionState,
 } = useProposalRevisions(activeProposal)
 
 const editablePayload = computed(() => {
@@ -666,6 +668,15 @@ async function onPreviewDiff() {
     previewDiff.value = null
     previewDiffLoading.value = false
     return
+  }
+
+  // A saved revision is rendered revision-aware by the backend (#1235), so a
+  // proposal with a revision must fetch even when its ORIGINAL operations are
+  // empty. Settle the revision list first so a still-loading revisionCount of 0
+  // can't short-circuit a revised proposal to the empty surface.
+  if (!revisionsLoaded.value) {
+    await loadRevisionState(p.id)
+    if (activeProposal.value?.id !== p.id) return
   }
 
   // No-op proposals: the backend `/diff` (GetProposalDiffAsync) returns 404 when

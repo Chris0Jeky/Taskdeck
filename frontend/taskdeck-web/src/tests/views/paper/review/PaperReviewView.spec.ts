@@ -970,6 +970,40 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('fetches the revision-aware diff for a 0-operation proposal that has a saved revision', async () => {
+    // Regression for the #1235 review: the no-op short-circuit must not fire when a
+    // saved revision exists. The backend renders a revision-aware diff, so Apply
+    // would execute the revised operations even when the ORIGINAL ops are empty —
+    // the view must fetch, not silently show the empty surface (preview == apply).
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'diff-noop-rev',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload:
+          '{"operations":[{"sequence":0,"actionType":"create","targetType":"card","parameters":"{}","idempotencyKey":"k"}]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    mocks.getProposalDiff.mockResolvedValueOnce('0. Create card')
+    const wrapper = await mountView([
+      makeProposal({ id: 'diff-noop-rev', diffPreview: null, operations: [] }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-noop-rev')
+    expect(wrapper.find('[data-testid="paper-review-diff-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
   it('notes that the diff reflects the saved revision when one exists', async () => {
     const now = new Date().toISOString()
     mocks.getRevisions.mockResolvedValue([
