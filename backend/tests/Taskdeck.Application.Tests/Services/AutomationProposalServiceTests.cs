@@ -17,6 +17,7 @@ public class AutomationProposalServiceTests
     private readonly Mock<IAutomationProposalRepository> _proposalRepoMock;
     private readonly Mock<INotificationService> _notificationServiceMock;
     private readonly Mock<IProposalProvenanceRepository> _provenanceRepoMock;
+    private readonly Mock<IProposalRevisionRepository> _revisionRepoMock;
     private readonly AutomationProposalService _service;
 
     public AutomationProposalServiceTests()
@@ -25,8 +26,15 @@ public class AutomationProposalServiceTests
         _proposalRepoMock = new Mock<IAutomationProposalRepository>();
         _notificationServiceMock = new Mock<INotificationService>();
         _provenanceRepoMock = new Mock<IProposalProvenanceRepository>();
+        _revisionRepoMock = new Mock<IProposalRevisionRepository>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ProposalRevisions).Returns(_revisionRepoMock.Object);
+        // Default: no saved revision, so GetProposalDiffAsync uses the original path.
+        // The revision-aware test overrides this per-proposal.
+        _revisionRepoMock
+            .Setup(r => r.GetLatestByProposalIdAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync((ProposalRevision?)null);
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
@@ -1087,6 +1095,116 @@ public class AutomationProposalServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Contain("Create");
         result.Value.Should().Contain("My card title");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldReflectSavedRevision_NotOriginalOperationsOrStoredPreview()
+    {
+        // Arrange: a proposal whose ORIGINAL operation AND stored DiffPreview both
+        // describe "Original card", plus a saved revision whose operation describes
+        // "Revised card". Apply materializes the latest revision
+        // (AutomationExecutorService.MaterializeEffectiveProposalAsync), so the diff
+        // preview must describe the REVISED operation — not the original ops and not
+        // the stale stored preview (#1235, exit criterion (b): preview == apply).
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "To Do", 0);
+        var columnId = column.Id;
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Create card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var originalParams = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            title = "Original card",
+            columnId,
+            boardId
+        });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", originalParams, Guid.NewGuid().ToString()));
+        proposal.SetDiffPreview("0. Create card \"Original card\"");
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var revisedParams = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            title = "Revised card",
+            columnId,
+            boardId
+        });
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "create",
+                    targetType = "card",
+                    parameters = revisedParams,
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposalId, default))
+            .ReturnsAsync(revision);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new[] { column });
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: the diff describes the revised operation, not the original.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain("Revised card");
+        result.Value.Should().NotContain("Original card");
+        result.Value.Should().Contain("To Do");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldReturnValidationError_WhenSavedRevisionPayloadIsInvalid()
+    {
+        // Arrange: a saved revision whose payload cannot be materialized into
+        // operations. Apply would fail the same way, so the diff surfaces the failure
+        // rather than silently falling back to the stale original preview (#1235).
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Create card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+        proposal.SetDiffPreview("0. Create card \"Original card\"");
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Non-empty payload that satisfies the entity ctor but carries no operations
+        // array — TryParseOperations rejects it (mirrors the executor's behavior).
+        var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), "{}", "Reviewer edit");
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposalId, default))
+            .ReturnsAsync(revision);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
     #endregion

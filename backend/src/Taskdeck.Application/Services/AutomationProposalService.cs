@@ -379,29 +379,76 @@ public class AutomationProposalService : IAutomationProposalService
         if (proposal == null)
             return Result.Failure<string>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+        // When a reviewer has saved a revision, Apply executes THAT payload — the
+        // executor materializes the latest ProposalRevision via
+        // AutomationExecutorService.MaterializeEffectiveProposalAsync, not the
+        // original operations. Build the diff from the same effective operations so
+        // the approval-gate preview equals what Apply will run (#1235). The stored
+        // DiffPreview is deliberately bypassed on this path because it describes the
+        // original proposal, which is exactly the stale-preview bug we are fixing.
+        var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(id, cancellationToken);
+        if (latestRevision is not null)
+        {
+            if (!ProposalRevisionPayload.TryParseOperations(
+                    id,
+                    latestRevision.RevisedPayload,
+                    out var revisedOperations,
+                    out var errorMessage))
+            {
+                // A saved revision is validated when it is created, so this is
+                // defensive: if the effective payload cannot be materialized, Apply
+                // would fail the same way — surface that rather than a stale diff.
+                return Result.Failure<string>(ErrorCodes.ValidationError, errorMessage);
+            }
+
+            var revisedViews = revisedOperations
+                .OrderBy(o => o.Sequence)
+                .Select(o => new DiffOperationView(o.Sequence, o.ActionType, o.TargetType, o.TargetId, o.Parameters))
+                .ToList();
+
+            var revisedDiff = await BuildReadableDiffAsync(proposal.BoardId, revisedViews, cancellationToken);
+            return Result.Success(revisedDiff);
+        }
+
         if (!string.IsNullOrWhiteSpace(proposal.DiffPreview))
             return Result.Success(proposal.DiffPreview);
 
         if (proposal.Operations.Count == 0)
             return Result.Failure<string>(ErrorCodes.NotFound, "Diff preview not available for this proposal");
 
-        var orderedOperations = proposal.Operations
+        var orderedViews = proposal.Operations
             .OrderBy(o => o.Sequence)
+            .Select(o => new DiffOperationView(o.Sequence, o.ActionType, o.TargetType, o.TargetId, o.Parameters))
             .ToList();
 
+        var generatedDiff = await BuildReadableDiffAsync(proposal.BoardId, orderedViews, cancellationToken);
+        return Result.Success(generatedDiff);
+    }
+
+    /// <summary>
+    /// Builds the human-readable multi-line diff for an ordered operation set,
+    /// resolving column/card IDs to names via a best-effort board lookup. Shared by
+    /// the original-operations path and the revision-aware path so both render
+    /// identically (#1235).
+    /// </summary>
+    private async Task<string> BuildReadableDiffAsync(
+        Guid? boardId,
+        IReadOnlyList<DiffOperationView> orderedOperations,
+        CancellationToken cancellationToken)
+    {
         // Batch-load entity names for resolving IDs to human-readable labels
         var columnNames = new Dictionary<Guid, string>();
         var cardTitles = new Dictionary<Guid, string>();
 
-        if (proposal.BoardId.HasValue)
+        if (boardId.HasValue)
         {
             try
             {
-                var columns = await _unitOfWork.Columns.GetByBoardIdAsync(proposal.BoardId.Value, cancellationToken);
+                var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
                 foreach (var column in columns)
                     columnNames[column.Id] = column.Name;
 
-                var cards = await _unitOfWork.Cards.GetByBoardIdAsync(proposal.BoardId.Value, cancellationToken);
+                var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
                 foreach (var card in cards)
                     cardTitles[card.Id] = card.Title;
             }
@@ -411,11 +458,9 @@ public class AutomationProposalService : IAutomationProposalService
             }
         }
 
-        var generatedDiff = string.Join(
+        return string.Join(
             Environment.NewLine,
             orderedOperations.Select(o => DescribeOperationReadable(o, columnNames, cardTitles)));
-
-        return Result.Success(generatedDiff);
     }
 
     public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
@@ -643,11 +688,23 @@ public class AutomationProposalService : IAutomationProposalService
     }
 
     /// <summary>
+    /// Lightweight, source-agnostic view of a proposal operation used for diff
+    /// rendering. Both the entity operations and the revised-payload DTO operations
+    /// map onto this so the readable diff renders identically regardless of source (#1235).
+    /// </summary>
+    private readonly record struct DiffOperationView(
+        int Sequence,
+        string ActionType,
+        string TargetType,
+        string? TargetId,
+        string Parameters);
+
+    /// <summary>
     /// Produces a human-readable diff line for a single operation, resolving
     /// card IDs to titles and column IDs to names where possible.
     /// </summary>
     private static string DescribeOperationReadable(
-        AutomationProposalOperation operation,
+        DiffOperationView operation,
         IReadOnlyDictionary<Guid, string> columnNames,
         IReadOnlyDictionary<Guid, string> cardTitles)
     {
