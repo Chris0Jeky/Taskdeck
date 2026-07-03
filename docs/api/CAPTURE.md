@@ -2,7 +2,7 @@
 
 > **Data model:** See [Data Model Reference](../architecture/DATA_MODEL.md) for entity fields, constraints, and relationships.
 
-The capture pipeline is Taskdeck's quick-capture system. Raw text is captured, then triaged by the LLM to generate automation proposals. Proposals must be explicitly approved by the user before any board mutations occur (review-first principle).
+The capture pipeline is Taskdeck's quick-capture system. Raw text is captured, then triaged by a deterministic, offline rule-based extractor (no LLM call) to generate automation proposals. Proposals must be explicitly approved by the user before any board mutations occur (review-first principle).
 
 ## Capture flow
 
@@ -80,7 +80,7 @@ curl -s "http://localhost:5000/api/capture/items/$CAPTURE_ID" \
 
 ## Enqueue for triage
 
-Sends the capture item to the LLM for proposal generation. The response is asynchronous -- the proposal will appear in the review queue when ready.
+Enqueues the capture item for triage by the deterministic offline extractor (no LLM call) into proposal operations. The response is asynchronous -- the proposal will appear in the review queue when ready.
 
 ```bash
 curl -s -X POST "http://localhost:5000/api/capture/items/$CAPTURE_ID/triage" \
@@ -126,7 +126,7 @@ Response: `204 No Content`
 | Status | Description |
 |--------|-------------|
 | `Pending` | Newly created, awaiting user action |
-| `Triaging` | Sent to LLM for proposal generation |
+| `Triaging` | Being triaged by the deterministic extractor into proposal operations |
 | `Processed` | Triage complete, proposal generated |
 | `Ignored` | Dismissed by user |
 | `Cancelled` | Cancelled by user |

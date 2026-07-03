@@ -157,7 +157,7 @@ This is intentionally separate from the broader demo tooling so an operator can 
 
 ## Behavior Guarantees
 
-- application services remain provider-agnostic (`ChatService`, capture triage paths depend on `ILlmProvider` only)
+- LLM-consuming application services remain provider-agnostic (`ChatService` depends on `ILlmProvider` only). Capture triage does not depend on `ILlmProvider` at all — it is a deterministic, offline extractor.
 - invalid/missing live-provider configuration does not crash requests
 - provider adapters return deterministic fallback responses when upstream calls fail
 - capture triage provenance persists `promptVersion`, `provider`, and `model`

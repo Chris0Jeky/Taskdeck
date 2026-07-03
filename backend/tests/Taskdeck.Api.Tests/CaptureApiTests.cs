@@ -330,8 +330,9 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         finalItem.Provenance.ProposalId.Should().NotBeNull();
         finalItem.Provenance.ProposalId.Should().NotBe(Guid.Empty);
         finalItem.Provenance.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
-        finalItem.Provenance.Provider.Should().Be("Mock");
-        finalItem.Provenance.Model.Should().Be("mock-default");
+        // #1273: triage is deterministic/offline — provenance names the extractor, not the LLM provider.
+        finalItem.Provenance.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        finalItem.Provenance.Model.Should().Be(CaptureTriageService.TriageModelName);
         finalItem.Provenance.RequestedByUserId.Should().Be(user.UserId);
         finalItem.Provenance.SourceSurface.Should().Be("capture");
         finalItem.Provenance.CorrelationId.Should().NotBeNullOrWhiteSpace();
@@ -353,8 +354,8 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         payload.IsSuccess.Should().BeTrue();
         payload.Value.Provenance.Should().NotBeNull();
         payload.Value.Provenance!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
-        payload.Value.Provenance.Provider.Should().Be("Mock");
-        payload.Value.Provenance.Model.Should().Be("mock-default");
+        payload.Value.Provenance.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        payload.Value.Provenance.Model.Should().Be(CaptureTriageService.TriageModelName);
         payload.Value.Provenance.RequestedByUserId.Should().Be(user.UserId);
         payload.Value.Provenance.SourceSurface.Should().Be("capture");
         payload.Value.Provenance.CorrelationId.Should().NotBeNullOrWhiteSpace();

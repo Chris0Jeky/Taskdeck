@@ -14,7 +14,7 @@ When Taskdeck operates with a platform-managed LLM provider key (managed-key mod
 - prohibited abuse patterns
 - enforcement consequences (throttle, restrict, block)
 
-This policy applies only when users consume LLM features (Automation Chat, capture triage, queue processing) through a managed key. Users who supply their own provider keys (BYOK) are not subject to these managed-key limits.
+This policy applies only when users consume LLM features (Automation Chat, LLM queue processing) through a managed key. Users who supply their own provider keys (BYOK) are not subject to these managed-key limits. Note: **capture triage is deterministic and offline — it never invokes a provider**, so it is not a managed-key LLM feature and consumes no managed-key quota.
 
 ## Fair-Use Boundaries
 
@@ -37,11 +37,11 @@ These values are operator-configurable and may be adjusted based on deployment s
 ### What counts toward quota
 
 - Each Automation Chat message that triggers a provider completion
-- Each capture triage operation that invokes the LLM provider
-- Each LLM queue processing request
+- Each LLM queue processing request that invokes the provider
 
 ### What does not count
 
+- Capture triage — deterministic and offline; it never invokes a provider
 - Requests served by the Mock provider
 - Read-only operations (viewing chat history, checking quota status, health checks without `?probe=true`)
 - Board operations, card edits, and other non-LLM features
@@ -52,16 +52,17 @@ When you use managed-key LLM features, Taskdeck transmits information to the con
 
 ### What is sent to the provider
 
-- The text content of your chat messages, capture items, and triage prompts
+- The text content of your Automation Chat messages (and any non-capture LLM queue request you submit)
 - A pseudonymous user token derived from your Taskdeck user ID (not your actual user ID, email, or name)
 - Attribution metadata headers (`x-taskdeck-*`) identifying the request surface and correlation context
 
 ### What is NOT sent to the provider
 
+- **Your capture text or board context during capture triage** — triage is deterministic and offline; it never calls the provider
 - Your Taskdeck password or authentication credentials
 - Your email address or display name
 - Your raw Taskdeck user ID
-- Board content beyond what you explicitly submit for triage or chat
+- Board content beyond what you explicitly submit for Automation Chat
 
 ### What Taskdeck records locally
 

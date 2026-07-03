@@ -46,7 +46,7 @@ Cloud costs are tracked across six dimensions. Each dimension maps to a billing 
 | Application metric | Persisted `ILlmQuotaService` usage records and quota summaries |
 | Current baseline | GPT-4o-mini: ~$0.15/1M input tokens, ~$0.60/1M output tokens (reference baseline; verify against current OpenAI pricing). Gemini 2.5 Flash pricing differs and should be verified separately against current Google pricing. |
 | Estimated monthly cost | $5-50 (light usage, 10-50 active users) to $200-500 (heavy usage, 100+ users with tool-calling) |
-| Scaling driver | Chat messages per user, tool-calling rounds per message (max 5), capture triage volume |
+| Scaling driver | Chat messages per user, tool-calling rounds per message (max 5), non-capture LLM queue requests (capture triage is deterministic/offline and adds no LLM cost) |
 
 LLM costs are the highest-variance dimension. See `docs/ops/COST_HOTSPOT_REGISTRY.md` for detailed breakdown.
 

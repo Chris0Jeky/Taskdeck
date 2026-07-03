@@ -13,13 +13,17 @@ const rows: ProvenanceRow[] = [
 ]
 
 describe('ReviewProvenance', () => {
-  it('uses neutral provider routing copy instead of claiming local-only processing', () => {
+  it('describes provenance honestly for both deterministic captures and LLM chat automation (#1273)', () => {
     const wrapper = mount(ReviewProvenance, {
       props: { rows },
     })
 
     const text = wrapper.text()
-    expect(text).toContain("Provider routing follows this workspace's AI settings and policy.")
+    // Captures are triaged offline/deterministically; chat automation uses the configured AI provider.
+    expect(text).toContain('deterministic offline extractor for captures')
+    expect(text).toContain('configured AI provider for chat-driven automation')
+    // Must not hardcode a specific LLM model (was "What haiku read"), and must not over-claim local-only for everything.
+    expect(text).not.toContain('haiku')
     expect(text).not.toContain('No data left this device')
     expect(text).not.toContain('ran locally')
   })
