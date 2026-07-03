@@ -29,16 +29,18 @@ Each hotspot follows this structure:
 
 ---
 
-## Hotspot 1: LLM API Usage (Chat and Capture Triage)
+## Hotspot 1: LLM API Usage (Chat and Tool-Calling)
+
+> **Capture triage is not an LLM cost.** Turning a capture into a proposal is a deterministic, offline extractor that never calls a provider, so it contributes $0 to this hotspot in every mode. The LLM cost of `LlmQueueToProposalWorker` comes only from **non-capture** queue requests.
 
 | Attribute | Detail |
 |---|---|
-| Feature | Automation Chat (`ChatService`), capture triage (`LlmQueueToProposalWorker`), tool-calling orchestrator |
+| Feature | Automation Chat (`ChatService`), LLM queue processing (`LlmQueueToProposalWorker`, non-capture requests only), tool-calling orchestrator |
 | Cost dimension | LLM API (OpenAI / Gemini) |
 | Estimated cost range | $5-50/month (10-50 users, light chat) to $200-500/month (100+ users, heavy tool-calling) |
 | Scaling behavior | **Superlinear** — each chat message may trigger 1-5 tool-calling rounds, each round is a full API call with growing context window. A single complex conversation can cost 5-10x a simple one. Capture triage adds **no** LLM cost — it is a deterministic, offline extractor. |
 | Current guardrails | Per-user rate limit: 60 req/60s. Per-user token limit: 100K tokens/day. Global budget ceiling config (`LlmQuota:GlobalBudgetCeilingTokens`). Tool-calling loop cap: 5 rounds, 60s total timeout, 30s per-round timeout. Tool result truncation: 8KB max. Kill-switch (global/surface/per-user). Mock provider default (zero cost). |
-| Mitigation levers | 1. Lower global `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` defaults. 2. Block abusive users entirely via per-user kill-switch. 3. Switch high-volume users to Mock provider. 4. Activate surface-level kill-switch for Chat or CaptureTriage. 5. Reduce context window size (`BoardContextBuilder` budget). 6. Switch from GPT-4o-mini to a cheaper model. 7. Enable clarification detection to reduce wasted rounds (`ClarificationDetector`). |
+| Mitigation levers | 1. Lower global `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` defaults. 2. Block abusive users entirely via per-user kill-switch. 3. Switch high-volume users to Mock provider. 4. Activate the surface-level kill-switch for an LLM-consuming surface (Chat, or non-capture queue processing — killing capture triage saves $0). 5. Reduce context window size (`BoardContextBuilder` budget). 6. Switch from GPT-4o-mini to a cheaper model. 7. Enable clarification detection to reduce wasted rounds (`ClarificationDetector`). |
 | Action owner | Product/backend lead |
 | Risk level | **High** — highest variance cost component with no natural ceiling per conversation |
 
@@ -50,7 +52,7 @@ Each hotspot follows this structure:
 | Chat with 1 read tool | ~1,200 | ~400 | ~$0.00042 |
 | Chat with 3 tool rounds | ~3,000 | ~800 | ~$0.00093 |
 | Chat with 5 tool rounds (max) | ~5,500 | ~1,200 | ~$0.00155 |
-| Capture triage (per item) | ~300 | ~150 | ~$0.00014 |
+| Capture triage (per item) | — | — | **$0** (deterministic, no provider call) |
 
 These estimates assume approximate GPT-4o-mini pricing ($0.15/1M input, $0.60/1M output) as a reference baseline. Gemini 2.5 Flash pricing differs and should be checked against current Google pricing. All provider prices should be verified against the current pricing pages at deployment time — LLM pricing changes frequently. Actual costs depend on conversation length, board context size, and tool result sizes.
 
@@ -61,7 +63,8 @@ These estimates assume approximate GPT-4o-mini pricing ($0.15/1M input, $0.60/1M
 | Light | 10 | 5 | 1.5 avg | ~$8 |
 | Moderate | 50 | 10 | 2.0 avg | ~$85 |
 | Heavy | 100 | 15 | 2.5 avg | ~$350 |
-| Peak (with triage) | 100 | 15 + 20 triage | 2.5 avg | ~$430 |
+
+(Capture triage volume is intentionally omitted — it adds no LLM cost regardless of triage throughput.)
 
 ---
 
