@@ -245,6 +245,8 @@ Current review model:
 3. user approves or rejects
 4. user executes explicitly
 
+> Capture triage is deterministic and offline in every mode — it extracts tasks from your text with a fixed rule-based parser and never calls an LLM, even when a live AI provider is configured. Its provenance is recorded as `deterministic-extractor` / `capture-triage-v1`, not the configured provider.
+
 ## Daily Rhythm
 
 Morning:

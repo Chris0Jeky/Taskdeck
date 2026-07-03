@@ -110,7 +110,8 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         // Assert: Provenance chain is intact
         converted.Provenance.CaptureItemId.Should().Be(capture.Id);
         converted.Provenance.BoardId.Should().Be(board.Id);
-        converted.Provenance.Provider.Should().Be("Mock");
+        // #1273: triage is deterministic/offline — provenance names the extractor, not the LLM provider.
+        converted.Provenance.Provider.Should().Be("deterministic-extractor");
         converted.Provenance.SourceSurface.Should().Be("capture");
         converted.Provenance.CorrelationId.Should().NotBeNullOrWhiteSpace();
     }

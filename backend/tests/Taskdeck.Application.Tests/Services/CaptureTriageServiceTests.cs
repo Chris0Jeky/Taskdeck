@@ -19,7 +19,6 @@ public class CaptureTriageServiceTests
     private readonly Mock<IAutomationProposalRepository> _automationProposalsMock;
     private readonly Mock<IAutomationProposalService> _proposalServiceMock;
     private readonly Mock<IAutomationPolicyEngine> _policyEngineMock;
-    private readonly Mock<ILlmProvider> _llmProviderMock;
     private readonly CaptureTriageService _service;
 
     public CaptureTriageServiceTests()
@@ -30,7 +29,6 @@ public class CaptureTriageServiceTests
         _automationProposalsMock = new Mock<IAutomationProposalRepository>();
         _proposalServiceMock = new Mock<IAutomationProposalService>();
         _policyEngineMock = new Mock<IAutomationPolicyEngine>();
-        _llmProviderMock = new Mock<ILlmProvider>();
 
         _unitOfWorkMock.SetupGet(u => u.Boards).Returns(_boardsMock.Object);
         _unitOfWorkMock.SetupGet(u => u.Columns).Returns(_columnsMock.Object);
@@ -49,14 +47,11 @@ public class CaptureTriageServiceTests
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
-        _llmProviderMock.Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LlmHealthStatus(true, "Mock", Model: "mock-default"));
 
         _service = new CaptureTriageService(
             _unitOfWorkMock.Object,
             _proposalServiceMock.Object,
-            _policyEngineMock.Object,
-            _llmProviderMock.Object);
+            _policyEngineMock.Object);
     }
 
     [Fact]
@@ -158,8 +153,8 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.OperationCount.Should().Be(3);
         result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
-        result.Value.Provider.Should().Be("Mock");
-        result.Value.Model.Should().Be("mock-default");
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        result.Value.Model.Should().Be(CaptureTriageService.TriageModelName);
         createdProposal.Should().NotBeNull();
         var created = createdProposal!;
         created.SourceType.Should().Be(ProposalSourceType.Queue);
@@ -170,6 +165,86 @@ public class CaptureTriageServiceTests
         created.Operations[1].Parameters.Should().Contain("Update docs");
         created.Operations[2].Parameters.Should().Contain("Ship follow-up PR");
         created.Operations.Select(operation => Guid.TryParse(operation.TargetId, out _)).Should().OnlyContain(parsed => parsed);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldRecordDeterministicExtractorProvenance_NotAnLlmProvider()
+    {
+        // #1273: capture triage is a deterministic, offline text extractor and never calls an LLM,
+        // so its provenance must name the extractor itself — not the configured live LLM provider.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var result = await _service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                "- [ ] Deterministic provenance"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().Be("deterministic-extractor");
+        result.Value.Model.Should().Be("capture-triage-v1");
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
+        // Provenance values must satisfy the capture provenance length contract the worker enforces.
+        result.Value.Provider.Length.Should().BeLessThanOrEqualTo(CaptureRequestContract.MaxProviderLength);
+        result.Value.Model.Length.Should().BeLessThanOrEqualTo(CaptureRequestContract.MaxModelLength);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldReuseExistingProposalProvenance_AsDeterministicExtractor()
+    {
+        // The reuse (already-triaged) branch must record the same deterministic provenance.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        var existingProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Capture triage",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            captureId.ToString());
+        existingProposal.AddOperation(new AutomationProposalOperation(
+            existingProposal.Id,
+            sequence: 0,
+            actionType: "create",
+            targetType: "card",
+            parameters: "{\"title\":\"existing\"}",
+            idempotencyKey: "existing-op-1"));
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(ProposalSourceType.Queue, captureId.ToString(), default))
+            .ReturnsAsync(existingProposal);
+
+        var result = await _service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                "- [ ] Reuse existing"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ProposalId.Should().Be(existingProposal.Id);
+        result.Value.Provider.Should().Be("deterministic-extractor");
+        result.Value.Model.Should().Be("capture-triage-v1");
     }
 
     [Fact]
@@ -342,73 +417,10 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
-        _llmProviderMock.Verify(p => p.GetHealthAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task CreateProposalFromCaptureAsync_ShouldUseUnknownProviderMetadata_WhenProviderHealthFails()
-    {
-        var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
-        var captureId = Guid.NewGuid();
-        var board = new Board("Capture board", ownerId: userId);
-        var column = new Column(boardId, "Inbox", 0);
-
-        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
-        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
-        _proposalServiceMock
-            .Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
-            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
-        _llmProviderMock.Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("health unavailable"));
-
-        var payload = new CapturePayloadV1(
-            CaptureRequestContract.CurrentSchemaVersion,
-            CaptureSource.Typed,
-            "- [ ] provider metadata fallback");
-
-        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Provider.Should().Be("unknown");
-        result.Value.Model.Should().Be("unknown");
-    }
-
-    [Fact]
-    public async Task CreateProposalFromCaptureAsync_ShouldClampProviderMetadataToContractLimits()
-    {
-        var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
-        var captureId = Guid.NewGuid();
-        var board = new Board("Capture board", ownerId: userId);
-        var column = new Column(boardId, "Inbox", 0);
-        var longProvider = new string('p', CaptureRequestContract.MaxProviderLength + 10);
-        var longModel = new string('m', CaptureRequestContract.MaxModelLength + 10);
-
-        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
-        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
-        _proposalServiceMock
-            .Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
-            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
-        _llmProviderMock.Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LlmHealthStatus(true, longProvider, Model: longModel));
-
-        var payload = new CapturePayloadV1(
-            CaptureRequestContract.CurrentSchemaVersion,
-            CaptureSource.Typed,
-            "- [ ] metadata clamp");
-
-        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Provider.Should().HaveLength(CaptureRequestContract.MaxProviderLength);
-        result.Value.Model.Should().HaveLength(CaptureRequestContract.MaxModelLength);
-        result.Value.Provider.Should().Be(longProvider[..CaptureRequestContract.MaxProviderLength]);
-        result.Value.Model.Should().Be(longModel[..CaptureRequestContract.MaxModelLength]);
-    }
-
-    [Fact]
-    public async Task CreateProposalFromCaptureAsync_ShouldNotResolveProviderMetadata_WhenProposalCreationFails()
+    public async Task CreateProposalFromCaptureAsync_ShouldReturnFailure_WhenProposalCreationFails()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -430,11 +442,11 @@ public class CaptureTriageServiceTests
         var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
 
         result.IsSuccess.Should().BeFalse();
-        _llmProviderMock.Verify(p => p.GetHealthAsync(It.IsAny<CancellationToken>()), Times.Never);
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
     }
 
     [Fact]
-    public async Task CreateProposalFromCaptureAsync_ShouldPropagateCancellation_WhenMetadataLookupTokenIsCancelled()
+    public async Task CreateProposalFromCaptureAsync_ShouldPropagateCancellation_WhenTokenIsAlreadyCancelled()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -458,11 +470,12 @@ public class CaptureTriageServiceTests
             new CapturePayloadV1(
                 CaptureRequestContract.CurrentSchemaVersion,
                 CaptureSource.Typed,
-                "- [ ] cancelled metadata lookup"),
+                "- [ ] cancelled before any work"),
             cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        _llmProviderMock.Verify(p => p.GetHealthAsync(It.IsAny<CancellationToken>()), Times.Never);
+        // An already-cancelled request must fail fast before creating any proposal.
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

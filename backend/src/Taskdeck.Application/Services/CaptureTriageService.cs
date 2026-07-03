@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -14,6 +13,17 @@ namespace Taskdeck.Application.Services;
 public class CaptureTriageService : ICaptureTriageService
 {
     private const int MaxExtractedTasks = CaptureTriageOutputContract.MaxTasks;
+
+    /// <summary>
+    /// Provenance actor recorded for capture triage. Triage runs a deterministic, offline text
+    /// extractor (<see cref="ExtractTaskCandidates"/>) that never invokes an LLM, so the recorded
+    /// provider/model must name the extractor itself — not the workspace's configured live LLM
+    /// provider. Recording the live provider here would be false provenance (#1273).
+    /// </summary>
+    public const string TriageProviderName = "deterministic-extractor";
+
+    /// <summary>Model/version identifier for the deterministic capture-triage extractor (#1273).</summary>
+    public const string TriageModelName = "capture-triage-v1";
 
     private static readonly Regex ChecklistPattern = new(
         @"^\s*[-*]\s+\[[xX ]\]\s+(.+?)\s*$",
@@ -38,21 +48,15 @@ public class CaptureTriageService : ICaptureTriageService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
-    private readonly ILlmProvider _llmProvider;
-    private readonly ILogger<CaptureTriageService>? _logger;
 
     public CaptureTriageService(
         IUnitOfWork unitOfWork,
         IAutomationProposalService proposalService,
-        IAutomationPolicyEngine policyEngine,
-        ILlmProvider llmProvider,
-        ILogger<CaptureTriageService>? logger = null)
+        IAutomationPolicyEngine policyEngine)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
-        _llmProvider = llmProvider;
-        _logger = logger;
     }
 
     public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromCaptureAsync(
@@ -62,6 +66,8 @@ public class CaptureTriageService : ICaptureTriageService
         CapturePayloadV1 payload,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (captureItemId == Guid.Empty)
             return Result.Failure<CaptureTriageProposalResultDto>(ErrorCodes.ValidationError, "CaptureItemId cannot be empty");
 
@@ -155,15 +161,14 @@ public class CaptureTriageService : ICaptureTriageService
             cancellationToken);
         if (existingProposal != null)
         {
-            var (existingProvider, existingModel) = await GetProviderMetadataAsync(cancellationToken);
             return Result.Success(new CaptureTriageProposalResultDto(
                 captureItemId,
                 ResolveTriageRunId(existingProposal.CorrelationId, triageRunId),
                 existingProposal.Id,
                 existingProposal.Operations.Count == 0 ? operations.Count : existingProposal.Operations.Count,
                 outputValidation.Value.PromptVersion,
-                existingProvider,
-                existingModel));
+                TriageProviderName,
+                TriageModelName));
         }
 
         var createProposalResult = await _proposalService.CreateProposalAsync(
@@ -185,16 +190,14 @@ public class CaptureTriageService : ICaptureTriageService
                 createProposalResult.ErrorMessage);
         }
 
-        var (provider, model) = await GetProviderMetadataAsync(cancellationToken);
-
         return Result.Success(new CaptureTriageProposalResultDto(
             captureItemId,
             triageRunId,
             createProposalResult.Value.Id,
             operations.Count,
             outputValidation.Value.PromptVersion,
-            provider,
-            model));
+            TriageProviderName,
+            TriageModelName));
     }
 
     private static Guid ResolveTriageRunId(string? correlationId, Guid fallback)
@@ -202,33 +205,6 @@ public class CaptureTriageService : ICaptureTriageService
         return Guid.TryParse(correlationId, out var parsed) && parsed != Guid.Empty
             ? parsed
             : fallback;
-    }
-
-    private async Task<(string Provider, string Model)> GetProviderMetadataAsync(CancellationToken ct)
-    {
-        try
-        {
-            ct.ThrowIfCancellationRequested();
-            var health = await _llmProvider.GetHealthAsync(ct);
-            var provider = CaptureRequestContract.SanitizeProvenanceMetadata(
-                health.ProviderName,
-                CaptureRequestContract.MaxProviderLength);
-            var model = CaptureRequestContract.SanitizeProvenanceMetadata(
-                health.Model,
-                CaptureRequestContract.MaxModelLength);
-            return (provider, model);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(
-                "Failed to resolve LLM provider metadata for capture triage provenance. Falling back to unknown values. {ExceptionSummary}",
-                SensitiveDataRedactor.SummarizeException(ex));
-            return ("unknown", "unknown");
-        }
     }
 
     private static (List<string> Tasks, string? ContextHint) ExtractTaskCandidates(string rawText)
