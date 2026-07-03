@@ -4,7 +4,7 @@ Last Updated: 2026-07-02
 
 **Audience:** the maintainer. This is the unflattering half of the 2026-07-02 whole-project analysis; the sibling [`PROJECT_TRAJECTORY.md`](PROJECT_TRAJECTORY.md) covers what the project does well and the effective path forward. The engineering quality is real — that is established there and not re-argued here.
 
-**The one-paragraph version:** nineteen days after deciding to "finish for personal use, then archive," the project has no mechanism that can ever conclude it is finished, is generating work at the rate it retires it, and has never once been used for the purpose it is being finished for. The process is excellent at executing whatever is in front of it — so what is in front of it must become a finite, tracked, ratified list. Everything below is ranked by how much it delays the archive goal, and every remediation is now a tracked issue (wave tracker: [#1278](https://github.com/Chris0Jeky/Taskdeck/issues/1278)).
+**The one-paragraph version:** nineteen days after deciding to "finish for personal use, then archive," the project has no mechanism that can ever conclude it is finished, is generating work at the rate it retires it, and has never once been used for the purpose it is being finished for. The process is excellent at executing whatever is in front of it — so what is in front of it must become a finite, tracked, ratified list. Everything below is ranked by how much it delays the archive goal, and every remediation is now a tracked issue (wave tracker: #1278).
 
 **Provenance:** six parallel dimension assessments over the repo, tracker, CI history, and local databases; all 15 critical/high claims adversarially verified by independent agents (5 confirmed, 10 adjusted — the corrected forms are what appear below; 0 refuted). Overstated claims that did not survive verification are called out explicitly rather than silently dropped.
 
@@ -134,4 +134,4 @@ Status: **Proposed** — the maintainer ratifies (with edits) and commits as `do
 
 - [`PROJECT_TRAJECTORY.md`](PROJECT_TRAJECTORY.md) — strengths, goal scoring, and the sequencing rationale.
 - [`IMPLEMENTATION_MASTERPLAN.md`](IMPLEMENTATION_MASTERPLAN.md) — Direction section (the pivot this document serves).
-- GitHub tracker [#1278](https://github.com/Chris0Jeky/Taskdeck/issues/1278) — ARCHIVE-00: exit criteria ratification and the closeout wave (#1269–#1277 plus re-scoped #1235, #996, #1123, #1128, #1134, #1135, #1138, #1139, #1173, #1175, #1210, #1215, #1222, #1227, #1228).
+- GitHub tracker #1278 — ARCHIVE-00: exit criteria ratification and the closeout wave (#1269–#1277 plus re-scoped #1235, #996, #1123, #1128, #1134, #1135, #1138, #1139, #1173, #1175, #1210, #1215, #1222, #1227, #1228).

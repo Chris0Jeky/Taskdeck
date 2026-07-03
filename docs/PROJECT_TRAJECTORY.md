@@ -90,4 +90,4 @@ At the velocity the Paper arc demonstrated, this is roughly **4–6 weeks of ses
 - [`COURSE_CORRECTION.md`](COURSE_CORRECTION.md) — the problems, the fix-vs-write-off calls, and the ordered plan with completion conditions.
 - [`IMPLEMENTATION_MASTERPLAN.md`](IMPLEMENTATION_MASTERPLAN.md) — Direction section (the pivot itself).
 - [`STATUS.md`](STATUS.md) — current shipped reality.
-- GitHub tracker [#1278](https://github.com/Chris0Jeky/Taskdeck/issues/1278) — ARCHIVE-00, the closeout wave and exit criteria.
+- GitHub tracker #1278 — ARCHIVE-00, the closeout wave and exit criteria.
