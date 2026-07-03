@@ -682,10 +682,16 @@ async function onPreviewDiff() {
   // No-op proposals: the backend `/diff` (GetProposalDiffAsync) returns 404 when
   // there is no stored DiffPreview AND no operations. The view already renders a
   // "No operation preview" change section for that state, so show the empty-diff
-  // surface directly rather than firing a request that 404s. A saved revision
-  // always carries operations and the backend renders it revision-aware (#1235),
-  // so never short-circuit when one exists.
-  if (!p.diffPreview && (p.operations?.length ?? 0) === 0 && revisionCount.value === 0) {
+  // surface directly rather than firing a request that 404s. Only take this path
+  // when the revision list is authoritatively loaded and empty — a saved revision
+  // carries operations the backend renders revision-aware (#1235), and if the
+  // revision load failed we fetch so the backend, not a stale count, decides.
+  if (
+    !p.diffPreview &&
+    (p.operations?.length ?? 0) === 0 &&
+    revisionsLoaded.value &&
+    revisionCount.value === 0
+  ) {
     latestDiffRequestId += 1
     previewDiffProposalId.value = p.id
     previewDiff.value = ''
@@ -721,6 +727,19 @@ async function onPreviewDiff() {
     if (requestId === latestDiffRequestId) {
       previewDiffLoading.value = false
     }
+  }
+}
+
+async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
+  await saveRevision(payload)
+  // Saving an edit changes what Apply will execute, so a diff already on screen is
+  // now stale — drop it so the "reflects your saved edit" note cannot certify a
+  // pre-revision preview (#1235). Re-opening the diff fetches the revision-aware one.
+  if (previewDiffProposalId.value) {
+    latestDiffRequestId += 1
+    previewDiffProposalId.value = null
+    previewDiff.value = null
+    previewDiffLoading.value = false
   }
 }
 
@@ -875,7 +894,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         v-if="revisionEditing"
         :operations-payload="editablePayload"
         :saving="revisionSaving"
-        @save="saveRevision"
+        @save="onSaveRevision"
         @cancel="cancelRevisionEditing"
       />
     </div>
