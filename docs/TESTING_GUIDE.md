@@ -283,7 +283,7 @@ _(Update `#1215`, 2026-07-04: `FieldVerificationResultTests`, `FuzzyTextMatcherT
 
 Run:
 ```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Provenance or FullyQualifiedName~FieldVerification or FullyQualifiedName~ProposalOutcome or FullyQualifiedName~FuzzyText or FullyQualifiedName~PreExtractor"
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Provenance or FullyQualifiedName~ProposalOutcome"
 ```
 
 ### Proposal Revision Tests (RFAI-04, `#976`/`#994`)
