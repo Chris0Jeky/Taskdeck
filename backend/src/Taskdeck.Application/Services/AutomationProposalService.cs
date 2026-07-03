@@ -710,7 +710,7 @@ public class AutomationProposalService : IAutomationProposalService
     {
         var verb = HumanizeActionVerb(operation.ActionType);
         var targetType = HumanizeTargetType(operation.TargetType).ToLowerInvariant();
-        var isCardTarget = operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase);
+        var isCardTarget = string.Equals(operation.TargetType, "card", StringComparison.OrdinalIgnoreCase);
         var namedTarget = ExtractNamedTarget(operation.Parameters);
 
         // Try to resolve card title from lookup when not embedded in parameters
