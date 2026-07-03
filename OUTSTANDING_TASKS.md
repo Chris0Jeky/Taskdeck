@@ -50,9 +50,27 @@ Last reviewed: 2026-06-19
 
 > Full audit context and the complete gap inventory: **GitHub issue #1142** (master tracker).
 
+## D. Archive closeout wave (seeded by the 2026-07-02 whole-project analysis)
+
+Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_CORRECTION.md` (what must change + ordered plan). Wave tracker: **#1278** (ARCHIVE-00).
+
+- [ ] **#1278** — ARCHIVE-00: ratify the archive exit criteria + target date; promote the closeout waves into the masterplan. *(Maintainer decision — the stop condition for pivot goal 3.)*
+- [ ] **#1269** — ARCHIVE-01: codify the two-tier review gate (LIGHT/FULL), issue-intake severity bar, no-new-backend-surface rule.
+- [ ] **#1270** — ARCHIVE-02: backlog triage hour — close ~16 already-decided issues with dated pivot notes. *(Maintainer sign-off on the list.)*
+- [ ] **#1271** — ARCHIVE-03: dogfooding sprint — ≥10 days of real personal use (the pivot's acceptance test; cannot be delegated).
+- [ ] **#1272** — ARCHIVE-04: Today dossier truth — de-stub the fabricated default daily surface (`useTodayDossier.ts` buildStubDossier).
+- [ ] **#1273** — ARCHIVE-05: capture-triage provenance names the deterministic extractor, not the uninvolved LLM provider.
+- [ ] **#1274** — ARCHIVE-06: re-point E2E + axe coverage at the Paper UI (currently the least-tested UI).
+- [ ] **#1275** — ARCHIVE-07: CI estate right-sizing — keep/kill/gate per lane + short ADR (nightly red 28 days; mutation red 10+ weeks).
+- [ ] **#1276** — ARCHIVE-08: dead-surface removal — ink-bleed decision, orphaned Paper code, cohorts stub, voice capture, Ollama marking.
+- [ ] **#1277** — ARCHIVE-09: final archive pass — README banner, final doc entries, tag decision, exit-criteria done-check.
+- [ ] **#1235** (re-scoped) — top engineering priority: revision-aware proposal diff (preview must equal what Apply executes).
+- *(Record, already done 2026-07-02:)* re-scope comments posted on #996, #1123/#1139, #1128, #1134 (+#1154 decision), #1135, #1138, #1173, #1175 (+#1174), #1210, #1215, #1222 (+#1227), #1228 — each carries updated finish-or-close ACs.
+
 ---
 
 ## Changelog
+- 2026-07-02: **Whole-project analysis delivered + archive closeout wave seeded.** Multi-agent analysis (6 dimensions, 15 claims adversarially verified: 5 confirmed / 10 adjusted / 0 refuted) produced `docs/PROJECT_TRAJECTORY.md` + `docs/COURSE_CORRECTION.md`. Seeded issues #1269–#1278 (ARCHIVE-00..09, new `archive-closeout` label) and posted re-scope comments on 14 existing issues. Added §D above. Central findings: no checkable definition of done existed in the tracked repo; zero organic personal-usage data; the default Paper UI is the least-tested UI; the "canonical" exe run path has never been built; ~31% of open issues already decided-closed by the pivot but still open.
 - 2026-06-19 (later): **Merge hold lifted — deck merged.** The maintainer lifted the hold and all four PRs shipped to `main`: **#1220** (canonical-docs reconciliation; 14 Codex rounds + 3 drift sweeps), **#1219** (Paper File-away dismiss, closes #1161), **#1221** (reachable in-app Appearance theme toggle — a Paper-activation prerequisite), **#1225** (StackExchange.Redis + SignalR-backplane semver-major caps). Post-merge STATUS/masterplan sync in PR #1233. Seeded during this work: #1226 (net8.0 upgrade), #1227 (dated-snapshot staleness), #1228 (cd-staging-gate auto-trigger), + the #1195 GDPR caller-audit. Next: the Paper-review de-stubs (last Wave-2 blocker before the default-theme flip) — `onPreviewDiff` in PR #1234.
 - 2026-06-19: **Maintainer check-offs confirmed** — **#1161** (Paper File-away dismiss, PR #1219), **#1164** (cross-process Migrate, PR #1186), **#1189** (Redis lock starvation, PR #1213), **#1198** (dead `ProposalGeneratorV1` removed, PR #1214), and **#1135 partial** (paper-night straggler tokens, PR #1216) marked done. Also: PR #1223 (npm group) merged; PR #1224 (nuget) closed (framework-major bumps rejected per ADR-0039 net8.0 pin); PR #1225 opened (StackExchange.Redis major cap). PRs #1219/#1220/#1221 fully reviewed + green + aged but **merges held by maintainer**. Maintainer decision: revisit net8.0 framework-major upgrade later (issue seeded). ADR-0004 stays "Accepted" with the never-implemented note (TenantId never built; isolation is per-UserId/board-access).
 - 2026-06-13: **Archive-pivot wave (Waves 0–2) merged — 17 PRs** (see STATUS.md "Archive-pivot delivery wave"). Direction is now **finish-for-personal-use → archive** (supersedes ship-first); distribution tracks (#1167 code-signing, #544/#546/#550 GTM, #537/#548 cloud, #540 mobile) are de-scoped and will be closed not-planned in archive closeout. **Maintainer check-off pending** for items this wave appears to deliver: **#1140** (dev-up + clean-workspace scripts, PR #1208), **#1139** AC1 (compose-secret quickstart docs, PR #1205), **#1135** partial (paper-night straggler tokens, PR #1216 — guardrail/decomposition half still open), **#1189** (Redis lock starvation, PR #1213), **#1198** (dead `ProposalGeneratorV1` removed, PR #1214 — follow-up #1215 seeded). Not auto-checked per rule 3. **#1161** (Paper "File away" dismiss) built on the #1217 shared-actionability foundation and is in review as PR #1219 (awaiting CI/aging). New issues seeded: #1209, #1215, #1218.

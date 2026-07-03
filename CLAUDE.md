@@ -170,6 +170,8 @@ ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template 
 
 - `docs/STATUS.md` -- current shipped reality (what is true now)
 - `docs/IMPLEMENTATION_MASTERPLAN.md` -- delivery history, roadmap, and planned work (what was done and what comes next)
+- `docs/PROJECT_TRAJECTORY.md` -- 2026-07-02 whole-project analysis: strengths, pivot-goal scoring, and the remaining path to archive (closeout tracker `#1278`)
+- `docs/COURSE_CORRECTION.md` -- 2026-07-02 whole-project analysis: what must change (strategy + execution), the ordered closeout plan, and the proposed archive exit criteria
 - `docs/GOLDEN_PRINCIPLES.md` -- stable invariants
 - `docs/decisions/INDEX.md` -- architecture decision records
 - `docs/TESTING_GUIDE.md` -- test operations reference
