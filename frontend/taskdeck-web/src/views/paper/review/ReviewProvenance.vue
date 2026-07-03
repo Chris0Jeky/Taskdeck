@@ -39,7 +39,7 @@ function tone(weight: ProvenanceWeight): string {
       <span class="tk-serial paper-review-prov__serial">§ II</span>
       <h3 class="tk-h3 paper-review-prov__title">Provenance</h3>
       <span class="tk-meta paper-review-prov__sub">
-        What haiku read · what it didn't · what it inferred
+        What was read · what wasn't · what was inferred
       </span>
     </header>
     <div class="card paper-review-prov__card">
@@ -57,7 +57,7 @@ function tone(weight: ProvenanceWeight): string {
       </div>
     </div>
     <p class="tk-meta paper-review-prov__footnote">
-      Provider routing follows this workspace's AI settings and policy.
+      Provenance reflects the actor behind this proposal — a deterministic offline extractor for captures, or your configured AI provider for chat-driven automation.
       <a href="#" class="paper-review-prov__more" @click.prevent="drawerOpen = true">View full read-set →</a>
     </p>
 
