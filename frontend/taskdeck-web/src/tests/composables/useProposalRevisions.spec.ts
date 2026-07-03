@@ -136,6 +136,37 @@ describe('useProposalRevisions', () => {
     expect(latestRevision.value).toEqual(newRevision)
   })
 
+  it('ignores a pre-save revision load that resolves after the save (no stale overwrite)', async () => {
+    // Codex review: a getRevisions request in flight when a save lands must not
+    // overwrite the save's state when it resolves with the pre-save (empty) list.
+    let resolveLoad: (v: ProposalRevision[]) => void = () => {}
+    const loadPromise = new Promise<ProposalRevision[]>((r) => {
+      resolveLoad = r
+    })
+    vi.mocked(proposalRevisionsApi.getRevisions).mockReturnValueOnce(loadPromise)
+    const saved = makeRevision({ revisionNumber: 1 })
+    vi.mocked(proposalRevisionsApi.createRevision).mockResolvedValue(saved)
+
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const { revisionCount, latestRevision, revisionsLoaded, saveRevision } =
+      useProposalRevisions(proposal)
+    await nextTick()
+
+    // Save lands while the initial load is still pending.
+    await saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
+    expect(revisionCount.value).toBe(1)
+    expect(revisionsLoaded.value).toBe(true)
+
+    // The stale load now resolves with the OLD (empty) list — must be ignored.
+    resolveLoad([])
+    await nextTick()
+    await nextTick()
+
+    expect(revisionCount.value).toBe(1)
+    expect(latestRevision.value).toEqual(saved)
+    expect(revisionsLoaded.value).toBe(true)
+  })
+
   it('resets editing when proposal changes', async () => {
     vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
     const proposal = ref<ApiProposal | null>(makeProposal())

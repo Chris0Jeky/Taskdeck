@@ -80,8 +80,12 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
       saving.value = true
       const revision = await proposalRevisionsApi.createRevision(proposalId, payload)
       if (gen !== saveGeneration || activeProposal.value?.id !== proposalId) return
+      // Invalidate any in-flight revision load so a pre-save (stale, empty) list
+      // can't overwrite this save's state when it resolves after the save.
+      loadGeneration += 1
       latestRevision.value = revision
       revisionCount.value += 1
+      revisionsLoaded.value = true
       editing.value = false
       toast.success('Revision saved')
     } catch (e: unknown) {

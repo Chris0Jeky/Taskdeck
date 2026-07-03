@@ -1031,7 +1031,7 @@ describe('PaperReviewView', () => {
     const caveat = wrapper.find('[data-testid="paper-review-diff-revision-caveat"]')
     expect(caveat.exists()).toBe(true)
     expect(caveat.text()).toContain('saved edit')
-    expect(caveat.text()).toContain('Apply will execute')
+    expect(caveat.text()).toContain('not the original')
 
     wrapper.unmount()
   })

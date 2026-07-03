@@ -863,8 +863,8 @@ function onQueueFilterChange(filter: QueueFilter) {
           class="paper-review-deep__diff-caveat tk-meta"
           data-testid="paper-review-diff-revision-caveat"
         >
-          ✎ This preview reflects your <strong>saved edit</strong> — it is exactly
-          what Apply will execute.
+          ✎ This preview reflects your latest <strong>saved edit</strong> — the
+          revised operations, not the original proposal.
         </p>
         <div class="card paper-review-deep__diff-card">
           <p
