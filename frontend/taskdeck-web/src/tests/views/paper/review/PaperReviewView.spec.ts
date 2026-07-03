@@ -3,6 +3,7 @@ import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
+import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
@@ -970,7 +971,41 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('shows a revision caveat in the diff preview when a saved revision exists', async () => {
+  it('fetches the revision-aware diff for a 0-operation proposal that has a saved revision', async () => {
+    // Regression for the #1235 review: the no-op short-circuit must not fire when a
+    // saved revision exists. The backend renders a revision-aware diff, so Apply
+    // would execute the revised operations even when the ORIGINAL ops are empty —
+    // the view must fetch, not silently show the empty surface (preview == apply).
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'diff-noop-rev',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload:
+          '{"operations":[{"sequence":0,"actionType":"create","targetType":"card","parameters":"{}","idempotencyKey":"k"}]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    mocks.getProposalDiff.mockResolvedValueOnce('0. Create card')
+    const wrapper = await mountView([
+      makeProposal({ id: 'diff-noop-rev', diffPreview: null, operations: [] }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-noop-rev')
+    expect(wrapper.find('[data-testid="paper-review-diff-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('notes that the diff reflects the saved revision when one exists', async () => {
     const now = new Date().toISOString()
     mocks.getRevisions.mockResolvedValue([
       {
@@ -991,11 +1026,54 @@ describe('PaperReviewView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
-    // The preview reflects the ORIGINAL proposal, so a pending saved revision must
-    // be flagged (the diff does not reflect the revision that Apply will run).
+    // The backend now returns the revision-aware diff (#1235), so the note confirms
+    // the preview reflects the saved edit and equals what Apply will execute.
     const caveat = wrapper.find('[data-testid="paper-review-diff-revision-caveat"]')
     expect(caveat.exists()).toBe(true)
-    expect(caveat.text()).toContain('original')
+    expect(caveat.text()).toContain('saved edit')
+    expect(caveat.text()).toContain('not the original')
+
+    wrapper.unmount()
+  })
+
+  it('clears an open diff after a revision is saved so the note cannot certify stale content', async () => {
+    // #1235 review (Codex P2): if the diff is open and the reviewer then saves an
+    // edit, the visible previewDiff is pre-revision content; the "reflects your
+    // saved edit" note must never certify it. Saving clears the diff so re-opening
+    // fetches the fresh revision-aware one.
+    const now = new Date().toISOString()
+    mocks.getProposalDiff.mockResolvedValueOnce('0. Create card "Original"')
+    mocks.createRevision.mockResolvedValue({
+      id: 'rev-1',
+      proposalId: 'proposal-001',
+      revisionNumber: 1,
+      editorUserId: 'u-1',
+      revisedPayload:
+        '{"operations":[{"sequence":0,"actionType":"create","targetType":"card","parameters":"{}","idempotencyKey":"k"}]}',
+      revisedAt: now,
+      reason: 'edit',
+      createdAt: now,
+    })
+    const wrapper = await mountView([makeProposal({ id: 'proposal-001' })])
+
+    // Open the diff.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(true)
+
+    // Enter edit mode and save a revision.
+    await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+    wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+      revisedPayload:
+        '{"operations":[{"sequence":0,"actionType":"create","targetType":"card","parameters":"{}","idempotencyKey":"k"}]}',
+      reason: 'edit',
+    })
+    await flushPromises()
+
+    // The stale diff is gone; re-opening would fetch the revision-aware one.
+    expect(mocks.createRevision).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(false)
 
     wrapper.unmount()
   })

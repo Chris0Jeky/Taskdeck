@@ -217,6 +217,39 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetProposalDiff_AfterSavingRevision_ShouldReflectRevisedOperations()
+    {
+        // #1235, exit criterion (b): the approval-gate diff must equal what Apply
+        // executes. Paired with ExecuteProposal_WithLatestRevision_ShouldApplyRevisedOperations
+        // (which proves Apply runs the revised "Edited Card"), this proves preview == apply.
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-diff-aware");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-diff-aware-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Card");
+
+        // Baseline: with no revision, the diff describes the original proposal.
+        var beforeResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        beforeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var beforeDiff = (await beforeResponse.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("diff").GetString();
+        beforeDiff.Should().Contain("Original Card");
+
+        // Edit-before-approve: save a revision changing the card title.
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayload("Edited Card", board.Id, column.Id), reason = "Use edited title" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // The diff must now reflect the revised operations, not the original.
+        var afterResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        afterResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var afterDiff = (await afterResponse.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("diff").GetString();
+        afterDiff.Should().Contain("Edited Card");
+        afterDiff.Should().NotContain("Original Card");
+    }
+
+    [Fact]
     public async Task CreateRevision_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
     {
         var ownerClient = _factory.CreateClient();

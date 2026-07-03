@@ -219,10 +219,12 @@ const {
   editing: revisionEditing,
   saving: revisionSaving,
   revisionCount,
+  revisionsLoaded,
   latestRevision,
   startEditing: startRevisionEditing,
   cancelEditing: cancelRevisionEditing,
   saveRevision,
+  loadRevisionState,
 } = useProposalRevisions(activeProposal)
 
 const editablePayload = computed(() => {
@@ -668,11 +670,28 @@ async function onPreviewDiff() {
     return
   }
 
+  // A saved revision is rendered revision-aware by the backend (#1235), so a
+  // proposal with a revision must fetch even when its ORIGINAL operations are
+  // empty. Settle the revision list first so a still-loading revisionCount of 0
+  // can't short-circuit a revised proposal to the empty surface.
+  if (!revisionsLoaded.value) {
+    await loadRevisionState(p.id)
+    if (activeProposal.value?.id !== p.id) return
+  }
+
   // No-op proposals: the backend `/diff` (GetProposalDiffAsync) returns 404 when
   // there is no stored DiffPreview AND no operations. The view already renders a
   // "No operation preview" change section for that state, so show the empty-diff
-  // surface directly rather than firing a request that 404s.
-  if (!p.diffPreview && (p.operations?.length ?? 0) === 0) {
+  // surface directly rather than firing a request that 404s. Only take this path
+  // when the revision list is authoritatively loaded and empty — a saved revision
+  // carries operations the backend renders revision-aware (#1235), and if the
+  // revision load failed we fetch so the backend, not a stale count, decides.
+  if (
+    !p.diffPreview &&
+    (p.operations?.length ?? 0) === 0 &&
+    revisionsLoaded.value &&
+    revisionCount.value === 0
+  ) {
     latestDiffRequestId += 1
     previewDiffProposalId.value = p.id
     previewDiff.value = ''
@@ -708,6 +727,19 @@ async function onPreviewDiff() {
     if (requestId === latestDiffRequestId) {
       previewDiffLoading.value = false
     }
+  }
+}
+
+async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
+  await saveRevision(payload)
+  // Saving an edit changes what Apply will execute, so a diff already on screen is
+  // now stale — drop it so the "reflects your saved edit" note cannot certify a
+  // pre-revision preview (#1235). Re-opening the diff fetches the revision-aware one.
+  if (previewDiffProposalId.value) {
+    latestDiffRequestId += 1
+    previewDiffProposalId.value = null
+    previewDiff.value = null
+    previewDiffLoading.value = false
   }
 }
 
@@ -831,9 +863,8 @@ function onQueueFilterChange(filter: QueueFilter) {
           class="paper-review-deep__diff-caveat tk-meta"
           data-testid="paper-review-diff-revision-caveat"
         >
-          ⚠ This preview shows the <strong>original</strong> proposal. A saved edit
-          (revision) will be applied instead, so the diff below may not reflect your
-          pending change (revision-aware diff tracked in #1235).
+          ✎ This preview reflects your latest <strong>saved edit</strong> — the
+          revised operations, not the original proposal.
         </p>
         <div class="card paper-review-deep__diff-card">
           <p
@@ -863,7 +894,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         v-if="revisionEditing"
         :operations-payload="editablePayload"
         :saving="revisionSaving"
-        @save="saveRevision"
+        @save="onSaveRevision"
         @cancel="cancelRevisionEditing"
       />
     </div>

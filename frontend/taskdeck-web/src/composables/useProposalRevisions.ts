@@ -15,6 +15,11 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
   const saving = ref(false)
   const revisionCount = ref(0)
   const latestRevision = ref<ProposalRevision | null>(null)
+  // False until the revision list for the active proposal has been authoritatively
+  // loaded. Stays false while loading AND if the load fails, so consumers never
+  // treat a not-yet-known revisionCount of 0 as "no revision" — a proposal with a
+  // saved edit renders a revision-aware diff (#1235).
+  const revisionsLoaded = ref(false)
   let loadGeneration = 0
   let saveGeneration = 0
 
@@ -28,10 +33,13 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
         revisions.length > 0
           ? revisions.reduce((a, b) => (a.revisionNumber > b.revisionNumber ? a : b))
           : null
+      revisionsLoaded.value = true
     } catch (e: unknown) {
       if (gen !== loadGeneration || activeProposal.value?.id !== proposalId) return
       revisionCount.value = 0
       latestRevision.value = null
+      // Leave revisionsLoaded false: the count is not authoritative, so callers
+      // must fetch (let the backend decide) rather than short-circuit to a no-op.
       toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
     }
   }
@@ -45,6 +53,7 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
       saving.value = false
       revisionCount.value = 0
       latestRevision.value = null
+      revisionsLoaded.value = false
       if (id) {
         void loadRevisionState(id)
       }
@@ -71,8 +80,12 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
       saving.value = true
       const revision = await proposalRevisionsApi.createRevision(proposalId, payload)
       if (gen !== saveGeneration || activeProposal.value?.id !== proposalId) return
+      // Invalidate any in-flight revision load so a pre-save (stale, empty) list
+      // can't overwrite this save's state when it resolves after the save.
+      loadGeneration += 1
       latestRevision.value = revision
       revisionCount.value += 1
+      revisionsLoaded.value = true
       editing.value = false
       toast.success('Revision saved')
     } catch (e: unknown) {
@@ -89,6 +102,7 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
     editing,
     saving,
     revisionCount,
+    revisionsLoaded,
     latestRevision,
     startEditing,
     cancelEditing,
