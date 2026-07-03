@@ -110,10 +110,6 @@ public static class DependencyInjection
         services.AddScoped<IHybridRetrievalService, Taskdeck.Application.Services.HybridRetrievalService>();
         services.AddScoped<IDuplicateDetectionService, Taskdeck.Application.Services.DuplicateDetectionService>();
 
-        // Provenance services
-        services.AddSingleton<IFuzzyTextMatcher, Taskdeck.Application.Services.FuzzyTextMatcher>();
-        services.AddSingleton<IDeterministicPreExtractor, Taskdeck.Infrastructure.Services.DeterministicPreExtractor>();
-
         // Credential encryption — requires a configured AES-256 key.
         // Fail-fast: the service refuses to start without a valid encryption key.
         var credentialEncryptionKey = configuration["Connectors:EncryptionKey"];

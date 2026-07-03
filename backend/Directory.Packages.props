@@ -45,10 +45,6 @@
     <!-- ── API documentation ───────────────────────────────────── -->
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
 
-    <!-- ── NLP / Recognizers ───────────────────────────────────── -->
-    <PackageVersion Include="Microsoft.Recognizers.Text.DateTime" Version="1.8.13" />
-    <PackageVersion Include="Microsoft.Recognizers.Text.Number" Version="1.8.13" />
-
     <!-- ── Data / Caching ──────────────────────────────────────── -->
     <PackageVersion Include="StackExchange.Redis" Version="2.13.17" />
 
