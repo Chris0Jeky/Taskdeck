@@ -68,6 +68,9 @@ public class CaptureTriageService : ICaptureTriageService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (payload is null)
+            return Result.Failure<CaptureTriageProposalResultDto>(ErrorCodes.ValidationError, "Capture payload cannot be null");
+
         if (captureItemId == Guid.Empty)
             return Result.Failure<CaptureTriageProposalResultDto>(ErrorCodes.ValidationError, "CaptureItemId cannot be empty");
 

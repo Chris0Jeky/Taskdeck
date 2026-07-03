@@ -4,6 +4,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Xunit;
@@ -290,8 +291,8 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
         triagedItem.Provenance.Should().NotBeNull();
         triagedItem.Provenance!.ProposalId.Should().NotBeNull();
         // #1273: triage is deterministic/offline — provenance names the extractor, not the LLM provider.
-        triagedItem.Provenance.Provider.Should().Be("deterministic-extractor");
-        triagedItem.Provenance.Model.Should().Be("capture-triage-v1");
+        triagedItem.Provenance.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        triagedItem.Provenance.Model.Should().Be(CaptureTriageService.TriageModelName);
 
         var proposalId = triagedItem.Provenance.ProposalId!.Value;
         var approveResponse = await _client.PostAsync($"/api/automation/proposals/{proposalId}/approve", null);

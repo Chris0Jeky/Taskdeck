@@ -193,6 +193,9 @@ public class CaptureTriageServiceTests
                 "- [ ] Deterministic provenance"));
 
         result.IsSuccess.Should().BeTrue();
+        // Intentional literals (not the constants): this is the single wire-contract lock that pins the
+        // exact strings persisted onto the capture payload / returned by the capture API. A change to the
+        // TriageProviderName/TriageModelName constants is an observable contract change and must fail here.
         result.Value.Provider.Should().Be("deterministic-extractor");
         result.Value.Model.Should().Be("capture-triage-v1");
         result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
@@ -243,8 +246,22 @@ public class CaptureTriageServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.ProposalId.Should().Be(existingProposal.Id);
-        result.Value.Provider.Should().Be("deterministic-extractor");
-        result.Value.Model.Should().Be("capture-triage-v1");
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        result.Value.Model.Should().Be(CaptureTriageService.TriageModelName);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldReturnValidationError_WhenPayloadIsNull()
+    {
+        var result = await _service.CreateProposalFromCaptureAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            payload: null!);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("payload cannot be null");
     }
 
     [Fact]
