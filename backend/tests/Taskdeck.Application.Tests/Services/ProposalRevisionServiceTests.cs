@@ -129,6 +129,67 @@ public class ProposalRevisionServiceTests
     }
 
     [Fact]
+    public async Task CreateRevisionAsync_Succeeds_AtExactlyMaxOperationCount()
+    {
+        // Boundary: exactly 50 operations is allowed (only >50 is rejected). Pins the allowed
+        // side of the count guard so a `>` -> `>=` mutation is caught.
+        var proposal = CreatePendingProposal();
+        SetupSuccessfulSave(proposal);
+
+        var operations = Enumerable.Range(0, 50)
+            .Select(i => (sequence: i, parameters: "{}"))
+            .ToArray();
+        var dto = new CreateProposalRevisionDto(
+            proposal.Id,
+            Guid.NewGuid(),
+            BuildPayload(operations),
+            "Exactly max operations");
+
+        var result = await _service.CreateRevisionAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        _revisions.Verify(repo => repo.AddAsync(It.IsAny<ProposalRevision>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateRevisionAsync_Succeeds_AtExactlyMaxParametersLength()
+    {
+        // Boundary: a parameters string of exactly 10000 chars is allowed (only >10000 is rejected).
+        var proposal = CreatePendingProposal();
+        SetupSuccessfulSave(proposal);
+
+        // {"blob":"<a...>"} — the 11-char JSON wrapper + 9989 'a' = exactly 10000 chars.
+        var exactlyMaxParameters = "{\"blob\":\"" + new string('a', 9_989) + "\"}";
+        exactlyMaxParameters.Length.Should().Be(10_000);
+        var dto = new CreateProposalRevisionDto(
+            proposal.Id,
+            Guid.NewGuid(),
+            BuildPayload((sequence: 0, parameters: exactlyMaxParameters)),
+            "Exactly max parameters length");
+
+        var result = await _service.CreateRevisionAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        _revisions.Verify(repo => repo.AddAsync(It.IsAny<ProposalRevision>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private void SetupSuccessfulSave(AutomationProposal proposal)
+    {
+        _proposals
+            .Setup(repo => repo.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _revisions
+            .Setup(repo => repo.GetNextRevisionNumberAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        _revisions
+            .Setup(repo => repo.AddAsync(It.IsAny<ProposalRevision>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposalRevision revision, CancellationToken _) => revision);
+        _unitOfWork
+            .Setup(unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+    }
+
+    [Fact]
     public async Task CreateRevisionAsync_ReturnsConflict_WhenSaveChangesDetectsRevisionNumberRace()
     {
         var proposal = CreatePendingProposal();
