@@ -274,17 +274,16 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Telemet
 
 ### Proposal Provenance Tests (RFAI-03, `#975`/`#993`)
 
-`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalProvenanceTests.cs`, `ProvenanceFieldTests.cs`, `FieldVerificationResultTests.cs`, `ProposalOutcomeTests.cs`, `EvidenceLinkTests.cs` and `backend/tests/Taskdeck.Application.Tests/Services/FuzzyTextMatcherTests.cs`, `DeterministicPreExtractorTests.cs` — **139 tests** covering:
+`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalProvenanceTests.cs`, `ProvenanceFieldTests.cs`, `ProposalOutcomeTests.cs`, `EvidenceLinkTests.cs` covering:
 - ProposalProvenance: field addition, parent-ID validation, field count tracking
 - ProvenanceField: extractive quote enforcement, confidence bounds, kind validation
-- FieldVerificationResult: verification-status/confidence consistency (Verified requires equality, Downgraded requires lower, Failed requires zero)
 - ProposalOutcome: content-free decision ledger, decision type coverage
-- FuzzyTextMatcher: Levenshtein sliding-window, case-insensitive normalization, whitespace collapsing
-- DeterministicPreExtractor: date/number/duration/URL/email recognition, malformed input resilience
+
+_(Update `#1215`, 2026-07-04: `FieldVerificationResultTests`, `FuzzyTextMatcherTests`, and `DeterministicPreExtractorTests` were removed with the dead-code sweep of `FieldVerifier`/`DeterministicPreExtractor`/`FuzzyTextMatcher` — see STATUS. The original RFAI-03 suite was 139 tests; the remaining provenance/outcome/evidence tests are unaffected.)_
 
 Run:
 ```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Provenance or FullyQualifiedName~FieldVerification or FullyQualifiedName~ProposalOutcome or FullyQualifiedName~FuzzyText or FullyQualifiedName~PreExtractor"
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Provenance or FullyQualifiedName~ProposalOutcome"
 ```
 
 ### Proposal Revision Tests (RFAI-04, `#976`/`#994`)

@@ -60,7 +60,6 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IProposalFeedbackService, ProposalFeedbackService>();
         services.AddScoped<ISimilarDecisionService, SimilarDecisionService>();
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
-        services.AddSingleton<IFieldVerifier, FieldVerifier>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
         services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
         services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();

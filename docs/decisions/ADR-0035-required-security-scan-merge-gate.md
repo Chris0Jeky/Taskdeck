@@ -29,7 +29,9 @@ Add three scans to `ci-required.yml` so they run on every PR in the required lan
   dependencies only (`frontend-omit-dev: true`, `frontend-audit-level: high`); dev-tooling vulns
   stay visible (non-blocking) in the nightly lane. It is advisory until a pre-existing Critical
   transitive (`NuGet.CommandLine` via `Microsoft.Recognizers.Text`) is remediated and a per-advisory
-  allowlist exists (tracked in #1175, #1174).
+  allowlist exists (tracked in #1175, #1174). _(Update `#1215`, 2026-07-04: `Microsoft.Recognizers.Text`
+  — the sole source of that `NuGet.CommandLine` Critical transitive — was removed as dead code, so
+  that specific baseline advisory is eliminated; #1174/#1175 can reassess flipping the gate to enforcing.)_
 - **SAST Scan** — `reusable-sast-scanning` (Semgrep), **advisory for now** (`enforce-findings:
   false`). The setuptools-82 `pkg_resources` crash is fixed (pin `setuptools<81`) so Semgrep now
   actually scans; it stays advisory until its pre-existing finding baseline is triaged (#1175),

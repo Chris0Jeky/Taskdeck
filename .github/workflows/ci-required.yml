@@ -141,9 +141,10 @@ jobs:
   #   - secret-scan  : ENFORCING — PR-diff scoped (gitleaks pr mode), so pre-existing fixtures
   #                    don't trip it; it blocks only newly-introduced secrets.
   #   - bundle-size  : ENFORCING — inside the Frontend Unit job (current bundle 994 KB < 1200 KB).
-  #   - dependency   : advisory (enforce-findings: false) — the repo has a pre-existing Critical
-  #                    transitive (NuGet.CommandLine via Microsoft.Recognizers.Text). Remediate +
-  #                    add a per-advisory allowlist, then flip to enforcing. Tracked: #1175, #1174.
+  #   - dependency   : advisory (enforce-findings: false). The pre-existing Critical transitive
+  #                    (NuGet.CommandLine via Microsoft.Recognizers.Text) was eliminated by #1215
+  #                    (the Recognizers packages were removed as dead code); re-evaluate flipping
+  #                    to enforcing now that that baseline advisory is gone. Tracked: #1175, #1174.
   #   - SAST         : advisory (enforce-findings: false) — Semgrep now scans (setuptools<81 crash
   #                    fix) and surfaces a pre-existing finding baseline to triage first. Tracked: #1175.
   #
