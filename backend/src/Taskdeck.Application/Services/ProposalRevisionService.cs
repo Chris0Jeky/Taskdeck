@@ -10,10 +10,12 @@ namespace Taskdeck.Application.Services;
 public class ProposalRevisionService : IProposalRevisionService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAutomationPolicyEngine _policyEngine;
 
-    public ProposalRevisionService(IUnitOfWork unitOfWork)
+    public ProposalRevisionService(IUnitOfWork unitOfWork, IAutomationPolicyEngine policyEngine)
     {
         _unitOfWork = unitOfWork;
+        _policyEngine = policyEngine;
     }
 
     public async Task<Result<ProposalRevisionDto>> CreateRevisionAsync(
@@ -34,12 +36,21 @@ public class ProposalRevisionService : IProposalRevisionService
             var payloadValidation = ProposalRevisionPayload.TryParseOperations(
                 dto.ProposalId,
                 dto.RevisedPayload,
-                out _,
+                out var revisedOperations,
                 out var validationError);
             if (!payloadValidation)
                 return Result.Failure<ProposalRevisionDto>(
                     ErrorCodes.ValidationError,
                     validationError);
+
+            // #1281: a revision must satisfy the same operation-structure invariants Apply enforces
+            // (unique sequences, MaxOperationCount, MaxParametersLength) so a reviewer cannot save a
+            // revision the executor would reject — closing the preview/apply expectation gap.
+            var structureValidation = _policyEngine.ValidateOperationStructure(revisedOperations);
+            if (!structureValidation.IsSuccess)
+                return Result.Failure<ProposalRevisionDto>(
+                    structureValidation.ErrorCode,
+                    structureValidation.ErrorMessage);
 
             var nextRevisionNumber = await _unitOfWork.ProposalRevisions
                 .GetNextRevisionNumberAsync(dto.ProposalId, cancellationToken);

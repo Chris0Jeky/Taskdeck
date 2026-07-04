@@ -98,19 +98,16 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
         return Result.Success();
     }
 
-    public Result ValidatePolicy(ProposalDto proposal)
+    public Result ValidateOperationStructure(IReadOnlyCollection<ProposalOperationDto> operations)
     {
-        if (proposal == null)
-            return Result.Failure(ErrorCodes.ValidationError, "Proposal cannot be null");
-
-        if (proposal.Operations == null || !proposal.Operations.Any())
+        if (operations == null || operations.Count == 0)
             return Result.Failure(ErrorCodes.ValidationError, "Proposal must contain at least one operation");
 
-        if (proposal.Operations.Count > MaxOperationCount)
+        if (operations.Count > MaxOperationCount)
             return Result.Failure(ErrorCodes.ValidationError, $"Proposal exceeds maximum operation count of {MaxOperationCount}");
 
         // Validate operation sequences are unique and non-negative
-        var sequences = proposal.Operations.Select(o => o.Sequence).ToList();
+        var sequences = operations.Select(o => o.Sequence).ToList();
         if (sequences.Distinct().Count() != sequences.Count)
             return Result.Failure(ErrorCodes.ValidationError, "Operation sequences must be unique");
 
@@ -118,11 +115,23 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
             return Result.Failure(ErrorCodes.ValidationError, "Operation sequences must be non-negative");
 
         // Validate parameters size
-        foreach (var operation in proposal.Operations)
+        foreach (var operation in operations)
         {
             if (operation.Parameters.Length > MaxParametersLength)
                 return Result.Failure(ErrorCodes.ValidationError, $"Operation parameters exceed maximum length of {MaxParametersLength}");
         }
+
+        return Result.Success();
+    }
+
+    public Result ValidatePolicy(ProposalDto proposal)
+    {
+        if (proposal == null)
+            return Result.Failure(ErrorCodes.ValidationError, "Proposal cannot be null");
+
+        var structureValidation = ValidateOperationStructure(proposal.Operations);
+        if (!structureValidation.IsSuccess)
+            return structureValidation;
 
         // Validate proposal hasn't expired
         if (DateTime.UtcNow > proposal.ExpiresAt)

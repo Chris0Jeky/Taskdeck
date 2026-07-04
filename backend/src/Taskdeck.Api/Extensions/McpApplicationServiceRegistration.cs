@@ -31,6 +31,9 @@ public static class McpApplicationServiceRegistration
         services.AddScoped<AutomationProposalService>();
         services.AddScoped<IAutomationProposalService>(
             sp => sp.GetRequiredService<AutomationProposalService>());
+        // ProposalRevisionService validates revised operation structure via the policy engine (#1281),
+        // so the MCP container must be able to construct it (only dep is IUnitOfWork via AddInfrastructure).
+        services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
         services.AddScoped<CaptureService>();
         services.AddScoped<ICaptureService>(
