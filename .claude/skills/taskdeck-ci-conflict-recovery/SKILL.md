@@ -9,7 +9,9 @@ Use this skill when a PR is blocked by CI, review/bot comments, conflicts, stale
 
 ## Read First
 
-Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them. Region rules auto-load from `scripts/agent_hooks/CLAUDE.md`.
+Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them.
+
+For the CI topology (`ci-required.yml` = the merge gate; `reusable-*` + scheduled lanes) use the **Harness/CI/docs** seam row of the map. `scripts/agent_hooks/CLAUDE.md` auto-loads only when the fix touches hook scripts — it does NOT cover `.github/workflows/` changes. Read as needed: the failing workflow under `.github/workflows/`, `docs/TESTING_GUIDE.md`, and the PR's checks/comments/annotations.
 
 ## Triage Sequence
 

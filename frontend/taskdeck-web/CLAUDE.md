@@ -5,8 +5,9 @@ axios, `@microsoft/signalr` board realtime). Orientation only.
 
 ## Invariants
 - Review-first: every proposal mutation (approve/reject/defer/execute/dismiss) is gated by
-  explicit status-based actionability checks (`composables/useReviewProposals.ts`) and requires
-  explicit user confirmation (`confirm()`/`prompt()` in `useReviewActions.ts`). Never auto-apply.
+  explicit status-based actionability checks (`composables/useReviewProposals.ts`) + an explicit
+  user action. `execute` is `confirm()`-gated and High/Critical `reject` requires a `prompt()`
+  reason (`useReviewActions.ts`); approve/defer/dismiss are status-gated, not dialog-gated. Never auto-apply.
 - Thin-shell decomposition is real for extracted sub-components/modals (e.g. `CardModal.vue`
   191 lines + `useCardModal`), but top-level route shells (`BoardView`/`TodayView`/`HomeView`)
   still run 600-900 total lines (inline template + scoped CSS). Keep new logic in

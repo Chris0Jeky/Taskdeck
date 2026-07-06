@@ -3,15 +3,15 @@
 .NET 8 Clean Architecture: Domain -> Application -> Infrastructure -> Api (+ separate Cli).
 `backend/AGENTS.md` is the full contributor contract; this file is orientation only.
 
-## Invariants (layer purity + identity are test-enforced; the rest are load-bearing)
+## Invariants (layer purity + the `[Authorize]` boundary are architecture-test-enforced; rest are conventions)
 - Domain has zero infra/framework refs (no Application/Infrastructure/Api, no
   Microsoft.AspNetCore/.EntityFrameworkCore); Application may not import Api/Infrastructure/
   AspNetCore/EFCore. Enforced by `Taskdeck.Architecture.Tests` — `ProjectReferenceBoundariesTests`
   (csproj level) + `SourceLayerPurityTests` (using-directive level, catches transitive leaks).
-- Claims-first identity: controllers resolve the acting user only from JWT claims via
-  `AuthenticatedControllerBase.TryGetCurrentUserId` (never the request body); enforced by
-  `ApiControllerBoundaryTests` (class-level `[Authorize]` required except allowlisted
-  Auth/Health controllers, which must annotate every action explicitly).
+- Claims-first identity (required pattern, NOT proven by the architecture test): resolve the acting
+  user only via `AuthenticatedControllerBase.TryGetCurrentUserId`, never the request body.
+  `ApiControllerBoundaryTests` enforces the `[Authorize]` boundary (class-level; allowlisted
+  Auth/Health annotate every action). Claims-not-body is covered by cross-user integration tests.
 - Stable error contract: `Extensions/ResultExtensions.cs` maps Domain `ErrorCodes` to
   400/401/403/404/409/429/503; never leak cross-user existence.
 - Review-first, no silent mutation: capture -> triage -> `AutomationProposalsController` ->

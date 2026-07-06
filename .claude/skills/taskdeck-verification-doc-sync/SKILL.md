@@ -13,6 +13,7 @@ Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its sea
 
 Read when relevant:
 
+- `docs/TESTING_GUIDE.md` — the source for choosing checks (targeted filters, `-m:1`, vitest OOM/`--maxWorkers=2` caveat, PowerShell fail-fast, and when canonical-doc sync is required)
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - product or manual docs touched by the change
 
