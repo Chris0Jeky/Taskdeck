@@ -1,52 +1,49 @@
-# Agent Index - Taskdeck
+# Agent Index - Taskdeck (seam map)
 
-Last reviewed: 2026-05-11.
+Last-Verified: 2026-07-06 (4-region code exploration). Stamp policy: re-verify when a seam
+moves; the budget script flags this map when the stamp is >90 days old.
 
-This is a fast orientation layer for coding agents. It should point to interfaces and seams, not duplicate implementation details.
+This is the repo's seam map — a fast orientation layer for coding agents. It points to
+interfaces, invariants, and verification commands; it does not duplicate implementation.
+It is the Taskdeck equivalent of the harness `AGENT_MAP.md` (grandfathered name).
 
-## Start Here
+## Orient (do NOT bulk-read the big docs)
 
-1. `docs/STATUS.md` - current shipped reality and constraints.
-2. `AGENTS.md` - repo-wide operating contract.
-3. `.codex/README.md` and `.codex/memories/00_ACTIVE.md` - Codex routing and active gate.
-4. `.claude/README.md` and `CLAUDE.md` - Claude routing and compact contract.
-5. `docs/IMPLEMENTATION_MASTERPLAN.md` - roadmap sequencing.
-6. `docs/GOLDEN_PRINCIPLES.md` - stable invariants.
-7. `docs/agentic/SKILL_REGISTRY.md` - skill selection.
-8. `docs/agentic/AGENT_TOOL_PARITY.md` - Codex/Claude tool parity and native strengths.
-9. Relevant `SKILL.md` under `.codex/skills/` or `.claude/skills/`.
+- **Start here** = this file. Find your region in the seams table, jump to its entry points.
+- Region rules auto-load: each major directory has a scoped `CLAUDE.md` (`backend/`,
+  `frontend/taskdeck-web/`, `scripts/agent_hooks/`) — Claude Code loads it when you touch files
+  there. Read that, not the whole repo.
+- Current shipped state: `docs/STATUS.md` (source of truth) — read the relevant section, it is
+  ~1.3k lines; do not read it end-to-end. Roadmap: `docs/IMPLEMENTATION_MASTERPLAN.md` (same).
+- Contract: `AGENTS.md`. Invariants: `docs/GOLDEN_PRINCIPLES.md`. Skills: `.claude/skills/`.
 
 ## Do Not Read By Default
 
-- `.claude/worktrees/`
-- `.worktrees/`
-- `frontend/taskdeck-web/node_modules/`
-- build outputs, coverage outputs, Playwright traces, and generated artifacts
-- `docs/archive/` unless active docs or the task explicitly point there
-- large design/source packs under `docs/InReview/` or `docs/WIP/` unless reconciling them
-- generated OpenAPI or compiled assets unless the task is about those artifacts
+- `.claude/worktrees/`, `.worktrees/`, `frontend/taskdeck-web/node_modules/`
+- build/coverage/dist outputs, Playwright traces, generated OpenAPI/compiled assets
+- EF `**/Migrations/*.Designer.cs` snapshots (unless a migration is the task)
+- `docs/agentic/failure_ledger.jsonl` (read the rendered `FAILURE_LEDGER.md` instead)
+- `docs/archive/` and large packs under `docs/InReview/` / `docs/WIP/` unless reconciling them
+- `C:/Users/jekyt/source/agent-harness` — sibling checkout (the blueprint), outside this repo
 
 ## Product And Engineering Seams
 
-| Domain | Entry points | Meaty files | Verification hints |
+| Domain | Entry points | Invariants (load-bearing) | Verify |
 | --- | --- | --- | --- |
-| Capture to review to board | `backend/src/Taskdeck.Api/Controllers`, `frontend/taskdeck-web/src/views/InboxView.vue`, `ReviewView.vue` | capture stores, proposal services, automation executor, provenance services | capture/review unit tests, API integration tests, E2E capture loop |
-| Review-first AI roadmap | `taskdeck-12-week-roadmap-v4.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `backend/src/Taskdeck.Domain` | intent envelope, proposal provenance, confidence, egress, eval harness | roadmap invariant tests and targeted backend filters in `docs/TESTING_GUIDE.md` |
-| Backend API/application slices | `backend/Taskdeck.sln`, `backend/src/Taskdeck.Api`, `backend/src/Taskdeck.Application` | repositories, services, controllers, migrations | `dotnet test backend/Taskdeck.sln -c Release -m:1` or narrow filters |
-| Frontend workspace | `frontend/taskdeck-web/src/router`, `views`, `store`, `components/ui` | route views, Pinia stores, composables, Td primitives | `npm run typecheck`, `npm run build`, `npx vitest --run`, targeted Playwright |
-| Agent runtime and MCP | `backend/src/Taskdeck.Application`, `docs/MCP_TOOLING_GUIDE.md`, `docs/agentic/AGENT_TOOL_PARITY.md`, `.codex/config.toml`, `.mcp.json` | policy evaluator, tool registry, egress/telemetry guards | security tests, MCP inventory tests, egress/telemetry tests |
-| Agent operating layer | `AGENTS.md`, `CLAUDE.md`, `.codex/README.md`, `.claude/README.md` | `.codex/skills/*`, `.claude/skills/*`, `docs/agentic/*`, `scripts/agent_hooks/*` | skill validation, docs governance, hook smoke tests |
-| Docs and planning | `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/TESTING_GUIDE.md` | topical docs under `docs/` | `node scripts/check-docs-governance.mjs`, `node scripts/check-golden-principles.mjs` |
+| Capture → review → board | `Api/Controllers/CaptureController.cs`, `AutomationProposalsController.cs`; `views/InboxView.vue`, `ReviewView.vue`, `composables/useReviewProposals.ts` | **Preview == Apply** (#1235: diff + executor both materialize the latest `ProposalRevision`); approve & execute are two explicit calls; execute needs an Idempotency-Key; provenance server-stamped, client identity fields rejected; triage is a deterministic regex extractor (`deterministic-extractor`), never the LLM | capture/review unit + `CaptureApiTests`, `ProposalRevisionApiTests`; E2E `capture-loop.spec.ts` |
+| Backend API/application | `backend/Taskdeck.sln`, `Api/`, `Application/`; DI at `Infrastructure/DependencyInjection.cs` | Domain has no infra/framework refs; Application no Api/Infra refs (Architecture.Tests); claims-first identity; stable HTTP 400/401/403/404/409; no cross-user leak | `dotnet test backend/Taskdeck.sln -c Release -m:1` (see `backend/CLAUDE.md`) |
+| Frontend workspace | `frontend/taskdeck-web/src/` router, views, `store/board*`, `composables/`, `api/http.ts`, `components/ui` (17 `Td*`) | Review-first UI gating; per-board SignalR (`useBoardRealtime.ts`), not global; `boardStore` is a facade over `store/board/*`; all HTTP through `api/http.ts` | `npm run typecheck`, `npm run build`, `npx vitest --run` (OOM-prone: `--maxWorkers=2`/targeted), Playwright (see `frontend/taskdeck-web/CLAUDE.md`) |
+| Agent runtime & MCP | `Application` (`AutomationPolicyEngine`), **MCP surface in `Api`** (`Program.cs` `--mcp` branch, `Api/Mcp/*`), `.codex/config.toml`, `.mcp.json`, `docs/MCP_TOOLING_GUIDE.md` | Policy evaluated before execute; egress/telemetry guards; tool registry | security tests, MCP inventory/egress tests |
+| Harness / CI / docs | `.claude/`, `scripts/agent_hooks/` (deny floor + ledger), `.github/workflows/` (`ci-required.yml` = the gate), `scripts/check-*.mjs` | `ci-required` is the sole merge gate; docs-governance `Last Updated: YYYY-MM-DD` exact line; hook `smoke_test.py` green; deny-floor changes are T4-class | `python scripts/agent_hooks/smoke_test.py`; `node scripts/check-docs-governance.mjs` (see `scripts/agent_hooks/CLAUDE.md`) |
+| Docs & planning | `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/TESTING_GUIDE.md` | STATUS is source of truth for shipped reality; keep governance line intact | `node scripts/check-docs-governance.mjs`, `node scripts/check-golden-principles.mjs` |
 
 ## Interface-On-Top Convention
 
-For any new or refactored complex domain:
-
-1. Keep the public entry point obvious: route, controller, service, facade, index, or README agent map.
-2. Record invariants, edit seams, and verification commands in `autodoc/AGENT_INDEX.md` or `autodoc/interfaces/<domain>.md`.
-3. Keep cross-domain imports pointed at facades or application interfaces where the architecture already provides them.
-4. Do not turn root docs into implementation references; link to the domain map or topical doc.
-5. Update `docs/agentic/SKILL_REGISTRY.md` only when workflow routing changes.
+For any new/refactored complex domain: keep the public entry point obvious (route, controller,
+service, facade); record invariants + edit seams + verify command in this file or
+`autodoc/interfaces/<domain>.md`; point cross-domain imports at facades/application interfaces;
+do not turn root docs into implementation references; update `docs/agentic/SKILL_REGISTRY.md`
+only when workflow routing changes.
 
 ## Minimum Handoff Shape
 
