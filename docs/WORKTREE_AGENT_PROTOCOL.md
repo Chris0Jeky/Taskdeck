@@ -53,6 +53,17 @@ sessions run under the committed default (`acceptEdits`) plus the committed allo
 worker needs broader trust, launch it with an explicit `--permission-mode` or seed a
 `settings.local.json` into the worktree at creation time.
 
+**Workspace-trust caveat (headless workers).** A committed allowlist is necessary but not
+sufficient. Claude Code applies a project's `permissions.allow` rules only after the workspace
+is *trusted*, and trust is keyed on the git-repository root — a freshly created worktree is a
+new, untrusted root. In non-interactive mode (`claude -p` / `--print`) the trust dialog never
+appears and untrusted project allow rules **stay ignored**, so even the allowlisted guard
+command can prompt or block. A headless worktree worker must therefore be launched with one of:
+`--allowedTools "Bash(powershell -File scripts/worktree_guard.ps1:*) ..."`, an explicit
+`--permission-mode acceptEdits`, or `--dangerously-skip-permissions` in a disposable
+environment. Interactive workers accept the one-time trust prompt instead. (Refs: Claude Code
+permissions — *project allow rules and workspace trust*; security — *trust verification*.)
+
 ## First Worker Command
 
 PowerShell:
