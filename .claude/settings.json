@@ -5,7 +5,6 @@
     "symlinkDirectories": ["node_modules", "frontend/taskdeck-web/node_modules"]
   },
   "permissions": {
-    "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(dotnet --version)",
       "Bash(dotnet --version:*)",
