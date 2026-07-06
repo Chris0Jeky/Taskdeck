@@ -5,8 +5,14 @@
     "symlinkDirectories": ["node_modules", "frontend/taskdeck-web/node_modules"]
   },
   "permissions": {
-    "defaultMode": "bypassPermissions",
+    "defaultMode": "acceptEdits",
     "allow": [
+      "Bash(powershell -File scripts/worktree_guard.ps1:*)",
+      "Bash(source scripts/worktree_guard.sh:*)",
+      "Bash(bash scripts/worktree_guard.sh:*)",
+      "Bash(powershell -File scripts/git/New-CodexIssueWorktree.ps1:*)",
+      "PowerShell(powershell -File scripts/worktree_guard.ps1:*)",
+      "PowerShell(powershell -File scripts/git/New-CodexIssueWorktree.ps1:*)",
       "Bash(dotnet --version)",
       "Bash(dotnet --version:*)",
       "Bash(dotnet clean:*)",
