@@ -9,11 +9,9 @@ Use Taskdeck's demo and regression tooling as evidence, not as a substitute for 
 
 ## Read first
 
-1. `docs/STATUS.md`
-2. `docs/TESTING_GUIDE.md`
-3. `docs/START_HERE.md`
-4. `docs/product/DEMO_PLAYBOOK.md`
-5. `docs/product/SCENARIOS.md`
+Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them.
+
+Read as needed: `docs/product/DEMO_PLAYBOOK.md` and `docs/product/SCENARIOS.md` (this skill's core evidence sources), `docs/TESTING_GUIDE.md`.
 
 ## Evidence ladder
 

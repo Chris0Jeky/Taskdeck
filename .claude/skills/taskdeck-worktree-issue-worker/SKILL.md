@@ -9,13 +9,7 @@ Use this skill when assigned one issue or task in an isolated worktree.
 
 ## First Commands
 
-Read:
-
-1. `docs/STATUS.md`
-2. `CLAUDE.md`
-3. `AGENTS.md`
-4. the issue body and acceptance criteria
-5. the domain skill matching the files you own
+Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them. Then read the issue's body + acceptance criteria and the domain skill matching the files you own.
 
 Validate worktree isolation with the command required by `docs/WORKTREE_AGENT_PROTOCOL.md` or:
 
