@@ -6,5 +6,6 @@
   "model_routing": { "harness_and_review": "top", "slices": "mid", "maintenance": "cheap" },
   "budgets": { "standing_context_tokens": 6000, "session_baseline_tokens": null },
   "human_todo": "OUTSTANDING_TASKS.md",
+  "notes": "Taskdeck intentionally layers a stricter local floor than T3 baseline: reset --hard / clean -f / checkout -- are hard-denied by .claude/settings.json deny rules and scripts/agent_hooks/pre_tool_use.py (post-incident choice after the 2026-05/06 worktree main-leaks), so the T3 'ask' path for those ops never fires here.",
   "last_reviewed": "2026-07-06"
 }
