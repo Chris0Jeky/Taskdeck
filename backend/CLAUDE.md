@@ -3,7 +3,7 @@
 .NET 8 Clean Architecture: Domain -> Application -> Infrastructure -> Api (+ separate Cli).
 `backend/AGENTS.md` is the full contributor contract; this file is orientation only.
 
-## Invariants (enforced by tests, not advisory)
+## Invariants (layer purity + identity are test-enforced; the rest are load-bearing)
 - Domain has zero infra/framework refs (no Application/Infrastructure/Api, no
   Microsoft.AspNetCore/.EntityFrameworkCore); Application may not import Api/Infrastructure/
   AspNetCore/EFCore. Enforced by `Taskdeck.Architecture.Tests` — `ProjectReferenceBoundariesTests`
@@ -14,9 +14,10 @@
   Auth/Health controllers, which must annotate every action explicitly).
 - Stable error contract: `Extensions/ResultExtensions.cs` maps Domain `ErrorCodes` to
   400/401/403/404/409/429/503; never leak cross-user existence.
-- Review-first, no silent mutation: capture -> triage -> `AutomationProposalsController`
-  (approve/reject/defer/execute/dismiss; execute requires an Idempotency-Key) ->
-  `AutomationExecutorService` (sole board-mutation choke point, transactional).
+- Review-first, no silent mutation: capture -> triage -> `AutomationProposalsController` ->
+  `AutomationExecutorService` (transactional) is the sole choke point for *proposal/automation*
+  board writes (execute needs an Idempotency-Key). Manual user CRUD (`CardService` via Cards/
+  Columns/Boards controllers) writes directly; agents must not (GP-06).
 - SQLite via EF Core (`TaskdeckDbContext`), WAL + busy_timeout pragma for cross-process
   concurrency (Api/Cli/MCP share one .db file); migrations run through `SerializedMigrator`.
 - The MCP surface (stdio/HTTP transport branch in `Program.cs` + `Taskdeck.Api/Mcp/*`) lives

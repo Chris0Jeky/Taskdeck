@@ -1,7 +1,7 @@
 # Agent Index - Taskdeck (seam map)
 
-Last-Verified: 2026-07-06 (4-region code exploration). Stamp policy: re-verify when a seam
-moves; the budget script flags this map when the stamp is >90 days old.
+Last-Verified: 2026-07-06 (4-region code exploration). Re-verify when a seam moves; treat a
+stamp older than ~90 days as stale (a wrong map misroutes — worse than no map).
 
 This is the repo's seam map — a fast orientation layer for coding agents. It points to
 interfaces, invariants, and verification commands; it does not duplicate implementation.
@@ -14,7 +14,8 @@ It is the Taskdeck equivalent of the harness `AGENT_MAP.md` (grandfathered name)
   `frontend/taskdeck-web/`, `scripts/agent_hooks/`) — Claude Code loads it when you touch files
   there. Read that, not the whole repo.
 - Current shipped state: `docs/STATUS.md` (source of truth) — read the relevant section, it is
-  ~1.3k lines; do not read it end-to-end. Roadmap: `docs/IMPLEMENTATION_MASTERPLAN.md` (same).
+  ~1.3k lines; do not read it end-to-end. Roadmap: `docs/IMPLEMENTATION_MASTERPLAN.md` (~1.6k
+  lines — also section-read only, never bulk-read).
 - Contract: `AGENTS.md`. Invariants: `docs/GOLDEN_PRINCIPLES.md`. Skills: `.claude/skills/`.
 
 ## Do Not Read By Default
