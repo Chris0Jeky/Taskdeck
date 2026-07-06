@@ -45,6 +45,14 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
   -BranchName "feature/custom-branch"
 ```
 
+## Permission Posture In Worktrees
+
+Worktree checkouts do NOT contain the gitignored `.claude/settings.local.json`, so worker
+sessions run under the committed default (`acceptEdits`) plus the committed allowlist — not
+`bypassPermissions`. The guard commands below are allowlisted in `.claude/settings.json`; if a
+worker needs broader trust, launch it with an explicit `--permission-mode` or seed a
+`settings.local.json` into the worktree at creation time.
+
 ## First Worker Command
 
 PowerShell:
