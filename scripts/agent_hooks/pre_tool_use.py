@@ -1,28 +1,134 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse hook for dangerous shell commands."""
+"""Claude Code PreToolUse hook — Taskdeck-specific overlay to the GLOBAL deny floor.
+
+This is a THIN complement to ``~/.claude/hooks/dispatch.py`` (the estate harness deny
+floor, wired PreToolUse/Bash in ``~/.claude/settings.json``, currently v1.3.0). It
+enforces ONLY what the global floor does NOT hard-deny for Taskdeck at T3 — never a
+duplicate of a rule the global floor already owns. See issue #1293 for the analysis.
+
+WHY THIS HOOK STILL EXISTS UNDER bypassPermissions
+---------------------------------------------------
+Taskdeck runs ``defaultMode=bypassPermissions`` (``.claude/settings.local.json``).
+Under bypass, native ``permissions.deny`` is SKIPPED but HOOKS STILL FIRE. And the
+global floor only *asks* on work-loss guards at T3 — and "ask" under bypass
+auto-allows. So the ONLY bypass-proof enforcer of Taskdeck's stricter, post-incident
+work-loss HARD-DENY is a hook. That is this file (2026-05/06 worktree main-leak class).
+
+DIVISION OF LABOR (proven end-to-end against dispatch.py @ T3 — see PR body)
+---------------------------------------------------------------------------
+GLOBAL floor owns (this overlay stays SILENT — no duplicate):
+  * force-push ``--force`` / ``-f`` / ``+refspec``
+  * ``rm -rf`` / ``Remove-Item -Recurse`` on ABSOLUTE dangerous paths, roots, ``*``
+  * ``sudo``; pipe-to-shell (``curl|wget|iwr|irm | sh/iex``)
+  * ``.env`` / ``.pem`` / ``credential`` secret mutation
+  In-project recursive deletes of a NAMED subdirectory are intentionally allowed by
+  the global model, so this overlay allows them too (the flagged #1293 relaxation).
+
+THIS overlay owns (global floor only asks / allows / misses at T3):
+  * work-loss HARD-DENY: ``git reset --hard``, ``clean -f*``, ``checkout -- <path>``,
+    ``restore --worktree/-W``
+  * repo-destructive: ``rmdir /s``, ``npm publish``, ``dotnet ef database drop``,
+    ``DROP TABLE/DATABASE`` (SQL-client-gated), ``chmod -R 777``
+  * broad secret-file mutation (``*token* / *password* / *api_key* / ...`` filenames
+    the global floor's narrower ``.env``/``.pem`` set misses)
+  * ``git push --force-with-lease`` (global allows it below T4; Taskdeck keeps
+    no-force-at-all as its post-incident posture)
+  * recursive delete of the project root (``.``), the parent (``..``), or any
+    ``..``-escaping path — the worktree-leak vector; the global floor only blocks
+    ABSOLUTE dangerous paths, so relative ``..`` traversal escapes it.
+
+Sanitization (``strip_quotes`` + segment split) is ported from the global floor so a
+quoted commit message / PR body ("fix reset --hard", "docs: DROP TABLE") can never
+false-positive-deny. Keep the two sanitizers semantically aligned.
+
+Deny-floor changes are T4-class work (top model + review + smoke tests). Keep the
+contract green:  python scripts/agent_hooks/smoke_test.py
+"""
 from __future__ import annotations
 
 import json
 import re
 import sys
 
-DENY_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\brm\b(?=[^;&|]*\s-[A-Za-z]*r)(?=[^;&|]*\s-[A-Za-z]*f)", re.I), "Destructive recursive removal requires explicit human approval."),
-    (re.compile(r"\bRemove-Item\b(?=[^;\n]*(?:^|\s)-Recurse\b)(?=[^;\n]*(?:^|\s)-Force\b)", re.I), "Destructive recursive removal requires explicit human approval."),
-    (re.compile(r"\brmdir\b(?=[^;&|]*\s/[sS]\b)", re.I), "Destructive recursive directory removal requires explicit human approval."),
-    (re.compile(r"\bgit\s+reset\s+--hard\b", re.I), "Hard reset would discard work; inspect state and ask first."),
-    (re.compile(r"\bgit\s+clean\b(?=[^;&|]*\s(?:-[A-Za-z]*f[A-Za-z]*|--force\b))", re.I), "Git clean can delete untracked work; ask first."),
-    (re.compile(r"\bgit\s+checkout\s+--(?:\s|$)", re.I), "Path checkout can discard user edits; ask first."),
-    (re.compile(r"\bgit\s+restore\b(?=[^;&|]*(?:\s--worktree\b|\s-[A-Za-z]*W[A-Za-z]*\b))", re.I), "Path restore can discard user edits; ask first."),
-    (re.compile(r"\bgit\s+push\s+--force(?:-with-lease)?\b", re.I), "Force-push is blocked by project policy."),
-    (re.compile(r"\bsudo\b", re.I), "sudo is outside normal Taskdeck repo workflow."),
-    (re.compile(r"\bchmod\s+-R\s+777\b", re.I), "Recursive world-writable permissions are blocked."),
-    (re.compile(r"\b(?:curl|wget|Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b.+\|\s*(?:sh|bash|pwsh|powershell|iex|Invoke-Expression)\b", re.I), "Piping remote scripts into a shell is blocked."),
-    (re.compile(r"\bnpm\s+publish\b", re.I), "Publishing packages is outside normal Taskdeck repo workflow."),
-    (re.compile(r"\bdotnet\s+ef\s+database\s+drop\b", re.I), "Database drop requires explicit human approval."),
-    (re.compile(r"\bDROP\s+(?:TABLE|DATABASE)\b", re.I), "Destructive SQL requires explicit human approval."),
-]
+# --- sanitization (ported from ~/.claude/hooks/dispatch.py — keep semantics aligned) --
 
+_SINGLE_Q = re.compile(r"'[^']*'")
+_DOUBLE_Q = re.compile(r'"(?:\\.|[^"\\])*"')
+
+
+def strip_quotes(text: str) -> str:
+    """Remove INERT quoted substrings so message/body text can never trip a rule.
+
+    Single-quoted text never expands -> always stripped. Double-quoted text is
+    stripped only when it holds no unescaped $ or backtick; if it does, the shell
+    EXECUTES the substitution, so the text must stay visible for scanning.
+    """
+    text = _SINGLE_Q.sub(" ", text)
+
+    def _dq(m: "re.Match[str]") -> str:
+        return m.group(0) if re.search(r"(?<!\\)[$`]", m.group(0)) else " "
+
+    return _DOUBLE_Q.sub(_dq, text)
+
+
+def segments(text: str) -> list[str]:
+    """Split a command line into per-command segments on chains and substitutions."""
+    return [s.strip() for s in re.split(r"[;\n()`|]|&&", text) if s.strip()]
+
+
+_GIT_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
+                   "--super-prefix", "--config-env"}
+_WRAPPERS = {"env", "command", "builtin", "nice", "nohup", "time", "stdbuf", "xargs"}
+_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_EXE_SUFFIX = re.compile(r"\.(exe|cmd|bat|com|ps1)$", re.IGNORECASE)
+
+
+def command_head(toks: list[str]) -> tuple[str, list[str]]:
+    """Strip leading VAR=val assignments and known wrappers; drop the head's directory
+    and .exe/.cmd suffix. ``env FOO=bar /usr/bin/git.exe push`` and ``git push`` both
+    resolve to head='git'."""
+    i = 0
+    while i < len(toks):
+        t = toks[i]
+        if _ASSIGN.match(t):
+            i += 1
+            continue
+        base = _EXE_SUFFIX.sub("", t.replace("\\", "/").split("/")[-1]).lower()
+        if base in _WRAPPERS:
+            i += 1
+            while i < len(toks) and _ASSIGN.match(toks[i]):
+                i += 1
+            continue
+        return base, toks[i:]
+    return "", []
+
+
+def git_subcommand(toks: list[str]) -> str:
+    """Return the git subcommand, skipping global options AND their value tokens."""
+    i = 1
+    while i < len(toks):
+        t = toks[i]
+        if t in _GIT_VALUE_OPTS:
+            i += 2
+            continue
+        if t.startswith("-"):
+            i += 1
+            continue
+        return t.lower()
+    return ""
+
+
+# --- Taskdeck-specific patterns ---------------------------------------------------
+
+# SQL clients whose ``-c "DROP TABLE ..."`` argument EXECUTES (unlike an inert commit
+# body). Gating DROP detection on the command head lets us keep the mid-command
+# substring rule while never false-denying a git/gh/echo body that mentions the phrase.
+SQL_CLIENTS = {"psql", "sqlite3", "mysql", "mariadb", "sqlcmd", "sqlplus", "mysqlsh",
+               "usql", "cockroach"}
+DROP_RX = re.compile(r"\bDROP\s+(?:TABLE|DATABASE)\b", re.IGNORECASE)
+
+# Broad secret-file coverage the global floor's narrower .env/.pem set misses
+# (e.g. api_key.txt, password.env, *_token.json). Ported from the prior overlay.
 SECRET_PATH = re.compile(
     r"""(?ix)
     (^|[\s/\\'"])\.env(?:[.\s'"]|$)
@@ -31,11 +137,116 @@ SECRET_PATH = re.compile(
     """
 )
 SECRET_MUTATORS = re.compile(
-    r"\b(rm|del|erase|mv|move|cp|copy|Set-Content|Add-Content|Out-File|New-Item|Remove-Item|Move-Item|Copy-Item|echo|printf)\b|>>?",
-    re.I,
+    r"\b(rm|del|erase|mv|move|cp|copy|Set-Content|Add-Content|Out-File|New-Item|"
+    r"Remove-Item|Move-Item|Copy-Item|echo|printf)\b|>>?",
+    re.IGNORECASE,
 )
-GIT_PUSH = re.compile(r"\bgit\s+push\b", re.I)
 
+# A relative ``..`` path-traversal token (``../``, ``..\``, bare ``..``). Used to keep
+# recursive deletes from ESCAPING the project — the exact worktree-leak vector.
+TRAVERSAL_RX = re.compile(r"(^|[\s/\\'\"=])\.\.(?:[\\/]|$)")
+
+
+def _drop_table_deny(command: str) -> tuple[str, str] | None:
+    """DROP TABLE/DATABASE executed by a SQL client. Checked on the RAW command so it
+    survives inside a ``-c "..."`` argument (the SQL executes; the quotes are not
+    inert). SQL-client gating avoids false-denying commit/PR bodies."""
+    for seg in segments(command):
+        head, _ = command_head(seg.split())
+        if head in SQL_CLIENTS and DROP_RX.search(seg):
+            return "deny", "Destructive SQL (DROP TABLE/DATABASE) requires explicit human approval."
+    return None
+
+
+def check(command: str) -> tuple[str, str]:
+    """Return (decision, reason). decision in {'allow', 'deny'}."""
+    # DROP is matched on the RAW command (see above); everything else on the sanitized
+    # form so quoted bodies never trip a rule.
+    drop = _drop_table_deny(command)
+    if drop:
+        return drop
+
+    sanitized = strip_quotes(command)
+    for seg in segments(sanitized):
+        toks_raw = seg.split()
+        if not toks_raw:
+            continue
+        head, toks = command_head(toks_raw)
+        if not toks:
+            continue
+
+        # ---- git work-loss HARD-DENY (global floor only ASKS at T3) ----
+        if head == "git":
+            sub = git_subcommand(toks)
+            args = toks[toks.index(sub) + 1:] if sub in toks else []
+
+            if sub == "reset" and "--hard" in args:
+                return "deny", "Hard reset discards uncommitted work; inspect state and ask first."
+            if sub == "clean" and any(re.match(r"^-[A-Za-z]*f", t) or t == "--force" for t in args):
+                return "deny", "git clean -f deletes untracked work; ask first."
+            if sub == "checkout" and "--" in args:
+                return "deny", "git checkout -- <path> discards working-tree edits; ask first."
+            if sub == "restore" and (
+                "--worktree" in args
+                or any(re.match(r"^-[A-Za-z]*W[A-Za-z]*$", t) for t in args)
+            ):
+                return "deny", "git restore --worktree/-W discards working-tree edits; ask first."
+            if sub == "push":
+                for t in args:
+                    if (t in ("--force", "--force-with-lease")
+                            or t.startswith("--force=")
+                            or t.startswith("--force-with-lease=")):
+                        return "deny", (
+                            "Force-push (incl. --force-with-lease) is blocked by Taskdeck "
+                            "policy; use merge-from-main + push HEAD:branch."
+                        )
+
+        # ---- repo-destructive (the global floor has none of these) ----
+        if head == "rmdir" and any(re.match(r"^/[sS]$", t) for t in toks[1:]):
+            return "deny", "Recursive directory removal (rmdir /s) requires explicit human approval."
+        if head == "npm" and len(toks) >= 2 and toks[1].lower() == "publish":
+            return "deny", "Publishing packages (npm publish) is outside normal Taskdeck workflow."
+        if head == "dotnet" and [t.lower() for t in toks[1:4]] == ["ef", "database", "drop"]:
+            return "deny", "Database drop (dotnet ef database drop) requires explicit human approval."
+        if head == "chmod" and any(re.match(r"^-[A-Za-z]*R", t) for t in toks[1:]) \
+                and any("777" in t for t in toks[1:]):
+            return "deny", "Recursive world-writable permissions (chmod -R 777) are blocked."
+
+        # ---- recursive delete escaping the project (global blocks only ABSOLUTE) ----
+        rm_flags = "".join(t.lstrip("-") for t in toks[1:] if t.startswith("-"))
+        is_rm_rf = head == "rm" and "r" in rm_flags and "f" in rm_flags
+        is_recurse_del = head in ("remove-item", "ri") and any(
+            re.match(r"^-recurse", t, re.IGNORECASE) for t in toks[1:]
+        )
+        if is_rm_rf or is_recurse_del:
+            for tgt in (t for t in toks[1:] if not t.startswith("-")):
+                bare = tgt.strip("'\"")
+                if bare in (".", "..") or TRAVERSAL_RX.search(tgt):
+                    return "deny", (
+                        "Recursive delete of the project root/parent or an escaping '..' "
+                        "path is blocked (worktree-leak guard). Delete a named in-project "
+                        "target instead."
+                    )
+
+        # ---- broad secret-file mutation (global floor misses these filenames) ----
+        if SECRET_PATH.search(seg) and SECRET_MUTATORS.search(seg):
+            return "deny", (
+                "Command appears to modify or move a secret/credential file; ask for "
+                "explicit approval."
+            )
+
+    return "allow", ""
+
+
+def _git_push_present(command: str) -> bool:
+    for seg in segments(strip_quotes(command)):
+        head, toks = command_head(seg.split())
+        if head == "git" and toks and git_subcommand(toks) == "push":
+            return True
+    return False
+
+
+# --- entry ------------------------------------------------------------------------
 
 def deny(reason: str) -> None:
     print(json.dumps({
@@ -60,28 +271,35 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except json.JSONDecodeError:
+        # Cannot even identify the command — allowing here matches the global floor's
+        # "unparseable stdin -> allow" (denying would brick every session).
         return 0
 
-    tool_name = str(payload.get("tool_name", ""))
-    if tool_name not in {"Bash", "Shell"}:
+    if str(payload.get("tool_name", "")) not in {"Bash", "Shell"}:
         return 0
 
-    command = str(payload.get("tool_input", {}).get("command", ""))
-    compact = " ".join(command.split())
-
-    for pattern, reason in DENY_PATTERNS:
-        if pattern.search(compact):
-            deny(reason)
-            return 0
-
-    if SECRET_PATH.search(compact) and SECRET_MUTATORS.search(compact):
-        deny("Command appears to modify or move secret/env files. Ask for explicit approval.")
+    command = str((payload.get("tool_input") or {}).get("command", ""))
+    if not command.strip():
         return 0
 
-    if GIT_PUSH.search(compact):
-        emit_context("[PRE-PUSH] Verify: tests passed, build clean, no secrets staged, commit messages are descriptive.")
+    try:
+        decision, reason = check(command)
+    except Exception as exc:  # fail CLOSED on rule-evaluation errors
+        # This overlay is the bypass-proof enforcer of Taskdeck's stricter work-loss
+        # denies; a crash must not silently open the gate. (The global floor still runs
+        # as its own hook.)
+        deny(f"pre_tool_use overlay error ({exc.__class__.__name__}); refusing to fail open.")
         return 0
 
+    if decision == "deny":
+        deny(reason)
+        return 0
+
+    if _git_push_present(command):
+        emit_context(
+            "[PRE-PUSH] Verify: tests passed, build clean, no secrets staged, "
+            "commit messages are descriptive."
+        )
     return 0
 
 
