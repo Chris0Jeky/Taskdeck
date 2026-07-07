@@ -169,6 +169,8 @@ def test_pre_tool_use(settings: dict[str, object]) -> None:
         'psql -c "DROP TABLE cards"',
         'sqlite3 taskdeck.db "DROP TABLE Cards"',
         "chmod -R 777 .",
+        "chmod --recursive 777 .",
+        "rm --recursive --force ../../evil",
         # broad secret-file mutation (global floor's narrower .env/.pem set misses these)
         "Set-Content .env.local test",
         "echo token=abc >> api_key.txt",
@@ -211,6 +213,10 @@ def test_pre_tool_use(settings: dict[str, object]) -> None:
         "rm -rf frontend/taskdeck-web/dist",
         "rm -rf ./dist",
         "Remove-Item -Recurse -Force .\\dist",
+        # non-recursive force delete: "--force" contains 'r'+'f' but is NOT recursive,
+        # so the '..'-escape guard must not fire on a single-file remove.
+        "rm --force ../file.txt",
+        "rm -f ../notes.txt",
     ]:
         expect_pretool_allow(command)
 

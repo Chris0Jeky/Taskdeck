@@ -103,8 +103,11 @@ def command_head(toks: list[str]) -> tuple[str, list[str]]:
     return "", []
 
 
-def git_subcommand(toks: list[str]) -> str:
-    """Return the git subcommand, skipping global options AND their value tokens."""
+def git_subcommand(toks: list[str]) -> tuple[str, int]:
+    """Return (subcommand_lowercased, index_in_toks), skipping global options AND their
+    value tokens. index is -1 when no subcommand is present. Returning the index avoids a
+    fragile toks.index(sub) rescan that could mis-align when a global-option value equals
+    the subcommand name (e.g. ``git -C push push``)."""
     i = 1
     while i < len(toks):
         t = toks[i]
@@ -114,8 +117,29 @@ def git_subcommand(toks: list[str]) -> str:
         if t.startswith("-"):
             i += 1
             continue
-        return t.lower()
-    return ""
+        return t.lower(), i
+    return "", -1
+
+
+def _rm_recursive_force(toks: list[str]) -> tuple[bool, bool]:
+    """(is_recursive, is_force) for an ``rm`` invocation. Short flags are scanned per
+    character (``-rf``/``-fr``); long flags are matched whole so ``--force`` is NOT
+    misread as recursive+force just because the word "force" contains 'r' and 'f'."""
+    recursive = force = False
+    for t in toks[1:]:
+        if t.startswith("--"):
+            opt = t.lower()
+            if opt == "--recursive":
+                recursive = True
+            elif opt == "--force":
+                force = True
+        elif t.startswith("-"):
+            chars = t[1:]
+            if "r" in chars or "R" in chars:
+                recursive = True
+            if "f" in chars:
+                force = True
+    return recursive, force
 
 
 # --- Taskdeck-specific patterns ---------------------------------------------------
@@ -177,8 +201,8 @@ def check(command: str) -> tuple[str, str]:
 
         # ---- git work-loss HARD-DENY (global floor only ASKS at T3) ----
         if head == "git":
-            sub = git_subcommand(toks)
-            args = toks[toks.index(sub) + 1:] if sub in toks else []
+            sub, sub_idx = git_subcommand(toks)
+            args = toks[sub_idx + 1:] if sub_idx != -1 else []
 
             if sub == "reset" and "--hard" in args:
                 return "deny", "Hard reset discards uncommitted work; inspect state and ask first."
@@ -208,13 +232,14 @@ def check(command: str) -> tuple[str, str]:
             return "deny", "Publishing packages (npm publish) is outside normal Taskdeck workflow."
         if head == "dotnet" and [t.lower() for t in toks[1:4]] == ["ef", "database", "drop"]:
             return "deny", "Database drop (dotnet ef database drop) requires explicit human approval."
-        if head == "chmod" and any(re.match(r"^-[A-Za-z]*R", t) for t in toks[1:]) \
-                and any("777" in t for t in toks[1:]):
+        if head == "chmod" and any(
+            re.match(r"^-[A-Za-z]*R", t) or t.lower() == "--recursive" for t in toks[1:]
+        ) and any("777" in t for t in toks[1:]):
             return "deny", "Recursive world-writable permissions (chmod -R 777) are blocked."
 
         # ---- recursive delete escaping the project (global blocks only ABSOLUTE) ----
-        rm_flags = "".join(t.lstrip("-") for t in toks[1:] if t.startswith("-"))
-        is_rm_rf = head == "rm" and "r" in rm_flags and "f" in rm_flags
+        rm_recursive, rm_force = _rm_recursive_force(toks)
+        is_rm_rf = head == "rm" and rm_recursive and rm_force
         is_recurse_del = head in ("remove-item", "ri") and any(
             re.match(r"^-recurse", t, re.IGNORECASE) for t in toks[1:]
         )
@@ -241,7 +266,7 @@ def check(command: str) -> tuple[str, str]:
 def _git_push_present(command: str) -> bool:
     for seg in segments(strip_quotes(command)):
         head, toks = command_head(seg.split())
-        if head == "git" and toks and git_subcommand(toks) == "push":
+        if head == "git" and toks and git_subcommand(toks)[0] == "push":
             return True
     return False
 
