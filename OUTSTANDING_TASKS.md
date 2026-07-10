@@ -54,7 +54,7 @@ Last reviewed: 2026-06-19
 
 Direction: **free open beta → commercial horizon** (`docs/REVIVAL_PLAN.md` is the planning spine; `docs/analysis/2026-07-10_revival_assessment.md` is the evidence base). §D items are re-scoped in place — same work, new purpose (v0.1 ship gate instead of archive gate). Issue IDs below are seeded as the REVIVAL wave; see the tracker for the authoritative list.
 
-- [ ] **REVIVAL-00 tracker** — charter + v0.1 ship-gate ratification (amends #1278); wave sequencing.
+- [ ] **REVIVAL-00 tracker (#1311)** — charter + v0.1 ship-gate ratification (amends #1278); wave sequencing. Child issues: #1297–#1310 (REVIVAL-01..14); docs PR: #1296.
 - [ ] **Phase 0 — dogfooding starts now** (#1271, unchanged): real personal use including WhisperX transcripts through the existing transcript capture tab.
 - [ ] **Phase 1 — truth + safety before strangers**: registration gating flag; remove the fake undo timeline; de-stub Today dossier (#1272); Paper fonts + favicon; Paper onboarding/first-board path; README revival rewrite + demo GIF + MCP section; v0.1.0 tag → exercise release pipeline → GHCR image; fix render.yaml; branch protection (#1173); CI keep/kill (#1275); Paper E2E/axe re-point (#1274).
 - [ ] **Phase 2 — transcript engine** (authorized new-surface exception): LLM triage strategy behind `ICaptureTriageService` for transcript sources; chunking + cap raise; triage schema v2 (type/assignee/due + model-derived confidence); Transcript entity + evidence spans; OpenAICompatible provider + true SSE streaming; risk-tiered opt-in auto-apply; (2b, gated on dogfooding value) audio upload + WhisperX sidecar.
