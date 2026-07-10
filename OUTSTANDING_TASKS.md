@@ -50,6 +50,17 @@ Last reviewed: 2026-06-19
 
 > Full audit context and the complete gap inventory: **GitHub issue #1142** (master tracker).
 
+## E. Revival wave (2026-07-10 pivot, ADR-0044 — supersedes the archive framing of §D)
+
+Direction: **free open beta → commercial horizon** (`docs/REVIVAL_PLAN.md` is the planning spine; `docs/analysis/2026-07-10_revival_assessment.md` is the evidence base). §D items are re-scoped in place — same work, new purpose (v0.1 ship gate instead of archive gate). Issue IDs below are seeded as the REVIVAL wave; see the tracker for the authoritative list.
+
+- [ ] **REVIVAL-00 tracker** — charter + v0.1 ship-gate ratification (amends #1278); wave sequencing.
+- [ ] **Phase 0 — dogfooding starts now** (#1271, unchanged): real personal use including WhisperX transcripts through the existing transcript capture tab.
+- [ ] **Phase 1 — truth + safety before strangers**: registration gating flag; remove the fake undo timeline; de-stub Today dossier (#1272); Paper fonts + favicon; Paper onboarding/first-board path; README revival rewrite + demo GIF + MCP section; v0.1.0 tag → exercise release pipeline → GHCR image; fix render.yaml; branch protection (#1173); CI keep/kill (#1275); Paper E2E/axe re-point (#1274).
+- [ ] **Phase 2 — transcript engine** (authorized new-surface exception): LLM triage strategy behind `ICaptureTriageService` for transcript sources; chunking + cap raise; triage schema v2 (type/assignee/due + model-derived confidence); Transcript entity + evidence spans; OpenAICompatible provider + true SSE streaming; risk-tiered opt-in auto-apply; (2b, gated on dogfooding value) audio upload + WhisperX sidecar.
+- [ ] **Phase 3 — slim + launch**: dead-surface amputation (#1276 expanded); MCP packaging + scoped keys + hash-pin wiring (#1154); privacy-respecting beta feedback channel; launch checklist (r/selfhosted, Show HN, awesome-selfhosted, hosted demo).
+- [ ] **Checkpoint (~8 weeks)**: traction + dogfooding review → continue toward monetization, or fall back to §D archive plan.
+
 ## D. Archive closeout wave (seeded by the 2026-07-02 whole-project analysis)
 
 Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_CORRECTION.md` (what must change + ordered plan). Wave tracker: **#1278** (ARCHIVE-00).
@@ -71,6 +82,7 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 ---
 
 ## Changelog
+- 2026-07-10: **Revival pivot decided (ADR-0044) — archive pivot superseded.** Maintainer decision after the WhisperX prototype + two-track revival analysis (`docs/analysis/2026-07-10_revival_assessment.md`). Direction: free open beta (adoption/feedback/exposure) → commercial horizon; positioning: local-first review-first action-item engine + write-gated MCP gateway; MIT stays MIT. Added §E (revival wave); §D items re-scoped in place as the v0.1 ship gate. Planning spine: `docs/REVIVAL_PLAN.md`. Seeded the REVIVAL issue wave on GitHub.
 - 2026-07-06: **Agent-harness blueprint adopted (step 1).** Estate-wide tiered blueprint landed at `source/agent-harness/`; Taskdeck declared T3 (`.claude/tier.json`). Footgun PR opened: committed `bypassPermissions` → settings.local.json, history-rewriter script fenced human-only. Remaining T3 diet seeded as #1291 (added to §D). Global layer shipped: `~/.claude/CLAUDE.md` laws, argv-aware deny floor (49-case tested), ESTATE.md registry, `~/.claude` now versioned (private repo claude-config).
 - 2026-07-02: **Whole-project analysis delivered + archive closeout wave seeded.** Multi-agent analysis (6 dimensions, 15 claims adversarially verified: 5 confirmed / 10 adjusted / 0 refuted) produced `docs/PROJECT_TRAJECTORY.md` + `docs/COURSE_CORRECTION.md`. Seeded issues #1269–#1278 (ARCHIVE-00..09, new `archive-closeout` label) and posted re-scope comments on 14 existing issues. Added §D above. Central findings: no checkable definition of done existed in the tracked repo; zero organic personal-usage data; the default Paper UI is the least-tested UI; the "canonical" exe run path has never been built; ~31% of open issues already decided-closed by the pivot but still open.
 - 2026-06-19 (later): **Merge hold lifted — deck merged.** The maintainer lifted the hold and all four PRs shipped to `main`: **#1220** (canonical-docs reconciliation; 14 Codex rounds + 3 drift sweeps), **#1219** (Paper File-away dismiss, closes #1161), **#1221** (reachable in-app Appearance theme toggle — a Paper-activation prerequisite), **#1225** (StackExchange.Redis + SignalR-backplane semver-major caps). Post-merge STATUS/masterplan sync in PR #1233. Seeded during this work: #1226 (net8.0 upgrade), #1227 (dated-snapshot staleness), #1228 (cd-staging-gate auto-trigger), + the #1195 GDPR caller-audit. Next: the Paper-review de-stubs (last Wave-2 blocker before the default-theme flip) — `onPreviewDiff` in PR #1234.
