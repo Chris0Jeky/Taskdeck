@@ -5,7 +5,8 @@ Last Updated: 2026-07-10
 **Status:** Active planning spine (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot).
 **Authority:** work not on this plan's ratified wave list is, by definition, not taken (the finite-work discipline from `COURSE_CORRECTION.md` §1.1 carries over unchanged). New backend surface is allowed only where §7 grants it.
 **Evidence base:** `docs/analysis/2026-07-10_revival_assessment.md` (7 code-review dimensions, ~25 adversarially verified claims; market research with live-verified competitor data) plus the 2026-07-10 business research (monetization/licensing/beta-mechanics; sources cited inline below).
-**Issue wave:** `REVIVAL-*` issues on GitHub (label `revival`); tracker REVIVAL-00 amends `#1278`.
+**Issue wave:** `REVIVAL-*` issues on GitHub (label `revival`); tracker REVIVAL-00 = `#1311` (amends `#1278`).
+**Issue numbers:** REVIVAL-00 `#1311` · 01 `#1297` · 02 `#1298` · 03 `#1299` · 04 `#1300` · 05 `#1301` · 06 `#1302` · 07 `#1303` · 08 `#1304` · 09 `#1305` · 10 `#1306` · 11 `#1307` · 12 `#1308` · 13 `#1309` · 14 `#1310`.
 
 ---
 
