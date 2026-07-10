@@ -1,8 +1,8 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-07-04
+Last Updated: 2026-07-10
 <br>
-Planning Horizon: the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive), then archival — _(historical: this was an open "Next 8 to 12 weeks" release horizon before the 2026-06-13 archive pivot)_
+Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -12,11 +12,26 @@ Companion Active Docs:
 
 ## Purpose
 
-This is the active execution guide for sequencing past, current, and the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive) that remain before archival.
+This is the active execution guide for sequencing past, current, and the revival waves defined in `docs/REVIVAL_PLAN.md` (truth + safety before strangers → transcript engine → open-beta launch → traction checkpoint).
 `docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
 Update this file at the end of each meaningful delivery cycle or when new work is seeded.
 
-## Direction (2026-06-13, maintainer-decided): finish-for-personal-use → archive
+## Direction (2026-07-10, maintainer-decided): revival — free open beta → commercial horizon
+
+**The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. Everything shipped under MIT stays MIT — no retroactive relicensing (ADR-0044 Decision 3).
+
+The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the one authorized new-backend-surface exception), Phase 3 (slim + launch), then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. The finite-work discipline from `COURSE_CORRECTION.md` carries over — work not on the ratified wave list is, by definition, not taken.
+
+Goals, in order:
+
+1. **Truth + safety before strangers** — de-stub the fabricated Today dossier (`#1272`), remove the fake undo affordance, gate registration, protect main, ship v0.1.0 through the never-exercised release pipeline, make the README/onboarding/fonts honest and welcoming (REVIVAL wave, Phase 1).
+2. **The transcript engine** — LLM-backed triage for transcript sources behind `ICaptureTriageService`, durable Transcript entity, evidence-span deep links, OpenAI-compatible provider, risk-tiered approvals (REVIVAL wave, Phase 2).
+3. **Open-beta launch** — dead-surface amputation, MCP packaging, privacy-respecting feedback channel, launch (REVIVAL wave, Phase 3).
+4. **Checkpoint** — re-evaluate on adoption/feedback signals; continue toward monetization or fall back to archive.
+
+## Direction (2026-06-13, superseded 2026-07-10): finish-for-personal-use → archive
+
+> **Superseded by the 2026-07-10 revival pivot above (ADR-0044).** Retained because the closeout analysis and most of its work items remain load-bearing: the archive exit criteria (#1278) are repurposed as the v0.1 ship gate, and the archive path is the documented fallback if the beta checkpoint fails.
 
 **Taskdeck will not be distributed.** The maintainer's decision is to finish it as a personal-use tool, then archive it as a completed project. This **supersedes** both the 2026-06-05 ship-first framing (v0.1.0 → … → v1.0.0 GA) and the 2026-03-29 platform-expansion "four pillars" framing. Goals, in order:
 
