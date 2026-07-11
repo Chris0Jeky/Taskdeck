@@ -36,6 +36,7 @@ public static class OptionsValidationRegistration
         services.RegisterValidatedOptions<LlmQuotaSettings>(configuration, "LlmQuota");
         services.RegisterValidatedOptions<LlmToolCallingSettings>(configuration, "LlmToolCalling");
         services.RegisterValidatedOptions<AbuseDetectionSettings>(configuration, "AbuseDetection");
+        services.RegisterValidatedOptions<LlmCaptureTriageSettings>(configuration, "CaptureTriageLlm");
 
         // ── Settings from WorkerRegistration ────────────────────────────────
 
