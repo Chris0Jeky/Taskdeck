@@ -685,6 +685,311 @@ public class CaptureTriageServiceTests
         createdProposal.Operations[1].Parameters.Should().Contain("Update docs");
     }
 
+    #region LLM transcript triage strategy (REVIVAL-08 M1)
+
+    private CaptureTriageService BuildServiceWithExtractor(Mock<ILlmCaptureTriageExtractor> extractorMock)
+    {
+        return new CaptureTriageService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            extractorMock.Object);
+    }
+
+    private void SetupBoardAndProposalCreation(
+        Guid userId, Guid boardId, Guid captureId, Action<CreateProposalDto>? onCreate = null)
+    {
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => onCreate?.Invoke(dto))
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+    }
+
+    private static CapturePayloadV1 TranscriptPayload(string text = "Alice: I'll send the report.\nBob: Sounds good.")
+        => new(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.TranscriptPaste, text);
+
+    private static LlmCaptureTriageExtraction SuccessfulExtraction(params (string Title, string Evidence)[] tasks)
+    {
+        var output = new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            CaptureTriageOutputContract.PromptVersionLlmV1,
+            tasks.Select(t => new CaptureTriageTaskV1(t.Title, t.Evidence)).ToList());
+        return new LlmCaptureTriageExtraction(
+            LlmCaptureTriageOutcome.Succeeded,
+            output,
+            Provider: "OpenAI",
+            Model: "gpt-4o-mini");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldUseLlmOutputAndRecordRealProviderProvenance_WhenExtractionSucceeds()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SuccessfulExtraction(
+                ("Send the quarterly report", "Alice: I will send the report."),
+                ("Review the deployment plan", "Bob: I will review the deployment plan tomorrow.")));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(2);
+        result.Value.Provider.Should().Be("OpenAI");
+        result.Value.Model.Should().Be("gpt-4o-mini");
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().HaveCount(2);
+        createdProposal.Operations![0].Parameters.Should().Contain("Send the quarterly report");
+        // Evidence rides in the card description so the review rail can show the verbatim quote.
+        createdProposal.Operations[0].Parameters.Should().Contain("Alice: I will send the report.");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldFallBackToDeterministicExtractor_WhenLlmLegFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.ProviderDegraded, Detail: "circuit open"));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Follow up with Alice\n- [ ] Ship the fix"));
+
+        // Degraded LLM must never fail the capture: the deterministic extractor runs and its
+        // provenance names the extractor, not the LLM that did not produce the output (#1273).
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(2);
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        result.Value.Model.Should().Be(CaptureTriageService.TriageModelName);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldFallBackToDeterministicExtractor_WhenExtractorThrows()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("unexpected provider bug"));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Survive extractor bugs"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        result.Value.Model.Should().Be(CaptureTriageService.TriageModelName);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldFailWithoutFallback_WhenLlmReportsNoActionableItems()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.EmptyExtraction));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("Just chit-chat, nothing actionable."));
+
+        // A deliberate zero-item verdict must not degrade to the deterministic extractor, whose
+        // whole-text fallback would fabricate a junk card — the behavior REVIVAL-08 removes.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("no actionable items");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldNeverInvokeExtractor_ForNonTranscriptSources()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>(MockBehavior.Strict);
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                "- [ ] Plain typed capture"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        extractorMock.Verify(
+            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldSkipLlmCall_WhenProposalAlreadyExists()
+    {
+        // A crashed prior attempt already committed the proposal; the retry must not burn a second
+        // LLM call for output that would be discarded by the reuse branch.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        var existingProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Capture triage",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            captureId.ToString());
+        existingProposal.AddOperation(new AutomationProposalOperation(
+            existingProposal.Id, 0, "create", "card", "{\"title\":\"existing\"}", "existing-op-1"));
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(ProposalSourceType.Queue, captureId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingProposal);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>(MockBehavior.Strict);
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ProposalId.Should().Be(existingProposal.Id);
+        extractorMock.Verify(
+            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldReportUnknownReuseProvenance_WhenLlmCouldHaveAuthoredExistingProposal()
+    {
+        // Crash window: a prior run committed the proposal but died before stamping the payload.
+        // On retry the author is unknowable (either engine could have produced it), so naming a
+        // concrete engine would risk false provenance (#1273) — "unknown" is the honest value.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        var existingProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Capture triage",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            captureId.ToString());
+        existingProposal.AddOperation(new AutomationProposalOperation(
+            existingProposal.Id, 0, "create", "card", "{\"title\":\"existing\"}", "existing-op-1"));
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(ProposalSourceType.Queue, captureId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingProposal);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>(MockBehavior.Strict);
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        // Payload provenance was never stamped (no provider/model on it).
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().Be(CaptureTriageService.UnknownProvenanceValue);
+        result.Value.Model.Should().Be(CaptureTriageService.UnknownProvenanceValue);
+        result.Value.PromptVersion.Should().Be(CaptureTriageService.UnknownProvenanceValue);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldPreserveStampedReuseProvenance_WhenPayloadCarriesIt()
+    {
+        // If the payload already carries the authoring run's stamp, the reuse branch must echo the
+        // author's own record instead of the current run's engine.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        var existingProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Capture triage",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            captureId.ToString());
+        existingProposal.AddOperation(new AutomationProposalOperation(
+            existingProposal.Id, 0, "create", "card", "{\"title\":\"existing\"}", "existing-op-1"));
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(ProposalSourceType.Queue, captureId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingProposal);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>(MockBehavior.Strict);
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var stampedPayload = CaptureRequestContract.WithProvenance(
+            TranscriptPayload(),
+            captureId,
+            promptVersion: CaptureTriageOutputContract.PromptVersionLlmV1,
+            provider: "OpenAI",
+            model: "gpt-4o-mini");
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, stampedPayload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().Be("OpenAI");
+        result.Value.Model.Should().Be("gpt-4o-mini");
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
+    }
+
+    #endregion
+
     private static ProposalDto BuildProposalDto(Guid userId, Guid boardId, Guid captureId)
     {
         return new ProposalDto(

@@ -581,4 +581,80 @@ public class CaptureRequestContractTests
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain(CaptureRequestContract.MaxRawTextLength.ToString());
     }
+
+    [Theory]
+    [InlineData(CaptureRequestContract.RequestTypeV1)]
+    [InlineData(CaptureRequestContract.RequestTypeTranscriptV1)]
+    [InlineData("INBOX.CAPTURE.TRANSCRIPT.V1")]
+    [InlineData("Inbox.Capture.Transcript.v1")]
+    public void ValidateRequestType_ShouldAcceptSupportedCaptureRequestTypes(string requestType)
+    {
+        var result = CaptureRequestContract.ValidateRequestType(requestType);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("inbox.capture.v2")]
+    [InlineData("inbox.capture.transcript.v2")]
+    [InlineData("inbox.capture.unknown")]
+    public void ValidateRequestType_ShouldFail_ForUnsupportedCapturePrefixedTypes(string requestType)
+    {
+        var result = CaptureRequestContract.ValidateRequestType(requestType);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Unsupported capture request type");
+        result.ErrorMessage.Should().Contain(CaptureRequestContract.RequestTypeV1);
+        result.ErrorMessage.Should().Contain(CaptureRequestContract.RequestTypeTranscriptV1);
+    }
+
+    [Theory]
+    [InlineData(CaptureRequestContract.RequestTypeTranscriptV1)]
+    [InlineData("INBOX.CAPTURE.TRANSCRIPT.V1")]
+    [InlineData("Inbox.Capture.Transcript.V1")]
+    public void IsTranscriptRequestType_ShouldReturnTrue_ForTranscriptRequestTypes(string requestType)
+    {
+        CaptureRequestContract.IsTranscriptRequestType(requestType).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(CaptureRequestContract.RequestTypeV1)]
+    [InlineData("automation.chat.v1")]
+    [InlineData("transcript.v1")]
+    public void IsTranscriptRequestType_ShouldReturnFalse_ForNonTranscriptRequestTypes(string requestType)
+    {
+        CaptureRequestContract.IsTranscriptRequestType(requestType).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void IsTranscriptRequestType_ShouldReturnFalse_ForMissingRequestTypes(string? requestType)
+    {
+        CaptureRequestContract.IsTranscriptRequestType(requestType!).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(CaptureSource.TranscriptPaste)]
+    [InlineData(CaptureSource.TranscriptFile)]
+    public void ResolveRequestTypeForSource_ShouldReturnTranscriptV1_ForTranscriptSources(CaptureSource source)
+    {
+        CaptureRequestContract.ResolveRequestTypeForSource(source)
+            .Should().Be(CaptureRequestContract.RequestTypeTranscriptV1);
+    }
+
+    [Theory]
+    [InlineData(CaptureSource.Typed)]
+    [InlineData(CaptureSource.Paste)]
+    [InlineData(CaptureSource.Import)]
+    [InlineData(CaptureSource.Voice)]
+    [InlineData(CaptureSource.MeetingIntegration)]
+    [InlineData(CaptureSource.VsCodeExtension)]
+    public void ResolveRequestTypeForSource_ShouldReturnCaptureV1_ForNonTranscriptSources(CaptureSource source)
+    {
+        CaptureRequestContract.ResolveRequestTypeForSource(source)
+            .Should().Be(CaptureRequestContract.RequestTypeV1);
+    }
 }
