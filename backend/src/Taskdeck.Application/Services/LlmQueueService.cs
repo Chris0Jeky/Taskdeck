@@ -67,7 +67,10 @@ public class LlmQueueService : ILlmQueueService
                     return Result.Failure<LlmRequestDto>(payloadResult.ErrorCode, payloadResult.ErrorMessage);
                 }
 
-                requestType = CaptureRequestContract.RequestTypeV1;
+                // Normalize the type from the parsed payload's source, not the caller's string, so
+                // a transcript payload enqueued under the general capture type (or vice versa)
+                // still lands in the correct worker lane.
+                requestType = CaptureRequestContract.ResolveRequestTypeForSource(payloadResult.Value.Source);
                 payload = CaptureRequestContract.SerializePayload(payloadResult.Value);
             }
 
