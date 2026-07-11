@@ -416,6 +416,12 @@ public static class CaptureRequestContract
 
         if (!allowServerAttributionFields)
         {
+            // Every server-authored provenance field is forbidden on the client path — not just
+            // actor attribution. proposalId/triageRunId/provider/model/promptVersion are stamped by
+            // the triage pipeline after it actually runs; accepting them from a client would let a
+            // capture bypass triage entirely (the workers short-circuit on provenance.proposalId,
+            // marking the item Completed without ever triaging it) and persist fabricated
+            // provider/model provenance as if the server recorded it (#1273).
             var forbiddenAttributionFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "requestedByUserId",
@@ -423,7 +429,12 @@ public static class CaptureRequestContract
                 "sourceSurface",
                 "boardId",
                 "sessionId",
-                "convertedAt"
+                "convertedAt",
+                "proposalId",
+                "triageRunId",
+                "provider",
+                "model",
+                "promptVersion"
             };
 
             foreach (var rootProperty in root.EnumerateObject())
