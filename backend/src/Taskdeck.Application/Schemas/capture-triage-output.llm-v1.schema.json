@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/capture-triage-output.llm-v1.schema.json",
+  "title": "Taskdeck Capture Triage Output llm-v1",
+  "description": "Output of the LLM-backed transcript triage engine (REVIVAL-08). Same v1 task shape as capture-triage-output.v1; the prompt version identifies the LLM extraction prompt so provenance stays honest. Evidence values are verbatim transcript quotes so evidence spans (REVIVAL-09) can be located by exact-substring search.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "promptVersion",
+    "tasks"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "promptVersion": {
+      "type": "string",
+      "const": "llm-triage.v1"
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "evidence"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          }
+        }
+      }
+    }
+  }
+}
