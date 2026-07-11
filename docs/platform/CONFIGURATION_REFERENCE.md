@@ -31,6 +31,7 @@ Source files used to build this reference:
   - [`LlmToolCalling`](#llmtoolcalling)
   - [`LlmQuota`](#llmquota)
   - [`LlmKillSwitch`](#llmkillswitch)
+  - [`CaptureTriageLlm`](#capturetriagellm)
   - [`AbuseDetection`](#abusedetection)
 - [Workers](#workers)
   - [`Workers`](#workers-1)
@@ -232,6 +233,23 @@ Bound to `LlmKillSwitchSettings`. Runtime changes are held in memory only
 | `LlmKillSwitch:KilledSurfaces` | `string[]` (set) | `[]` | Surface names to block individually (e.g. `Chat`, `CaptureTriage`, `Worker`). Case-insensitive. | No |
 | `LlmKillSwitch:KilledUserIds` | `string[]` (set) | `[]` | User IDs to block individually. Case-insensitive. | No |
 | `LlmKillSwitch:Reasons` | `object` (map) | `{}` | Map keyed by surface name or user ID to reason string. | No |
+
+### `CaptureTriageLlm`
+
+Bound to `LlmCaptureTriageSettings`. Registered in
+`LlmProviderRegistration.AddLlmProviders`. Controls the LLM-backed transcript
+triage strategy (REVIVAL-08, ADR-0045): it only ever runs for transcript-source
+captures when a live (non-mock) provider resolves, and any failure — provider
+down, kill switch (`LlmKillSwitch` surface `CaptureTriage`), quota
+(`LlmQuota`), unparseable output — degrades to the deterministic extractor
+instead of failing the capture. The section is absent from `appsettings.json`;
+class defaults apply.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `CaptureTriageLlm:Enabled` | `bool` | `true` | Master switch for LLM transcript triage. When false, transcript captures triage through the deterministic extractor exactly as before REVIVAL-08. | No |
+| `CaptureTriageLlm:MaxOutputTokens` | `int` | `4096` | Completion-token budget for the extraction response (range 256–32768). Sized for the worst-case 20-task v1 output with headroom; a truncated response is detected as degraded and falls back deterministically. | No |
+| `CaptureTriageLlm:Temperature` | `double` | `0.1` | Sampling temperature for extraction (range 0–2). Low by default: fidelity over creativity. | No |
 
 ### `AbuseDetection`
 

@@ -45,3 +45,5 @@
 | [0041](ADR-0041-desktop-connector-key-autogeneration.md) | Auto-Generate the Connector Encryption Key for the Desktop Exe (Headless Production Excluded) | Accepted | 2026-06-20 |
 | [0042](ADR-0042-proposal-deferral-snooze.md) | Proposal Deferral (Snooze) via DeferredUntil with Expiry Protection | Accepted | 2026-06-27 |
 | [0043](ADR-0043-proposal-quality-feedback-signal.md) | Proposal Quality Feedback as a Separate Content-Free Signal | Accepted | 2026-06-27 |
+| 0044 | *(reserved by PR #1296 — Revival Pivot to a Free Open Beta, ADR-0044)* | Proposed (in PR #1296) | 2026-07-10 |
+| [0045](ADR-0045-llm-transcript-triage-engine.md) | LLM Transcript Triage — Dedicated Worker Lane, Strategy-with-Fallback, Honest Provenance | Proposed | 2026-07-11 |
