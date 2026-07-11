@@ -103,30 +103,18 @@ public class TranscriptTriageWorker : BackgroundService
             return;
         }
 
-        var maxConcurrency = Math.Clamp(_settings.MaxConcurrency, 1, _settings.MaxBatchSize);
-        using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
-        var tasks = new List<Task>(transcriptItems.Count);
-
+        // Deliberately SEQUENTIAL (unlike the sibling worker's semaphore fan-out): the per-user LLM
+        // quota is check-then-record with no atomic reservation, so concurrent extractions in one
+        // tick would all pass CheckQuotaAsync on pre-tick usage totals and overshoot the quota — the
+        // free beta's primary cost-abuse control — by up to concurrency-1 live calls. Serializing
+        // the lane closes that intra-worker window (each item's RecordUsageAsync commits before the
+        // next item's check) and matches the lane's nature: transcript triage is rare, slow work
+        // where throughput matters far less than spend control.
         foreach (var item in transcriptItems)
         {
-            await semaphore.WaitAsync(ct);
-
-            var itemId = item.Id;
-            var expectedUpdatedAt = item.UpdatedAt;
-            tasks.Add(Task.Run(async () =>
-            {
-                try
-                {
-                    await ProcessTranscriptItemAsync(itemId, expectedUpdatedAt, ct);
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
-            }, ct));
+            ct.ThrowIfCancellationRequested();
+            await ProcessTranscriptItemAsync(item.Id, item.UpdatedAt, ct);
         }
-
-        await Task.WhenAll(tasks);
     }
 
     private async Task ProcessTranscriptItemAsync(Guid itemId, DateTimeOffset expectedUpdatedAt, CancellationToken ct)
@@ -231,14 +219,29 @@ public class TranscriptTriageWorker : BackgroundService
                 item.MarkAsCompleted();
                 await unitOfWork.SaveChangesAsync(ct);
 
-                _logger.LogInformation(
-                    "Transcript capture item {ItemId} triaged into proposal {ProposalId} by {Provider}/{Model}",
-                    item.Id,
-                    triageResult.Value.ProposalId,
-                    triageResult.Value.Provider,
-                    triageResult.Value.Model);
+                // A null ProposalId is the "triaged, nothing to propose" verdict: the item is
+                // Completed without a linked proposal (capture status: Triaged), never Failed —
+                // a correct empty extraction is a successful triage, not an error.
+                if (triageResult.Value.ProposalId is null)
+                {
+                    _logger.LogInformation(
+                        "Transcript capture item {ItemId} triaged by {Provider}/{Model}: no actionable items; completed without a proposal",
+                        item.Id,
+                        triageResult.Value.Provider,
+                        triageResult.Value.Model);
+                    outcome = "completed_empty";
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Transcript capture item {ItemId} triaged into proposal {ProposalId} by {Provider}/{Model}",
+                        item.Id,
+                        triageResult.Value.ProposalId,
+                        triageResult.Value.Provider,
+                        triageResult.Value.Model);
+                    outcome = "completed";
+                }
 
-                outcome = "completed";
                 stopWatch.Stop();
                 RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
                 return;
