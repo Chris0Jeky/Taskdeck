@@ -143,6 +143,84 @@ public class CaptureRequestContractTests
         result.ErrorMessage.Should().Contain("must not include server attribution field");
     }
 
+    [Theory]
+    [InlineData("proposalId")]
+    [InlineData("triageRunId")]
+    public void ParsePayload_ShouldFail_WhenTriageLinkageFieldIsSuppliedInUntrustedPayload(string field)
+    {
+        // A client-supplied provenance.proposalId would make the workers short-circuit and mark
+        // the capture Completed WITHOUT ever triaging it; triageRunId is equally server-authored.
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "{{field}}": "{{Guid.NewGuid()}}"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("must not include server attribution field");
+    }
+
+    [Theory]
+    [InlineData("provider", "OpenAI")]
+    [InlineData("model", "gpt-4o-mini")]
+    [InlineData("promptVersion", "llm-triage.v1")]
+    public void ParsePayload_ShouldFail_WhenTriageEngineProvenanceIsSuppliedInUntrustedPayload(string field, string value)
+    {
+        // provider/model/promptVersion are stamped by the triage pipeline after it actually ran;
+        // accepting them from a client would persist fabricated provenance (#1273).
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "{{field}}": "{{value}}"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("must not include server attribution field");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldAllowTriageLinkageFields_WhenServerAttributionIsAllowed()
+    {
+        // The workers re-parse STAMPED payloads with allowServerAttributionFields: true; the
+        // client-path hardening must not break server-side round-trips of triaged captures.
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "proposalId": "{{Guid.NewGuid()}}",
+                            "triageRunId": "{{Guid.NewGuid()}}",
+                            "provider": "OpenAI",
+                            "model": "gpt-4o-mini",
+                            "promptVersion": "llm-triage.v1"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: true);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provenance!.Provider.Should().Be("OpenAI");
+        result.Value.Provenance.PromptVersion.Should().Be("llm-triage.v1");
+    }
+
     [Fact]
     public void ParsePayload_ShouldAllowProvenanceAttributionField_WhenServerAttributionIsAllowed()
     {
@@ -323,7 +401,9 @@ public class CaptureRequestContractTests
                         }
                         """;
 
-        var result = CaptureRequestContract.ParsePayload(payload);
+        // Server path: the client path now rejects the field outright as server-authored
+        // provenance, so the length contract is exercised where stamped payloads round-trip.
+        var result = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: true);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
@@ -344,7 +424,9 @@ public class CaptureRequestContractTests
                         }
                         """;
 
-        var result = CaptureRequestContract.ParsePayload(payload);
+        // Server path: the client path now rejects the field outright as server-authored
+        // provenance, so the length contract is exercised where stamped payloads round-trip.
+        var result = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: true);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);

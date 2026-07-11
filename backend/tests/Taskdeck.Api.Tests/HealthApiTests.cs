@@ -50,6 +50,14 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         var housekeepingWorker = workers.GetProperty("proposalHousekeeping");
         housekeepingWorker.TryGetProperty("stalenessSeconds", out _).Should().BeTrue();
         housekeepingWorker.TryGetProperty("maxStalenessSeconds", out _).Should().BeTrue();
+
+        // Transcript lane (REVIVAL-08): monitored with its own, much larger staleness budget
+        // because one tick legitimately blocks for minutes of sequential LLM calls.
+        var transcriptWorker = workers.GetProperty("transcriptTriage");
+        transcriptWorker.TryGetProperty("stalenessSeconds", out _).Should().BeTrue();
+        transcriptWorker.TryGetProperty("maxStalenessSeconds", out var transcriptMax).Should().BeTrue();
+        var queueMax = queueWorker.GetProperty("maxStalenessSeconds").GetDouble();
+        transcriptMax.GetDouble().Should().BeGreaterThan(queueMax);
     }
 
     [Fact]

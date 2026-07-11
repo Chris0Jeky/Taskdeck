@@ -810,7 +810,7 @@ public class CaptureTriageServiceTests
     }
 
     [Fact]
-    public async Task CreateProposalFromCaptureAsync_ShouldFailWithoutFallback_WhenLlmReportsNoActionableItems()
+    public async Task CreateProposalFromCaptureAsync_ShouldReturnTriagedWithoutProposal_WhenLlmReportsNoActionableItems()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -820,7 +820,10 @@ public class CaptureTriageServiceTests
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
             .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.EmptyExtraction));
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.EmptyExtraction,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini"));
         var service = BuildServiceWithExtractor(extractorMock);
 
         var result = await service.CreateProposalFromCaptureAsync(
@@ -829,11 +832,16 @@ public class CaptureTriageServiceTests
             boardId,
             TranscriptPayload("Just chit-chat, nothing actionable."));
 
-        // A deliberate zero-item verdict must not degrade to the deterministic extractor, whose
-        // whole-text fallback would fabricate a junk card — the behavior REVIVAL-08 removes.
-        result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("no actionable items");
+        // A deliberate zero-item verdict must not degrade to the deterministic extractor (whose
+        // whole-text fallback would fabricate a junk card) NOR surface as a failure (a correct
+        // extraction is a successful triage, not an error the user should retry). It is the
+        // "triaged, nothing to propose" success shape: no proposal, provenance naming the LLM.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ProposalId.Should().BeNull();
+        result.Value.OperationCount.Should().Be(0);
+        result.Value.Provider.Should().Be("OpenAI");
+        result.Value.Model.Should().Be("gpt-4o-mini");
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 

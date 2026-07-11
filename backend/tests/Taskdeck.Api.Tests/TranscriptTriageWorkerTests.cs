@@ -147,6 +147,39 @@ public class TranscriptTriageWorkerTests
     }
 
     [Fact]
+    public async Task ProcessBatch_TriagedWithoutProposal_CompletesWithoutStampingProposalId()
+    {
+        // The "triaged, nothing to propose" verdict (null ProposalId): the item completes without
+        // a linked proposal — rendered as the terminal Triaged capture status, never Failed — and
+        // the payload stamp carries the LLM's identity but no proposalId.
+        var item = CreateTranscriptTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (captureItemId, _, _, _, _) => Result.Success(new CaptureTriageProposalResultDto(
+                captureItemId,
+                Guid.NewGuid(),
+                ProposalId: null,
+                OperationCount: 0,
+                "llm-triage.v1",
+                "OpenAI",
+                "gpt-4o-mini"))
+        };
+        using var sp = BuildServiceProvider(queueRepo, triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed);
+        item.Payload.Should().Contain("\"proposalId\":null");
+        item.Payload.Should().Contain("\"provider\":\"OpenAI\"");
+        item.Payload.Should().Contain("\"model\":\"gpt-4o-mini\"");
+        item.Payload.Should().Contain("\"promptVersion\":\"llm-triage.v1\"");
+        CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal: false)
+            .Should().Be(CaptureStatus.Triaged);
+    }
+
+    [Fact]
     public async Task ProcessBatch_SuccessfulTriage_StampsProviderModelAndProposalIntoPayload()
     {
         var item = CreateTranscriptTriageItem();

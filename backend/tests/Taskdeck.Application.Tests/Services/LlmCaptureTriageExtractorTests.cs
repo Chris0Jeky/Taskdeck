@@ -242,7 +242,7 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldReturnEmptyExtraction_WhenModelDeliberatelyReportsNoTasks()
+    public async Task ExtractAsync_ShouldReturnEmptyExtractionWithProviderIdentity_WhenModelDeliberatelyReportsNoTasks()
     {
         SetupCompletion("""{"tasks":[]}""");
         var extractor = BuildExtractor();
@@ -250,6 +250,11 @@ public class LlmCaptureTriageExtractorTests
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
 
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.EmptyExtraction);
+        // The LLM genuinely ran and produced this verdict — its identity is reported so the
+        // "triaged, nothing to propose" outcome carries honest provenance (#1273).
+        result.Provider.Should().Be("OpenAI");
+        result.Model.Should().Be("gpt-4o-mini");
+        result.Output.Should().BeNull();
     }
 
     [Fact]
