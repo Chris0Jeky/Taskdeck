@@ -42,8 +42,11 @@ public static class LlmCaptureTriagePrompt
     /// fences and prose around the object via brace matching (the same shape
     /// <c>LlmInstructionExtractionPrompt.TryParseStructuredResponse</c> relies on) and ignores any
     /// extra JSON properties the model added. Returns false when no well-formed <c>tasks</c> array
-    /// is present; an empty-but-present array parses as an empty list (a deliberate "no action
-    /// items" verdict, distinct from a malformed response).
+    /// is present. EVERY array element yields an entry — malformed elements (non-objects, missing or
+    /// non-string fields) yield blank fields for the caller's sanitization to drop — so a non-empty
+    /// array can never masquerade as the deliberate "no action items" verdict that an
+    /// empty-but-present array represents (the two have different failure semantics downstream:
+    /// fallback vs honest empty).
     /// </summary>
     public static bool TryParseTasks(string? content, out List<CaptureTriageTaskV1> tasks)
     {
@@ -77,21 +80,19 @@ public static class LlmCaptureTriagePrompt
 
             foreach (var item in tasksElement.EnumerateArray())
             {
-                if (item.ValueKind != JsonValueKind.Object)
+                var title = string.Empty;
+                var evidence = string.Empty;
+                if (item.ValueKind == JsonValueKind.Object)
                 {
-                    continue;
-                }
+                    if (item.TryGetProperty("title", out var titleEl) && titleEl.ValueKind == JsonValueKind.String)
+                    {
+                        title = titleEl.GetString() ?? string.Empty;
+                    }
 
-                var title = item.TryGetProperty("title", out var titleEl) && titleEl.ValueKind == JsonValueKind.String
-                    ? titleEl.GetString()
-                    : null;
-                var evidence = item.TryGetProperty("evidence", out var evidenceEl) && evidenceEl.ValueKind == JsonValueKind.String
-                    ? evidenceEl.GetString()
-                    : null;
-
-                if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(evidence))
-                {
-                    continue;
+                    if (item.TryGetProperty("evidence", out var evidenceEl) && evidenceEl.ValueKind == JsonValueKind.String)
+                    {
+                        evidence = evidenceEl.GetString() ?? string.Empty;
+                    }
                 }
 
                 tasks.Add(new CaptureTriageTaskV1(title, evidence));
