@@ -103,6 +103,38 @@ public class CaptureTriageService : ICaptureTriageService
                 "BoardId is required to triage capture items into proposals");
         }
 
+        var captureReferenceId = captureItemId.ToString();
+        var llmIsCandidate = _llmExtractor is not null &&
+                             CaptureRequestContract.IsTranscriptSource(payload.Source);
+
+        // Replay idempotency comes FIRST: a prior attempt may have committed the proposal and then
+        // crashed before the worker stamped the payload. The reuse short-circuit must run before
+        // any validation that can legitimately fail on replay (board deleted, columns removed,
+        // permission revoked since the original run) — otherwise the replay fails permanently and
+        // orphans the committed proposal — and before any LLM spend, so a retry never burns a
+        // second extraction call for output the reuse would discard.
+        var existingProposal = await _unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+            ProposalSourceType.Queue,
+            captureReferenceId,
+            cancellationToken);
+        if (existingProposal != null)
+        {
+            var (reuseProvider, reuseModel, reusePromptVersion) = ResolveReuseProvenance(
+                payload,
+                llmIsCandidate,
+                TriageProviderName,
+                TriageModelName,
+                CaptureTriageOutputContract.PromptVersionV1);
+            return Result.Success(new CaptureTriageProposalResultDto(
+                captureItemId,
+                ResolveTriageRunId(existingProposal.CorrelationId, Guid.NewGuid()),
+                existingProposal.Id,
+                existingProposal.Operations.Count,
+                reusePromptVersion,
+                reuseProvider,
+                reuseModel));
+        }
+
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId.Value, cancellationToken);
         if (board == null)
         {
@@ -122,51 +154,49 @@ public class CaptureTriageService : ICaptureTriageService
                 "No columns found in board");
         }
 
-        var captureReferenceId = captureItemId.ToString();
-        var llmIsCandidate = _llmExtractor is not null &&
-                             CaptureRequestContract.IsTranscriptSource(payload.Source);
-
         CaptureTriageOutputV1? outputModel = null;
         var triageProvider = TriageProviderName;
         var triageModel = TriageModelName;
 
         if (llmIsCandidate)
         {
-            // Check for an already-committed proposal BEFORE spending an LLM call: a crashed prior
-            // attempt (proposal committed, completion lost) is replayed by the worker, and the
-            // reuse branch below will return the existing proposal without new extraction work.
-            var priorProposal = await _unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
-                ProposalSourceType.Queue,
-                captureReferenceId,
-                cancellationToken);
-            if (priorProposal is null)
+            var extraction = await RunLlmExtractionLegAsync(captureItemId, userId, boardId, payload, cancellationToken);
+            if (extraction.Succeeded)
             {
-                var extraction = await RunLlmExtractionLegAsync(captureItemId, userId, boardId, payload, cancellationToken);
-                if (extraction.Succeeded)
-                {
-                    outputModel = extraction.Output;
-                    triageProvider = CaptureRequestContract.SanitizeProvenanceMetadata(
-                        extraction.Provider, CaptureRequestContract.MaxProviderLength);
-                    triageModel = CaptureRequestContract.SanitizeProvenanceMetadata(
-                        extraction.Model, CaptureRequestContract.MaxModelLength);
-                }
-                else if (extraction.Outcome == LlmCaptureTriageOutcome.EmptyExtraction)
-                {
-                    // A deliberate zero-item verdict from a successful LLM run. Degrading to the
-                    // deterministic extractor here would fabricate a card out of unactionable text
-                    // (its whole-text fallback always yields one), so surface the honest outcome.
-                    return Result.Failure<CaptureTriageProposalResultDto>(
-                        ErrorCodes.ValidationError,
-                        "Transcript triage found no actionable items");
-                }
-                else
-                {
-                    _logger?.LogInformation(
-                        "LLM transcript triage unavailable for capture {CaptureItemId} ({Outcome}); using deterministic extractor. {Detail}",
-                        captureItemId,
-                        extraction.Outcome,
-                        extraction.Detail ?? string.Empty);
-                }
+                outputModel = extraction.Output;
+                triageProvider = CaptureRequestContract.SanitizeProvenanceMetadata(
+                    extraction.Provider, CaptureRequestContract.MaxProviderLength);
+                triageModel = CaptureRequestContract.SanitizeProvenanceMetadata(
+                    extraction.Model, CaptureRequestContract.MaxModelLength);
+            }
+            else if (extraction.Outcome == LlmCaptureTriageOutcome.EmptyExtraction)
+            {
+                // A deliberate zero-item verdict from a successful LLM run. Degrading to the
+                // deterministic extractor would fabricate a card out of unactionable text (its
+                // whole-text fallback always yields one), and reporting failure would surface a
+                // correct extraction as a red Failed capture and invite a pointless retry loop.
+                // Return the "triaged, nothing to propose" success shape instead: no ProposalId,
+                // zero operations, provenance naming the engine that actually ran. The workers map
+                // this to Completed-without-proposal, which the capture status policy already
+                // renders as the terminal Triaged state.
+                return Result.Success(new CaptureTriageProposalResultDto(
+                    captureItemId,
+                    Guid.NewGuid(),
+                    ProposalId: null,
+                    OperationCount: 0,
+                    CaptureTriageOutputContract.PromptVersionLlmV1,
+                    CaptureRequestContract.SanitizeProvenanceMetadata(
+                        extraction.Provider, CaptureRequestContract.MaxProviderLength),
+                    CaptureRequestContract.SanitizeProvenanceMetadata(
+                        extraction.Model, CaptureRequestContract.MaxModelLength)));
+            }
+            else
+            {
+                _logger?.LogInformation(
+                    "LLM transcript triage unavailable for capture {CaptureItemId} ({Outcome}); using deterministic extractor. {Detail}",
+                    captureItemId,
+                    extraction.Outcome,
+                    extraction.Detail ?? string.Empty);
             }
         }
 
@@ -226,28 +256,6 @@ public class CaptureTriageService : ICaptureTriageService
             return Result.Failure<CaptureTriageProposalResultDto>(
                 permissionResult.ErrorCode,
                 permissionResult.ErrorMessage);
-        }
-
-        var existingProposal = await _unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
-            ProposalSourceType.Queue,
-            captureReferenceId,
-            cancellationToken);
-        if (existingProposal != null)
-        {
-            var (reuseProvider, reuseModel, reusePromptVersion) = ResolveReuseProvenance(
-                payload,
-                llmIsCandidate,
-                triageProvider,
-                triageModel,
-                outputValidation.Value.PromptVersion);
-            return Result.Success(new CaptureTriageProposalResultDto(
-                captureItemId,
-                ResolveTriageRunId(existingProposal.CorrelationId, triageRunId),
-                existingProposal.Id,
-                existingProposal.Operations.Count == 0 ? operations.Count : existingProposal.Operations.Count,
-                reusePromptVersion,
-                reuseProvider,
-                reuseModel));
         }
 
         var createProposalResult = await _proposalService.CreateProposalAsync(
