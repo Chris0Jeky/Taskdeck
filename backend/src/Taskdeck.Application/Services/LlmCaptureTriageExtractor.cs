@@ -133,7 +133,12 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 
         if (rawTasks.Count == 0)
         {
-            return new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.EmptyExtraction);
+            // The LLM ran and deliberately reported zero action items — a real verdict, so the
+            // provider/model that produced it are reported for honest provenance stamping.
+            return new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.EmptyExtraction,
+                Provider: result.Provider,
+                Model: result.Model);
         }
 
         var sanitized = SanitizeTasks(rawTasks);

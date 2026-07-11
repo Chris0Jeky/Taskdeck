@@ -483,12 +483,25 @@ public class LlmQueueToProposalWorker : BackgroundService
                 item.MarkAsCompleted();
                 await unitOfWork.SaveChangesAsync(ct);
 
-                _logger.LogInformation(
-                    "Capture item {ItemId} triaged into proposal {ProposalId}",
-                    item.Id,
-                    triageResult.Value.ProposalId);
+                // A null ProposalId is the "triaged, nothing to propose" verdict (only reachable
+                // here for legacy transcript-typed rows whose LLM leg ran): Completed without a
+                // linked proposal renders as Triaged, never Failed.
+                if (triageResult.Value.ProposalId is null)
+                {
+                    _logger.LogInformation(
+                        "Capture item {ItemId} triaged: no actionable items; completed without a proposal",
+                        item.Id);
+                    outcome = "completed_empty";
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Capture item {ItemId} triaged into proposal {ProposalId}",
+                        item.Id,
+                        triageResult.Value.ProposalId);
+                    outcome = "completed";
+                }
 
-                outcome = "completed";
                 stopWatch.Stop();
                 RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
                 return;
