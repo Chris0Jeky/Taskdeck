@@ -59,8 +59,12 @@ Constraints discovered in the shipped seam:
 
 4. **One deliberate non-fallback: the empty verdict.** When the LLM successfully returns
    `{"tasks":[]}`, that is an extraction result, not a failure — degrading to the deterministic
-   extractor would fabricate a card out of unactionable text (the exact behavior this epic removes).
-   The capture fails with "Transcript triage found no actionable items".
+   extractor would fabricate a card out of unactionable text (the exact behavior this epic
+   removes), and marking the capture Failed would surface a correct extraction as an error and
+   invite a retry loop. The capture completes as the existing **Triaged** terminal state
+   (Completed without a linked proposal), with provenance naming the LLM that produced the
+   verdict. *(Revised during review: the original draft failed the capture; the adversarial
+   review showed Failed inflates the needs-triage gauge and loops on re-triage.)*
 
 5. **Provenance names the engine that ran, including "unknown".** LLM success records the real
    provider/model and prompt version `llm-triage.v1` (a new versioned constant beside `triage.v1`;
@@ -86,6 +90,17 @@ Constraints discovered in the shipped seam:
 - **Trusting the model with the full versioned envelope (`version`/`promptVersion`)** — rejected;
   the envelope is constructed server-side and only `{"tasks":[...]}` is requested, shrinking the
   failure surface and keeping version constants honest.
+
+6. **Review-hardened boundaries.** Client payloads may not carry any server-authored triage
+   provenance (`proposalId`/`triageRunId`/`provider`/`model`/`promptVersion` are forbidden on the
+   untrusted parse path — a client-supplied `proposalId` would let a capture skip triage entirely
+   and persist fabricated provenance). The reuse short-circuit runs before any validation that can
+   fail on replay, so a crash between proposal commit and payload stamp can never orphan the
+   proposal. The transcript lane processes items **sequentially**: the per-user quota is
+   check-then-record with no atomic reservation, and concurrent extractions in one tick would
+   overshoot it. The transcript worker is health-monitored with its own staleness budget
+   (~`pollInterval*3 + MaxBatchSize×180s`) because a legitimate tick blocks for minutes of
+   sequential LLM calls — the fast worker's threshold would false-alarm.
 
 ## Consequences
 
