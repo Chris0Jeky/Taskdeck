@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -15,15 +16,27 @@ public class CaptureTriageService : ICaptureTriageService
     private const int MaxExtractedTasks = CaptureTriageOutputContract.MaxTasks;
 
     /// <summary>
-    /// Provenance actor recorded for capture triage. Triage runs a deterministic, offline text
-    /// extractor (<see cref="ExtractTaskCandidates"/>) that never invokes an LLM, so the recorded
-    /// provider/model must name the extractor itself — not the workspace's configured live LLM
-    /// provider. Recording the live provider here would be false provenance (#1273).
+    /// Provenance actor recorded when the deterministic text extractor
+    /// (<see cref="ExtractTaskCandidates"/>) produced the triage output. It never invokes an LLM,
+    /// so the recorded provider/model must name the extractor itself — not the workspace's
+    /// configured live LLM provider. Recording the live provider here would be false provenance
+    /// (#1273). When the LLM extraction leg (REVIVAL-08) produced the output, the real
+    /// provider/model reported by <see cref="ILlmCaptureTriageExtractor"/> is recorded instead.
     /// </summary>
     public const string TriageProviderName = "deterministic-extractor";
 
     /// <summary>Model/version identifier for the deterministic capture-triage extractor (#1273).</summary>
     public const string TriageModelName = "capture-triage-v1";
+
+    /// <summary>
+    /// Provenance value recorded when the engine that produced an existing proposal cannot be
+    /// determined (a prior run created the proposal but crashed before stamping the payload; on
+    /// retry either engine could have been the author). Matches
+    /// <see cref="CaptureRequestContract.SanitizeProvenanceMetadata"/>'s fallback so downstream
+    /// consumers see one "we don't know" spelling. Naming a concrete engine here would risk false
+    /// provenance (#1273).
+    /// </summary>
+    public const string UnknownProvenanceValue = "unknown";
 
     private static readonly Regex ChecklistPattern = new(
         @"^\s*[-*]\s+\[[xX ]\]\s+(.+?)\s*$",
@@ -48,15 +61,21 @@ public class CaptureTriageService : ICaptureTriageService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
+    private readonly ILlmCaptureTriageExtractor? _llmExtractor;
+    private readonly ILogger<CaptureTriageService>? _logger;
 
     public CaptureTriageService(
         IUnitOfWork unitOfWork,
         IAutomationProposalService proposalService,
-        IAutomationPolicyEngine policyEngine)
+        IAutomationPolicyEngine policyEngine,
+        ILlmCaptureTriageExtractor? llmExtractor = null,
+        ILogger<CaptureTriageService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
+        _llmExtractor = llmExtractor;
+        _logger = logger;
     }
 
     public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromCaptureAsync(
@@ -103,15 +122,67 @@ public class CaptureTriageService : ICaptureTriageService
                 "No columns found in board");
         }
 
-        var (taskCandidates, contextHint) = ExtractTaskCandidates(payload.Text);
-        if (taskCandidates.Count == 0)
+        var captureReferenceId = captureItemId.ToString();
+        var llmIsCandidate = _llmExtractor is not null &&
+                             CaptureRequestContract.IsTranscriptSource(payload.Source);
+
+        CaptureTriageOutputV1? outputModel = null;
+        var triageProvider = TriageProviderName;
+        var triageModel = TriageModelName;
+
+        if (llmIsCandidate)
         {
-            return Result.Failure<CaptureTriageProposalResultDto>(
-                ErrorCodes.ValidationError,
-                "Capture text did not produce actionable triage items");
+            // Check for an already-committed proposal BEFORE spending an LLM call: a crashed prior
+            // attempt (proposal committed, completion lost) is replayed by the worker, and the
+            // reuse branch below will return the existing proposal without new extraction work.
+            var priorProposal = await _unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+                ProposalSourceType.Queue,
+                captureReferenceId,
+                cancellationToken);
+            if (priorProposal is null)
+            {
+                var extraction = await RunLlmExtractionLegAsync(captureItemId, userId, boardId, payload, cancellationToken);
+                if (extraction.Succeeded)
+                {
+                    outputModel = extraction.Output;
+                    triageProvider = CaptureRequestContract.SanitizeProvenanceMetadata(
+                        extraction.Provider, CaptureRequestContract.MaxProviderLength);
+                    triageModel = CaptureRequestContract.SanitizeProvenanceMetadata(
+                        extraction.Model, CaptureRequestContract.MaxModelLength);
+                }
+                else if (extraction.Outcome == LlmCaptureTriageOutcome.EmptyExtraction)
+                {
+                    // A deliberate zero-item verdict from a successful LLM run. Degrading to the
+                    // deterministic extractor here would fabricate a card out of unactionable text
+                    // (its whole-text fallback always yields one), so surface the honest outcome.
+                    return Result.Failure<CaptureTriageProposalResultDto>(
+                        ErrorCodes.ValidationError,
+                        "Transcript triage found no actionable items");
+                }
+                else
+                {
+                    _logger?.LogInformation(
+                        "LLM transcript triage unavailable for capture {CaptureItemId} ({Outcome}); using deterministic extractor. {Detail}",
+                        captureItemId,
+                        extraction.Outcome,
+                        extraction.Detail ?? string.Empty);
+                }
+            }
         }
 
-        var outputModel = BuildOutputModel(taskCandidates, contextHint);
+        if (outputModel is null)
+        {
+            var (taskCandidates, contextHint) = ExtractTaskCandidates(payload.Text);
+            if (taskCandidates.Count == 0)
+            {
+                return Result.Failure<CaptureTriageProposalResultDto>(
+                    ErrorCodes.ValidationError,
+                    "Capture text did not produce actionable triage items");
+            }
+
+            outputModel = BuildOutputModel(taskCandidates, contextHint);
+        }
+
         var outputValidation = CaptureTriageOutputContract.Validate(outputModel);
         if (!outputValidation.IsSuccess)
         {
@@ -128,7 +199,6 @@ public class CaptureTriageService : ICaptureTriageService
                 task,
                 sequence))
             .ToList();
-        var captureReferenceId = captureItemId.ToString();
 
         var operationDtos = operations
             .Select((operation, sequence) => new ProposalOperationDto(
@@ -164,14 +234,20 @@ public class CaptureTriageService : ICaptureTriageService
             cancellationToken);
         if (existingProposal != null)
         {
+            var (reuseProvider, reuseModel, reusePromptVersion) = ResolveReuseProvenance(
+                payload,
+                llmIsCandidate,
+                triageProvider,
+                triageModel,
+                outputValidation.Value.PromptVersion);
             return Result.Success(new CaptureTriageProposalResultDto(
                 captureItemId,
                 ResolveTriageRunId(existingProposal.CorrelationId, triageRunId),
                 existingProposal.Id,
                 existingProposal.Operations.Count == 0 ? operations.Count : existingProposal.Operations.Count,
-                outputValidation.Value.PromptVersion,
-                TriageProviderName,
-                TriageModelName));
+                reusePromptVersion,
+                reuseProvider,
+                reuseModel));
         }
 
         var createProposalResult = await _proposalService.CreateProposalAsync(
@@ -199,8 +275,73 @@ public class CaptureTriageService : ICaptureTriageService
             createProposalResult.Value.Id,
             operations.Count,
             outputValidation.Value.PromptVersion,
-            TriageProviderName,
-            TriageModelName));
+            triageProvider,
+            triageModel));
+    }
+
+    /// <summary>
+    /// Runs the LLM extraction leg, converting unexpected exceptions into a fallback-triggering
+    /// outcome: an LLM-side problem must degrade to the deterministic extractor, never fail the
+    /// capture item (the extractor contract already reports expected failures as outcomes; this
+    /// guard covers bugs and infrastructure surprises).
+    /// </summary>
+    private async Task<LlmCaptureTriageExtraction> RunLlmExtractionLegAsync(
+        Guid captureItemId,
+        Guid userId,
+        Guid? boardId,
+        CapturePayloadV1 payload,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _llmExtractor!.ExtractAsync(userId, boardId, payload, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(
+                ex,
+                "LLM transcript triage threw unexpectedly for capture {CaptureItemId}; using deterministic extractor",
+                captureItemId);
+            return new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.InvalidOutput,
+                Detail: ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the provenance to report when an existing proposal is reused instead of creating a
+    /// new one. The current run did not author that proposal, so naming the current engine could be
+    /// false provenance (#1273): a crashed LLM run may have authored it, then a retry lands here
+    /// after the LLM leg was skipped or fell back. The payload's stamped provenance (the author's
+    /// own record) wins when present; otherwise, if the LLM could have authored it the honest value
+    /// is "unknown"; only when the deterministic extractor is the sole possible author are its
+    /// constants safe to report.
+    /// </summary>
+    private static (string Provider, string Model, string PromptVersion) ResolveReuseProvenance(
+        CapturePayloadV1 payload,
+        bool llmIsCandidate,
+        string currentProvider,
+        string currentModel,
+        string currentPromptVersion)
+    {
+        var stamped = payload.Provenance;
+        if (!string.IsNullOrWhiteSpace(stamped?.Provider) &&
+            !string.IsNullOrWhiteSpace(stamped?.Model) &&
+            !string.IsNullOrWhiteSpace(stamped?.PromptVersion))
+        {
+            return (stamped!.Provider!, stamped.Model!, stamped.PromptVersion!);
+        }
+
+        if (llmIsCandidate)
+        {
+            return (UnknownProvenanceValue, UnknownProvenanceValue, UnknownProvenanceValue);
+        }
+
+        return (currentProvider, currentModel, currentPromptVersion);
     }
 
     private static Guid ResolveTriageRunId(string? correlationId, Guid fallback)
