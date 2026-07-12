@@ -30,7 +30,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
   - if MCP is unavailable, failing, or lacks required capability, use shell/CLI fallback and state that fallback briefly in handoff notes.
 
 ## Multi-Agent / Parallel Execution (required)
-- When the Codex runtime exposes spawned subagents, use them without asking for extra permission when they are efficient or effective for safely parallelizable work.
+- When the Codex runtime exposes spawned subagents, use them without asking for extra permission when they are efficient for safely parallelizable work — but right-size the fan-out (start inline; a few agents, not a reflexive fleet), and keep one coordinator for synthesis and final verification.
 - Split only when work can be separated by clear ownership and can proceed without blocking the coordinator's immediate next step.
 - If spawned agents are unavailable, use explicit git worktrees plus separate Codex/Claude sessions or GitHub coding-agent tasks; do not claim subagent execution unless it actually happened.
 - Split ownership by file/module/concern so concurrent work does not overlap.
