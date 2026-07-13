@@ -148,6 +148,7 @@ export function useCardModal(options: UseCardModalOptions) {
         title: title.value !== card.value.title ? title.value : null,
         description: description.value !== card.value.description ? description.value : null,
         dueDate: dueDate.value ? new Date(dueDate.value).toISOString() : null,
+        clearDueDate: Boolean(card.value.dueDate) && !dueDate.value,
         isBlocked: isBlocked.value !== card.value.isBlocked ? isBlocked.value : null,
         blockReason: isBlocked.value ? blockReason.value : null,
         labelIds: selectedLabelIds.value,

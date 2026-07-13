@@ -98,6 +98,92 @@ public class WriteToolExecutorTests
         doc.RootElement.GetProperty("available_columns").GetArrayLength().Should().Be(2);
     }
 
+    [Fact]
+    public async Task ProposeCreateCard_WithDueDate_PassesNormalizedUtcDateToProposal()
+    {
+        CreateProposalDto? captured = null;
+        SetupColumns("Backlog");
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs("""{"title":"Ship brief","due_date":"2026-07-14T09:30:00+02:00"}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        captured.Should().NotBeNull();
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("dueDate").GetString()
+            .Should().Be("2026-07-14T07:30:00.0000000+00:00");
+    }
+
+    [Fact]
+    public async Task ProposeCreateCard_WithInvalidDueDate_ReturnsErrorWithoutProposal()
+    {
+        SetupColumns("Backlog");
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs("""{"title":"Ship brief","due_date":"tomorrow-ish"}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("ISO-8601");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData("{\"title\":\"Ship brief\",\"labels\":\"urgent\"}")]
+    [InlineData("{\"title\":\"Ship brief\",\"labels\":[\"urgent\",42]}")]
+    [InlineData("{\"title\":\"Ship brief\",\"labels\":[\"urgent\",\"\"]}")]
+    public async Task ProposeCreateCard_WithMalformedLabels_ReturnsErrorWithoutProposal(string rawArguments)
+    {
+        SetupColumns("Backlog");
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs(rawArguments));
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("labels");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeCreateCard_WithUnknownLabel_ReturnsErrorWithoutProposal()
+    {
+        SetupColumns("Backlog");
+        SetupLabels();
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(
+            MakeContext(),
+            ParseArgs("""{"title":"Ship brief","labels":["not-on-board"]}"""));
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("not found");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeCreateCard_WithExistingLabel_CreatesProposal()
+    {
+        CreateProposalDto? captured = null;
+        SetupColumns("Backlog");
+        SetupLabels(new Label(_boardId, "urgent", "#FF0000"));
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(
+            MakeContext(),
+            ParseArgs("""{"title":"Ship brief","labels":["urgent"]}"""));
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("labels")[0].GetString().Should().Be("urgent");
+    }
+
     #endregion
 
     #region ProposeMoveCardExecutor
@@ -220,6 +306,117 @@ public class WriteToolExecutorTests
         doc.RootElement.GetProperty("error").GetString().Should().Contain("At least one field");
     }
 
+    [Fact]
+    public async Task ProposeUpdateCard_WithClearDueDate_PassesExplicitClearToProposal()
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","clear_due_date":true}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("clearDueDate").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_WithNullDueDate_TreatsItAsOmitted()
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs(
+            $$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","title":"Keep due date","due_date":null}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        using var resultDocument = JsonDocument.Parse(result);
+        resultDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        resultDocument.RootElement.GetProperty("summary").GetString().Should().NotContain("clear due date");
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("title").GetString().Should().Be("Keep due date");
+        parameters.RootElement.TryGetProperty("dueDate", out _).Should().BeFalse();
+        parameters.RootElement.TryGetProperty("clearDueDate", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_WithDueDateAndClear_ReturnsErrorWithoutProposal()
+    {
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","due_date":"2026-07-14","clear_due_date":true}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("cannot both");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData("\"urgent\"")]
+    [InlineData("[\"urgent\",42]")]
+    [InlineData("[\"urgent\",\"\"]")]
+    public async Task ProposeUpdateCard_WithMalformedLabels_ReturnsErrorWithoutProposal(string labelsJson)
+    {
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","labels":{{labelsJson}}}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("labels");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_WithUnknownLabel_ReturnsErrorWithoutProposal()
+    {
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        SetupLabels();
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs(
+            $$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","labels":["not-on-board"]}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("not found");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_WithExistingLabel_CreatesProposal()
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        SetupLabels(new Label(_boardId, "urgent", "#FF0000"));
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs(
+            $$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","labels":["urgent"]}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("labels")[0].GetString().Should().Be("urgent");
+    }
+
     #endregion
 
     #region ProposeBulkMoveExecutor
@@ -336,6 +533,11 @@ public class WriteToolExecutorTests
         }).ToArray();
         _columnRepo.Setup(r => r.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(columns);
+        foreach (var column in columns)
+        {
+            _columnRepo.Setup(r => r.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(column);
+        }
         return columns;
     }
 
@@ -349,6 +551,17 @@ public class WriteToolExecutorTests
     {
         _cardRepo.Setup(r => r.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(cards);
+        foreach (var card in cards)
+        {
+            _cardRepo.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(card);
+        }
+    }
+
+    private void SetupLabels(params Label[] labels)
+    {
+        _labelRepo.Setup(r => r.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(labels);
     }
 
     private void SetupColumnCards(Guid columnId, IEnumerable<Card> cards)
@@ -357,9 +570,10 @@ public class WriteToolExecutorTests
             .ReturnsAsync(cards);
     }
 
-    private void SetupProposalCreation(Guid proposalId)
+    private void SetupProposalCreation(Guid proposalId, Action<CreateProposalDto>? capture = null)
     {
         _proposalService.Setup(p => p.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => capture?.Invoke(dto))
             .ReturnsAsync(Result.Success(new ProposalDto(
                 proposalId, ProposalSourceType.Chat, null, _boardId, _userId,
                 ProposalStatus.PendingReview, RiskLevel.Low, "Test proposal",

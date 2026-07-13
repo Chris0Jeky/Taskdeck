@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { formatLocalDossierDate, useTodayDossier } from '../../composables/useTodayDossier'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
+import { useWorkspaceStore } from '../../store/workspaceStore'
 
 import TodayCover from './today/TodayCover.vue'
 import TodayStats from './today/TodayStats.vue'
@@ -16,9 +17,9 @@ import TodayLineForTomorrow from './today/TodayLineForTomorrow.vue'
 
 /**
  * PaperTodayView — orchestrator for the Paper "Today / End-of-day dossier".
- * Reads stub data from `useTodayDossier` (real backend wiring tracked under
- * #1015–#1018) and arranges the 9 dossier sections into a 1.5fr / 1fr
- * two-column body.
+ * Reads live Today summary, cadence, streak, seal, and tomorrow-note data from
+ * `useTodayDossier`. Sections without a shipped query render explicit empty
+ * states instead of inferred activity.
  *
  * The Obsidian `TodayView` continues to render when paper mode is off; the
  * `TodayView.vue` shell delegates to this component when `paperThemeStore
@@ -27,8 +28,20 @@ import TodayLineForTomorrow from './today/TodayLineForTomorrow.vue'
 const { dossier, sealed, sealDay, saveLineForTomorrow } = useTodayDossier()
 const session = useSessionStore()
 const toast = useToastStore()
+const workspace = useWorkspaceStore()
 
-const ledgerEntryCount = computed(() => dossier.value.ledger.length)
+const ledgerSummary = computed(() => dossier.value.ledger.length > 0
+  ? `Every meaningful event today · ${dossier.value.ledger.length} entries`
+  : 'Live ledger unavailable')
+const carryOverSummary = computed(() => {
+  const total = workspace.todaySummary?.summary.overdueCards
+  if (total === undefined) return 'Live carry-over unavailable'
+
+  const visible = dossier.value.carryOver.length
+  return total > visible
+    ? `Showing ${visible} of ${total} live overdue cards`
+    : `${total} live overdue card${total === 1 ? '' : 's'}`
+})
 const lineForTomorrowStorageKey = computed(() => {
   const userPart = encodeURIComponent(session.userId?.trim() || 'anonymous')
   const dayPart = formatLocalDossierDate(dossier.value.date)
@@ -58,13 +71,83 @@ function onWriteNote() {
   toast.info('Notes will land in tomorrow’s morning briefing.')
 }
 
-function onPinCarryOver(serials: string[]) {
-  toast.success(`Pinned ${serials.length} card${serials.length === 1 ? '' : 's'} to tomorrow.`)
+async function retryTodaySummary() {
+  try {
+    await workspace.fetchTodaySummary()
+  } catch {
+    // The workspace store owns todayError; leaving it set keeps this retry visible.
+  }
 }
+
 </script>
 
 <template>
-  <div class="paper-today" data-paper-today>
+  <div
+    class="paper-today"
+    data-paper-today
+    :aria-busy="workspace.todayLoading ? 'true' : undefined"
+  >
+    <section
+      v-if="workspace.todayLoading && !workspace.todaySummary"
+      class="paper-today__load-state"
+      data-testid="paper-today-loading"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="tk-serial">TODAY · LIVE SUMMARY</span>
+      <h1 class="tk-h2">Loading today’s dossier…</h1>
+      <p>Checking Inbox, Review, and board deadlines before showing today’s totals.</p>
+    </section>
+
+    <template v-else>
+      <section
+        v-if="workspace.todayError && !workspace.todaySummary"
+        class="paper-today__summary-state paper-today__summary-state--error"
+        data-testid="paper-today-error"
+        role="alert"
+      >
+        <div>
+          <strong>Today’s live summary could not be loaded.</strong>
+          <p>{{ workspace.todayError }} The independent dossier sections remain available below.</p>
+        </div>
+        <button
+          type="button"
+          class="paper-today__retry"
+          :disabled="workspace.todayLoading"
+          @click="retryTodaySummary"
+        >
+          Retry live summary
+        </button>
+      </section>
+      <section
+        v-else-if="workspace.todayLoading && workspace.todaySummary"
+        class="paper-today__summary-state"
+        data-testid="paper-today-refreshing"
+        role="status"
+        aria-live="polite"
+      >
+        Refreshing today’s live summary. Previously loaded data remains visible until it completes.
+      </section>
+      <section
+        v-else-if="workspace.todayError && workspace.todaySummary"
+        class="paper-today__summary-state paper-today__summary-state--error"
+        data-testid="paper-today-stale"
+        role="alert"
+      >
+        <div>
+          <strong>Today’s live summary could not be refreshed.</strong>
+          <p>Showing previously loaded data, which may be stale. {{ workspace.todayError }}</p>
+        </div>
+        <button
+          type="button"
+          class="paper-today__retry"
+          :disabled="workspace.todayLoading"
+          @click="retryTodaySummary"
+        >
+          Retry live summary
+        </button>
+      </section>
+
     <TodayCover
       :serial="dossier.serial"
       :cards-moved="dossier.headlineCardsMoved"
@@ -75,7 +158,10 @@ function onPinCarryOver(serials: string[]) {
       @note="onWriteNote"
     />
 
-    <TodayStats :stats="dossier.stats" />
+    <TodayStats v-if="dossier.stats.length > 0" :stats="dossier.stats" />
+    <p v-else class="paper-today__empty paper-today__empty--stats" data-empty-state="stats">
+      Today's live totals are unavailable. Inbox and Review remain the source of truth.
+    </p>
 
     <section class="paper-today__body">
       <div class="paper-today__col paper-today__col--left">
@@ -85,16 +171,22 @@ function onPinCarryOver(serials: string[]) {
             <h3 class="tk-h3 paper-today__section-title">Cadence</h3>
             <span class="tk-meta paper-today__section-sub">When you worked · 24h strip</span>
           </header>
-          <TodayCadence :cadence="dossier.cadence" />
+          <TodayCadence v-if="dossier.cadenceAvailable" :cadence="dossier.cadence" />
+          <p v-else class="paper-today__empty" data-empty-state="cadence">
+            Cadence data is unavailable. No work pattern is being inferred.
+          </p>
         </div>
 
         <div class="card paper-today__card paper-today__card--ledger">
           <header class="paper-today__section-head paper-today__section-head--inline">
             <span class="tk-serial paper-today__section-num">§ II</span>
             <h3 class="tk-h3 paper-today__section-title">Ledger</h3>
-            <span class="tk-meta paper-today__section-sub">Every meaningful event today · {{ ledgerEntryCount }} entries</span>
+            <span class="tk-meta paper-today__section-sub">{{ ledgerSummary }}</span>
           </header>
-          <TodayLedger :entries="dossier.ledger" />
+          <TodayLedger v-if="dossier.ledger.length > 0" :entries="dossier.ledger" />
+          <p v-else class="paper-today__empty paper-today__empty--inset" data-empty-state="ledger">
+            A live day ledger is not available yet. No events are being invented.
+          </p>
         </div>
 
         <div class="card paper-today__card">
@@ -103,7 +195,10 @@ function onPinCarryOver(serials: string[]) {
             <h3 class="tk-h3 paper-today__section-title">Decisions</h3>
             <span class="tk-meta paper-today__section-sub">Proposals you weighed today</span>
           </header>
-          <TodayDecisions :decisions="dossier.decisions" />
+          <TodayDecisions v-if="dossier.decisions.length > 0" :decisions="dossier.decisions" />
+          <p v-else class="paper-today__empty" data-empty-state="decisions">
+            Today's decisions are not summarized here yet. Open Review for live proposals.
+          </p>
         </div>
       </div>
 
@@ -114,16 +209,24 @@ function onPinCarryOver(serials: string[]) {
             <h3 class="tk-h3 paper-today__section-title">Boards touched</h3>
             <span class="tk-meta paper-today__section-sub">Touch summary</span>
           </header>
-          <TodayBoards :boards="dossier.boards" />
+          <TodayBoards v-if="dossier.boards.length > 0" :boards="dossier.boards" />
+          <p v-else class="paper-today__empty" data-empty-state="boards">
+            Board-touch history is not available yet. Open Boards for live state.
+          </p>
         </div>
 
         <div class="card paper-today__card paper-today__card--carry">
           <header class="paper-today__section-head">
             <span class="tk-serial paper-today__section-num">§ V</span>
             <h3 class="tk-h3 paper-today__section-title">Carry-over</h3>
-            <span class="tk-meta paper-today__section-sub">Bring to tomorrow · {{ dossier.carryOver.length }} cards</span>
+            <span class="tk-meta paper-today__section-sub">{{ carryOverSummary }}</span>
           </header>
-          <TodayCarryOver :cards="dossier.carryOver" @pin="onPinCarryOver" />
+          <TodayCarryOver v-if="dossier.carryOver.length > 0" :cards="dossier.carryOver" />
+          <p v-else class="paper-today__empty" data-empty-state="carry-over">
+            {{ dossier.stats.length > 0
+              ? "No overdue cards in today's live summary."
+              : 'Carry-over data is unavailable. Open Boards for live cards.' }}
+          </p>
         </div>
 
         <div class="card paper-today__card paper-today__card--streak">
@@ -132,7 +235,10 @@ function onPinCarryOver(serials: string[]) {
             <h3 class="tk-h3 paper-today__section-title">Streak</h3>
             <span class="tk-meta paper-today__section-sub">Days in a row · this quarter</span>
           </header>
-          <TodayStreak :streak="dossier.streak" />
+          <TodayStreak v-if="dossier.streakAvailable" :streak="dossier.streak" />
+          <p v-else class="paper-today__empty" data-empty-state="streak">
+            Streak data is unavailable. No activity history is being inferred.
+          </p>
         </div>
 
         <div class="card paper-today__card">
@@ -156,6 +262,7 @@ function onPinCarryOver(serials: string[]) {
       <span class="tk-serial">DOSSIER · {{ dossier.serial }} · YEAR LEDGER</span>
       <span class="tk-serial">SEAL ABOVE · LEDGER IN § II</span>
     </footer>
+    </template>
   </div>
 </template>
 
@@ -195,6 +302,77 @@ function onPinCarryOver(serials: string[]) {
   background: var(--paper-2);
 }
 
+.paper-today__load-state {
+  display: grid;
+  gap: 12px;
+  margin: 56px;
+  padding: 36px;
+  border: 1px solid var(--line);
+  background: var(--paper-card);
+}
+.paper-today__load-state h1,
+.paper-today__load-state p,
+.paper-today__summary-state p {
+  margin: 0;
+}
+.paper-today__summary-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 24px 56px 0;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.paper-today__summary-state--error {
+  border-left: 3px solid var(--overdue);
+}
+.paper-today__summary-state strong {
+  color: var(--ink);
+}
+.paper-today__retry {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: var(--paper-card);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.paper-today__retry:hover {
+  border-color: var(--ink-2);
+}
+.paper-today__retry:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.paper-today__retry:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.paper-today__empty {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.paper-today__empty--stats {
+  margin: 28px 56px 12px;
+  padding: 18px;
+  border: 1px solid var(--line-soft);
+  background: var(--paper-card);
+}
+.paper-today__empty--inset {
+  margin: 0;
+  padding: 18px 22px;
+}
+
 .paper-today__section-head {
   display: flex;
   align-items: baseline;
@@ -230,9 +408,20 @@ function onPinCarryOver(serials: string[]) {
 }
 
 @media (max-width: 1100px) {
+  .paper-today__load-state {
+    margin: 24px;
+  }
+  .paper-today__summary-state {
+    align-items: flex-start;
+    flex-direction: column;
+    margin: 20px 24px 0;
+  }
   .paper-today__body {
     grid-template-columns: 1fr;
     padding: 20px 24px 0;
+  }
+  .paper-today__empty--stats {
+    margin: 24px 24px 12px;
   }
   .paper-today__footer {
     padding: 24px 24px 16px;

@@ -2,8 +2,9 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 
 /**
- * TodayLineForTomorrow — italic serif textarea, autosaved with debounce
- * to localStorage (until the backend ships per-day storage; see #1018).
+ * TodayLineForTomorrow — italic serif textarea with debounced persistence.
+ * Paper Today supplies the shipped per-day backend save; localStorage remains
+ * an opt-in fallback for standalone component consumers.
  *
  * Persistence is keyed by `storageKey`, defaulting to `td.paper.line-for-tomorrow`.
  * `debounceMs` is exposed so tests can drop the timer without forcing real

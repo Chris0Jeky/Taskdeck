@@ -1,23 +1,15 @@
 <script setup lang="ts">
-import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 import type { DossierCarryOverCard } from '../../../composables/useTodayDossier'
 
 /**
- * TodayCarryOver — overdue cards rendered inside a rust-bordered card.
- * "Pin to tomorrow's morning" CTA emits `pin` with the list of serials.
+ * TodayCarryOver — live overdue cards rendered inside a rust-bordered card.
+ * No pin action is offered until a real mutation endpoint exists.
  */
-const props = defineProps<{
+defineProps<{
   cards: DossierCarryOverCard[]
 }>()
 
-const emit = defineEmits<{
-  (event: 'pin', serials: string[]): void
-}>()
-
-function pinAll() {
-  emit('pin', props.cards.map(c => c.serial))
-}
 </script>
 
 <template>
@@ -34,13 +26,6 @@ function pinAll() {
       <div class="today-carry-over__title">{{ card.title }}</div>
       <div class="tk-meta today-carry-over__meta">{{ card.reason }}</div>
     </div>
-    <PaperHLBtn
-      v-if="cards.length > 0"
-      class="today-carry-over__pin"
-      label="Pin to tomorrow's morning"
-      data-action="pin-tomorrow"
-      @click="pinAll"
-    />
   </div>
 </template>
 
@@ -69,10 +54,5 @@ function pinAll() {
 .today-carry-over__meta {
   font-size: 10.5px;
   margin-top: 2px;
-}
-.today-carry-over__pin {
-  margin-top: 12px;
-  width: 100%;
-  justify-content: center;
 }
 </style>
