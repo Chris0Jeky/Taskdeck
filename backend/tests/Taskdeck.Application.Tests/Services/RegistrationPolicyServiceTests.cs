@@ -282,6 +282,43 @@ public sealed class RegistrationPolicyServiceTests
         result.ErrorMessage.Should().Be(RegistrationPolicyService.InviteRequiredMessage);
     }
 
+    [Theory]
+    [InlineData(RegistrationMode.Open, true, false)]
+    [InlineData(RegistrationMode.InviteOnly, true, true)]
+    public async Task GetAvailabilityAsync_ReturnsStaticModeAvailabilityWithoutBootstrapRead(
+        RegistrationMode mode,
+        bool isAvailable,
+        bool inviteRequired)
+    {
+        var service = CreateService(mode);
+
+        var result = await service.GetAvailabilityAsync();
+
+        result.Should().Be(new RegistrationAvailability(mode, isAvailable, inviteRequired));
+        _store.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    public async Task GetAvailabilityAsync_ClosedModeReflectsFirstUserBootstrap(
+        bool bootstrapClaimed,
+        bool isAvailable,
+        bool inviteRequired)
+    {
+        _store
+            .Setup(store => store.IsFirstUserBootstrapClaimedAsync(default))
+            .ReturnsAsync(bootstrapClaimed);
+        var service = CreateService(RegistrationMode.Closed);
+
+        var result = await service.GetAvailabilityAsync();
+
+        result.Should().Be(new RegistrationAvailability(
+            RegistrationMode.Closed,
+            isAvailable,
+            inviteRequired));
+    }
+
     [Fact]
     public async Task CreateInviteAsync_PersistsOnlyHashAndReturnsPlaintextOnce()
     {

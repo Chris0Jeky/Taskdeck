@@ -12,6 +12,11 @@ public sealed record RegistrationInviteResult(
 public sealed record RegistrationAuthorization(
     bool ClaimedFirstUserBootstrap);
 
+public sealed record RegistrationAvailability(
+    RegistrationMode Mode,
+    bool IsRegistrationAvailable,
+    bool InviteRequired);
+
 public interface IRegistrationPolicyService
 {
     Task<Result> CheckNewUserEligibilityAsync(
@@ -20,6 +25,9 @@ public interface IRegistrationPolicyService
 
     Task<Result<RegistrationAuthorization>> AuthorizeNewUserAsync(
         string? inviteCode,
+        CancellationToken cancellationToken = default);
+
+    Task<RegistrationAvailability> GetAvailabilityAsync(
         CancellationToken cancellationToken = default);
 
     Task<Result<RegistrationInviteResult>> CreateInviteAsync(
