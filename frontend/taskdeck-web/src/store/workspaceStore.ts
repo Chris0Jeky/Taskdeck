@@ -119,7 +119,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return preference
     } catch (e: unknown) {
       if (isCurrentPreferenceRequest(requestVersion)) {
-        preferenceError.value = getErrorMessage(e, 'Failed to load workspace preferences')
+        preferenceError.value = getErrorMessage(e, "We couldn't load your workspace preferences")
       }
 
       return null
@@ -155,7 +155,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
     } catch (e: unknown) {
       if (isCurrentPreferenceRequest(requestVersion)) {
-        preferenceError.value = getErrorMessage(e, 'Failed to save workspace mode')
+        preferenceError.value = getErrorMessage(e, "We couldn't save this workspace mode")
         preferencesHydrated.value = false
         toast.warning(`${preferenceError.value}. Keeping the local selection for now.`)
       }
@@ -187,7 +187,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       preferencesHydrated.value = true
       return summary
     } catch (e: unknown) {
-      homeError.value = getErrorMessage(e, 'Failed to load workspace summary')
+      homeError.value = getErrorMessage(e, "We couldn't load your workspace overview")
       throw e
     } finally {
       homeLoading.value = false
@@ -215,7 +215,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       syncOnboarding(summary.onboarding)
       return summary
     } catch (e: unknown) {
-      todayError.value = getErrorMessage(e, 'Failed to load today agenda')
+      todayError.value = getErrorMessage(e, "We couldn't load today's overview")
       throw e
     } finally {
       todayLoading.value = false
@@ -239,7 +239,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       syncOnboarding(nextOnboarding)
       return nextOnboarding
     } catch (e: unknown) {
-      preferenceError.value = getErrorMessage(e, 'Failed to update onboarding state')
+      preferenceError.value = getErrorMessage(e, "We couldn't update the setup guide")
       toast.warning(preferenceError.value)
       throw e
     } finally {

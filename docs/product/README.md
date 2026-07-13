@@ -11,6 +11,7 @@ This folder contains product-facing guides that help users understand, use, demo
 - `BETA_INTAKE_WORKFLOW.md` — **parked by the archive pivot** (GTM/beta, not in use)
 - `DOGFOODING_GUIDE.md`
 - `SCENARIOS.md`
+- `GENERALIST_COPY_DECK.md` - GEN-10 guided-workspace language audit and maintainer decision list
 
 Current-state entry docs still remain at root:
 

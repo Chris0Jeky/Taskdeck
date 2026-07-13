@@ -163,6 +163,30 @@ describe('workspaceStore', () => {
     expect(toastMocks.warning).toHaveBeenCalledWith('save failed. Keeping the local selection for now.')
   })
 
+  it('uses plain-language fallbacks when a failed request has no message', async () => {
+    const store = useWorkspaceStore()
+
+    vi.mocked(workspaceApi.getPreferences).mockRejectedValueOnce(null)
+    await store.hydratePreferences()
+    expect(store.preferenceError).toBe("We couldn't load your workspace preferences")
+
+    vi.mocked(workspaceApi.updatePreferences).mockRejectedValueOnce(null)
+    await store.updateMode('workbench')
+    expect(store.preferenceError).toBe("We couldn't save this workspace mode")
+
+    vi.mocked(workspaceApi.getHomeSummary).mockRejectedValueOnce(null)
+    await store.fetchHomeSummary().catch(() => undefined)
+    expect(store.homeError).toBe("We couldn't load your workspace overview")
+
+    vi.mocked(workspaceApi.getTodaySummary).mockRejectedValueOnce(null)
+    await store.fetchTodaySummary().catch(() => undefined)
+    expect(store.todayError).toBe("We couldn't load today's overview")
+
+    vi.mocked(workspaceApi.updateOnboarding).mockRejectedValueOnce(null)
+    await store.updateOnboarding('replay').catch(() => undefined)
+    expect(store.preferenceError).toBe("We couldn't update the setup guide")
+  })
+
   it('loads home summary and syncs mode and onboarding from the payload', async () => {
     const store = useWorkspaceStore()
     vi.mocked(workspaceApi.getHomeSummary).mockResolvedValue({
