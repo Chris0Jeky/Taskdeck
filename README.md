@@ -193,4 +193,6 @@ Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY
 
 ## License
 
-Taskdeck is released under the [MIT License](LICENSE).
+Taskdeck is released under the [MIT License](LICENSE). The permanent free-core
+boundary and additive-only commercial posture are documented in
+[LICENSING.md](LICENSING.md).
