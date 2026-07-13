@@ -3,7 +3,6 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using UglyToad.PdfPig;
-using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace Taskdeck.Infrastructure.Services;
 
@@ -43,18 +42,27 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
 
         Stream pdfStream = content;
         MemoryStream? bufferedStream = null;
-        if (!content.CanSeek || content.Position != 0)
+        if (content.CanSeek)
         {
+            // Seekable streams (the common case: a MemoryStream fed by the bounded
+            // copy in ArtefactExtractionService) need no buffering. Enforce the input
+            // cap up front, then rewind and read directly — copying up to 10 MiB into
+            // a second MemoryStream would only add avoidable Large Object Heap pressure.
+            if (content.Length > MaxInputBytes)
+                return Warning(ArtefactExtractionWarningCodes.InputTooLarge);
+
+            content.Position = 0;
+        }
+        else
+        {
+            // Non-seekable streams cannot be rewound and expose no reliable length, so
+            // buffer them once through a bounded read that also enforces the input cap.
             var bytes = await ReadBoundedAsync(content, MaxInputBytes, cancellationToken);
             if (bytes is null)
                 return Warning(ArtefactExtractionWarningCodes.InputTooLarge);
 
             bufferedStream = new MemoryStream(bytes, writable: false);
             pdfStream = bufferedStream;
-        }
-        else if (content.Length > MaxInputBytes)
-        {
-            return Warning(ArtefactExtractionWarningCodes.InputTooLarge);
         }
 
         try
@@ -67,48 +75,73 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
             };
             using var document = PdfDocument.Open(pdfStream, parsingOptions);
             var warnings = new List<string>();
-            if (document.NumberOfPages > MaxPages)
+            var pagesSkipped = document.NumberOfPages > MaxPages;
+            if (pagesSkipped)
                 warnings.Add(ArtefactExtractionWarningCodes.PageLimit);
 
             var text = new StringBuilder(capacity: Math.Min(MaxExtractedCharacters, 16 * 1024));
             var pageCount = Math.Min(document.NumberOfPages, MaxPages);
-            for (var pageNumber = 1; pageNumber <= pageCount; pageNumber++)
+            var characterLimitReached = false;
+            for (var pageNumber = 1; pageNumber <= pageCount && !characterLimitReached; pageNumber++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var page = document.GetPage(pageNumber);
-                var pageText = ContentOrderTextExtractor.GetText(page, addDoubleNewline: false);
-                if (string.IsNullOrWhiteSpace(pageText))
-                    continue;
 
-                if (text.Length > 0)
+                // Enforce the output budget while collecting, so a single text-heavy
+                // page under the input cap cannot materialize an unbounded string or
+                // burn CPU past the advertised limit before truncation. Words are
+                // appended in reading order and collection stops the moment the budget
+                // is exhausted; cancellation is observed between words rather than only
+                // after a whole page is rendered.
+                var firstWordOnPage = true;
+                foreach (var word in page.GetWords())
                 {
-                    if (text.Length == MaxExtractedCharacters)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var wordText = word.Text;
+                    if (string.IsNullOrEmpty(wordText))
+                        continue;
+
+                    if (text.Length > 0)
                     {
-                        warnings.Add(ArtefactExtractionWarningCodes.CharacterLimit);
-                        break;
+                        if (text.Length >= MaxExtractedCharacters)
+                        {
+                            characterLimitReached = true;
+                            break;
+                        }
+
+                        text.Append(firstWordOnPage ? '\n' : ' ');
+                    }
+                    firstWordOnPage = false;
+
+                    var remaining = MaxExtractedCharacters - text.Length;
+                    if (wordText.Length <= remaining)
+                    {
+                        text.Append(wordText);
+                        continue;
                     }
 
-                    text.Append('\n');
+                    text.Append(ArtefactTextNormalization.TruncateWithoutSplittingSurrogatePair(
+                        wordText,
+                        remaining));
+                    characterLimitReached = true;
+                    break;
                 }
-
-                var remaining = MaxExtractedCharacters - text.Length;
-                if (pageText.Length <= remaining)
-                {
-                    text.Append(pageText);
-                    continue;
-                }
-
-                var bounded = ArtefactTextNormalization.TruncateWithoutSplittingSurrogatePair(
-                    pageText,
-                    remaining);
-                text.Append(bounded);
-                warnings.Add(ArtefactExtractionWarningCodes.CharacterLimit);
-                break;
             }
 
-            if (string.IsNullOrWhiteSpace(text.ToString()))
+            if (characterLimitReached)
+                warnings.Add(ArtefactExtractionWarningCodes.CharacterLimit);
+
+            var extractedText = text.ToString();
+            if (string.IsNullOrWhiteSpace(extractedText))
             {
-                warnings.Add(ArtefactExtractionWarningCodes.NoTextLayer);
+                // Only assert "no text layer" when every page was actually inspected.
+                // If pages were skipped past MaxPages, the page-limit warning already
+                // signals that unscanned pages may carry selectable text, so emitting
+                // no-text-layer here would misdiagnose the document and push users
+                // toward OCR for a file that does have a text layer further in.
+                if (!pagesSkipped)
+                    warnings.Add(ArtefactExtractionWarningCodes.NoTextLayer);
+
                 return new ArtefactExtractionResult(
                     string.Empty,
                     warnings.Distinct(StringComparer.Ordinal).ToArray(),
@@ -117,7 +150,7 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
             }
 
             return new ArtefactExtractionResult(
-                text.ToString(),
+                extractedText,
                 warnings.Distinct(StringComparer.Ordinal).ToArray(),
                 ExtractorName,
                 ExtractorVersion);
