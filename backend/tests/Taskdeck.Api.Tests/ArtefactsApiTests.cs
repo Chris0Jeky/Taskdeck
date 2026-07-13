@@ -71,6 +71,12 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
             .ToListAsync();
         auditActions.Should().Contain(Domain.Enums.AuditAction.Created);
         auditActions.Should().Contain(Domain.Enums.AuditAction.Deleted);
+
+        // Deleting an artefact must cascade-remove its blob so no orphaned bytes remain
+        // (guards against a future regression that disabled the ON DELETE CASCADE).
+        var remainingBlobs = await db.Set<Domain.Entities.ArtefactBlob>()
+            .CountAsync(b => b.SourceArtefactId == created.Id);
+        remainingBlobs.Should().Be(0);
     }
 
     [Fact]
