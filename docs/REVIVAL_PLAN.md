@@ -138,6 +138,8 @@ Authorized: REVIVAL-01 (registration gate), REVIVAL-08/-09/-10/-11 (transcript e
 
 **Phase-4 additions (ADR-0046, 2026-07-13 — Proposed, pending GEN-00 `#1327` ratification; only lane G-A pre-authorized):** GEN-01/-02/-03/-04/-05 (the artefact intake pipeline — `SourceArtefact` entity + blob store + upload endpoint, extraction abstraction + records, provider multimodal content parts + consent-gated vision, triage routing for artefact sources, due-date/label apply operations), GEN-07 (board dossier read model + Paper panel), GEN-08 (Today attention aggregations), GEN-10 (mode-scoped navigation + guided-first default).
 
+GEN-06 (`#1320`) is wave-authorized as the Paper UX over that approved intake pipeline, not as a separate backend-surface exception: it adds no second mutation path or standalone view. It remains lane G-B and therefore waits for ADR-0046 ratification plus its transcript/artefact-routing dependencies.
+
 Not authorized without a plan amendment: the twin generalist application (GEN-12 `#1326` is the evidence gate), other new views/dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens).
 
 ## 8. Metrics and the checkpoint

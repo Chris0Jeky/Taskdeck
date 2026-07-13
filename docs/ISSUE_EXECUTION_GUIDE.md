@@ -1,9 +1,9 @@
 # Issue Execution Guide
 
-Last Updated: 2026-06-13
+Last Updated: 2026-07-13
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
-> **⚠️ Archive-pivot override (2026-06-13).** The maintainer's direction is now **finish-for-personal-use → archive** (see the Direction sections of `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md`). The **active sequencing** is the archive-pivot waves — Paper UI activation, trivially-easy local run, general quality, then clean archive — **not** the "Phase 4 / post-Phase-4 / Expansion" tranches described in the Priority Model below. Distribution, cloud, mobile, and GTM tracks are de-scoped. Treat the priority-tranche language in this guide as **historical pre-pivot framing**; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Concretely: where the Start Protocol says "pick the highest-priority issue" and the Priority Model ranks `Priority I`–`V` tranches, read "highest-priority" as **the next item in the active archive-pivot waves** (Paper UI activation → easy local run → general quality → archive), **not** the Phase-4 / Expansion tranches below. When this guide and the Direction sections conflict, the Direction sections win.
+> **⚠️ Revival-direction override (2026-07-13).** The 2026-06-13 archive pivot is superseded by the accepted revival pivot (ADR-0044). Active sequencing now lives in `docs/REVIVAL_PLAN.md`: the v0.1 truth-and-safety ship gate remains first, followed by the transcript engine and open-beta launch. ADR-0046's Phase-4 generalist expansion is Proposed; only lane G-A is authorized before GEN-00 `#1327` ratification, and it stays subordinate to the v0.1 gate. Treat the priority-tranche language below as **historical framing**, not an active queue. The mechanics in this guide (clean-branch start, project-status workflow, one-priority-label discipline, and dependency checks) still apply. Where the Start Protocol says "pick the highest-priority issue," read it as **the next unblocked item in the active REVIVAL/authorized GEN wave order** (or the maintainer's explicit queue), not the historical tranches below. When this guide and the active Direction/REVIVAL_PLAN sections conflict, the active direction wins.
 
 ## Purpose
 
@@ -26,9 +26,9 @@ Use this file when starting backlog work. It prevents out-of-order development a
 - Move issue to `Done` only after merge and verification notes are posted.
 - If item is blocked by dependency or external input, move to `Blocked` and add blocking note.
 
-## Priority Model (historical pre-pivot framing — see the override banner above)
+## Priority Model (historical pre-revival framing — see the override banner above)
 
-> _(The Phase-4 / post-Phase-4 / Expansion tranches below are pre-pivot framing. The active sequencing is the archive-pivot waves — Paper UI activation → easy local run → general quality → archive. Retained for historical continuity.)_
+> _(The Phase-4 / post-Phase-4 / Expansion tranches below predate the revival plan. Active sequencing is `docs/REVIVAL_PLAN.md`; this section is retained for historical continuity and label semantics.)_
 
 - `Priority I`: Current Phase 4 completion path and blockers.
 - `Priority II`: Immediate post-Phase-4 foundation work, including novice-first productization.
