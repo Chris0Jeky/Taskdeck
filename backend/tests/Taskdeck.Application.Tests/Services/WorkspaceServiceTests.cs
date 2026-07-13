@@ -38,6 +38,9 @@ public class WorkspaceServiceTests
         _proposalRepositoryMock
             .Setup(repository => repository.HasReviewedByUserIdAsync(It.IsAny<Guid>(), default))
             .ReturnsAsync(false);
+        _proposalRepositoryMock
+            .Setup(repository => repository.HasAppliedByUserIdAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync(false);
 
         _llmQueueRepositoryMock
             .Setup(repository => repository.GetByUserAsync(It.IsAny<Guid>(), default))
@@ -133,6 +136,7 @@ public class WorkspaceServiceTests
         result.Value.Onboarding.IsComplete.Should().BeTrue();
         _llmQueueRepositoryMock.Verify(repository => repository.GetCaptureSummaryByUserAsync(userId, default), Times.Never);
         _proposalRepositoryMock.Verify(repository => repository.HasReviewedByUserIdAsync(userId, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.HasAppliedByUserIdAsync(userId, default), Times.Never);
         _boardRepositoryMock.Verify(repository => repository.CountReadableByUserIdAsync(userId, false, default), Times.Never);
         _unitOfWorkMock.Verify(unitOfWork => unitOfWork.SaveChangesAsync(default), Times.Never);
     }
@@ -156,6 +160,7 @@ public class WorkspaceServiceTests
         result.Value.Onboarding.Steps.Should().BeEmpty();
         _llmQueueRepositoryMock.Verify(repository => repository.GetCaptureSummaryByUserAsync(userId, default), Times.Never);
         _proposalRepositoryMock.Verify(repository => repository.HasReviewedByUserIdAsync(userId, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.HasAppliedByUserIdAsync(userId, default), Times.Never);
         _boardRepositoryMock.Verify(repository => repository.CountReadableByUserIdAsync(userId, false, default), Times.Never);
         _unitOfWorkMock.Verify(unitOfWork => unitOfWork.SaveChangesAsync(default), Times.Never);
     }
@@ -231,6 +236,7 @@ public class WorkspaceServiceTests
         result.Value.Onboarding.IsComplete.Should().BeTrue();
         _llmQueueRepositoryMock.Verify(repository => repository.GetCaptureSummaryByUserAsync(userId, default), Times.Never);
         _proposalRepositoryMock.Verify(repository => repository.HasReviewedByUserIdAsync(userId, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.HasAppliedByUserIdAsync(userId, default), Times.Never);
         _boardRepositoryMock.Verify(repository => repository.CountReadableByUserIdAsync(userId, false, default), Times.Never);
     }
 
@@ -255,6 +261,7 @@ public class WorkspaceServiceTests
         result.Value.Onboarding.Steps.Should().BeEmpty();
         _llmQueueRepositoryMock.Verify(repository => repository.GetCaptureSummaryByUserAsync(userId, default), Times.Never);
         _proposalRepositoryMock.Verify(repository => repository.HasReviewedByUserIdAsync(userId, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.HasAppliedByUserIdAsync(userId, default), Times.Never);
         _boardRepositoryMock.Verify(repository => repository.CountReadableByUserIdAsync(userId, false, default), Times.Never);
     }
 
@@ -289,6 +296,9 @@ public class WorkspaceServiceTests
         _proposalRepositoryMock
             .Setup(repository => repository.HasReviewedByUserIdAsync(userId, default))
             .ReturnsAsync(true);
+        _proposalRepositoryMock
+            .Setup(repository => repository.HasAppliedByUserIdAsync(userId, default))
+            .ReturnsAsync(true);
 
         var result = await _service.GetHomeAsync(userId);
 
@@ -311,6 +321,45 @@ public class WorkspaceServiceTests
             "capture-now"
         ]);
         _llmQueueRepositoryMock.Verify(repository => repository.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetHomeAsync_ShouldKeepApplyStepIncomplete_WhenProposalReviewedButNotApplied()
+    {
+        // Regression for the capture→review→apply contract (#1301): reviewing a proposal
+        // (approve/reject) must NOT satisfy the apply milestone. Only a genuine apply does.
+        var userId = Guid.NewGuid();
+        var board = new Board("Alpha", "Alpha board", userId);
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
+            .ReturnsAsync(new UserPreference(userId, WorkspaceMode.Guided));
+        _boardRepositoryMock
+            .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync(1);
+        _boardRepositoryMock
+            .Setup(repository => repository.GetRecentReadableByUserIdAsync(userId, 3, false, default))
+            .ReturnsAsync([board]);
+        _llmQueueRepositoryMock
+            .Setup(repository => repository.GetCaptureSummaryByUserAsync(userId, default))
+            .ReturnsAsync((1, 0, 0, 0, 0));
+        _proposalRepositoryMock
+            .Setup(repository => repository.HasReviewedByUserIdAsync(userId, default))
+            .ReturnsAsync(true);
+        _proposalRepositoryMock
+            .Setup(repository => repository.HasAppliedByUserIdAsync(userId, default))
+            .ReturnsAsync(false);
+
+        var result = await _service.GetHomeAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Onboarding.IsComplete.Should().BeFalse();
+        result.Value.Onboarding.CurrentStepId.Should().Be("apply-first-proposal");
+        result.Value.Onboarding.Steps.Should().HaveCount(4);
+        result.Value.Onboarding.Steps
+            .Single(step => step.StepId == "review-first-proposal").IsComplete.Should().BeTrue();
+        result.Value.Onboarding.Steps
+            .Single(step => step.StepId == "apply-first-proposal").IsComplete.Should().BeFalse();
     }
 
     [Fact]
@@ -380,6 +429,9 @@ public class WorkspaceServiceTests
             .ReturnsAsync(0);
         _proposalRepositoryMock
             .Setup(repository => repository.HasReviewedByUserIdAsync(userId, default))
+            .ReturnsAsync(true);
+        _proposalRepositoryMock
+            .Setup(repository => repository.HasAppliedByUserIdAsync(userId, default))
             .ReturnsAsync(true);
         _cardRepositoryMock
             .Setup(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))

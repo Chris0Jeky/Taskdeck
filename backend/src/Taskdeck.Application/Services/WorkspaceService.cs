@@ -35,6 +35,7 @@ public class WorkspaceService : IWorkspaceService
         var capturesReadyForFollowUp = captureSummary.TriagedCount;
         var proposalsPendingReview = await _unitOfWork.AutomationProposals.CountPendingReviewByUserIdAsync(userId, cancellationToken);
         var hasReviewedProposal = await _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
+        var hasAppliedProposal = await _unitOfWork.AutomationProposals.HasAppliedByUserIdAsync(userId, cancellationToken);
         var totalBoards = await _unitOfWork.Boards.CountReadableByUserIdAsync(userId, includeArchived: false, cancellationToken);
         var recentBoardsCount = await _unitOfWork.Boards.CountReadableUpdatedSinceAsync(
             userId,
@@ -59,6 +60,7 @@ public class WorkspaceService : IWorkspaceService
             preference,
             hasCapture: captureSummary.TotalCaptures > 0,
             hasReviewedProposal,
+            hasAppliedProposal,
             hasBoard: totalBoards > 0,
             cancellationToken);
         var isFirstRun =
@@ -100,6 +102,7 @@ public class WorkspaceService : IWorkspaceService
         var capturesReadyForFollowUp = captureSummary.TriagedCount;
         var proposalsPendingReview = await _unitOfWork.AutomationProposals.CountPendingReviewByUserIdAsync(userId, cancellationToken);
         var hasReviewedProposal = await _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
+        var hasAppliedProposal = await _unitOfWork.AutomationProposals.HasAppliedByUserIdAsync(userId, cancellationToken);
         var accessibleBoards = (await _unitOfWork.Boards.GetReadableByUserIdAsync(
                 userId,
                 includeArchived: false,
@@ -115,6 +118,7 @@ public class WorkspaceService : IWorkspaceService
             preference,
             hasCapture: captureSummary.TotalCaptures > 0,
             hasReviewedProposal,
+            hasAppliedProposal,
             hasBoard: accessibleBoards.Count > 0,
             cancellationToken);
         var boardsById = accessibleBoards.ToDictionary(board => board.Id);
@@ -324,6 +328,7 @@ public class WorkspaceService : IWorkspaceService
                 BuildOnboardingSteps(
                     hasCapture: true,
                     hasReviewedProposal: true,
+                    hasAppliedProposal: true,
                     hasBoard: true));
         }
 
@@ -334,6 +339,7 @@ public class WorkspaceService : IWorkspaceService
 
         var captureSummary = await _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
         var hasReviewedProposal = await _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
+        var hasAppliedProposal = await _unitOfWork.AutomationProposals.HasAppliedByUserIdAsync(userId, cancellationToken);
         var boardCount = await _unitOfWork.Boards.CountReadableByUserIdAsync(
             userId,
             includeArchived: false,
@@ -343,6 +349,7 @@ public class WorkspaceService : IWorkspaceService
             preference,
             hasCapture: captureSummary.TotalCaptures > 0,
             hasReviewedProposal: hasReviewedProposal,
+            hasAppliedProposal: hasAppliedProposal,
             hasBoard: boardCount > 0,
             cancellationToken);
     }
@@ -351,10 +358,11 @@ public class WorkspaceService : IWorkspaceService
         UserPreference preference,
         bool hasCapture,
         bool hasReviewedProposal,
+        bool hasAppliedProposal,
         bool hasBoard,
         CancellationToken cancellationToken)
     {
-        var steps = BuildOnboardingSteps(hasCapture, hasReviewedProposal, hasBoard);
+        var steps = BuildOnboardingSteps(hasCapture, hasReviewedProposal, hasAppliedProposal, hasBoard);
         if (steps.All(step => step.IsComplete) && preference.OnboardingCompletedAt is null)
         {
             preference.RecordOnboardingCompletion();
@@ -367,6 +375,7 @@ public class WorkspaceService : IWorkspaceService
     private static IReadOnlyList<WorkspaceOnboardingStepDto> BuildOnboardingSteps(
         bool hasCapture,
         bool hasReviewedProposal,
+        bool hasAppliedProposal,
         bool hasBoard)
     {
         return
@@ -388,7 +397,13 @@ public class WorkspaceService : IWorkspaceService
                 "Review your first proposal",
                 "Use Review to decide what should reach a board before anything is applied.",
                 "review",
-                hasReviewedProposal)
+                hasReviewedProposal),
+            new WorkspaceOnboardingStepDto(
+                "apply-first-proposal",
+                "Apply your first proposal",
+                "Approve and apply a proposal so the change reaches your board — the full capture-to-board loop.",
+                "board",
+                hasAppliedProposal)
         ];
     }
 

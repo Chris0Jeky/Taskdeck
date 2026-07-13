@@ -54,6 +54,18 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
                 cancellationToken);
     }
 
+    public async Task<bool> HasAppliedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        // The apply onboarding milestone demands a genuine capture→review→board apply:
+        // only a proposal the user carried all the way to Applied counts. Approved,
+        // Rejected, and Failed are deliberately excluded (reviewed, but never applied).
+        return await _dbSet
+            .AsNoTracking()
+            .AnyAsync(
+                proposal => proposal.DecidedByUserId == userId && proposal.Status == ProposalStatus.Applied,
+                cancellationToken);
+    }
+
     public async Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(
