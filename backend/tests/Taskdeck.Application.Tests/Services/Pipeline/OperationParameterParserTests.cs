@@ -36,6 +36,19 @@ public class OperationParameterParserTests
         error.Should().Contain("Invalid operation parameters JSON");
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("\"text\"")]
+    public void TryDeserializeParameters_ShouldReturnFalse_ForNonObjectJson(string rawParameters)
+    {
+        var result = OperationParameterParser.TryDeserializeParameters(rawParameters, out _, out var error);
+
+        result.Should().BeFalse();
+        error.Should().Contain("JSON object");
+    }
+
     [Fact]
     public void TryDeserializeParameters_ShouldReturnTrue_ForValidJson()
     {

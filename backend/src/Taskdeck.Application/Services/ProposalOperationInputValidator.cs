@@ -104,6 +104,9 @@ public static class ProposalOperationInputValidator
             // JsonDocument.Parse rejects input nested deeper than its default max depth (64),
             // which bounds the recursion in MeasureDepth below.
             using var document = JsonDocument.Parse(rawParameters);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return $"{prefix}: parameters must be a JSON object.";
+
             if (MeasureDepth(document.RootElement) > MaxParametersDepth)
                 return $"{prefix}: parameters are nested too deeply (max depth {MaxParametersDepth}).";
         }

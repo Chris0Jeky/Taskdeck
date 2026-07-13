@@ -23,6 +23,12 @@ public static class OperationParameterParser
         try
         {
             parameters = JsonSerializer.Deserialize<JsonElement>(rawParameters);
+            if (parameters.ValueKind != JsonValueKind.Object)
+            {
+                error = "Operation parameters must be a JSON object";
+                return false;
+            }
+
             return true;
         }
         catch (JsonException ex)

@@ -369,6 +369,67 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task RevisedUpdate_WithOnlyFalseClearDueDate_ShouldFailPreviewAndApply()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-noop-update");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-noop-update-board");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged card");
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = JsonSerializer.Serialize(new { cardId = card.Id, clearDueDate = false });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload(
+                    "update", "card", parameters, card.Id.ToString()),
+                reason = "attempt a no-op update"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Title == "Unchanged card");
+    }
+
+    [Fact]
+    public async Task RevisedLabelOperation_WithoutCardId_ShouldFailPreviewAndApply()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-label-missing-card");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-label-missing-card-board");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged labels");
+        var label = await CreateLabelAsync(client, board.Id, "urgent");
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = JsonSerializer.Serialize(new { labelId = label.Id });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload("add-label", "card", parameters),
+                reason = "omit the card identity"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
     public async Task CreateRevision_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
     {
         var ownerClient = _factory.CreateClient();
@@ -423,6 +484,40 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task RevisedUpdate_CannotTargetAnotherUsersCardWithMatchingIdentities()
+    {
+        var ownerClient = _factory.CreateClient();
+        var victimClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "rev-scope-matched-card-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(victimClient, "rev-scope-matched-card-victim");
+        var (ownerBoard, ownerColumn) = await CreateBoardWithColumnAsync(ownerClient, "rev-scope-matched-card-owner-board");
+        var (victimBoard, victimColumn) = await CreateBoardWithColumnAsync(victimClient, "rev-scope-matched-card-victim-board");
+        var ownerCard = await CreateCardAsync(ownerClient, ownerBoard.Id, ownerColumn.Id, "Owner card");
+        var victimCard = await CreateCardAsync(victimClient, victimBoard.Id, victimColumn.Id, "Victim card");
+        var proposal = await CreateUpdateProposalAsync(ownerClient, owner.UserId, ownerBoard.Id, ownerCard.Id);
+
+        var revisionResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildUpdateRevisionPayload(victimCard.Id, victimCard.Id, "Redirected title"),
+                reason = "attempt to redirect both identities"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertForbiddenAsync(diffResponse);
+
+        (await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeResponse = await ExecuteProposalAsync(ownerClient, proposal.Id);
+        await ApiTestHarness.AssertForbiddenAsync(executeResponse);
+
+        var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
+        victimCards.Should().ContainSingle(card => card.Id == victimCard.Id && card.Title == "Victim card");
+    }
+
+    [Fact]
     public async Task RevisedCreate_CannotRedirectBoardAndColumnToAnotherUsersBoard()
     {
         var ownerClient = _factory.CreateClient();
@@ -454,6 +549,38 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
         victimCards.Should().NotContain(card => card.Title == "Cross-board card");
+    }
+
+    [Fact]
+    public async Task RevisedCreate_CannotUseAnotherUsersColumnWithinAuthorizedBoardParameters()
+    {
+        var ownerClient = _factory.CreateClient();
+        var victimClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "rev-scope-column-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(victimClient, "rev-scope-column-victim");
+        var (ownerBoard, ownerColumn) = await CreateBoardWithColumnAsync(ownerClient, "rev-scope-column-owner-board");
+        var (victimBoard, victimColumn) = await CreateBoardWithColumnAsync(victimClient, "rev-scope-column-victim-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, ownerBoard.Id, ownerColumn.Id);
+
+        var revisionResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildRevisionPayload("Cross-board column card", ownerBoard.Id, victimColumn.Id),
+                reason = "attempt to redirect only the column"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertForbiddenAsync(diffResponse);
+
+        (await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeResponse = await ExecuteProposalAsync(ownerClient, proposal.Id);
+        await ApiTestHarness.AssertForbiddenAsync(executeResponse);
+
+        var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
+        victimCards.Should().NotContain(card => card.Title == "Cross-board column card");
     }
 
     private static async Task<ProposalDto> CreateTestProposalAsync(
@@ -514,11 +641,27 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         return (await response.Content.ReadFromJsonAsync<CardDto>())!;
     }
 
+    private static async Task<LabelDto> CreateLabelAsync(HttpClient client, Guid boardId, string name)
+    {
+        var response = await client.PostAsJsonAsync(
+            $"/api/boards/{boardId}/labels",
+            new CreateLabelDto(boardId, name, "#FF0000"));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<LabelDto>())!;
+    }
+
     private static async Task<List<CardDto>> ReadCardsAsync(HttpClient client, Guid boardId)
     {
         var response = await client.GetAsync($"/api/boards/{boardId}/cards");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return (await response.Content.ReadFromJsonAsync<List<CardDto>>())!;
+    }
+
+    private static async Task<HttpResponseMessage> ExecuteProposalAsync(HttpClient client, Guid proposalId)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposalId}/execute");
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        return await client.SendAsync(request);
     }
 
     private static async Task<ProposalDto> CreateUpdateProposalAsync(
@@ -557,6 +700,30 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
                     targetType = "card",
                     targetId = targetId.ToString(),
                     parameters = JsonSerializer.Serialize(new { cardId = parameterCardId, title }),
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    expectedVersion = (string?)null
+                }
+            }
+        });
+    }
+
+    private static string BuildSingleOperationRevisionPayload(
+        string actionType,
+        string targetType,
+        string parameters,
+        string? targetId = null)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType,
+                    targetType,
+                    targetId,
+                    parameters,
                     idempotencyKey = Guid.NewGuid().ToString(),
                     expectedVersion = (string?)null
                 }

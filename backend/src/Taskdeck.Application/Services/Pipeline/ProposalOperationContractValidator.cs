@@ -166,8 +166,14 @@ public static class ProposalOperationContractValidator
         if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase) ||
             normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase))
         {
+            if (normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase) &&
+                !OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
+            {
+                return Result.Failure(ErrorCodes.ValidationError, cardIdError);
+            }
+
             if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
-                    parameters, "dueDate", out _, out var dueDate, out var dueDateError))
+                    parameters, "dueDate", out var dueDateProvided, out var dueDate, out var dueDateError))
                 return Result.Failure(ErrorCodes.ValidationError, dueDateError);
 
             if (!OperationParameterParser.TryGetOptionalBoolean(
@@ -180,10 +186,28 @@ public static class ProposalOperationContractValidator
             var labelsResult = await ValidateLabelsAsync(unitOfWork, proposalBoardId, parameters, cancellationToken);
             if (!labelsResult.IsSuccess)
                 return labelsResult;
+
+            if (normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase))
+            {
+                var title = OperationParameterParser.GetOptionalString(parameters, "title");
+                var description = OperationParameterParser.GetOptionalString(parameters, "description");
+                var labelsProvided = parameters.TryGetProperty("labels", out _);
+                var labelIdsProvided = parameters.TryGetProperty("labelIds", out _);
+                if (title == null && description == null && !dueDateProvided && !clearDueDate &&
+                    !labelsProvided && !labelIdsProvided)
+                {
+                    return Result.Failure(
+                        ErrorCodes.ValidationError,
+                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
+                }
+            }
         }
 
         if (normalizedAction is "addlabel" or "removelabel")
         {
+            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
+                return Result.Failure(ErrorCodes.ValidationError, cardIdError);
+
             var hasLabelId = parameters.TryGetProperty("labelId", out _);
             var hasLabelName = parameters.TryGetProperty("labelName", out _);
             if (hasLabelId == hasLabelName)

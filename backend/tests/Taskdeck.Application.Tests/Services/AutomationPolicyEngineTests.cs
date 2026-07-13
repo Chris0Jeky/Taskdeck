@@ -198,6 +198,29 @@ public class AutomationPolicyEngineTests
         result.IsSuccess.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("\"text\"")]
+    public async Task ValidatePermissions_ShouldReturnValidationError_ForNonObjectParameters(string parameters)
+    {
+        var userId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedPassword");
+        var operations = new List<ProposalOperationDto>
+        {
+            new(Guid.NewGuid(), Guid.NewGuid(), 0, "create", "card", null, parameters, "key1", null)
+        };
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+
+        var result = await _engine.ValidatePermissionsAsync(userId, null, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("JSON object");
+    }
+
     [Fact]
     public async Task ValidatePermissions_ShouldReturnFailure_ForInvalidUserId()
     {
