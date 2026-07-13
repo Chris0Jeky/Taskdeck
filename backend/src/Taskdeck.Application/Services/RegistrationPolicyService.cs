@@ -11,6 +11,7 @@ public sealed class RegistrationPolicyService : IRegistrationPolicyService
 {
     public const string RegistrationClosedMessage = "Registration is closed by this Taskdeck instance.";
     public const string InviteRequiredMessage = "A valid registration invite is required.";
+    public static readonly TimeSpan MinimumInviteLifetime = TimeSpan.FromMinutes(1);
     public static readonly TimeSpan MaximumInviteLifetime = TimeSpan.FromDays(365);
 
     private const string Base62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -27,6 +28,30 @@ public sealed class RegistrationPolicyService : IRegistrationPolicyService
         _settings = settings;
         _store = store;
         _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Result> CheckNewUserEligibilityAsync(
+        string? inviteCode,
+        CancellationToken cancellationToken = default)
+    {
+        if (_settings.Mode == RegistrationMode.Open)
+            return Result.Success();
+
+        if (_settings.Mode == RegistrationMode.Closed
+            && await _store.IsFirstUserBootstrapClaimedAsync(cancellationToken))
+        {
+            return Result.Failure(ErrorCodes.Forbidden, RegistrationClosedMessage);
+        }
+
+        if (!IsWellFormedInviteCode(inviteCode))
+            return GetRestrictiveFailure();
+
+        var available = await _store.IsInviteAvailableAsync(
+            HashInviteCode(inviteCode!),
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+
+        return available ? Result.Success() : GetRestrictiveFailure();
     }
 
     public async Task<Result> AuthorizeNewUserAsync(
@@ -76,7 +101,7 @@ public sealed class RegistrationPolicyService : IRegistrationPolicyService
         TimeSpan expiresIn,
         CancellationToken cancellationToken = default)
     {
-        if (expiresIn <= TimeSpan.Zero || expiresIn > MaximumInviteLifetime)
+        if (expiresIn < MinimumInviteLifetime || expiresIn > MaximumInviteLifetime)
         {
             return Result.Failure<RegistrationInviteResult>(
                 ErrorCodes.ValidationError,
@@ -124,5 +149,14 @@ public sealed class RegistrationPolicyService : IRegistrationPolicyService
             && inviteCode.StartsWith(RegistrationInvite.CodePrefix, StringComparison.Ordinal)
             && inviteCode[RegistrationInvite.CodePrefix.Length..]
                 .All(character => Base62Chars.Contains(character));
+    }
+
+    private Result GetRestrictiveFailure()
+    {
+        return Result.Failure(
+            ErrorCodes.Forbidden,
+            _settings.Mode == RegistrationMode.Closed
+                ? RegistrationClosedMessage
+                : InviteRequiredMessage);
     }
 }

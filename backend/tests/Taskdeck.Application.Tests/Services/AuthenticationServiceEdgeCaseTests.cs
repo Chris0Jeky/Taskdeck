@@ -46,6 +46,9 @@ public class AuthenticationServiceEdgeCaseTests
         _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.RollbackTransactionAsync(default)).Returns(Task.CompletedTask);
         _registrationPolicyMock
+            .Setup(policy => policy.CheckNewUserEligibilityAsync(It.IsAny<string?>(), default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
+        _registrationPolicyMock
             .Setup(policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default))
             .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
     }
@@ -597,6 +600,7 @@ public class AuthenticationServiceEdgeCaseTests
         return new AuthenticationService(
             _unitOfWorkMock.Object,
             jwtSettings ?? DefaultJwtSettings,
-            _registrationPolicyMock.Object);
+            _registrationPolicyMock.Object,
+            new BcryptPasswordHasher());
     }
 }

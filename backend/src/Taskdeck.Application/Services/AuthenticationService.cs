@@ -17,15 +17,18 @@ public class AuthenticationService : IAuthenticationService
     private readonly IUnitOfWork _unitOfWork;
     private readonly JwtSettings _jwtSettings;
     private readonly IRegistrationPolicyService _registrationPolicy;
+    private readonly IPasswordHasher _passwordHasher;
 
     public AuthenticationService(
         IUnitOfWork unitOfWork,
         JwtSettings jwtSettings,
-        IRegistrationPolicyService registrationPolicy)
+        IRegistrationPolicyService registrationPolicy,
+        IPasswordHasher passwordHasher)
     {
         _unitOfWork = unitOfWork;
         _jwtSettings = jwtSettings;
         _registrationPolicy = registrationPolicy;
+        _passwordHasher = passwordHasher;
     }
 
     public async Task<Result<AuthResultDto>> LoginAsync(LoginDto dto)
@@ -47,7 +50,7 @@ public class AuthenticationService : IAuthenticationService
             var hasInactivePasswordMatch = false;
             foreach (var candidate in users)
             {
-                if (!BCrypt.Net.BCrypt.Verify(dto.Password, candidate.PasswordHash))
+                if (!_passwordHasher.VerifyPassword(dto.Password, candidate.PasswordHash))
                     continue;
 
                 if (!candidate.IsActive)
@@ -98,10 +101,18 @@ public class AuthenticationService : IAuthenticationService
             if (string.IsNullOrWhiteSpace(normalizedEmail))
                 return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Email is required");
 
-            // BCrypt is intentionally completed before the transaction. Restrictive
-            // registration authorization and the uniqueness check stay inside the
-            // transaction so an invite is rolled back if the identity already exists.
-            var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+            // Reject requests that cannot currently satisfy restrictive policy before
+            // paying BCrypt's cost. The authoritative claim/consumption is repeated
+            // transactionally below so races and duplicate identities still roll back.
+            var registrationEligibility = await _registrationPolicy.CheckNewUserEligibilityAsync(dto.InviteCode);
+            if (!registrationEligibility.IsSuccess)
+            {
+                return Result.Failure<AuthResultDto>(
+                    registrationEligibility.ErrorCode,
+                    registrationEligibility.ErrorMessage);
+            }
+
+            var passwordHash = _passwordHasher.HashPassword(dto.Password);
 
             await _unitOfWork.BeginTransactionAsync();
             transactionStarted = true;
@@ -194,9 +205,17 @@ public class AuthenticationService : IAuthenticationService
             // their account, because GitHub does not guarantee email verification.
             // Instead, always create a new account for unlinked external logins.
 
-            // Complete the random unusable password's expensive BCrypt work
-            // before acquiring SQLite's write transaction.
-            var randomPassword = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString());
+            // Apply the same cheap policy boundary to new external accounts. Existing
+            // linked accounts return above and remain unaffected by registration mode.
+            var registrationEligibility = await _registrationPolicy.CheckNewUserEligibilityAsync(dto.InviteCode);
+            if (!registrationEligibility.IsSuccess)
+            {
+                return Result.Failure<AuthResultDto>(
+                    registrationEligibility.ErrorCode,
+                    registrationEligibility.ErrorMessage);
+            }
+
+            var randomPassword = _passwordHasher.HashPassword(Guid.NewGuid().ToString());
 
             await _unitOfWork.BeginTransactionAsync();
             transactionStarted = true;
@@ -387,10 +406,10 @@ public class AuthenticationService : IAuthenticationService
             if (!user.IsActive)
                 return Result.Failure(ErrorCodes.Forbidden, "User account is inactive");
 
-            if (!BCrypt.Net.BCrypt.Verify(currentPassword, user.PasswordHash))
+            if (!_passwordHasher.VerifyPassword(currentPassword, user.PasswordHash))
                 return Result.Failure(ErrorCodes.AuthenticationFailed, "Current password is incorrect");
 
-            var newHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+            var newHash = _passwordHasher.HashPassword(newPassword);
             user.UpdatePassword(newHash);
 
             await _unitOfWork.SaveChangesAsync();

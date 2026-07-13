@@ -14,6 +14,26 @@ public sealed class RegistrationPolicyStore : IRegistrationPolicyStore
         _context = context;
     }
 
+    public Task<bool> IsFirstUserBootstrapClaimedAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return _context.RegistrationBootstraps
+            .AsNoTracking()
+            .AnyAsync(bootstrap => bootstrap.Id == RegistrationBootstrap.SingletonId, cancellationToken);
+    }
+
+    public async Task<bool> IsInviteAvailableAsync(
+        string codeHash,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var invite = await _context.RegistrationInvites
+            .AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.CodeHash == codeHash, cancellationToken);
+
+        return invite is { ConsumedAt: null } && invite.ExpiresAt > now;
+    }
+
     public async Task<bool> TryClaimFirstUserBootstrapAsync(
         DateTimeOffset claimedAt,
         CancellationToken cancellationToken = default)

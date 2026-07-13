@@ -26,6 +26,9 @@ public class AuthenticationServiceTests
         _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.RollbackTransactionAsync(default)).Returns(Task.CompletedTask);
         _registrationPolicyMock
+            .Setup(policy => policy.CheckNewUserEligibilityAsync(It.IsAny<string?>(), default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
+        _registrationPolicyMock
             .Setup(policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default))
             .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
     }
@@ -186,6 +189,43 @@ public class AuthenticationServiceTests
         _userRepoMock.Verify(repository => repository.AddAsync(It.IsAny<User>(), default), Times.Never);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-an-invite")]
+    [InlineData("tdi_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+    public async Task RegisterAsync_ShouldRejectPolicyIneligibleRequestBeforeHashing(string? inviteCode)
+    {
+        var passwordHasher = new Mock<IPasswordHasher>(MockBehavior.Strict);
+        var service = CreateService(passwordHasher: passwordHasher.Object);
+        var dto = new CreateUserDto(
+            "closed-user",
+            "closed-user@example.com",
+            "password123",
+            InviteCode: inviteCode);
+        _registrationPolicyMock
+            .Setup(policy => policy.CheckNewUserEligibilityAsync(inviteCode, default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Failure(
+                ErrorCodes.Forbidden,
+                RegistrationPolicyService.InviteRequiredMessage));
+
+        var result = await service.RegisterAsync(dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        passwordHasher.Verify(
+            hasher => hasher.HashPassword(It.IsAny<string>()),
+            Times.Never,
+            "policy-denied anonymous requests must not pay BCrypt's cost");
+        _unitOfWorkMock.Verify(unit => unit.BeginTransactionAsync(default), Times.Never);
+        _registrationPolicyMock.Verify(
+            policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default),
+            Times.Never);
+        _userRepoMock.Verify(
+            repository => repository.ExistsAsync(It.IsAny<string>(), It.IsAny<string>(), default),
+            Times.Never,
+            "the cheap denial path must not disclose account existence");
+    }
+
     [Fact]
     public async Task RegisterAsync_ShouldNotCreateUser_WhenJwtConfigIsInvalid()
     {
@@ -248,7 +288,9 @@ public class AuthenticationServiceTests
         result.ErrorCode.Should().Be(ErrorCodes.Unauthorized);
     }
 
-    private AuthenticationService CreateService(JwtSettings? jwtSettings = null)
+    private AuthenticationService CreateService(
+        JwtSettings? jwtSettings = null,
+        IPasswordHasher? passwordHasher = null)
     {
         jwtSettings ??= new JwtSettings
         {
@@ -261,6 +303,7 @@ public class AuthenticationServiceTests
         return new AuthenticationService(
             _unitOfWorkMock.Object,
             jwtSettings,
-            _registrationPolicyMock.Object);
+            _registrationPolicyMock.Object,
+            passwordHasher ?? new BcryptPasswordHasher());
     }
 }

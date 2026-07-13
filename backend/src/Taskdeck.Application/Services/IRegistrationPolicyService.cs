@@ -11,6 +11,10 @@ public sealed record RegistrationInviteResult(
 
 public interface IRegistrationPolicyService
 {
+    Task<Result> CheckNewUserEligibilityAsync(
+        string? inviteCode,
+        CancellationToken cancellationToken = default);
+
     Task<Result> AuthorizeNewUserAsync(
         string? inviteCode,
         CancellationToken cancellationToken = default);

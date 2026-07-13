@@ -291,7 +291,8 @@ public class AuthRefreshEndpointTests : IClassFixture<TestWebApplicationFactory>
         var authService = new AuthenticationService(
             unitOfWorkMock.Object,
             DefaultJwtSettings,
-            Mock.Of<IRegistrationPolicyService>());
+            Mock.Of<IRegistrationPolicyService>(),
+            new BcryptPasswordHasher());
         return (unitOfWorkMock, authService);
     }
 

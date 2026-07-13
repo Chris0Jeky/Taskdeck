@@ -391,7 +391,8 @@ public class AuthControllerEdgeCaseTests
         var authServiceMock = new Mock<AuthenticationService>(
             unitOfWorkMock.Object,
             DefaultJwtSettings,
-            Mock.Of<IRegistrationPolicyService>())
+            Mock.Of<IRegistrationPolicyService>(),
+            new BcryptPasswordHasher())
         {
             CallBase = true
         };

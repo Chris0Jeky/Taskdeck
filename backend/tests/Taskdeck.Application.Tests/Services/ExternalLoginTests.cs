@@ -29,6 +29,9 @@ public class ExternalLoginTests
         _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.RollbackTransactionAsync(default)).Returns(Task.CompletedTask);
         _registrationPolicyMock
+            .Setup(policy => policy.CheckNewUserEligibilityAsync(It.IsAny<string?>(), default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
+        _registrationPolicyMock
             .Setup(policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default))
             .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
     }
@@ -144,6 +147,44 @@ public class ExternalLoginTests
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         result.ErrorMessage.Should().Be(RegistrationPolicyService.InviteRequiredMessage);
         _unitOfWorkMock.Verify(unit => unit.RollbackTransactionAsync(default), Times.Once);
+        _userRepoMock.Verify(repository => repository.AddAsync(It.IsAny<User>(), default), Times.Never);
+        _externalLoginRepoMock.Verify(
+            repository => repository.AddAsync(It.IsAny<ExternalLogin>(), default),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExternalLoginAsync_ShouldRejectPolicyIneligibleNewUserBeforeHashing()
+    {
+        var passwordHasher = new Mock<IPasswordHasher>(MockBehavior.Strict);
+        var service = CreateService(passwordHasher: passwordHasher.Object);
+        var dto = new ExternalLoginDto(
+            Provider: "GitHub",
+            ProviderUserId: "new-denied-user",
+            Username: "new-denied-user",
+            Email: "new-denied-user@example.com");
+        _externalLoginRepoMock
+            .Setup(repository => repository.GetByProviderAsync(dto.Provider, dto.ProviderUserId, default))
+            .ReturnsAsync((ExternalLogin?)null);
+        _registrationPolicyMock
+            .Setup(policy => policy.CheckNewUserEligibilityAsync(null, default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Failure(
+                ErrorCodes.Forbidden,
+                RegistrationPolicyService.RegistrationClosedMessage));
+
+        var result = await service.ExternalLoginAsync(dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be(RegistrationPolicyService.RegistrationClosedMessage);
+        passwordHasher.Verify(
+            hasher => hasher.HashPassword(It.IsAny<string>()),
+            Times.Never,
+            "policy-denied external identities must not pay BCrypt's cost");
+        _unitOfWorkMock.Verify(unit => unit.BeginTransactionAsync(default), Times.Never);
+        _registrationPolicyMock.Verify(
+            policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default),
+            Times.Never);
         _userRepoMock.Verify(repository => repository.AddAsync(It.IsAny<User>(), default), Times.Never);
         _externalLoginRepoMock.Verify(
             repository => repository.AddAsync(It.IsAny<ExternalLogin>(), default),
@@ -352,7 +393,9 @@ public class ExternalLoginTests
         result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
     }
 
-    private AuthenticationService CreateService(JwtSettings? jwtSettings = null)
+    private AuthenticationService CreateService(
+        JwtSettings? jwtSettings = null,
+        IPasswordHasher? passwordHasher = null)
     {
         jwtSettings ??= new JwtSettings
         {
@@ -365,6 +408,7 @@ public class ExternalLoginTests
         return new AuthenticationService(
             _unitOfWorkMock.Object,
             jwtSettings,
-            _registrationPolicyMock.Object);
+            _registrationPolicyMock.Object,
+            passwordHasher ?? new BcryptPasswordHasher());
     }
 }

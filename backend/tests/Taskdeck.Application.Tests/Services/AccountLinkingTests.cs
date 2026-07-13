@@ -195,7 +195,8 @@ public class AccountLinkingTests
         var service = new AuthenticationService(
             uow.Object,
             DefaultJwtSettings,
-            Mock.Of<IRegistrationPolicyService>());
+            Mock.Of<IRegistrationPolicyService>(),
+            new BcryptPasswordHasher());
         return (service, uow);
     }
 
