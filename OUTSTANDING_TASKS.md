@@ -77,6 +77,7 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 - [ ] **#1330** — Repair the CI Extended reusable-workflow permission contract; affected PRs remain ineligible while the workflow startup failure is red.
 - [ ] **#1282 / #1332 / #1335** — Stabilize the required full-suite harness: SQLite concurrency, Redis connect/dispose, and hosted-worker/presence lifecycle isolation. Narrow passes do not clear the recorded full-suite failures.
 - [ ] **#1338** — Map HTTP MCP and its API-key middleware to the same `/mcp` route before documenting or exposing HTTP transport; the current parameterless mapping serves MCP at an unintended unauthenticated root route.
+- [ ] **#1343** — Prevent late Home/Today summary responses from overwriting a newer local workspace-mode choice; add deterministic ordering tests and repeated error-recovery E2E proof.
 - [ ] **#1323 prompt-rail remainder** — Bind the hostile transcript/PDF/image and malformed-response fixtures from PR #1340 to PR #1312's effective prompt/parser path before GEN-04; prove grounded-task-or-empty verdicts and deterministic fallback for schema escapes.
 
 ---
