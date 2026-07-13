@@ -586,6 +586,70 @@ public class DataExportServiceStreamingTests
     }
 
     [Fact]
+    public async Task StreamUserDataExportAsync_ShouldIncrementallyBase64EncodeArtefactContent()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var content = "stream me"u8.ToArray();
+        var artefact = new SourceArtefact(
+            _userId,
+            ArtefactKind.TextFile,
+            "text/plain",
+            "notes.txt",
+            // Deliberately above Utf8JsonWriter's single-value Base64 input limit:
+            // export must use the repository copy primitive, not a byte[] token write.
+            125_000_001,
+            new string('a', SourceArtefact.Sha256HexLength),
+            CaptureSource.Import);
+        _artefactRepoMock
+            .Setup(r => r.GetByUserAsync(_userId, 500, 0, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([artefact]);
+        _artefactRepoMock
+            .Setup(r => r.GetByUserAsync(_userId, 500, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SourceArtefact>());
+        _artefactRepoMock
+            .Setup(r => r.CopyContentForUserAsync(
+                artefact.Id,
+                _userId,
+                It.IsAny<Stream>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(async (Guid _, Guid _, Stream destination, CancellationToken token) =>
+            {
+                await destination.WriteAsync(content.AsMemory(0, 2), token);
+                await destination.WriteAsync(content.AsMemory(2), token);
+                return true;
+            });
+
+        using var stream = new MemoryStream();
+        var result = await _service.StreamUserDataExportAsync(_userId, stream);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        stream.Position = 0;
+        using var doc = System.Text.Json.JsonDocument.Parse(stream);
+        var exported = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("artefacts")
+            .EnumerateArray()
+            .Single();
+        exported.GetProperty("byteSize").GetInt64().Should().Be(artefact.ByteSize);
+        Convert.FromBase64String(exported.GetProperty("contentBase64").GetString()!)
+            .Should().Equal(content);
+        _artefactRepoMock.Verify(
+            r => r.GetContentForUserAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _artefactRepoMock.Verify(
+            r => r.CopyContentForUserAsync(
+                artefact.Id,
+                _userId,
+                It.IsAny<Stream>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task StreamUserDataExportAsync_UsesOneCountQueryForManyChatSessions_NotNPlus1()
     {
         // Arrange — two chat sessions

@@ -33,8 +33,9 @@ public class DataPortabilityController : AuthenticatedControllerBase
     /// Export all data belonging to the authenticated user as a versioned JSON package.
     /// The export includes: boards, notifications, capture items, proposals,
     /// chat sessions, audit trail, preferences, proposal feedback, and source
-    /// artefact metadata plus Base64 content. The response is streamed to keep
-    /// memory bounded for valid large exports.
+    /// artefact metadata plus Base64 content. This compatibility route keeps its
+    /// bounded row/content contract; use <c>/export/stream</c> for a complete or
+    /// larger export.
     /// </summary>
     [HttpGet("export")]
     [ResponseCache(NoStore = true)]
@@ -43,13 +44,14 @@ public class DataPortabilityController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        return await StreamExportAsync(userId, cancellationToken);
+        var result = await _dataExportService.ExportUserDataAsync(userId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     /// <summary>
     /// Stream all data belonging to the authenticated user as a complete versioned JSON export.
-    /// This compatibility route emits the same complete, bounded-memory response as
-    /// <c>GET /api/account/export</c>, including source artefact metadata and Base64 content.
+    /// Unlike <c>GET /api/account/export</c>, this endpoint has no row cap and includes
+    /// source artefact metadata plus incrementally Base64-encoded content.
     /// </summary>
     [HttpGet("export/stream")]
     [ResponseCache(NoStore = true)]
