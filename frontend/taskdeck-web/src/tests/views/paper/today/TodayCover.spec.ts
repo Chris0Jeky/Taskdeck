@@ -33,7 +33,7 @@ describe('TodayCover', () => {
       props: {
         serial,
         cardsMoved: 9,
-        lede: 'A quiet Saturday.',
+        lede: 'Live summary.',
         autoSealsIn: '2h 18m',
         sealed: false,
       },
@@ -60,6 +60,23 @@ describe('TodayCover', () => {
 
     await wrapper.setProps({ sealed: true })
     expect(wrapper.find('[data-testid="auto-seals-in"]').text()).toContain('Sealed for the day')
+  })
+
+  it('uses an honest headline and no invented countdown when movement data is unavailable', () => {
+    const wrapper = mount(TodayCover, {
+      props: {
+        serial: 'D-2026-04-25-001',
+        cardsMoved: null,
+        lede: 'Activity totals are unavailable.',
+        autoSealsIn: null,
+        sealed: false,
+      },
+    })
+
+    expect(wrapper.text()).toContain('Today, at a glance.')
+    expect(wrapper.text()).toContain('Seal when your day is complete')
+    expect(wrapper.text()).not.toContain('cards')
+    expect(wrapper.text()).not.toContain('Auto-seals in')
   })
 
   it('seal button emits seal event each click; parent decides idempotency', async () => {
