@@ -27,6 +27,8 @@ services:
     # Render injects PORT env var; the Dockerfile's ASPNETCORE_URLS reads it.
     envVars:
       # --- Required ---
+      - key: Connectors__EncryptionKey
+        sync: false  # AES-256 key; generate with: openssl rand -base64 32
       - key: Jwt__SecretKey
         sync: false  # Must be set manually in dashboard — never commit secrets
       - key: Cors__AllowedOrigins

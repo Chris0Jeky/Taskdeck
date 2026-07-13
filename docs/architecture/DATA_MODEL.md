@@ -405,8 +405,8 @@ it in the same transaction as the first successful registration.
 
 ### RegistrationInvite
 
-Expiring, one-time invite for `InviteOnly` registration. Plaintext is never
-persisted.
+Expiring, one-time invite for restrictive registration, including the first
+owner in `Closed` or `InviteOnly`. Plaintext is never persisted.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|

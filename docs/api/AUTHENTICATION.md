@@ -38,12 +38,16 @@ Response (`200 OK`):
 Registration behavior is controlled by `Auth:Registration:Mode`:
 
 - `Open` (application default) allows new accounts.
-- `InviteOnly` requires an `inviteCode` after the first account.
-- `Closed` rejects later registrations with a stable `403 Forbidden` error.
+- `InviteOnly` requires an operator-minted `inviteCode` for every new account,
+  including the first owner.
+- `Closed` requires an operator-minted `inviteCode` for the first owner, then
+  rejects every later registration with a stable `403 Forbidden` error.
 
-A fresh database always allows exactly one first-user bootstrap, including in
-`InviteOnly` and `Closed`, so restrictive configuration cannot lock out the
-operator. For an invited registration, add the code to the request:
+On a fresh restrictive deployment, mint the first-owner code locally with
+`taskdeck invite create --expires 1` or from the container/provider's private
+shell as the non-root application user. Do not expose the URL as ready for use
+until the owner has registered. For an invited registration, add the code to
+the request:
 
 ```json
 {

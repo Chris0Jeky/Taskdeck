@@ -139,18 +139,20 @@ Developers can alternatively supply the secret via `dotnet user-secrets` or the
 
 Bound to `RegistrationSettings`. The application default is `Open` so local
 development, demo seeding, and existing integrations keep their current
-behavior. Production container templates override this to `Closed` as the safe
-public-deployment default.
+behavior. Production container templates override this to restrictive `Closed`.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Auth:Registration:Mode` | `RegistrationMode` | `Open` | `Open` allows new accounts; `InviteOnly` requires a valid one-time, expiring invite after the first account; `Closed` denies later registrations. A fresh database always permits exactly one first-user bootstrap in every mode. | No |
+| `Auth:Registration:Mode` | `RegistrationMode` | `Open` | `Open` allows new accounts. `InviteOnly` requires a valid one-time, expiring invite for every account. `Closed` requires such an invite for the first owner, then denies every later registration. | No |
 
-For `InviteOnly`, a local operator mints a code with
+For either restrictive mode, a local operator mints the first-owner code with
 `taskdeck invite create --expires 7`. Production images include the CLI at
 `/app/cli/Taskdeck.Cli.dll`; for Compose use
 `docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7`.
-Only a SHA-256 hash is stored and the plaintext code is shown once. OAuth/OIDC
+Run the container command as the documented non-root UID so CLI-created SQLite
+sidecars remain accessible to the API. Only a SHA-256 hash is stored and the
+plaintext code is shown once. In `Closed`, only the first owner can redeem a
+code; use `InviteOnly` and mint a separate code for each later account. OAuth/OIDC
 logins for already-linked accounts remain available in every mode. In this
 v0.1 CLI-only slice, a new invited user registers with username/password first,
 then links an external account from settings.

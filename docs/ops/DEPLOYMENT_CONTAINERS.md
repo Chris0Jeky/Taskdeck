@@ -70,20 +70,20 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 - API via proxy: `http://localhost:8080/api`
 - Optional (only when backend runs with `ASPNETCORE_ENVIRONMENT=Development`): `http://localhost:8080/swagger`
 
-The Compose baseline defaults `Auth:Registration:Mode` to `Closed`: a fresh
-database permits the first account, then later signups return `403`. To use
-one-time invites instead, set `TASKDECK_REGISTRATION_MODE=InviteOnly` in
-`deploy/.env` and mint a code from the packaged CLI:
+The Compose baseline defaults `Auth:Registration:Mode` to `Closed`. Before
+creating the first owner, mint a one-time bootstrap code from the packaged CLI:
 
 ```bash
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api \
   dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
 ```
 
-The plaintext appears once; only its hash is stored. Register invited users
-with username/password before linking GitHub/OIDC. Keep the explicit `--user`
-flag: running the CLI as root can leave SQLite WAL/journal files that the
-non-root API process cannot reopen.
+The plaintext appears once; only its hash is stored. Use it to create the first
+owner; Closed then returns `403` for every later registration. To admit later
+users, set `TASKDECK_REGISTRATION_MODE=InviteOnly`, restart the API, and mint a
+separate code per account. Register invited users with username/password before
+linking GitHub/OIDC. Keep the explicit `--user` flag: running the CLI as root can
+leave SQLite WAL/journal files that the non-root API process cannot reopen.
 
 4. Stop stack:
 
