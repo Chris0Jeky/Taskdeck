@@ -98,6 +98,8 @@ for (const km of keyMetrics) {
 // Check for near-threshold conditions and aspirational targets
 const p95Limit = 2000; // ms -- hard gate (issue #872)
 const p95Aspirational = 1200; // ms -- aspirational target (warning only)
+const boardWriteP95Capacity = 2000; // ms -- measured SQLite capacity at 20 VUs (issue #1358)
+const boardWriteP95Limit = 2200; // ms -- capacity plus 10% CI jitter allowance
 const errorRateLimit = 0.01; // 1%
 const nearThresholdRatio = 0.80; // warn at 80% of limit
 
@@ -118,6 +120,22 @@ if (httpDuration?.values?.["p(95)"]) {
     const msg = `HTTP p95 latency is ${p95.toFixed(2)}ms, approaching ${p95Limit}ms limit (${((p95 / p95Limit) * 100).toFixed(0)}%)`;
     console.log(`\n::warning::${msg}`);
     findings.push({ level: "warning", metric: "http_req_duration_p95", value: p95, limit: p95Limit, message: msg });
+    hasWarnings = true;
+  }
+}
+
+const boardWriteDuration = metrics["http_req_duration{workload:board-write}"];
+if (boardWriteDuration?.values?.["p(95)"] !== undefined) {
+  const p95 = boardWriteDuration.values["p(95)"];
+  if (p95 >= boardWriteP95Limit) {
+    const msg = `Board-write p95 latency is ${p95.toFixed(2)}ms, exceeds ${boardWriteP95Limit}ms hard gate (measured SQLite capacity: ${boardWriteP95Capacity}ms plus 10% jitter allowance)`;
+    console.log(`\n::error::${msg}`);
+    findings.push({ level: "error", metric: "board_write_p95", value: p95, limit: boardWriteP95Limit, message: msg });
+    hasBreaches = true;
+  } else if (p95 >= boardWriteP95Capacity) {
+    const msg = `Board-write p95 latency is ${p95.toFixed(2)}ms, at or above measured ${boardWriteP95Capacity}ms SQLite capacity (hard gate: ${boardWriteP95Limit}ms, 10% jitter allowance)`;
+    console.log(`\n::warning::${msg}`);
+    findings.push({ level: "warning", metric: "board_write_p95_capacity", value: p95, limit: boardWriteP95Capacity, message: msg });
     hasWarnings = true;
   }
 }
@@ -156,6 +174,7 @@ if (outputJson) {
       httpReqDurationP99: httpDuration?.values?.["p(99)"] ?? null,
       httpReqDurationAvg: httpDuration?.values?.avg ?? null,
       httpReqFailedRate: httpFailed?.values?.rate ?? null,
+      boardWriteDurationP95: boardWriteDuration?.values?.["p(95)"] ?? null,
     },
     thresholds,
     findings,
