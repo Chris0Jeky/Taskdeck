@@ -47,6 +47,8 @@ services:
         value: "false"
       - key: DevelopmentSandbox__Enabled
         value: "false"
+      - key: Auth__Registration__Mode
+        value: Closed
       # Headless mode prevents ephemeral JWT secret generation on restart
       - key: TASKDECK_HEADLESS
         value: "true"

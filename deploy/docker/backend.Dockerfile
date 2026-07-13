@@ -9,6 +9,7 @@ COPY global.json ./
 COPY backend/ ./backend/
 RUN dotnet restore backend/src/Taskdeck.Api/Taskdeck.Api.csproj
 RUN dotnet publish backend/src/Taskdeck.Api/Taskdeck.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj -c Release -o /app/cli /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
@@ -21,6 +22,7 @@ ENV ASPNETCORE_URLS=http://+:8080
 # connector credentials unrecoverable. Only the self-contained desktop exe (not built from this image)
 # auto-generates and persists the key locally. See ADR-0041.
 ENV TASKDECK_HEADLESS=true
+ENV Auth__Registration__Mode=Closed
 
 # Install curl for HEALTHCHECK probes. aspnet:8.0 is Debian-based and has no
 # HTTP client by default. util-linux (for setpriv) is already in the base
@@ -40,6 +42,7 @@ RUN groupadd --system --gid 10001 appuser \
     && chown appuser:appuser /app /app/data
 
 COPY --from=build --chown=appuser:appuser /app/publish ./
+COPY --from=build --chown=appuser:appuser /app/cli ./cli/
 
 # Entrypoint handles upgrade-time volume ownership and drops to appuser via
 # setpriv. We keep the container starting as root so the entrypoint can chown

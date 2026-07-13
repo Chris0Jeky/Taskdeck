@@ -1,6 +1,6 @@
 # Container Deployment Baseline
 
-Last Updated: 2026-02-25
+Last Updated: 2026-07-13
 Issue: `#69` OPS-07 containerized deployment baseline
 
 This runbook defines the minimal production-oriented container baseline for Taskdeck:
@@ -69,6 +69,19 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 - App entrypoint: `http://localhost:8080`
 - API via proxy: `http://localhost:8080/api`
 - Optional (only when backend runs with `ASPNETCORE_ENVIRONMENT=Development`): `http://localhost:8080/swagger`
+
+The Compose baseline defaults `Auth:Registration:Mode` to `Closed`: a fresh
+database permits the first account, then later signups return `403`. To use
+one-time invites instead, set `TASKDECK_REGISTRATION_MODE=InviteOnly` in
+`deploy/.env` and mint a code from the packaged CLI:
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec api \
+  dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
+```
+
+The plaintext appears once; only its hash is stored. Register invited users
+with username/password before linking GitHub/OIDC.
 
 4. Stop stack:
 

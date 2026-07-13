@@ -35,6 +35,30 @@ Response (`200 OK`):
 }
 ```
 
+Registration behavior is controlled by `Auth:Registration:Mode`:
+
+- `Open` (application default) allows new accounts.
+- `InviteOnly` requires an `inviteCode` after the first account.
+- `Closed` rejects later registrations with a stable `403 Forbidden` error.
+
+A fresh database always allows exactly one first-user bootstrap, including in
+`InviteOnly` and `Closed`, so restrictive configuration cannot lock out the
+operator. For an invited registration, add the code to the request:
+
+```json
+{
+  "username": "bob",
+  "email": "bob@example.com",
+  "password": "SecureP@ss1",
+  "inviteCode": "tdi_..."
+}
+```
+
+Invites are expiring and single-use. New OAuth/OIDC identities are subject to
+the same gate; the v0.1 CLI-only invite flow requires password registration
+first and external-account linking afterward. Existing linked external users
+can always log in.
+
 ### Login with existing credentials
 
 ```bash
