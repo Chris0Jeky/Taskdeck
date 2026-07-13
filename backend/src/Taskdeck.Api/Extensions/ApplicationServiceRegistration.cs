@@ -81,6 +81,9 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IIntegrationRegistryService, IntegrationRegistryService>();
         services.AddScoped<IDataExportService, DataExportService>();
         services.AddScoped<IAccountDeletionService, AccountDeletionService>();
+        services.AddScoped<IArtefactService, ArtefactService>();
+        services.AddScoped<IArtefactTextExtractor, PlainTextArtefactTextExtractor>();
+        services.AddScoped<IArtefactExtractionService, ArtefactExtractionService>();
         services.AddSingleton<InMemoryActiveUserCache>();
         services.AddSingleton<IActiveUserCache>(sp => sp.GetRequiredService<InMemoryActiveUserCache>());
         services.AddScoped<IBoardMetricsService>(sp =>

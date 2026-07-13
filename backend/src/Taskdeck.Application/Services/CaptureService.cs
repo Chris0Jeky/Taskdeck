@@ -62,7 +62,7 @@ public class CaptureService : ICaptureService
 
             var request = new LlmRequest(
                 userId,
-                CaptureRequestContract.RequestTypeV1,
+                CaptureRequestContract.ResolveRequestTypeForSource(sourceResult.Value),
                 CaptureRequestContract.SerializePayload(payload),
                 dto.BoardId);
             var attributedPayload = CaptureRequestContract.WithProvenance(

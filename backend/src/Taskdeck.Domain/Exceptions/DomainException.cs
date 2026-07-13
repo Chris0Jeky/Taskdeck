@@ -31,4 +31,5 @@ public static class ErrorCodes
     public const string LlmQuotaExceeded = "LlmQuotaExceeded";
     public const string LlmKillSwitchActive = "LlmKillSwitchActive";
     public const string AbuseContainmentActive = "AbuseContainmentActive";
+    public const string PayloadTooLarge = "PayloadTooLarge";
 }

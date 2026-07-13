@@ -9,7 +9,7 @@
 4. **Add new outstanding tasks here** when the maintainer asks you to remember something, or when substantial work is deferred. Keep entries short with a one-line "how" and a link to the GitHub issue/PR that holds the detail.
 5. Keep this file lean and scannable. Detail lives in the linked issues, not here.
 
-Last reviewed: 2026-06-19
+Last reviewed: 2026-07-13
 
 ---
 
@@ -35,7 +35,7 @@ Last reviewed: 2026-06-19
 
 ## C. Strategic / larger tracks (seeded under tracker #1142)
 
-- [ ] **#1123** — v0.1.0 release: now an **optional archival item** (archive pivot 2026-06-13 — no distribution). The self-contained exe is the personal run path; pushing a `v0.1.0` tag is a maintainer end-of-project decision, not a usefulness blocker. The release smoke step already landed in `release-desktop.yml`. *(Was "the #1 blocker" under ship-first; re-scoped by the pivot.)*
+- [ ] **#1123** — v0.1.0 release: a **required revival Phase-1 ship-gate item** under ADR-0044/REVIVAL-07. Exercise the release pipeline, smoke-run the self-contained exe, publish the GHCR image, and fix the documented release-path breakage before strangers are invited. The release smoke step already landed in `release-desktop.yml`. *(Optional-archive framing from 2026-06-13 is superseded.)*
 - [ ] **#1132** — Make the required PR gate enforce security: gitleaks/SAST/dependency scan + CORS fail-closed + single ≥32 JWT floor + global `FallbackPolicy` + bundle-size in the required lane.
 - [x] **#1130** — SQLite local concurrency: enable WAL + `busy_timeout`, fix per-process `Migrate()` race (UI + MCP + CLI share one DB → `SQLITE_BUSY`). *(closed 2026-06-05; ACs 1+3 shipped in PR #1165 / da764b92. AC2 cross-process `Migrate()` serialization → #1164; export/import redesign → #1166.)*
 - [ ] **#1131** — CLI hardening: fresh-machine bootstrap (it crashes without `Connectors:EncryptionKey`) + route CLI mutations through board-access authorization.
@@ -45,7 +45,7 @@ Last reviewed: 2026-06-19
 - [ ] **#1166** — Harden dev-sandbox export/import via the SQLite backup API (carries #1130's export/import follow-up).
 - [ ] **#1138** (rest) — Split the 1300+ line `STATUS.md` into a lean current-reality head + `docs/archive/status-history/`; add a rotation rule; recertify TESTING_GUIDE totals from a green CI run; add a markdown link-checker to nightly.
 - [ ] **#1136** (remainder) — ADR decision **delivered** (ADR-0038, Paper canonical / Legacy frozen; STATUS states the canonical stack) via PR #1207. **Still open:** remove/quarantine the dead paper composables (AC3) — scheduled for the Paper polish wave.
-- [ ] **#1137** — Refocus strategy/roadmap. **Effectively satisfied by the 2026-06-13 archive pivot** (strategy is now finish-for-personal-use → archive; distribution/GTM/cloud/mobile tracks de-scoped). Pending maintainer check-off / close as not-planned during archive closeout.
+- [ ] **#1137** — Refocus strategy/roadmap. ADR-0044 + `docs/REVIVAL_PLAN.md` now provide the revival direction and finite wave; pending maintainer check-off after the canonical-doc sync is merged. The 2026-06-13 archive framing is retained only as the checkpoint fallback.
 - [ ] **#1135 / #1140 / #1141 / #1139** — Code-health guardrails + oversized-view decomposition; workspace hygiene + one-command dev-up; i18n/a11y ADR; deployment docs (docker quickstart secret, desktop run docs). *(2026-06-19: **#1135 partial** — paper-night straggler tokens (PR #1216) — checked off by maintainer; guardrail/decomposition half + #1140/#1141/#1139 remain open.)*
 
 > Full audit context and the complete gap inventory: **GitHub issue #1142** (master tracker).
@@ -64,27 +64,42 @@ Direction: **free open beta → commercial horizon** (`docs/REVIVAL_PLAN.md` is 
 - [ ] **REVIVAL-00 tracker (#1311)** — charter + v0.1 ship-gate ratification (amends #1278); wave sequencing. Child issues: #1297–#1310 (REVIVAL-01..14); docs PR: #1296.
 - [ ] **Phase 0 — dogfooding starts now** (#1271, unchanged): real personal use including WhisperX transcripts through the existing transcript capture tab.
 - [ ] **Phase 1 — truth + safety before strangers**: registration gating flag; remove the fake undo timeline; de-stub Today dossier (#1272); Paper fonts + favicon; Paper onboarding/first-board path; README revival rewrite + demo GIF + MCP section; v0.1.0 tag → exercise release pipeline → GHCR image; fix render.yaml; branch protection (#1173); CI keep/kill (#1275); Paper E2E/axe re-point (#1274).
-- [ ] **Phase 2 — transcript engine** (authorized new-surface exception): LLM triage strategy behind `ICaptureTriageService` for transcript sources; chunking + cap raise; triage schema v2 (type/assignee/due + model-derived confidence); Transcript entity + evidence spans; OpenAICompatible provider + true SSE streaming; risk-tiered opt-in auto-apply; (2b, gated on dogfooding value) audio upload + WhisperX sidecar.
-- [ ] **Phase 3 — slim + launch**: dead-surface amputation (#1276 expanded); MCP packaging + scoped keys + hash-pin wiring (#1154); privacy-respecting beta feedback channel; launch checklist (r/selfhosted, Show HN, awesome-selfhosted, hosted demo).
-- [ ] **Checkpoint (~8 weeks)**: traction + dogfooding review → continue toward monetization, or fall back to §D archive plan.
+- [ ] **Phase 2 — transcript engine** (authorized new-surface exception): LLM triage strategy behind `ICaptureTriageService` for transcript sources; chunking + cap raise; triage schema v2 (type/assignee/due + model-derived confidence); Transcript entity + evidence spans; OpenAICompatible provider + true SSE streaming; risk-tiered review prioritization and batch-confirm ergonomics (**never auto-apply or bypass ADR-0003's approve-then-execute gate**); (2b, gated on dogfooding value) audio upload + WhisperX sidecar.
+- [ ] **Phase 3 — slim + launch**: dead-surface amputation (#1276 expanded); MCP packaging + scoped keys + hash-pin wiring (#1154) + explicit multi-user-safe stdio identity (#1309); privacy-respecting beta feedback channel; launch checklist (r/selfhosted, Show HN, awesome-selfhosted, hosted demo).
+- [ ] **Checkpoint (~8 weeks)**: fall back to the §D archive plan only if there is no organic traction **and** dogfooding has not stuck; any mixed outcome requires an explicit maintainer assessment/plan amendment.
 
-## D. Archive closeout wave (seeded by the 2026-07-02 whole-project analysis)
+## D. Historical archive closeout wave — re-scoped by ADR-0044
 
-Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_CORRECTION.md` (what must change + ordered plan). Wave tracker: **#1278** (ARCHIVE-00).
+Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_CORRECTION.md` (what must change + ordered plan). These issue titles retain their ARCHIVE-* history, but **nothing in this section independently authorizes archival**: ADR-0044 re-scopes the still-useful work into the revival ship gate and keeps archive only as the checkpoint fallback. Wave source: **#1278** (originally ARCHIVE-00; amended by REVIVAL-00/#1311).
 
-- [ ] **#1278** — ARCHIVE-00: ratify the archive exit criteria + target date; promote the closeout waves into the masterplan. *(Maintainer decision — the stop condition for pivot goal 3.)*
+- [ ] **#1278** — originally ARCHIVE-00; now the **v0.1 ship-gate source** amended by REVIVAL-00/#1311: ratify the repurposed exit criteria and revival additions, then use archive only if ADR-0044's checkpoint condition is met. *(Maintainer decision.)*
 - [ ] **#1269** — ARCHIVE-01: codify the two-tier review gate (LIGHT/FULL), issue-intake severity bar, no-new-backend-surface rule.
 - [ ] **#1270** — ARCHIVE-02: backlog triage hour — close ~16 already-decided issues with dated pivot notes. *(Maintainer sign-off on the list.)*
 - [ ] **#1271** — ARCHIVE-03: dogfooding sprint — ≥10 days of real personal use (the pivot's acceptance test; cannot be delegated).
 - [ ] **#1272** — ARCHIVE-04: Today dossier truth — de-stub the fabricated default daily surface (`useTodayDossier.ts` buildStubDossier).
-- [ ] **#1273** — ARCHIVE-05: capture-triage provenance names the deterministic extractor, not the uninvolved LLM provider.
+- [ ] **#1273** — **record-only maintainer check-off:** capture-triage provenance now names the deterministic extractor, delivered by #1283; the v0.1 ship-gate item is done. Checkbox intentionally remains human-owned per rule 3.
 - [ ] **#1274** — ARCHIVE-06: re-point E2E + axe coverage at the Paper UI (currently the least-tested UI).
 - [ ] **#1275** — ARCHIVE-07: CI estate right-sizing — keep/kill/gate per lane + short ADR (nightly red 28 days; mutation red 10+ weeks).
 - [ ] **#1276** — ARCHIVE-08: dead-surface removal — ink-bleed decision, orphaned Paper code, cohorts stub, voice capture, Ollama marking.
-- [ ] **#1277** — ARCHIVE-09: final archive pass — README banner, final doc entries, tag decision, exit-criteria done-check.
-- [ ] **#1235** (re-scoped) — top engineering priority: revision-aware proposal diff (preview must equal what Apply executes).
+- [ ] **#1277** — originally ARCHIVE-09; now the revival checkpoint/fallback record. Beta-facing README, release tag, and ship-gate checks live in REVIVAL-06/07/14; archive-only edits wait unless ADR-0044's checkpoint condition is met.
+- [ ] **#1235** — **record-only maintainer check-off:** revision-aware proposal diff (preview equals what Apply executes) was delivered by #1280 with regression coverage; the v0.1 ship-gate item is done. Checkbox intentionally remains human-owned per rule 3.
 - [ ] **#1291** — Adopt agent-harness T3 profile: one-home policy collapse, .codex mirror retirement, skill read-first diet, region maps, review-twin merge, ledger triage cadence. *(Blueprint: sibling checkout `C:/Users/jekyt/source/agent-harness/BLUEPRINT.md` — outside this repo; complements #1138/#1269/#1275/#1276, no duplication.)*
 - *(Record, already done 2026-07-02:)* re-scope comments posted on #996, #1123/#1139, #1128, #1134 (+#1154 decision), #1135, #1138, #1173, #1175 (+#1174), #1210, #1215, #1222 (+#1227), #1228 — each carries updated finish-or-close ACs.
+
+## E. Revival overnight deferrals (added 2026-07-13)
+
+- [ ] **#1173** — Apply and verify the required branch-protection settings in GitHub. This is repository-settings work and remains maintainer-only.
+- [ ] **#1303** — Push the `v0.1.0` release tag only after the maintainer accepts the release deck and its pipeline evidence. Agents may repair the pipeline but must not push the tag.
+- [ ] **#1299 trademark check** — Complete the human-only Taskdeck name/trademark clearance step; the licensing/DCO implementation does not substitute for legal-name clearance.
+- [ ] **#1327 project sync access** — Run `gh auth refresh -s project`, then rerun `scripts/github/Sync-TaskdeckProjectPriority.ps1` in audit and apply modes and verify no issue/PR project item has an empty Priority.
+- [ ] **#1330** — Repair the CI Extended reusable-workflow permission contract; affected PRs remain ineligible while the workflow startup failure is red.
+- [ ] **#1282 / #1332 / #1335** — Stabilize the required full-suite harness: SQLite concurrency, Redis connect/dispose, and hosted-worker/presence lifecycle isolation. Narrow passes do not clear the recorded full-suite failures.
+- [ ] **#1338** — Map HTTP MCP and its API-key middleware to the same `/mcp` route before documenting or exposing HTTP transport; the current parameterless mapping serves MCP at an unintended unauthenticated root route.
+- [ ] **#1343** — Prevent late Home/Today summary responses from overwriting a newer local workspace-mode choice; add deterministic ordering tests and repeated error-recovery E2E proof.
+- [ ] **#1345** — Resolve or formally mitigate GHSA-2m69-gcr7-jv3q in the transitive `SQLitePCLRaw.lib.e_sqlite3` package once a patched release exists or a safe provider change is proven; current published releases through 2.1.11 are affected.
+- [ ] **#1274 / `origin/issue-1274/paper-e2e-axe` at `993f188f`** — Resume the parked Paper E2E/axe re-point from the pushed WIP branch; fix tracked Paper Review blockers #1347/#1348, finish the named first-run/onboarding/smoke and axe coverage, then run the full frontend/E2E gates before opening a PR.
+- [ ] **#1347 / #1348** — Repair the Paper deep-review enum wire-contract crash and the SQLite-backed similar-past HTTP 500; both were reproduced by the real Paper capture/review path and must not be hidden by frontend fallbacks.
+- [ ] **#1323 prompt-rail remainder** — Bind the hostile transcript/PDF/image and malformed-response fixtures from PR #1340 to PR #1312's effective prompt/parser path before GEN-04; prove grounded-task-or-empty verdicts and deterministic fallback for schema escapes.
 
 ---
 

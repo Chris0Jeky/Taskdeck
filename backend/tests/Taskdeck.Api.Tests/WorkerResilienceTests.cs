@@ -427,9 +427,13 @@ public class WorkerResilienceTests
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
         public Task<IEnumerable<LlmRequest>> GetOldestProcessingCaptureAsync(int limit, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<IEnumerable<LlmRequest>> GetOldestProcessingTranscriptAsync(int limit, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
         public Task<int> CountPendingNonCaptureAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
         public Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
+        public Task<int> CountProcessingTranscriptAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
         public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database unavailable — simulated for resilience test");
@@ -462,6 +466,8 @@ public class WorkerResilienceTests
         public Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<bool> TryClaimProcessingTranscriptAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -509,7 +515,19 @@ public class WorkerResilienceTests
         {
             var all = _pending.Concat(_processing);
             return Task.FromResult<IEnumerable<LlmRequest>>(
-                all.Where(i => i.Status == RequestStatus.Processing && CaptureRequestContract.IsCaptureRequestType(i.RequestType))
+                all.Where(i => i.Status == RequestStatus.Processing
+                        && CaptureRequestContract.IsCaptureRequestType(i.RequestType)
+                        && !CaptureRequestContract.IsTranscriptRequestType(i.RequestType))
+                   .OrderBy(i => i.CreatedAt)
+                   .Take(limit)
+                   .ToList());
+        }
+
+        public Task<IEnumerable<LlmRequest>> GetOldestProcessingTranscriptAsync(int limit, CancellationToken cancellationToken = default)
+        {
+            var all = _pending.Concat(_processing);
+            return Task.FromResult<IEnumerable<LlmRequest>>(
+                all.Where(i => i.Status == RequestStatus.Processing && CaptureRequestContract.IsTranscriptRequestType(i.RequestType))
                    .OrderBy(i => i.CreatedAt)
                    .Take(limit)
                    .ToList());
@@ -519,7 +537,12 @@ public class WorkerResilienceTests
             => Task.FromResult(_pending.Concat(_processing).Count(i => i.Status == RequestStatus.Pending && !CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
 
         public Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(_pending.Concat(_processing).Count(i => i.Status == RequestStatus.Processing && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
+            => Task.FromResult(_pending.Concat(_processing).Count(i => i.Status == RequestStatus.Processing
+                && CaptureRequestContract.IsCaptureRequestType(i.RequestType)
+                && !CaptureRequestContract.IsTranscriptRequestType(i.RequestType)));
+
+        public Task<int> CountProcessingTranscriptAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(_pending.Concat(_processing).Count(i => i.Status == RequestStatus.Processing && CaptureRequestContract.IsTranscriptRequestType(i.RequestType)));
 
         public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.Concat(_processing).Count(i => i.Status == RequestStatus.Pending && CaptureRequestContract.IsCaptureRequestType(i.RequestType)));
@@ -566,6 +589,8 @@ public class WorkerResilienceTests
         public Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(_pending.FirstOrDefault(i => i.Status == RequestStatus.Pending));
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+        public Task<bool> TryClaimProcessingTranscriptAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
 
         // Records the (requestId, expectedUpdatedAt) the worker forwards on each claim so

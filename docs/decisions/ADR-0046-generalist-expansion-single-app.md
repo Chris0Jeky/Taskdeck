@@ -1,6 +1,6 @@
 # ADR-0046: Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-13
 - Deciders: Maintainer (Chris)
 - Related: ADR-0044 (revival pivot — the plan this amends), ADR-0045 (LLM transcript triage engine, PR #1312), ADR-0008 (novice-first product legibility before breadth — the standing precedent this extends), `docs/REVIVAL_PLAN.md` §Phase 4, tracker `#1327` (GEN-00), decision gate `#1326` (GEN-12)

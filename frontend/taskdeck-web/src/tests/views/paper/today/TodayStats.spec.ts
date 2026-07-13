@@ -4,10 +4,10 @@ import TodayStats from '../../../../views/paper/today/TodayStats.vue'
 import type { DossierStatCard } from '../../../../composables/useTodayDossier'
 
 const STATS: DossierStatCard[] = [
-  { id: 'cards-moved', value: 12345, numeric: true, label: 'cards moved', sub: '', tone: 'ink' },
-  { id: 'proposals-applied', value: 3, numeric: true, label: 'proposals applied', sub: '', tone: 'ember' },
-  { id: 'captures-triaged', value: 11, numeric: true, label: 'captures triaged', sub: '', tone: 'ink' },
-  { id: 'longest-focus', value: '2h 14m', numeric: false, label: 'focus', sub: '', tone: 'applied' },
+  { id: 'captures-needing-triage', value: 12345, numeric: true, label: 'captures to triage', sub: '', tone: 'ink' },
+  { id: 'proposals-pending-review', value: 3, numeric: true, label: 'proposals to review', sub: '', tone: 'ember' },
+  { id: 'due-today', value: 11, numeric: true, label: 'due today', sub: '', tone: 'ink' },
+  { id: 'blocked', value: 4, numeric: true, label: 'blocked', sub: '', tone: 'applied' },
   { id: 'overdue', value: 2, numeric: true, label: 'overdue', sub: '', tone: 'overdue' },
 ]
 
@@ -18,15 +18,14 @@ describe('TodayStats', () => {
     expect(values[0]).toBe('12,345')
     expect(values[1]).toBe('3')
     expect(values[2]).toBe('11')
-    // String pass-through
-    expect(values[3]).toBe('2h 14m')
+    expect(values[3]).toBe('4')
     expect(values[4]).toBe('2')
   })
 
   it('respects the provided locale separator', () => {
     const wrapper = mount(TodayStats, {
       props: {
-        stats: [{ id: 'cards-moved', value: 12345, numeric: true, label: 'x', sub: '', tone: 'ink' }],
+        stats: [{ id: 'captures-needing-triage', value: 12345, numeric: true, label: 'x', sub: '', tone: 'ink' }],
         locale: 'de-DE',
       },
     })

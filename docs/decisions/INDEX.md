@@ -46,4 +46,5 @@
 | [0042](ADR-0042-proposal-deferral-snooze.md) | Proposal Deferral (Snooze) via DeferredUntil with Expiry Protection | Accepted | 2026-06-27 |
 | [0043](ADR-0043-proposal-quality-feedback-signal.md) | Proposal Quality Feedback as a Separate Content-Free Signal | Accepted | 2026-06-27 |
 | [0044](ADR-0044-revival-pivot-open-beta.md) | Revival Pivot — Open-Beta Distribution with a Commercial Horizon (Supersedes the Archive Pivot) | Accepted | 2026-07-10 |
-| [0046](ADR-0046-generalist-expansion-single-app.md) | Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork) | Proposed | 2026-07-13 |
+| [0045](ADR-0045-llm-transcript-triage-engine.md) | LLM Transcript Triage — Dedicated Worker Lane, Strategy-with-Fallback, Honest Provenance | Accepted | 2026-07-11 |
+| [0046](ADR-0046-generalist-expansion-single-app.md) | Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork) | Accepted | 2026-07-13 |

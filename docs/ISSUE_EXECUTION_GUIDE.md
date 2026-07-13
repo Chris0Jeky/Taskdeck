@@ -3,7 +3,7 @@
 Last Updated: 2026-07-13
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
-> **⚠️ Revival-direction override (2026-07-13).** The 2026-06-13 archive pivot is superseded by the accepted revival pivot (ADR-0044). Active sequencing now lives in `docs/REVIVAL_PLAN.md`: the v0.1 truth-and-safety ship gate remains first, followed by the transcript engine and open-beta launch. ADR-0046's Phase-4 generalist expansion is Proposed; only lane G-A is authorized before GEN-00 `#1327` ratification, and it stays subordinate to the v0.1 gate. Treat the priority-tranche language below as **historical framing**, not an active queue. The mechanics in this guide (clean-branch start, project-status workflow, one-priority-label discipline, and dependency checks) still apply. Where the Start Protocol says "pick the highest-priority issue," read it as **the next unblocked item in the active REVIVAL/authorized GEN wave order** (or the maintainer's explicit queue), not the historical tranches below. When this guide and the active Direction/REVIVAL_PLAN sections conflict, the active direction wins.
+> **⚠️ Revival override (2026-07-10, ADR-0044).** The active sequence is the ratified REVIVAL wave in `docs/REVIVAL_PLAN.md`: truth + safety before strangers → transcript engine → bounded open-beta launch → generalist expansion (Phase 4) → checkpoint. The 2026-06-13 archive sequence is superseded and retained only as the checkpoint fallback. ADR-0046's Phase-4 generalist expansion (Accepted 2026-07-13, tracker GEN-00 `#1327`) stays strictly subordinate to the v0.1 ship gate; the twin generalist app remains deferred behind the GEN-12 `#1326` evidence gate. Treat the `Priority I`–`V`, Phase-4, and expansion tranches below as historical framing; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Where the Start Protocol says "pick the highest-priority issue," read that as **the next dependency-ready item admitted by the REVIVAL/authorized GEN wave**, not the historical tranches. When this guide and `docs/STATUS.md`/`docs/REVIVAL_PLAN.md` conflict, those active documents win.
 
 ## Purpose
 
@@ -26,9 +26,9 @@ Use this file when starting backlog work. It prevents out-of-order development a
 - Move issue to `Done` only after merge and verification notes are posted.
 - If item is blocked by dependency or external input, move to `Blocked` and add blocking note.
 
-## Priority Model (historical pre-revival framing — see the override banner above)
+## Priority Model (historical framing — see the revival override above)
 
-> _(The Phase-4 / post-Phase-4 / Expansion tranches below predate the revival plan. Active sequencing is `docs/REVIVAL_PLAN.md`; this section is retained for historical continuity and label semantics.)_
+> _(The Phase-4 / post-Phase-4 / Expansion tranches below are historical framing that predates the revival plan. Active sequencing is the dependency-ready REVIVAL wave in `docs/REVIVAL_PLAN.md`; this section remains for historical continuity and label semantics only.)_
 
 - `Priority I`: Current Phase 4 completion path and blockers.
 - `Priority II`: Immediate post-Phase-4 foundation work, including novice-first productization.
@@ -384,7 +384,7 @@ Maintainability hotspot refactor wave (analysis-driven, all delivered):
 
 ### Stage 5: Priority V - Meta/Historical
 
-1. ~~`#107`~~ OPS-13 future expansion wave index (**closed historical index**; the RFAI roadmap tracker `#972` is complete 2026-05-29 and **superseded by the archive pivot** — active execution order is the archive-pivot waves in `IMPLEMENTATION_MASTERPLAN.md`)
+1. ~~`#107`~~ OPS-13 future expansion wave index (**closed historical index**; the RFAI roadmap tracker `#972` completed 2026-05-29 and is not an active issue-selection source — active execution follows `docs/REVIVAL_PLAN.md`)
 2. ~~`#338`~~ AGT-03 agent mode surfaces and run-detail timeline (**delivered**)
 3. ~~`#340`~~ INT-06 integrations registry and supervised inbound connector foundation (**delivered** `#841`)
 4. ~~`#341`~~ TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through (**delivered** `#741`)

@@ -123,7 +123,7 @@ Mock provider is default. OpenAI and Gemini supported behind config gates. See `
 - Use `.claude/skills/README.md` to pick a local Claude skill for broad, issue, PR-review, CI-recovery, backend, frontend, capture/review, demo, or verification work.
 - Use `docs/agentic/QUESTION_PROTOCOL.md` before asking; batch true blockers and proceed with explicit assumptions for reversible choices.
 - Use `docs/agentic/FAILURE_LEDGER.md` for unresolved command/tool/test/CI failures and promote recurring lessons through `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`.
-- Use spawned subagents or Claude worktree agents only when the user explicitly asks for delegation/parallel work or the task prompt grants that authority. Keep one coordinator responsible for final synthesis and verification.
+- Use spawned subagents or Claude worktree agents when the situation warrants it (genuinely disjoint work, an independent review lens, or context beyond one window) — you don't need to be asked, but right-size the fan-out (start inline; a few agents, not a reflexive fleet) and never delegate final synthesis or verification: one coordinator owns those. Sizing rules: the global `model-effort-routing` skill.
 
 ## Review Policy
 

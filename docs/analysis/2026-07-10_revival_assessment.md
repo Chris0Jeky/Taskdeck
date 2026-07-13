@@ -4,7 +4,7 @@ Last Updated: 2026-07-10
 
 **Audience:** the maintainer. This document re-examines the 2026-06-13 archive pivot in light of the maintainer's successful WhisperX + cheap-LLM prototype and asks: could Taskdeck instead be revived as a free-to-deploy, easy-to-adopt product — possibly adjacent to AI meeting-notes tools (Fireflies, Granola, Otter), possibly something leaner with a twist? Minimum bar set by the maintainer: deployable for free, easy adoption, real user value.
 
-**Status:** Proposed analysis. Nothing here overrides the archive plan (#1278) until the maintainer decides. The archive closeout wave and this revival path share most of their near-term work (see §6), so the decision does not need to be made before starting.
+**Status:** Completed evidence base for the maintainer's accepted revival decision in ADR-0044. This analysis did not itself override the archive plan (#1278); ADR-0044 records the decision that did. The archive closeout wave and this revival path share most of their near-term work (see §6), so the decision did not need to be made before starting.
 
 **Provenance:** produced 2026-07-10 by a two-track multi-agent analysis. Track 1: seven parallel code-grounded dimension reviews over the repo (product surface, backend architecture, LLM pipeline, frontend/UX, deployment/adoption, quality/risk, integrations/MCP) with ~25 load-bearing claims adversarially verified by independent agents (verdicts inline: CONFIRMED / ADJUSTED / REFUTED). Track 2: market deep-research across five angles (~15 sources); GitHub-traction claims were live-verified against the GitHub API on 2026-07-10; pricing/complaint claims are corroborated across 3+ independent sources but mostly vendor-adjacent blogs — spot-check before quoting publicly. Claims that did not survive verification are flagged rather than dropped.
 
@@ -107,7 +107,7 @@ Amend #1278: the archive exit criteria become the **v0.1 public ship gate** (sam
 3. Triage schema v2: item type (action/decision/question), assigneeHint, dueDateHint; real per-item model-reported confidence replacing the hardcoded 0.8/0.75.
 4. Durable `Transcript` entity + implement the declared-but-empty `SourceSpan`/`EvidenceLink` vocabulary → **every proposed card deep-links to the transcript span that justified it** (the trust-gate UX no incumbent has).
 5. `OpenAICompatible` named provider (formalizes OpenRouter/Groq/DeepSeek; one true-SSE streaming implementation covers all of them).
-6. Risk-tiered approvals: opt-in auto-apply for low-risk proposals using the existing risk classification (answers the over-gating/rubber-stamping critique from the HITL literature).
+6. Risk-tiered review ergonomics: use the existing risk classification to prioritize the review queue and offer explicit batch-confirm flows for low-risk proposals, while preserving ADR-0003's separate approve-then-execute gate for every board write (answers the over-gating/rubber-stamping critique without introducing auto-apply).
 7. Audio upload + local WhisperX sidecar worker = Phase 2b, **only after** transcript-paste proves value in dogfooding (the multipart-upload pattern exists via `ExportController`; audio infra is otherwise net-new — verified).
 *Done when:* a real 45-min meeting transcript produces reviewable, evidence-linked, typed action items you actually approve onto your own board.
 

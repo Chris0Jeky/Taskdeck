@@ -1,5 +1,6 @@
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -81,21 +82,11 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
                 return Result.Failure(ErrorCodes.Forbidden, $"User does not have access to board {boardId}");
         }
 
-        // Validate each operation targets entities within the board scope
-        foreach (var operation in opList)
-        {
-            if (boardId.HasValue && operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(operation.TargetId))
-            {
-                if (Guid.TryParse(operation.TargetId, out var cardId))
-                {
-                    var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
-                    if (card != null && card.BoardId != boardId.Value)
-                        return Result.Failure(ErrorCodes.Forbidden, $"Card {cardId} does not belong to board {boardId}");
-                }
-            }
-        }
-
-        return Result.Success();
+        return await ProposalOperationContractValidator.ValidateAsync(
+            _unitOfWork,
+            boardId,
+            opList,
+            cancellationToken);
     }
 
     public Result ValidateOperationStructure(IReadOnlyCollection<ProposalOperationDto> operations)

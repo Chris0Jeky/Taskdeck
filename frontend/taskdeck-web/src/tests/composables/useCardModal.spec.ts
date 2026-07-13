@@ -546,7 +546,7 @@ describe('useCardModal', () => {
       expect(ctx.onClose).toHaveBeenCalled()
     })
 
-    it('sends null dueDate when dueDate is empty string', async () => {
+    it('sends explicit clearDueDate when an existing due date is removed', async () => {
       const ctx = mountComposable()
       ctx.isOpenRef.value = true
       await nextTick()
@@ -560,6 +560,26 @@ describe('useCardModal', () => {
         'card-1',
         expect.objectContaining({
           dueDate: null,
+          clearDueDate: true,
+        }),
+      )
+    })
+
+    it('does not request a due-date clear when the card never had one', async () => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ dueDate: null })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      await nextTick()
+
+      await ctx.result.handleSave()
+
+      expect(mockBoardStore.updateCard).toHaveBeenCalledWith(
+        'board-1',
+        'card-1',
+        expect.objectContaining({
+          dueDate: null,
+          clearDueDate: false,
         }),
       )
     })

@@ -3,6 +3,20 @@ import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
 import { todayApi } from '../../api/todayApi'
 import type { CadenceApiResponse, StreakApiResponse, SealStatusApiResponse, TomorrowNoteApiResponse } from '../../api/todayApi'
+import type { TodaySummary } from '../../types/workspace'
+
+const workspaceMock = vi.hoisted(() => ({
+  todaySummary: null as TodaySummary | null,
+  clearTodaySummary: vi.fn(),
+  fetchTodaySummary: vi.fn(),
+}))
+
+const workspaceSummaryState = ref<TodaySummary | null>(null)
+Object.defineProperty(workspaceMock, 'todaySummary', {
+  configurable: true,
+  get: () => workspaceSummaryState.value,
+  set: value => { workspaceSummaryState.value = value },
+})
 
 vi.mock('../../api/todayApi', () => ({
   todayApi: {
@@ -16,7 +30,7 @@ vi.mock('../../api/todayApi', () => ({
 }))
 
 vi.mock('../../store/workspaceStore', () => ({
-  useWorkspaceStore: () => ({ todaySummary: null }),
+  useWorkspaceStore: () => workspaceMock,
 }))
 
 const cadenceResponse: CadenceApiResponse = {
@@ -59,6 +73,11 @@ describe('useTodayDossier', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    workspaceMock.todaySummary = null
+    workspaceMock.clearTodaySummary.mockImplementation(() => {
+      workspaceMock.todaySummary = null
+    })
+    workspaceMock.fetchTodaySummary.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -112,6 +131,27 @@ describe('useTodayDossier', () => {
     expect(dossier.value.cadence.peakAction).toBe('no peak')
   })
 
+  it('renders unavailable time markers for invalid cadence timestamps', async () => {
+    vi.mocked(todayApi.getCadence).mockResolvedValue({
+      ...cadenceResponse,
+      firstActionAt: 'not-an-iso-timestamp',
+      lastActionAt: '2026-99-99T25:61:00Z',
+    })
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockRejectedValue(new Error('skip'))
+
+    const { dossier } = await importAndCreate()
+    await vi.waitFor(() => {
+      expect(todayApi.getCadence).toHaveBeenCalled()
+    })
+
+    expect(dossier.value.cadence.firstAction).toBe('--:-- UTC · first action')
+    expect(dossier.value.cadence.lastAction).toBe('--:-- UTC · last action')
+    expect(dossier.value.cadence.firstAction).not.toContain('NaN')
+    expect(dossier.value.cadence.lastAction).not.toContain('NaN')
+  })
+
   it('fetches live streak and maps to DossierStreak', async () => {
     vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
     vi.mocked(todayApi.getStreak).mockResolvedValue(streakResponse)
@@ -157,7 +197,7 @@ describe('useTodayDossier', () => {
     expect(dossier.value.lineForTomorrow).toBe('Review the AA contrast audit')
   })
 
-  it('falls back to stub metrics but not fabricated tomorrow-note text when all API calls fail', async () => {
+  it('uses honest unavailable states instead of fabricated dossier data when live calls fail', async () => {
     vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('network'))
     vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('network'))
     vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('network'))
@@ -169,9 +209,74 @@ describe('useTodayDossier', () => {
     })
 
     expect(dossier.value.serial).toMatch(/^D-\d{4}-\d{2}-\d{2}-\d{3}$/)
-    expect(dossier.value.cadence.peakHourIndex).toBe(13)
-    expect(dossier.value.streak.cells).toHaveLength(90)
+    expect(dossier.value.headlineCardsMoved).toBeNull()
+    expect(dossier.value.autoSealsIn).toBeNull()
+    expect(dossier.value.stats).toEqual([])
+    expect(dossier.value.cadenceAvailable).toBe(false)
+    expect(dossier.value.cadence.peakHourIndex).toBeNull()
+    expect(dossier.value.streakAvailable).toBe(false)
+    expect(dossier.value.streak.cells).toEqual([])
+    expect(dossier.value.ledger).toEqual([])
+    expect(dossier.value.decisions).toEqual([])
+    expect(dossier.value.boards).toEqual([])
+    expect(dossier.value.carryOver).toEqual([])
+    expect(dossier.value.lede).toContain('Activity totals are unavailable')
     expect(dossier.value.lineForTomorrow).toBe('')
+  })
+
+  it('maps the live Today summary to truthful stats and overdue carry-over cards', async () => {
+    workspaceMock.todaySummary = {
+      workspaceMode: 'guided',
+      onboarding: {
+        visibility: 'active',
+        isComplete: false,
+        currentStepId: null,
+        dismissedAt: null,
+        completedAt: null,
+        steps: [],
+      },
+      summary: {
+        capturesNeedingTriage: 2,
+        proposalsPendingReview: 3,
+        overdueCards: 1,
+        dueTodayCards: 4,
+        blockedCards: 1,
+      },
+      overdueCards: [{
+        boardId: 'board-1',
+        boardName: 'Client onboarding',
+        cardId: 'card-123456789',
+        title: 'Confirm engagement letter',
+        dueDate: '2026-01-14T09:00:00Z',
+        blockReason: null,
+        updatedAt: '2026-01-15T09:00:00Z',
+      }],
+      dueTodayCards: [],
+      blockedCards: [],
+      recommendedActions: [],
+    }
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+
+    const { dossier } = await importAndCreate()
+
+    expect(dossier.value.stats.map(stat => [stat.id, stat.value])).toEqual([
+      ['captures-needing-triage', 2],
+      ['proposals-pending-review', 3],
+      ['overdue', 1],
+      ['due-today', 4],
+      ['blocked', 1],
+    ])
+    expect(dossier.value.carryOver).toEqual([{
+      serial: 'C-card-123',
+      title: 'Confirm engagement letter',
+      age: 'due 14 Jan 2026',
+      reason: 'Board: Client onboarding',
+    }])
+    expect(dossier.value.lede).toContain('2 captures need triage')
+    expect(dossier.value.lede).toContain('3 proposals await review')
   })
 
   it('autosaves tomorrow note to the date captured at edit time', async () => {
@@ -433,5 +538,89 @@ describe('useTodayDossier', () => {
     await vi.waitFor(() => {
       expect(todayApi.getCadence).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('invalidates and replaces the workspace summary after a local-day rollover', async () => {
+    const previousSummary: TodaySummary = {
+      workspaceMode: 'guided',
+      onboarding: {
+        visibility: 'active',
+        isComplete: false,
+        currentStepId: null,
+        dismissedAt: null,
+        completedAt: null,
+        steps: [],
+      },
+      summary: {
+        capturesNeedingTriage: 8,
+        proposalsPendingReview: 5,
+        overdueCards: 2,
+        dueTodayCards: 1,
+        blockedCards: 0,
+      },
+      overdueCards: [{
+        boardId: 'old-board',
+        boardName: 'Yesterday',
+        cardId: 'old-card-123',
+        title: 'Yesterday carry-over',
+        dueDate: '2026-01-14',
+        blockReason: null,
+        updatedAt: '2026-01-15T09:00:00Z',
+      }],
+      dueTodayCards: [],
+      blockedCards: [],
+      recommendedActions: [],
+    }
+    const nextSummary: TodaySummary = {
+      ...previousSummary,
+      summary: {
+        capturesNeedingTriage: 1,
+        proposalsPendingReview: 0,
+        overdueCards: 0,
+        dueTodayCards: 6,
+        blockedCards: 1,
+      },
+      overdueCards: [],
+    }
+    workspaceMock.todaySummary = previousSummary
+
+    let resolveSummary!: (summary: TodaySummary) => void
+    workspaceMock.fetchTodaySummary.mockImplementationOnce(
+      () => new Promise<TodaySummary>((resolve) => {
+        resolveSummary = (summary) => {
+          workspaceMock.todaySummary = summary
+          resolve(summary)
+        }
+      }),
+    )
+    vi.mocked(todayApi.getCadence).mockResolvedValue(cadenceResponse)
+    vi.mocked(todayApi.getStreak).mockResolvedValue(streakResponse)
+    vi.mocked(todayApi.getSealStatus).mockResolvedValue(sealStatusResponse)
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const nowRef = ref(new Date(2026, 0, 15, 23, 59, 59))
+    const { dossier } = useTodayDossier({ now: nowRef })
+
+    expect(dossier.value.stats.find(stat => stat.id === 'captures-needing-triage')?.value).toBe(8)
+    expect(dossier.value.carryOver[0]?.title).toBe('Yesterday carry-over')
+
+    nowRef.value = new Date(2026, 0, 16, 0, 0, 1)
+
+    await vi.waitFor(() => {
+      expect(workspaceMock.clearTodaySummary).toHaveBeenCalledTimes(1)
+      expect(workspaceMock.fetchTodaySummary).toHaveBeenCalledTimes(1)
+    })
+    expect(dossier.value.stats).toEqual([])
+    expect(dossier.value.carryOver).toEqual([])
+
+    resolveSummary(nextSummary)
+
+    await vi.waitFor(() => {
+      expect(dossier.value.stats.find(stat => stat.id === 'captures-needing-triage')?.value).toBe(1)
+    })
+    expect(dossier.value.stats.find(stat => stat.id === 'due-today')?.value).toBe(6)
+    expect(dossier.value.carryOver).toEqual([])
+    expect(dossier.value.serial).toContain('2026-01-16')
   })
 })

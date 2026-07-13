@@ -62,10 +62,16 @@ public class Card : Entity
         if (description != null)
             SetDescription(description);
 
-        // Allow explicitly setting to null
+        // Clearing is explicit via ClearDueDate so omitted values remain unchanged.
         if (dueDate.HasValue)
             DueDate = dueDate.Value;
 
+        Touch();
+    }
+
+    public void ClearDueDate()
+    {
+        DueDate = null;
         Touch();
     }
 

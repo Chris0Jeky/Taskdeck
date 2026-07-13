@@ -31,6 +31,7 @@ Source files used to build this reference:
   - [`LlmToolCalling`](#llmtoolcalling)
   - [`LlmQuota`](#llmquota)
   - [`LlmKillSwitch`](#llmkillswitch)
+  - [`CaptureTriageLlm`](#capturetriagellm)
   - [`AbuseDetection`](#abusedetection)
 - [Workers](#workers)
   - [`Workers`](#workers-1)
@@ -56,6 +57,7 @@ Source files used to build this reference:
   - [`ConnectionStrings`](#connectionstrings)
   - [`Database`](#database)
   - [`ExportImport`](#exportimport)
+  - [`Artefacts`](#artefacts)
   - [`FirstRun`](#firstrun)
   - [`DevelopmentSandbox`](#developmentsandbox)
 - [Connectors](#connectors)
@@ -232,6 +234,23 @@ Bound to `LlmKillSwitchSettings`. Runtime changes are held in memory only
 | `LlmKillSwitch:KilledSurfaces` | `string[]` (set) | `[]` | Surface names to block individually (e.g. `Chat`, `CaptureTriage`, `Worker`). Case-insensitive. | No |
 | `LlmKillSwitch:KilledUserIds` | `string[]` (set) | `[]` | User IDs to block individually. Case-insensitive. | No |
 | `LlmKillSwitch:Reasons` | `object` (map) | `{}` | Map keyed by surface name or user ID to reason string. | No |
+
+### `CaptureTriageLlm`
+
+Bound to `LlmCaptureTriageSettings`. Registered in
+`LlmProviderRegistration.AddLlmProviders`. Controls the LLM-backed transcript
+triage strategy (REVIVAL-08, ADR-0045): it only ever runs for transcript-source
+captures when a live (non-mock) provider resolves, and any failure — provider
+down, kill switch (`LlmKillSwitch` surface `CaptureTriage`), quota
+(`LlmQuota`), unparseable output — degrades to the deterministic extractor
+instead of failing the capture. The section is absent from `appsettings.json`;
+class defaults apply.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `CaptureTriageLlm:Enabled` | `bool` | `true` | Master switch for LLM transcript triage. When false, transcript captures triage through the deterministic extractor exactly as before REVIVAL-08. | No |
+| `CaptureTriageLlm:MaxOutputTokens` | `int` | `4096` | Completion-token budget for the extraction response (range 256–32768). Sized for the worst-case 20-task v1 output with headroom; a truncated response is detected as degraded and falls back deterministically. | No |
+| `CaptureTriageLlm:Temperature` | `double` | `0.1` | Sampling temperature for extraction (range 0–2). Low by default: fidelity over creativity. | No |
 
 ### `AbuseDetection`
 
@@ -523,6 +542,20 @@ Consumed directly by `SettingsRegistration.cs`. Backs
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `ExportImport:MaxDatabaseImportBytes` | `int` | `52428800` (50 MiB) | Maximum accepted size of a SQLite database file on import. | No |
+
+### `Artefacts`
+
+Bound to `ArtefactStorageSettings`
+(`Taskdeck.Application.Services.ArtefactStorageSettings`) and validated at
+startup. Source artefact metadata and blobs stay in the same SQLite database;
+the blob table is queried only for explicit content retrieval and GDPR export.
+Both limits are enforced from server configuration, never from multipart form
+fields. Concurrent uploads serialize the quota check with the SQLite write.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Artefacts:MaxBytesPerArtefact` | `long` | `10485760` (10 MiB) | Maximum bytes accepted for one PNG, JPEG, WebP, PDF, TXT, or Markdown artefact. The upload stream stops and returns HTTP 413 once this bound is crossed. The API raises Kestrel's request-body ceiling to this value plus 128 KiB of bounded multipart overhead. This setting is capped at `int.MaxValue` because upload validation materializes one accepted artefact as a `byte[]` before the atomic SQLite write. Environment variable: `Artefacts__MaxBytesPerArtefact`. | No |
+| `Artefacts:MaxBytesPerUser` | `long` | `209715200` (200 MiB) | Aggregate source-artefact quota for one user, including blob bytes. Uploads that would cross it return HTTP 413. Environment variable: `Artefacts__MaxBytesPerUser`. | No |
 
 ### `FirstRun`
 
