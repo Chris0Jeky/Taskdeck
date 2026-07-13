@@ -86,17 +86,20 @@ For the first guided run, see [START_HERE.md](docs/START_HERE.md).
 
 Taskdeck includes an MCP server for AI clients such as Claude Code and Cursor. Read tools expose boards, cards, captures, and proposal status. Board-mutating tools stop at proposals, and MCP intentionally exposes no approve or apply tool, so an agent cannot approve its own suggested board changes. Bounded workflow actions such as creating a capture or dismissing a proposal are direct writes.
 
-Three launch modes are available across two MCP transports:
+The verified local launch mode is stdio:
 
 | Mode | Command / endpoint | Intended use |
 |---|---|---|
 | Local stdio | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp` | Local editor or agent client; zero network listener |
-| Standalone Streamable HTTP | Add `--transport http --port 5001` | Dedicated remote-capable MCP host; send `Authorization: Bearer tdsk_...` |
-| Co-hosted Streamable HTTP | Start the normal API and connect to `/mcp` | REST, UI, and authenticated MCP from one Taskdeck process; send the same Bearer header |
 
-Before using stdio, run the web app once and create a local user. The stdio server uses the first user in that SQLite database unless `McpServer__DefaultUserId` names an existing user. It also needs the connector encryption key written by the normal first-run flow; for an explicit headless setup, provide `Connectors__EncryptionKey` yourself. Copy [mcp.example.json](mcp.example.json) into your client's MCP configuration and adjust the project path if Taskdeck is not the working directory.
+Every Taskdeck process that should share a workspace must use the same `ConnectionStrings__DefaultConnection`. `dev-up` prints the database path, but its environment override belongs only to the API process it launches; a later MCP process does not inherit it. The launchers use these stable paths:
 
-For either HTTP mode, sign in to the web app, open **Settings -> API Keys**, create a key, and copy the one-time `tdsk_...` value into your MCP client's Bearer-auth configuration. One-command packaging and scoped-key hardening are planned for [REVIVAL-13](https://github.com/Chris0Jeky/Taskdeck/issues/1309); the embedded server itself already ships.
+- Windows: `Data Source=$env:LOCALAPPDATA\Taskdeck\taskdeck-dev.db` (PowerShell expands `$env:LOCALAPPDATA` when you assign the value).
+- macOS/Linux: `Data Source=${XDG_DATA_HOME:-$HOME/.local/share}/taskdeck/taskdeck-dev.db` (the shell expands the data directory when you export the value).
+
+Before using stdio, run the web app once and create a local user. Then copy [mcp.example.json](mcp.example.json) into your client's MCP configuration, replace `REPLACE_WITH_THE_ABSOLUTE_taskdeck-dev.db_PATH` with the absolute database path printed by `dev-up`, and adjust the project path if Taskdeck is not the working directory. The stdio server uses the first user in that database unless `McpServer__DefaultUserId` names an existing user. It also needs the connector encryption key written by the normal first-run flow; for an explicit headless setup, provide `Connectors__EncryptionKey` yourself.
+
+Streamable HTTP code is present, but its route and API-key boundary do not currently line up. Until [#1338](https://github.com/Chris0Jeky/Taskdeck/issues/1338) is fixed and security-reviewed, standalone and co-hosted HTTP MCP are **not supported run paths**. Do not expose or connect to the accidental root MCP route. One-command packaging and scoped-key hardening remain planned for [REVIVAL-13](https://github.com/Chris0Jeky/Taskdeck/issues/1309).
 
 ## Current scope
 
