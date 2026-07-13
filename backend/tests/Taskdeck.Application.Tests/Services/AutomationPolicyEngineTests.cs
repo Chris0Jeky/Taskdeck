@@ -67,6 +67,21 @@ public class AutomationPolicyEngineTests
         risk.Should().Be(RiskLevel.Low);
     }
 
+    [Theory]
+    [InlineData("update", "{\"dueDate\":\"2026-07-14T00:00:00+00:00\"}")]
+    [InlineData("add-label", "{\"labelName\":\"urgent\"}")]
+    [InlineData("remove-label", "{\"labelName\":\"urgent\"}")]
+    public void ClassifyRisk_ShouldReturnLow_ForReversibleCardMetadataChanges(string actionType, string parameters)
+    {
+        var operations = new List<ProposalOperationDto>
+        {
+            new(Guid.NewGuid(), Guid.NewGuid(), 0, actionType, "card", Guid.NewGuid().ToString(), parameters, "key1", null)
+        };
+
+        _engine.ClassifyRisk(operations).Should().Be(RiskLevel.Low,
+            "due-date and label metadata changes follow the existing reversible card-update category pending #1307");
+    }
+
     [Fact]
     public void ClassifyRisk_ShouldReturnMedium_ForArchiveOperation()
     {
@@ -181,6 +196,29 @@ public class AutomationPolicyEngineTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("\"text\"")]
+    public async Task ValidatePermissions_ShouldReturnValidationError_ForNonObjectParameters(string parameters)
+    {
+        var userId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedPassword");
+        var operations = new List<ProposalOperationDto>
+        {
+            new(Guid.NewGuid(), Guid.NewGuid(), 0, "create", "card", null, parameters, "key1", null)
+        };
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+
+        var result = await _engine.ValidatePermissionsAsync(userId, null, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("JSON object");
     }
 
     [Fact]

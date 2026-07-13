@@ -32,7 +32,10 @@ public class DataPortabilityController : AuthenticatedControllerBase
     /// <summary>
     /// Export all data belonging to the authenticated user as a versioned JSON package.
     /// The export includes: boards, notifications, capture items, proposals,
-    /// chat sessions, audit trail, and preferences.
+    /// chat sessions, audit trail, preferences, proposal feedback, and source
+    /// artefact metadata, extraction history, and Base64 content. This compatibility
+    /// route keeps its bounded row/content contract; use <c>/export/stream</c> for a
+    /// complete or larger export.
     /// </summary>
     [HttpGet("export")]
     [ResponseCache(NoStore = true)]
@@ -47,9 +50,9 @@ public class DataPortabilityController : AuthenticatedControllerBase
 
     /// <summary>
     /// Stream all data belonging to the authenticated user as a complete versioned JSON export.
-    /// Unlike <c>GET /api/account/export</c>, this endpoint has no row cap and is suitable
-    /// for users with more than 10,000 notifications, proposals, chat sessions, or audit entries.
-    /// The JSON format is identical to the non-streaming endpoint.
+    /// Unlike <c>GET /api/account/export</c>, this endpoint has no row cap and includes
+    /// source artefact metadata, complete extraction history, and incrementally
+    /// Base64-encoded content.
     /// </summary>
     [HttpGet("export/stream")]
     [ResponseCache(NoStore = true)]
@@ -58,7 +61,11 @@ public class DataPortabilityController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        // Validate the user exists before committing to streaming
+        return await StreamExportAsync(userId, cancellationToken);
+    }
+
+    private async Task<IActionResult> StreamExportAsync(Guid userId, CancellationToken cancellationToken)
+    {
         Response.ContentType = "application/json";
         Response.Headers.ContentDisposition = "attachment; filename=\"taskdeck-export.json\"";
 
@@ -70,7 +77,11 @@ public class DataPortabilityController : AuthenticatedControllerBase
             // throw InvalidOperationException. In that case we fall through and return EmptyResult;
             // the client will receive a truncated/incomplete JSON body and must validate completeness.
             if (!Response.HasStarted)
+            {
+                Response.ContentType = null;
+                Response.Headers.Remove("Content-Disposition");
                 return result.ToErrorActionResult();
+            }
         }
 
         return new EmptyResult();

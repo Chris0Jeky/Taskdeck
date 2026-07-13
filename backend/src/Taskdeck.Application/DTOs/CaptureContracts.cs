@@ -33,6 +33,17 @@ public static class CaptureRequestContract
 {
     public const string RequestTypePrefix = "inbox.capture.";
     public const string RequestTypeV1 = "inbox.capture.v1";
+
+    /// <summary>
+    /// Request type for transcript-source captures (REVIVAL-08). Deliberately nested under
+    /// <see cref="RequestTypePrefix"/> so every capture-scoped query (GDPR export/delete, inbox
+    /// summary/listing, executor guards) keeps matching transcripts, while the queue workers can
+    /// route transcript items to their own lane: LLM-backed triage runs seconds-to-minutes, and the
+    /// shared worker awaits its whole batch per tick, so transcript work must not sit in the
+    /// millisecond-latency capture lane.
+    /// </summary>
+    public const string RequestTypeTranscriptPrefix = "inbox.capture.transcript.";
+    public const string RequestTypeTranscriptV1 = "inbox.capture.transcript.v1";
     public const int CurrentSchemaVersion = 1;
     public const int MaxRawTextLength = 20_000;
     public const int MaxTranscriptTextLength = 51_200;
@@ -57,6 +68,23 @@ public static class CaptureRequestContract
                && requestType.StartsWith(RequestTypePrefix, StringComparison.OrdinalIgnoreCase);
     }
 
+    public static bool IsTranscriptRequestType(string requestType)
+    {
+        return !string.IsNullOrWhiteSpace(requestType)
+               && requestType.StartsWith(RequestTypeTranscriptPrefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Resolves the queue request type for a capture payload's source. Transcript sources route to
+    /// the transcript request type so the transcript worker lane owns them; everything else stays on
+    /// the general capture type. This is the single choke point for the decision — both enqueue
+    /// paths (CaptureService and LlmQueueService) must call it rather than hardcoding a type.
+    /// </summary>
+    public static string ResolveRequestTypeForSource(CaptureSource source)
+    {
+        return IsTranscriptSource(source) ? RequestTypeTranscriptV1 : RequestTypeV1;
+    }
+
     public static Result ValidateRequestType(string requestType)
     {
         if (string.IsNullOrWhiteSpace(requestType))
@@ -70,11 +98,12 @@ public static class CaptureRequestContract
             return Result.Success();
         }
 
-        if (!string.Equals(normalized, RequestTypeV1, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(normalized, RequestTypeV1, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(normalized, RequestTypeTranscriptV1, StringComparison.OrdinalIgnoreCase))
         {
             return Result.Failure(
                 ErrorCodes.ValidationError,
-                $"Unsupported capture request type. Supported type: {RequestTypeV1}");
+                $"Unsupported capture request type. Supported types: {RequestTypeV1}, {RequestTypeTranscriptV1}");
         }
 
         return Result.Success();
@@ -387,6 +416,12 @@ public static class CaptureRequestContract
 
         if (!allowServerAttributionFields)
         {
+            // Every server-authored provenance field is forbidden on the client path — not just
+            // actor attribution. proposalId/triageRunId/provider/model/promptVersion are stamped by
+            // the triage pipeline after it actually runs; accepting them from a client would let a
+            // capture bypass triage entirely (the workers short-circuit on provenance.proposalId,
+            // marking the item Completed without ever triaging it) and persist fabricated
+            // provider/model provenance as if the server recorded it (#1273).
             var forbiddenAttributionFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "requestedByUserId",
@@ -394,7 +429,12 @@ public static class CaptureRequestContract
                 "sourceSurface",
                 "boardId",
                 "sessionId",
-                "convertedAt"
+                "convertedAt",
+                "proposalId",
+                "triageRunId",
+                "provider",
+                "model",
+                "promptVersion"
             };
 
             foreach (var rootProperty in root.EnumerateObject())

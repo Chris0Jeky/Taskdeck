@@ -1,6 +1,6 @@
 # Agent Index - Taskdeck (seam map)
 
-Last-Verified: 2026-07-06 (4-region code exploration). Re-verify when a seam moves; treat a
+Last-Verified: 2026-07-13 (4-region code exploration). Re-verify when a seam moves; treat a
 stamp older than ~90 days as stale (a wrong map misroutes — worse than no map).
 
 This is the repo's seam map — a fast orientation layer for coding agents. It points to
@@ -32,6 +32,8 @@ It is the Taskdeck equivalent of the harness `AGENT_MAP.md` (grandfathered name)
 | Domain | Entry points | Invariants (load-bearing) | Verify |
 | --- | --- | --- | --- |
 | Capture → review → board | `Api/Controllers/CaptureController.cs`, `AutomationProposalsController.cs`; `views/InboxView.vue`, `ReviewView.vue`, `composables/useReviewProposals.ts` | **Preview == Apply** (#1235: diff + executor both materialize the latest `ProposalRevision`); approve & execute are two explicit calls; execute needs an Idempotency-Key; provenance server-stamped, client identity fields rejected; triage is a deterministic regex extractor (`deterministic-extractor`), never the LLM | capture/review unit + `CaptureApiTests`, `ProposalRevisionApiTests`; E2E `capture-loop.spec.ts` |
+| Artefact intake and local extraction | `backend/src/Taskdeck.Api/Controllers/ArtefactsController.cs`, `backend/src/Taskdeck.Application/Interfaces/IArtefactTextExtractor.cs`, `backend/src/Taskdeck.Application/Services/IArtefactExtractionService.cs` | `SourceArtefact` is the immutable user-owned source; extraction appends bounded, warning-bearing history and never mutates task state | `dotnet test backend/Taskdeck.sln -c Release -m:1 --filter "FullyQualifiedName~ArtefactExtraction"`; `MigrationBootstrapTests` |
+| Proposal operation vocabulary | [`autodoc/interfaces/proposal-operation-vocabulary.md`](interfaces/proposal-operation-vocabulary.md), `ProposalOperationContractValidator`, `OperationHandlerRegistry`, `AutomationProposalService.GetProposalDiffAsync` | board-scoped preview/apply validation, card metadata handlers, chat executors, and `Taskdeck.Api/Mcp/WriteTools` | pipeline handler, proposal diff/revision, MCP/write-tool, and proposal API tests |
 | Backend API/application | `backend/Taskdeck.sln`, `Api/`, `Application/`; DI at `Infrastructure/DependencyInjection.cs` | Domain has no infra/framework refs; Application no Api/Infra refs (Architecture.Tests); claims-first identity; stable HTTP 400/401/403/404/409; no cross-user leak | `dotnet test backend/Taskdeck.sln -c Release -m:1` (see `backend/CLAUDE.md`) |
 | Frontend workspace | `frontend/taskdeck-web/src/`: `router`, `views`, `store/board*`, `composables/`, `api/http.ts`, `components/ui` (17 `Td*`) | Review-first UI gating; per-board SignalR (`useBoardRealtime.ts`), not global; `boardStore` is a facade over `store/board/*`; all HTTP through `api/http.ts` | `npm run typecheck`, `npm run build`, `npx vitest --run` (OOM-prone: `--maxWorkers=2`/targeted), Playwright (see `frontend/taskdeck-web/CLAUDE.md`) |
 | Agent runtime & MCP | `Application` (`AutomationPolicyEngine`), **MCP surface in `Api`** (`Program.cs` `--mcp` branch, `Api/Mcp/*`), `.codex/config.toml`, `.mcp.json`, `docs/MCP_TOOLING_GUIDE.md` | Policy evaluated before execute; egress/telemetry guards; tool registry | security tests, MCP inventory/egress tests |

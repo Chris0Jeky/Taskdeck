@@ -243,6 +243,49 @@ describe('workspaceStore — integration (real workspaceApi, mocked HTTP)', () =
       expect(store.todayError).toBe('Network Error')
       expect(store.todayLoading).toBe(false)
     })
+
+    it('keeps the latest summary when an older request resolves afterward', async () => {
+      const oldSummary = makeTodaySummary({
+        summary: {
+          capturesNeedingTriage: 8,
+          proposalsPendingReview: 5,
+          overdueCards: 4,
+          dueTodayCards: 1,
+          blockedCards: 0,
+        },
+      })
+      const newSummary = makeTodaySummary({
+        summary: {
+          capturesNeedingTriage: 1,
+          proposalsPendingReview: 0,
+          overdueCards: 0,
+          dueTodayCards: 6,
+          blockedCards: 1,
+        },
+      })
+
+      let resolveOld!: (value: { data: TodaySummary }) => void
+      let resolveNew!: (value: { data: TodaySummary }) => void
+      vi.mocked(http.get)
+        .mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+        .mockImplementationOnce(() => new Promise(resolve => { resolveNew = resolve }))
+
+      const store = useWorkspaceStore()
+      const oldRequest = store.fetchTodaySummary()
+      store.clearTodaySummary()
+      const newRequest = store.fetchTodaySummary()
+
+      resolveNew({ data: newSummary })
+      await newRequest
+      expect(store.todaySummary?.summary.dueTodayCards).toBe(6)
+
+      resolveOld({ data: oldSummary })
+      await oldRequest
+      expect(store.todaySummary?.summary.dueTodayCards).toBe(6)
+      expect(store.todaySummary?.summary.capturesNeedingTriage).toBe(1)
+      expect(store.todayLoading).toBe(false)
+      expect(store.todayError).toBeNull()
+    })
   })
 
   // ── updateOnboarding ──────────────────────────────────────────────────────

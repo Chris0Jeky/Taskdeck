@@ -97,6 +97,38 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_ShouldAssignTranscriptRequestType_ForTranscriptSources()
+    {
+        // REVIVAL-08: transcript-source captures get the transcript request type so the transcript
+        // worker lane owns them; the type is resolved server-side, never chosen by the client.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("capture-user", "capture-user@example.com", "hash");
+        var dto = new CreateCaptureItemDto(boardId, "Alice: I will send the report.", "transcriptPaste");
+        LlmRequest? persisted = null;
+
+        _userRepositoryMock
+            .Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+        _llmQueueRepositoryMock
+            .Setup(r => r.AddAsync(It.IsAny<LlmRequest>(), default))
+            .Callback<LlmRequest, CancellationToken>((request, _) => persisted = request)
+            .ReturnsAsync((LlmRequest request, CancellationToken _) => request);
+
+        var result = await _service.CreateAsync(userId, dto);
+
+        result.IsSuccess.Should().BeTrue();
+        persisted.Should().NotBeNull();
+        persisted!.RequestType.Should().Be(CaptureRequestContract.RequestTypeTranscriptV1);
+        var parsedPayload = CaptureRequestContract.ParsePayload(persisted.Payload, allowServerAttributionFields: true);
+        parsedPayload.IsSuccess.Should().BeTrue();
+        parsedPayload.Value.Source.Should().Be(CaptureSource.TranscriptPaste);
+    }
+
+    [Fact]
     public async Task CreateAsync_ShouldReturnValidationError_WhenSourceIsInvalid()
     {
         var userId = Guid.NewGuid();

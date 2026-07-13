@@ -13,6 +13,22 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 {
     private const string CaptureRequestTypeLike = "inbox.capture.%";
 
+    // Transcript captures nest under the capture prefix (so user-facing capture queries keep
+    // matching them) but form their own worker lane: LLM-backed triage runs seconds-to-minutes and
+    // must not block the millisecond-latency capture lane (REVIVAL-08). Worker-lane predicates
+    // (oldest-Processing fetch, Processing counts, Processing claims) treat capture and transcript
+    // as DISJOINT kinds; user-facing queries (GetCaptureSummaryByUserAsync, GetCapturesByUserAsync,
+    // CountPendingCaptureAsync) keep the inclusive capture prefix.
+    private const string TranscriptRequestTypeLike = "inbox.capture.transcript.%";
+
+    /// <summary>Worker-lane request kinds. See <see cref="TranscriptRequestTypeLike"/>.</summary>
+    private enum QueueLane
+    {
+        NonCapture,
+        Capture,
+        Transcript,
+    }
+
     public LlmQueueRepository(TaskdeckDbContext context) : base(context)
     {
     }
@@ -232,14 +248,17 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
     }
 
     public Task<IEnumerable<LlmRequest>> GetOldestPendingNonCaptureAsync(int limit, CancellationToken cancellationToken = default)
-        => GetOldestByStatusAndCaptureKindAsync(RequestStatus.Pending, capture: false, limit, cancellationToken);
+        => GetOldestByStatusAndLaneAsync(RequestStatus.Pending, QueueLane.NonCapture, limit, cancellationToken);
 
     public Task<IEnumerable<LlmRequest>> GetOldestProcessingCaptureAsync(int limit, CancellationToken cancellationToken = default)
-        => GetOldestByStatusAndCaptureKindAsync(RequestStatus.Processing, capture: true, limit, cancellationToken);
+        => GetOldestByStatusAndLaneAsync(RequestStatus.Processing, QueueLane.Capture, limit, cancellationToken);
 
-    private async Task<IEnumerable<LlmRequest>> GetOldestByStatusAndCaptureKindAsync(
+    public Task<IEnumerable<LlmRequest>> GetOldestProcessingTranscriptAsync(int limit, CancellationToken cancellationToken = default)
+        => GetOldestByStatusAndLaneAsync(RequestStatus.Processing, QueueLane.Transcript, limit, cancellationToken);
+
+    private async Task<IEnumerable<LlmRequest>> GetOldestByStatusAndLaneAsync(
         RequestStatus status,
-        bool capture,
+        QueueLane lane,
         int limit,
         CancellationToken cancellationToken)
     {
@@ -254,11 +273,15 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             // LIMIT live in raw SQL. FromSqlInterpolated + Include wraps this in a subquery that does not
             // guarantee the raw ORDER BY survives to the final result (see GetByUserAsync); the inner LIMIT
             // still selects the correct oldest-N rows, so re-sort in memory to make oldest-first a contract.
-            var rawQuery = capture
-                ? _context.LlmRequests.FromSqlInterpolated(
-                    $"SELECT * FROM LlmRequests WHERE Status = {(int)status} AND RequestType LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt ASC LIMIT {limit}")
-                : _context.LlmRequests.FromSqlInterpolated(
-                    $"SELECT * FROM LlmRequests WHERE Status = {(int)status} AND RequestType NOT LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt ASC LIMIT {limit}");
+            var rawQuery = lane switch
+            {
+                QueueLane.Capture => _context.LlmRequests.FromSqlInterpolated(
+                    $"SELECT * FROM LlmRequests WHERE Status = {(int)status} AND RequestType LIKE {CaptureRequestTypeLike} AND RequestType NOT LIKE {TranscriptRequestTypeLike} ORDER BY CreatedAt ASC LIMIT {limit}"),
+                QueueLane.Transcript => _context.LlmRequests.FromSqlInterpolated(
+                    $"SELECT * FROM LlmRequests WHERE Status = {(int)status} AND RequestType LIKE {TranscriptRequestTypeLike} ORDER BY CreatedAt ASC LIMIT {limit}"),
+                _ => _context.LlmRequests.FromSqlInterpolated(
+                    $"SELECT * FROM LlmRequests WHERE Status = {(int)status} AND RequestType NOT LIKE {CaptureRequestTypeLike} ORDER BY CreatedAt ASC LIMIT {limit}"),
+            };
 
             var rows = await rawQuery
                 .Include(lr => lr.User)
@@ -274,9 +297,7 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .Include(lr => lr.Board)
             .Where(lr => lr.Status == status);
 
-        query = capture
-            ? query.Where(lr => EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike))
-            : query.Where(lr => !EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike));
+        query = ApplyLanePredicate(query, lane);
 
         return await query
             .OrderBy(lr => lr.CreatedAt)
@@ -284,27 +305,50 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
+    private static IQueryable<LlmRequest> ApplyLanePredicate(IQueryable<LlmRequest> query, QueueLane lane)
+    {
+        return lane switch
+        {
+            QueueLane.Capture => query.Where(lr =>
+                EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike) &&
+                !EF.Functions.Like(lr.RequestType, TranscriptRequestTypeLike)),
+            QueueLane.Transcript => query.Where(lr =>
+                EF.Functions.Like(lr.RequestType, TranscriptRequestTypeLike)),
+            _ => query.Where(lr => !EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike)),
+        };
+    }
+
     public Task<int> CountPendingNonCaptureAsync(CancellationToken cancellationToken = default)
-        => CountByStatusAndCaptureKindAsync(RequestStatus.Pending, capture: false, cancellationToken);
+        => CountByStatusAndLaneAsync(RequestStatus.Pending, QueueLane.NonCapture, cancellationToken);
 
     public Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default)
-        => CountByStatusAndCaptureKindAsync(RequestStatus.Processing, capture: true, cancellationToken);
+        => CountByStatusAndLaneAsync(RequestStatus.Processing, QueueLane.Capture, cancellationToken);
 
-    public Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
-        => CountByStatusAndCaptureKindAsync(RequestStatus.Pending, capture: true, cancellationToken);
+    public Task<int> CountProcessingTranscriptAsync(CancellationToken cancellationToken = default)
+        => CountByStatusAndLaneAsync(RequestStatus.Processing, QueueLane.Transcript, cancellationToken);
 
-    private async Task<int> CountByStatusAndCaptureKindAsync(
+    public async Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default)
+    {
+        // Deliberately the inclusive capture prefix, NOT the Capture lane predicate: Pending means
+        // "in the inbox, triage not requested yet" — an inbox-depth gauge where transcript captures
+        // count like any other capture. The lane split only governs Processing-row ownership.
+        return await _context.LlmRequests
+            .AsNoTracking()
+            .Where(lr => lr.Status == RequestStatus.Pending
+                && EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike))
+            .CountAsync(cancellationToken);
+    }
+
+    private async Task<int> CountByStatusAndLaneAsync(
         RequestStatus status,
-        bool capture,
+        QueueLane lane,
         CancellationToken cancellationToken)
     {
         var query = _context.LlmRequests
             .AsNoTracking()
             .Where(lr => lr.Status == status);
 
-        query = capture
-            ? query.Where(lr => EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike))
-            : query.Where(lr => !EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike));
+        query = ApplyLanePredicate(query, lane);
 
         return await query.CountAsync(cancellationToken);
     }
@@ -414,6 +458,31 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
               AND Status = {(int)RequestStatus.Processing}
               AND UpdatedAt = {expectedUpdatedAt}
               AND RequestType LIKE {CaptureRequestTypeLike}
+              AND RequestType NOT LIKE {TranscriptRequestTypeLike}
+            """,
+            cancellationToken);
+
+        return rowsAffected > 0;
+    }
+
+    public async Task<bool> TryClaimProcessingTranscriptAsync(
+        Guid requestId,
+        DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        // Same shape as the capture claim: transcript items also live in Processing while queued
+        // for triage (the API's triage endpoint marks them Processing), so the claim is a pure
+        // UpdatedAt stamp under optimistic concurrency. The lane predicate makes the capture and
+        // transcript claims mutually exclusive so the two workers can never claim each other's rows.
+        var claimedAt = DateTimeOffset.UtcNow;
+        var rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE LlmRequests
+            SET UpdatedAt = {claimedAt}
+            WHERE Id = {requestId}
+              AND Status = {(int)RequestStatus.Processing}
+              AND UpdatedAt = {expectedUpdatedAt}
+              AND RequestType LIKE {TranscriptRequestTypeLike}
             """,
             cancellationToken);
 
