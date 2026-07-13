@@ -498,5 +498,35 @@ public class ColumnServiceTests
         resultNames.Should().ContainInOrder("D", "C", "B", "A");
     }
 
+    [Fact]
+    public async Task ReorderColumnAsync_ShouldReindexAndPreserveWipLimits()
+    {
+        // Arrange: three columns, two carrying WIP limits.
+        var boardId = Guid.NewGuid();
+        var columnA = new Column(boardId, "A", 0, 3);
+        var columnB = new Column(boardId, "B", 1, 5);
+        var columnC = new Column(boardId, "C", 2, null);
+        var all = new List<Column> { columnA, columnB, columnC };
+        _columnRepoMock.Setup(r => r.GetByIdAsync(columnA.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(columnA);
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(all);
+
+        // Act: move A to the end.
+        var result = await _service.ReorderColumnAsync(columnA.Id, 2);
+
+        // Assert: the order becomes B, C, A ...
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        columnB.Position.Should().Be(0);
+        columnC.Position.Should().Be(1);
+        columnA.Position.Should().Be(2);
+        // ... and every WIP limit survives the reorder (lossless).
+        columnA.WipLimit.Should().Be(3);
+        columnB.WipLimit.Should().Be(5);
+        columnC.WipLimit.Should().BeNull();
+        // Two-phase write keeps the unique (BoardId, Position) index satisfied.
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
     #endregion
 }

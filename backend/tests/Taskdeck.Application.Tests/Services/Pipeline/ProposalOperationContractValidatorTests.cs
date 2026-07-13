@@ -378,6 +378,95 @@ public class ProposalOperationContractValidatorTests
         unitOfWork.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectCreateCardWithEmptyTargetId()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Now", 0);
+        var (unitOfWork, _, columns, _) = CreateMocks();
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operations = new[]
+        {
+            CreateOperation(0, "create", Guid.Empty, new { boardId, columnId = column.Id, title = "New card" })
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("non-empty");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectCardTitleBeyondDomainLimit()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Now", 0);
+        var (unitOfWork, _, columns, _) = CreateMocks();
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operations = new[]
+        {
+            CreateOperation(
+                0,
+                "create",
+                Guid.NewGuid(),
+                new { boardId, columnId = column.Id, title = new string('x', 201) })
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Card title cannot exceed 200");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectCardDescriptionBeyondDomainLimit()
+    {
+        var boardId = Guid.NewGuid();
+        var card = new Card(boardId, Guid.NewGuid(), "Existing");
+        var (unitOfWork, cards, _, _) = CreateMocks();
+        cards.Setup(repository => repository.GetByIdAsync(card.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        var operations = new[]
+        {
+            CreateOperation(0, "update", card.Id, new { cardId = card.Id, description = new string('x', 2001) })
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Card description cannot exceed 2000");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectBoardNameBeyondDomainLimit()
+    {
+        var boardId = Guid.NewGuid();
+        var (unitOfWork, _, _, _) = CreateMocks();
+        var operations = new[]
+        {
+            CreateOperation(0, "update", boardId, new { boardId, name = new string('x', 101) }, targetType: "board")
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Board name cannot exceed 100");
+    }
+
+    private static (Mock<IUnitOfWork> unitOfWork, Mock<ICardRepository> cards, Mock<IColumnRepository> columns, Mock<ILabelRepository> labels) CreateMocks()
+    {
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        var labels = new Mock<ILabelRepository>();
+        unitOfWork.Setup(instance => instance.Cards).Returns(cards.Object);
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        unitOfWork.Setup(instance => instance.Labels).Returns(labels.Object);
+        return (unitOfWork, cards, columns, labels);
+    }
+
     private static ProposalOperationDto CreateOperation(
         int sequence,
         string actionType,

@@ -181,7 +181,8 @@ public class McpToolsTests : IDisposable
         var tools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var json = await tools.CreateCard(boardId.ToString(), "New Card", colId.ToString());
 
@@ -202,7 +203,8 @@ public class McpToolsTests : IDisposable
         var tools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var json = await tools.CreateCard("not-a-guid", "Card");
 
@@ -224,7 +226,8 @@ public class McpToolsTests : IDisposable
         var tools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var json = await tools.MoveCard(boardId.ToString(), card.Value.Id.ToString(), col2.Value.Id.ToString());
 
@@ -326,7 +329,8 @@ public class McpToolsTests : IDisposable
         var tools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var json = await tools.UpdateCard(boardId.ToString(), card.Value.Id.ToString(), title: "Updated Title");
 
@@ -343,7 +347,8 @@ public class McpToolsTests : IDisposable
         var tools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var json = await tools.UpdateCard(boardId.ToString(), Guid.NewGuid().ToString());
 
@@ -376,6 +381,47 @@ public class McpToolsTests : IDisposable
         created.DueDate.Should().Be(new DateTimeOffset(2026, 7, 14, 7, 30, 0, TimeSpan.Zero));
         var withLabels = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Cards.GetByIdWithLabelsAsync(created.Id);
         withLabels!.CardLabels.Should().ContainSingle(cardLabel => cardLabel.LabelId == label.Value.Id);
+    }
+
+    [Fact]
+    public async Task CreateCard_UnknownLabelId_ReturnsErrorAndCreatesNoProposal()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var tools = CreateWriteTools(scope, user.Id);
+
+        var json = await tools.CreateCard(
+            boardId.ToString(),
+            "MCP labelled card",
+            colId.ToString(),
+            label_ids: Guid.NewGuid().ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.TryGetProperty("error", out var error).Should().BeTrue("unknown label ids must be rejected before a proposal is created");
+        error.GetString().Should().Contain("label_ids not found");
+        doc.RootElement.TryGetProperty("proposalId", out _).Should().BeFalse("no dead proposal should be created");
+        var proposals = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>()
+            .AutomationProposals.GetByBoardIdAsync(boardId);
+        proposals.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpdateCard_UnknownLabelId_ReturnsError()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "MCP card", null, null, null));
+        var tools = CreateWriteTools(scope, user.Id);
+
+        var json = await tools.UpdateCard(
+            boardId.ToString(),
+            card.Value.Id.ToString(),
+            label_ids: Guid.NewGuid().ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.TryGetProperty("error", out var error).Should().BeTrue("unknown label ids must be rejected before a proposal is created");
+        error.GetString().Should().Contain("label_ids not found");
     }
 
     [Fact]
@@ -476,7 +522,8 @@ public class McpToolsTests : IDisposable
         var tools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var json = await tools.ArchiveCard(boardId.ToString(), card.Value.Id.ToString());
 
@@ -499,7 +546,8 @@ public class McpToolsTests : IDisposable
         var tools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var json = await tools.CreateCapture("Remember to fix the tests", boardId.ToString());
 
@@ -518,7 +566,8 @@ public class McpToolsTests : IDisposable
         var tools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var json = await tools.CreateColumn(boardId.ToString(), "In Progress", wip_limit: 3);
 
@@ -539,7 +588,8 @@ public class McpToolsTests : IDisposable
         var writeTools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var createJson = await writeTools.CreateCard(boardId.ToString(), "Status Check Card", colId.ToString());
         using var createDoc = JsonDocument.Parse(createJson);
@@ -568,7 +618,8 @@ public class McpToolsTests : IDisposable
         var writeTools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         await writeTools.CreateCard(boardId.ToString(), "Proposal Card 1", colId.ToString());
         await writeTools.CreateCard(boardId.ToString(), "Proposal Card 2", colId.ToString());
@@ -592,7 +643,8 @@ public class McpToolsTests : IDisposable
         var writeTools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         await writeTools.CreateCard(boardId.ToString(), "FilterCard", colId.ToString());
 
@@ -664,7 +716,8 @@ public class McpToolsTests : IDisposable
         var writeTools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         var createJson = await writeTools.CreateCard(boardId.ToString(), "Dismiss Me", colId.ToString());
         using var createDoc = JsonDocument.Parse(createJson);
@@ -698,7 +751,8 @@ public class McpToolsTests : IDisposable
         var tools = new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
 
         // All write tools that should produce proposals
         var results = new[]
@@ -724,7 +778,8 @@ public class McpToolsTests : IDisposable
         return new WriteTools(
             scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
             new McpBoardResourcesTests.FixedUserContextProvider(userId),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
     }
 
     private static async Task ApproveAndExecuteAsync(IServiceScope scope, Guid userId, Guid proposalId)

@@ -1102,6 +1102,54 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalDiffAsync_ShouldSurfaceDestinationPosition_ForColumnReorderOperations()
+    {
+        // Arrange
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "In Progress", 1);
+        var columnId = column.Id;
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Reorder column",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { columnId, position = 2 });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "reorder", "column", parameters, Guid.NewGuid().ToString(),
+            targetId: columnId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(columnId, default)).ReturnsAsync(column);
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var labelRepoMock = new Mock<ILabelRepository>();
+        labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
+        _unitOfWorkMock.Setup(u => u.Labels).Returns(labelRepoMock.Object);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: the approval preview names the column and its destination position.
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Contain("Reorder");
+        result.Value.Should().Contain("In Progress");
+        result.Value.Should().Contain("to position 2");
+        result.Value.Should().NotContain(columnId.ToString());
+    }
+
+    [Fact]
     public async Task GetProposalDiffAsync_ShouldDescribeDueDateExactlyAsApplyNormalizesIt()
     {
         var proposalId = Guid.NewGuid();
