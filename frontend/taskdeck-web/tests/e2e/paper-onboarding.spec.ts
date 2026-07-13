@@ -1,16 +1,28 @@
 import { expect, test } from '@playwright/test'
-import { registerAndAttachSession } from './support/authSession'
 
-test('fresh Paper user can create a first board through guided setup', async ({ page, request }, testInfo) => {
+test('fresh Paper user can register and create a first board through guided setup', async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('td.paper.mode.v2', 'paper')
   })
-  await registerAndAttachSession(page, request, 'paper-onboarding')
 
+  const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+  const username = `e2e-paper-onboarding-${unique}`
   const boardName = `Paper First Board ${Date.now()}`
 
-  await page.goto('/workspace/home')
+  await page.goto('/login')
+  await expect(page.getByRole('heading', { name: 'Sign in to Taskdeck' })).toBeVisible()
+  await expect(page.getByText('Taskdeck · review before action')).toBeVisible()
+  await page.getByRole('link', { name: 'Register' }).click()
 
+  await expect(page).toHaveURL(/\/register$/)
+  await expect(page.getByRole('heading', { name: 'Create an account' })).toBeVisible()
+  await page.locator('#reg-username').fill(username)
+  await page.locator('#reg-email').fill(`${username}@taskdeck.local`)
+  await page.locator('#reg-password').fill('E2ePassword123!')
+  await page.locator('#reg-confirm').fill('E2ePassword123!')
+  await page.getByRole('button', { name: 'Create account' }).click()
+
+  await expect(page).toHaveURL(/\/workspace\/home$/)
   await expect(page.getByTestId('paper-home')).toBeVisible()
   await expect(page.getByTestId('paper-home-first-board')).toBeVisible()
   await expect(page.getByTestId('paper-home-milestones')).toContainText('0/3 complete')
