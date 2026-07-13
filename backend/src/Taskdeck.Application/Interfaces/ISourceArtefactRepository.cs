@@ -35,6 +35,12 @@ public interface ISourceArtefactRepository : IRepository<SourceArtefact>
         Guid userId,
         CancellationToken cancellationToken = default);
 
+    Task<bool> CopyContentForUserAsync(
+        Guid id,
+        Guid userId,
+        Stream destination,
+        CancellationToken cancellationToken = default);
+
     Task<int> DeleteByUserIdAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
