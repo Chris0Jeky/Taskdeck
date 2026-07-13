@@ -56,6 +56,20 @@ public sealed class ArtefactExtractionTests
     }
 
     [Fact]
+    public void Constructor_ShouldRejectUnpairedSurrogate()
+    {
+        var act = () => new ArtefactExtraction(
+            Guid.NewGuid(),
+            "PlainText",
+            "1.0",
+            [],
+            "invalid\uD83D");
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("*valid UTF-16*");
+    }
+
+    [Fact]
     public void Constructor_ShouldRejectUnboundedWarnings()
     {
         var warnings = Enumerable.Range(0, ArtefactExtraction.MaxWarningCount + 1)

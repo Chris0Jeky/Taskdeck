@@ -101,6 +101,53 @@ public sealed class ArtefactExtractionServiceTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldRejectInvalidUtf16FromExtractorAsContractError()
+    {
+        ArrangeStoredArtefact("text/plain", Encoding.UTF8.GetBytes("ignored"));
+        _extractions
+            .Setup(repository => repository.TryAddForUserAsync(
+                It.IsAny<ArtefactExtraction>(),
+                _userId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ArtefactExtractionStoreResult.Stored);
+        var extractor = new StubExtractor(
+            "text/plain",
+            new ArtefactExtractionResult("invalid\uD83D", [], "First", "1.0"),
+            "First");
+
+        var result = await CreateService(extractor).ExtractAsync(_userId, _artefactId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ExtractedText.Should().BeEmpty();
+        result.Value.Warnings.Should().Contain(ArtefactExtractionWarningCodes.ExtractorContractError);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldRetainContractWarningWhenExtractorReturnsTooManyWarnings()
+    {
+        ArrangeStoredArtefact("text/plain", Encoding.UTF8.GetBytes("ignored"));
+        _extractions
+            .Setup(repository => repository.TryAddForUserAsync(
+                It.IsAny<ArtefactExtraction>(),
+                _userId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ArtefactExtractionStoreResult.Stored);
+        var warnings = Enumerable.Range(0, ArtefactExtraction.MaxWarningCount + 1)
+            .Select(index => $"warning-{index}")
+            .ToArray();
+        var extractor = new StubExtractor(
+            "text/plain",
+            new ArtefactExtractionResult("content", warnings, "First", "1.0"),
+            "First");
+
+        var result = await CreateService(extractor).ExtractAsync(_userId, _artefactId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Warnings.Should().HaveCount(ArtefactExtraction.MaxWarningCount);
+        result.Value.Warnings.Should().Contain(ArtefactExtractionWarningCodes.ExtractorContractError);
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldNotCreateRecordForUnsupportedMimeType()
     {
         ArrangeStoredArtefact("image/png", [1, 2, 3]);

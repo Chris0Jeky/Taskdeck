@@ -27,4 +27,23 @@ public static class ArtefactTextNormalization
 
         return text[..length];
     }
+
+    public static bool HasUnpairedSurrogate(string text)
+    {
+        for (var index = 0; index < text.Length; index++)
+        {
+            if (char.IsHighSurrogate(text[index]))
+            {
+                if (index + 1 >= text.Length || !char.IsLowSurrogate(text[index + 1]))
+                    return true;
+                index++;
+            }
+            else if (char.IsLowSurrogate(text[index]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

@@ -122,10 +122,10 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 catch (Exception ex)
                 {
                     _logger?.LogWarning(
-                        ex,
-                        "Local extraction failed for artefact {ArtefactId} with extractor {ExtractorName}",
+                        "Local extraction failed for artefact {ArtefactId} with extractor {ExtractorName}; exception type {ExceptionType}",
                         sourceArtefactId,
-                        extractor.ExtractorName);
+                        extractor.ExtractorName,
+                        ex.GetType().Name);
                     extractorResult = WarningResult(
                         extractor,
                         ArtefactExtractionWarningCodes.ExtractorError);
@@ -214,19 +214,30 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 if (!warnings.Contains(warning, StringComparer.Ordinal))
                     warnings.Add(warning);
             }
+
+            if (result.Warnings.Count > ArtefactExtraction.MaxWarningCount ||
+                warnings.Count > ArtefactExtraction.MaxWarningCount)
+            {
+                contractError = true;
+            }
         }
 
         var text = ArtefactTextNormalization.NormalizeLineEndings(result.ExtractedText ?? string.Empty);
+        if (ArtefactTextNormalization.HasUnpairedSurrogate(text))
+        {
+            text = string.Empty;
+            contractError = true;
+        }
         if (text.Length > ArtefactExtraction.MaxExtractedTextLength)
         {
             text = ArtefactTextNormalization.TruncateWithoutSplittingSurrogatePair(
                 text,
                 ArtefactExtraction.MaxExtractedTextLength);
-            warnings.Add(ArtefactExtractionWarningCodes.CharacterLimit);
+            AddPriorityWarning(warnings, ArtefactExtractionWarningCodes.CharacterLimit);
         }
 
         if (contractError)
-            warnings.Add(ArtefactExtractionWarningCodes.ExtractorContractError);
+            AddPriorityWarning(warnings, ArtefactExtractionWarningCodes.ExtractorContractError);
 
         warnings = warnings
             .Distinct(StringComparer.Ordinal)
@@ -244,6 +255,15 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
         => !string.IsNullOrWhiteSpace(value) &&
            value.Length <= maxLength &&
            !value.Any(char.IsControl);
+
+    private static void AddPriorityWarning(List<string> warnings, string warning)
+    {
+        if (warnings.Contains(warning, StringComparer.Ordinal))
+            return;
+        while (warnings.Count >= ArtefactExtraction.MaxWarningCount)
+            warnings.RemoveAt(warnings.Count - 1);
+        warnings.Add(warning);
+    }
 
     private static ArtefactExtractionResult WarningResult(
         IArtefactTextExtractor extractor,

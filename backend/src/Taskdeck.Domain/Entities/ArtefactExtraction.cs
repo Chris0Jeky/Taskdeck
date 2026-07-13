@@ -68,6 +68,12 @@ public sealed class ArtefactExtraction : Entity
                 ErrorCodes.ValidationError,
                 "Extracted text must use LF line endings");
         }
+        if (HasUnpairedSurrogate(extractedText))
+        {
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                "Extracted text must contain valid UTF-16");
+        }
         if (warnings is null)
             throw new DomainException(ErrorCodes.ValidationError, "Extraction warnings cannot be null");
 
@@ -102,5 +108,24 @@ public sealed class ArtefactExtraction : Entity
         WarningsJson = warningsJson;
         ExtractedText = extractedText;
         TextLength = extractedText.Length;
+    }
+
+    private static bool HasUnpairedSurrogate(string text)
+    {
+        for (var index = 0; index < text.Length; index++)
+        {
+            if (char.IsHighSurrogate(text[index]))
+            {
+                if (index + 1 >= text.Length || !char.IsLowSurrogate(text[index + 1]))
+                    return true;
+                index++;
+            }
+            else if (char.IsLowSurrogate(text[index]))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
