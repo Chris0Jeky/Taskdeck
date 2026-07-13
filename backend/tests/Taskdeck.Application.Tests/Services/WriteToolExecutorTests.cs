@@ -149,6 +149,41 @@ public class WriteToolExecutorTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task ProposeCreateCard_WithUnknownLabel_ReturnsErrorWithoutProposal()
+    {
+        SetupColumns("Backlog");
+        SetupLabels();
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(
+            MakeContext(),
+            ParseArgs("""{"title":"Ship brief","labels":["not-on-board"]}"""));
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("not found");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeCreateCard_WithExistingLabel_CreatesProposal()
+    {
+        CreateProposalDto? captured = null;
+        SetupColumns("Backlog");
+        SetupLabels(new Label(_boardId, "urgent", "#FF0000"));
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(
+            MakeContext(),
+            ParseArgs("""{"title":"Ship brief","labels":["urgent"]}"""));
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("labels")[0].GetString().Should().Be("urgent");
+    }
+
     #endregion
 
     #region ProposeMoveCardExecutor
@@ -345,6 +380,43 @@ public class WriteToolExecutorTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task ProposeUpdateCard_WithUnknownLabel_ReturnsErrorWithoutProposal()
+    {
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        SetupLabels();
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs(
+            $$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","labels":["not-on-board"]}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("not found");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_WithExistingLabel_CreatesProposal()
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        SetupLabels(new Label(_boardId, "urgent", "#FF0000"));
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs(
+            $$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","labels":["urgent"]}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("labels")[0].GetString().Should().Be("urgent");
+    }
+
     #endregion
 
     #region ProposeBulkMoveExecutor
@@ -461,6 +533,11 @@ public class WriteToolExecutorTests
         }).ToArray();
         _columnRepo.Setup(r => r.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(columns);
+        foreach (var column in columns)
+        {
+            _columnRepo.Setup(r => r.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(column);
+        }
         return columns;
     }
 
@@ -474,6 +551,17 @@ public class WriteToolExecutorTests
     {
         _cardRepo.Setup(r => r.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(cards);
+        foreach (var card in cards)
+        {
+            _cardRepo.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(card);
+        }
+    }
+
+    private void SetupLabels(params Label[] labels)
+    {
+        _labelRepo.Setup(r => r.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(labels);
     }
 
     private void SetupColumnCards(Guid columnId, IEnumerable<Card> cards)

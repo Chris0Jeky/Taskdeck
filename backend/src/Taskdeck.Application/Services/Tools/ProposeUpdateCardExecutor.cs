@@ -152,6 +152,19 @@ public sealed class ProposeUpdateCardExecutor : IToolExecutor
             o.TargetType, o.TargetId, o.Parameters, o.IdempotencyKey, o.ExpectedVersion
         )).ToList();
 
+        // Reuse the same effective-operation contract as preview and Apply so
+        // nonexistent or ambiguous labels cannot become dead-on-arrival proposals.
+        var contractResult = await ProposalOperationContractValidator.ValidateAsync(
+            _unitOfWork, context.BoardId, operationDtos, ct);
+        if (!contractResult.IsSuccess)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = contractResult.ErrorMessage,
+                suggestion = "Refresh the card and board labels, then retry with existing values"
+            }, ToolJsonOptions.Default);
+        }
+
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
         // Build summary describing what is being updated

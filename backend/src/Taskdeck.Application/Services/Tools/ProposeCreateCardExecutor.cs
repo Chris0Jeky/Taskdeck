@@ -53,7 +53,7 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
         var columnName = arguments.TryGetProperty("column_name", out var cn) ? cn.GetString() : null;
         var description = arguments.TryGetProperty("description", out var d) ? d.GetString() : null;
         if (!OperationParameterParser.TryGetOptionalStringArray(
-                arguments, "labels", out _, out var labels, out var labelsError))
+                arguments, "labels", out var labelsProvided, out var labels, out var labelsError))
         {
             return JsonSerializer.Serialize(new
             {
@@ -114,9 +114,10 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
             ["title"] = title,
             ["description"] = description,
             ["columnId"] = columnId,
-            ["boardId"] = context.BoardId,
-            ["labels"] = labels
+            ["boardId"] = context.BoardId
         };
+        if (labelsProvided)
+            createParameters["labels"] = labels;
         if (dueDate.HasValue)
             createParameters["dueDate"] = dueDate.Value.ToString("O");
 
@@ -131,6 +132,19 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
             Guid.Empty, Guid.Empty, o.Sequence, o.ActionType,
             o.TargetType, o.TargetId, o.Parameters, o.IdempotencyKey, o.ExpectedVersion
         )).ToList();
+
+        // Chat must not hand a user a proposal that the shared preview/apply
+        // contract already knows is unusable (for example, an unknown label).
+        var contractResult = await ProposalOperationContractValidator.ValidateAsync(
+            _unitOfWork, context.BoardId, operationDtos, ct);
+        if (!contractResult.IsSuccess)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = contractResult.ErrorMessage,
+                suggestion = "Refresh board columns and labels, then retry with existing values"
+            }, ToolJsonOptions.Default);
+        }
 
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
