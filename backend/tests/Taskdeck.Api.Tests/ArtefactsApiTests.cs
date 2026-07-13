@@ -147,6 +147,34 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task BoardScopedAudit_ShouldIncludeArtefactCreateAndDeleteAfterArtefactIsRemoved()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "artefact-board-audit");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "artefact-audit-board");
+        using var upload = CreateUpload(PngBytes(), "audit.png", "image/png", board.Id);
+        using var uploadResponse = await client.PostAsync("/api/artefacts", upload);
+        uploadResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await uploadResponse.Content.ReadFromJsonAsync<SourceArtefactDto>();
+
+        using var deleteResponse = await client.DeleteAsync($"/api/artefacts/{created!.Id}");
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var repo = scope.ServiceProvider.GetRequiredService<IAuditLogRepository>();
+        var boardLogs = (await repo.GetByBoardAsync(board.Id))
+            .Where(log =>
+                log.EntityType == "SourceArtefact" &&
+                log.EntityId == board.Id &&
+                log.Changes != null &&
+                log.Changes.Contains(created.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        boardLogs.Should().Contain(log => log.Action == AuditAction.Created);
+        boardLogs.Should().Contain(log => log.Action == AuditAction.Deleted);
+    }
+
+    [Fact]
     public async Task Upload_ShouldRejectNonCaptureAndMismatchedBoardProvenance()
     {
         using var client = _factory.CreateClient();

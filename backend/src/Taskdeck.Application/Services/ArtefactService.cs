@@ -105,6 +105,7 @@ public sealed class ArtefactService : IArtefactService
             content.Bytes,
             _settings.MaxBytesPerUser,
             auditLog,
+            CreateBoardAuditLog(artefact, AuditAction.Created, userId),
             cancellationToken);
         if (storeResult == ArtefactStoreResult.UserInactive)
         {
@@ -165,6 +166,10 @@ public sealed class ArtefactService : IArtefactService
         Guid artefactId,
         CancellationToken cancellationToken = default)
     {
+        var artefact = await _artefacts.GetByIdForUserAsync(artefactId, userId, cancellationToken);
+        if (artefact is null)
+            return Result.Failure(ErrorCodes.NotFound, "Artefact not found");
+
         var auditLog = new AuditLog(
             "SourceArtefact",
             artefactId,
@@ -175,10 +180,27 @@ public sealed class ArtefactService : IArtefactService
             artefactId,
             userId,
             auditLog,
+            CreateBoardAuditLog(artefact, AuditAction.Deleted, userId),
             cancellationToken);
         return deleted
             ? Result.Success()
             : Result.Failure(ErrorCodes.NotFound, "Artefact not found");
+    }
+
+    private static AuditLog? CreateBoardAuditLog(
+        SourceArtefact artefact,
+        AuditAction action,
+        Guid userId)
+    {
+        if (!artefact.BoardId.HasValue)
+            return null;
+
+        return new AuditLog(
+            "SourceArtefact",
+            artefact.BoardId.Value,
+            action,
+            userId,
+            $"artefactId={artefact.Id}; kind={artefact.Kind}; bytes={artefact.ByteSize}");
     }
 
     private static SourceArtefactDto Map(SourceArtefact artefact)
