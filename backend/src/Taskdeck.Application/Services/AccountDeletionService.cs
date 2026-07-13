@@ -28,17 +28,20 @@ public class AccountDeletionService : IAccountDeletionService
     private readonly IHistoryService _historyService;
     private readonly IActiveUserCache? _activeUserCache;
     private readonly ILogger<AccountDeletionService>? _logger;
+    private readonly ISourceArtefactRepository? _artefacts;
 
     public AccountDeletionService(
         IUnitOfWork unitOfWork,
         IHistoryService historyService,
         IActiveUserCache? activeUserCache = null,
-        ILogger<AccountDeletionService>? logger = null)
+        ILogger<AccountDeletionService>? logger = null,
+        ISourceArtefactRepository? artefacts = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
         _activeUserCache = activeUserCache;
         _logger = logger;
+        _artefacts = artefacts;
     }
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
@@ -112,6 +115,12 @@ public class AccountDeletionService : IAccountDeletionService
                 await _unitOfWork.LlmQueue.DeleteAsync(capture, cancellationToken);
                 captureItemsDeleted++;
             }
+
+            // Artefact blobs are personal data. The repository performs set-based
+            // deletion of blobs followed by metadata inside this account transaction.
+            var artefactsDeleted = _artefacts is null
+                ? 0
+                : await _artefacts.DeleteByUserIdAsync(userId, cancellationToken);
 
             // 4. Anonymize chat sessions — delete messages and sessions
             var chatSessions = await _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
@@ -194,7 +203,8 @@ public class AccountDeletionService : IAccountDeletionService
                 CaptureItemsDeleted: captureItemsDeleted,
                 ChatSessionsAnonymized: chatSessionsAnonymized,
                 ExternalLoginsDeleted: externalLoginsDeleted,
-                PreferencesDeleted: preferencesDeleted));
+                PreferencesDeleted: preferencesDeleted,
+                ArtefactsDeleted: artefactsDeleted));
         }
         catch (Exception ex)
         {
