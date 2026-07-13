@@ -11,6 +11,7 @@ import type { WorkspaceMode } from '../../types/workspace'
 import { isWorkspaceMode } from '../../types/workspace'
 import PaperIcon from './PaperIcon.vue'
 import PaperStatusPill from './PaperStatusPill.vue'
+import { orderGuidedAdvancedDestinations } from '../guidedAdvancedNavigation'
 
 /**
  * PaperSidebar — Paper & Graphite shell sidebar.
@@ -137,13 +138,13 @@ const visibleWorkbench = computed(() => activeWorkspaceMode.value === 'guided'
 const visibleMeta = computed(() => activeWorkspaceMode.value === 'guided'
   ? availableMeta.value.filter(item => !guidedAdvancedExistingIds.has(item.id))
   : availableMeta.value)
-const guidedAdvancedNavItems = computed(() => [
+const guidedAdvancedNavItems = computed(() => orderGuidedAdvancedDestinations([
   ...availableWorkbench.value,
   ...availableMeta.value,
   ...availableCommandOnly.value,
 ].filter(item => guidedAdvancedExistingIds.has(item.id)).concat(
   guidedAdvancedOnlyItems.filter(isAvailable),
-))
+)))
 const workbenchGroupLabel = computed(() =>
   activeWorkspaceMode.value === 'guided' ? 'More tools' : 'Workbench tools')
 const availableNavItems = computed(() =>
@@ -735,6 +736,7 @@ defineExpose({
   position: relative;
   min-height: 100vh;
   height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
 }
 

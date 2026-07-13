@@ -138,6 +138,9 @@ describe('PaperSidebar', () => {
     for (const label of ['Agents', 'Metrics', 'Cohorts', 'Integrations', 'Ops', 'Endpoints', 'Logs', 'API Keys', 'Dev Tools']) {
       expect(wrapper.find('[data-group="advanced"]').text()).toContain(label)
     }
+    expect(wrapper.findAll('[data-group="advanced"] a .paper-sidebar__label').map(label => label.text())).toEqual([
+      'Agents', 'Metrics', 'Cohorts', 'Integrations', 'Ops', 'Endpoints', 'Logs', 'API Keys', 'Dev Tools',
+    ])
   })
 
   it('keeps the command palette catalog complete while guided navigation is collapsed', () => {

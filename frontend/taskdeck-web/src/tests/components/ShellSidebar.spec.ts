@@ -264,6 +264,9 @@ describe('ShellSidebar', () => {
     for (const label of ['Agents', 'Metrics', 'Cohorts', 'Integrations', 'Ops', 'Endpoints', 'Logs', 'API Keys', 'Dev Tools']) {
       expect(wrapper.text()).toContain(label)
     }
+    expect(wrapper.findAll('#guided-advanced-destinations a .td-nav-item__label').map(label => label.text())).toEqual([
+      'Agents', 'Metrics', 'Cohorts', 'Integrations', 'Ops', 'Endpoints', 'Logs', 'API Keys', 'Dev Tools',
+    ])
     const exposed = (wrapper.vm as unknown as { availableNavItems: Array<{ id: string }> }).availableNavItems
     expect(exposed.map(item => item.id)).toEqual(expect.arrayContaining([
       'agents', 'metrics', 'integrations', 'ops', 'api-keys',

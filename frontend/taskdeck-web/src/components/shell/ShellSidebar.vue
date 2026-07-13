@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
+import { orderGuidedAdvancedDestinations } from '../guidedAdvancedNavigation'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import type { FeatureFlags } from '../../types/feature-flags'
@@ -361,10 +362,10 @@ const availableNavItems = computed(() => navCatalog.filter(isFeatureAvailable))
 const sidebarNavItems = computed(() =>
   availableNavItems.value.filter((item) => item.sidebarPrimary === true))
 
-const guidedAdvancedNavItems = computed(() => [
+const guidedAdvancedNavItems = computed(() => orderGuidedAdvancedDestinations([
   ...availableNavItems.value.filter(item => item.guidedAdvanced === true),
   ...guidedAdvancedOnlyCatalog.filter(isFeatureAvailable),
-])
+]))
 
 watch(activeWorkspaceMode, mode => {
   if (mode !== 'guided') guidedAdvancedRevealed.value = false
@@ -503,7 +504,7 @@ defineExpose({
         >
           <span class="td-nav-item__icon">A</span>
           <span v-if="!sidebarCollapsed" class="td-nav-item__label">Advanced</span>
-          <span v-if="!sidebarCollapsed" class="td-nav-item__kbd">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
+          <span v-if="!sidebarCollapsed" class="td-nav-item__disclosure">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
         </button>
 
         <div
@@ -785,6 +786,13 @@ defineExpose({
   border: 1px solid var(--td-border-default);
   border-radius: var(--td-radius-sm);
   padding: 1px 4px;
+  letter-spacing: 0.05em;
+}
+
+.td-nav-item__disclosure {
+  margin-left: auto;
+  color: var(--td-text-tertiary);
+  font-size: 0.6rem;
   letter-spacing: 0.05em;
 }
 
