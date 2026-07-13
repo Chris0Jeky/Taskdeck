@@ -1,9 +1,9 @@
 # Issue Execution Guide
 
-Last Updated: 2026-06-13
+Last Updated: 2026-07-13
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
-> **⚠️ Archive-pivot override (2026-06-13).** The maintainer's direction is now **finish-for-personal-use → archive** (see the Direction sections of `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md`). The **active sequencing** is the archive-pivot waves — Paper UI activation, trivially-easy local run, general quality, then clean archive — **not** the "Phase 4 / post-Phase-4 / Expansion" tranches described in the Priority Model below. Distribution, cloud, mobile, and GTM tracks are de-scoped. Treat the priority-tranche language in this guide as **historical pre-pivot framing**; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Concretely: where the Start Protocol says "pick the highest-priority issue" and the Priority Model ranks `Priority I`–`V` tranches, read "highest-priority" as **the next item in the active archive-pivot waves** (Paper UI activation → easy local run → general quality → archive), **not** the Phase-4 / Expansion tranches below. When this guide and the Direction sections conflict, the Direction sections win.
+> **⚠️ Revival override (2026-07-10, ADR-0044).** The active sequence is the ratified REVIVAL wave in `docs/REVIVAL_PLAN.md`: truth + safety before strangers → transcript engine → bounded open-beta launch → checkpoint. The 2026-06-13 archive sequence is superseded and retained only as the checkpoint fallback. Treat the `Priority I`–`V`, Phase-4, and expansion tranches below as historical framing; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Where the Start Protocol says "pick the highest-priority issue," read that as **the next dependency-ready item admitted by the REVIVAL wave**, not the historical tranches. When this guide and `docs/STATUS.md`/`docs/REVIVAL_PLAN.md` conflict, those active documents win.
 
 ## Purpose
 
@@ -26,9 +26,9 @@ Use this file when starting backlog work. It prevents out-of-order development a
 - Move issue to `Done` only after merge and verification notes are posted.
 - If item is blocked by dependency or external input, move to `Blocked` and add blocking note.
 
-## Priority Model (historical pre-pivot framing — see the override banner above)
+## Priority Model (historical framing — see the revival override above)
 
-> _(The Phase-4 / post-Phase-4 / Expansion tranches below are pre-pivot framing. The active sequencing is the archive-pivot waves — Paper UI activation → easy local run → general quality → archive. Retained for historical continuity.)_
+> _(The Phase-4 / post-Phase-4 / Expansion tranches below are historical. Active sequencing is the dependency-ready REVIVAL wave in `docs/REVIVAL_PLAN.md`; this section remains for continuity only.)_
 
 - `Priority I`: Current Phase 4 completion path and blockers.
 - `Priority II`: Immediate post-Phase-4 foundation work, including novice-first productization.
@@ -384,7 +384,7 @@ Maintainability hotspot refactor wave (analysis-driven, all delivered):
 
 ### Stage 5: Priority V - Meta/Historical
 
-1. ~~`#107`~~ OPS-13 future expansion wave index (**closed historical index**; the RFAI roadmap tracker `#972` is complete 2026-05-29 and **superseded by the archive pivot** — active execution order is the archive-pivot waves in `IMPLEMENTATION_MASTERPLAN.md`)
+1. ~~`#107`~~ OPS-13 future expansion wave index (**closed historical index**; the RFAI roadmap tracker `#972` completed 2026-05-29 and is not an active issue-selection source — active execution follows `docs/REVIVAL_PLAN.md`)
 2. ~~`#338`~~ AGT-03 agent mode surfaces and run-detail timeline (**delivered**)
 3. ~~`#340`~~ INT-06 integrations registry and supervised inbound connector foundation (**delivered** `#841`)
 4. ~~`#341`~~ TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through (**delivered** `#741`)

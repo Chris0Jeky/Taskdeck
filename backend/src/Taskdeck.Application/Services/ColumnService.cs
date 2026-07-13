@@ -174,26 +174,11 @@ public class ColumnService
             if (dto.ColumnIds.Count != columnsList.Count)
                 return Result.Failure<IEnumerable<ColumnDto>>(ErrorCodes.ValidationError, "Reorder request must include all columns in the board");
 
-            // Two-phase update to avoid UNIQUE constraint violations:
-            // Phase 1: Set all positions to temporary negative values
-            for (int i = 0; i < dto.ColumnIds.Count; i++)
-            {
-                var column = columnDict[dto.ColumnIds[i]];
-                column.Update(null, null, -(i + 1));
-            }
+            // Reindex positions in the requested order. This preserves each column's
+            // WipLimit and Name — only the position changes, so a reorder is lossless.
+            var orderedColumns = dto.ColumnIds.Select(id => columnDict[id]).ToList();
+            await ApplyColumnOrderAsync(orderedColumns, cancellationToken);
 
-            // Save Phase 1 changes - moves all columns to negative positions
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            // Phase 2: Set correct positive positions
-            for (int i = 0; i < dto.ColumnIds.Count; i++)
-            {
-                var column = columnDict[dto.ColumnIds[i]];
-                column.Update(null, null, i);
-            }
-
-            // Save Phase 2 changes - moves columns to final positions
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(boardId, "column", "reordered", null, DateTimeOffset.UtcNow),
                 cancellationToken);
@@ -207,6 +192,71 @@ public class ColumnService
         {
             return Result.Failure<IEnumerable<ColumnDto>>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Moves a single column to <paramref name="newPosition"/> within its board and
+    /// reindexes the remaining columns to a contiguous 0..n-1 sequence. The move is
+    /// atomic (no transient unique-index collision) and lossless (WipLimit/Name are
+    /// preserved). Used by the proposal "reorder column" apply operation.
+    /// </summary>
+    public async Task<Result<ColumnDto>> ReorderColumnAsync(Guid columnId, int newPosition, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (newPosition < 0)
+                return Result.Failure<ColumnDto>(ErrorCodes.ValidationError, "Position cannot be negative");
+
+            var column = await _unitOfWork.Columns.GetByIdAsync(columnId, cancellationToken);
+            if (column == null)
+                return Result.Failure<ColumnDto>(ErrorCodes.NotFound, $"Column with ID {columnId} not found");
+
+            var boardColumns = (await _unitOfWork.Columns.GetByBoardIdAsync(column.BoardId, cancellationToken))
+                .OrderBy(c => c.Position)
+                .ToList();
+            var oldPosition = column.Position;
+
+            // Rebuild the desired order: drop the moved column, then insert it at the
+            // requested index (clamped to the end when the request overshoots).
+            var ordered = boardColumns.Where(c => c.Id != column.Id).ToList();
+            var insertAt = Math.Min(newPosition, ordered.Count);
+            ordered.Insert(insertAt, column);
+
+            await ApplyColumnOrderAsync(ordered, cancellationToken);
+
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(column.BoardId, "column", "reordered", column.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
+            await SafeLogAsync("column", column.Id, AuditAction.Updated, changes: $"Position: {oldPosition} -> {column.Position}");
+
+            return Result.Success(MapToDto(column));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<ColumnDto>(ex.ErrorCode, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Reassigns positions 0..n-1 to <paramref name="orderedColumns"/> in list order.
+    /// Phase 1 parks every column above the current maximum position, then phase 2 writes
+    /// the final contiguous positions. The two-phase write means no intermediate state
+    /// violates the unique (BoardId, Position) index (SQLite checks the constraint per
+    /// row, not deferred to commit). Only positions change — WipLimit and Name are kept.
+    /// </summary>
+    private async Task ApplyColumnOrderAsync(IReadOnlyList<Column> orderedColumns, CancellationToken cancellationToken)
+    {
+        if (orderedColumns.Count == 0)
+            return;
+
+        var parkBase = orderedColumns.Max(c => c.Position) + 1;
+        for (var i = 0; i < orderedColumns.Count; i++)
+            orderedColumns[i].SetPosition(parkBase + i);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        for (var i = 0; i < orderedColumns.Count; i++)
+            orderedColumns[i].SetPosition(i);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     private static ColumnDto MapToDto(Column column)

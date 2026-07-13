@@ -1,6 +1,6 @@
 # ADR-0045: LLM Transcript Triage — Dedicated Worker Lane, Strategy-with-Fallback, Honest Provenance
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Date:** 2026-07-11
 

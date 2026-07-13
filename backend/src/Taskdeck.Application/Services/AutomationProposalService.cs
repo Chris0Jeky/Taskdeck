@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
@@ -401,6 +402,14 @@ public class AutomationProposalService : IAutomationProposalService
                 return Result.Failure<string>(ErrorCodes.ValidationError, errorMessage);
             }
 
+            var revisedValidation = await ProposalOperationContractValidator.ValidateAsync(
+                _unitOfWork,
+                proposal.BoardId,
+                revisedOperations,
+                cancellationToken);
+            if (!revisedValidation.IsSuccess)
+                return Result.Failure<string>(revisedValidation.ErrorCode, revisedValidation.ErrorMessage);
+
             var revisedViews = revisedOperations
                 .OrderBy(o => o.Sequence)
                 .Select(o => new DiffOperationView(o.Sequence, o.ActionType, o.TargetType, o.TargetId, o.Parameters))
@@ -410,14 +419,29 @@ public class AutomationProposalService : IAutomationProposalService
             return Result.Success(revisedDiff);
         }
 
+        if (proposal.Operations.Count == 0)
+        {
+            return !string.IsNullOrWhiteSpace(proposal.DiffPreview)
+                ? Result.Success(proposal.DiffPreview)
+                : Result.Failure<string>(ErrorCodes.NotFound, "Diff preview not available for this proposal");
+        }
+
+        var originalOperations = proposal.Operations
+            .OrderBy(o => o.Sequence)
+            .Select(MapOperationToDto)
+            .ToList();
+        var originalValidation = await ProposalOperationContractValidator.ValidateAsync(
+            _unitOfWork,
+            proposal.BoardId,
+            originalOperations,
+            cancellationToken);
+        if (!originalValidation.IsSuccess)
+            return Result.Failure<string>(originalValidation.ErrorCode, originalValidation.ErrorMessage);
+
         if (!string.IsNullOrWhiteSpace(proposal.DiffPreview))
             return Result.Success(proposal.DiffPreview);
 
-        if (proposal.Operations.Count == 0)
-            return Result.Failure<string>(ErrorCodes.NotFound, "Diff preview not available for this proposal");
-
-        var orderedViews = proposal.Operations
-            .OrderBy(o => o.Sequence)
+        var orderedViews = originalOperations
             .Select(o => new DiffOperationView(o.Sequence, o.ActionType, o.TargetType, o.TargetId, o.Parameters))
             .ToList();
 
@@ -439,6 +463,7 @@ public class AutomationProposalService : IAutomationProposalService
         // Batch-load entity names for resolving IDs to human-readable labels
         var columnNames = new Dictionary<Guid, string>();
         var cardTitles = new Dictionary<Guid, string>();
+        var labelNames = new Dictionary<Guid, string>();
 
         if (boardId.HasValue)
         {
@@ -451,6 +476,10 @@ public class AutomationProposalService : IAutomationProposalService
                 var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
                 foreach (var card in cards)
                     cardTitles[card.Id] = card.Title;
+
+                var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId.Value, cancellationToken);
+                foreach (var label in labels)
+                    labelNames[label.Id] = label.Name;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -460,7 +489,7 @@ public class AutomationProposalService : IAutomationProposalService
 
         return string.Join(
             Environment.NewLine,
-            orderedOperations.Select(o => DescribeOperationReadable(o, columnNames, cardTitles)));
+            orderedOperations.Select(o => DescribeOperationReadable(o, columnNames, cardTitles, labelNames)));
     }
 
     public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
@@ -706,12 +735,16 @@ public class AutomationProposalService : IAutomationProposalService
     private static string DescribeOperationReadable(
         DiffOperationView operation,
         IReadOnlyDictionary<Guid, string> columnNames,
-        IReadOnlyDictionary<Guid, string> cardTitles)
+        IReadOnlyDictionary<Guid, string> cardTitles,
+        IReadOnlyDictionary<Guid, string> labelNames)
     {
         var verb = HumanizeActionVerb(operation.ActionType);
         var targetType = HumanizeTargetType(operation.TargetType).ToLowerInvariant();
         var isCardTarget = string.Equals(operation.TargetType, "card", StringComparison.OrdinalIgnoreCase);
-        var namedTarget = ExtractNamedTarget(operation.Parameters);
+        var labelAction = CardLabelOperationVocabulary.Classify(operation.ActionType);
+        var isLabelOperation = isCardTarget &&
+            labelAction is CardLabelOperationAction.Add or CardLabelOperationAction.Remove;
+        var namedTarget = isLabelOperation ? null : ExtractNamedTarget(operation.Parameters);
 
         // Try to resolve card title from lookup when not embedded in parameters
         // Only attempt card-specific lookups when the operation targets a card
@@ -727,6 +760,40 @@ public class AutomationProposalService : IAutomationProposalService
             var cardIdFromParams = ExtractGuidParameter(operation.Parameters, "cardId");
             if (cardIdFromParams.HasValue && cardTitles.TryGetValue(cardIdFromParams.Value, out var title))
                 namedTarget = title;
+        }
+
+        if (isLabelOperation)
+        {
+            var labelName = ExtractStringParameter(operation.Parameters, "labelName");
+            var labelId = ExtractGuidParameter(operation.Parameters, "labelId");
+            var labelDisplay = labelName is not null
+                ? $"\"{labelName}\""
+                : labelId.HasValue
+                    ? DescribeLabel(labelId.Value, labelNames)
+                    : "(unspecified)";
+            var cardDisplay = namedTarget is not null
+                ? $"\"{namedTarget}\""
+                : !string.IsNullOrWhiteSpace(operation.TargetId)
+                    ? operation.TargetId
+                    : ExtractGuidParameter(operation.Parameters, "cardId")?.ToString() ?? "(unspecified)";
+            var preposition = labelAction == CardLabelOperationAction.Add ? "to" : "from";
+            return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
+        }
+
+        // Column reorder: surface the requested destination position so the approval
+        // preview shows what Apply will do (the position is the whole point of the op).
+        if (string.Equals(operation.TargetType, "column", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(operation.ActionType, "reorder", StringComparison.OrdinalIgnoreCase))
+        {
+            var reorderColumnId = ExtractGuidParameter(operation.Parameters, "columnId")
+                ?? (Guid.TryParse(operation.TargetId, out var reorderTargetId) ? reorderTargetId : (Guid?)null);
+            var reorderColumnDisplay = reorderColumnId.HasValue && columnNames.TryGetValue(reorderColumnId.Value, out var reorderColumnName)
+                ? $"\"{reorderColumnName}\""
+                : reorderColumnId?.ToString() ?? "(unspecified)";
+            var reorderPosition = ExtractInt32Parameter(operation.Parameters, "position");
+            return reorderPosition.HasValue
+                ? $"{operation.Sequence}. {verb} column {reorderColumnDisplay} to position {reorderPosition.Value}"
+                : $"{operation.Sequence}. {verb} column {reorderColumnDisplay}";
         }
 
         // Build description, falling back to raw TargetId when no name is available
@@ -750,7 +817,66 @@ public class AutomationProposalService : IAutomationProposalService
                 description += $" in column {columnDisplay}";
         }
 
+        var cardEffects = DescribeCardParameterEffects(operation.Parameters, labelNames);
+        if (isCardTarget && cardEffects.Count > 0)
+            description += $"; {string.Join("; ", cardEffects)}";
+
         return description;
+    }
+
+    private static IReadOnlyList<string> DescribeCardParameterEffects(
+        string parameters,
+        IReadOnlyDictionary<Guid, string> labelNames)
+    {
+        if (!OperationParameterParser.TryDeserializeParameters(parameters, out var parsed, out _))
+            return Array.Empty<string>();
+
+        var effects = new List<string>();
+        if (OperationParameterParser.TryGetOptionalDateTimeOffset(
+                parsed, "dueDate", out var dueDateProvided, out var dueDate, out _)
+            && dueDateProvided)
+        {
+            effects.Add(dueDate.HasValue
+                ? $"set due date to {dueDate.Value:O}"
+                : "clear due date");
+        }
+
+        if (parsed.TryGetProperty("clearDueDate", out var clearProperty)
+            && clearProperty.ValueKind == JsonValueKind.True)
+        {
+            effects.RemoveAll(effect => effect.StartsWith("set due date", StringComparison.Ordinal));
+            if (!effects.Contains("clear due date", StringComparer.Ordinal))
+                effects.Add("clear due date");
+        }
+
+        if (OperationParameterParser.TryGetOptionalStringArray(
+                parsed, "labels", out var labelsProvided, out var labels, out _)
+            && labelsProvided)
+        {
+            var effectiveLabels = labels.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            effects.Add(effectiveLabels.Count == 0
+                ? "replace labels with none"
+                : $"replace labels with [{string.Join(", ", effectiveLabels.Select(label => $"\"{label}\""))}]");
+        }
+
+        if (OperationParameterParser.TryGetOptionalGuidArray(
+                parsed, "labelIds", out var labelIdsProvided, out var labelIds, out _)
+            && labelIdsProvided)
+        {
+            var effectiveLabelIds = labelIds.Distinct().ToList();
+            effects.Add(effectiveLabelIds.Count == 0
+                ? "replace labels with none"
+                : $"replace labels with [{string.Join(", ", effectiveLabelIds.Select(labelId => DescribeLabel(labelId, labelNames)))}]");
+        }
+
+        return effects;
+    }
+
+    private static string DescribeLabel(Guid labelId, IReadOnlyDictionary<Guid, string> labelNames)
+    {
+        return labelNames.TryGetValue(labelId, out var labelName)
+            ? $"\"{labelName}\""
+            : labelId.ToString();
     }
 
     /// <summary>
@@ -780,6 +906,56 @@ public class AutomationProposalService : IAutomationProposalService
         }
 
         return null;
+    }
+
+    private static int? ExtractInt32Parameter(string parameters, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(parameters))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(parameters);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            if (document.RootElement.TryGetProperty(propertyName, out var propertyValue)
+                && propertyValue.ValueKind == JsonValueKind.Number
+                && propertyValue.TryGetInt32(out var value))
+            {
+                return value;
+            }
+        }
+        catch (JsonException)
+        {
+            // Malformed JSON — fall through to null
+        }
+
+        return null;
+    }
+
+    private static string? ExtractStringParameter(string parameters, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(parameters))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(parameters);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty(propertyName, out var propertyValue)
+                || propertyValue.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var value = propertyValue.GetString()?.Trim();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static string? ExtractNamedTarget(string parameters)

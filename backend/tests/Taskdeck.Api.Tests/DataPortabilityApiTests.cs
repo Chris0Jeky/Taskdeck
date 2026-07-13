@@ -2,8 +2,15 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Moq;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Exceptions;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -65,6 +72,47 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.NoStore.Should().BeTrue(
             "data export should not be cached due to ResponseCache(NoStore=true)");
+    }
+
+    [Fact]
+    public async Task ExportUserData_ShouldKeepBoundedRouteInsteadOfCallingStreamingService()
+    {
+        var exportService = new Mock<IDataExportService>();
+        exportService
+            .Setup(service => service.ExportUserDataAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<UserDataExportDto>(
+                ErrorCodes.PayloadTooLarge,
+                "Use the streaming export endpoint"));
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IDataExportService>();
+                services.AddSingleton(exportService.Object);
+            });
+        });
+        using var client = factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "export-bounded-route");
+
+        var response = await client.GetAsync("/api/account/export");
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.RequestEntityTooLarge,
+            ErrorCodes.PayloadTooLarge);
+        exportService.Verify(
+            service => service.ExportUserDataAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        exportService.Verify(
+            service => service.StreamUserDataExportAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Stream>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

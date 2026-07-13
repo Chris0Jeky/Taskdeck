@@ -100,6 +100,7 @@ export interface UpdateCardDto {
   title?: string | null
   description?: string | null
   dueDate?: string | null
+  clearDueDate?: boolean
   isBlocked?: boolean | null
   blockReason?: string | null
   labelIds?: string[] | null
