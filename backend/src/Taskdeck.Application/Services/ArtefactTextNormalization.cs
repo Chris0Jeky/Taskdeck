@@ -4,7 +4,7 @@ namespace Taskdeck.Application.Services;
 /// Establishes the single persisted offset convention for extracted text:
 /// UTF-16 string indexes with every line ending normalized to LF.
 /// </summary>
-internal static class ArtefactTextNormalization
+public static class ArtefactTextNormalization
 {
     public static string NormalizeLineEndings(string text)
         => text.Contains('\r')
