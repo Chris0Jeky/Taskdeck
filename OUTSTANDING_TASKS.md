@@ -78,6 +78,9 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 - [ ] **#1282 / #1332 / #1335** — Stabilize the required full-suite harness: SQLite concurrency, Redis connect/dispose, and hosted-worker/presence lifecycle isolation. Narrow passes do not clear the recorded full-suite failures.
 - [ ] **#1338** — Map HTTP MCP and its API-key middleware to the same `/mcp` route before documenting or exposing HTTP transport; the current parameterless mapping serves MCP at an unintended unauthenticated root route.
 - [ ] **#1343** — Prevent late Home/Today summary responses from overwriting a newer local workspace-mode choice; add deterministic ordering tests and repeated error-recovery E2E proof.
+- [ ] **#1345** — Resolve or formally mitigate GHSA-2m69-gcr7-jv3q in the transitive `SQLitePCLRaw.lib.e_sqlite3` package once a patched release exists or a safe provider change is proven; current published releases through 2.1.11 are affected.
+- [ ] **#1274 / local `993f188f`** — Resume the parked Paper E2E/axe re-point from the clean local worktree; fix tracked Paper Review blockers #1347/#1348, finish the named first-run/onboarding/smoke and axe coverage, then run the full frontend/E2E gates before opening a PR.
+- [ ] **#1347 / #1348** — Repair the Paper deep-review enum wire-contract crash and the SQLite-backed similar-past HTTP 500; both were reproduced by the real Paper capture/review path and must not be hidden by frontend fallbacks.
 - [ ] **#1323 prompt-rail remainder** — Bind the hostile transcript/PDF/image and malformed-response fixtures from PR #1340 to PR #1312's effective prompt/parser path before GEN-04; prove grounded-task-or-empty verdicts and deterministic fallback for schema escapes.
 
 ---
