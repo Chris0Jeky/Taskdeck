@@ -120,6 +120,53 @@ describe('LoginView', () => {
     expect(wrapper.text()).not.toContain("Don't have an account?")
   })
 
+  it('shows the register link only after availability is explicitly confirmed', async () => {
+    const wrapper = mount(LoginView)
+    await waitForUi()
+    await waitForUi()
+
+    expect(wrapper.text()).toContain("Don't have an account?")
+    expect(wrapper.find('.td-link').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Registration is closed on this Taskdeck instance.')
+  })
+
+  it('fails closed and hides the register link when the registration field is missing', async () => {
+    authApiMock.getProviders.mockResolvedValue({ gitHub: false, oidc: [] })
+
+    const wrapper = mount(LoginView)
+    await waitForUi()
+    await waitForUi()
+
+    expect(wrapper.text()).not.toContain("Don't have an account?")
+    expect(wrapper.text()).toContain('Registration is closed on this Taskdeck instance.')
+  })
+
+  it('fails closed when the registration payload is malformed', async () => {
+    authApiMock.getProviders.mockResolvedValue({
+      gitHub: false,
+      oidc: [],
+      registration: { mode: 'Maybe' },
+    })
+
+    const wrapper = mount(LoginView)
+    await waitForUi()
+    await waitForUi()
+
+    expect(wrapper.text()).not.toContain("Don't have an account?")
+    expect(wrapper.text()).toContain('Registration is closed on this Taskdeck instance.')
+  })
+
+  it('fails closed when the provider fetch fails', async () => {
+    authApiMock.getProviders.mockRejectedValue(new Error('unreachable'))
+
+    const wrapper = mount(LoginView)
+    await waitForUi()
+    await waitForUi()
+
+    expect(wrapper.text()).not.toContain("Don't have an account?")
+    expect(wrapper.text()).toContain('Registration is closed on this Taskdeck instance.')
+  })
+
   it('shows validation error when submitting with empty fields', async () => {
     const wrapper = mount(LoginView)
     await waitForUi()

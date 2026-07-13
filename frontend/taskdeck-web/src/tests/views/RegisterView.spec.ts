@@ -262,4 +262,60 @@ describe('RegisterView', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('Could not check whether')
     expect(wrapper.text()).toContain('Try again')
   })
+
+  it('fails closed when the registration field is missing from the provider payload', async () => {
+    authApiMock.getProviders.mockResolvedValue({ gitHub: false, oidc: [] })
+
+    const wrapper = await mountView()
+
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Could not check whether')
+  })
+
+  it('fails closed when the registration field is null', async () => {
+    authApiMock.getProviders.mockResolvedValue({ gitHub: false, oidc: [], registration: null })
+
+    const wrapper = await mountView()
+
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Could not check whether')
+  })
+
+  it('fails closed when the registration payload is malformed', async () => {
+    // Missing `isRegistrationAvailable`/`inviteRequired` and an unknown mode: an older
+    // or corrupted response must not be trusted to render a live form.
+    authApiMock.getProviders.mockResolvedValue({
+      gitHub: false,
+      oidc: [],
+      registration: { mode: 'Sometimes' },
+    })
+
+    const wrapper = await mountView()
+
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Could not check whether')
+    // The submit button never appears, so there is no dead form to submit.
+    expect(wrapper.find('button[type="submit"]').exists()).toBe(false)
+  })
+
+  it('recovers to a live form when Try again succeeds after a malformed payload', async () => {
+    authApiMock.getProviders.mockResolvedValueOnce({
+      gitHub: false,
+      oidc: [],
+      registration: { mode: 'Sometimes' },
+    })
+
+    const wrapper = await mountView()
+    expect(wrapper.find('form').exists()).toBe(false)
+
+    authApiMock.getProviders.mockResolvedValue({
+      gitHub: false,
+      oidc: [],
+      registration: { mode: 'Open', isRegistrationAvailable: true, inviteRequired: false },
+    })
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('form').exists()).toBe(true)
+  })
 })

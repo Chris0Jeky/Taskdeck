@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { OidcProviderInfo, RegistrationAvailability } from '../types/auth'
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '../store/sessionStore'
 import { authApi } from '../api/authApi'
 import { sanitizeInternalRedirect } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
+import { normalizeRegistrationAvailability } from '../utils/registrationAvailability'
 
 const router = useRouter()
 const route = useRoute()
@@ -18,7 +19,13 @@ const submitting = ref(false)
 const githubAvailable = ref(false)
 const oidcProviders = ref<OidcProviderInfo[]>([])
 const registration = ref<RegistrationAvailability | null>(null)
+// Fail closed: until we have a validated provider payload we treat registration as
+// unknown and never expose the Register link. `registrationChecked` flips true once the
+// provider probe resolves or fails, avoiding a flash of the wrong footer state.
+const registrationChecked = ref(false)
 const oauthExchanging = ref(false)
+
+const registrationAvailable = computed(() => registration.value?.isRegistrationAvailable === true)
 
 function navigateAfterLogin() {
   const redirectRaw = (route.query.redirect as string) || '/workspace/home'
@@ -112,9 +119,15 @@ onMounted(async () => {
     const providers = await authApi.getProviders()
     githubAvailable.value = providers.gitHub === true
     oidcProviders.value = Array.isArray(providers.oidc) ? providers.oidc : []
-    registration.value = providers.registration ?? null
+    // Fail closed: a missing/malformed/older `registration` payload normalizes to null,
+    // so the Register link only appears when availability is explicitly confirmed.
+    registration.value = normalizeRegistrationAvailability(providers?.registration)
   } catch {
-    // Silently ignore — provider buttons simply won't appear
+    // Silently ignore — provider buttons simply won't appear, and registration stays
+    // unknown (null) so the Register link is withheld.
+    registration.value = null
+  } finally {
+    registrationChecked.value = true
   }
 })
 </script>
@@ -208,8 +221,8 @@ onMounted(async () => {
             </button>
           </form>
 
-          <p class="td-auth-footer">
-            <template v-if="registration?.isRegistrationAvailable !== false">
+          <p v-if="registrationChecked" class="td-auth-footer">
+            <template v-if="registrationAvailable">
               Don't have an account?
               <router-link to="/register" class="td-link">Register</router-link>
             </template>
@@ -309,7 +322,14 @@ onMounted(async () => {
 .td-input:focus {
   outline: none;
   border-color: var(--ember, var(--td-border-focus));
-  box-shadow: 0 0 0 2px var(--ember-bloom, var(--td-focus-ring));
+  /* Whole-property fallback: Legacy (no Paper class) keeps its canonical multi-shadow
+     focus ring. Substituting --td-focus-ring into a color slot would invalidate the
+     whole declaration and drop the ring, so scope the ember bloom ring to Paper only. */
+  box-shadow: var(--td-focus-ring);
+}
+.paper .td-input:focus,
+.paper-night .td-input:focus {
+  box-shadow: 0 0 0 2px var(--ember-bloom);
 }
 
 .td-btn {
@@ -324,7 +344,9 @@ onMounted(async () => {
 
 .td-btn--primary {
   background: var(--ember, var(--td-color-ember-glow));
-  color: var(--td-text-inverse);
+  /* On Paper, --td-on-ember gives a theme-aware on-ember text colour that clears
+     4.5:1 on the ember button (base + hover). Legacy falls back to --td-text-inverse. */
+  color: var(--td-on-ember, var(--td-text-inverse));
 }
 
 .td-btn--primary:hover:not(:disabled) {

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { authApi } from '../api/authApi'
 import { useSessionStore } from '../store/sessionStore'
 import type { RegistrationAvailability } from '../types/auth'
+import { normalizeRegistrationAvailability } from '../utils/registrationAvailability'
 
 const router = useRouter()
 const session = useSessionStore()
@@ -29,7 +30,13 @@ async function loadRegistrationAvailability() {
   registrationStatusError.value = null
   try {
     const providers = await authApi.getProviders()
-    registration.value = providers.registration
+    // Fail closed: a missing/malformed/older `registration` payload normalizes to
+    // null, which surfaces the stable "could not check" notice instead of a dead form.
+    const normalized = normalizeRegistrationAvailability(providers?.registration)
+    registration.value = normalized
+    if (normalized === null) {
+      registrationStatusError.value = 'Could not check whether this Taskdeck instance accepts new accounts.'
+    }
   } catch {
     registration.value = null
     registrationStatusError.value = 'Could not check whether this Taskdeck instance accepts new accounts.'
@@ -262,7 +269,14 @@ onMounted(loadRegistrationAvailability)
 .td-input:focus {
   outline: none;
   border-color: var(--ember, var(--td-border-focus));
-  box-shadow: 0 0 0 2px var(--ember-bloom, var(--td-focus-ring));
+  /* Whole-property fallback: Legacy (no Paper class) keeps its canonical multi-shadow
+     focus ring. Substituting --td-focus-ring into a color slot would invalidate the
+     whole declaration and drop the ring, so scope the ember bloom ring to Paper only. */
+  box-shadow: var(--td-focus-ring);
+}
+.paper .td-input:focus,
+.paper-night .td-input:focus {
+  box-shadow: 0 0 0 2px var(--ember-bloom);
 }
 .td-btn {
   padding: var(--td-space-2) var(--td-space-4);
@@ -275,7 +289,9 @@ onMounted(loadRegistrationAvailability)
 }
 .td-btn--primary {
   background: var(--ember, var(--td-color-ember-glow));
-  color: var(--td-text-inverse);
+  /* On Paper, --td-on-ember gives a theme-aware on-ember text colour that clears
+     4.5:1 on the ember button (base + hover). Legacy falls back to --td-text-inverse. */
+  color: var(--td-on-ember, var(--td-text-inverse));
 }
 .td-btn--secondary {
   border: 1px solid var(--line, var(--td-border-default));
