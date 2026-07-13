@@ -172,6 +172,20 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
 
         boardLogs.Should().Contain(log => log.Action == AuditAction.Created);
         boardLogs.Should().Contain(log => log.Action == AuditAction.Deleted);
+
+        var queriedBoardLogs = (await repo.QueryAsync(
+                DateTimeOffset.UtcNow.AddHours(-1),
+                DateTimeOffset.UtcNow.AddHours(1),
+                boardId: board.Id))
+            .Where(log =>
+                log.EntityType == "SourceArtefact" &&
+                log.EntityId == board.Id &&
+                log.Changes != null &&
+                log.Changes.Contains(created.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        queriedBoardLogs.Should().Contain(log => log.Action == AuditAction.Created);
+        queriedBoardLogs.Should().Contain(log => log.Action == AuditAction.Deleted);
     }
 
     [Fact]
