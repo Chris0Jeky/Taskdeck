@@ -184,7 +184,7 @@ public class UntrustedArtefactFixtureContractTests
     }
 
     [Fact]
-    public void FixtureDirectory_ShouldContainOnlyManifestReferencedFiles()
+    public void FixtureDirectory_ShouldContainOnlyManifestReferencedFilesAndNoSubdirectories()
     {
         using var manifest = ReadManifest();
         var referencedFiles = ReadBoundedCases(manifest.RootElement, "sourceCases")
@@ -192,10 +192,15 @@ public class UntrustedArtefactFixtureContractTests
             .Select(ReadSafeFixtureFileName)
             .Append("manifest.json")
             .ToArray();
+        var nestedDirectories = Directory.EnumerateDirectories(
+            FixtureDirectory(),
+            "*",
+            SearchOption.AllDirectories);
         var actualFiles = Directory.EnumerateFiles(FixtureDirectory(), "*", SearchOption.TopDirectoryOnly)
             .Select(Path.GetFileName)
             .ToArray();
 
+        nestedDirectories.Should().BeEmpty();
         actualFiles.Should().BeEquivalentTo(referencedFiles);
     }
 
