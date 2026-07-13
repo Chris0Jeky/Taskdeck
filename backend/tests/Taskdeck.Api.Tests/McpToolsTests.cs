@@ -270,6 +270,97 @@ public class McpToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateCard_DueDateAndLabelIds_AreAppliedAfterApproval()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var label = await scope.ServiceProvider.GetRequiredService<LabelService>()
+            .CreateLabelAsync(new CreateLabelDto(boardId, "urgent", "#FF0000"));
+        var tools = CreateWriteTools(scope, user.Id);
+
+        var json = await tools.CreateCard(
+            boardId.ToString(),
+            "MCP dated card",
+            colId.ToString(),
+            label_ids: label.Value.Id.ToString(),
+            due_date: "2026-07-14T09:30:00+02:00");
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+
+        await ApproveAndExecuteAsync(scope, user.Id, proposalId);
+
+        var cards = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Cards.GetByBoardIdAsync(boardId);
+        var created = cards.Should().ContainSingle(card => card.Title == "MCP dated card").Subject;
+        created.DueDate.Should().Be(new DateTimeOffset(2026, 7, 14, 7, 30, 0, TimeSpan.Zero));
+        var withLabels = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Cards.GetByIdWithLabelsAsync(created.Id);
+        withLabels!.CardLabels.Should().ContainSingle(cardLabel => cardLabel.LabelId == label.Value.Id);
+    }
+
+    [Fact]
+    public async Task UpdateCard_DueDateLabelIdsAndExplicitClear_AreAppliedAfterApproval()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "MCP update card", null, null, null));
+        var label = await scope.ServiceProvider.GetRequiredService<LabelService>()
+            .CreateLabelAsync(new CreateLabelDto(boardId, "urgent", "#FF0000"));
+        var tools = CreateWriteTools(scope, user.Id);
+
+        var setJson = await tools.UpdateCard(
+            boardId.ToString(),
+            card.Value.Id.ToString(),
+            label_ids: label.Value.Id.ToString(),
+            due_date: "2026-07-20");
+        using (var setDocument = JsonDocument.Parse(setJson))
+            await ApproveAndExecuteAsync(scope, user.Id, setDocument.RootElement.GetProperty("proposalId").GetGuid());
+
+        var afterSet = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Cards.GetByIdWithLabelsAsync(card.Value.Id);
+        afterSet!.DueDate.Should().Be(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero));
+        afterSet.CardLabels.Should().ContainSingle(cardLabel => cardLabel.LabelId == label.Value.Id);
+
+        var clearJson = await tools.UpdateCard(
+            boardId.ToString(),
+            card.Value.Id.ToString(),
+            clear_due_date: true);
+        using (var clearDocument = JsonDocument.Parse(clearJson))
+            await ApproveAndExecuteAsync(scope, user.Id, clearDocument.RootElement.GetProperty("proposalId").GetGuid());
+
+        var afterClear = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Cards.GetByIdAsync(card.Value.Id);
+        afterClear!.DueDate.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("2026-07-14T09:30:00")]
+    [InlineData("07/14/2026")]
+    public async Task CreateCard_OffsetlessOrLocaleDueDate_ReturnsError(string dueDate)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+
+        var json = await CreateWriteTools(scope, user.Id)
+            .CreateCard(boardId.ToString(), "Invalid date", colId.ToString(), due_date: dueDate);
+
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.TryGetProperty("error", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpdateCard_MalformedLabelIds_ReturnsError()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var card = await scope.ServiceProvider.GetRequiredService<CardService>()
+            .CreateCardAsync(new CreateCardDto(boardId, colId, "MCP update card", null, null, null));
+
+        var json = await CreateWriteTools(scope, user.Id)
+            .UpdateCard(boardId.ToString(), card.Value.Id.ToString(), label_ids: $"{Guid.NewGuid()},not-a-guid");
+
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.TryGetProperty("error", out _).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ArchiveCard_ReturnsHighRiskProposal()
     {
         using var scope = _serviceProvider.CreateScope();
@@ -521,5 +612,28 @@ public class McpToolsTests : IDisposable
                 $"All write tools must return proposalId. Got: {json}");
             doc.RootElement.GetProperty("status").GetString().Should().Be("Pending");
         }
+    }
+
+    private static WriteTools CreateWriteTools(IServiceScope scope, Guid userId)
+    {
+        return new WriteTools(
+            scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
+            new McpBoardResourcesTests.FixedUserContextProvider(userId),
+            scope.ServiceProvider.GetRequiredService<ICaptureService>());
+    }
+
+    private static async Task ApproveAndExecuteAsync(IServiceScope scope, Guid userId, Guid proposalId)
+    {
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        (await proposalService.ApproveProposalAsync(proposalId, userId)).IsSuccess.Should().BeTrue();
+        var executor = new AutomationExecutorService(
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>(),
+            proposalService,
+            new AutomationPolicyEngine(scope.ServiceProvider.GetRequiredService<IUnitOfWork>()),
+            scope.ServiceProvider.GetRequiredService<CardService>(),
+            scope.ServiceProvider.GetRequiredService<BoardService>(),
+            scope.ServiceProvider.GetRequiredService<ColumnService>());
+        var result = await executor.ExecuteProposalAsync(proposalId, Guid.NewGuid().ToString());
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
     }
 }

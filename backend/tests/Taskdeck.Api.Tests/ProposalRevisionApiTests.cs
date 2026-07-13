@@ -289,6 +289,85 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
             card.Title == "Dated Card" && card.DueDate == revisedDueDate.ToUniversalTime());
     }
 
+    [Theory]
+    [InlineData("2026-07-14T09:30:00")]
+    [InlineData("07/14/2026")]
+    public async Task RevisedDueDate_InvalidFormat_ShouldFailPreviewAndApply(string dueDate)
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-invalid-due");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-invalid-due-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+        var revisedParameters = JsonSerializer.Serialize(new
+        {
+            title = "Invalid date card",
+            boardId = board.Id,
+            columnId = column.Id,
+            dueDate
+        });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayloadWithParameters(revisedParameters), reason = "invalid date" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task RevisedLabels_MalformedArray_ShouldFailPreview()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-invalid-labels");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-invalid-labels-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+        var revisedParameters = $$"""{"title":"Invalid labels","boardId":"{{board.Id}}","columnId":"{{column.Id}}","labels":["urgent",42]}""";
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayloadWithParameters(revisedParameters), reason = "invalid labels" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task RevisedDueDate_SetAndClear_ShouldFailPreviewWithExactConflict()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-conflicting-due");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-conflicting-due-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+        var revisedParameters = JsonSerializer.Serialize(new
+        {
+            title = "Conflicting date card",
+            boardId = board.Id,
+            columnId = column.Id,
+            dueDate = "2026-07-14",
+            clearDueDate = true
+        });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayloadWithParameters(revisedParameters), reason = "conflicting due date" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+        var error = await diffResponse.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("message").GetString().Should().Be(
+            "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
+    }
+
     [Fact]
     public async Task CreateRevision_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
     {
@@ -305,6 +384,76 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
             new { revisedPayload = BuildRevisionPayload("Edited Card", board.Id, column.Id), reason = "unauthorized" });
 
         await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task RevisedUpdate_CannotRedirectAuthorizedTargetToAnotherUsersCard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var victimClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "rev-scope-update-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(victimClient, "rev-scope-update-victim");
+        var (ownerBoard, ownerColumn) = await CreateBoardWithColumnAsync(ownerClient, "rev-scope-update-owner-board");
+        var (victimBoard, victimColumn) = await CreateBoardWithColumnAsync(victimClient, "rev-scope-update-victim-board");
+        var ownerCard = await CreateCardAsync(ownerClient, ownerBoard.Id, ownerColumn.Id, "Owner card");
+        var victimCard = await CreateCardAsync(victimClient, victimBoard.Id, victimColumn.Id, "Victim card");
+        var proposal = await CreateUpdateProposalAsync(ownerClient, owner.UserId, ownerBoard.Id, ownerCard.Id);
+
+        var revisionResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildUpdateRevisionPayload(ownerCard.Id, victimCard.Id, "Redirected title"),
+                reason = "attempt to redirect the parameter identity"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        (await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await ownerClient.SendAsync(executeRequest);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
+        victimCards.Should().ContainSingle(card => card.Id == victimCard.Id && card.Title == "Victim card");
+    }
+
+    [Fact]
+    public async Task RevisedCreate_CannotRedirectBoardAndColumnToAnotherUsersBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var victimClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "rev-scope-create-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(victimClient, "rev-scope-create-victim");
+        var (ownerBoard, ownerColumn) = await CreateBoardWithColumnAsync(ownerClient, "rev-scope-create-owner-board");
+        var (victimBoard, victimColumn) = await CreateBoardWithColumnAsync(victimClient, "rev-scope-create-victim-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, ownerBoard.Id, ownerColumn.Id);
+
+        var revisionResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildRevisionPayload("Cross-board card", victimBoard.Id, victimColumn.Id),
+                reason = "attempt to redirect create scope"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertForbiddenAsync(diffResponse);
+
+        (await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await ownerClient.SendAsync(executeRequest);
+        await ApiTestHarness.AssertForbiddenAsync(executeResponse);
+
+        var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
+        victimCards.Should().NotContain(card => card.Title == "Cross-board card");
     }
 
     private static async Task<ProposalDto> CreateTestProposalAsync(
@@ -352,6 +501,69 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         return (board, column!);
     }
 
+    private static async Task<CardDto> CreateCardAsync(
+        HttpClient client,
+        Guid boardId,
+        Guid columnId,
+        string title)
+    {
+        var response = await client.PostAsJsonAsync(
+            $"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, columnId, title, null, null, null));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<CardDto>())!;
+    }
+
+    private static async Task<List<CardDto>> ReadCardsAsync(HttpClient client, Guid boardId)
+    {
+        var response = await client.GetAsync($"/api/boards/{boardId}/cards");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<List<CardDto>>())!;
+    }
+
+    private static async Task<ProposalDto> CreateUpdateProposalAsync(
+        HttpClient client,
+        Guid userId,
+        Guid boardId,
+        Guid cardId)
+    {
+        var parameters = JsonSerializer.Serialize(new { cardId, title = "Safe title" });
+        var request = new CreateProposalDto(
+            ProposalSourceType.Chat,
+            userId,
+            "Update one card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            Operations: new List<CreateProposalOperationDto>
+            {
+                new(0, "update", "card", parameters, Guid.NewGuid().ToString(), cardId.ToString())
+            });
+        var response = await client.PostAsJsonAsync("/api/automation/proposals", request);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
+    }
+
+    private static string BuildUpdateRevisionPayload(Guid targetId, Guid parameterCardId, string title)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "card",
+                    targetId = targetId.ToString(),
+                    parameters = JsonSerializer.Serialize(new { cardId = parameterCardId, title }),
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    expectedVersion = (string?)null
+                }
+            }
+        });
+    }
+
     private static string BuildRevisionPayload(
         string title,
         Guid boardId,
@@ -376,6 +588,26 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         };
 
         return JsonSerializer.Serialize(payload);
+    }
+
+    private static string BuildRevisionPayloadWithParameters(string parameters)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 1,
+                    actionType = "create",
+                    targetType = "card",
+                    targetId = (string?)null,
+                    parameters,
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    expectedVersion = (string?)null
+                }
+            }
+        });
     }
 
     private static string BuildCreateCardParameters(

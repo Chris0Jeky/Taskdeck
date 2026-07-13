@@ -1,5 +1,6 @@
-using System.Text.Json;
 using System.Globalization;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Taskdeck.Application.Services.Pipeline;
 
@@ -161,11 +162,28 @@ public static class OperationParameterParser
             return true;
         }
 
-        if (!DateTimeOffset.TryParse(
-                raw,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.RoundtripKind,
-                out var parsed))
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            error = $"Parameter '{parameterName}' must be a valid ISO-8601 date or timestamp";
+            return false;
+        }
+
+        var hasUtcSuffix = raw.EndsWith("Z", StringComparison.OrdinalIgnoreCase);
+        var hasOffsetSuffix = Regex.IsMatch(raw, @"[+-]\d{2}:\d{2}$", RegexOptions.CultureInvariant);
+        if (!hasUtcSuffix && !hasOffsetSuffix)
+        {
+            error = $"Parameter '{parameterName}' must be a valid ISO-8601 timestamp with an explicit UTC or numeric offset";
+            return false;
+        }
+
+        var formats = hasUtcSuffix
+            ? new[] { "yyyy-MM-dd'T'HH:mm:ss'Z'", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'" }
+            : new[] { "yyyy-MM-dd'T'HH:mm:sszzz", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz" };
+        var styles = hasUtcSuffix
+            ? DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal
+            : DateTimeStyles.None;
+
+        if (!DateTimeOffset.TryParseExact(raw, formats, CultureInfo.InvariantCulture, styles, out var parsed))
         {
             error = $"Parameter '{parameterName}' must be a valid ISO-8601 date or timestamp";
             return false;
@@ -208,6 +226,57 @@ public static class OperationParameterParser
         }
 
         values = parsed;
+        return true;
+    }
+
+    public static bool TryGetOptionalGuidArray(
+        JsonElement parameters,
+        string parameterName,
+        out bool wasProvided,
+        out IReadOnlyList<Guid> values,
+        out string error)
+    {
+        values = Array.Empty<Guid>();
+        if (!TryGetOptionalStringArray(parameters, parameterName, out wasProvided, out var rawValues, out error))
+            return false;
+
+        var parsed = new List<Guid>();
+        foreach (var rawValue in rawValues)
+        {
+            if (!Guid.TryParse(rawValue, out var value))
+            {
+                error = $"Parameter '{parameterName}' must contain only valid UUID strings";
+                return false;
+            }
+
+            parsed.Add(value);
+        }
+
+        values = parsed;
+        return true;
+    }
+
+    public static bool TryGetOptionalBoolean(
+        JsonElement parameters,
+        string parameterName,
+        out bool wasProvided,
+        out bool value,
+        out string error)
+    {
+        wasProvided = parameters.TryGetProperty(parameterName, out var property);
+        value = false;
+        error = string.Empty;
+
+        if (!wasProvided)
+            return true;
+
+        if (property.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            error = $"Parameter '{parameterName}' must be a boolean";
+            return false;
+        }
+
+        value = property.GetBoolean();
         return true;
     }
 }

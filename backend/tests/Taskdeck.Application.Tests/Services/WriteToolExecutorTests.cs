@@ -132,6 +132,23 @@ public class WriteToolExecutorTests
             Times.Never);
     }
 
+    [Theory]
+    [InlineData("{\"title\":\"Ship brief\",\"labels\":\"urgent\"}")]
+    [InlineData("{\"title\":\"Ship brief\",\"labels\":[\"urgent\",42]}")]
+    [InlineData("{\"title\":\"Ship brief\",\"labels\":[\"urgent\",\"\"]}")]
+    public async Task ProposeCreateCard_WithMalformedLabels_ReturnsErrorWithoutProposal(string rawArguments)
+    {
+        SetupColumns("Backlog");
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs(rawArguments));
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("labels");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     #endregion
 
     #region ProposeMoveCardExecutor
@@ -282,6 +299,25 @@ public class WriteToolExecutorTests
         var result = await executor.ExecuteAsync(MakeContext(), args);
 
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("cannot both");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData("\"urgent\"")]
+    [InlineData("[\"urgent\",42]")]
+    [InlineData("[\"urgent\",\"\"]")]
+    public async Task ProposeUpdateCard_WithMalformedLabels_ReturnsErrorWithoutProposal(string labelsJson)
+    {
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","labels":{{labelsJson}}}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("labels");
         _proposalService.Verify(
             service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
             Times.Never);

@@ -1135,6 +1135,10 @@ public class AutomationProposalServiceTests
         var cardRepoMock = new Mock<ICardRepository>();
         cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card });
         _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+        var labelRepoMock = new Mock<ILabelRepository>();
+        labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new[] { new Label(boardId, "urgent", "#FF0000") });
+        _unitOfWorkMock.Setup(u => u.Labels).Returns(labelRepoMock.Object);
 
         var result = await _service.GetProposalDiffAsync(proposalId);
 

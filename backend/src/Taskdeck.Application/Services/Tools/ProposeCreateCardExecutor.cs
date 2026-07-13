@@ -52,7 +52,15 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
 
         var columnName = arguments.TryGetProperty("column_name", out var cn) ? cn.GetString() : null;
         var description = arguments.TryGetProperty("description", out var d) ? d.GetString() : null;
-        var labels = ExtractStringArray(arguments, "labels");
+        if (!OperationParameterParser.TryGetOptionalStringArray(
+                arguments, "labels", out _, out var labels, out var labelsError))
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = labelsError,
+                suggestion = "Provide labels as an array of non-empty names"
+            }, ToolJsonOptions.Default);
+        }
         if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
                 arguments, "due_date", out _, out var dueDate, out var dueDateError))
         {
@@ -159,15 +167,4 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
         }, ToolJsonOptions.Default);
     }
 
-    private static string[] ExtractStringArray(JsonElement args, string propertyName)
-    {
-        if (!args.TryGetProperty(propertyName, out var prop) || prop.ValueKind != JsonValueKind.Array)
-            return Array.Empty<string>();
-
-        return prop.EnumerateArray()
-            .Where(e => e.ValueKind == JsonValueKind.String)
-            .Select(e => e.GetString()!)
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .ToArray();
-    }
 }

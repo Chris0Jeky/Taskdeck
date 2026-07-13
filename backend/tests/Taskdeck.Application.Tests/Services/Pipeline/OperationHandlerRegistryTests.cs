@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -174,7 +175,7 @@ public class OperationHandlerRegistryTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("at least one of 'title', 'description', 'dueDate', 'clearDueDate', or 'labels'");
+        result.ErrorMessage.Should().Contain("at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
     }
 
     [Fact]
@@ -234,6 +235,37 @@ public class OperationHandlerRegistryTests
 
         (await _registry.ExecuteOperationAsync(clearOperation, default)).IsSuccess.Should().BeTrue();
         card.DueDate.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("2026-07-14T09:30:00")]
+    [InlineData("07/14/2026")]
+    public async Task ExecuteOperationAsync_ShouldRejectOffsetlessOrLocaleDueDate(string dueDate)
+    {
+        var cardId = Guid.NewGuid();
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "update", "card", cardId.ToString(),
+            JsonSerializer.Serialize(new { cardId, dueDate }), "invalid-due", null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("offset");
+    }
+
+    [Fact]
+    public async Task ExecuteOperationAsync_ShouldRejectDueDateAndClearAsMutuallyExclusive()
+    {
+        var cardId = Guid.NewGuid();
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "update", "card", cardId.ToString(),
+            JsonSerializer.Serialize(new { cardId, dueDate = "2026-07-14", clearDueDate = true }), "conflicting-due", null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
     }
 
     [Fact]

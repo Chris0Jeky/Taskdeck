@@ -125,8 +125,17 @@ public class OperationHandlerRegistry
         if (!OperationParameterParser.TryGetOptionalStringArray(
                 parameters, "labels", out var labelsProvided, out var labelNames, out var labelsError))
             return Result.Failure(ErrorCodes.ValidationError, labelsError);
+        if (!OperationParameterParser.TryGetOptionalGuidArray(
+                parameters, "labelIds", out var labelIdsProvided, out var suppliedLabelIds, out var labelIdsError))
+            return Result.Failure(ErrorCodes.ValidationError, labelIdsError);
 
-        var labelResolution = await ResolveLabelNamesAsync(boardId, labelsProvided, labelNames, cancellationToken);
+        var labelResolution = await ResolveLabelsAsync(
+            boardId,
+            labelsProvided,
+            labelNames,
+            labelIdsProvided,
+            suppliedLabelIds,
+            cancellationToken);
         if (!labelResolution.IsSuccess)
             return Result.Failure(labelResolution.ErrorCode, labelResolution.ErrorMessage);
 
@@ -148,30 +157,40 @@ public class OperationHandlerRegistry
                 parameters, "dueDate", out var dueDateProvided, out var dueDate, out var dueDateError))
             return Result.Failure(ErrorCodes.ValidationError, dueDateError);
 
-        if (!TryGetClearDueDate(parameters, out var clearDueDate, out var clearDueDateError))
+        if (!OperationParameterParser.TryGetOptionalBoolean(
+                parameters, "clearDueDate", out _, out var clearDueDate, out var clearDueDateError))
             return Result.Failure(ErrorCodes.ValidationError, clearDueDateError);
 
         if (dueDate.HasValue && clearDueDate)
-            return Result.Failure(ErrorCodes.ValidationError, "Parameters 'dueDate' and 'clearDueDate' cannot both set a due date");
+            return Result.Failure(ErrorCodes.ValidationError, "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
 
         if (!OperationParameterParser.TryGetOptionalStringArray(
                 parameters, "labels", out var labelsProvided, out var labelNames, out var labelsError))
             return Result.Failure(ErrorCodes.ValidationError, labelsError);
+        if (!OperationParameterParser.TryGetOptionalGuidArray(
+                parameters, "labelIds", out var labelIdsProvided, out var suppliedLabelIds, out var labelIdsError))
+            return Result.Failure(ErrorCodes.ValidationError, labelIdsError);
 
         var shouldClearDueDate = clearDueDate || (dueDateProvided && !dueDate.HasValue);
-        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided)
+        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided && !labelIdsProvided)
             return Result.Failure(
                 ErrorCodes.ValidationError,
-                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', or 'labels'");
+                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
 
         List<Guid>? labelIds = null;
-        if (labelsProvided)
+        if (labelsProvided || labelIdsProvided)
         {
             var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
             if (card == null)
                 return Result.Failure(ErrorCodes.NotFound, $"Card {cardId} not found");
 
-            var labelResolution = await ResolveLabelNamesAsync(card.BoardId, labelsProvided, labelNames, cancellationToken);
+            var labelResolution = await ResolveLabelsAsync(
+                card.BoardId,
+                labelsProvided,
+                labelNames,
+                labelIdsProvided,
+                suppliedLabelIds,
+                cancellationToken);
             if (!labelResolution.IsSuccess)
                 return Result.Failure(labelResolution.ErrorCode, labelResolution.ErrorMessage);
 
@@ -270,16 +289,31 @@ public class OperationHandlerRegistry
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 
-    private async Task<Result<List<Guid>?>> ResolveLabelNamesAsync(
+    private async Task<Result<List<Guid>?>> ResolveLabelsAsync(
         Guid boardId,
-        bool labelsProvided,
+        bool namesProvided,
         IReadOnlyList<string> labelNames,
+        bool idsProvided,
+        IReadOnlyList<Guid> suppliedLabelIds,
         CancellationToken cancellationToken)
     {
-        if (!labelsProvided)
+        if (!namesProvided && !idsProvided)
             return Result.Success<List<Guid>?>(null);
+        if (namesProvided && idsProvided)
+            return Result.Failure<List<Guid>?>(ErrorCodes.ValidationError, "Provide exactly one of 'labels' or 'labelIds'");
 
         var labels = (await _unitOfWork.Labels.GetByBoardIdAsync(boardId, cancellationToken)).ToList();
+        if (idsProvided)
+        {
+            foreach (var labelId in suppliedLabelIds.Distinct())
+            {
+                if (labels.All(candidate => candidate.Id != labelId))
+                    return Result.Failure<List<Guid>?>(ErrorCodes.NotFound, "Label was not found on the card's board");
+            }
+
+            return Result.Success<List<Guid>?>(suppliedLabelIds.Distinct().ToList());
+        }
+
         var resolvedIds = new List<Guid>();
         foreach (var labelName in labelNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
@@ -292,23 +326,6 @@ public class OperationHandlerRegistry
         }
 
         return Result.Success<List<Guid>?>(resolvedIds);
-    }
-
-    private static bool TryGetClearDueDate(JsonElement parameters, out bool clearDueDate, out string error)
-    {
-        clearDueDate = false;
-        error = string.Empty;
-        if (!parameters.TryGetProperty("clearDueDate", out var property))
-            return true;
-
-        if (property.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-        {
-            error = "Parameter 'clearDueDate' must be a boolean";
-            return false;
-        }
-
-        clearDueDate = property.GetBoolean();
-        return true;
     }
 
     private async Task<Result> ExecuteBoardOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)

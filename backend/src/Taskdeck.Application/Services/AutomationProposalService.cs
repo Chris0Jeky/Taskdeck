@@ -402,6 +402,14 @@ public class AutomationProposalService : IAutomationProposalService
                 return Result.Failure<string>(ErrorCodes.ValidationError, errorMessage);
             }
 
+            var revisedValidation = await ProposalOperationContractValidator.ValidateAsync(
+                _unitOfWork,
+                proposal.BoardId,
+                revisedOperations,
+                cancellationToken);
+            if (!revisedValidation.IsSuccess)
+                return Result.Failure<string>(revisedValidation.ErrorCode, revisedValidation.ErrorMessage);
+
             var revisedViews = revisedOperations
                 .OrderBy(o => o.Sequence)
                 .Select(o => new DiffOperationView(o.Sequence, o.ActionType, o.TargetType, o.TargetId, o.Parameters))
@@ -411,14 +419,29 @@ public class AutomationProposalService : IAutomationProposalService
             return Result.Success(revisedDiff);
         }
 
+        if (proposal.Operations.Count == 0)
+        {
+            return !string.IsNullOrWhiteSpace(proposal.DiffPreview)
+                ? Result.Success(proposal.DiffPreview)
+                : Result.Failure<string>(ErrorCodes.NotFound, "Diff preview not available for this proposal");
+        }
+
+        var originalOperations = proposal.Operations
+            .OrderBy(o => o.Sequence)
+            .Select(MapOperationToDto)
+            .ToList();
+        var originalValidation = await ProposalOperationContractValidator.ValidateAsync(
+            _unitOfWork,
+            proposal.BoardId,
+            originalOperations,
+            cancellationToken);
+        if (!originalValidation.IsSuccess)
+            return Result.Failure<string>(originalValidation.ErrorCode, originalValidation.ErrorMessage);
+
         if (!string.IsNullOrWhiteSpace(proposal.DiffPreview))
             return Result.Success(proposal.DiffPreview);
 
-        if (proposal.Operations.Count == 0)
-            return Result.Failure<string>(ErrorCodes.NotFound, "Diff preview not available for this proposal");
-
-        var orderedViews = proposal.Operations
-            .OrderBy(o => o.Sequence)
+        var orderedViews = originalOperations
             .Select(o => new DiffOperationView(o.Sequence, o.ActionType, o.TargetType, o.TargetId, o.Parameters))
             .ToList();
 
