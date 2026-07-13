@@ -53,26 +53,30 @@ describe('PaperTodayView', () => {
     vi.useRealTimers()
   })
 
-  it('smoke renders the dossier with all 9 sections present', () => {
+  it('renders live sections and honest empty states for unavailable dossier queries', () => {
     const wrapper = mount(PaperTodayView)
 
     expect(wrapper.find('[data-paper-today]').exists()).toBe(true)
+    expect(wrapper.find('[data-section="cover"]').exists()).toBe(true)
+    expect(wrapper.find('[data-section="line-for-tomorrow"]').exists()).toBe(true)
 
-    // Sections we expect to land on the page (exposed via data-section)
-    const expected = [
-      'cover',
-      'stats',
-      'cadence',
-      'ledger',
-      'decisions',
-      'boards',
-      'carry-over',
-      'streak',
-      'line-for-tomorrow',
-    ]
-    for (const section of expected) {
-      expect(wrapper.find(`[data-section="${section}"]`).exists()).toBe(true)
+    for (const section of ['stats', 'cadence', 'ledger', 'decisions', 'boards', 'carry-over', 'streak']) {
+      expect(wrapper.find(`[data-empty-state="${section}"]`).exists()).toBe(true)
     }
+  })
+
+  it('does not render any formerly fabricated dossier claims or a fake pin action', () => {
+    const wrapper = mount(PaperTodayView)
+    const text = wrapper.text()
+
+    expect(text).toContain('Today, at a glance.')
+    expect(text).toContain('No events are being invented')
+    expect(text).not.toContain('A quiet Saturday')
+    expect(text).not.toContain('haiku')
+    expect(text).not.toContain('Sprint 12')
+    expect(text).not.toContain('2h 14m')
+    expect(text).not.toContain('C-072')
+    expect(wrapper.find('[data-action="pin-tomorrow"]').exists()).toBe(false)
   })
 
   it('renders the dossier serial in the cover and footer', () => {
