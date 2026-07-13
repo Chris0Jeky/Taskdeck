@@ -289,6 +289,28 @@ public class WriteToolExecutorTests
     }
 
     [Fact]
+    public async Task ProposeUpdateCard_WithNullDueDate_TreatsItAsOmitted()
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs(
+            $$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","title":"Keep due date","due_date":null}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        using var resultDocument = JsonDocument.Parse(result);
+        resultDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        resultDocument.RootElement.GetProperty("summary").GetString().Should().NotContain("clear due date");
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("title").GetString().Should().Be("Keep due date");
+        parameters.RootElement.TryGetProperty("dueDate", out _).Should().BeFalse();
+        parameters.RootElement.TryGetProperty("clearDueDate", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ProposeUpdateCard_WithDueDateAndClear_ReturnsErrorWithoutProposal()
     {
         var card = CreateCard("Dated card");

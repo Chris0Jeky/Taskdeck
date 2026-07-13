@@ -72,6 +72,12 @@ public sealed class ProposeUpdateCardExecutor : IToolExecutor
             }, ToolJsonOptions.Default);
         }
 
+        // Tool-call serializers commonly include optional properties as null.
+        // Clearing remains an explicit action through clear_due_date; a null
+        // due_date therefore has omission semantics at this public boundary.
+        if (hasDueDate && arguments.GetProperty("due_date").ValueKind == JsonValueKind.Null)
+            hasDueDate = false;
+
         var clearDueDate = false;
         if (arguments.TryGetProperty("clear_due_date", out var clearDueDateProperty))
         {

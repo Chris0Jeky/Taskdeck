@@ -12,7 +12,7 @@ Entry points:
 Card operations:
 
 - `create`: `boardId`, `columnId`, `title`; optional `description`, `dueDate`, and exactly one replacement-label representation: name array `labels` or UUID-string array `labelIds`.
-- `update`: `cardId`; at least one of `title`, `description`, `dueDate`, `clearDueDate`, `labels`, or `labelIds`. An explicit null `dueDate` also clears it. `dueDate` and a true `clearDueDate` are mutually exclusive.
+- `update`: `cardId`; at least one of `title`, `description`, `dueDate`, `clearDueDate`, `labels`, or `labelIds`. At the operation-payload layer, an explicit null `dueDate` clears it. The chat tool treats `due_date: null` as omitted and emits clearing only for `clear_due_date: true`. `dueDate` and a true `clearDueDate` are mutually exclusive.
 - `move`: `cardId`, `columnId`.
 - `archive`: `cardId`.
 - `add-label` / `remove-label`: `cardId` plus exactly one of board-scoped `labelId` or `labelName`. Separator-free and underscore aliases remain accepted at apply time for existing callers.
