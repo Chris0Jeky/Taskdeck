@@ -20,6 +20,7 @@ public sealed class PlainTextArtefactTextExtractor : IArtefactTextExtractor
 
     public string ExtractorName => "PlainText";
     public string ExtractorVersion => "1.0";
+    public long InputByteLimit => MaxInputBytes;
 
     public bool CanExtract(string mimeType)
     {

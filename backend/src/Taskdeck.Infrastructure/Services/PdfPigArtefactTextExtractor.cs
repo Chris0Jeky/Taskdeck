@@ -20,6 +20,7 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
 
     public string ExtractorName => "PdfPig";
     public string ExtractorVersion => "0.1.15";
+    public long InputByteLimit => MaxInputBytes;
 
     public bool CanExtract(string mimeType)
     {

@@ -10,6 +10,7 @@ public interface IArtefactTextExtractor
 {
     string ExtractorName { get; }
     string ExtractorVersion { get; }
+    long InputByteLimit { get; }
 
     bool CanExtract(string mimeType);
 

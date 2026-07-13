@@ -68,7 +68,8 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 $"No local text extractor supports MIME type '{artefact.MimeType}'");
         }
         if (!HasValidIdentity(extractor.ExtractorName, ArtefactExtraction.MaxExtractorNameLength) ||
-            !HasValidIdentity(extractor.ExtractorVersion, ArtefactExtraction.MaxExtractorVersionLength))
+            !HasValidIdentity(extractor.ExtractorVersion, ArtefactExtraction.MaxExtractorVersionLength) ||
+            extractor.InputByteLimit is <= 0 or > int.MaxValue)
         {
             _logger?.LogError(
                 "Artefact extractor registration has invalid identity for artefact {ArtefactId}",
@@ -78,39 +79,58 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 "The selected artefact extractor is misconfigured");
         }
 
-        var content = await _artefacts.GetContentForUserAsync(
-            sourceArtefactId,
-            userId,
-            cancellationToken);
-        if (content is null)
+        ArtefactExtractionResult? extractorResult = artefact.ByteSize > extractor.InputByteLimit
+            ? WarningResult(extractor, ArtefactExtractionWarningCodes.InputTooLarge)
+            : null;
+        if (extractorResult is null)
         {
-            return Result.Failure<ArtefactExtractionDto>(
-                ErrorCodes.NotFound,
-                "Artefact not found");
-        }
+            await using var stream = new BoundedMemoryStream(extractor.InputByteLimit);
+            var contentFound = false;
+            try
+            {
+                contentFound = await _artefacts.CopyContentForUserAsync(
+                    sourceArtefactId,
+                    userId,
+                    stream,
+                    cancellationToken);
+            }
+            catch (ExtractionInputTooLargeException)
+            {
+                extractorResult = WarningResult(
+                    extractor,
+                    ArtefactExtractionWarningCodes.InputTooLarge);
+            }
 
-        ArtefactExtractionResult extractorResult;
-        try
-        {
-            await using var stream = new MemoryStream(content, writable: false);
-            extractorResult = await extractor.ExtractAsync(stream, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(
-                ex,
-                "Local extraction failed for artefact {ArtefactId} with extractor {ExtractorName}",
-                sourceArtefactId,
-                extractor.ExtractorName);
-            extractorResult = new ArtefactExtractionResult(
-                string.Empty,
-                [ArtefactExtractionWarningCodes.ExtractorError],
-                extractor.ExtractorName,
-                extractor.ExtractorVersion);
+            if (extractorResult is null)
+            {
+                if (!contentFound)
+                {
+                    return Result.Failure<ArtefactExtractionDto>(
+                        ErrorCodes.NotFound,
+                        "Artefact not found");
+                }
+
+                stream.Position = 0;
+                try
+                {
+                    extractorResult = await extractor.ExtractAsync(stream, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(
+                        ex,
+                        "Local extraction failed for artefact {ArtefactId} with extractor {ExtractorName}",
+                        sourceArtefactId,
+                        extractor.ExtractorName);
+                    extractorResult = WarningResult(
+                        extractor,
+                        ArtefactExtractionWarningCodes.ExtractorError);
+                }
+            }
         }
 
         var sanitized = SanitizeResult(extractor, extractorResult);
@@ -225,6 +245,15 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
            value.Length <= maxLength &&
            !value.Any(char.IsControl);
 
+    private static ArtefactExtractionResult WarningResult(
+        IArtefactTextExtractor extractor,
+        string warning)
+        => new(
+            string.Empty,
+            [warning],
+            extractor.ExtractorName,
+            extractor.ExtractorVersion);
+
     private static ArtefactExtractionDto Map(ArtefactExtraction extraction)
         => new(
             extraction.Id,
@@ -235,4 +264,59 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
             extraction.ExtractedText,
             extraction.TextLength,
             extraction.CreatedAt);
+
+    private sealed class BoundedMemoryStream : MemoryStream
+    {
+        private readonly long _maxBytes;
+
+        public BoundedMemoryStream(long maxBytes)
+            : base(capacity: (int)Math.Min(maxBytes, 64 * 1024))
+        {
+            _maxBytes = maxBytes;
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            EnsureWithinLimit(count);
+            base.Write(buffer, offset, count);
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            EnsureWithinLimit(buffer.Length);
+            base.Write(buffer);
+        }
+
+        public override Task WriteAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            EnsureWithinLimit(count);
+            return base.WriteAsync(buffer, offset, count, cancellationToken);
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureWithinLimit(buffer.Length);
+            return base.WriteAsync(buffer, cancellationToken);
+        }
+
+        public override void WriteByte(byte value)
+        {
+            EnsureWithinLimit(1);
+            base.WriteByte(value);
+        }
+
+        private void EnsureWithinLimit(int count)
+        {
+            if (Position > _maxBytes - count)
+                throw new ExtractionInputTooLargeException();
+        }
+    }
+
+    private sealed class ExtractionInputTooLargeException : IOException;
 }

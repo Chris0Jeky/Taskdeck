@@ -36,9 +36,9 @@ public sealed class PdfPigArtefactExtractionTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldReportNoTextLayerForBlankPdf()
+    public async Task ExtractAsync_ShouldReportNoTextLayerForImageOnlyPdf()
     {
-        var pdf = BuildPdf([null]);
+        var pdf = BuildImageOnlyPdf();
         await using var stream = new MemoryStream(pdf);
 
         var result = await _extractor.ExtractAsync(stream);
@@ -104,6 +104,18 @@ public sealed class PdfPigArtefactExtractionTests
                 page.AddText(text, 12, new PdfPoint(40, 780), font);
         }
 
+        return builder.Build();
+    }
+
+    private static byte[] BuildImageOnlyPdf()
+    {
+        const string onePixelPng =
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        var builder = new PdfDocumentBuilder();
+        var page = builder.AddPage(PageSize.A4);
+        page.AddPng(
+            Convert.FromBase64String(onePixelPng),
+            new PdfRectangle(40, 700, 140, 800));
         return builder.Build();
     }
 }
