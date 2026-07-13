@@ -107,7 +107,7 @@ Amend #1278: the archive exit criteria become the **v0.1 public ship gate** (sam
 3. Triage schema v2: item type (action/decision/question), assigneeHint, dueDateHint; real per-item model-reported confidence replacing the hardcoded 0.8/0.75.
 4. Durable `Transcript` entity + implement the declared-but-empty `SourceSpan`/`EvidenceLink` vocabulary → **every proposed card deep-links to the transcript span that justified it** (the trust-gate UX no incumbent has).
 5. `OpenAICompatible` named provider (formalizes OpenRouter/Groq/DeepSeek; one true-SSE streaming implementation covers all of them).
-6. Risk-tiered approvals: opt-in auto-apply for low-risk proposals using the existing risk classification (answers the over-gating/rubber-stamping critique from the HITL literature).
+6. Risk-tiered review ergonomics: use the existing risk classification to prioritize the review queue and offer explicit batch-confirm flows for low-risk proposals, while preserving ADR-0003's separate approve-then-execute gate for every board write (answers the over-gating/rubber-stamping critique without introducing auto-apply).
 7. Audio upload + local WhisperX sidecar worker = Phase 2b, **only after** transcript-paste proves value in dogfooding (the multipart-upload pattern exists via `ExportController`; audio infra is otherwise net-new — verified).
 *Done when:* a real 45-min meeting transcript produces reviewable, evidence-linked, typed action items you actually approve onto your own board.
 

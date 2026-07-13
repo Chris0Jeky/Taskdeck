@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-07-10
+Last Updated: 2026-07-13
 
 **Status:** Active planning spine (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot).
 **Authority:** work not on this plan's ratified wave list is, by definition, not taken (the finite-work discipline from `COURSE_CORRECTION.md` §1.1 carries over unchanged). New backend surface is allowed only where §7 grants it.
@@ -44,7 +44,7 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 | **v0.1 "First Light"** | Phase 1 complete: honest surfaces, safe public defaults, exercised release pipeline, welcoming README/onboarding | §6 ship gate |
 | **v0.2 "Transcript Engine"** | Phase 2 complete: LLM transcript triage with evidence spans, OpenAI-compatible provider, risk-tiered approvals | a real 45-min transcript → reviewable, evidence-linked, typed action items on the maintainer's own board |
 | **v0.3 "Open Beta"** | Phase 3 complete: slimmed surface, MCP packaged, feedback channel live, launched | launch executed; 48h response presence done |
-| **Checkpoint (~8 weeks from start)** | Traction + dogfooding review | continue toward the commercial ADR, or fall back to the archive plan (kept intact) |
+| **Checkpoint (~8 weeks from start)** | Traction + dogfooding review | fall back only if both are absent; mixed outcomes require an explicit maintainer plan amendment |
 
 ## 4. Phases and waves (the issue map)
 
@@ -65,7 +65,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | Self-host Paper fonts + favicon + theme-color | REVIVAL-04 | verified: Fraunces/Inter/JetBrains Mono never load |
 | Paper onboarding: guided first-board path + Login/Register in Paper | REVIVAL-05 | verified: setup modal unreachable from any Paper surface |
 | README revival rewrite + demo GIF + MCP section | REVIVAL-06 | removes archive messaging ×3, fills the GIF slot |
-| v0.1.0 release: dispatch pipeline, fix breakage, GHCR **+ Docker Hub** images, fix render.yaml, UPGRADING.md + pre-migration auto-backup | REVIVAL-07 | folds #1123 + #1139; Docker Hub because GHCR exposes no public pull counts |
+| v0.1.0 release: dispatch pipeline, fix breakage, publish the GHCR image, fix render.yaml, UPGRADING.md + pre-migration auto-backup | REVIVAL-07 | folds #1123 + #1139; matches ADR-0044's required image channel |
 | De-stub Today dossier or honest empty states | #1272 (unchanged) | the flagship screen must not lie |
 | Re-point E2E + axe at Paper | #1274 (unchanged) | the default UI is currently the least-tested |
 | CI keep/kill/gate pass | #1275 (unchanged) | zero always-red lanes |
@@ -77,7 +77,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | LLM transcript triage (epic): strategy behind `ICaptureTriageService` for transcript sources, worker dispatch branch, chunked map-reduce, cap raise, triage schema v2 (type/assignee/due), deterministic fallback | REVIVAL-08 | the WhisperX payoff; seam verified in the assessment |
 | Durable `Transcript` entity + evidence spans (`SourceSpan`/`EvidenceLink`) → every proposed card deep-links to its transcript span | REVIVAL-09 | the trust-gate UX no incumbent has |
 | `OpenAICompatible` named provider + true SSE streaming | REVIVAL-10 | formalizes OpenRouter/Groq/DeepSeek; fixes fake streaming |
-| Risk-tiered opt-in auto-apply + model-derived confidence (replace hardcoded 0.8/0.75) | REVIVAL-11 | answers the over-gating/rubber-stamping critique; makes the confidence UI honest |
+| Risk-tiered review prioritization + batch-confirm ergonomics + model-derived confidence (replace hardcoded 0.8/0.75) | REVIVAL-11 | reduces rubber-stamping without bypassing ADR-0003: every proposed board write still requires explicit approve, then explicit execute; no standing policy or confidence threshold may auto-apply it |
 | Audio upload + local WhisperX sidecar | REVIVAL-08 phase 2b | **gated on transcript-paste proving value in dogfooding** |
 
 ### Phase 3 — slim + launch (v0.3)
@@ -117,9 +117,9 @@ Authorized: REVIVAL-01 (registration gate), REVIVAL-08/-09/-10/-11 (transcript e
 
 ## 8. Metrics and the checkpoint
 
-Tracked without invasive telemetry: GitHub stars + unique Discussion/issue participants per month + issues-to-stars ratio; Docker Hub pull counts + GitHub Releases download counts (GHCR has no public counts); opt-in ping count as a clearly-labeled lower bound on active installs; local-only activation milestones (first capture, first approved proposal, first board apply) shown to the user as an onboarding checklist and included in the opt-in ping only as an aggregate boolean.
+Tracked without invasive telemetry: GitHub stars + unique Discussion/issue participants per month + issues-to-stars ratio; GitHub Release download counts for the self-contained executable; opt-in ping count as a clearly-labeled lower bound on active installs; local-only activation milestones (first capture, first approved proposal, first board apply) shown to the user as an onboarding checklist and included in the opt-in ping only as an aggregate boolean. GHCR image pulls are not used as a checkpoint metric because the plan does not depend on a public registry counter.
 
-**Checkpoint (~8 weeks from Phase 0):** continue toward the commercial ADR if there is *any* organic traction signal (real users filing issues/discussions, meaningful pulls/downloads, HN/Reddit engagement) **and** the maintainer's own dogfooding has stuck. Otherwise fall back to the archive plan (`COURSE_CORRECTION.md` §4), which Phase 1 leaves ~90% complete.
+**Checkpoint (~8 weeks from Phase 0):** fall back to the archive plan (`COURSE_CORRECTION.md` §4) only if the beta shows **no organic traction** (real users filing issues/discussions, meaningful downloads, HN/Reddit engagement) **and** the maintainer's own dogfooding has not stuck. Any mixed outcome requires an explicit maintainer assessment and plan amendment rather than an automatic archive decision. Phase 1 leaves the fallback ~90% complete.
 
 ## 9. Risks (named, accepted)
 
