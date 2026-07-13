@@ -52,4 +52,3 @@ project. Descriptive references to the project remain permitted as applicable
 law allows.
 
 No trademark registration or availability claim is made in this document.
-
