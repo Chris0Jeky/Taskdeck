@@ -69,7 +69,7 @@ function buildSummary(overrides?: Partial<HomeSummary>): HomeSummary {
       proposalsPendingReview: 0,
     },
     boards: {
-      totalBoards: 0,
+      totalBoards: 1,
       recentBoardsCount: 0,
       recentBoards: [],
     },
@@ -201,6 +201,74 @@ describe('PaperHomeView', () => {
       expect(wrapper.find('[data-testid="paper-home-empty"]').text()).toContain('Nothing waiting')
       expect(wrapper.find('[data-testid="paper-home-card-proposal"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="paper-home-card-carryover"]').exists()).toBe(false)
+    })
+
+    it('opens the reused setup flow when a fresh user has no boards', async () => {
+      mockWorkspaceStore.homeSummary = buildSummary({
+        boards: {
+          totalBoards: 0,
+          recentBoardsCount: 0,
+          recentBoards: [],
+        },
+      })
+      const wrapper = mount(PaperHomeView, {
+        global: {
+          stubs: {
+            Teleport: true,
+            WorkspaceSetupModal: {
+              template: '<div data-testid="workspace-setup-modal-stub" />',
+            },
+          },
+        },
+      })
+
+      expect(wrapper.find('[data-testid="paper-home-first-board"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="paper-home-empty"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="paper-home-setup-cta"]').trigger('click')
+
+      expect(wrapper.find('[data-testid="workspace-setup-modal-stub"]').exists()).toBe(true)
+    })
+
+    it('shows the local first-loop milestones and completion state', () => {
+      mockWorkspaceStore.homeSummary = buildSummary({
+        onboarding: {
+          visibility: 'active',
+          isComplete: false,
+          currentStepId: 'capture',
+          dismissedAt: null,
+          completedAt: null,
+          steps: [
+            {
+              stepId: 'capture',
+              title: 'Capture something',
+              description: 'Put one thought in the inbox.',
+              targetSurface: 'capture',
+              isComplete: true,
+            },
+            {
+              stepId: 'review',
+              title: 'Review a proposal',
+              description: 'Decide before anything changes.',
+              targetSurface: 'review',
+              isComplete: false,
+            },
+            {
+              stepId: 'apply',
+              title: 'Apply to a board',
+              description: 'Send approved work to its board.',
+              targetSurface: 'board',
+              isComplete: false,
+            },
+          ],
+        },
+      })
+
+      const wrapper = mount(PaperHomeView)
+
+      expect(wrapper.get('[data-testid="paper-home-milestones"]').text()).toContain('1/3 complete')
+      expect(wrapper.findAll('.paper-home__milestone')).toHaveLength(3)
+      expect(wrapper.findAll('.paper-home__milestone--complete')).toHaveLength(1)
+      expect(wrapper.text()).toContain('not sent as analytics')
     })
 
     it('only marks proposal entries with the ember halo, not carry-overs', () => {
