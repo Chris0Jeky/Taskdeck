@@ -3,7 +3,7 @@
 Last Updated: 2026-07-13
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
-> **⚠️ Revival override (2026-07-10, ADR-0044).** The active sequence is the ratified REVIVAL wave in `docs/REVIVAL_PLAN.md`: truth + safety before strangers → transcript engine → bounded open-beta launch → checkpoint. The 2026-06-13 archive sequence is superseded and retained only as the checkpoint fallback. Treat the `Priority I`–`V`, Phase-4, and expansion tranches below as historical framing; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Where the Start Protocol says "pick the highest-priority issue," read that as **the next dependency-ready item admitted by the REVIVAL wave**, not the historical tranches. When this guide and `docs/STATUS.md`/`docs/REVIVAL_PLAN.md` conflict, those active documents win.
+> **⚠️ Revival override (2026-07-10, ADR-0044).** The active sequence is the ratified REVIVAL wave in `docs/REVIVAL_PLAN.md`: truth + safety before strangers → transcript engine → bounded open-beta launch → generalist expansion (Phase 4) → checkpoint. The 2026-06-13 archive sequence is superseded and retained only as the checkpoint fallback. ADR-0046's Phase-4 generalist expansion (Accepted 2026-07-13, tracker GEN-00 `#1327`) stays strictly subordinate to the v0.1 ship gate; the twin generalist app remains deferred behind the GEN-12 `#1326` evidence gate. Treat the `Priority I`–`V`, Phase-4, and expansion tranches below as historical framing; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Where the Start Protocol says "pick the highest-priority issue," read that as **the next dependency-ready item admitted by the REVIVAL/authorized GEN wave**, not the historical tranches. When this guide and `docs/STATUS.md`/`docs/REVIVAL_PLAN.md` conflict, those active documents win.
 
 ## Purpose
 
@@ -28,7 +28,7 @@ Use this file when starting backlog work. It prevents out-of-order development a
 
 ## Priority Model (historical framing — see the revival override above)
 
-> _(The Phase-4 / post-Phase-4 / Expansion tranches below are historical. Active sequencing is the dependency-ready REVIVAL wave in `docs/REVIVAL_PLAN.md`; this section remains for continuity only.)_
+> _(The Phase-4 / post-Phase-4 / Expansion tranches below are historical framing that predates the revival plan. Active sequencing is the dependency-ready REVIVAL wave in `docs/REVIVAL_PLAN.md`; this section remains for historical continuity and label semantics only.)_
 
 - `Priority I`: Current Phase 4 completion path and blockers.
 - `Priority II`: Immediate post-Phase-4 foundation work, including novice-first productization.

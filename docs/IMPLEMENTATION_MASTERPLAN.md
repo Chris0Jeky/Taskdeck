@@ -1,8 +1,8 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-07-10
+Last Updated: 2026-07-13
 <br>
-Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
+Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -20,14 +20,15 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 
 **The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. Everything shipped under MIT stays MIT — no retroactive relicensing (ADR-0044 Decision 3).
 
-The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), plus the other scoped exceptions enumerated in the plan's §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. The finite-work discipline from `COURSE_CORRECTION.md` carries over — work not on the ratified wave list is, by definition, not taken.
+The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is deferred behind the GEN-12 `#1326` evidence gate), plus the other scoped exceptions enumerated in the plan's §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 grants it (Phase-2 grants per ADR-0044; Phase-4 grants per ADR-0046). The finite-work discipline from `COURSE_CORRECTION.md` carries over — work not on the ratified wave list is, by definition, not taken.
 
 Goals, in order:
 
 1. **Truth + safety before strangers** — de-stub the fabricated Today dossier (`#1272`), remove the fake undo affordance, gate registration, protect main, ship v0.1.0 through the never-exercised release pipeline, make the README/onboarding/fonts honest and welcoming (REVIVAL wave, Phase 1).
 2. **The transcript engine** — LLM-backed triage for transcript sources behind `ICaptureTriageService`, durable Transcript entity, evidence-span deep links, OpenAI-compatible provider, risk-tiered approvals (REVIVAL wave, Phase 2).
 3. **Open-beta launch** — dead-surface amputation, MCP packaging, privacy-respecting feedback channel, launch (REVIVAL wave, Phase 3).
-4. **Checkpoint** — fall back to archive only if there is no organic traction and dogfooding has not stuck; any mixed outcome requires an explicit maintainer assessment/plan amendment.
+4. **Generalist expansion** (ADR-0046) — artefact intake (screenshots/PDFs/files → extraction → the review-first triage lane), per-board dossiers from approved state, mode-scoped generalist legibility, friends-family beta channel (GEN wave, Phase 4 — strictly subordinate to the v0.1 ship gate).
+5. **Checkpoint** — re-evaluate on adoption/feedback + friends-family signals; fall back to archive only if there is no organic traction and dogfooding has not stuck, and any mixed outcome requires an explicit maintainer assessment/plan amendment; record the GEN-12 twin-app gate decision.
 
 ## Direction (2026-06-13, superseded 2026-07-10): finish-for-personal-use → archive
 

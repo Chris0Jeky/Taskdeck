@@ -7,6 +7,7 @@ Last Updated: 2026-07-13
 **Evidence base:** `docs/analysis/2026-07-10_revival_assessment.md` (7 code-review dimensions, ~25 adversarially verified claims; market research with live-verified competitor data) plus the 2026-07-10 business research (monetization/licensing/beta-mechanics; sources cited inline below).
 **Issue wave:** `REVIVAL-*` issues on GitHub (label `revival`); tracker REVIVAL-00 = `#1311` (amends `#1278`).
 **Issue numbers:** REVIVAL-00 `#1311` · 01 `#1297` · 02 `#1298` · 03 `#1299` · 04 `#1300` · 05 `#1301` · 06 `#1302` · 07 `#1303` · 08 `#1304` · 09 `#1305` · 10 `#1306` · 11 `#1307` · 12 `#1308` · 13 `#1309` · 14 `#1310`.
+**Phase-4 wave (ADR-0046, 2026-07-13, label `generalist`):** tracker GEN-00 = `#1327`; children GEN-01..12 = `#1315`–`#1326` (see §4 Phase 4).
 
 ---
 
@@ -44,6 +45,7 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 | **v0.1 "First Light"** | Phase 1 complete: honest surfaces, safe public defaults, exercised release pipeline, welcoming README/onboarding | §6 ship gate |
 | **v0.2 "Transcript Engine"** | Phase 2 complete: LLM transcript triage with evidence spans, OpenAI-compatible provider, risk-tiered approvals | a real 45-min transcript → reviewable, evidence-linked, typed action items on the maintainer's own board |
 | **v0.3 "Open Beta"** | Phase 3 complete: slimmed surface, MCP packaged, feedback channel live, launched | launch executed; 48h response presence done |
+| **v0.4 "Every Artefact"** | Phase 4 complete (ADR-0046): artefact intake (screenshots/PDFs/files), project dossiers, generalist legibility, friends-family channel | a screenshot → reviewable typed proposals on a real board; a non-technical invitee reaches first-approved-proposal unassisted |
 | **Checkpoint (~8 weeks from start)** | Traction + dogfooding review | fall back only if both are absent; mixed outcomes require an explicit maintainer plan amendment |
 
 ## 4. Phases and waves (the issue map)
@@ -90,6 +92,25 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 
 Bounded finish-or-close slices from the archive plan (#1134, #1135, #1128, #1175, #1138, #1222/#1227) continue as capacity allows, unchanged.
 
+### Phase 4 — every artefact, everyone (v0.4; ADR-0046 **Proposed**, tracker `#1327`)
+
+Seeded 2026-07-13 from the maintainer's twin-app evaluation (decision: extend the single app, defer the twin behind the GEN-12 evidence gate). **Ratification pending on GEN-00 `#1327`** — until the maintainer ratifies ADR-0046, only lane **G-A** foundational work is authorized (per maintainer instruction 2026-07-13); lanes G-B/G-C wait for ratification in addition to their technical dependencies. **Strictly subordinate to the v0.1 ship gate** — lane **G-A** is parallel-safe immediately (stays off the transcript-lane files while PR #1312 is open), lane **G-B** waits for REVIVAL-08 M1 (`#1312`) to merge, lane **G-C** follows Phase 1.
+
+| Item | Issue | Lane |
+|---|---|---|
+| Artefact storage foundation: `SourceArtefact` entity + SQLite blob store + upload endpoint | GEN-01 `#1315` | G-A |
+| Local text extraction: `IArtefactTextExtractor`, PDF text layer (PdfPig), extraction records | GEN-02 `#1316` | G-A |
+| Consent-gated multimodal image extraction: provider content parts + vision | GEN-03 `#1317` | G-B |
+| Artefact-aware triage routing through the transcript lane | GEN-04 `#1318` | G-B |
+| Operation vocabulary: apply due dates + labels (closes the `dueDateHint` apply gap) | GEN-05 `#1319` | G-A |
+| Paper intake UX: drop-zone wiring, paste-image, artefact previews, source affordance | GEN-06 `#1320` | G-B |
+| Project dossier: per-board derived read model + Paper panel (approved state only) | GEN-07 `#1321` | G-C |
+| Today enrichment: real attention aggregations (after `#1272`) | GEN-08 `#1322` | G-C |
+| Untrusted-artefact threat model + prompt-injection rails | GEN-09 `#1323` | G-A (merges with/before GEN-04) |
+| Generalist legibility: mode-scoped nav, plain-language pass, guided-first default | GEN-10 `#1324` | G-A |
+| Friends & family beta channel (runbook, invite path, feedback loop, metrics) | GEN-11 `#1325` | G-C |
+| Twin-app decision gate (strategy; default **no**) | GEN-12 `#1326` | checkpoint |
+
 ## 5. What agents need to know (execution contract)
 
 - Every REVIVAL issue body is a self-contained agent brief: context, acceptance criteria, entry-point files, traps, and verification commands. Do not start work that lacks a tracked issue.
@@ -113,13 +134,21 @@ Bounded finish-or-close slices from the archive plan (#1134, #1135, #1128, #1175
 
 ## 7. New-surface exceptions (everything else stays under the #1269 rule)
 
-Authorized: REVIVAL-01 (registration gate), REVIVAL-08/-09/-10/-11 (transcript engine), REVIVAL-12 (feedback/telemetry), REVIVAL-13 (key scopes + hash-pin wiring + explicit multi-user-safe stdio identity). Not authorized without a plan amendment: new views, new dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens).
+Authorized: REVIVAL-01 (registration gate), REVIVAL-08/-09/-10/-11 (transcript engine), REVIVAL-12 (feedback/telemetry), REVIVAL-13 (key scopes + hash-pin wiring + explicit multi-user-safe stdio identity).
+
+**Phase-4 additions (ADR-0046, Accepted 2026-07-13; tracker GEN-00 `#1327`):** GEN-01/-02/-03/-04/-05 (the artefact intake pipeline — `SourceArtefact` entity + blob store + upload endpoint, extraction abstraction + records, provider multimodal content parts + consent-gated vision, triage routing for artefact sources, due-date/label apply operations), GEN-07 (board dossier read model + Paper panel), GEN-08 (Today attention aggregations), GEN-10 (mode-scoped navigation + guided-first default).
+
+GEN-06 (`#1320`) is wave-authorized as the Paper UX over that approved intake pipeline, not as a separate backend-surface exception: it adds no second mutation path or standalone view. It remains lane G-B and therefore waits on its transcript/artefact-routing dependencies.
+
+Not authorized without a plan amendment: the twin generalist application (GEN-12 `#1326` is the evidence gate), other new views/dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens).
 
 ## 8. Metrics and the checkpoint
 
 Tracked without invasive telemetry: GitHub stars + unique Discussion/issue participants per month + issues-to-stars ratio; GitHub Release download counts for the self-contained executable; opt-in ping count as a clearly-labeled lower bound on active installs; local-only activation milestones (first capture, first approved proposal, first board apply) shown to the user as an onboarding checklist and included in the opt-in ping only as an aggregate boolean. GHCR image pulls are not used as a checkpoint metric because the plan does not depend on a public registry counter.
 
 **Checkpoint (~8 weeks from Phase 0):** fall back to the archive plan (`COURSE_CORRECTION.md` §4) only if the beta shows **no organic traction** (real users filing issues/discussions, meaningful downloads, HN/Reddit engagement) **and** the maintainer's own dogfooding has not stuck. Any mixed outcome requires an explicit maintainer assessment and plan amendment rather than an automatic archive decision. Phase 1 leaves the fallback ~90% complete.
+
+The GEN-11 friends-family channel (`#1325`) adds a second signal stream — non-technical activation and retention — reviewed at the same checkpoint against the GEN-12 (`#1326`) twin-app gate criteria.
 
 ## 9. Risks (named, accepted)
 
@@ -131,7 +160,8 @@ Tracked without invasive telemetry: GitHub stars + unique Discussion/issue parti
 ## 10. Related documents
 
 - `docs/decisions/ADR-0044-revival-pivot-open-beta.md` — the decision this plan executes
+- `docs/decisions/ADR-0046-generalist-expansion-single-app.md` — the Phase 4 amendment (artefact intake, dossiers, generalist reach; twin-app deferral)
 - `docs/analysis/2026-07-10_revival_assessment.md` — evidence base (code + market)
 - `docs/COURSE_CORRECTION.md` / `docs/PROJECT_TRAJECTORY.md` — the 2026-07-02 analysis pair; fallback plan + finite-work discipline
 - `docs/IMPLEMENTATION_MASTERPLAN.md` — Direction section (points here)
-- `OUTSTANDING_TASKS.md` §E — the maintainer-visible checklist mirror
+- `OUTSTANDING_TASKS.md` §E/§F — the maintainer-visible checklist mirrors (revival wave / Phase-4 generalist wave)
