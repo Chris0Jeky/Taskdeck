@@ -79,6 +79,21 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 - [ ] **#1291** — Adopt agent-harness T3 profile: one-home policy collapse, .codex mirror retirement, skill read-first diet, region maps, review-twin merge, ledger triage cadence. *(Blueprint: sibling checkout `C:/Users/jekyt/source/agent-harness/BLUEPRINT.md` — outside this repo; complements #1138/#1269/#1275/#1276, no duplication.)*
 - *(Record, already done 2026-07-02:)* re-scope comments posted on #996, #1123/#1139, #1128, #1134 (+#1154 decision), #1135, #1138, #1173, #1175 (+#1174), #1210, #1215, #1222 (+#1227), #1228 — each carries updated finish-or-close ACs.
 
+## E. Revival overnight deferrals (added 2026-07-13)
+
+- [ ] **#1173** — Apply and verify the required branch-protection settings in GitHub. This is repository-settings work and remains maintainer-only.
+- [ ] **#1303** — Push the `v0.1.0` release tag only after the maintainer accepts the release deck and its pipeline evidence. Agents may repair the pipeline but must not push the tag.
+- [ ] **#1299 trademark check** — Complete the human-only Taskdeck name/trademark clearance step; the licensing/DCO implementation does not substitute for legal-name clearance.
+- [ ] **#1327 project sync access** — Run `gh auth refresh -s project`, then rerun `scripts/github/Sync-TaskdeckProjectPriority.ps1` in audit and apply modes and verify no issue/PR project item has an empty Priority.
+- [ ] **#1330** — Repair the CI Extended reusable-workflow permission contract; affected PRs remain ineligible while the workflow startup failure is red.
+- [ ] **#1282 / #1332 / #1335** — Stabilize the required full-suite harness: SQLite concurrency, Redis connect/dispose, and hosted-worker/presence lifecycle isolation. Narrow passes do not clear the recorded full-suite failures.
+- [ ] **#1338** — Map HTTP MCP and its API-key middleware to the same `/mcp` route before documenting or exposing HTTP transport; the current parameterless mapping serves MCP at an unintended unauthenticated root route.
+- [ ] **#1343** — Prevent late Home/Today summary responses from overwriting a newer local workspace-mode choice; add deterministic ordering tests and repeated error-recovery E2E proof.
+- [ ] **#1345** — Resolve or formally mitigate GHSA-2m69-gcr7-jv3q in the transitive `SQLitePCLRaw.lib.e_sqlite3` package once a patched release exists or a safe provider change is proven; current published releases through 2.1.11 are affected.
+- [ ] **#1274 / `origin/issue-1274/paper-e2e-axe` at `993f188f`** — Resume the parked Paper E2E/axe re-point from the pushed WIP branch; fix tracked Paper Review blockers #1347/#1348, finish the named first-run/onboarding/smoke and axe coverage, then run the full frontend/E2E gates before opening a PR.
+- [ ] **#1347 / #1348** — Repair the Paper deep-review enum wire-contract crash and the SQLite-backed similar-past HTTP 500; both were reproduced by the real Paper capture/review path and must not be hidden by frontend fallbacks.
+- [ ] **#1323 prompt-rail remainder** — Bind the hostile transcript/PDF/image and malformed-response fixtures from PR #1340 to PR #1312's effective prompt/parser path before GEN-04; prove grounded-task-or-empty verdicts and deterministic fallback for schema escapes.
+
 ---
 
 ## Changelog
