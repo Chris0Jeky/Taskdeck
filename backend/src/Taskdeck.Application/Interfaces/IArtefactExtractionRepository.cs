@@ -35,4 +35,12 @@ public interface IArtefactExtractionRepository
     Task<long> GetTotalTextLengthByUserAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns a conservative upper bound for the JSON bytes needed to export
+    /// all extraction records owned by the user.
+    /// </summary>
+    Task<long> GetEstimatedSerializedBytesByUserAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
 }

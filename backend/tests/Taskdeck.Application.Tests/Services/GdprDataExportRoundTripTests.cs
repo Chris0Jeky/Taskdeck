@@ -40,6 +40,7 @@ public class GdprDataExportRoundTripTests
     private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
     private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
     private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
+    private readonly Mock<IArtefactExtractionRepository> _extractionRepoMock;
     private readonly DataExportService _service;
 
     public GdprDataExportRoundTripTests()
@@ -59,6 +60,7 @@ public class GdprDataExportRoundTripTests
         _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
         _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
         _artefactRepoMock = new Mock<ISourceArtefactRepository>();
+        _extractionRepoMock = new Mock<IArtefactExtractionRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -76,12 +78,22 @@ public class GdprDataExportRoundTripTests
             .ReturnsAsync(Array.Empty<ProposalFeedback>());
         _artefactRepoMock.Setup(r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<SourceArtefact>());
+        _artefactRepoMock.Setup(r => r.GetTotalByteSizeByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0L);
+        _extractionRepoMock.Setup(r => r.GetEstimatedSerializedBytesByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0L);
+        _extractionRepoMock.Setup(r => r.GetByArtefactForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<ArtefactExtraction>());
 
         _historyServiceMock
             .Setup(h => h.LogActionAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
             .ReturnsAsync(Result.Success());
 
-        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object);
+        _service = new DataExportService(
+            _unitOfWorkMock.Object,
+            _historyServiceMock.Object,
+            _artefactRepoMock.Object,
+            _extractionRepoMock.Object);
     }
 
     [Fact]

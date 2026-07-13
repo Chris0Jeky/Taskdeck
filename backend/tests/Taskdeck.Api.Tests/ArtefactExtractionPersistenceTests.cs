@@ -119,6 +119,10 @@ public sealed class ArtefactExtractionPersistenceTests : IClassFixture<TestWebAp
 
         (await repository.GetTotalTextLengthByUserAsync(firstUser.Id)).Should().Be(8);
         (await repository.GetTotalTextLengthByUserAsync(secondUser.Id)).Should().Be(7);
+        var firstExportEstimate = await repository.GetEstimatedSerializedBytesByUserAsync(firstUser.Id);
+        var secondExportEstimate = await repository.GetEstimatedSerializedBytesByUserAsync(secondUser.Id);
+        firstExportEstimate.Should().BeGreaterThan(secondExportEstimate);
+        secondExportEstimate.Should().BeGreaterThan(7);
     }
 
     private static async Task<(User User, SourceArtefact Source)> SeedSourceAsync(TaskdeckDbContext db)

@@ -10,6 +10,7 @@ namespace Taskdeck.Infrastructure.Repositories;
 public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
 {
     private const int MaxPageSize = 50;
+    private const int EstimatedJsonOverheadCharacters = 512;
     private readonly TaskdeckDbContext _context;
 
     public ArtefactExtractionRepository(TaskdeckDbContext context)
@@ -125,6 +126,29 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
                 select (long?)extraction.TextLength)
             .SumAsync(cancellationToken);
         return total ?? 0L;
+    }
+
+    public async Task<long> GetEstimatedSerializedBytesByUserAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var serializedCharacters = await (
+                from extraction in _context.ArtefactExtractions
+                join artefact in _context.SourceArtefacts
+                    on extraction.SourceArtefactId equals artefact.Id
+                where artefact.UserId == userId
+                select (long?)(
+                    extraction.TextLength +
+                    extraction.WarningsJson.Length +
+                    extraction.ExtractorName.Length +
+                    extraction.ExtractorVersion.Length +
+                    EstimatedJsonOverheadCharacters))
+            .SumAsync(cancellationToken) ?? 0L;
+
+        // A UTF-16 code unit can expand to six ASCII bytes when JSON escaped.
+        return serializedCharacters > long.MaxValue / 6
+            ? long.MaxValue
+            : serializedCharacters * 6;
     }
 
     private async Task<T> ExecuteInImmediateWriteTransactionAsync<T>(

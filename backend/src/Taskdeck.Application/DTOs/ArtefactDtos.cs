@@ -27,4 +27,5 @@ public sealed record UserDataExportArtefactDto(
     string? OriginReference,
     Guid? CreatedFromCaptureId,
     DateTimeOffset CreatedAt,
-    string ContentBase64);
+    string ContentBase64,
+    IReadOnlyList<UserDataExportArtefactExtractionDto>? Extractions = null);
