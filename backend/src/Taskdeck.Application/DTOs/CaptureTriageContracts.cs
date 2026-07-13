@@ -18,9 +18,19 @@ public static class CaptureTriageOutputContract
 {
     public const int SchemaVersion = 1;
     public const string PromptVersionV1 = "triage.v1";
+
+    /// <summary>
+    /// Prompt version for LLM-backed transcript triage (REVIVAL-08 M1). The output shape is the
+    /// same v1 schema; the prompt version distinguishes which extraction engine produced it so
+    /// provenance stays honest (#1273). Schema file: capture-triage-output.llm-v1.schema.json.
+    /// </summary>
+    public const string PromptVersionLlmV1 = "llm-triage.v1";
+
     public const int MaxTasks = 20;
     public const int MaxTaskTitleLength = 180;
     public const int MaxTaskEvidenceLength = 280;
+
+    private static readonly string[] KnownPromptVersions = [PromptVersionV1, PromptVersionLlmV1];
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -69,11 +79,11 @@ public static class CaptureTriageOutputContract
                 $"Capture triage output version must be {SchemaVersion}");
         }
 
-        if (!string.Equals(output.PromptVersion, PromptVersionV1, StringComparison.Ordinal))
+        if (!KnownPromptVersions.Contains(output.PromptVersion, StringComparer.Ordinal))
         {
             return Result.Failure<CaptureTriageOutputV1>(
                 ErrorCodes.ValidationError,
-                $"Capture triage prompt version must be '{PromptVersionV1}'");
+                $"Capture triage prompt version must be one of: {string.Join(", ", KnownPromptVersions.Select(v => $"'{v}'"))}");
         }
 
         if (output.Tasks is null || output.Tasks.Count == 0)

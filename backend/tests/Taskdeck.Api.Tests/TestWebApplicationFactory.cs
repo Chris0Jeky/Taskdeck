@@ -45,6 +45,8 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Llm:EnableLiveProviders"] = "false",
                 ["Llm:AllowLiveProvidersInDevelopment"] = "false",
                 ["Llm:Provider"] = "Mock",
+                ["Artefacts:MaxBytesPerArtefact"] = "1024",
+                ["Artefacts:MaxBytesPerUser"] = "1024",
                 // Test-only 256-bit encryption key for connector credentials.
                 ["Connectors:EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
             };
@@ -57,6 +59,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<DbContextOptions<TaskdeckDbContext>>();
             services.RemoveAll<TaskdeckDbContext>();
             services.RemoveAll<LlmProviderSettings>();
+            services.RemoveAll<ArtefactStorageSettings>();
             services.AddDbContext<TaskdeckDbContext>(options =>
                 options.UseSqlite($"Data Source={dbPath}"));
             services.AddSingleton(new LlmProviderSettings
@@ -64,6 +67,11 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 EnableLiveProviders = false,
                 AllowLiveProvidersInDevelopment = false,
                 Provider = "Mock"
+            });
+            services.AddSingleton(new ArtefactStorageSettings
+            {
+                MaxBytesPerArtefact = 1024,
+                MaxBytesPerUser = 1024
             });
 
             using var provider = services.BuildServiceProvider();

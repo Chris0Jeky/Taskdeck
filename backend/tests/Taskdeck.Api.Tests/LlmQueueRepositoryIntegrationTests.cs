@@ -248,6 +248,72 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task GetOldestProcessingLaneReads_SplitCaptureAndTranscriptLanes()
+    {
+        // REVIVAL-08: transcript captures form their own worker lane. The Processing reads must treat
+        // plain-capture and transcript as DISJOINT kinds so the slow LLM-backed transcript triage can
+        // never block (or be drained by) the millisecond-latency capture lane.
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-lane-split", "llm-lane-split@example.com", "hash");
+            db.Users.Add(user);
+
+            // One Processing row per lane, plus Pending rows that must never surface in a Processing read.
+            var processingCapture = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"c\":1}");
+            processingCapture.MarkAsProcessing();
+            var processingTranscript = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{\"t\":1}");
+            processingTranscript.MarkAsProcessing();
+            var processingNonCapture = new LlmRequest(user.Id, "automation.command", "{\"n\":1}");
+            processingNonCapture.MarkAsProcessing();
+            var pendingTranscript = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{\"t\":0}");
+            var pendingCapture = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"c\":0}");
+            db.LlmRequests.AddRange(
+                processingCapture, processingTranscript, processingNonCapture, pendingTranscript, pendingCapture);
+            await db.SaveChangesAsync();
+
+            // The transcript and non-capture rows are OLDER than the plain capture, so the capture read
+            // can only exclude them via the lane predicate, not via ordering + limit.
+            var t0 = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            db.Entry(processingTranscript).Property(nameof(Entity.CreatedAt)).CurrentValue = t0;
+            db.Entry(processingNonCapture).Property(nameof(Entity.CreatedAt)).CurrentValue = t0.AddSeconds(1);
+            db.Entry(processingCapture).Property(nameof(Entity.CreatedAt)).CurrentValue = t0.AddSeconds(2);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var captureLane = (await repo.GetOldestProcessingCaptureAsync(10)).ToList();
+            var transcriptLane = (await repo.GetOldestProcessingTranscriptAsync(10)).ToList();
+
+            // Capture lane: ONLY the plain capture — no transcript, no non-capture, no Pending rows.
+            captureLane.Select(r => r.Id).Should().Equal(processingCapture.Id);
+            // Transcript lane: ONLY the transcript row.
+            transcriptLane.Select(r => r.Id).Should().Equal(processingTranscript.Id);
+        });
+    }
+
+    [Fact]
+    public async Task GetOldestPendingNonCaptureAsync_ExcludesTranscriptRows()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-noncap-transcript", "llm-noncap-transcript@example.com", "hash");
+            db.Users.Add(user);
+
+            var automation = new LlmRequest(user.Id, "automation.command", "{}");
+            var pendingCapture = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}");
+            var pendingTranscript = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{}");
+            db.LlmRequests.AddRange(automation, pendingCapture, pendingTranscript);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var result = (await repo.GetOldestPendingNonCaptureAsync(10)).ToList();
+
+            // Transcript rows nest under the capture prefix, so NOT LIKE 'inbox.capture.%' excludes
+            // them from the non-capture lane alongside plain captures.
+            result.Select(r => r.Id).Should().Equal(automation.Id);
+        });
+    }
+
+    [Fact]
     public async Task GetOldestWorkReads_WithLimitBelowOne_Throw()
     {
         await WithSqliteRepoAsync(async (_, repo) =>
@@ -255,6 +321,8 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
             await repo.Invoking(r => r.GetOldestPendingNonCaptureAsync(0))
                 .Should().ThrowAsync<ArgumentOutOfRangeException>();
             await repo.Invoking(r => r.GetOldestProcessingCaptureAsync(-1))
+                .Should().ThrowAsync<ArgumentOutOfRangeException>();
+            await repo.Invoking(r => r.GetOldestProcessingTranscriptAsync(0))
                 .Should().ThrowAsync<ArgumentOutOfRangeException>();
             await repo.Invoking(r => r.GetByStatusForDisplayAsync(RequestStatus.Pending, 0))
                 .Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -290,6 +358,45 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
             // #1251: the readiness gauge's captureDepth — Pending capture only (not the 3 Processing
             // captures, not the 4 Pending non-captures).
             (await repo.CountPendingCaptureAsync()).Should().Be(2);
+        });
+    }
+
+    [Fact]
+    public async Task LaneCounts_SplitProcessingLanes_PendingCaptureDepthStaysInclusive()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-lane-counts", "llm-lane-counts@example.com", "hash");
+            db.Users.Add(user);
+
+            for (var i = 0; i < 3; i++)
+            {
+                var c = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}"); // Processing capture
+                c.MarkAsProcessing();
+                db.LlmRequests.Add(c);
+            }
+            for (var i = 0; i < 2; i++)
+            {
+                var t = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{}"); // Processing transcript
+                t.MarkAsProcessing();
+                db.LlmRequests.Add(t);
+            }
+            var n = new LlmRequest(user.Id, "automation.command", "{}"); // Processing non-capture
+            n.MarkAsProcessing();
+            db.LlmRequests.Add(n);
+            for (var i = 0; i < 4; i++)
+                db.LlmRequests.Add(new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}")); // Pending capture
+            db.LlmRequests.Add(new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{}")); // Pending transcript
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            // Processing counts are per-lane: transcript rows no longer count as capture work.
+            (await repo.CountProcessingCaptureAsync()).Should().Be(3);
+            (await repo.CountProcessingTranscriptAsync()).Should().Be(2);
+            // Pending capture depth is DELIBERATELY inclusive (4 plain + 1 transcript): a pending
+            // transcript sits in the same inbox as any other capture; the lane split only governs
+            // Processing-row ownership.
+            (await repo.CountPendingCaptureAsync()).Should().Be(5);
         });
     }
 
@@ -463,6 +570,29 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
     }
 
     [Fact]
+    public async Task GetCapturesByUserAsync_IncludesTranscriptCaptureRows()
+    {
+        // The user-facing capture page keeps the INCLUSIVE capture prefix: a transcript capture is
+        // still a capture to its owner even though the workers drain it on a separate lane (REVIVAL-08).
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("cap-page-transcript", "cap-page-transcript@example.com", "hash");
+            db.Users.Add(user);
+
+            var capture = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}");
+            var transcript = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{}");
+            var nonCapture = new LlmRequest(user.Id, "automation.command", "{}");
+            db.LlmRequests.AddRange(capture, transcript, nonCapture);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var result = (await repo.GetCapturesByUserAsync(user.Id, 10, 0)).ToList();
+
+            result.Select(r => r.Id).Should().BeEquivalentTo(new[] { capture.Id, transcript.Id });
+        });
+    }
+
+    [Fact]
     public async Task GetStuckProcessingNonCaptureAsync_ReturnsOnlyNonCaptureProcessingRowsAtOrBeforeThreshold()
     {
         // #1209: the recovery query selects non-capture requests stuck in Processing past the lease and
@@ -610,6 +740,89 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         result.Should().BeFalse();
     }
 
+    // The lane-claim mutual-exclusion tests seed Processing capture/transcript rows -- exactly the rows
+    // the live workers claim -- so they use the isolated, worker-free SQLite harness for determinism.
+
+    [Fact]
+    public async Task TryClaimProcessingCaptureAsync_ShouldRejectTranscriptRow_WithoutMutatingIt()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-claim-lane-cap", "llm-claim-lane-cap@example.com", "hash");
+            db.Users.Add(user);
+
+            var transcript = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{\"t\":1}");
+            transcript.MarkAsProcessing();
+            db.LlmRequests.Add(transcript);
+            await db.SaveChangesAsync();
+            var expectedUpdatedAt = transcript.UpdatedAt;
+
+            var claimed = await repo.TryClaimProcessingCaptureAsync(transcript.Id, expectedUpdatedAt);
+
+            claimed.Should().BeFalse("the capture claim must never take a transcript-lane row");
+
+            // A refused claim must leave the row untouched: still Processing, concurrency token unmoved.
+            db.ChangeTracker.Clear();
+            var persisted = await db.LlmRequests
+                .AsNoTracking()
+                .SingleAsync(r => r.Id == transcript.Id);
+            persisted.Status.Should().Be(RequestStatus.Processing);
+            persisted.UpdatedAt.Should().Be(expectedUpdatedAt);
+        });
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingTranscriptAsync_ShouldRejectPlainCaptureRow()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-claim-lane-tr", "llm-claim-lane-tr@example.com", "hash");
+            db.Users.Add(user);
+
+            var capture = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"c\":1}");
+            capture.MarkAsProcessing();
+            db.LlmRequests.Add(capture);
+            await db.SaveChangesAsync();
+
+            var claimed = await repo.TryClaimProcessingTranscriptAsync(capture.Id, capture.UpdatedAt);
+
+            claimed.Should().BeFalse("the transcript claim must never take a capture-lane row");
+        });
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingTranscriptAsync_StampsUpdatedAtStaysProcessing_ThenRejectsStaleClaim()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-claim-transcript", "llm-claim-transcript@example.com", "hash");
+            db.Users.Add(user);
+
+            var transcript = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{\"t\":1}");
+            transcript.MarkAsProcessing();
+            db.LlmRequests.Add(transcript);
+            await db.SaveChangesAsync();
+            var originalUpdatedAt = transcript.UpdatedAt;
+
+            var firstClaim = await repo.TryClaimProcessingTranscriptAsync(transcript.Id, originalUpdatedAt);
+
+            firstClaim.Should().BeTrue();
+
+            // The claim is a pure UpdatedAt stamp: the row was already Processing (the triage endpoint
+            // marks it so) and stays Processing; only the optimistic-concurrency token moves.
+            db.ChangeTracker.Clear();
+            var persisted = await db.LlmRequests
+                .AsNoTracking()
+                .SingleAsync(r => r.Id == transcript.Id);
+            persisted.Status.Should().Be(RequestStatus.Processing);
+            persisted.UpdatedAt.Should().NotBe(originalUpdatedAt);
+
+            // A competing worker still holding the pre-claim UpdatedAt loses (optimistic concurrency).
+            var staleClaim = await repo.TryClaimProcessingTranscriptAsync(transcript.Id, originalUpdatedAt);
+            staleClaim.Should().BeFalse();
+        });
+    }
+
     [Fact]
     public async Task GetCaptureSummaryByUserAsync_ShouldCountByStatusForCaptureRequests()
     {
@@ -678,6 +891,33 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
 
         // 2 completed total, 1 has proposalId → triaged = 2 - 1 = 1
         summary.TriagedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetCaptureSummaryByUserAsync_IncludesTranscriptCaptures()
+    {
+        // Like the capture page, the per-user summary keeps the INCLUSIVE capture prefix: transcript
+        // captures count in the owner's totals regardless of the worker-lane split (REVIVAL-08).
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-summary-transcript", "llm-summary-transcript@example.com", "hash");
+            db.Users.Add(user);
+
+            var pendingCapture = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{}");
+            var pendingTranscript = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{}");
+            var processingTranscript = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeTranscriptV1, "{}");
+            processingTranscript.MarkAsProcessing();
+            var nonCapture = new LlmRequest(user.Id, "chat.completion", "{}");
+            db.LlmRequests.AddRange(pendingCapture, pendingTranscript, processingTranscript, nonCapture);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var summary = await repo.GetCaptureSummaryByUserAsync(user.Id);
+
+            summary.TotalCaptures.Should().Be(3); // plain capture + both transcript rows
+            summary.NewCount.Should().Be(2);      // pending capture + pending transcript
+            summary.TriagingCount.Should().Be(1); // processing transcript
+        });
     }
 
     [Fact]

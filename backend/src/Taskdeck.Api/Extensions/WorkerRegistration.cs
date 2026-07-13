@@ -47,6 +47,7 @@ public static class WorkerRegistration
 
         services.AddSingleton<WorkerHeartbeatRegistry>();
         services.AddHostedService<LlmQueueToProposalWorker>();
+        services.AddHostedService<TranscriptTriageWorker>();
         services.AddHostedService<ProposalHousekeepingWorker>();
         services.AddHostedService<OutboundWebhookDeliveryWorker>();
         services.AddHostedService<AuditRetentionWorker>();

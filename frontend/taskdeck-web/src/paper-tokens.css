@@ -7,9 +7,8 @@
    remain canonical until Paper is promoted by paperThemeStore.
    ========================================================= */
 
-/* Paper references preferred local font names first and falls back to system
-   families. External font imports are intentionally avoided so production CSP
-   can keep style-src locked to self. */
+/* Paper fonts are bundled from local WOFF2 subsets in paper-fonts.css and fall
+   back to system families. No Paper font request leaves the application. */
 
 .paper {
   /* --- Substrate --- */

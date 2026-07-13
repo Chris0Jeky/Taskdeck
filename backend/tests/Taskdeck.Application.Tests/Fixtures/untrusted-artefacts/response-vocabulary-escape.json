@@ -1,0 +1,12 @@
+{
+  "operations": [
+    {
+      "actionType": "delete",
+      "targetType": "board",
+      "parameters": {
+        "boardId": "00000000-0000-0000-0000-000000000000",
+        "canary": "TASKDECK_INJECTION_CANARY_RESPONSE_VOCAB_9E31"
+      }
+    }
+  ]
+}

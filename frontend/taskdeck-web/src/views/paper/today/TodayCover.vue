@@ -12,9 +12,9 @@ import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
  */
 const props = defineProps<{
   serial: string
-  cardsMoved: number
+  cardsMoved: number | null
   lede: string
-  autoSealsIn: string
+  autoSealsIn: string | null
   sealed: boolean
 }>()
 
@@ -24,7 +24,7 @@ const emit = defineEmits<{
 }>()
 
 const headlineParts = computed(() => {
-  const moved = props.cardsMoved
+  const moved = props.cardsMoved ?? 0
   const word = moved === 1 ? 'card' : 'cards'
   // Headline rendered as: "Today, you moved <em>N cards</em>."
   return { count: moved, word }
@@ -41,7 +41,10 @@ function onSealClick() {
       <div class="today-cover__copy">
         <div class="tk-eyebrow">Dossier · day's ledger · sealed at end of session</div>
         <h1 class="tk-h1 today-cover__headline">
-          Today, you moved <em>{{ headlineParts.count }} {{ headlineParts.word }}</em>.
+          <template v-if="cardsMoved !== null">
+            Today, you moved <em>{{ headlineParts.count }} {{ headlineParts.word }}</em>.
+          </template>
+          <template v-else>Today, at a glance.</template>
         </h1>
         <p class="tk-lede today-cover__lede">{{ lede }}</p>
         <div class="today-cover__actions">
@@ -55,7 +58,8 @@ function onSealClick() {
           <PaperHLBtn label="Write a note" data-action="note" @click="emit('note')" />
           <span class="tk-meta today-cover__auto" data-testid="auto-seals-in">
             <template v-if="sealed">Sealed for the day</template>
-            <template v-else>Auto-seals in {{ autoSealsIn }}</template>
+            <template v-else-if="autoSealsIn">Auto-seals in {{ autoSealsIn }}</template>
+            <template v-else>Seal when your day is complete</template>
           </span>
         </div>
       </div>

@@ -3,12 +3,8 @@ import { computed } from 'vue'
 import type { DossierStatCard } from '../../../composables/useTodayDossier'
 
 /**
- * TodayStats — 5 stat cards.  Each card has a 2px top accent in tone
- * colour, a mono eyebrow, a 38px serif italic number, and a sub line.
- *
- * Numeric values run through `Intl.NumberFormat` so 1_000+ render as
- * `1,000` regardless of locale.  String values (e.g. "2h 14m") pass
- * through verbatim.
+ * TodayStats — live Today-summary stat cards. Numeric values run through
+ * `Intl.NumberFormat` so 1_000+ render with the requested locale.
  */
 const props = defineProps<{
   stats: DossierStatCard[]

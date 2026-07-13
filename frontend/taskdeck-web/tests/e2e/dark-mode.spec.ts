@@ -85,6 +85,13 @@ test('night theme should persist when navigating between Home, Boards, Inbox, an
   await page.goto('/workspace/today')
   await expect(page.locator('[data-paper-today]')).toBeVisible()
   await expect(page.locator('body')).toHaveClass(PAPER_NIGHT_CLASS)
+  await expect(page.getByRole('heading', { name: 'Today, at a glance.' })).toBeVisible()
+  await expect(page.locator('[data-empty-state="ledger"]')).toContainText('No events are being invented')
+  await expect(page.locator('[data-empty-state="decisions"]')).toBeVisible()
+  await expect(page.locator('[data-empty-state="boards"]')).toBeVisible()
+  await expect(page.locator('[data-action="pin-tomorrow"]')).toHaveCount(0)
+  await expect(page.getByText('A quiet Saturday', { exact: false })).toHaveCount(0)
+  await expect(page.getByText('haiku', { exact: false })).toHaveCount(0)
 })
 
 // --- Dark mode with board content ---

@@ -9,12 +9,9 @@ Use this skill when a PR is blocked by CI, review/bot comments, conflicts, stale
 
 ## Read First
 
-1. `docs/STATUS.md`
-2. `CLAUDE.md`
-3. `AGENTS.md`
-4. PR body, checks, comments, review threads, and linked issue
-5. `docs/TESTING_GUIDE.md`
-6. `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` for shared recovery discipline; substitute Claude entrypoints for Codex-specific preflight.
+Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them.
+
+For the CI topology (`ci-required.yml` = the merge gate; `reusable-*` + scheduled lanes) use the **Harness/CI/docs** seam row of the map. `scripts/agent_hooks/CLAUDE.md` auto-loads only when the fix touches hook scripts — it does NOT cover `.github/workflows/` changes. Read as needed: the failing workflow under `.github/workflows/`, `docs/TESTING_GUIDE.md`, and the PR's checks/comments/annotations.
 
 ## Triage Sequence
 
