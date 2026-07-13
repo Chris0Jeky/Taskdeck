@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { todayApi } from '../../../../api/todayApi'
 import { formatLocalDossierDate } from '../../../../composables/useTodayDossier'
+import type { TodaySummary } from '../../../../types/workspace'
 import PaperTodayView from '../../../../views/paper/PaperTodayView.vue'
 
 const toastMocks = vi.hoisted(() => ({
@@ -12,7 +13,11 @@ const toastMocks = vi.hoisted(() => ({
 }))
 
 const mockWorkspaceStore = {
-  todaySummary: null,
+  todaySummary: null as TodaySummary | null,
+  todayLoading: false,
+  todayError: null as string | null,
+  fetchTodaySummary: vi.fn(),
+  clearTodaySummary: vi.fn(),
 }
 const mockSessionStore = {
   userId: 'user-1' as string | null,
@@ -41,12 +46,57 @@ vi.mock('../../../../store/toastStore', () => ({
   useToastStore: () => toastMocks,
 }))
 
+function makeTodaySummary(overdueCards = 1): TodaySummary {
+  return {
+    workspaceMode: 'guided',
+    onboarding: {
+      visibility: 'active',
+      isComplete: false,
+      currentStepId: null,
+      dismissedAt: null,
+      completedAt: null,
+      steps: [],
+    },
+    summary: {
+      capturesNeedingTriage: 2,
+      proposalsPendingReview: 3,
+      overdueCards,
+      dueTodayCards: 4,
+      blockedCards: 1,
+    },
+    overdueCards: [{
+      boardId: 'board-1',
+      boardName: 'Client onboarding',
+      cardId: 'card-123456789',
+      title: 'Confirm engagement letter',
+      dueDate: '2026-01-14',
+      blockReason: null,
+      updatedAt: '2026-01-15T09:00:00Z',
+    }],
+    dueTodayCards: [],
+    blockedCards: [],
+    recommendedActions: [],
+  }
+}
+
 describe('PaperTodayView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     localStorage.clear()
     mockSessionStore.userId = 'user-1'
+    mockWorkspaceStore.todaySummary = null
+    mockWorkspaceStore.todayLoading = false
+    mockWorkspaceStore.todayError = null
+    mockWorkspaceStore.fetchTodaySummary.mockImplementation(async () => {
+      if (!mockWorkspaceStore.todaySummary) {
+        mockWorkspaceStore.todaySummary = makeTodaySummary()
+      }
+      return mockWorkspaceStore.todaySummary
+    })
+    mockWorkspaceStore.clearTodaySummary.mockImplementation(() => {
+      mockWorkspaceStore.todaySummary = null
+    })
   })
 
   afterEach(() => {
@@ -80,6 +130,71 @@ describe('PaperTodayView', () => {
     expect(text).not.toContain('2h 14m')
     expect(text).not.toContain('C-072')
     expect(wrapper.find('[data-action="pin-tomorrow"]').exists()).toBe(false)
+  })
+
+  it('announces initial summary loading without presenting unavailable totals', () => {
+    mockWorkspaceStore.todayLoading = true
+
+    const wrapper = mount(PaperTodayView)
+    const status = wrapper.get('[data-testid="paper-today-loading"]')
+
+    expect(status.attributes('role')).toBe('status')
+    expect(status.attributes('aria-live')).toBe('polite')
+    expect(status.text()).toContain('Loading today’s dossier')
+    expect(wrapper.find('[data-section="cover"]').exists()).toBe(false)
+    expect(wrapper.attributes('aria-busy')).toBe('true')
+  })
+
+  it('surfaces an initial summary failure with an accessible retry', async () => {
+    mockWorkspaceStore.todayError = 'Request failed with status code 500'
+
+    const wrapper = mount(PaperTodayView)
+    const error = wrapper.get('[data-testid="paper-today-error"]')
+
+    expect(error.attributes('role')).toBe('alert')
+    expect(error.text()).toContain('live summary could not be loaded')
+    expect(error.text()).toContain('Request failed with status code 500')
+    expect(wrapper.find('[data-section="cover"]').exists()).toBe(false)
+
+    await error.get('button').trigger('click')
+    expect(mockWorkspaceStore.fetchTodaySummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('labels cached summary data as stale after a failed refresh and offers retry', async () => {
+    mockWorkspaceStore.todaySummary = makeTodaySummary()
+    mockWorkspaceStore.todayError = 'Network unavailable'
+
+    const wrapper = mount(PaperTodayView)
+    const stale = wrapper.get('[data-testid="paper-today-stale"]')
+
+    expect(stale.attributes('role')).toBe('alert')
+    expect(stale.text()).toContain('Showing previously loaded data, which may be stale')
+    expect(wrapper.find('[data-section="cover"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('2 captures need triage')
+
+    await stale.get('button').trigger('click')
+    expect(mockWorkspaceStore.fetchTodaySummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('announces refresh progress while retaining a previously loaded summary', () => {
+    mockWorkspaceStore.todaySummary = makeTodaySummary()
+    mockWorkspaceStore.todayLoading = true
+
+    const wrapper = mount(PaperTodayView)
+    const status = wrapper.get('[data-testid="paper-today-refreshing"]')
+
+    expect(status.attributes('role')).toBe('status')
+    expect(status.text()).toContain('Previously loaded data remains visible')
+    expect(wrapper.find('[data-section="cover"]').exists()).toBe(true)
+  })
+
+  it('discloses when the live carry-over list is capped below the total', () => {
+    mockWorkspaceStore.todaySummary = makeTodaySummary(7)
+
+    const wrapper = mount(PaperTodayView)
+
+    expect(wrapper.text()).toContain('Showing 1 of 7 live overdue cards')
+    expect(wrapper.text()).toContain('7 cards are overdue')
   })
 
   it('renders the dossier serial in the cover and footer', () => {
