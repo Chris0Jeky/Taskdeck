@@ -3,7 +3,9 @@
 Last Updated: 2026-07-13
 Issue: `#538` CLD-01 Deploy Taskdeck to managed cloud platform
 
-> **Beta deployment reference (ADR-0044).** Taskdeck's current supported posture is local-first, self-hosted, single-instance SQLite. This guide remains useful for operators evaluating a single hosted container. A managed Taskdeck cloud is a future commercial possibility, not a shipped beta service; multi-instance/PostgreSQL work remains unratified and unsupported today. See the revival direction in [PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296).
+> **Private evaluation only unless registration is gated.** Do not expose a build to the public internet unless it includes the registration-gating work in [#1297](https://github.com/Chris0Jeky/Taskdeck/issues/1297) and the operator has explicitly chosen a safe registration mode. Otherwise, keep the service behind provider access controls, a private network, or another authentication layer.
+>
+> Taskdeck's current supported posture is local-first, self-hosted, single-instance SQLite. This guide is an evaluation reference for a single private hosted container. A managed Taskdeck cloud is a future possibility, not a shipped beta service; multi-instance/PostgreSQL work remains unsupported today. This update follows the direction proposed in [PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) and must not land before it.
 
 ---
 
@@ -35,8 +37,10 @@ Related documents:
 ## Prerequisites
 
 - A GitHub account with access to the Taskdeck repository
-- A Railway or Render account (free tiers available for evaluation)
+- A Railway or Render account; verify the provider's current plans and limits before deploying
 - A strong JWT secret (generate with `openssl rand -base64 48`)
+- A connector encryption key (generate with `openssl rand -base64 32`)
+- Provider access controls or another private-network boundary; the current target branch is not safe for public registration
 
 ---
 
@@ -64,6 +68,7 @@ docker build -f deploy/Dockerfile.production -t taskdeck-prod .
 # Run locally
 docker run -p 5000:5000 \
   -e Jwt__SecretKey=$(openssl rand -base64 48) \
+  -e Connectors__EncryptionKey=$(openssl rand -base64 32) \
   -e Cors__AllowedOrigins=http://localhost:5000 \
   -v taskdeck-data:/app/data \
   taskdeck-prod
@@ -99,6 +104,7 @@ In the Railway dashboard, go to **Variables** and add:
 | Variable | Value | Required |
 |----------|-------|----------|
 | `Jwt__SecretKey` | Output of `openssl rand -base64 48` | Yes |
+| `Connectors__EncryptionKey` | Output of `openssl rand -base64 32`; preserve it with database backups | Yes |
 | `Cors__AllowedOrigins` | Your Railway URL (e.g., `https://taskdeck-production.up.railway.app`) | Yes |
 | `ConnectionStrings__DefaultConnection` | `Data Source=/app/data/taskdeck.db` | Yes |
 | `ASPNETCORE_ENVIRONMENT` | `Production` | Yes |
@@ -115,7 +121,8 @@ Railway deploys automatically on push to the connected branch. Verify deployment
 
 1. Check the Railway deploy logs for successful startup
 2. Visit your Railway URL -- the Taskdeck SPA should load
-3. Check `https://your-url.up.railway.app/health/ready` for a healthy status
+3. Check `https://your-url.up.railway.app/health/ready` for a healthy status from inside your private boundary
+4. Confirm anonymous/public access is still blocked by your provider or network controls
 
 ### Railway-specific notes
 
@@ -162,7 +169,7 @@ If creating manually:
 
 ### Step 3: Set environment variables
 
-In the Render dashboard, go to **Environment** and add the same variables as Railway (see table above). The `render.yaml` blueprint pre-populates safe defaults; you must set `Jwt__SecretKey` and `Cors__AllowedOrigins` manually.
+In the Render dashboard, go to **Environment** and add the same variables as Railway (see table above). The `render.yaml` blueprint pre-populates defaults; you must set `Jwt__SecretKey`, `Connectors__EncryptionKey`, and `Cors__AllowedOrigins` manually, then configure a private access boundary before deploying.
 
 ### Step 4: Deploy
 
@@ -170,13 +177,14 @@ Render deploys automatically on push to the configured branch.
 
 1. Check the Render deploy logs
 2. Visit your Render URL (e.g., `https://taskdeck.onrender.com`)
-3. Check `https://taskdeck.onrender.com/health/ready`
+3. Check `https://taskdeck.onrender.com/health/ready` from inside your private boundary
+4. Confirm anonymous/public access is blocked by your provider or network controls
 
 ### Render-specific notes
 
 - Render injects `PORT` as an environment variable
 - Render provides automatic HTTPS on `.onrender.com`
-- Free tier instances spin down after inactivity (upgrade to Starter plan for always-on)
+- Verify the current plan's sleep, cold-start, storage, and retention behavior in Render's documentation
 - Render's health check uses `healthCheckPath` from `render.yaml`
 
 ---
@@ -190,6 +198,7 @@ See `deploy/.env.production.template` for the authoritative list with descriptio
 | Variable | Purpose |
 |----------|---------|
 | `Jwt__SecretKey` | JWT signing secret (min 32 bytes, `openssl rand -base64 48`) |
+| `Connectors__EncryptionKey` | Encrypts stored connector credentials (`openssl rand -base64 32`); restore the same value with the database |
 | `Cors__AllowedOrigins` | Comma-separated allowed origins for CORS |
 | `ConnectionStrings__DefaultConnection` | SQLite connection string (use `/app/data/` path) |
 
@@ -238,7 +247,7 @@ SQLite supports one writer at a time (WAL mode improves this but does not elimin
 
 ### Backups
 
-Cloud platform volumes are not automatically backed up. Implement a backup strategy:
+Do not assume a cloud volume includes backups. Verify the provider's current snapshot and retention behavior, then implement and restore-test a backup strategy.
 
 > **Warning**: Do not copy the SQLite database file while the application is running.
 > A raw `cp` of `taskdeck.db` during active writes can produce a corrupt or
@@ -261,17 +270,17 @@ Cloud platform volumes are not automatically backed up. Implement a backup strat
 > keeps using the stale key. `scripts/restore.sh` / `restore.ps1` restore the key file and print this
 > reminder; on the AWS Terraform path, replacing the instance re-renders `.env` from the restored key file.
 
-1. **Railway**: Use the Railway CLI to open a shell, then run:
-   ```bash
-   sqlite3 /app/data/taskdeck.db ".backup /tmp/taskdeck-backup.db"
-   ```
-   Download the backup file from `/tmp/taskdeck-backup.db`.
-2. **Render**: Use the Render Shell to run the same `sqlite3 .backup` command.
-3. **Automated**: Schedule a task that runs `sqlite3 .backup` and uploads the result to object storage (S3, R2, etc.). Alternatively, stop the application briefly before copying the file.
+The production Taskdeck image does **not** include the `sqlite3` CLI, so commands that assume it is available inside the running container will fail. Use one of these operator-controlled paths:
+
+1. Stop the Taskdeck instance and create a provider volume snapshot or offline export.
+2. Attach the stopped volume to a trusted one-off administration image that includes `sqlite3`, then run `.backup` from that image.
+3. Build a separately reviewed backup job image that includes `sqlite3` and uploads encrypted snapshots to operator-controlled storage. Do not add backup tooling to the public runtime image casually.
+
+Whichever path you use, preserve `Connectors__EncryptionKey` in the same protected recovery set and prove a restore before relying on the backup.
 
 ### Migration to PostgreSQL
 
-> **Future horizon, not current support.** PostgreSQL migration and horizontal scaling are not part of the free beta or an executable operator path today. ADR-0044 leaves hosted infrastructure as a possible future commercial surface; any provider change still requires a separately ratified implementation plan.
+> **Future horizon, not current support.** PostgreSQL migration and horizontal scaling are not part of the free beta or an executable operator path today. Hosted infrastructure remains a possible future surface; any provider change still requires a separately ratified implementation plan.
 
 The existing `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` records earlier research. Do not treat it as proof that the current application supports switching providers.
 
@@ -300,31 +309,9 @@ The readiness check validates:
 
 ---
 
-## Cost Estimates
+## Cost Planning
 
-Estimates for a single-instance deployment serving 50-200 users.
-
-### Railway
-
-| Component | Cost |
-|-----------|------|
-| Compute (512 MB RAM) | ~$5/month |
-| Persistent volume (1 GB) | ~$0.25/month |
-| Bandwidth | Included |
-| Custom domain + TLS | Included |
-| **Total** | **~$5-10/month** |
-
-### Render
-
-| Component | Cost |
-|-----------|------|
-| Starter plan (512 MB RAM) | $7/month |
-| Persistent disk (1 GB) | $0.25/month |
-| Bandwidth | Included |
-| Custom domain + TLS | Included |
-| **Total** | **~$7-10/month** |
-
-Render's free tier is available for evaluation but has spin-down behavior (cold starts after inactivity).
+Provider prices, free-tier behavior, storage charges, and bandwidth allowances change. Before deploying, verify the current Railway or Render pricing page and budget for one always-on container, persistent storage, backups, and network egress. Treat any provider calculator result as an estimate, then monitor actual usage during the private evaluation.
 
 ---
 
@@ -336,8 +323,9 @@ Render's free tier is available for evaluation but has spin-down behavior (cold 
 
 **Check**:
 1. Verify `Jwt__SecretKey` is set. The app will fail to start without it (first-run bootstrap generates one locally, but in production you must provide it).
-2. Verify the volume is mounted at `/app/data`. Without it, the SQLite path may not be writable.
-3. Check that `ASPNETCORE_URLS` matches the platform's expected port. Both Railway and Render inject `PORT`; the Dockerfile defaults handle this.
+2. Verify `Connectors__EncryptionKey` is set and decodes to exactly 32 bytes.
+3. Verify the volume is mounted at `/app/data`. Without it, the SQLite path may not be writable.
+4. Check that `ASPNETCORE_URLS` matches the platform's expected port. Both Railway and Render inject `PORT`; the Dockerfile defaults handle this.
 
 ### Health check fails after deploy
 

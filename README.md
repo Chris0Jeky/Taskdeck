@@ -2,7 +2,7 @@
 
 **The local-first, review-first action-item engine.**
 
-Your transcripts and messy notes become evidence-linked proposals. You decide what is correct; only then does Taskdeck apply the approved changes to your board. Your entire workspace is a single SQLite file you own.
+Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turns them into source-linked proposals. You decide what is correct; only then does Taskdeck apply approved board changes. Your entire workspace is a single SQLite file you own. Transcript-aware extraction with evidence spans is planned for v0.2, not shipped today.
 
 [![CI](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml/badge.svg)](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml)
 [![Status: Beta](https://img.shields.io/badge/status-beta-5b5bd6.svg)](https://github.com/Chris0Jeky/Taskdeck/releases)
@@ -60,7 +60,7 @@ cp deploy/.env.example deploy/.env
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline up -d --build
 ```
 
-Open `http://localhost:5000` for the production-container path. See [DEPLOYMENT_CONTAINERS.md](docs/ops/DEPLOYMENT_CONTAINERS.md) for secret generation, volumes, health checks, and shutdown.
+Open `http://localhost:5000` after the direct `docker run` command. The Compose baseline publishes its reverse proxy at `http://localhost:8080`. See [DEPLOYMENT_CONTAINERS.md](docs/ops/DEPLOYMENT_CONTAINERS.md) for secret generation, volumes, health checks, and shutdown.
 
 ### 3. From source
 
@@ -84,17 +84,19 @@ For the first guided run, see [START_HERE.md](docs/START_HERE.md).
 
 ## MCP: write access with a human gate
 
-Taskdeck includes an MCP server for AI clients such as Claude Code and Cursor. Read tools expose boards, cards, captures, and proposal status. Write tools create proposals; they do **not** mutate the board directly. There is intentionally no `approve_proposal` tool, so an agent cannot approve its own suggested changes.
+Taskdeck includes an MCP server for AI clients such as Claude Code and Cursor. Read tools expose boards, cards, captures, and proposal status. Board-mutating tools stop at proposals, and MCP intentionally exposes no approve or apply tool, so an agent cannot approve its own suggested board changes. Bounded workflow actions such as creating a capture or dismissing a proposal are direct writes.
 
 Three launch modes are available across two MCP transports:
 
 | Mode | Command / endpoint | Intended use |
 |---|---|---|
 | Local stdio | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp` | Local editor or agent client; zero network listener |
-| Standalone Streamable HTTP | Add `--transport http --port 5001` | Dedicated remote-capable MCP host with API-key authentication |
-| Co-hosted Streamable HTTP | Start the normal API and connect to `/mcp` | REST, UI, and MCP from one Taskdeck process |
+| Standalone Streamable HTTP | Add `--transport http --port 5001` | Dedicated remote-capable MCP host; send `Authorization: Bearer tdsk_...` |
+| Co-hosted Streamable HTTP | Start the normal API and connect to `/mcp` | REST, UI, and authenticated MCP from one Taskdeck process; send the same Bearer header |
 
-Copy [mcp.example.json](mcp.example.json) into your client's MCP configuration and adjust the project path if Taskdeck is not the working directory. One-command packaging and scoped-key hardening are planned for [REVIVAL-13](https://github.com/Chris0Jeky/Taskdeck/issues/1309); the embedded server itself already ships.
+Before using stdio, run the web app once and create a local user. The stdio server uses the first user in that SQLite database unless `McpServer__DefaultUserId` names an existing user. It also needs the connector encryption key written by the normal first-run flow; for an explicit headless setup, provide `Connectors__EncryptionKey` yourself. Copy [mcp.example.json](mcp.example.json) into your client's MCP configuration and adjust the project path if Taskdeck is not the working directory.
+
+For either HTTP mode, sign in to the web app, open **Settings -> API Keys**, create a key, and copy the one-time `tdsk_...` value into your MCP client's Bearer-auth configuration. One-command packaging and scoped-key hardening are planned for [REVIVAL-13](https://github.com/Chris0Jeky/Taskdeck/issues/1309); the embedded server itself already ships.
 
 ## Current scope
 
@@ -103,7 +105,7 @@ Shipped now:
 - capture, triage, proposal review, explicit approval, and audited apply;
 - boards, cards, labels, Inbox, Review, search, notifications, and local operations surfaces;
 - SQLite persistence, JSON/board exports, authentication, and self-hosted container support;
-- MCP resources and proposal-only write tools;
+- MCP resources, review-gated board changes, and bounded workflow actions;
 - mock, OpenAI, Gemini, and config-gated local/provider integrations.
 
 Coming through the revival roadmap:
@@ -112,7 +114,7 @@ Coming through the revival roadmap:
 - **v0.2 Transcript Engine:** transcript-aware triage, evidence spans, and OpenAI-compatible provider support;
 - **v0.3 Open Beta:** a slimmer public surface, packaged MCP setup, and the feedback channel.
 
-The operative direction is [ADR-0044 / the revival plan in PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296). Taskdeck is not claiming a hosted service, production transcript engine, or stable v1 API today.
+This README follows the maintainer-owned revival direction proposed in [PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) and must not land before that direction update. Taskdeck is not claiming a hosted service, production transcript engine, or stable v1 API today.
 
 ## Technology
 
