@@ -48,12 +48,14 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        // SQLite cannot translate ORDER BY on a DateTimeOffset column (CreatedAt) from
-        // LINQ, so the ordering + LIMIT are pushed into raw SQL to keep the "latest"
-        // selection deterministic in the database. This mirrors the established pattern
-        // in ChatSessionRepository / LlmQueueRepository / AuditLogRepository; collapsing
-        // to a pure LINQ query would silently change ordering semantics under SQLite.
-        // Other providers translate the equivalent LINQ correctly. Coverage:
+        // Push the "latest" selection (ORDER BY + LIMIT 1) into raw SQL under SQLite to
+        // keep an explicit, deterministic in-database ordering and to match the
+        // established IsSqlite()/FromSqlInterpolated convention shared by
+        // ChatSessionRepository / LlmQueueRepository / AuditLogRepository. The SQLite
+        // provider can translate the equivalent LINQ (it orders the stored TEXT, which
+        // is chronologically correct for the all-UTC CreatedAt values here), but the raw
+        // form keeps ordering consistent with how the rest of the codebase resolves these
+        // reads on SQLite. Other providers use the LINQ branch below. Coverage:
         // ArtefactExtractionPersistenceTests.Queries_ReturnDeterministicHistoryWithinUserBoundary.
         if (_context.Database.IsSqlite())
         {
@@ -92,11 +94,13 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
         var boundedLimit = Math.Clamp(limit, 1, MaxPageSize);
         var boundedOffset = Math.Max(offset, 0);
 
-        // SQLite cannot translate ORDER BY on the DateTimeOffset CreatedAt column from
-        // LINQ, so ordering + LIMIT/OFFSET are pushed into raw SQL to keep pagination
-        // deterministic in the database (same rationale and codebase convention as
-        // GetLatestForArtefactForUserAsync above). Other providers translate the LINQ
-        // branch below correctly. Coverage:
+        // Push ordering + LIMIT/OFFSET into raw SQL under SQLite for an explicit,
+        // deterministic in-database pagination, matching the IsSqlite()/FromSqlInterpolated
+        // convention used across ChatSessionRepository / LlmQueueRepository /
+        // AuditLogRepository (same rationale as GetLatestForArtefactForUserAsync above:
+        // the SQLite provider can translate the equivalent LINQ, but the raw form keeps
+        // ordering consistent with the rest of the codebase's SQLite reads). Other
+        // providers use the LINQ branch below. Coverage:
         // ArtefactExtractionPersistenceTests.Queries_ReturnDeterministicHistoryWithinUserBoundary.
         if (_context.Database.IsSqlite())
         {
