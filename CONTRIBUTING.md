@@ -229,6 +229,32 @@ For full test operations, fixtures, and troubleshooting, see
 
 ---
 
+## Developer Certificate of Origin
+
+Every commit must include a `Signed-off-by:` trailer certifying the
+[Developer Certificate of Origin 1.1](https://developercertificate.org/).
+Create the trailer from your configured Git name and email with `-s`:
+
+```bash
+git commit -s -m "Add booking validation to application layer"
+```
+
+The DCO is a lightweight statement that you created the contribution, or have
+the right to submit it under Taskdeck's licence, and understand that the public
+record is retained. Taskdeck uses this inbound-equals-outbound model instead of
+a contributor licence agreement: contributions arrive under the same MIT terms
+under which the core is distributed, so the
+[MIT-forever commitment](LICENSING.md) does not depend on collecting unilateral
+relicensing rights.
+
+The CI check is advisory through the first rollout week (target: 2026-07-20).
+Missing sign-offs still need to be corrected before the check is promoted into
+branch protection under
+[#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173). A sign-off is not a
+cryptographic signature; do not add one on another contributor's behalf.
+
+---
+
 ## Commit Message Conventions
 
 - Use **present-tense, imperative** messages.
