@@ -374,7 +374,8 @@ watch(
 
 .td-btn--primary {
   background: var(--ember, var(--td-color-primary));
-  color: var(--td-text-inverse);
+  /* Paper-aware on-ember text (>=4.5:1 on the ember CTA); Legacy falls back unchanged. */
+  color: var(--td-on-ember, var(--td-text-inverse));
 }
 
 .td-btn--secondary {
