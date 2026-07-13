@@ -388,7 +388,14 @@ public class AuthControllerEdgeCaseTests
         unitOfWorkMock.Setup(u => u.Users).Returns(userRepoMock.Object);
         unitOfWorkMock.Setup(u => u.ExternalLogins).Returns(new Mock<IExternalLoginRepository>().Object);
 
-        var authServiceMock = new Mock<AuthenticationService>(unitOfWorkMock.Object, DefaultJwtSettings) { CallBase = true };
+        var authServiceMock = new Mock<AuthenticationService>(
+            unitOfWorkMock.Object,
+            DefaultJwtSettings,
+            Mock.Of<IRegistrationPolicyService>(),
+            new BcryptPasswordHasher())
+        {
+            CallBase = true
+        };
         return (unitOfWorkMock, authServiceMock);
     }
 

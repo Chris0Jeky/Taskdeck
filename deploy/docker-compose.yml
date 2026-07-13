@@ -34,6 +34,7 @@ services:
       Jwt__Issuer: ${TASKDECK_JWT_ISSUER:-Taskdeck}
       Jwt__Audience: ${TASKDECK_JWT_AUDIENCE:-TaskdeckUsers}
       Jwt__ExpirationMinutes: ${TASKDECK_JWT_EXPIRATION_MINUTES:-1440}
+      Auth__Registration__Mode: ${TASKDECK_REGISTRATION_MODE:-Closed}
       Llm__EnableLiveProviders: ${TASKDECK_LLM_ENABLE_LIVE_PROVIDERS:-false}
       Llm__Provider: ${TASKDECK_LLM_PROVIDER:-Mock}
       Llm__OpenAi__ApiKey: ${TASKDECK_LLM_OPENAI_API_KEY:-}

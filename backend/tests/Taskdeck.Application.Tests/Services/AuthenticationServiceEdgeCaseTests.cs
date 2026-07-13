@@ -31,15 +31,27 @@ public class AuthenticationServiceEdgeCaseTests
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IUserRepository> _userRepoMock;
     private readonly Mock<IExternalLoginRepository> _externalLoginRepoMock;
+    private readonly Mock<IRegistrationPolicyService> _registrationPolicyMock;
 
     public AuthenticationServiceEdgeCaseTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _userRepoMock = new Mock<IUserRepository>();
         _externalLoginRepoMock = new Mock<IExternalLoginRepository>();
+        _registrationPolicyMock = new Mock<IRegistrationPolicyService>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.ExternalLogins).Returns(_externalLoginRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.BeginTransactionAsync(default)).Returns(Task.CompletedTask);
+        _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
+        _unitOfWorkMock.Setup(u => u.RollbackTransactionAsync(default)).Returns(Task.CompletedTask);
+        _registrationPolicyMock
+            .Setup(policy => policy.CheckNewUserEligibilityAsync(It.IsAny<string?>(), default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
+        _registrationPolicyMock
+            .Setup(policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success(
+                new RegistrationAuthorization(ClaimedFirstUserBootstrap: false)));
     }
 
     // ─────────────────────────────────────────────────────────
@@ -586,6 +598,10 @@ public class AuthenticationServiceEdgeCaseTests
 
     private AuthenticationService CreateService(JwtSettings? jwtSettings = null)
     {
-        return new AuthenticationService(_unitOfWorkMock.Object, jwtSettings ?? DefaultJwtSettings);
+        return new AuthenticationService(
+            _unitOfWorkMock.Object,
+            jwtSettings ?? DefaultJwtSettings,
+            _registrationPolicyMock.Object,
+            new BcryptPasswordHasher());
     }
 }

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Cli;
 using Taskdeck.Cli.Commands;
@@ -39,6 +40,11 @@ if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Default
 CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(builder.Configuration);
 
 builder.Services.AddInfrastructure(builder.Configuration);
+var registrationSettings = builder.Configuration
+    .GetSection("Auth:Registration")
+    .Get<RegistrationSettings>() ?? new RegistrationSettings();
+builder.Services.AddSingleton(registrationSettings);
+builder.Services.AddScoped<IRegistrationPolicyService, RegistrationPolicyService>();
 builder.Services.AddScoped<BoardService>();
 builder.Services.AddScoped<ColumnService>();
 builder.Services.AddScoped<CardService>();
@@ -47,6 +53,7 @@ builder.Services.AddScoped<BoardsCommandHandler>();
 builder.Services.AddScoped<ColumnsCommandHandler>();
 builder.Services.AddScoped<CardsCommandHandler>();
 builder.Services.AddScoped<ApiKeysCommandHandler>();
+builder.Services.AddScoped<InvitesCommandHandler>();
 
 using var host = builder.Build();
 

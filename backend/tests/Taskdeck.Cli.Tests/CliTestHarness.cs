@@ -41,6 +41,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
     /// <c>appsettings.local.json</c> here.
     /// </summary>
     public string DataDirectory => _dataDirectory;
+    public string DatabasePath => _databasePath;
 
     public async Task<(Guid BoardId, Guid ColumnId)> CreateBoardAndColumnAsync(
         string boardName = "TestBoard",

@@ -50,6 +50,8 @@ internal static class ConsoleOutput
               taskdeck api-key list
               taskdeck api-key revoke --name <name> | --id <key-id>
 
+              taskdeck invite create [--expires <days>]
+
             Exit codes:
               0 success
               1 command failed

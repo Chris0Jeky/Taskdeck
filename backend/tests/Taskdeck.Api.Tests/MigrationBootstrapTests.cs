@@ -2,9 +2,13 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Moq;
+using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Infrastructure.Repositories;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -141,6 +145,77 @@ public class MigrationBootstrapTests : IDisposable
         timestamps.Should().OnlyHaveUniqueItems(
             "each migration must have a unique timestamp prefix; " +
             "collisions indicate migrations were scaffolded in the same second");
+    }
+
+    [Fact]
+    public void AddRegistrationGating_LeavesFreshDatabaseBootstrapUnclaimed()
+    {
+        _context.Database.Migrate();
+
+        GetRegistrationBootstrapCount().Should().Be(0,
+            "a fresh database must permit one operator-invite bootstrap transaction");
+    }
+
+    [Fact]
+    public void AddRegistrationGating_MarksExistingInstallationAsAlreadyBootstrapped()
+    {
+        _context.GetService<IMigrator>()
+            .Migrate("20260627003457_AddProposalFeedback");
+        InsertLegacyUser("existing-user", "existing@example.test");
+
+        _context.GetService<IMigrator>()
+            .Migrate("20260713022601_AddRegistrationGating");
+
+        GetRegistrationBootstrapCount().Should().Be(1,
+            "upgrading an installation with users must not reopen first-user registration");
+    }
+
+    [Fact]
+    public async Task AddRegistrationGating_CliActorOnlyDatabaseCanRedeemFirstOwnerInvite()
+    {
+        _context.GetService<IMigrator>()
+            .Migrate("20260627003457_AddProposalFeedback");
+        InsertLegacyUser("taskdeck_cli_actor", "cli-actor@system.taskdeck");
+
+        _context.GetService<IMigrator>()
+            .Migrate("20260713022601_AddRegistrationGating");
+
+        GetRegistrationBootstrapCount().Should().Be(0,
+            "a CLI-only database must still permit an operator-invite owner bootstrap");
+
+        var code = RegistrationPolicyService.GenerateInviteCode();
+        var invite = new RegistrationInvite(
+            RegistrationPolicyService.HashInviteCode(code),
+            code[..10],
+            DateTimeOffset.UtcNow.AddHours(1));
+        _context.RegistrationInvites.Add(invite);
+        await _context.SaveChangesAsync();
+
+        var policy = new RegistrationPolicyService(
+            new RegistrationSettings { Mode = RegistrationMode.Closed },
+            new RegistrationPolicyStore(_context),
+            Mock.Of<IUnitOfWork>());
+
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        var eligibility = await policy.CheckNewUserEligibilityAsync(code);
+        var authorization = await policy.AuthorizeNewUserAsync(code);
+        _context.Users.Add(new User(
+            "first-owner",
+            "first-owner@example.test",
+            "test-password-hash"));
+        await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        eligibility.IsSuccess.Should().BeTrue();
+        authorization.IsSuccess.Should().BeTrue();
+        authorization.Value.ClaimedFirstUserBootstrap.Should().BeTrue();
+        GetRegistrationBootstrapCount().Should().Be(1);
+        _context.ChangeTracker.Clear();
+        var persistedInvite = await _context.RegistrationInvites.SingleAsync(
+            candidate => candidate.Id == invite.Id);
+        persistedInvite.ConsumedAt.Should().NotBeNull();
+        (await _context.Users.AnyAsync(user => user.Email == "first-owner@example.test"))
+            .Should().BeTrue();
     }
 
     [Fact]
@@ -318,6 +393,35 @@ public class MigrationBootstrapTests : IDisposable
         }
 
         return tables;
+    }
+
+    private long GetRegistrationBootstrapCount()
+    {
+        var connection = _context.Database.GetDbConnection();
+        _context.Database.OpenConnection();
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM RegistrationBootstraps";
+            return Convert.ToInt64(command.ExecuteScalar());
+        }
+        finally
+        {
+            _context.Database.CloseConnection();
+        }
+    }
+
+    private void InsertLegacyUser(string username, string email)
+    {
+        var now = DateTimeOffset.UtcNow;
+        _context.Database.ExecuteSqlInterpolated($"""
+            INSERT INTO "Users"
+                ("Id", "Username", "Email", "PasswordHash", "DefaultRole", "IsActive",
+                 "TokenInvalidatedAt", "MfaEnabled", "CreatedAt", "UpdatedAt")
+            VALUES
+                ({Guid.NewGuid()}, {username}, {email}, {"hash"},
+                 {2}, {true}, {(DateTimeOffset?)null}, {false}, {now}, {now});
+            """);
     }
 
     public void Dispose()
