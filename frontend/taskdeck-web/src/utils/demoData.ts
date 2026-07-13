@@ -17,6 +17,7 @@ export const DEMO_ONBOARDING: WorkspaceOnboarding = {
     { stepId: 'board', title: 'Create a board', description: 'Set up a board to organise your work.', targetSurface: 'boards', isComplete: true },
     { stepId: 'capture', title: 'Capture a note', description: 'Drop a quick thought into the inbox.', targetSurface: 'capture', isComplete: false },
     { stepId: 'review', title: 'Review a proposal', description: 'Approve or reject a proposed change before it reaches a board.', targetSurface: 'review', isComplete: false },
+    { stepId: 'apply', title: 'Apply to a board', description: 'Apply an approved proposal so the change reaches your board.', targetSurface: 'board', isComplete: false },
   ],
 }
 

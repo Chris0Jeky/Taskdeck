@@ -6,13 +6,13 @@ Captured from the isolated `paper-onboarding.spec.ts` Playwright journey that st
 
 ![Paper guided setup modal opened from the zero-board Home state](paper-guided-setup.png)
 
-The Paper Home CTA opens the existing `WorkspaceSetupModal`; the local-only three-step activation milestones remain visible behind it.
+The Paper Home CTA opens the existing `WorkspaceSetupModal`; the local-only capture→review→apply activation milestones remain visible behind it.
 
 ## Created board
 
 ![First Paper board created by the guided setup](paper-first-board.png)
 
-The same journey creates a blank board, navigates to it, then returns Home and verifies the board milestone advances to `1/3 complete`.
+The same journey creates a blank board, navigates to it, then returns Home and verifies the board milestone advances to `1/4 complete` (capture → review → apply remain).
 
 Verification command:
 

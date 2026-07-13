@@ -10,9 +10,10 @@ import {
 
 describe('demoData', () => {
   describe('DEMO_ONBOARDING', () => {
-    it('has active visibility and three steps', () => {
+    it('has active visibility and the four capture-to-board loop steps', () => {
       expect(DEMO_ONBOARDING.visibility).toBe('active')
-      expect(DEMO_ONBOARDING.steps).toHaveLength(3)
+      expect(DEMO_ONBOARDING.steps).toHaveLength(4)
+      expect(DEMO_ONBOARDING.steps.map((step) => step.stepId)).toContain('apply')
     })
   })
 

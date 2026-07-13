@@ -25,7 +25,7 @@ test('fresh Paper user can register and create a first board through guided setu
   await expect(page).toHaveURL(/\/workspace\/home$/)
   await expect(page.getByTestId('paper-home')).toBeVisible()
   await expect(page.getByTestId('paper-home-first-board')).toBeVisible()
-  await expect(page.getByTestId('paper-home-milestones')).toContainText('0/3 complete')
+  await expect(page.getByTestId('paper-home-milestones')).toContainText('0/4 complete')
 
   await page.getByTestId('paper-home-setup-cta').click()
   const setupDialog = page.getByRole('dialog', { name: 'Workspace setup' })
@@ -43,5 +43,6 @@ test('fresh Paper user can register and create a first board through guided setu
   await page.goto('/workspace/home')
   await expect(page.getByTestId('paper-home')).toBeVisible()
   await expect(page.getByTestId('paper-home-first-board')).toHaveCount(0)
-  await expect(page.getByTestId('paper-home-milestones')).toContainText('1/3 complete')
+  // Creating the first board completes 1 of the 4 milestones (capture→review→apply remain).
+  await expect(page.getByTestId('paper-home-milestones')).toContainText('1/4 complete')
 })
