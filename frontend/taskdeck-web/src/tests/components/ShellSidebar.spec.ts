@@ -11,6 +11,7 @@ const mockWorkspaceStore = reactive({
   mode: 'guided' as string,
   inboxBadgeCount: 0,
   reviewBadgeCount: 0,
+  updateMode: vi.fn(async (_mode: string) => {}),
 })
 
 vi.mock('../../store/featureFlagStore', () => ({
@@ -33,7 +34,7 @@ vi.mock('vue-router', () => ({
   useRoute: () => routeMock,
 }))
 
-const routerLinkStub = { template: '<a><slot /></a>', props: ['to'] }
+const routerLinkStub = { template: '<a :href="to"><slot /></a>', props: ['to'] }
 
 function mountSidebar(overrides?: { isAuthenticated?: boolean; stub?: Record<string, unknown> }) {
   return mount(ShellSidebar, {
@@ -48,6 +49,7 @@ describe('ShellSidebar', () => {
     mockWorkspaceStore.mode = 'guided'
     mockWorkspaceStore.inboxBadgeCount = 0
     mockWorkspaceStore.reviewBadgeCount = 0
+    mockWorkspaceStore.updateMode = vi.fn(async (_mode: string) => {})
     mockFeatureFlags.isEnabled = vi.fn(() => true)
     routeMock.path = '/workspace/home'
   })
@@ -55,7 +57,7 @@ describe('ShellSidebar', () => {
   it('renders the Taskdeck brand title', () => {
     const wrapper = mountSidebar()
     expect(wrapper.text()).toContain('Taskdeck')
-    expect(wrapper.text()).toContain('Precision Mode Active')
+    expect(wrapper.text()).toContain('Review before changes')
   })
 
   it('renders reduced IA sidebar items: Today, Review, Boards, Inbox', () => {
@@ -187,7 +189,7 @@ describe('ShellSidebar', () => {
       return true
     })
     const wrapper = mountSidebar()
-    expect(wrapper.text()).not.toContain('Review')
+    expect(wrapper.findAll('.td-sidebar__nav .td-nav-item').some(item => item.text().includes('Review'))).toBe(false)
   })
 
   it('hides Settings link when newAuth flag is disabled', () => {
@@ -236,15 +238,57 @@ describe('ShellSidebar', () => {
     expect(exposed.some((item) => item.id === 'home')).toBe(true)
   })
 
-  it('exposes demoted items in availableNavItems (accessible via command palette)', () => {
+  it('keeps developer destinations command-palette reachable while guided navigation is collapsed', () => {
     const wrapper = mountSidebar()
     const exposed = (wrapper.vm as unknown as { availableNavItems: Array<{ id: string }> }).availableNavItems
-    // Demoted items should still be available in the nav catalog for command palette
     expect(exposed.some((item) => item.id === 'metrics')).toBe(true)
-    expect(exposed.some((item) => item.id === 'activity')).toBe(true)
+    expect(exposed.some((item) => item.id === 'integrations')).toBe(true)
     expect(exposed.some((item) => item.id === 'ops')).toBe(true)
+    expect(exposed.some((item) => item.id === 'api-keys')).toBe(true)
+    expect(exposed.some((item) => item.id === 'agents')).toBe(true)
+    // Non-developer demoted destinations remain command-palette reachable.
+    expect(exposed.some((item) => item.id === 'activity')).toBe(true)
     expect(exposed.some((item) => item.id === 'views')).toBe(true)
     expect(exposed.some((item) => item.id === 'notifications')).toBe(true)
     expect(exposed.some((item) => item.id === 'chat')).toBe(true)
+  })
+
+  it('reveals all guided developer destinations behind one accessible Advanced disclosure', async () => {
+    const wrapper = mountSidebar()
+    const toggle = wrapper.get('[data-testid="guided-advanced-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    for (const label of ['Agents', 'Metrics', 'Cohorts', 'Integrations', 'Ops', 'Endpoints', 'Logs', 'API Keys', 'Dev Tools']) {
+      expect(wrapper.text()).toContain(label)
+    }
+    const exposed = (wrapper.vm as unknown as { availableNavItems: Array<{ id: string }> }).availableNavItems
+    expect(exposed.map(item => item.id)).toEqual(expect.arrayContaining([
+      'agents', 'metrics', 'integrations', 'ops', 'api-keys',
+    ]))
+    for (const path of ['/workspace/metrics/cohorts', '/workspace/ops/endpoints', '/workspace/ops/logs', '/workspace/dev-tools']) {
+      expect(wrapper.find(`a[href="${path}"]`).exists()).toBe(true)
+    }
+  })
+
+  it('offers a discoverable switch to workbench from the Advanced disclosure', async () => {
+    const wrapper = mountSidebar()
+    await wrapper.get('[data-testid="guided-advanced-toggle"]').trigger('click')
+
+    await wrapper.get('[data-testid="switch-to-workbench"]').trigger('click')
+
+    expect(mockWorkspaceStore.updateMode).toHaveBeenCalledWith('workbench')
+  })
+
+  it.each(['workbench', 'agent'])('leaves the existing %s catalog unchanged without guided disclosure', (mode) => {
+    mockWorkspaceStore.mode = mode
+    const wrapper = mountSidebar()
+    expect(wrapper.find('[data-testid="guided-advanced-toggle"]').exists()).toBe(false)
+    const exposed = (wrapper.vm as unknown as { availableNavItems: Array<{ id: string }> }).availableNavItems
+    expect(exposed.some(item => item.id === 'metrics')).toBe(true)
+    expect(exposed.some(item => item.id === 'ops')).toBe(true)
+    expect(exposed.some(item => item.id === 'dev-tools')).toBe(false)
   })
 })

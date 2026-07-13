@@ -13,6 +13,7 @@ const mockWorkspace = reactive({
   mode: 'guided' as string,
   inboxBadgeCount: 0,
   reviewBadgeCount: 0,
+  updateMode: vi.fn(async (_mode: string) => {}),
 })
 
 const mockFeatureFlags = {
@@ -68,6 +69,7 @@ describe('PaperSidebar', () => {
     mockWorkspace.mode = 'guided'
     mockWorkspace.inboxBadgeCount = 0
     mockWorkspace.reviewBadgeCount = 0
+    mockWorkspace.updateMode = vi.fn(async (_mode: string) => {})
     mockFeatureFlags.isEnabled = vi.fn(() => true)
     mockPaperTheme.mode = 'paper'
     mockPaperTheme.activeClass = 'paper'
@@ -75,10 +77,10 @@ describe('PaperSidebar', () => {
     document.body.style.overflow = ''
   })
 
-  it('renders the brand and Precision Mode eyebrow with the active accent', () => {
+  it('renders the brand and plain-language review-first eyebrow', () => {
     const wrapper = mountSidebar()
     expect(wrapper.find('.paper-sidebar__brand').text()).toBe('Taskdeck')
-    expect(wrapper.text()).toContain('Precision Mode')
+    expect(wrapper.text()).toContain('Review before changes')
     expect(wrapper.find('.paper-sidebar__eyebrow-active').text()).toContain('active')
   })
 
@@ -89,6 +91,7 @@ describe('PaperSidebar', () => {
   })
 
   it('renders the three IA groups with primary loop, workbench, and meta items', () => {
+    mockWorkspace.mode = 'workbench'
     const wrapper = mountSidebar()
     const text = wrapper.text()
     // Primary loop
@@ -114,6 +117,44 @@ describe('PaperSidebar', () => {
     expect(text).toContain('Preferences')
     expect(text).toContain('Shortcuts')
     expect(text).toContain('Logout')
+  })
+
+  it('hides developer-facing Paper navigation behind one guided Advanced disclosure', async () => {
+    const wrapper = mountSidebar()
+    const toggle = wrapper.get('[data-testid="paper-guided-advanced-toggle"]')
+
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-group="workbench"]').text()).toContain('More tools')
+    const visiblePaths = wrapper.findAll('a.paper-sidebar__item').map(link => link.attributes('href'))
+    for (const path of ['/workspace/agents', '/workspace/metrics', '/workspace/integrations', '/workspace/ops/cli', '/workspace/settings/api-keys']) {
+      expect(visiblePaths).not.toContain(path)
+    }
+    expect(visiblePaths).toContain('/workspace/settings/profile')
+    expect(visiblePaths).toContain('/workspace/settings/appearance')
+
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    for (const label of ['Agents', 'Metrics', 'Cohorts', 'Integrations', 'Ops', 'Endpoints', 'Logs', 'API Keys', 'Dev Tools']) {
+      expect(wrapper.find('[data-group="advanced"]').text()).toContain(label)
+    }
+  })
+
+  it('keeps the command palette catalog complete while guided navigation is collapsed', () => {
+    const wrapper = mountSidebar()
+    const exposed = wrapper.vm as unknown as { availableNavItems: Array<{ id: string }> }
+
+    expect(exposed.availableNavItems.map(item => item.id)).toEqual(expect.arrayContaining([
+      'agents', 'metrics', 'integrations', 'ops', 'api-keys',
+    ]))
+  })
+
+  it('switches from the guided Advanced disclosure to the existing workbench mode', async () => {
+    const wrapper = mountSidebar()
+    await wrapper.get('[data-testid="paper-guided-advanced-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="paper-switch-to-workbench"]').trigger('click')
+
+    expect(mockWorkspace.updateMode).toHaveBeenCalledWith('workbench')
   })
 
   it('marks the active item with the ember class and aria-current', () => {

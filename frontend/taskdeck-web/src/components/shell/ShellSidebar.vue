@@ -20,6 +20,8 @@ export type NavItem = {
   keywords?: string
   /** When true, this item appears in the reduced primary sidebar IA. */
   sidebarPrimary?: boolean
+  /** Developer-facing destination hidden behind guided mode's Advanced disclosure. */
+  guidedAdvanced?: boolean
 }
 
 defineProps<{
@@ -38,6 +40,7 @@ const workspace = useWorkspaceStore()
 
 const sidebarCollapsed = ref(false)
 const mobileOpen = ref(false)
+const guidedAdvancedRevealed = ref(false)
 
 function closeMobileMenu() {
   mobileOpen.value = false
@@ -132,6 +135,7 @@ const navCatalog: NavItem[] = [
     path: '/workspace/agents',
     flag: null,
     primaryModes: ['agent'],
+    guidedAdvanced: true,
     keywords: 'agents profiles runs automation agent mode',
   },
   {
@@ -183,6 +187,7 @@ const navCatalog: NavItem[] = [
     flag: null,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
+    guidedAdvanced: true,
     keywords: 'metrics analytics throughput cycle time wip blocked dashboard',
   },
   {
@@ -193,6 +198,7 @@ const navCatalog: NavItem[] = [
     flag: null,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
+    guidedAdvanced: true,
     keywords: 'integrations connectors inbound outbound webhook import',
   },
   {
@@ -215,6 +221,7 @@ const navCatalog: NavItem[] = [
     workbenchBypassesFlag: true,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
+    guidedAdvanced: true,
     keywords: 'ops logs cli endpoints',
   },
   {
@@ -236,6 +243,7 @@ const navCatalog: NavItem[] = [
     flag: null,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
+    guidedAdvanced: true,
     keywords: 'api keys mcp tokens authentication',
   },
   {
@@ -282,16 +290,69 @@ const navCatalog: NavItem[] = [
   },
 ]
 
+/**
+ * Existing developer routes that were never part of the command-palette catalog.
+ * Offer them only from guided mode's explicit Advanced disclosure so the
+ * established workbench and agent catalogs remain unchanged.
+ */
+const guidedAdvancedOnlyCatalog: NavItem[] = [
+  {
+    id: 'ops-endpoints',
+    label: 'Endpoints',
+    icon: 'E',
+    path: '/workspace/ops/endpoints',
+    flag: 'newOps',
+    primaryModes: [],
+    guidedAdvanced: true,
+    keywords: 'advanced ops endpoints health connectivity diagnostics',
+  },
+  {
+    id: 'ops-logs',
+    label: 'Logs',
+    icon: 'L',
+    path: '/workspace/ops/logs',
+    flag: 'newOps',
+    primaryModes: [],
+    guidedAdvanced: true,
+    keywords: 'advanced ops logs diagnostics correlation',
+  },
+  {
+    id: 'cohorts',
+    label: 'Cohorts',
+    icon: 'C',
+    path: '/workspace/metrics/cohorts',
+    flag: 'newAutomation',
+    primaryModes: [],
+    guidedAdvanced: true,
+    keywords: 'advanced metrics cohorts automation outcomes',
+  },
+  {
+    id: 'dev-tools',
+    label: 'Dev Tools',
+    icon: 'D',
+    path: '/workspace/dev-tools',
+    flag: 'devTools',
+    primaryModes: [],
+    guidedAdvanced: true,
+    keywords: 'advanced developer scenarios traces diagnostics',
+  },
+]
+
 const activeWorkspaceMode = computed<WorkspaceMode>(() =>
   isWorkspaceMode(workspace.mode)
     ? workspace.mode
     : 'guided')
 
-const availableNavItems = computed(() => navCatalog.filter((item) => {
+function isFeatureAvailable(item: NavItem): boolean {
   if (!item.flag) return true
   if (activeWorkspaceMode.value === 'workbench' && item.workbenchBypassesFlag) return true
   return featureFlags.isEnabled(item.flag)
-}))
+}
+
+// The command palette remains a complete escape hatch in guided mode. The
+// Advanced disclosure changes visible navigation only, never route or command
+// reachability.
+const availableNavItems = computed(() => navCatalog.filter(isFeatureAvailable))
 
 /**
  * Reduced IA: only sidebarPrimary items appear in the sidebar nav.
@@ -299,6 +360,25 @@ const availableNavItems = computed(() => navCatalog.filter((item) => {
  */
 const sidebarNavItems = computed(() =>
   availableNavItems.value.filter((item) => item.sidebarPrimary === true))
+
+const guidedAdvancedNavItems = computed(() => [
+  ...availableNavItems.value.filter(item => item.guidedAdvanced === true),
+  ...guidedAdvancedOnlyCatalog.filter(isFeatureAvailable),
+])
+
+watch(activeWorkspaceMode, mode => {
+  if (mode !== 'guided') guidedAdvancedRevealed.value = false
+})
+
+function toggleGuidedAdvanced() {
+  guidedAdvancedRevealed.value = !guidedAdvancedRevealed.value
+}
+
+function switchToWorkbench() {
+  guidedAdvancedRevealed.value = false
+  closeMobileMenu()
+  void workspace.updateMode('workbench')
+}
 
 // Note: primaryNavItems and secondaryNavItems were removed as part of sidebar IA
 // reduction. All surfaces remain accessible via the command palette (Ctrl+K) through
@@ -324,9 +404,7 @@ function isActiveRoute(path: string): boolean {
     return route.path.startsWith(path)
   }
 
-  if (path === '/workspace/ops/cli') {
-    return route.path.startsWith('/workspace/ops')
-  }
+  if (path === '/workspace/ops/cli') return route.path === path
 
   return route.path.startsWith(path)
 }
@@ -365,8 +443,8 @@ defineExpose({
         <span class="td-sidebar__title">Taskdeck</span>
         <span
           class="td-sidebar__subtitle"
-          title="Precision Mode: the workspace operates with guided automation — all proposals require explicit review before applying to the board. Change this in Preferences."
-        >Precision Mode Active</span>
+          title="Taskdeck suggests changes; you decide what reaches your boards. Change the workspace mode in Preferences."
+        >Review before changes</span>
       </div>
       <button
         class="td-sidebar__toggle"
@@ -408,6 +486,57 @@ defineExpose({
         <span v-if="!sidebarCollapsed" class="td-nav-item__label">Search</span>
         <span v-if="!sidebarCollapsed" class="td-nav-item__kbd">Ctrl+K</span>
       </button>
+
+      <div
+        v-if="activeWorkspaceMode === 'guided'"
+        class="td-sidebar__advanced"
+        data-testid="guided-advanced-navigation"
+      >
+        <button
+          type="button"
+          class="td-nav-item td-nav-item--secondary"
+          data-testid="guided-advanced-toggle"
+          :aria-expanded="guidedAdvancedRevealed"
+          :aria-label="guidedAdvancedRevealed ? 'Hide advanced navigation' : 'Show advanced navigation'"
+          aria-controls="guided-advanced-destinations"
+          @click="toggleGuidedAdvanced"
+        >
+          <span class="td-nav-item__icon">A</span>
+          <span v-if="!sidebarCollapsed" class="td-nav-item__label">Advanced</span>
+          <span v-if="!sidebarCollapsed" class="td-nav-item__kbd">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
+        </button>
+
+        <div
+          v-if="guidedAdvancedRevealed"
+          id="guided-advanced-destinations"
+          class="td-sidebar__advanced-list"
+        >
+          <router-link
+            v-for="item in guidedAdvancedNavItems"
+            :key="item.id"
+            :to="item.path"
+            class="td-nav-item td-nav-item--secondary"
+            :class="{ 'td-nav-item--active': isActiveRoute(item.path) }"
+            :aria-current="isActiveRoute(item.path) ? 'page' : undefined"
+            :aria-label="item.label"
+            @click="closeMobileMenu"
+          >
+            <span class="td-nav-item__icon">{{ item.icon }}</span>
+            <span v-if="!sidebarCollapsed" class="td-nav-item__label">{{ item.label }}</span>
+          </router-link>
+
+          <button
+            type="button"
+            class="td-nav-item td-nav-item--secondary"
+            data-testid="switch-to-workbench"
+            aria-label="Use advanced workspace"
+            @click="switchToWorkbench"
+          >
+            <span class="td-nav-item__icon">→</span>
+            <span v-if="!sidebarCollapsed" class="td-nav-item__label">Use advanced workspace</span>
+          </button>
+        </div>
+      </div>
 
       <!-- Settings link at bottom of nav (above footer) -->
       <div class="td-sidebar__spacer" />
@@ -559,6 +688,22 @@ defineExpose({
   color: var(--td-text-tertiary);
   letter-spacing: 0.2em;
   text-transform: uppercase;
+}
+
+.td-sidebar__advanced,
+.td-sidebar__advanced-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.td-sidebar__advanced-list {
+  border-left: 1px solid var(--td-border-ghost);
+  margin-left: var(--td-space-5);
+}
+
+.td-sidebar__advanced-list .td-nav-item {
+  padding-left: var(--td-space-4);
 }
 
 .td-nav-item {

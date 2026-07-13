@@ -7,6 +7,8 @@ import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import type { FeatureFlags } from '../../types/feature-flags'
+import type { WorkspaceMode } from '../../types/workspace'
+import { isWorkspaceMode } from '../../types/workspace'
 import PaperIcon from './PaperIcon.vue'
 import PaperStatusPill from './PaperStatusPill.vue'
 
@@ -59,7 +61,9 @@ const paperTheme = usePaperThemeStore()
 const { mode: viewportMode } = useViewportMode()
 const mobileOpen = ref(false)
 const phoneMoreOpen = ref(false)
+const guidedAdvancedRevealed = ref(false)
 const phoneMoreDrawerId = 'paper-phone-more-drawer'
+const paperAdvancedDrawerId = 'paper-guided-advanced-navigation'
 
 const phoneNavItemCandidates: PaperNavItem[] = [
   { id: 'home', glyph: 'H', label: 'Home', path: '/workspace/home', keywords: '' },
@@ -103,18 +107,48 @@ const commandOnlyItems: PaperNavItem[] = [
   { id: 'archive', label: 'Archive', glyph: 'Z', path: '/workspace/archive', flag: 'newArchive', workbenchBypassesFlag: true, keywords: 'archive restore hidden boards' },
 ]
 
+const guidedAdvancedOnlyItems: PaperNavItem[] = [
+  { id: 'cohorts', label: 'Cohorts', glyph: 'C', path: '/workspace/metrics/cohorts', flag: 'newAutomation', keywords: 'advanced metrics cohorts automation outcomes' },
+  { id: 'ops-endpoints', label: 'Endpoints', glyph: 'E', path: '/workspace/ops/endpoints', flag: 'newOps', keywords: 'advanced ops endpoints health connectivity diagnostics' },
+  { id: 'ops-logs', label: 'Logs', glyph: 'L', path: '/workspace/ops/logs', flag: 'newOps', keywords: 'advanced ops logs diagnostics correlation' },
+  { id: 'dev-tools', label: 'Dev Tools', glyph: 'D', path: '/workspace/dev-tools', flag: 'devTools', keywords: 'advanced developer scenarios traces diagnostics' },
+]
+
+const guidedAdvancedExistingIds = new Set(['agents', 'metrics', 'integrations', 'ops', 'api-keys'])
+
+const activeWorkspaceMode = computed<WorkspaceMode>(() =>
+  isWorkspaceMode(workspace.mode) ? workspace.mode : 'guided')
+
 function isAvailable(item: PaperNavItem): boolean {
   if (!item.flag) return true
-  if (workspace.mode === 'workbench' && item.workbenchBypassesFlag) return true
+  if (activeWorkspaceMode.value === 'workbench' && item.workbenchBypassesFlag) return true
   return featureFlags.isEnabled(item.flag)
 }
 
-const visiblePrimary = computed(() => primaryItems.filter(isAvailable))
-const visibleWorkbench = computed(() => workbenchItems.filter(isAvailable))
-const visibleMeta = computed(() => metaItems.filter(isAvailable))
+const availablePrimary = computed(() => primaryItems.filter(isAvailable))
+const availableWorkbench = computed(() => workbenchItems.filter(isAvailable))
+const availableMeta = computed(() => metaItems.filter(isAvailable))
+const availableCommandOnly = computed(() => commandOnlyItems.filter(isAvailable))
+
+const visiblePrimary = computed(() => availablePrimary.value)
+const visibleWorkbench = computed(() => activeWorkspaceMode.value === 'guided'
+  ? availableWorkbench.value.filter(item => !guidedAdvancedExistingIds.has(item.id))
+  : availableWorkbench.value)
+const visibleMeta = computed(() => activeWorkspaceMode.value === 'guided'
+  ? availableMeta.value.filter(item => !guidedAdvancedExistingIds.has(item.id))
+  : availableMeta.value)
+const guidedAdvancedNavItems = computed(() => [
+  ...availableWorkbench.value,
+  ...availableMeta.value,
+  ...availableCommandOnly.value,
+].filter(item => guidedAdvancedExistingIds.has(item.id)).concat(
+  guidedAdvancedOnlyItems.filter(isAvailable),
+))
+const workbenchGroupLabel = computed(() =>
+  activeWorkspaceMode.value === 'guided' ? 'More tools' : 'Workbench tools')
 const availableNavItems = computed(() =>
-  [...visiblePrimary.value, ...visibleWorkbench.value, ...visibleMeta.value]
-    .concat(commandOnlyItems.filter(isAvailable))
+  [...availablePrimary.value, ...availableWorkbench.value, ...availableMeta.value]
+    .concat(availableCommandOnly.value)
     .filter((item) => !item.path.startsWith('#'))
     .map((item) => ({
       id: item.id,
@@ -139,7 +173,7 @@ function isActive(item: PaperNavItemBase): boolean {
       || isCurrentOrChild('/workspace/automations/proposals')
       || isCurrentOrChild('/workspace/automations/queue')
   }
-  if (item.path === '/workspace/ops/cli') return isCurrentOrChild('/workspace/ops')
+  if (item.path === '/workspace/ops/cli') return route.path === item.path
   return isCurrentOrChild(item.path)
 }
 
@@ -169,6 +203,17 @@ function handleMetaClick(item: PaperNavItem, event: MouseEvent) {
 
 function handleThemeToggle() {
   paperTheme.toggleNight()
+}
+
+function toggleGuidedAdvanced() {
+  guidedAdvancedRevealed.value = !guidedAdvancedRevealed.value
+}
+
+function switchToWorkbench() {
+  guidedAdvancedRevealed.value = false
+  closeMobileMenu()
+  closePhoneMore()
+  void workspace.updateMode('workbench')
 }
 
 function closeMobileMenu() {
@@ -237,6 +282,10 @@ watch(() => route.path, () => {
   closePhoneMore()
 })
 
+watch(activeWorkspaceMode, mode => {
+  if (mode !== 'guided') guidedAdvancedRevealed.value = false
+})
+
 onUnmounted(() => {
   if (mobileOpen.value || phoneMoreOpen.value) {
     document.body.style.overflow = ''
@@ -248,6 +297,7 @@ defineExpose({
   visiblePrimary,
   visibleWorkbench,
   visibleMeta,
+  guidedAdvancedNavItems,
   mobileOpen,
   phoneMoreOpen,
   toggleMobileMenu,
@@ -307,7 +357,7 @@ defineExpose({
       data-paper-phone-drawer
     >
       <div class="paper-sidebar__group" data-group="workbench">
-        <div class="paper-sidebar__group-label">Workbench</div>
+        <div class="paper-sidebar__group-label">{{ workbenchGroupLabel }}</div>
         <ul class="paper-sidebar__list">
           <li v-for="item in visibleWorkbench" :key="item.id">
             <router-link
@@ -319,6 +369,45 @@ defineExpose({
               <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </router-link>
+          </li>
+        </ul>
+      </div>
+      <div
+        v-if="activeWorkspaceMode === 'guided'"
+        class="paper-sidebar__group"
+        data-group="advanced"
+        data-testid="paper-guided-advanced-navigation"
+      >
+        <button
+          type="button"
+          class="paper-sidebar__item"
+          data-testid="paper-guided-advanced-toggle"
+          :aria-expanded="guidedAdvancedRevealed"
+          :aria-controls="paperAdvancedDrawerId"
+          @click="toggleGuidedAdvanced"
+        >
+          <span class="paper-sidebar__glyph">A</span>
+          <span class="paper-sidebar__label">Advanced</span>
+          <span class="paper-sidebar__disclosure">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
+        </button>
+        <ul v-if="guidedAdvancedRevealed" :id="paperAdvancedDrawerId" class="paper-sidebar__list paper-sidebar__advanced-list">
+          <li v-for="item in guidedAdvancedNavItems" :key="item.id">
+            <router-link
+              :to="item.path"
+              class="paper-sidebar__item"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              @click="closePhoneMore"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__label">{{ item.label }}</span>
+            </router-link>
+          </li>
+          <li>
+            <button type="button" class="paper-sidebar__item" data-testid="paper-switch-to-workbench" @click="switchToWorkbench">
+              <span class="paper-sidebar__glyph">&rarr;</span>
+              <span class="paper-sidebar__label">Use advanced workspace</span>
+            </button>
           </li>
         </ul>
       </div>
@@ -396,6 +485,43 @@ defineExpose({
         </ul>
       </div>
 
+      <div
+        v-if="activeWorkspaceMode === 'guided'"
+        class="paper-sidebar__group"
+        data-group="advanced"
+        data-testid="paper-guided-advanced-navigation"
+      >
+        <button
+          type="button"
+          class="paper-sidebar__item"
+          data-testid="paper-guided-advanced-toggle"
+          :aria-label="guidedAdvancedRevealed ? 'Hide advanced navigation' : 'Show advanced navigation'"
+          :aria-expanded="guidedAdvancedRevealed"
+          :aria-controls="paperAdvancedDrawerId"
+          @click="toggleGuidedAdvanced"
+        >
+          <span class="paper-sidebar__glyph">A</span>
+        </button>
+        <ul v-if="guidedAdvancedRevealed" :id="paperAdvancedDrawerId" class="paper-sidebar__list paper-sidebar__advanced-list">
+          <li v-for="item in guidedAdvancedNavItems" :key="item.id">
+            <router-link
+              :to="item.path"
+              class="paper-sidebar__item"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              :aria-label="item.label"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+            </router-link>
+          </li>
+          <li>
+            <button type="button" class="paper-sidebar__item" data-testid="paper-switch-to-workbench" aria-label="Use advanced workspace" @click="switchToWorkbench">
+              <span class="paper-sidebar__glyph">&rarr;</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
       <div class="paper-sidebar__spacer" />
 
       <div class="paper-sidebar__group paper-sidebar__group--muted" data-group="meta">
@@ -455,7 +581,7 @@ defineExpose({
       <div class="paper-sidebar__header">
         <div class="paper-sidebar__brand">Taskdeck</div>
         <div class="tk-eyebrow paper-sidebar__eyebrow">
-          Precision Mode <span class="paper-sidebar__eyebrow-active">&middot; active</span>
+          Review before changes <span class="paper-sidebar__eyebrow-active">&middot; active</span>
         </div>
       </div>
 
@@ -489,7 +615,7 @@ defineExpose({
       </div>
 
       <div class="paper-sidebar__group" data-group="workbench">
-        <div class="tk-eyebrow paper-sidebar__group-label">Workbench tools</div>
+        <div class="tk-eyebrow paper-sidebar__group-label">{{ workbenchGroupLabel }}</div>
         <ul class="paper-sidebar__list">
           <li v-for="item in visibleWorkbench" :key="item.id">
             <router-link
@@ -502,6 +628,46 @@ defineExpose({
               <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
               <span class="paper-sidebar__label">{{ item.label }}</span>
             </router-link>
+          </li>
+        </ul>
+      </div>
+
+      <div
+        v-if="activeWorkspaceMode === 'guided'"
+        class="paper-sidebar__group"
+        data-group="advanced"
+        data-testid="paper-guided-advanced-navigation"
+      >
+        <button
+          type="button"
+          class="paper-sidebar__item paper-sidebar__advanced-toggle"
+          data-testid="paper-guided-advanced-toggle"
+          :aria-expanded="guidedAdvancedRevealed"
+          :aria-controls="paperAdvancedDrawerId"
+          @click="toggleGuidedAdvanced"
+        >
+          <span class="paper-sidebar__glyph">A</span>
+          <span class="paper-sidebar__label">Advanced</span>
+          <span class="paper-sidebar__disclosure">{{ guidedAdvancedRevealed ? 'Hide' : 'Show' }}</span>
+        </button>
+        <ul v-if="guidedAdvancedRevealed" :id="paperAdvancedDrawerId" class="paper-sidebar__list paper-sidebar__advanced-list">
+          <li v-for="item in guidedAdvancedNavItems" :key="item.id">
+            <router-link
+              :to="item.path"
+              class="paper-sidebar__item"
+              :class="{ 'paper-sidebar__item--active': isActive(item) }"
+              :aria-current="isActive(item) ? 'page' : undefined"
+              @click="closeMobileMenu"
+            >
+              <span class="paper-sidebar__glyph">{{ item.glyph }}</span>
+              <span class="paper-sidebar__label">{{ item.label }}</span>
+            </router-link>
+          </li>
+          <li>
+            <button type="button" class="paper-sidebar__item" data-testid="paper-switch-to-workbench" @click="switchToWorkbench">
+              <span class="paper-sidebar__glyph">&rarr;</span>
+              <span class="paper-sidebar__label">Use advanced workspace</span>
+            </button>
           </li>
         </ul>
       </div>
@@ -568,6 +734,8 @@ defineExpose({
   font-family: var(--sans);
   position: relative;
   min-height: 100vh;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .paper-sidebar-overlay {
@@ -650,6 +818,23 @@ defineExpose({
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.paper-sidebar__advanced-list {
+  border-left: 1px solid var(--line-soft);
+  margin-left: 20px;
+}
+
+.paper-sidebar__advanced-list .paper-sidebar__item {
+  padding-left: 14px;
+}
+
+.paper-sidebar__disclosure {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* Items */
@@ -834,6 +1019,15 @@ defineExpose({
 .paper-sidebar--rail .paper-sidebar__glyph {
   width: auto;
   font-size: 12px;
+}
+
+.paper-sidebar--rail .paper-sidebar__advanced-list {
+  border-left: 0;
+  margin-left: 0;
+}
+
+.paper-sidebar--rail .paper-sidebar__advanced-list .paper-sidebar__item {
+  padding-left: 0;
 }
 
 .paper-sidebar--rail .paper-sidebar__footer {
