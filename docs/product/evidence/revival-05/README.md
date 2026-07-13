@@ -1,6 +1,6 @@
 # REVIVAL-05 Paper onboarding evidence
 
-Captured from the isolated `paper-onboarding.spec.ts` Playwright journey against a fresh registered user in Paper mode on 2026-07-13.
+Captured from the isolated `paper-onboarding.spec.ts` Playwright journey that starts on Paper Login, registers a fresh user through Paper Register, and continues in Paper mode on 2026-07-13.
 
 ## Guided first board
 
@@ -24,4 +24,4 @@ $env:TASKDECK_E2E_WORKERS='1'
 npx playwright test tests/e2e/paper-onboarding.spec.ts --project=chromium --workers=1 --reporter=line
 ```
 
-Result: 1 passed in 16.0 seconds.
+Result: 1 passed in 14.2 seconds.
