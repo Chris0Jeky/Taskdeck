@@ -98,9 +98,10 @@ public class AuthenticationService : IAuthenticationService
             if (string.IsNullOrWhiteSpace(normalizedEmail))
                 return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Email is required");
 
-            var exists = await _unitOfWork.Users.ExistsAsync(normalizedUsername, normalizedEmail);
-            if (exists)
-                return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "An account with that username or email already exists. Sign in with your existing credentials.");
+            // BCrypt is intentionally completed before the transaction. Restrictive
+            // registration authorization and the uniqueness check stay inside the
+            // transaction so an invite is rolled back if the identity already exists.
+            var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
 
             await _unitOfWork.BeginTransactionAsync();
             transactionStarted = true;
@@ -115,7 +116,14 @@ public class AuthenticationService : IAuthenticationService
                     registrationAuthorization.ErrorMessage);
             }
 
-            var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+            var exists = await _unitOfWork.Users.ExistsAsync(normalizedUsername, normalizedEmail);
+            if (exists)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                transactionStarted = false;
+                return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "An account with that username or email already exists. Sign in with your existing credentials.");
+            }
+
             var user = new User(normalizedUsername, normalizedEmail, passwordHash, dto.DefaultRole);
 
             await _unitOfWork.Users.AddAsync(user);
@@ -186,7 +194,10 @@ public class AuthenticationService : IAuthenticationService
             // their account, because GitHub does not guarantee email verification.
             // Instead, always create a new account for unlinked external logins.
 
-            // New user — create account with a random unusable password hash
+            // Complete the random unusable password's expensive BCrypt work
+            // before acquiring SQLite's write transaction.
+            var randomPassword = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString());
+
             await _unitOfWork.BeginTransactionAsync();
             transactionStarted = true;
 
@@ -227,7 +238,6 @@ public class AuthenticationService : IAuthenticationService
                 candidateUsername = $"{normalizedUsername}{suffix}";
             }
 
-            var randomPassword = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString());
             var newUser = new User(candidateUsername, candidateEmail, randomPassword);
 
             await _unitOfWork.Users.AddAsync(newUser);

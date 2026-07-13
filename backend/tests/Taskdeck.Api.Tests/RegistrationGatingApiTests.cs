@@ -9,6 +9,7 @@ using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -36,12 +37,19 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
     }
 
     [Fact]
-    public async Task ClosedMode_AllowsFirstUserThenReturnsStableForbidden_WhileLoginStillWorks()
+    public async Task ClosedMode_RequiresOperatorInviteForFirstUser_ThenClosesWhileLoginStillWorks()
     {
         using var factory = CreateFactory(RegistrationMode.Closed);
         using var client = factory.CreateClient();
 
-        var first = await RegisterAsync(client, "closed-first");
+        var remoteBootstrap = await RegisterAsync(client, "remote-first");
+        await ApiTestHarness.AssertErrorContractAsync(
+            remoteBootstrap,
+            HttpStatusCode.Forbidden,
+            ErrorCodes.Forbidden);
+
+        var bootstrapInvite = await CreateInviteAsync(factory);
+        var first = await RegisterAsync(client, "closed-first", bootstrapInvite);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var second = await RegisterAsync(client, "closed-second");
@@ -58,13 +66,10 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
     }
 
     [Fact]
-    public async Task InviteOnlyMode_AllowsFirstUserAndOneInviteRedemptionOnly()
+    public async Task InviteOnlyMode_RequiresInviteForFirstUserAndEveryLaterRegistration()
     {
         using var factory = CreateFactory(RegistrationMode.InviteOnly);
         using var client = factory.CreateClient();
-
-        var bootstrap = await RegisterAsync(client, "invite-bootstrap");
-        bootstrap.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var withoutInvite = await RegisterAsync(client, "invite-missing");
         await ApiTestHarness.AssertErrorContractAsync(
@@ -72,15 +77,11 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
             HttpStatusCode.Forbidden,
             ErrorCodes.Forbidden);
 
-        string inviteCode;
-        using (var scope = factory.Services.CreateScope())
-        {
-            var policy = scope.ServiceProvider.GetRequiredService<IRegistrationPolicyService>();
-            var invite = await policy.CreateInviteAsync(TimeSpan.FromDays(1));
-            invite.IsSuccess.Should().BeTrue();
-            inviteCode = invite.Value.Code;
-        }
+        var bootstrapInvite = await CreateInviteAsync(factory);
+        var bootstrap = await RegisterAsync(client, "invite-bootstrap", bootstrapInvite);
+        bootstrap.StatusCode.Should().Be(HttpStatusCode.OK);
 
+        var inviteCode = await CreateInviteAsync(factory);
         var accepted = await RegisterAsync(client, "invite-accepted", inviteCode);
         accepted.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -91,19 +92,103 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
             ErrorCodes.Forbidden);
     }
 
-    [Fact]
-    public async Task ClosedMode_ConcurrentFirstRegistrations_AllowExactlyOneBootstrap()
+    [Theory]
+    [InlineData(RegistrationMode.Closed, "Registration is closed by this Taskdeck instance.")]
+    [InlineData(RegistrationMode.InviteOnly, "A valid registration invite is required.")]
+    public async Task RestrictiveMode_DeniesKnownAndUnknownIdentitiesWithSameContractWithoutInvite(
+        RegistrationMode mode,
+        string expectedMessage)
     {
-        using var factory = CreateFactory(RegistrationMode.Closed);
+        using var factory = CreateFactory(mode);
+        using var client = factory.CreateClient();
+        var bootstrapInvite = await CreateInviteAsync(factory);
+        var bootstrap = await RegisterAsync(client, "known-user", bootstrapInvite);
+        bootstrap.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var known = await RegisterAsync(client, "known-user");
+        var unknown = await RegisterAsync(client, "unknown-user");
+
+        var knownError = await AssertForbiddenAndReadErrorAsync(known);
+        var unknownError = await AssertForbiddenAndReadErrorAsync(unknown);
+        knownError.GetProperty("message").GetString().Should().Be(expectedMessage);
+        unknownError.GetProperty("message").GetString().Should().Be(expectedMessage);
+    }
+
+    [Fact]
+    public async Task InviteOnlyMode_DuplicateIdentityRollsBackInviteConsumption()
+    {
+        using var factory = CreateFactory(RegistrationMode.InviteOnly);
+        using var client = factory.CreateClient();
+        var bootstrapInvite = await CreateInviteAsync(factory);
+        (await RegisterAsync(client, "existing-user", bootstrapInvite)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var inviteCode = await CreateInviteAsync(factory);
+
+        var duplicate = await RegisterAsync(client, "existing-user", inviteCode);
+        await ApiTestHarness.AssertErrorContractAsync(duplicate, HttpStatusCode.Conflict, ErrorCodes.Conflict);
+
+        var retry = await RegisterAsync(client, "unique-user", inviteCode);
+        retry.StatusCode.Should().Be(HttpStatusCode.OK,
+            "the duplicate-user transaction must roll back invite consumption");
+    }
+
+    [Fact]
+    public async Task InviteOnlyMode_ConcurrentSingleInviteRedemptionCreatesExactlyOneUser()
+    {
+        using var factory = CreateFactory(RegistrationMode.InviteOnly);
+        using var bootstrapClient = factory.CreateClient();
+        var bootstrapInvite = await CreateInviteAsync(factory);
+        (await RegisterAsync(bootstrapClient, "bootstrap-user", bootstrapInvite)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var inviteCode = await CreateInviteAsync(factory);
         using var firstClient = factory.CreateClient();
         using var secondClient = factory.CreateClient();
 
         var responses = await Task.WhenAll(
-            RegisterAsync(firstClient, "closed-race-a"),
-            RegisterAsync(secondClient, "closed-race-b"));
+            RegisterAsync(firstClient, "invite-race-a", inviteCode),
+            RegisterAsync(secondClient, "invite-race-b", inviteCode));
 
         responses.Count(response => response.StatusCode == HttpStatusCode.OK).Should().Be(1);
         responses.Count(response => response.StatusCode == HttpStatusCode.Forbidden).Should().Be(1);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        dbContext.Users.Count().Should().Be(2,
+            "only the bootstrap owner and one invite redeemer may be persisted");
+        dbContext.ExternalLogins.Count().Should().Be(0,
+            "password registration must not leave an orphan external identity");
+    }
+
+    [Fact]
+    public async Task ClosedMode_RealStoreGatesNewExternalIdentityButKeepsExistingLoginWorking()
+    {
+        using var factory = CreateFactory(RegistrationMode.Closed);
+        var bootstrapInvite = await CreateInviteAsync(factory);
+        using var scope = factory.Services.CreateScope();
+        var authentication = scope.ServiceProvider.GetRequiredService<AuthenticationService>();
+        var owner = new ExternalLoginDto(
+            "GitHub",
+            "external-owner-id",
+            "external-owner",
+            "external-owner@example.test",
+            InviteCode: bootstrapInvite);
+
+        var firstLogin = await authentication.ExternalLoginAsync(owner);
+        var newIdentity = await authentication.ExternalLoginAsync(new ExternalLoginDto(
+            "GitHub",
+            "remote-new-id",
+            "remote-new",
+            "remote-new@example.test"));
+        var existingLogin = await authentication.ExternalLoginAsync(owner with { InviteCode = null });
+
+        firstLogin.IsSuccess.Should().BeTrue();
+        newIdentity.IsSuccess.Should().BeFalse();
+        newIdentity.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        newIdentity.ErrorMessage.Should().Be(RegistrationPolicyService.RegistrationClosedMessage);
+        existingLogin.IsSuccess.Should().BeTrue();
+        existingLogin.Value.User.Id.Should().Be(firstLogin.Value.User.Id);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        dbContext.Users.Count().Should().Be(1);
+        dbContext.ExternalLogins.Count().Should().Be(1);
     }
 
     private WebApplicationFactory<Program> CreateFactory(RegistrationMode mode)
@@ -112,6 +197,21 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
         {
             builder.UseSetting("Auth:Registration:Mode", mode.ToString());
         });
+    }
+
+    private static async Task<string> CreateInviteAsync(WebApplicationFactory<Program> factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        var policy = scope.ServiceProvider.GetRequiredService<IRegistrationPolicyService>();
+        var invite = await policy.CreateInviteAsync(TimeSpan.FromDays(1));
+        invite.IsSuccess.Should().BeTrue();
+        return invite.Value.Code;
+    }
+
+    private static async Task<JsonElement> AssertForbiddenAndReadErrorAsync(HttpResponseMessage response)
+    {
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Forbidden, ErrorCodes.Forbidden);
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
     }
 
     private static Task<HttpResponseMessage> RegisterAsync(

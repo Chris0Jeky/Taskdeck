@@ -13,16 +13,13 @@ public sealed class RegistrationPolicyServiceTests
     private readonly Mock<IRegistrationPolicyStore> _store = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
 
-    [Theory]
-    [InlineData(RegistrationMode.Open)]
-    [InlineData(RegistrationMode.InviteOnly)]
-    [InlineData(RegistrationMode.Closed)]
-    public async Task AuthorizeNewUserAsync_AllowsAtomicFirstUserBootstrap(RegistrationMode mode)
+    [Fact]
+    public async Task AuthorizeNewUserAsync_AllowsOpenFirstUserAndRecordsBootstrap()
     {
         _store
             .Setup(store => store.TryClaimFirstUserBootstrapAsync(It.IsAny<DateTimeOffset>(), default))
             .ReturnsAsync(true);
-        var service = CreateService(mode);
+        var service = CreateService(RegistrationMode.Open);
 
         var result = await service.AuthorizeNewUserAsync(inviteCode: null);
 
@@ -33,6 +30,56 @@ public sealed class RegistrationPolicyServiceTests
                 It.IsAny<DateTimeOffset>(),
                 default),
             Times.Never);
+    }
+
+    [Theory]
+    [InlineData(RegistrationMode.InviteOnly, "A valid registration invite is required.")]
+    [InlineData(RegistrationMode.Closed, "Registration is closed by this Taskdeck instance.")]
+    public async Task AuthorizeNewUserAsync_RestrictiveFreshDatabaseRejectsRemoteBootstrapWithoutInvite(
+        RegistrationMode mode,
+        string expectedMessage)
+    {
+        _store
+            .Setup(store => store.TryClaimFirstUserBootstrapAsync(It.IsAny<DateTimeOffset>(), default))
+            .ReturnsAsync(true);
+        var service = CreateService(mode);
+
+        var result = await service.AuthorizeNewUserAsync(inviteCode: null);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be(expectedMessage);
+        _store.Verify(
+            store => store.TryConsumeInviteAsync(
+                It.IsAny<string>(),
+                It.IsAny<DateTimeOffset>(),
+                default),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData(RegistrationMode.InviteOnly)]
+    [InlineData(RegistrationMode.Closed)]
+    public async Task AuthorizeNewUserAsync_RestrictiveFreshDatabaseRequiresAndConsumesOperatorInvite(
+        RegistrationMode mode)
+    {
+        var code = RegistrationPolicyService.GenerateInviteCode();
+        var expectedHash = RegistrationPolicyService.HashInviteCode(code);
+        _store
+            .Setup(store => store.TryClaimFirstUserBootstrapAsync(It.IsAny<DateTimeOffset>(), default))
+            .ReturnsAsync(true);
+        _store
+            .Setup(store => store.TryConsumeInviteAsync(
+                expectedHash,
+                It.IsAny<DateTimeOffset>(),
+                default))
+            .ReturnsAsync(true);
+        var service = CreateService(mode);
+
+        var result = await service.AuthorizeNewUserAsync(code);
+
+        result.IsSuccess.Should().BeTrue();
+        _store.VerifyAll();
     }
 
     [Fact]
@@ -52,11 +99,17 @@ public sealed class RegistrationPolicyServiceTests
         ConfigureBootstrapAlreadyClaimed();
         var service = CreateService(RegistrationMode.Closed);
 
-        var result = await service.AuthorizeNewUserAsync("tdi_unused");
+        var result = await service.AuthorizeNewUserAsync(RegistrationPolicyService.GenerateInviteCode());
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         result.ErrorMessage.Should().Be(RegistrationPolicyService.RegistrationClosedMessage);
+        _store.Verify(
+            store => store.TryConsumeInviteAsync(
+                It.IsAny<string>(),
+                It.IsAny<DateTimeOffset>(),
+                default),
+            Times.Never);
     }
 
     [Fact]

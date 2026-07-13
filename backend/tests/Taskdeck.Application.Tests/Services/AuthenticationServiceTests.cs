@@ -150,6 +150,10 @@ public class AuthenticationServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        _registrationPolicyMock.Verify(
+            policy => policy.AuthorizeNewUserAsync(dto.InviteCode, default),
+            Times.Once);
+        _unitOfWorkMock.Verify(unit => unit.RollbackTransactionAsync(default), Times.Once);
         _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Never);
     }
 
@@ -162,9 +166,6 @@ public class AuthenticationServiceTests
             "closed-user@example.com",
             "password123",
             InviteCode: "supplied-code");
-        _userRepoMock
-            .Setup(repository => repository.ExistsAsync(dto.Username, dto.Email, default))
-            .ReturnsAsync(false);
         _registrationPolicyMock
             .Setup(policy => policy.AuthorizeNewUserAsync(dto.InviteCode, default))
             .ReturnsAsync(Taskdeck.Domain.Common.Result.Failure(
@@ -178,6 +179,10 @@ public class AuthenticationServiceTests
         result.ErrorMessage.Should().Be(RegistrationPolicyService.RegistrationClosedMessage);
         _unitOfWorkMock.Verify(unit => unit.BeginTransactionAsync(default), Times.Once);
         _unitOfWorkMock.Verify(unit => unit.RollbackTransactionAsync(default), Times.Once);
+        _userRepoMock.Verify(
+            repository => repository.ExistsAsync(It.IsAny<string>(), It.IsAny<string>(), default),
+            Times.Never,
+            "restrictive authorization must happen before any account-existence disclosure");
         _userRepoMock.Verify(repository => repository.AddAsync(It.IsAny<User>(), default), Times.Never);
     }
 

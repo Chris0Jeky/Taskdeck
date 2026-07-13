@@ -36,28 +36,40 @@ public sealed class RegistrationPolicyService : IRegistrationPolicyService
         var now = DateTimeOffset.UtcNow;
 
         // The singleton claim is written inside the caller's registration
-        // transaction. Exactly one fresh-install registration can bypass a
-        // restrictive mode, and a failed user creation rolls the claim back.
-        if (await _store.TryClaimFirstUserBootstrapAsync(now, cancellationToken))
-            return Result.Success();
+        // transaction. Open mode needs no ceremony, but still records the claim
+        // so a later switch to a restrictive mode cannot reopen bootstrap.
+        // Restrictive modes require an operator-minted invite for the first user;
+        // a failed invite or user write rolls both the claim and consumption back.
+        var claimedBootstrap = await _store.TryClaimFirstUserBootstrapAsync(now, cancellationToken);
 
         if (_settings.Mode == RegistrationMode.Open)
             return Result.Success();
 
-        if (_settings.Mode == RegistrationMode.Closed)
+        if (_settings.Mode == RegistrationMode.Closed && !claimedBootstrap)
             return Result.Failure(ErrorCodes.Forbidden, RegistrationClosedMessage);
 
         if (!IsWellFormedInviteCode(inviteCode))
-            return Result.Failure(ErrorCodes.Forbidden, InviteRequiredMessage);
+        {
+            return Result.Failure(
+                ErrorCodes.Forbidden,
+                _settings.Mode == RegistrationMode.Closed
+                    ? RegistrationClosedMessage
+                    : InviteRequiredMessage);
+        }
 
         var consumed = await _store.TryConsumeInviteAsync(
             HashInviteCode(inviteCode!),
             now,
             cancellationToken);
 
-        return consumed
-            ? Result.Success()
-            : Result.Failure(ErrorCodes.Forbidden, InviteRequiredMessage);
+        if (consumed)
+            return Result.Success();
+
+        return Result.Failure(
+            ErrorCodes.Forbidden,
+            _settings.Mode == RegistrationMode.Closed
+                ? RegistrationClosedMessage
+                : InviteRequiredMessage);
     }
 
     public async Task<Result<RegistrationInviteResult>> CreateInviteAsync(

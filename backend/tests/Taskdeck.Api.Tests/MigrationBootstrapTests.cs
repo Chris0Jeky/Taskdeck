@@ -149,7 +149,7 @@ public class MigrationBootstrapTests : IDisposable
         _context.Database.Migrate();
 
         GetRegistrationBootstrapCount().Should().Be(0,
-            "a fresh database must permit exactly one first-user bootstrap");
+            "a fresh database must permit one operator-invite bootstrap transaction");
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public class MigrationBootstrapTests : IDisposable
             .Migrate("20260713022601_AddRegistrationGating");
 
         GetRegistrationBootstrapCount().Should().Be(0,
-            "a CLI-only database must still permit the first human account bootstrap");
+            "a CLI-only database must still permit an operator-invite owner bootstrap");
     }
 
     [Fact]
