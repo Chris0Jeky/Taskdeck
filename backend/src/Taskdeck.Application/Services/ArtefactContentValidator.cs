@@ -63,6 +63,11 @@ public static class ArtefactContentValidator
                 HasValidUtf8Text)
         };
 
+    // Path.GetInvalidFileNameChars() is minimal on Linux ({'\0','/'}), so the reserved
+    // path/HTML metacharacters below are rejected cross-platform for consistent, hardened
+    // filename validation regardless of the host OS.
+    private static readonly char[] ReservedFileNameChars = { '<', '>', ':', '"', '/', '\\', '|', '?', '*' };
+
     public static async Task<Result<ValidatedArtefactContent>> ReadAndValidateAsync(
         Stream source,
         string fileName,
@@ -80,7 +85,11 @@ public static class ArtefactContentValidator
             Path.GetFileName(normalizedFileName) != normalizedFileName ||
             normalizedFileName.Contains('\\') ||
             normalizedFileName.Any(char.IsControl) ||
-            normalizedFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            normalizedFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            normalizedFileName.IndexOfAny(ReservedFileNameChars) >= 0 ||
+            // Reject Unicode format characters (e.g. U+202E right-to-left override) that can
+            // spoof the displayed file name even though the stored bytes stay verified.
+            normalizedFileName.Any(c => char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format))
         {
             return Result.Failure<ValidatedArtefactContent>(ErrorCodes.ValidationError, "Artefact file name is invalid");
         }

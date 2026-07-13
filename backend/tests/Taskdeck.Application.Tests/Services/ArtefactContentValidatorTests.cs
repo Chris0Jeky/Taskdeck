@@ -107,6 +107,23 @@ public sealed class ArtefactContentValidatorTests
         result.IsSuccess.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("<script>x</script>.png")]        // HTML/path metacharacters, rejected cross-platform
+    [InlineData("a|b.png")]
+    [InlineData("evidence\u202E.png")]            // U+202E right-to-left override display spoofing
+    public async Task ReadAndValidateAsync_ShouldRejectSpoofingFileNameCharacters(string fileName)
+    {
+        await using var stream = new MemoryStream(PngBytes());
+
+        var result = await ArtefactContentValidator.ReadAndValidateAsync(
+            stream,
+            fileName,
+            "image/png",
+            1024);
+
+        result.IsSuccess.Should().BeFalse();
+    }
+
     public static IEnumerable<object[]> AllowedFixtures()
     {
         yield return ["image.png", "image/png", PngBytes(), ArtefactKind.Image];
