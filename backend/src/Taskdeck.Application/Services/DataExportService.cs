@@ -15,6 +15,7 @@ namespace Taskdeck.Application.Services;
 public class DataExportService : IDataExportService
 {
     private const string ExportVersion = "1.0";
+    private const long MaxBufferedArtefactBytes = ArtefactStorageSettings.DefaultMaxBytesPerArtefact;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
     private readonly ILogger<DataExportService>? _logger;
@@ -43,6 +44,14 @@ public class DataExportService : IDataExportService
 
         try
         {
+            var artefactBytes = await _artefacts.GetTotalByteSizeByUserAsync(userId, cancellationToken);
+            if (artefactBytes > MaxBufferedArtefactBytes)
+            {
+                return Result.Failure<UserDataExportDto>(
+                    ErrorCodes.PayloadTooLarge,
+                    "This export contains too much artefact content to buffer; use the streaming export endpoint");
+            }
+
             // Gather all user-scoped data in parallel where safe
             var boardAccessesTask = _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
             var notificationsTask = _unitOfWork.Notifications.GetByUserIdAsync(userId, limit: 10000, cancellationToken: cancellationToken);

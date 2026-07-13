@@ -12,8 +12,9 @@ public interface IDataExportService
     /// <summary>
     /// Export all data belonging to the specified user as a versioned JSON-serializable package.
     /// The export is scoped strictly to the requesting user's data.
-    /// This method buffers up to the configured row limit per entity type; use
-    /// <see cref="StreamUserDataExportAsync"/> for complete exports of large datasets.
+    /// This method buffers up to the configured row limit per entity type and rejects
+    /// exports with more than 10 MiB of artefact content. Use
+    /// <see cref="StreamUserDataExportAsync"/> for complete or larger exports.
     /// </summary>
     Task<Result<UserDataExportDto>> ExportUserDataAsync(Guid userId, CancellationToken cancellationToken = default);
 
