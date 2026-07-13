@@ -31,16 +31,7 @@ public sealed class ArtefactService : IArtefactService
         if (userId == Guid.Empty)
             return Result.Failure<SourceArtefactDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
 
-        if (request.BoardId.HasValue &&
-            !await _unitOfWork.BoardAccesses.HasAccessAsync(
-                request.BoardId.Value,
-                userId,
-                UserRole.Editor,
-                cancellationToken))
-        {
-            return Result.Failure<SourceArtefactDto>(ErrorCodes.Forbidden, "Editor access to the board is required");
-        }
-
+        Guid? effectiveBoardId = request.BoardId;
         if (request.CreatedFromCaptureId.HasValue)
         {
             var capture = await _unitOfWork.LlmQueue.GetByIdAsync(request.CreatedFromCaptureId.Value, cancellationToken);
@@ -50,6 +41,34 @@ public sealed class ArtefactService : IArtefactService
                     ErrorCodes.Forbidden,
                     "The linked capture does not belong to the authenticated user");
             }
+
+            if (!CaptureRequestContract.IsCaptureRequestType(capture.RequestType))
+            {
+                return Result.Failure<SourceArtefactDto>(
+                    ErrorCodes.ValidationError,
+                    "The linked queue item is not a capture request");
+            }
+
+            if (request.BoardId.HasValue &&
+                capture.BoardId.HasValue &&
+                request.BoardId.Value != capture.BoardId.Value)
+            {
+                return Result.Failure<SourceArtefactDto>(
+                    ErrorCodes.ValidationError,
+                    "The linked capture belongs to a different board");
+            }
+
+            effectiveBoardId ??= capture.BoardId;
+        }
+
+        if (effectiveBoardId.HasValue &&
+            !await _unitOfWork.BoardAccesses.HasAccessAsync(
+                effectiveBoardId.Value,
+                userId,
+                UserRole.Editor,
+                cancellationToken))
+        {
+            return Result.Failure<SourceArtefactDto>(ErrorCodes.Forbidden, "Editor access to the board is required");
         }
 
         var validation = await ArtefactContentValidator.ReadAndValidateAsync(
@@ -72,7 +91,7 @@ public sealed class ArtefactService : IArtefactService
             content.Bytes.LongLength,
             content.Sha256,
             CaptureSource.Import,
-            request.BoardId,
+            effectiveBoardId,
             createdFromCaptureId: request.CreatedFromCaptureId);
         var auditLog = new AuditLog(
             "SourceArtefact",
@@ -81,18 +100,35 @@ public sealed class ArtefactService : IArtefactService
             userId,
             $"kind={artefact.Kind}; bytes={artefact.ByteSize}");
 
-        var stored = await _artefacts.TryAddWithinQuotaAsync(
+        var storeResult = await _artefacts.TryAddWithinQuotaAsync(
             artefact,
             content.Bytes,
             _settings.MaxBytesPerUser,
             auditLog,
             cancellationToken);
-        if (!stored)
+        if (storeResult == ArtefactStoreResult.UserInactive)
+        {
+            return Result.Failure<SourceArtefactDto>(
+                ErrorCodes.Unauthorized,
+                "The authenticated user is no longer active");
+        }
+
+        if (storeResult == ArtefactStoreResult.BoardAccessDenied)
+        {
+            return Result.Failure<SourceArtefactDto>(
+                ErrorCodes.Forbidden,
+                "Editor access to the board is required");
+        }
+
+        if (storeResult == ArtefactStoreResult.QuotaExceeded)
         {
             return Result.Failure<SourceArtefactDto>(
                 ErrorCodes.PayloadTooLarge,
                 $"Artefact would exceed the configured {_settings.MaxBytesPerUser}-byte user quota");
         }
+
+        if (storeResult != ArtefactStoreResult.Stored)
+            throw new InvalidOperationException($"Unknown artefact store result: {storeResult}");
 
         return Result.Success(Map(artefact));
     }

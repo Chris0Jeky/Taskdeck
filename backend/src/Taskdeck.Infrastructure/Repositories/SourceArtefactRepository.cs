@@ -55,7 +55,7 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
         return total ?? 0L;
     }
 
-    public Task<bool> TryAddWithinQuotaAsync(
+    public Task<ArtefactStoreResult> TryAddWithinQuotaAsync(
         SourceArtefact artefact,
         byte[] content,
         long quotaBytes,
@@ -64,9 +64,30 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
     {
         return ExecuteInImmediateWriteTransactionAsync(async () =>
         {
+            var userIsActive = await _context.Users.AnyAsync(
+                user => user.Id == artefact.UserId && user.IsActive,
+                cancellationToken);
+            if (!userIsActive)
+                return ArtefactStoreResult.UserInactive;
+
+            if (artefact.BoardId.HasValue)
+            {
+                var boardId = artefact.BoardId.Value;
+                var hasEditorAccess = await _context.Boards.AnyAsync(
+                        board => board.Id == boardId && board.OwnerId == artefact.UserId,
+                        cancellationToken)
+                    || await _context.BoardAccesses.AnyAsync(
+                        access => access.BoardId == boardId &&
+                                  access.UserId == artefact.UserId &&
+                                  access.Role <= Taskdeck.Domain.Enums.UserRole.Editor,
+                        cancellationToken);
+                if (!hasEditorAccess)
+                    return ArtefactStoreResult.BoardAccessDenied;
+            }
+
             var usedBytes = await GetTotalByteSizeByUserAsync(artefact.UserId, cancellationToken);
             if (usedBytes > quotaBytes - artefact.ByteSize)
-                return false;
+                return ArtefactStoreResult.QuotaExceeded;
 
             await _dbSet.AddAsync(artefact, cancellationToken);
             await _context.Set<ArtefactBlob>().AddAsync(
@@ -74,7 +95,7 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
                 cancellationToken);
             await _context.AuditLogs.AddAsync(auditLog, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
-            return true;
+            return ArtefactStoreResult.Stored;
         }, cancellationToken);
     }
 
@@ -178,7 +199,9 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
 
         if (!_context.Database.IsSqlite())
         {
-            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            await using var transaction = await _context.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
             var result = await action();
             await transaction.CommitAsync(cancellationToken);
             return result;
@@ -188,7 +211,7 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
         try
         {
             var connection = (SqliteConnection)_context.Database.GetDbConnection();
-            var sqliteTransaction = connection.BeginTransaction(deferred: false);
+            await using var sqliteTransaction = connection.BeginTransaction(deferred: false);
             await using var transaction = await _context.Database.UseTransactionAsync(
                 sqliteTransaction,
                 cancellationToken)

@@ -2,6 +2,14 @@ using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Interfaces;
 
+public enum ArtefactStoreResult
+{
+    Stored,
+    UserInactive,
+    BoardAccessDenied,
+    QuotaExceeded
+}
+
 public interface ISourceArtefactRepository : IRepository<SourceArtefact>
 {
     Task<SourceArtefact?> GetByIdForUserAsync(
@@ -20,10 +28,10 @@ public interface ISourceArtefactRepository : IRepository<SourceArtefact>
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Atomically checks the user's byte quota and persists metadata, blob, and
-    /// the content-free audit entry. Returns false when the quota would be exceeded.
+    /// Atomically rechecks the active user, board write authority, and byte quota,
+    /// then persists metadata, blob, and the content-free audit entry.
     /// </summary>
-    Task<bool> TryAddWithinQuotaAsync(
+    Task<ArtefactStoreResult> TryAddWithinQuotaAsync(
         SourceArtefact artefact,
         byte[] content,
         long quotaBytes,
