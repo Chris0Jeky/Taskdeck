@@ -123,6 +123,17 @@ internal static class ArtefactMultipartReader
                 }
             }
         }
+        catch (BadHttpRequestException exception)
+            when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return Result.Failure<BufferedArtefactUpload>(
+                ErrorCodes.PayloadTooLarge,
+                $"Artefact exceeds the configured {settings.MaxBytesPerArtefact}-byte size limit");
+        }
+        catch (BadHttpRequestException)
+        {
+            return Invalid("Artefact upload contains malformed multipart data");
+        }
         catch (InvalidDataException)
         {
             return Invalid("Artefact upload contains malformed multipart data");
