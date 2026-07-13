@@ -126,6 +126,7 @@ jobs:
           fi
 
           docker run --rm --network host \
+            --user "$(id -u):$(id -g)" \
             -e K6_BASE_URL="http://127.0.0.1:5000/api" \
             -e K6_VUS="$K6_VUS" \
             -e K6_DURATION="$K6_DURATION" \
