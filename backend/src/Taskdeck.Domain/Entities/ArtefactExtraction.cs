@@ -25,8 +25,14 @@ public sealed class ArtefactExtraction : Entity
     public string ExtractedText { get; private set; } = string.Empty;
     public int TextLength { get; private set; }
 
+    // The entity is immutable, so WarningsJson never changes after construction or
+    // EF materialization. Parse it at most once instead of on every access to avoid
+    // repeated JSON deserialization (CPU + GC pressure) when the same record is read
+    // multiple times (e.g. export mapping, DTO projection).
+    private IReadOnlyList<string>? _warnings;
+
     public IReadOnlyList<string> Warnings
-        => JsonSerializer.Deserialize<string[]>(WarningsJson) ?? [];
+        => _warnings ??= JsonSerializer.Deserialize<string[]>(WarningsJson) ?? [];
 
     private ArtefactExtraction() : base()
     {
@@ -113,6 +119,7 @@ public sealed class ArtefactExtraction : Entity
         ExtractorName = extractorName;
         ExtractorVersion = extractorVersion;
         WarningsJson = warningsJson;
+        _warnings = warningList;
         ExtractedText = extractedText;
         TextLength = extractedText.Length;
     }

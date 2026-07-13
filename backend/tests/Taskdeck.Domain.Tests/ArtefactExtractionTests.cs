@@ -28,6 +28,25 @@ public sealed class ArtefactExtractionTests
     }
 
     [Fact]
+    public void Warnings_ShouldCacheParsedResultAcrossAccesses()
+    {
+        var extraction = new ArtefactExtraction(
+            Guid.NewGuid(),
+            "PdfPig",
+            "0.1.15",
+            ["page-limit", "character-limit"],
+            "body");
+
+        var first = extraction.Warnings;
+        var second = extraction.Warnings;
+
+        first.Should().Equal("page-limit", "character-limit");
+        // Immutable record: repeated access must return the same cached instance
+        // rather than deserializing WarningsJson again.
+        second.Should().BeSameAs(first);
+    }
+
+    [Fact]
     public void Constructor_ShouldRejectCarriageReturnsBeforePersistence()
     {
         var act = () => new ArtefactExtraction(
