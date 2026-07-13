@@ -9,14 +9,9 @@ Use this skill for Claude Code batch work. It mirrors the Codex workflow in `.co
 
 ## Read First
 
-1. `docs/STATUS.md`
-2. `CLAUDE.md`
-3. `AGENTS.md`
-4. `docs/IMPLEMENTATION_MASTERPLAN.md`
-5. `docs/ISSUE_EXECUTION_GUIDE.md`
-6. `docs/GITHUB_PROJECT_AUTOMATION.md`
-7. `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` for shared batch discipline; substitute Claude entrypoints for Codex-specific preflight.
-8. `docs/WORKTREE_AGENT_PROTOCOL.md` when using Claude worktree agents
+Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them.
+
+Read as needed: `docs/GITHUB_PROJECT_AUTOMATION.md` (Status/Priority project-board sync — this skill's operational reference).
 
 ## Coordinator Responsibilities
 

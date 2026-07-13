@@ -9,13 +9,7 @@ Establish current Taskdeck truth before editing code or docs.
 
 ## Read first
 
-1. `docs/STATUS.md`
-2. `CLAUDE.md`
-3. `AGENTS.md`
-4. `docs/IMPLEMENTATION_MASTERPLAN.md`
-5. `docs/GOLDEN_PRINCIPLES.md`
-6. `docs/ISSUE_EXECUTION_GUIDE.md`
-7. `docs/TESTING_GUIDE.md`
+Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them.
 
 Read when relevant:
 
