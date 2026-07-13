@@ -50,6 +50,13 @@ Last reviewed: 2026-06-19
 
 > Full audit context and the complete gap inventory: **GitHub issue #1142** (master tracker).
 
+## F. Generalist expansion wave (2026-07-13, ADR-0046 Proposed — extends §E as REVIVAL_PLAN Phase 4)
+
+Decision under ratification: **extend the single app** (artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel); the twin generalist app is **deferred behind the GEN-12 evidence gate**, not built. Wave label `generalist`; strictly subordinate to the v0.1 ship gate.
+
+- [ ] **GEN-00 tracker (#1327)** — ratify ADR-0046 + Phase-4 placement + the tracker's decision checklist (SQLite blob storage, consent-gated vision MVP, twin-app deferral). Child issues: #1315–#1326 (GEN-01..12).
+- [ ] **Maintainer at checkpoint:** review GEN-12 (#1326) twin-app gate against friends-family signal (GEN-11 #1325) — recorded decision required, silence is not a close.
+
 ## E. Revival wave (2026-07-10 pivot, ADR-0044 — supersedes the archive framing of §D)
 
 Direction: **free open beta → commercial horizon** (`docs/REVIVAL_PLAN.md` is the planning spine; `docs/analysis/2026-07-10_revival_assessment.md` is the evidence base). §D items are re-scoped in place — same work, new purpose (v0.1 ship gate instead of archive gate). Issue IDs below are seeded as the REVIVAL wave; see the tracker for the authoritative list.
@@ -82,6 +89,7 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 ---
 
 ## Changelog
+- 2026-07-13: **Generalist expansion wave seeded (ADR-0046 Proposed).** Maintainer evaluated the artefact-intake research handoff + his twin-generalist-app idea; decision (pending ratification): extend the single app, defer the twin behind an evidence gate. Seeded GEN-00..12 (#1315–#1327, label `generalist`) as REVIVAL_PLAN Phase 4 ("Every Artefact, Everyone", v0.4); coordination comments posted on #1304 (dueDateHint apply gap → GEN-05) and #1305 (artefact/Transcript one-home constraint). Added §F above. Capability recon findings: no artefact/blob model exists; inert drop zone already shipped in PaperCaptureComposer; no operation applies due dates; prompt injection undefended beyond schema+review gate; guided/workbench/agent mode scaffold ready for generalist nav.
 - 2026-07-10: **Revival pivot decided (ADR-0044) — archive pivot superseded.** Maintainer decision after the WhisperX prototype + two-track revival analysis (`docs/analysis/2026-07-10_revival_assessment.md`). Direction: free open beta (adoption/feedback/exposure) → commercial horizon; positioning: local-first review-first action-item engine + write-gated MCP gateway; MIT stays MIT. Added §E (revival wave); §D items re-scoped in place as the v0.1 ship gate. Planning spine: `docs/REVIVAL_PLAN.md`. Seeded the REVIVAL issue wave on GitHub.
 - 2026-07-06: **Agent-harness blueprint adopted (step 1).** Estate-wide tiered blueprint landed at `source/agent-harness/`; Taskdeck declared T3 (`.claude/tier.json`). Footgun PR opened: committed `bypassPermissions` → settings.local.json, history-rewriter script fenced human-only. Remaining T3 diet seeded as #1291 (added to §D). Global layer shipped: `~/.claude/CLAUDE.md` laws, argv-aware deny floor (49-case tested), ESTATE.md registry, `~/.claude` now versioned (private repo claude-config).
 - 2026-07-02: **Whole-project analysis delivered + archive closeout wave seeded.** Multi-agent analysis (6 dimensions, 15 claims adversarially verified: 5 confirmed / 10 adjusted / 0 refuted) produced `docs/PROJECT_TRAJECTORY.md` + `docs/COURSE_CORRECTION.md`. Seeded issues #1269–#1278 (ARCHIVE-00..09, new `archive-closeout` label) and posted re-scope comments on 14 existing issues. Added §D above. Central findings: no checkable definition of done existed in the tracked repo; zero organic personal-usage data; the default Paper UI is the least-tested UI; the "canonical" exe run path has never been built; ~31% of open issues already decided-closed by the pivot but still open.
