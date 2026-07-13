@@ -31,18 +31,21 @@
     {
       "id": "extra-field-response",
       "file": "response-extra-field.json",
+      "canary": "TASKDECK_INJECTION_CANARY_RESPONSE_EXTRA_5D7A",
       "format": "json",
       "expectedDisposition": "deterministic-fallback"
     },
     {
       "id": "operation-vocabulary-response",
       "file": "response-vocabulary-escape.json",
+      "canary": "TASKDECK_INJECTION_CANARY_RESPONSE_VOCAB_9E31",
       "format": "json",
       "expectedDisposition": "deterministic-fallback"
     },
     {
       "id": "malformed-response",
       "file": "response-malformed.txt",
+      "canary": "TASKDECK_INJECTION_CANARY_RESPONSE_BROKEN_19F0",
       "format": "invalid-json",
       "expectedDisposition": "deterministic-fallback"
     }

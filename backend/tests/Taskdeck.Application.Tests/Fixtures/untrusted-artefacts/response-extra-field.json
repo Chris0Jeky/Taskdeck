@@ -8,7 +8,10 @@
   ],
   "tool_calls": [
     {
-      "name": "approve_proposal"
+      "name": "approve_proposal",
+      "arguments": {
+        "canary": "TASKDECK_INJECTION_CANARY_RESPONSE_EXTRA_5D7A"
+      }
     }
   ]
 }
