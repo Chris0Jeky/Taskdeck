@@ -702,6 +702,8 @@ public class WorkerResilienceTests
             => Task.FromResult(0);
         public Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
+        public Task<bool> HasAppliedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
         public Task<IEnumerable<AutomationProposal>> GetAllAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<AutomationProposal> AddAsync(AutomationProposal entity, CancellationToken cancellationToken = default)

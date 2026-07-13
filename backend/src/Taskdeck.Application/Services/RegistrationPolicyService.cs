@@ -89,6 +89,22 @@ public sealed class RegistrationPolicyService : IRegistrationPolicyService
         return GetRestrictiveAuthorizationFailure();
     }
 
+    public async Task<RegistrationAvailability> GetAvailabilityAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (_settings.Mode == RegistrationMode.Open)
+            return new RegistrationAvailability(_settings.Mode, true, false);
+
+        if (_settings.Mode == RegistrationMode.InviteOnly)
+            return new RegistrationAvailability(_settings.Mode, true, true);
+
+        var bootstrapClaimed = await _store.IsFirstUserBootstrapClaimedAsync(cancellationToken);
+        return new RegistrationAvailability(
+            _settings.Mode,
+            IsRegistrationAvailable: !bootstrapClaimed,
+            InviteRequired: !bootstrapClaimed);
+    }
+
     private Result<RegistrationAuthorization> GetRestrictiveAuthorizationFailure()
     {
         return Result.Failure<RegistrationAuthorization>(

@@ -123,13 +123,18 @@ public class AuthControllerEdgeCaseTests
     }
 
     [Fact]
-    public void GetProviders_ShouldReturnGitHubStatus()
+    public async Task GetProviders_ShouldReturnGitHubAndRegistrationStatus()
     {
         var (controller, _) = CreateAuthControllerWithUnitOfWork(gitHubConfigured: true);
-        var result = controller.GetProviders();
+        var result = await controller.GetProviders(CancellationToken.None);
 
         var ok = result.Should().BeOfType<OkObjectResult>().Subject;
-        ok.Value.Should().NotBeNull();
+        var response = ok.Value.Should().BeOfType<AuthProvidersResponse>().Subject;
+        response.GitHub.Should().BeTrue();
+        response.Registration.Should().Be(new RegistrationAvailabilityResponse(
+            RegistrationMode.Open.ToString(),
+            IsRegistrationAvailable: true,
+            InviteRequired: false));
     }
 
     // ─────────────────────────────────────────────────────────
@@ -179,7 +184,7 @@ public class AuthControllerEdgeCaseTests
         authCodeRepoMock.Setup(r => r.GetByCodeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((OAuthAuthCode?)null);
         uow.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(true), new OidcSettings(), CreateMockMfaService(), userContext.Object, uow.Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(true), new OidcSettings(), CreateMockMfaService(), userContext.Object, uow.Object, CreateRegistrationPolicy());
 
         var urlHelper = new Mock<IUrlHelper>();
         urlHelper.Setup(u => u.IsLocalUrl(It.IsAny<string>())).Returns(true);
@@ -207,7 +212,7 @@ public class AuthControllerEdgeCaseTests
         authCodeRepoMock.Setup(r => r.GetByCodeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((OAuthAuthCode?)null);
         uow.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(true), new OidcSettings(), CreateMockMfaService(), userContext.Object, uow.Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(true), new OidcSettings(), CreateMockMfaService(), userContext.Object, uow.Object, CreateRegistrationPolicy());
 
         var urlHelper = new Mock<IUrlHelper>();
         urlHelper.Setup(u => u.IsLocalUrl(It.IsAny<string>())).Returns(true);
@@ -340,7 +345,7 @@ public class AuthControllerEdgeCaseTests
     public async Task Login_ShouldReturn401_WhenBodyIsNull()
     {
         var (uow, authService) = CreateMockAuthServiceWithUow();
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), new OidcSettings(), CreateMockMfaService(), CreateMockUserContext().Object, uow.Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), new OidcSettings(), CreateMockMfaService(), CreateMockUserContext().Object, uow.Object, CreateRegistrationPolicy());
 
         var result = await controller.Login(null);
 
@@ -353,7 +358,7 @@ public class AuthControllerEdgeCaseTests
     public async Task Login_ShouldReturn401_WhenFieldsEmpty()
     {
         var (uow, authService) = CreateMockAuthServiceWithUow();
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), new OidcSettings(), CreateMockMfaService(), CreateMockUserContext().Object, uow.Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), new OidcSettings(), CreateMockMfaService(), CreateMockUserContext().Object, uow.Object, CreateRegistrationPolicy());
 
         var result = await controller.Login(new LoginDto("", ""));
 
@@ -377,8 +382,20 @@ public class AuthControllerEdgeCaseTests
             .ReturnsAsync((OAuthAuthCode?)null);
         unitOfWorkMock.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
 
-        var controller = new AuthController(authServiceMock.Object, gitHubSettings, new OidcSettings(), CreateMockMfaService(), CreateMockUserContext().Object, unitOfWorkMock.Object);
+        var controller = new AuthController(authServiceMock.Object, gitHubSettings, new OidcSettings(), CreateMockMfaService(), CreateMockUserContext().Object, unitOfWorkMock.Object, CreateRegistrationPolicy());
         return (controller, unitOfWorkMock);
+    }
+
+    private static IRegistrationPolicyService CreateRegistrationPolicy()
+    {
+        var registrationPolicy = new Mock<IRegistrationPolicyService>();
+        registrationPolicy
+            .Setup(policy => policy.GetAvailabilityAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RegistrationAvailability(
+                RegistrationMode.Open,
+                IsRegistrationAvailable: true,
+                InviteRequired: false));
+        return registrationPolicy.Object;
     }
 
     private static (Mock<IUnitOfWork> UnitOfWork, Mock<AuthenticationService> AuthService) CreateMockAuthServiceWithUow()

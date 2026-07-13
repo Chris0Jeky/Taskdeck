@@ -26,6 +26,27 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
         _factory = factory;
     }
 
+    [Theory]
+    [InlineData(RegistrationMode.Open, true, false)]
+    [InlineData(RegistrationMode.InviteOnly, true, true)]
+    [InlineData(RegistrationMode.Closed, true, true)]
+    public async Task Providers_ExposeTruthfulPublicRegistrationAvailability(
+        RegistrationMode mode,
+        bool isRegistrationAvailable,
+        bool inviteRequired)
+    {
+        using var factory = CreateFactory(mode);
+        using var client = factory.CreateClient();
+
+        var providers = await client.GetFromJsonAsync<AuthProvidersResponse>("/api/auth/providers");
+
+        providers.Should().NotBeNull();
+        providers!.Registration.Should().Be(new RegistrationAvailabilityResponse(
+            mode.ToString(),
+            isRegistrationAvailable,
+            inviteRequired));
+    }
+
     [Fact]
     public async Task OpenMode_AllowsMultipleRegistrations()
     {
@@ -57,6 +78,13 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
         var firstPayload = await first.Content.ReadFromJsonAsync<AuthResultDto>();
         firstPayload.Should().NotBeNull();
         firstPayload!.User.DefaultRole.Should().Be(UserRole.Owner);
+
+        var providers = await client.GetFromJsonAsync<AuthProvidersResponse>("/api/auth/providers");
+        providers.Should().NotBeNull();
+        providers!.Registration.Should().Be(new RegistrationAvailabilityResponse(
+            RegistrationMode.Closed.ToString(),
+            IsRegistrationAvailable: false,
+            InviteRequired: false));
 
         var second = await RegisterAsync(client, "closed-second");
         await ApiTestHarness.AssertErrorContractAsync(second, HttpStatusCode.Forbidden, ErrorCodes.Forbidden);

@@ -34,6 +34,9 @@
   --ember-bloom:  #a8421f1a;
   --ember-tint:   #f0d9c8;
   --ember-ink:    #6e2810;
+  /* Text ON an ember-filled surface (primary CTAs). Paper's ember is dark, so a
+     warm near-white clears 4.5:1 at rest and under the brightness(1.1) hover. */
+  --td-on-ember:  #fefaf6;
 
   /* --- Earth-tone semantics --- */
   --applied:      #4a6b3f;
@@ -107,6 +110,8 @@
   --ember-bloom:  #d96a3e22;
   --ember-tint:   #2d1a12;
   --ember-ink:    #ffb38c;
+  /* Night ember is brighter, so on-ember text goes dark to clear 4.5:1 (base + hover). */
+  --td-on-ember:  #1c0d04;
 
   --applied:      #8aae72;
   --applied-tint: #1d2417;

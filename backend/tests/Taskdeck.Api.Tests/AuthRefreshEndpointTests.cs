@@ -278,7 +278,8 @@ public class AuthRefreshEndpointTests : IClassFixture<TestWebApplicationFactory>
             new OidcSettings(),
             CreateMockMfaService(),
             userContext,
-            unitOfWork);
+            unitOfWork,
+            Mock.Of<IRegistrationPolicyService>());
     }
 
     private static (Mock<IUnitOfWork> UnitOfWork, AuthenticationService AuthService) CreateMockAuthServiceWithUow()

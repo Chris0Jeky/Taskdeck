@@ -297,6 +297,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> HasAppliedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetAllAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal> AddAsync(AutomationProposal entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -329,6 +330,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> HasAppliedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetAllAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal> AddAsync(AutomationProposal entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();

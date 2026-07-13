@@ -86,7 +86,7 @@ jobs:
           #    lines, so a line with two hex values counts as two.  CSS
           #    comment lines (leading `*` or `/*`) are excluded to avoid
           #    false positives from issue references and illustrative values.
-          BASELINE=68
+          BASELINE=70
           ACTUAL=$(grep -vE '^\s*(\*|/\*)' frontend/taskdeck-web/src/paper-tokens.css \
                     | grep -oE "$HEX_RE" | wc -l)
           if [[ "$ACTUAL" -gt "$BASELINE" ]]; then

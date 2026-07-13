@@ -216,10 +216,10 @@ watch(
 .td-setup-modal {
   width: min(760px, 100%);
   max-height: min(90vh, 100%);
-  background: var(--td-surface-primary);
-  border: 1px solid var(--td-border-default);
-  border-radius: var(--td-radius-xl);
-  box-shadow: var(--td-shadow-xl);
+  background: var(--paper-card, var(--td-surface-primary));
+  border: 1px solid var(--line, var(--td-border-default));
+  border-radius: var(--r-2, var(--td-radius-xl));
+  box-shadow: var(--shadow-lift, var(--td-shadow-xl));
   display: flex;
   flex-direction: column;
   gap: var(--td-space-4);
@@ -238,17 +238,19 @@ watch(
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--td-color-primary);
+  color: var(--ember, var(--td-color-primary));
 }
 
 .td-setup-modal__header h2 {
   margin: 0;
+  font-family: var(--serif, inherit);
   font-size: var(--td-font-2xl);
+  color: var(--ink-deep, var(--td-text-primary));
 }
 
 .td-setup-modal__subtitle {
   margin: var(--td-space-2) 0 0;
-  color: var(--td-text-secondary);
+  color: var(--ink-2, var(--td-text-secondary));
   line-height: 1.6;
 }
 
@@ -271,14 +273,14 @@ watch(
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--td-text-tertiary);
+  color: var(--mute, var(--td-text-tertiary));
 }
 
 .td-input {
-  border: 1px solid var(--td-border-default);
-  border-radius: var(--td-radius-md);
-  background: var(--td-surface-primary);
-  color: var(--td-text-primary);
+  border: 1px solid var(--line, var(--td-border-default));
+  border-radius: var(--r-1, var(--td-radius-md));
+  background: var(--paper, var(--td-surface-primary));
+  color: var(--ink, var(--td-text-primary));
   padding: 0.8rem 0.9rem;
   font-size: var(--td-font-base);
 }
@@ -294,17 +296,17 @@ watch(
 
 .td-setup-option {
   position: relative;
-  border: 1px solid var(--td-border-default);
-  border-radius: var(--td-radius-lg);
-  background: var(--td-surface-secondary);
+  border: 1px solid var(--line, var(--td-border-default));
+  border-radius: var(--r-2, var(--td-radius-lg));
+  background: var(--paper-2, var(--td-surface-secondary));
   cursor: pointer;
   padding: var(--td-space-3);
 }
 
 .td-setup-option--selected {
-  border-color: var(--td-color-primary);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--td-color-primary) 45%, transparent);
-  background: color-mix(in srgb, var(--td-color-primary) 7%, var(--td-surface-primary));
+  border-color: var(--ember, var(--td-color-primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ember, var(--td-color-primary)) 45%, transparent);
+  background: var(--ember-tint, color-mix(in srgb, var(--td-color-primary) 7%, var(--td-surface-primary)));
 }
 
 .td-setup-option__radio {
@@ -323,27 +325,27 @@ watch(
 .td-setup-option__title {
   font-size: var(--td-font-base);
   font-weight: 700;
-  color: var(--td-text-primary);
+  color: var(--ink-deep, var(--td-text-primary));
 }
 
 .td-setup-option__summary {
   font-size: var(--td-font-sm);
-  color: var(--td-text-primary);
+  color: var(--ink, var(--td-text-primary));
   line-height: 1.5;
 }
 
 .td-setup-option__helper {
   font-size: var(--td-font-xs);
-  color: var(--td-text-secondary);
+  color: var(--ink-2, var(--td-text-secondary));
   line-height: 1.5;
 }
 
 .td-setup-modal__note {
-  border-radius: var(--td-radius-lg);
-  border: 1px solid var(--td-border-default);
-  background: var(--td-surface-secondary);
+  border-radius: var(--r-2, var(--td-radius-lg));
+  border: 1px solid var(--line, var(--td-border-default));
+  background: var(--paper-2, var(--td-surface-secondary));
   padding: var(--td-space-3);
-  color: var(--td-text-secondary);
+  color: var(--ink-2, var(--td-text-secondary));
   line-height: 1.6;
 }
 
@@ -359,8 +361,8 @@ watch(
 }
 
 .td-alert--error {
-  background: var(--td-color-error-light);
-  color: var(--td-color-error);
+  background: var(--overdue-tint, var(--td-color-error-light));
+  color: var(--overdue, var(--td-color-error));
 }
 
 .td-btn {
@@ -371,20 +373,21 @@ watch(
 }
 
 .td-btn--primary {
-  background: var(--td-color-primary);
-  color: var(--td-text-inverse);
+  background: var(--ember, var(--td-color-primary));
+  /* Paper-aware on-ember text (>=4.5:1 on the ember CTA); Legacy falls back unchanged. */
+  color: var(--td-on-ember, var(--td-text-inverse));
 }
 
 .td-btn--secondary {
-  background: var(--td-surface-tertiary);
-  color: var(--td-text-primary);
-  border-color: var(--td-border-default);
+  background: var(--paper-2, var(--td-surface-tertiary));
+  color: var(--ink, var(--td-text-primary));
+  border-color: var(--line, var(--td-border-default));
 }
 
 .td-btn--ghost {
   background: transparent;
-  border-color: var(--td-border-default);
-  color: var(--td-text-secondary);
+  border-color: var(--line, var(--td-border-default));
+  color: var(--ink-2, var(--td-text-secondary));
 }
 
 .td-btn:disabled {

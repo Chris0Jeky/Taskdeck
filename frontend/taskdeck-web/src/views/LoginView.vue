@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { OidcProviderInfo } from '../types/auth'
-import { ref, onMounted } from 'vue'
+import type { OidcProviderInfo, RegistrationAvailability } from '../types/auth'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '../store/sessionStore'
 import { authApi } from '../api/authApi'
 import { sanitizeInternalRedirect } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
+import { normalizeRegistrationAvailability } from '../utils/registrationAvailability'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,7 +18,14 @@ const formError = ref<string | null>(null)
 const submitting = ref(false)
 const githubAvailable = ref(false)
 const oidcProviders = ref<OidcProviderInfo[]>([])
+const registration = ref<RegistrationAvailability | null>(null)
+// Fail closed: until we have a validated provider payload we treat registration as
+// unknown and never expose the Register link. `registrationChecked` flips true once the
+// provider probe resolves or fails, avoiding a flash of the wrong footer state.
+const registrationChecked = ref(false)
 const oauthExchanging = ref(false)
+
+const registrationAvailable = computed(() => registration.value?.isRegistrationAvailable === true)
 
 function navigateAfterLogin() {
   const redirectRaw = (route.query.redirect as string) || '/workspace/home'
@@ -111,8 +119,15 @@ onMounted(async () => {
     const providers = await authApi.getProviders()
     githubAvailable.value = providers.gitHub === true
     oidcProviders.value = Array.isArray(providers.oidc) ? providers.oidc : []
+    // Fail closed: a missing/malformed/older `registration` payload normalizes to null,
+    // so the Register link only appears when availability is explicitly confirmed.
+    registration.value = normalizeRegistrationAvailability(providers?.registration)
   } catch {
-    // Silently ignore — provider buttons simply won't appear
+    // Silently ignore — provider buttons simply won't appear, and registration stays
+    // unknown (null) so the Register link is withheld.
+    registration.value = null
+  } finally {
+    registrationChecked.value = true
   }
 })
 </script>
@@ -120,6 +135,7 @@ onMounted(async () => {
 <template>
   <div class="td-auth-page">
     <div class="td-auth-card">
+      <p class="td-auth-eyebrow">Taskdeck · review before action</p>
       <h1 class="td-auth-title">Sign in to Taskdeck</h1>
 
       <div v-if="isDemoMode" class="td-demo-entry">
@@ -205,9 +221,14 @@ onMounted(async () => {
             </button>
           </form>
 
-          <p class="td-auth-footer">
-            Don't have an account?
-            <router-link to="/register" class="td-link">Register</router-link>
+          <p v-if="registrationChecked" class="td-auth-footer">
+            <template v-if="registrationAvailable">
+              Don't have an account?
+              <router-link to="/register" class="td-link">Register</router-link>
+            </template>
+            <template v-else>
+              Registration is closed on this Taskdeck instance.
+            </template>
           </p>
         </template>
       </template>
@@ -221,29 +242,41 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: var(--td-surface-base);
+  min-height: 100dvh;
+  background: var(--paper, var(--td-surface-base));
+  color: var(--ink, var(--td-text-primary));
   padding: var(--td-space-4);
 }
 
 .td-auth-card {
-  background: var(--td-glass-bg);
+  background: var(--paper-card, var(--td-glass-bg));
   backdrop-filter: blur(var(--td-glass-blur));
-  border: 0.5px solid var(--td-border-ghost);
-  border-radius: var(--td-radius-xl);
-  box-shadow: var(--td-shadow-lg);
+  border: 1px solid var(--line, var(--td-border-ghost));
+  border-radius: var(--r-2, var(--td-radius-xl));
+  box-shadow: var(--shadow-lift, var(--td-shadow-lg));
   padding: var(--td-space-8);
   width: 100%;
   max-width: 400px;
 }
 
+.td-auth-eyebrow {
+  margin: 0 0 var(--td-space-2);
+  color: var(--ember, var(--td-color-primary));
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .td-auth-title {
-  font-family: 'Manrope', system-ui, sans-serif;
+  font-family: var(--serif, 'Manrope', system-ui, sans-serif);
   font-size: var(--td-font-2xl);
   font-weight: 800;
   letter-spacing: -0.03em;
   text-align: center;
   margin-bottom: var(--td-space-6);
-  color: var(--td-text-primary);
+  color: var(--ink-deep, var(--td-text-primary));
 }
 
 .td-auth-form {
@@ -253,8 +286,8 @@ onMounted(async () => {
 }
 
 .td-auth-error {
-  background: var(--td-color-error-light);
-  color: var(--td-color-error);
+  background: var(--overdue-tint, var(--td-color-error-light));
+  color: var(--overdue, var(--td-color-error));
   padding: var(--td-space-3);
   border-radius: var(--td-radius-md);
   font-size: var(--td-font-sm);
@@ -269,27 +302,34 @@ onMounted(async () => {
 .td-label {
   font-size: var(--td-font-sm);
   font-weight: 500;
-  color: var(--td-text-secondary);
+  color: var(--ink-2, var(--td-text-secondary));
 }
 
 .td-input {
   padding: var(--td-space-2) var(--td-space-3);
-  border: 1px solid var(--td-border-default);
-  border-radius: var(--td-radius-md);
+  border: 1px solid var(--line, var(--td-border-default));
+  border-radius: var(--r-1, var(--td-radius-md));
   font-size: var(--td-font-base);
-  background: var(--td-surface-container);
-  color: var(--td-text-primary);
+  background: var(--paper, var(--td-surface-container));
+  color: var(--ink, var(--td-text-primary));
   transition: border-color var(--td-transition-fast);
 }
 
 .td-input::placeholder {
-  color: var(--td-text-tertiary);
+  color: var(--faint, var(--td-text-tertiary));
 }
 
 .td-input:focus {
   outline: none;
-  border-color: var(--td-border-focus);
+  border-color: var(--ember, var(--td-border-focus));
+  /* Whole-property fallback: Legacy (no Paper class) keeps its canonical multi-shadow
+     focus ring. Substituting --td-focus-ring into a color slot would invalidate the
+     whole declaration and drop the ring, so scope the ember bloom ring to Paper only. */
   box-shadow: var(--td-focus-ring);
+}
+.paper .td-input:focus,
+.paper-night .td-input:focus {
+  box-shadow: 0 0 0 2px var(--ember-bloom);
 }
 
 .td-btn {
@@ -303,8 +343,10 @@ onMounted(async () => {
 }
 
 .td-btn--primary {
-  background: var(--td-color-ember-glow);
-  color: var(--td-text-inverse);
+  background: var(--ember, var(--td-color-ember-glow));
+  /* On Paper, --td-on-ember gives a theme-aware on-ember text colour that clears
+     4.5:1 on the ember button (base + hover). Legacy falls back to --td-text-inverse. */
+  color: var(--td-on-ember, var(--td-text-inverse));
 }
 
 .td-btn--primary:hover:not(:disabled) {
@@ -320,18 +362,18 @@ onMounted(async () => {
   text-align: center;
   margin-top: var(--td-space-4);
   font-size: var(--td-font-sm);
-  color: var(--td-text-secondary);
+  color: var(--ink-2, var(--td-text-secondary));
 }
 
 .td-link {
-  color: var(--td-color-primary);
+  color: var(--ember, var(--td-color-primary));
   text-decoration: none;
   font-weight: 500;
 }
 
 .td-link:hover {
   text-decoration: underline;
-  color: var(--td-color-ember-glow);
+  color: var(--ember-deep, var(--td-color-ember-glow));
 }
 
 .td-oauth-exchanging {

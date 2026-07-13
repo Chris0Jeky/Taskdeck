@@ -69,7 +69,7 @@ function buildSummary(overrides?: Partial<HomeSummary>): HomeSummary {
       proposalsPendingReview: 0,
     },
     boards: {
-      totalBoards: 0,
+      totalBoards: 1,
       recentBoardsCount: 0,
       recentBoards: [],
     },
@@ -201,6 +201,88 @@ describe('PaperHomeView', () => {
       expect(wrapper.find('[data-testid="paper-home-empty"]').text()).toContain('Nothing waiting')
       expect(wrapper.find('[data-testid="paper-home-card-proposal"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="paper-home-card-carryover"]').exists()).toBe(false)
+    })
+
+    it('opens the reused setup flow when a fresh user has no boards', async () => {
+      mockWorkspaceStore.homeSummary = buildSummary({
+        boards: {
+          totalBoards: 0,
+          recentBoardsCount: 0,
+          recentBoards: [],
+        },
+      })
+      const wrapper = mount(PaperHomeView, {
+        global: {
+          stubs: {
+            Teleport: true,
+            // isOpen-aware stub: the modal is now kept mounted and toggled via the
+            // is-open prop, so the stub must respect it to prove the CTA opens it.
+            WorkspaceSetupModal: {
+              props: ['isOpen'],
+              template: '<div v-if="isOpen" data-testid="workspace-setup-modal-stub" />',
+            },
+          },
+        },
+      })
+
+      expect(wrapper.find('[data-testid="paper-home-first-board"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="paper-home-empty"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="workspace-setup-modal-stub"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="paper-home-setup-cta"]').trigger('click')
+
+      expect(wrapper.find('[data-testid="workspace-setup-modal-stub"]').exists()).toBe(true)
+    })
+
+    it('shows the local first-loop milestones from the real backend payload', () => {
+      // Mirror the exact steps WorkspaceService.BuildOnboardingSteps emits so the test
+      // tracks the real capture→review→apply contract rather than invented fixtures.
+      mockWorkspaceStore.homeSummary = buildSummary({
+        onboarding: {
+          visibility: 'active',
+          isComplete: false,
+          currentStepId: 'review-first-proposal',
+          dismissedAt: null,
+          completedAt: null,
+          steps: [
+            {
+              stepId: 'create-first-board',
+              title: 'Create your first board',
+              description: 'Start with a real destination so captures and proposals can land somewhere useful.',
+              targetSurface: 'boards',
+              isComplete: true,
+            },
+            {
+              stepId: 'capture-first-item',
+              title: 'Capture one real task',
+              description: 'Drop a note, task, or follow-up into Inbox so the review loop has something to shape.',
+              targetSurface: 'capture',
+              isComplete: true,
+            },
+            {
+              stepId: 'review-first-proposal',
+              title: 'Review your first proposal',
+              description: 'Use Review to decide what should reach a board before anything is applied.',
+              targetSurface: 'review',
+              isComplete: false,
+            },
+            {
+              stepId: 'apply-first-proposal',
+              title: 'Apply your first proposal',
+              description: 'Approve and apply a proposal so the change reaches your board — the full capture-to-board loop.',
+              targetSurface: 'board',
+              isComplete: false,
+            },
+          ],
+        },
+      })
+
+      const wrapper = mount(PaperHomeView)
+
+      expect(wrapper.get('[data-testid="paper-home-milestones"]').text()).toContain('2/4 complete')
+      expect(wrapper.findAll('.paper-home__milestone')).toHaveLength(4)
+      expect(wrapper.findAll('.paper-home__milestone--complete')).toHaveLength(2)
+      expect(wrapper.text()).toContain('Apply your first proposal')
+      expect(wrapper.text()).toContain('not sent as analytics')
     })
 
     it('only marks proposal entries with the ember halo, not carry-overs', () => {

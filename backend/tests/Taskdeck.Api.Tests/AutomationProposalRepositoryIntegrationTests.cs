@@ -418,6 +418,45 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
     }
 
     [Fact]
+    public async Task HasAppliedByUserIdAsync_ShouldOnlyCountAppliedProposals()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var applier = new User("ap-applier", "ap-applier@example.com", "hash");
+        var reviewerOnly = new User("ap-reviewonly", "ap-reviewonly@example.com", "hash");
+        db.Users.AddRange(applier, reviewerOnly);
+
+        // Applier: approved AND applied — the full capture→review→apply loop.
+        var appliedProposal = new AutomationProposal(
+            ProposalSourceType.Queue, applier.Id, "Applied test", RiskLevel.Low,
+            $"corr-app-{Guid.NewGuid():N}");
+        appliedProposal.Approve(applier.Id);
+        appliedProposal.MarkAsApplied();
+        db.AutomationProposals.Add(appliedProposal);
+
+        // Reviewer-only: approved but never applied — must NOT satisfy the apply milestone.
+        var approvedOnly = new AutomationProposal(
+            ProposalSourceType.Queue, reviewerOnly.Id, "Approved only", RiskLevel.Low,
+            $"corr-appr-{Guid.NewGuid():N}");
+        approvedOnly.Approve(reviewerOnly.Id);
+        db.AutomationProposals.Add(approvedOnly);
+
+        // Rejected proposal by the applier is a review, not an apply.
+        var rejected = new AutomationProposal(
+            ProposalSourceType.Queue, applier.Id, "Rejected", RiskLevel.Low,
+            $"corr-rej-{Guid.NewGuid():N}");
+        rejected.Reject(applier.Id);
+        db.AutomationProposals.Add(rejected);
+
+        await db.SaveChangesAsync();
+
+        (await repo.HasAppliedByUserIdAsync(applier.Id)).Should().BeTrue();
+        (await repo.HasAppliedByUserIdAsync(reviewerOnly.Id)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task GetLatestByOperationTargetAsync_ShouldFindByTargetTypeAndId()
     {
         using var scope = _factory.Services.CreateScope();
