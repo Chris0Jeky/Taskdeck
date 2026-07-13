@@ -99,29 +99,28 @@ async function retryTodaySummary() {
       <p>Checking Inbox, Review, and board deadlines before showing today’s totals.</p>
     </section>
 
-    <section
-      v-else-if="workspace.todayError && !workspace.todaySummary"
-      class="paper-today__summary-state paper-today__summary-state--error"
-      data-testid="paper-today-error"
-      role="alert"
-    >
-      <div>
-        <strong>Today’s live summary could not be loaded.</strong>
-        <p>{{ workspace.todayError }}</p>
-      </div>
-      <button
-        type="button"
-        class="paper-today__retry"
-        :disabled="workspace.todayLoading"
-        @click="retryTodaySummary"
-      >
-        Retry live summary
-      </button>
-    </section>
-
     <template v-else>
       <section
-        v-if="workspace.todayLoading && workspace.todaySummary"
+        v-if="workspace.todayError && !workspace.todaySummary"
+        class="paper-today__summary-state paper-today__summary-state--error"
+        data-testid="paper-today-error"
+        role="alert"
+      >
+        <div>
+          <strong>Today’s live summary could not be loaded.</strong>
+          <p>{{ workspace.todayError }} The independent dossier sections remain available below.</p>
+        </div>
+        <button
+          type="button"
+          class="paper-today__retry"
+          :disabled="workspace.todayLoading"
+          @click="retryTodaySummary"
+        >
+          Retry live summary
+        </button>
+      </section>
+      <section
+        v-else-if="workspace.todayLoading && workspace.todaySummary"
         class="paper-today__summary-state"
         data-testid="paper-today-refreshing"
         role="status"

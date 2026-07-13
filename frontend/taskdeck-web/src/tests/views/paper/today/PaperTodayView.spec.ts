@@ -145,7 +145,7 @@ describe('PaperTodayView', () => {
     expect(wrapper.attributes('aria-busy')).toBe('true')
   })
 
-  it('surfaces an initial summary failure with an accessible retry', async () => {
+  it('surfaces an initial summary failure with an accessible retry and honest fallback dossier', async () => {
     mockWorkspaceStore.todayError = 'Request failed with status code 500'
 
     const wrapper = mount(PaperTodayView)
@@ -154,7 +154,9 @@ describe('PaperTodayView', () => {
     expect(error.attributes('role')).toBe('alert')
     expect(error.text()).toContain('live summary could not be loaded')
     expect(error.text()).toContain('Request failed with status code 500')
-    expect(wrapper.find('[data-section="cover"]').exists()).toBe(false)
+    expect(wrapper.find('[data-section="cover"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Activity totals are unavailable')
+    expect(wrapper.text()).toContain('independent dossier sections remain available')
 
     await error.get('button').trigger('click')
     expect(mockWorkspaceStore.fetchTodaySummary).toHaveBeenCalledTimes(1)

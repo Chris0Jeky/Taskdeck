@@ -114,6 +114,16 @@ function formatUtcTime(iso: string | null): string {
   return `${date.getUTCHours().toString().padStart(2, '0')}:${date.getUTCMinutes().toString().padStart(2, '0')}`
 }
 
+function formatCarryOverDueDate(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return 'overdue'
+  return `due ${new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)}`
+}
+
 function mapCadenceResponse(response: CadenceApiResponse): DossierCadence {
   const weights = Array.from({ length: 24 }, (_, hour) => {
     const bucket = response.buckets.find(candidate => candidate.hour === hour)
@@ -192,7 +202,7 @@ function buildHonestDossier(now: Date, summary: TodaySummary | null): DossierDat
   const carryOver: DossierCarryOverCard[] = (summary?.overdueCards ?? []).map(card => ({
     serial: `C-${card.cardId.slice(0, 8)}`,
     title: card.title,
-    age: card.dueDate ? `due ${card.dueDate}` : 'overdue',
+    age: card.dueDate ? formatCarryOverDueDate(card.dueDate) : 'overdue',
     reason: `Board: ${card.boardName}`,
   }))
 

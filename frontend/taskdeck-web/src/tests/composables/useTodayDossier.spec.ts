@@ -247,7 +247,7 @@ describe('useTodayDossier', () => {
         boardName: 'Client onboarding',
         cardId: 'card-123456789',
         title: 'Confirm engagement letter',
-        dueDate: '2026-01-14',
+        dueDate: '2026-01-14T09:00:00Z',
         blockReason: null,
         updatedAt: '2026-01-15T09:00:00Z',
       }],
@@ -272,7 +272,7 @@ describe('useTodayDossier', () => {
     expect(dossier.value.carryOver).toEqual([{
       serial: 'C-card-123',
       title: 'Confirm engagement letter',
-      age: 'due 2026-01-14',
+      age: 'due 14 Jan 2026',
       reason: 'Board: Client onboarding',
     }])
     expect(dossier.value.lede).toContain('2 captures need triage')
