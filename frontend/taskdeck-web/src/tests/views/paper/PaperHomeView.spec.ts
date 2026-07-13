@@ -215,8 +215,11 @@ describe('PaperHomeView', () => {
         global: {
           stubs: {
             Teleport: true,
+            // isOpen-aware stub: the modal is now kept mounted and toggled via the
+            // is-open prop, so the stub must respect it to prove the CTA opens it.
             WorkspaceSetupModal: {
-              template: '<div data-testid="workspace-setup-modal-stub" />',
+              props: ['isOpen'],
+              template: '<div v-if="isOpen" data-testid="workspace-setup-modal-stub" />',
             },
           },
         },
@@ -224,38 +227,48 @@ describe('PaperHomeView', () => {
 
       expect(wrapper.find('[data-testid="paper-home-first-board"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="paper-home-empty"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="workspace-setup-modal-stub"]').exists()).toBe(false)
       await wrapper.get('[data-testid="paper-home-setup-cta"]').trigger('click')
 
       expect(wrapper.find('[data-testid="workspace-setup-modal-stub"]').exists()).toBe(true)
     })
 
-    it('shows the local first-loop milestones and completion state', () => {
+    it('shows the local first-loop milestones from the real backend payload', () => {
+      // Mirror the exact steps WorkspaceService.BuildOnboardingSteps emits so the test
+      // tracks the real capture→review→apply contract rather than invented fixtures.
       mockWorkspaceStore.homeSummary = buildSummary({
         onboarding: {
           visibility: 'active',
           isComplete: false,
-          currentStepId: 'capture',
+          currentStepId: 'review-first-proposal',
           dismissedAt: null,
           completedAt: null,
           steps: [
             {
-              stepId: 'capture',
-              title: 'Capture something',
-              description: 'Put one thought in the inbox.',
+              stepId: 'create-first-board',
+              title: 'Create your first board',
+              description: 'Start with a real destination so captures and proposals can land somewhere useful.',
+              targetSurface: 'boards',
+              isComplete: true,
+            },
+            {
+              stepId: 'capture-first-item',
+              title: 'Capture one real task',
+              description: 'Drop a note, task, or follow-up into Inbox so the review loop has something to shape.',
               targetSurface: 'capture',
               isComplete: true,
             },
             {
-              stepId: 'review',
-              title: 'Review a proposal',
-              description: 'Decide before anything changes.',
+              stepId: 'review-first-proposal',
+              title: 'Review your first proposal',
+              description: 'Use Review to decide what should reach a board before anything is applied.',
               targetSurface: 'review',
               isComplete: false,
             },
             {
-              stepId: 'apply',
-              title: 'Apply to a board',
-              description: 'Send approved work to its board.',
+              stepId: 'apply-first-proposal',
+              title: 'Apply your first proposal',
+              description: 'Approve and apply a proposal so the change reaches your board — the full capture-to-board loop.',
               targetSurface: 'board',
               isComplete: false,
             },
@@ -265,9 +278,10 @@ describe('PaperHomeView', () => {
 
       const wrapper = mount(PaperHomeView)
 
-      expect(wrapper.get('[data-testid="paper-home-milestones"]').text()).toContain('1/3 complete')
-      expect(wrapper.findAll('.paper-home__milestone')).toHaveLength(3)
-      expect(wrapper.findAll('.paper-home__milestone--complete')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="paper-home-milestones"]').text()).toContain('2/4 complete')
+      expect(wrapper.findAll('.paper-home__milestone')).toHaveLength(4)
+      expect(wrapper.findAll('.paper-home__milestone--complete')).toHaveLength(2)
+      expect(wrapper.text()).toContain('Apply your first proposal')
       expect(wrapper.text()).toContain('not sent as analytics')
     })
 

@@ -447,9 +447,15 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
       </form>
     </section>
 
-    <Teleport v-if="showSetupModal" to="body">
+    <!--
+      Keep the modal MOUNTED and toggle `is-open` so its non-immediate
+      watch(isOpen) observes the false→true transition and registers the global
+      Escape handler (registerEscapeHandler). Mounting only-when-open with
+      :is-open="true" skips that transition, leaving Escape unwired.
+    -->
+    <Teleport to="body">
       <WorkspaceSetupModal
-        :is-open="true"
+        :is-open="showSetupModal"
         @close="closeSetupModal"
         @created="handleSetupCreated"
       />
@@ -601,7 +607,8 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   border: 1px solid var(--ember-deep);
   border-radius: var(--r-1);
   background: var(--ember);
-  color: var(--td-text-inverse);
+  /* Paper-aware on-ember text (>=4.5:1 on the ember CTA, base + hover). */
+  color: var(--td-on-ember, var(--td-text-inverse));
   font-family: var(--sans);
   font-size: 13px;
   font-weight: 700;
