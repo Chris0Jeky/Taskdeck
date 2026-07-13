@@ -20,15 +20,38 @@ public class WriteTools
     private readonly IAutomationProposalService _proposalService;
     private readonly IUserContextProvider _userContext;
     private readonly ICaptureService _captureService;
+    private readonly IUnitOfWork _unitOfWork;
 
     public WriteTools(
         IAutomationProposalService proposalService,
         IUserContextProvider userContext,
-        ICaptureService captureService)
+        ICaptureService captureService,
+        IUnitOfWork unitOfWork)
     {
         _proposalService = proposalService;
         _userContext = userContext;
         _captureService = captureService;
+        _unitOfWork = unitOfWork;
+    }
+
+    /// <summary>
+    /// Rejects label IDs that are not labels on the target board before a proposal is
+    /// created, so an MCP caller gets immediate feedback instead of a dead proposal that
+    /// only fails when the shared preview/apply contract runs. Returns an error message
+    /// when any ID is unknown, otherwise null.
+    /// </summary>
+    private async Task<string?> ValidateBoardLabelsAsync(Guid boardId, IReadOnlyCollection<Guid> labelIds)
+    {
+        if (labelIds.Count == 0)
+            return null;
+
+        var boardLabelIds = (await _unitOfWork.Labels.GetByBoardIdAsync(boardId))
+            .Select(label => label.Id)
+            .ToHashSet();
+        var missing = labelIds.Where(id => !boardLabelIds.Contains(id)).Distinct().ToList();
+        return missing.Count == 0
+            ? null
+            : $"label_ids not found on board: {string.Join(", ", missing)}";
     }
 
     /// <summary>
@@ -80,6 +103,9 @@ public class WriteTools
         {
             if (!TryParseGuidList(label_ids, out var labelIds))
                 return Error("label_ids must contain only comma-separated non-empty UUIDs");
+            var labelError = await ValidateBoardLabelsAsync(boardGuid, labelIds);
+            if (labelError != null)
+                return Error(labelError);
             parameters["labelIds"] = labelIds;
         }
 
@@ -220,6 +246,9 @@ public class WriteTools
         {
             if (!TryParseGuidList(label_ids, out var labelIds))
                 return Error("label_ids must contain only comma-separated non-empty UUIDs");
+            var labelError = await ValidateBoardLabelsAsync(boardGuid, labelIds);
+            if (labelError != null)
+                return Error(labelError);
             parameters["labelIds"] = labelIds;
         }
 
