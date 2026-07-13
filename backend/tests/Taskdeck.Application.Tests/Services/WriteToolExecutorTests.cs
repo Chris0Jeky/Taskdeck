@@ -98,6 +98,40 @@ public class WriteToolExecutorTests
         doc.RootElement.GetProperty("available_columns").GetArrayLength().Should().Be(2);
     }
 
+    [Fact]
+    public async Task ProposeCreateCard_WithDueDate_PassesNormalizedUtcDateToProposal()
+    {
+        CreateProposalDto? captured = null;
+        SetupColumns("Backlog");
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs("""{"title":"Ship brief","due_date":"2026-07-14T09:30:00+02:00"}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        captured.Should().NotBeNull();
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("dueDate").GetString()
+            .Should().Be("2026-07-14T07:30:00.0000000+00:00");
+    }
+
+    [Fact]
+    public async Task ProposeCreateCard_WithInvalidDueDate_ReturnsErrorWithoutProposal()
+    {
+        SetupColumns("Backlog");
+        var executor = new ProposeCreateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs("""{"title":"Ship brief","due_date":"tomorrow-ish"}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("ISO-8601");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     #endregion
 
     #region ProposeMoveCardExecutor
@@ -218,6 +252,39 @@ public class WriteToolExecutorTests
         var doc = JsonDocument.Parse(result);
 
         doc.RootElement.GetProperty("error").GetString().Should().Contain("At least one field");
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_WithClearDueDate_PassesExplicitClearToProposal()
+    {
+        CreateProposalDto? captured = null;
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","clear_due_date":true}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        using var parameters = JsonDocument.Parse(captured!.Operations!.Single().Parameters);
+        parameters.RootElement.GetProperty("clearDueDate").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProposeUpdateCard_WithDueDateAndClear_ReturnsErrorWithoutProposal()
+    {
+        var card = CreateCard("Dated card");
+        SetupBoardCards(card);
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","due_date":"2026-07-14","clear_due_date":true}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("cannot both");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     #endregion
@@ -357,9 +424,10 @@ public class WriteToolExecutorTests
             .ReturnsAsync(cards);
     }
 
-    private void SetupProposalCreation(Guid proposalId)
+    private void SetupProposalCreation(Guid proposalId, Action<CreateProposalDto>? capture = null)
     {
         _proposalService.Setup(p => p.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => capture?.Invoke(dto))
             .ReturnsAsync(Result.Success(new ProposalDto(
                 proposalId, ProposalSourceType.Chat, null, _boardId, _userId,
                 ProposalStatus.PendingReview, RiskLevel.Low, "Test proposal",

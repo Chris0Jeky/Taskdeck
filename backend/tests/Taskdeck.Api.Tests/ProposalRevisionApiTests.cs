@@ -250,6 +250,46 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task RevisedDueDate_PreviewShouldEqualAppliedCardDueDate()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-due-date");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-due-date-board");
+        var originalDueDate = new DateTimeOffset(2026, 7, 14, 9, 30, 0, TimeSpan.FromHours(2));
+        var revisedDueDate = new DateTimeOffset(2026, 7, 20, 16, 0, 0, TimeSpan.FromHours(-4));
+        var proposal = await CreateTestProposalAsync(
+            client, user.UserId, board.Id, column.Id, "Dated Card", originalDueDate);
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildRevisionPayload("Dated Card", board.Id, column.Id, revisedDueDate),
+                reason = "Use revised due date"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        diffResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var diff = (await diffResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("diff").GetString();
+        diff.Should().Contain($"set due date to {revisedDueDate.ToUniversalTime():O}");
+        diff.Should().NotContain(originalDueDate.ToUniversalTime().ToString("O"));
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var cardsResponse = await client.GetAsync($"/api/boards/{board.Id}/cards");
+        cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
+        cards.Should().ContainSingle(card =>
+            card.Title == "Dated Card" && card.DueDate == revisedDueDate.ToUniversalTime());
+    }
+
+    [Fact]
     public async Task CreateRevision_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
     {
         var ownerClient = _factory.CreateClient();
@@ -272,7 +312,8 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         Guid userId,
         Guid boardId,
         Guid columnId,
-        string title = "Test Card")
+        string title = "Test Card",
+        DateTimeOffset? dueDate = null)
     {
         var createRequest = new CreateProposalDto(
             SourceType: ProposalSourceType.Chat,
@@ -287,7 +328,7 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
                     Sequence: 1,
                     ActionType: "create",
                     TargetType: "card",
-                    Parameters: BuildCreateCardParameters(title, boardId, columnId),
+                    Parameters: BuildCreateCardParameters(title, boardId, columnId, dueDate),
                     IdempotencyKey: Guid.NewGuid().ToString())
             });
 
@@ -311,7 +352,11 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         return (board, column!);
     }
 
-    private static string BuildRevisionPayload(string title, Guid boardId, Guid columnId)
+    private static string BuildRevisionPayload(
+        string title,
+        Guid boardId,
+        Guid columnId,
+        DateTimeOffset? dueDate = null)
     {
         var payload = new
         {
@@ -323,7 +368,7 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
                     actionType = "create",
                     targetType = "card",
                     targetId = (string?)null,
-                    parameters = BuildCreateCardParameters(title, boardId, columnId),
+                    parameters = BuildCreateCardParameters(title, boardId, columnId, dueDate),
                     idempotencyKey = Guid.NewGuid().ToString(),
                     expectedVersion = (string?)null
                 }
@@ -333,13 +378,21 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         return JsonSerializer.Serialize(payload);
     }
 
-    private static string BuildCreateCardParameters(string title, Guid boardId, Guid columnId)
+    private static string BuildCreateCardParameters(
+        string title,
+        Guid boardId,
+        Guid columnId,
+        DateTimeOffset? dueDate = null)
     {
-        return JsonSerializer.Serialize(new
+        var parameters = new Dictionary<string, object>
         {
-            title,
-            boardId,
-            columnId
-        });
+            ["title"] = title,
+            ["boardId"] = boardId,
+            ["columnId"] = columnId
+        };
+        if (dueDate.HasValue)
+            parameters["dueDate"] = dueDate.Value.ToString("O");
+
+        return JsonSerializer.Serialize(parameters);
     }
 }

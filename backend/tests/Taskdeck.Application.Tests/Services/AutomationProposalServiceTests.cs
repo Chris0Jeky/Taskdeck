@@ -1065,6 +1065,84 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalDiffAsync_ShouldDescribeDueDateExactlyAsApplyNormalizesIt()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "To Do", 0);
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Create dated card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            title = "File return",
+            columnId = column.Id,
+            boardId,
+            dueDate = "2026-07-14T09:30:00+02:00"
+        });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", parameters, Guid.NewGuid().ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain("set due date to 2026-07-14T07:30:00.0000000+00:00");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldDescribeCardLabelOperation()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var card = new Card(boardId, Guid.NewGuid(), "File return");
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Label card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            cardId = card.Id,
+            labelName = "urgent"
+        });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "add-label",
+            "card",
+            parameters,
+            Guid.NewGuid().ToString(),
+            targetId: card.Id.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Column>());
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card });
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain("Add label \"urgent\" to card \"File return\"");
+    }
+
+    [Fact]
     public async Task GetProposalDiffAsync_ShouldFallbackGracefully_WhenBoardIdIsNull()
     {
         // Arrange

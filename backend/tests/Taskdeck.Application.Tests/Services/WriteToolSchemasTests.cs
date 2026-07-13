@@ -49,6 +49,7 @@ public class WriteToolSchemasTests
         var props = schema.ParametersSchema.GetProperty("properties");
         props.TryGetProperty("column_name", out _).Should().BeTrue();
         props.TryGetProperty("description", out _).Should().BeTrue();
+        props.TryGetProperty("due_date", out _).Should().BeTrue();
         props.TryGetProperty("labels", out _).Should().BeTrue();
     }
 
@@ -78,7 +79,13 @@ public class WriteToolSchemasTests
         // title, description, labels are all optional
         schema.Required.Should().NotContain("title");
         schema.Required.Should().NotContain("description");
+        schema.Required.Should().NotContain("due_date");
+        schema.Required.Should().NotContain("clear_due_date");
         schema.Required.Should().NotContain("labels");
+
+        var props = schema.ParametersSchema.GetProperty("properties");
+        props.TryGetProperty("due_date", out _).Should().BeTrue();
+        props.TryGetProperty("clear_due_date", out _).Should().BeTrue();
     }
 
     [Fact]

@@ -261,4 +261,93 @@ public class OperationParameterParserTests
     }
 
     #endregion
+
+    #region TryGetOptionalDateTimeOffset
+
+    [Fact]
+    public void TryGetOptionalDateTimeOffset_ShouldNormalizeOffsetTimestampToUtc()
+    {
+        var json = JsonSerializer.Deserialize<JsonElement>("""{"dueDate":"2026-07-14T09:30:00+02:00"}""");
+
+        var result = OperationParameterParser.TryGetOptionalDateTimeOffset(
+            json, "dueDate", out var provided, out var value, out var error);
+
+        result.Should().BeTrue();
+        provided.Should().BeTrue();
+        value.Should().Be(new DateTimeOffset(2026, 7, 14, 7, 30, 0, TimeSpan.Zero));
+        error.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryGetOptionalDateTimeOffset_ShouldTreatDateOnlyAsUtcMidnight()
+    {
+        var json = JsonSerializer.Deserialize<JsonElement>("""{"dueDate":"2026-07-14"}""");
+
+        OperationParameterParser.TryGetOptionalDateTimeOffset(
+                json, "dueDate", out var provided, out var value, out _)
+            .Should().BeTrue();
+
+        provided.Should().BeTrue();
+        value.Should().Be(new DateTimeOffset(2026, 7, 14, 0, 0, 0, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void TryGetOptionalDateTimeOffset_ShouldDistinguishMissingFromExplicitNull()
+    {
+        var missing = JsonSerializer.Deserialize<JsonElement>("{}");
+        var explicitNull = JsonSerializer.Deserialize<JsonElement>("""{"dueDate":null}""");
+
+        OperationParameterParser.TryGetOptionalDateTimeOffset(
+            missing, "dueDate", out var missingProvided, out var missingValue, out _);
+        OperationParameterParser.TryGetOptionalDateTimeOffset(
+            explicitNull, "dueDate", out var nullProvided, out var nullValue, out _);
+
+        missingProvided.Should().BeFalse();
+        missingValue.Should().BeNull();
+        nullProvided.Should().BeTrue();
+        nullValue.Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetOptionalDateTimeOffset_ShouldRejectInvalidDate()
+    {
+        var json = JsonSerializer.Deserialize<JsonElement>("""{"dueDate":"not-a-date"}""");
+
+        var result = OperationParameterParser.TryGetOptionalDateTimeOffset(
+            json, "dueDate", out _, out _, out var error);
+
+        result.Should().BeFalse();
+        error.Should().Contain("valid ISO-8601");
+    }
+
+    #endregion
+
+    #region TryGetOptionalStringArray
+
+    [Fact]
+    public void TryGetOptionalStringArray_ShouldPreserveExplicitEmptyArray()
+    {
+        var json = JsonSerializer.Deserialize<JsonElement>("""{"labels":[]}""");
+
+        var result = OperationParameterParser.TryGetOptionalStringArray(
+            json, "labels", out var provided, out var values, out _);
+
+        result.Should().BeTrue();
+        provided.Should().BeTrue();
+        values.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryGetOptionalStringArray_ShouldRejectNonStringItems()
+    {
+        var json = JsonSerializer.Deserialize<JsonElement>("""{"labels":["urgent",42]}""");
+
+        var result = OperationParameterParser.TryGetOptionalStringArray(
+            json, "labels", out _, out _, out var error);
+
+        result.Should().BeFalse();
+        error.Should().Contain("non-empty strings");
+    }
+
+    #endregion
 }
