@@ -780,6 +780,22 @@ public class AutomationProposalService : IAutomationProposalService
             return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
         }
 
+        // Column reorder: surface the requested destination position so the approval
+        // preview shows what Apply will do (the position is the whole point of the op).
+        if (string.Equals(operation.TargetType, "column", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(operation.ActionType, "reorder", StringComparison.OrdinalIgnoreCase))
+        {
+            var reorderColumnId = ExtractGuidParameter(operation.Parameters, "columnId")
+                ?? (Guid.TryParse(operation.TargetId, out var reorderTargetId) ? reorderTargetId : (Guid?)null);
+            var reorderColumnDisplay = reorderColumnId.HasValue && columnNames.TryGetValue(reorderColumnId.Value, out var reorderColumnName)
+                ? $"\"{reorderColumnName}\""
+                : reorderColumnId?.ToString() ?? "(unspecified)";
+            var reorderPosition = ExtractInt32Parameter(operation.Parameters, "position");
+            return reorderPosition.HasValue
+                ? $"{operation.Sequence}. {verb} column {reorderColumnDisplay} to position {reorderPosition.Value}"
+                : $"{operation.Sequence}. {verb} column {reorderColumnDisplay}";
+        }
+
         // Build description, falling back to raw TargetId when no name is available
         var description = namedTarget is not null
             ? $"{operation.Sequence}. {verb} {targetType} \"{namedTarget}\""
@@ -883,6 +899,32 @@ public class AutomationProposalService : IAutomationProposalService
 
             if (propertyValue.TryGetGuid(out var guidValue))
                 return guidValue;
+        }
+        catch (JsonException)
+        {
+            // Malformed JSON — fall through to null
+        }
+
+        return null;
+    }
+
+    private static int? ExtractInt32Parameter(string parameters, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(parameters))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(parameters);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            if (document.RootElement.TryGetProperty(propertyName, out var propertyValue)
+                && propertyValue.ValueKind == JsonValueKind.Number
+                && propertyValue.TryGetInt32(out var value))
+            {
+                return value;
+            }
         }
         catch (JsonException)
         {
