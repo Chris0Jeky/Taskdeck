@@ -46,6 +46,7 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
 
     <!-- ── Data / Caching ──────────────────────────────────────── -->
+    <PackageVersion Include="PdfPig" Version="0.1.15" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.17" />
 
     <!-- ── Security / Crypto ───────────────────────────────────── -->

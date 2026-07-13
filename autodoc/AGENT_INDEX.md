@@ -1,6 +1,6 @@
 # Agent Index - Taskdeck
 
-Last reviewed: 2026-05-11.
+Last reviewed: 2026-07-13.
 
 This is a fast orientation layer for coding agents. It should point to interfaces and seams, not duplicate implementation details.
 
@@ -31,6 +31,7 @@ This is a fast orientation layer for coding agents. It should point to interface
 | Domain | Entry points | Meaty files | Verification hints |
 | --- | --- | --- | --- |
 | Capture to review to board | `backend/src/Taskdeck.Api/Controllers`, `frontend/taskdeck-web/src/views/InboxView.vue`, `ReviewView.vue` | capture stores, proposal services, automation executor, provenance services | capture/review unit tests, API integration tests, E2E capture loop |
+| Artefact intake and local extraction | `backend/src/Taskdeck.Api/Controllers/ArtefactsController.cs`, `backend/src/Taskdeck.Application/Interfaces/IArtefactTextExtractor.cs`, `backend/src/Taskdeck.Application/Services/IArtefactExtractionService.cs` | `SourceArtefact` is the immutable user-owned source; extraction appends bounded, warning-bearing history and never mutates task state | `dotnet test backend/Taskdeck.sln -c Release -m:1 --filter "FullyQualifiedName~ArtefactExtraction"`; `MigrationBootstrapTests` |
 | Proposal operation vocabulary | [`autodoc/interfaces/proposal-operation-vocabulary.md`](interfaces/proposal-operation-vocabulary.md), `ProposalOperationContractValidator`, `OperationHandlerRegistry`, `AutomationProposalService.GetProposalDiffAsync` | board-scoped preview/apply validation, card metadata handlers, chat executors, and `Taskdeck.Api/Mcp/WriteTools` | pipeline handler, proposal diff/revision, MCP/write-tool, and proposal API tests |
 | Review-first AI roadmap | `taskdeck-12-week-roadmap-v4.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `backend/src/Taskdeck.Domain` | intent envelope, proposal provenance, confidence, egress, eval harness | roadmap invariant tests and targeted backend filters in `docs/TESTING_GUIDE.md` |
 | Backend API/application slices | `backend/Taskdeck.sln`, `backend/src/Taskdeck.Api`, `backend/src/Taskdeck.Application` | repositories, services, controllers, migrations | `dotnet test backend/Taskdeck.sln -c Release -m:1` or narrow filters |

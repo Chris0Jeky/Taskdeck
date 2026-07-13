@@ -393,6 +393,15 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-gdpr");
         var bytes = "portable notes"u8.ToArray();
         var created = await UploadAsync(client, bytes, "portable.txt", "text/plain");
+        Guid extractionId;
+        using (var extractionScope = _factory.Services.CreateScope())
+        {
+            var extractionService = extractionScope.ServiceProvider
+                .GetRequiredService<IArtefactExtractionService>();
+            var extractionResult = await extractionService.ExtractAsync(user.UserId, created.Id);
+            extractionResult.IsSuccess.Should().BeTrue(extractionResult.ErrorMessage);
+            extractionId = extractionResult.Value.Id;
+        }
 
         var exportResponse = await client.GetAsync("/api/account/export");
         exportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -400,6 +409,10 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         var exportedArtefact = export.RootElement.GetProperty("data").GetProperty("artefacts")
             .EnumerateArray().Single(a => a.GetProperty("id").GetGuid() == created.Id);
         Convert.FromBase64String(exportedArtefact.GetProperty("contentBase64").GetString()!).Should().Equal(bytes);
+        var exportedExtraction = exportedArtefact.GetProperty("extractions")
+            .EnumerateArray().Single(e => e.GetProperty("id").GetGuid() == extractionId);
+        exportedExtraction.GetProperty("extractedText").GetString().Should().Be("portable notes");
+        exportedExtraction.GetProperty("warnings").GetArrayLength().Should().Be(0);
 
         var streamExportResponse = await client.GetAsync("/api/account/export/stream");
         streamExportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -407,6 +420,9 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         var streamedArtefact = streamExport.RootElement.GetProperty("data").GetProperty("artefacts")
             .EnumerateArray().Single(a => a.GetProperty("id").GetGuid() == created.Id);
         Convert.FromBase64String(streamedArtefact.GetProperty("contentBase64").GetString()!).Should().Equal(bytes);
+        var streamedExtraction = streamedArtefact.GetProperty("extractions")
+            .EnumerateArray().Single(e => e.GetProperty("id").GetGuid() == extractionId);
+        streamedExtraction.GetProperty("extractedText").GetString().Should().Be("portable notes");
 
         var deleteResponse = await client.PostAsJsonAsync(
             "/api/account/delete",
@@ -419,6 +435,7 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         (await db.SourceArtefacts.CountAsync(a => a.UserId == user.UserId)).Should().Be(0);
         (await db.ArtefactBlobs.CountAsync(b => b.SourceArtefactId == created.Id)).Should().Be(0);
+        (await db.ArtefactExtractions.CountAsync(e => e.SourceArtefactId == created.Id)).Should().Be(0);
     }
 
     private static async Task<SourceArtefactDto> UploadAsync(

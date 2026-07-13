@@ -58,6 +58,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<McpToolHash> McpToolHashes => Set<McpToolHash>();
     public DbSet<SourceArtefact> SourceArtefacts => Set<SourceArtefact>();
     public DbSet<ArtefactBlob> ArtefactBlobs => Set<ArtefactBlob>();
+    public DbSet<ArtefactExtraction> ArtefactExtractions => Set<ArtefactExtraction>();
 
     /// <summary>
     /// SQLite stores DateTime as TEXT without timezone info. EF Core materializes

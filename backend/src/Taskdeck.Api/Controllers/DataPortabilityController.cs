@@ -33,9 +33,9 @@ public class DataPortabilityController : AuthenticatedControllerBase
     /// Export all data belonging to the authenticated user as a versioned JSON package.
     /// The export includes: boards, notifications, capture items, proposals,
     /// chat sessions, audit trail, preferences, proposal feedback, and source
-    /// artefact metadata plus Base64 content. This compatibility route keeps its
-    /// bounded row/content contract; use <c>/export/stream</c> for a complete or
-    /// larger export.
+    /// artefact metadata, extraction history, and Base64 content. This compatibility
+    /// route keeps its bounded row/content contract; use <c>/export/stream</c> for a
+    /// complete or larger export.
     /// </summary>
     [HttpGet("export")]
     [ResponseCache(NoStore = true)]
@@ -51,7 +51,8 @@ public class DataPortabilityController : AuthenticatedControllerBase
     /// <summary>
     /// Stream all data belonging to the authenticated user as a complete versioned JSON export.
     /// Unlike <c>GET /api/account/export</c>, this endpoint has no row cap and includes
-    /// source artefact metadata plus incrementally Base64-encoded content.
+    /// source artefact metadata, complete extraction history, and incrementally
+    /// Base64-encoded content.
     /// </summary>
     [HttpGet("export/stream")]
     [ResponseCache(NoStore = true)]
