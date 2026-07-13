@@ -42,6 +42,9 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
 
             // Existing installations already have at least one real account and
             // must not regain the first-user bootstrap after this migration.
+            // The CLI system actor is not a human owner and must not close a
+            // CLI-first database. Keep this literal aligned with
+            // CliActorIdentity.ActorEmail in Taskdeck.Cli.
             // Fresh databases leave the singleton absent so the first successful
             // registration can claim it transactionally.
             migrationBuilder.Sql(
@@ -50,7 +53,7 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                 SELECT 'registration', CURRENT_TIMESTAMP
                 WHERE EXISTS (
                     SELECT 1 FROM "Users"
-                    WHERE "Email" <> 'cli@system.taskdeck'
+                    WHERE lower("Email") <> 'cli-actor@system.taskdeck'
                 );
                 """);
 
