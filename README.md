@@ -45,12 +45,20 @@ Build and run the production image locally:
 
 ```bash
 docker build -f deploy/Dockerfile.production -t taskdeck:local .
+if [ ! -f deploy/.env.docker-run ]; then
+  umask 077
+  printf 'Jwt__SecretKey=%s\nConnectors__EncryptionKey=%s\n' \
+    "$(openssl rand -base64 48)" \
+    "$(openssl rand -base64 32)" \
+    > deploy/.env.docker-run
+fi
 docker run --rm -p 5000:5000 \
-  -e Jwt__SecretKey="$(openssl rand -base64 48)" \
-  -e Connectors__EncryptionKey="$(openssl rand -base64 32)" \
+  --env-file deploy/.env.docker-run \
   -v taskdeck-data:/app/data \
   taskdeck:local
 ```
+
+Keep `deploy/.env.docker-run` with the `taskdeck-data` volume and reuse it for every restart. Back up both together: replacing `Jwt__SecretKey` signs everyone out, while losing or replacing `Connectors__EncryptionKey` makes connector credentials already stored in SQLite undecryptable. The env file is ignored by Git; never commit it.
 
 Or use the Compose baseline:
 
