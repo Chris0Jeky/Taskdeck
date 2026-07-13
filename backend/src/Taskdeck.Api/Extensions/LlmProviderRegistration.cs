@@ -38,6 +38,13 @@ public static class LlmProviderRegistration
         var llmToolCallingSettings = configuration.GetSection("LlmToolCalling").Get<LlmToolCallingSettings>() ?? new LlmToolCallingSettings();
         services.AddSingleton(llmToolCallingSettings);
 
+        // LLM-backed transcript triage (REVIVAL-08 M1): the extraction leg CaptureTriageService
+        // consults for transcript-source captures. Scoped because it depends on the scoped
+        // ILlmProvider and ILlmQuotaService.
+        var llmCaptureTriageSettings = configuration.GetSection("CaptureTriageLlm").Get<LlmCaptureTriageSettings>() ?? new LlmCaptureTriageSettings();
+        services.AddSingleton(llmCaptureTriageSettings);
+        services.AddScoped<ILlmCaptureTriageExtractor, LlmCaptureTriageExtractor>();
+
         // LLM provider settings and deterministic provider selection policy
         var llmProviderSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
         services.AddSingleton(llmProviderSettings);

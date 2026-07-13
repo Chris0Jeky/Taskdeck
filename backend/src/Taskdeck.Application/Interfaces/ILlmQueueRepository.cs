@@ -60,17 +60,39 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     /// Returns at most <paramref name="limit"/> Processing capture-triage requests, oldest-first, with the
     /// capture predicate applied in the query and bounded at the database (same anti-starvation reasoning as
     /// <see cref="GetOldestPendingNonCaptureAsync"/>: non-capture requests also transit Processing).
+    /// Transcript-capture requests are EXCLUDED: they belong to the transcript worker lane
+    /// (<see cref="GetOldestProcessingTranscriptAsync"/>) because their LLM-backed triage runs
+    /// seconds-to-minutes and must never block the millisecond-latency capture lane (REVIVAL-08).
     /// </summary>
     /// <param name="limit">Maximum rows to return; must be at least 1.</param>
     Task<IEnumerable<LlmRequest>> GetOldestProcessingCaptureAsync(int limit, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns at most <paramref name="limit"/> Processing transcript-capture requests
+    /// (request type <c>inbox.capture.transcript.*</c>), oldest-first, bounded at the database.
+    /// The transcript worker lane's fetch primitive (REVIVAL-08): transcript captures share the
+    /// capture lifecycle (enqueued Pending, user-triggered triage marks Processing, worker re-claims
+    /// from Processing) but are drained by their own worker so slow LLM triage cannot starve either
+    /// the capture lane or the non-capture automation lane.
+    /// </summary>
+    /// <param name="limit">Maximum rows to return; must be at least 1.</param>
+    Task<IEnumerable<LlmRequest>> GetOldestProcessingTranscriptAsync(int limit, CancellationToken cancellationToken = default);
+
     /// <summary>Counts Pending non-capture (automation) requests for backlog telemetry, without materializing rows.</summary>
     Task<int> CountPendingNonCaptureAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Counts Processing capture-triage requests for backlog telemetry, without materializing rows.</summary>
+    /// <summary>Counts Processing capture-triage requests (excluding transcripts) for backlog telemetry, without materializing rows.</summary>
     Task<int> CountProcessingCaptureAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Counts Pending capture-triage requests for the readiness gauge, without materializing rows.</summary>
+    /// <summary>Counts Processing transcript-capture requests for backlog telemetry, without materializing rows.</summary>
+    Task<int> CountProcessingTranscriptAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts Pending capture-triage requests for the readiness gauge, without materializing rows.
+    /// INCLUDES transcript captures: Pending means "in the inbox, triage not yet requested", which
+    /// is a per-user inbox state, not a worker-lane state — the capture/transcript lane split only
+    /// applies to Processing rows, where it decides which worker owns the row.
+    /// </summary>
     Task<int> CountPendingCaptureAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -91,6 +113,18 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default);
     Task<bool> TryClaimProcessingCaptureAsync(
+        Guid requestId,
+        DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims a Processing transcript-capture request (request type
+    /// <c>inbox.capture.transcript.*</c>) for the transcript worker lane using optimistic
+    /// concurrency: stamps UpdatedAt only if the row still has the expected UpdatedAt. Mutually
+    /// exclusive with <see cref="TryClaimProcessingCaptureAsync"/> via the in-query lane predicate,
+    /// so the capture and transcript workers can never claim each other's rows (REVIVAL-08).
+    /// </summary>
+    Task<bool> TryClaimProcessingTranscriptAsync(
         Guid requestId,
         DateTimeOffset expectedUpdatedAt,
         CancellationToken cancellationToken = default);
