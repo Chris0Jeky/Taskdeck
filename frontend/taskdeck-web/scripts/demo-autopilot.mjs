@@ -29,7 +29,7 @@ import {
   triageCaptureItem,
   waitForCaptureOutcome,
 } from './demo-lib.mjs'
-import { extractListItems } from './demo-shared.mjs'
+import { collectAllListItems } from './demo-shared.mjs'
 
 function parseArgs(argv) {
   const args = {
@@ -318,7 +318,10 @@ async function resolveBoard({ api, args }) {
     return await api.get(`/boards/${args.boardId}`)
   }
 
-  const boards = extractListItems(await api.get('/boards'), 'boards')
+  const boards = await collectAllListItems(
+    ({ offset, limit }) => api.get(`/boards?offset=${offset}&limit=${limit}`),
+    { contextLabel: 'boards' },
+  )
   const existing = boards.find((board) => board.name === args.boardName)
   if (existing) return existing
 
