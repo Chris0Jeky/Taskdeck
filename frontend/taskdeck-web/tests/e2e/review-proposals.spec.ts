@@ -4,7 +4,7 @@
  * Covers review/proposal scenarios:
  * - Board-scoped proposal filtering (boardId query parameter)
  * - Multiple pending proposals displayed for the same board
- * - Applied proposal visibility via the Show Completed toggle
+ * - Applied proposal visibility in Paper's recently-applied ledger
  */
 
 import { expect, test } from '@playwright/test'
@@ -17,6 +17,14 @@ import {
 } from './support/captureFlow'
 
 let auth: AuthResult
+
+function proposalSerial(proposalId: string): string {
+  return `#${proposalId.slice(0, 4).toUpperCase()}`
+}
+
+function proposalQueueItem(page: import('@playwright/test').Page, proposalId: string) {
+  return page.locator(`[data-serial="${proposalSerial(proposalId)}"]`)
+}
 
 test.beforeEach(async ({ page, request }) => {
   auth = await registerAndAttachSession(page, request, 'review-proposals')
@@ -58,12 +66,11 @@ test('review view with boardId filter should only show proposals for that board'
   await page.goto(`/workspace/review?boardId=${boardIdA}`)
 
   // Proposal for board A should be visible
-  const proposalCardA = page.locator(`#proposal-${proposalIdA}`)
-  await expect(proposalCardA).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('paper-review-view')).toBeVisible()
+  await expect(proposalQueueItem(page, proposalIdA as string)).toBeVisible({ timeout: 15_000 })
 
   // Proposal for board B should NOT be visible
-  const proposalCardB = page.locator(`#proposal-${proposalIdB}`)
-  await expect(proposalCardB).toHaveCount(0)
+  await expect(proposalQueueItem(page, proposalIdB as string)).toHaveCount(0)
 })
 
 // --- Multiple proposals on one board ---
@@ -95,13 +102,14 @@ test('review view should display multiple pending proposals for the same board',
   await page.goto(`/workspace/review?boardId=${boardId}`)
 
   // Both proposals should be visible
-  await expect(page.locator(`#proposal-${proposalId1}`)).toBeVisible({ timeout: 15_000 })
-  await expect(page.locator(`#proposal-${proposalId2}`)).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('paper-review-view')).toBeVisible()
+  await expect(proposalQueueItem(page, proposalId1 as string)).toBeVisible({ timeout: 15_000 })
+  await expect(proposalQueueItem(page, proposalId2 as string)).toBeVisible({ timeout: 15_000 })
 })
 
-// --- Applied proposal appears in completed toggle ---
+// --- Applied proposal appears in the Paper filing ledger ---
 
-test('applied proposal should appear when Show Completed is toggled on', async ({ page, request }) => {
+test('applied proposal should appear in the recently-applied ledger', async ({ page, request }) => {
   test.setTimeout(90_000)
 
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
@@ -122,17 +130,26 @@ test('applied proposal should appear when Show Completed is toggled on', async (
 
   // Navigate to review and approve+apply the proposal
   await page.goto(`/workspace/review?boardId=${boardId}#proposal-${proposalId}`)
-  const proposalCard = page.locator(`#proposal-${proposalId}`)
-  await expect(proposalCard).toBeVisible({ timeout: 15_000 })
+  const queueItem = proposalQueueItem(page, proposalId as string)
+  await expect(queueItem).toBeVisible({ timeout: 15_000 })
+  await expect(queueItem).toHaveAttribute('aria-pressed', 'true')
 
-  await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
-  await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
+  const approveResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && response.url().endsWith(`/automation/proposals/${proposalId}/approve`))
+  await page.getByTestId('decision-apply').click()
+  expect((await approveResponse).ok()).toBeTruthy()
 
   page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
-  await expect(proposalCard).not.toBeVisible()
+  const executeResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
+  await page.getByTestId('decision-apply').click()
+  expect((await executeResponse).ok()).toBeTruthy()
+  await expect(queueItem).toHaveCount(0)
 
-  // Toggle "Show completed" to reveal the applied proposal
-  await page.getByLabel('Show completed').check()
-  await expect(proposalCard).toBeVisible({ timeout: 10_000 })
+  // Paper keeps just-applied proposals in the always-visible local filing ledger.
+  await expect(
+    page.locator('.paper-review-recent__row').filter({ hasText: proposalSerial(proposalId as string) }),
+  ).toBeVisible({ timeout: 10_000 })
 })

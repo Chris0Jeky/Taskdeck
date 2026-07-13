@@ -42,7 +42,7 @@ test.use({
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'audit')
+  auth = await registerAndAttachSession(page, request, 'audit', { theme: 'legacy' })
 })
 
 test.describe('Core loop: Home -> Inbox/Capture -> Review -> Board', () => {

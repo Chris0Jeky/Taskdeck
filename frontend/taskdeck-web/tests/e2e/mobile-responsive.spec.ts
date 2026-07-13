@@ -12,7 +12,7 @@ import { addCard, addColumn, createBoard } from './support/boardUiHelpers'
  */
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'mobile')
+  await registerAndAttachSession(page, request, 'mobile', { theme: 'legacy' })
 })
 
 async function openMobileNavigation(page: Page) {
