@@ -160,6 +160,31 @@ describe('PaperSidebar', () => {
     expect(mockWorkspace.updateMode).toHaveBeenCalledWith('workbench')
   })
 
+  it.each([
+    ['/workspace/metrics/cohorts', '/workspace/metrics', '/workspace/metrics/cohorts'],
+    ['/workspace/ops/endpoints', '/workspace/ops/cli', '/workspace/ops/endpoints'],
+    ['/workspace/ops/logs', '/workspace/ops/cli', '/workspace/ops/logs'],
+  ])('marks only the visible guided child current on %s', async (route, parentPath, childPath) => {
+    mockRoute.path = route
+    const wrapper = mountSidebar()
+    await wrapper.get('[data-testid="paper-guided-advanced-toggle"]').trigger('click')
+
+    expect(wrapper.get(`a[href="${parentPath}"]`).attributes('aria-current')).toBeUndefined()
+    expect(wrapper.get(`a[href="${childPath}"]`).attributes('aria-current')).toBe('page')
+  })
+
+  it.each([
+    ['/workspace/metrics/cohorts', '/workspace/metrics'],
+    ['/workspace/ops/endpoints', '/workspace/ops/cli'],
+    ['/workspace/ops/logs', '/workspace/ops/cli'],
+  ])('keeps the visible workbench parent current on child route %s', (route, parentPath) => {
+    mockWorkspace.mode = 'workbench'
+    mockRoute.path = route
+    const wrapper = mountSidebar()
+
+    expect(wrapper.get(`a[href="${parentPath}"]`).attributes('aria-current')).toBe('page')
+  })
+
   it('marks the active item with the ember class and aria-current', () => {
     mockRoute.path = '/workspace/boards'
     const wrapper = mountSidebar()

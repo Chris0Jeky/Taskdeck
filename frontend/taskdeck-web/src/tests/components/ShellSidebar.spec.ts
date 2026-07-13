@@ -285,6 +285,19 @@ describe('ShellSidebar', () => {
     expect(mockWorkspaceStore.updateMode).toHaveBeenCalledWith('workbench')
   })
 
+  it.each([
+    ['/workspace/metrics/cohorts', '/workspace/metrics', '/workspace/metrics/cohorts'],
+    ['/workspace/ops/endpoints', '/workspace/ops/cli', '/workspace/ops/endpoints'],
+    ['/workspace/ops/logs', '/workspace/ops/cli', '/workspace/ops/logs'],
+  ])('marks only the visible guided child current on %s', async (route, parentPath, childPath) => {
+    routeMock.path = route
+    const wrapper = mountSidebar()
+    await wrapper.get('[data-testid="guided-advanced-toggle"]').trigger('click')
+
+    expect(wrapper.get(`a[href="${parentPath}"]`).attributes('aria-current')).toBeUndefined()
+    expect(wrapper.get(`a[href="${childPath}"]`).attributes('aria-current')).toBe('page')
+  })
+
   it.each(['workbench', 'agent'])('leaves the existing %s catalog unchanged without guided disclosure', (mode) => {
     mockWorkspaceStore.mode = mode
     const wrapper = mountSidebar()

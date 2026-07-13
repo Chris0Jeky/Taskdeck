@@ -174,8 +174,21 @@ function isActive(item: PaperNavItemBase): boolean {
       || isCurrentOrChild('/workspace/automations/proposals')
       || isCurrentOrChild('/workspace/automations/queue')
   }
-  if (item.path === '/workspace/ops/cli') return route.path === item.path
+  if (item.path === '/workspace/metrics' && guidedAdvancedShows('cohorts')) {
+    return route.path === item.path
+  }
+  if (item.path === '/workspace/ops/cli') {
+    return guidedAdvancedShows('ops-endpoints') || guidedAdvancedShows('ops-logs')
+      ? route.path === item.path
+      : isCurrentOrChild('/workspace/ops')
+  }
   return isCurrentOrChild(item.path)
+}
+
+function guidedAdvancedShows(itemId: string): boolean {
+  return activeWorkspaceMode.value === 'guided'
+    && guidedAdvancedRevealed.value
+    && guidedAdvancedNavItems.value.some(item => item.id === itemId)
 }
 
 function isCurrentOrChild(path: string): boolean {

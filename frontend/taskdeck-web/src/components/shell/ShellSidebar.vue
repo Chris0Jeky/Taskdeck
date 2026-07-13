@@ -405,9 +405,23 @@ function isActiveRoute(path: string): boolean {
     return route.path.startsWith(path)
   }
 
-  if (path === '/workspace/ops/cli') return route.path === path
+  if (path === '/workspace/metrics' && guidedAdvancedShows('cohorts')) {
+    return route.path === path
+  }
+
+  if (path === '/workspace/ops/cli') {
+    return guidedAdvancedShows('ops-endpoints') || guidedAdvancedShows('ops-logs')
+      ? route.path === path
+      : route.path.startsWith('/workspace/ops')
+  }
 
   return route.path.startsWith(path)
+}
+
+function guidedAdvancedShows(itemId: string): boolean {
+  return activeWorkspaceMode.value === 'guided'
+    && guidedAdvancedRevealed.value
+    && guidedAdvancedNavItems.value.some(item => item.id === itemId)
 }
 
 function toggleSidebar() {

@@ -4,7 +4,7 @@ Last Updated: 2026-07-13
 
 ## Purpose
 
-This deck records the GEN-10 plain-language audit for the default guided workspace. It follows the revival direction in ADR-0044 and the proposed generalist expansion in ADR-0046. The implementation applies only low-risk wording changes; vocabulary that would change the product model remains a maintainer decision.
+This deck records the GEN-10 plain-language audit for the default guided workspace. It follows the revival direction documented as ADR-0044 in [docs PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) and the proposed ADR-0046 generalist expansion in its [stacked docs PR #1328](https://github.com/Chris0Jeky/Taskdeck/pull/1328). Those direction records are intentionally maintainer-owned and have not landed on `main`. The implementation applies only low-risk wording changes; vocabulary that would change the product model remains a maintainer decision.
 
 The review-first promise stays explicit: Taskdeck can suggest a change, but the user decides what reaches a board.
 
