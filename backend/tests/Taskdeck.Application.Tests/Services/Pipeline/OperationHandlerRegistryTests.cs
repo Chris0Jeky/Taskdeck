@@ -299,6 +299,38 @@ public class OperationHandlerRegistryTests
     }
 
     [Fact]
+    public async Task ExecuteOperationAsync_ShouldRejectAmbiguousLabelNamesForReplacementAndSingleLabelOperations()
+    {
+        var boardId = Guid.NewGuid();
+        var card = new Card(boardId, Guid.NewGuid(), "Review brief");
+        var labels = new[]
+        {
+            new Label(boardId, "urgent", "#FF0000"),
+            new Label(boardId, "URGENT", "#00FF00")
+        };
+        _cardRepoMock.Setup(repository => repository.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
+        _cardRepoMock.Setup(repository => repository.GetByIdWithLabelsAsync(card.Id, default)).ReturnsAsync(card);
+        _labelRepoMock.Setup(repository => repository.GetByBoardIdAsync(boardId, default)).ReturnsAsync(labels);
+        var replaceOperation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "update", "card", card.Id.ToString(),
+            $$"""{"cardId":"{{card.Id}}","labels":["urgent"]}""", "replace-ambiguous", null);
+        var addOperation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 1, "add-label", "card", card.Id.ToString(),
+            $$"""{"cardId":"{{card.Id}}","labelName":"urgent"}""", "add-ambiguous", null);
+
+        var replaceResult = await _registry.ExecuteOperationAsync(replaceOperation, default);
+        var addResult = await _registry.ExecuteOperationAsync(addOperation, default);
+
+        replaceResult.IsSuccess.Should().BeFalse();
+        replaceResult.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        replaceResult.ErrorMessage.Should().Contain("ambiguous");
+        addResult.IsSuccess.Should().BeFalse();
+        addResult.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        addResult.ErrorMessage.Should().Contain("ambiguous");
+        card.CardLabels.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ExecuteOperationAsync_ShouldReplaceLabelsByNameForExistingToolCallers()
     {
         var boardId = Guid.NewGuid();

@@ -22,7 +22,7 @@ Invariants:
 - Operations remain proposal-first; handlers are reached only after approval and policy revalidation.
 - Every operation carries its own idempotency key. Label add/remove is also state-idempotent when retried.
 - Due dates are parsed from exact `YYYY-MM-DD` or ISO-8601 timestamps with explicit `Z`/numeric offsets and normalized to UTC before apply. Offsetless timestamps and locale-formatted dates are rejected.
-- Label names and IDs resolve only against the target card or create operation's board.
+- Label names and IDs resolve only against the target card or create operation's board. Name-based operations reject case-insensitive duplicate matches as ambiguous; callers must use a label ID or make the board's label names unique.
 - Parameter `boardId`, `cardId`, `columnId`, and typed `TargetId` identities must agree with each other and with the proposal's authorized `BoardId`; cross-board revisions fail before preview or apply.
 - Preview and Apply validate the same effective revision payload with `ProposalOperationContractValidator` and use the same field parsers. Invalid/conflicting dates, malformed labels, or scope redirects cannot produce an approval preview.
 - `ProposalOperationInputValidator` intentionally validates token/JSON shape, size, and depth only. Do not turn it into a verb allowlist; planner, chat, capture, and MCP callers share this extensible boundary.

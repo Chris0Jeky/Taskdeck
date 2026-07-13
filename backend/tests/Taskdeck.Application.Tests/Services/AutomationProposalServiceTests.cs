@@ -1233,7 +1233,7 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
-    public async Task GetProposalDiffAsync_ShouldFallbackGracefully_WhenBoardIdIsNull()
+    public async Task GetProposalDiffAsync_ShouldRejectCreateCardMissingApplyFields_WhenBoardIdIsNull()
     {
         // Arrange
         var proposalId = Guid.NewGuid();
@@ -1256,13 +1256,13 @@ public class AutomationProposalServiceTests
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync(proposal);
 
-        // Act — no column/card repos set up since boardId is null
+        // Act — no column/card repos set up since the executable fields are absent.
         var result = await _service.GetProposalDiffAsync(proposalId);
 
-        // Assert — should still return a readable diff from parameters
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Contain("Create");
-        result.Value.Should().Contain("My card title");
+        // Assert — preview rejects the same payload Apply cannot execute.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("'columnId'");
     }
 
     [Fact]

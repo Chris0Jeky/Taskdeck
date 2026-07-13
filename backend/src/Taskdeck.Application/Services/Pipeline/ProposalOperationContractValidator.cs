@@ -176,6 +176,12 @@ public static class ProposalOperationContractValidator
         if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase) ||
             normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase))
         {
+            if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase) &&
+                !OperationParameterParser.TryGetRequiredString(parameters, "title", out _, out var titleError))
+            {
+                return Result.Failure(ErrorCodes.ValidationError, titleError);
+            }
+
             if (normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase) &&
                 !OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
             {
@@ -192,6 +198,14 @@ public static class ProposalOperationContractValidator
 
             if (dueDate.HasValue && clearDueDate)
                 return Result.Failure(ErrorCodes.ValidationError, "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
+
+            if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
+                    return Result.Failure(ErrorCodes.ValidationError, columnIdError);
+                if (!OperationParameterParser.TryGetRequiredGuid(parameters, "boardId", out _, out var boardIdError))
+                    return Result.Failure(ErrorCodes.ValidationError, boardIdError);
+            }
 
             var labelsResult = await ValidateLabelsAsync(validationContext, parameters, cancellationToken);
             if (!labelsResult.IsSuccess)
@@ -237,8 +251,11 @@ public static class ProposalOperationContractValidator
             {
                 if (!OperationParameterParser.TryGetRequiredString(parameters, "labelName", out var labelName, out var labelError))
                     return Result.Failure(ErrorCodes.ValidationError, labelError);
-                if (!await validationContext.ContainsLabelNameAsync(labelName, cancellationToken))
+                var matchingLabelCount = await validationContext.GetLabelNameMatchCountAsync(labelName, cancellationToken);
+                if (matchingLabelCount == 0)
                     return Result.Failure(ErrorCodes.NotFound, "Label was not found on the proposal board");
+                if (matchingLabelCount > 1)
+                    return AmbiguousLabelFailure(labelName);
             }
         }
 
@@ -268,8 +285,11 @@ public static class ProposalOperationContractValidator
         {
             foreach (var labelName in labelNames)
             {
-                if (!await validationContext.ContainsLabelNameAsync(labelName, cancellationToken))
+                var matchingLabelCount = await validationContext.GetLabelNameMatchCountAsync(labelName, cancellationToken);
+                if (matchingLabelCount == 0)
                     return Result.Failure(ErrorCodes.NotFound, $"Label '{labelName}' was not found on the proposal board");
+                if (matchingLabelCount > 1)
+                    return AmbiguousLabelFailure(labelName);
             }
         }
         else
@@ -289,7 +309,7 @@ public static class ProposalOperationContractValidator
         private readonly Dictionary<Guid, Guid?> _cardBoardIds = [];
         private readonly Dictionary<Guid, Guid?> _columnBoardIds = [];
         private HashSet<Guid>? _labelIds;
-        private HashSet<string>? _labelNames;
+        private Dictionary<string, int>? _labelNameCounts;
 
         public Guid? BoardId { get; } = boardId;
 
@@ -331,10 +351,10 @@ public static class ProposalOperationContractValidator
             return _labelIds!.Contains(labelId);
         }
 
-        public async Task<bool> ContainsLabelNameAsync(string labelName, CancellationToken cancellationToken)
+        public async Task<int> GetLabelNameMatchCountAsync(string labelName, CancellationToken cancellationToken)
         {
             await EnsureLabelsLoadedAsync(cancellationToken);
-            return _labelNames!.Contains(labelName);
+            return _labelNameCounts!.GetValueOrDefault(labelName);
         }
 
         private async Task EnsureLabelsLoadedAsync(CancellationToken cancellationToken)
@@ -346,9 +366,15 @@ public static class ProposalOperationContractValidator
                 ? await unitOfWork.Labels.GetByBoardIdAsync(BoardId.Value, cancellationToken)
                 : []).ToList();
             _labelIds = labels.Select(label => label.Id).ToHashSet();
-            _labelNames = labels.Select(label => label.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _labelNameCounts = labels
+                .GroupBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
         }
     }
+
+    private static Result AmbiguousLabelFailure(string labelName) => Result.Failure(
+        ErrorCodes.ValidationError,
+        $"Label name '{labelName}' is ambiguous on the proposal board; use a label ID");
 
     private static Result ScopeFailure(string message) => Result.Failure(ErrorCodes.Forbidden, message);
 }

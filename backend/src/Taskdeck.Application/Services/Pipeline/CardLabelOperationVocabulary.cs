@@ -21,7 +21,7 @@ internal static class CardLabelOperationVocabulary
         if (string.IsNullOrWhiteSpace(actionType))
             return CardLabelOperationAction.None;
 
-        var normalized = actionType.Trim().ToLowerInvariant();
+        var normalized = actionType.ToLowerInvariant();
         var exactMatch = normalized switch
         {
             "add-label" or "add_label" or "addlabel" => CardLabelOperationAction.Add,
@@ -31,7 +31,7 @@ internal static class CardLabelOperationVocabulary
         if (exactMatch != CardLabelOperationAction.None)
             return exactMatch;
 
-        var collapsed = normalized
+        var collapsed = normalized.Trim()
             .Replace("-", string.Empty)
             .Replace("_", string.Empty)
             .Replace(".", string.Empty);

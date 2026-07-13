@@ -268,8 +268,14 @@ public class OperationHandlerRegistry
             if (!OperationParameterParser.TryGetRequiredString(parameters, "labelName", out var labelName, out var labelNameError))
                 return Result.Failure(ErrorCodes.ValidationError, labelNameError);
 
-            label = labels.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, labelName, StringComparison.OrdinalIgnoreCase));
+            var matchingLabels = labels
+                .Where(candidate => string.Equals(candidate.Name, labelName, StringComparison.OrdinalIgnoreCase))
+                .Take(2)
+                .ToList();
+            if (matchingLabels.Count > 1)
+                return AmbiguousLabelFailure(labelName);
+
+            label = matchingLabels.SingleOrDefault();
         }
 
         if (label == null)
@@ -313,8 +319,16 @@ public class OperationHandlerRegistry
         var resolvedIds = new List<Guid>();
         foreach (var labelName in labelNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var label = labels.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, labelName, StringComparison.OrdinalIgnoreCase));
+            var matchingLabels = labels
+                .Where(candidate => string.Equals(candidate.Name, labelName, StringComparison.OrdinalIgnoreCase))
+                .Take(2)
+                .ToList();
+            if (matchingLabels.Count > 1)
+                return Result.Failure<List<Guid>?>(
+                    ErrorCodes.ValidationError,
+                    $"Label name '{labelName}' is ambiguous on the card's board; use a label ID");
+
+            var label = matchingLabels.SingleOrDefault();
             if (label == null)
                 return Result.Failure<List<Guid>?>(ErrorCodes.NotFound, $"Label '{labelName}' was not found on board {boardId}");
 
@@ -323,6 +337,10 @@ public class OperationHandlerRegistry
 
         return Result.Success<List<Guid>?>(resolvedIds);
     }
+
+    private static Result AmbiguousLabelFailure(string labelName) => Result.Failure(
+        ErrorCodes.ValidationError,
+        $"Label name '{labelName}' is ambiguous on the card's board; use a label ID");
 
     private async Task<Result> ExecuteBoardOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)
     {
