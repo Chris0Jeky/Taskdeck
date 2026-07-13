@@ -28,7 +28,12 @@ const { dossier, sealed, sealDay, saveLineForTomorrow } = useTodayDossier()
 const session = useSessionStore()
 const toast = useToastStore()
 
-const ledgerEntryCount = computed(() => dossier.value.ledger.length)
+const ledgerSummary = computed(() => dossier.value.ledger.length > 0
+  ? `Every meaningful event today · ${dossier.value.ledger.length} entries`
+  : 'Live ledger unavailable')
+const carryOverSummary = computed(() => dossier.value.stats.length > 0
+  ? `${dossier.value.carryOver.length} live overdue cards`
+  : 'Live carry-over unavailable')
 const lineForTomorrowStorageKey = computed(() => {
   const userPart = encodeURIComponent(session.userId?.trim() || 'anonymous')
   const dayPart = formatLocalDossierDate(dossier.value.date)
@@ -95,7 +100,7 @@ function onWriteNote() {
           <header class="paper-today__section-head paper-today__section-head--inline">
             <span class="tk-serial paper-today__section-num">§ II</span>
             <h3 class="tk-h3 paper-today__section-title">Ledger</h3>
-            <span class="tk-meta paper-today__section-sub">Every meaningful event today · {{ ledgerEntryCount }} entries</span>
+            <span class="tk-meta paper-today__section-sub">{{ ledgerSummary }}</span>
           </header>
           <TodayLedger v-if="dossier.ledger.length > 0" :entries="dossier.ledger" />
           <p v-else class="paper-today__empty paper-today__empty--inset" data-empty-state="ledger">
@@ -133,7 +138,7 @@ function onWriteNote() {
           <header class="paper-today__section-head">
             <span class="tk-serial paper-today__section-num">§ V</span>
             <h3 class="tk-h3 paper-today__section-title">Carry-over</h3>
-            <span class="tk-meta paper-today__section-sub">Bring to tomorrow · {{ dossier.carryOver.length }} cards</span>
+            <span class="tk-meta paper-today__section-sub">{{ carryOverSummary }}</span>
           </header>
           <TodayCarryOver v-if="dossier.carryOver.length > 0" :cards="dossier.carryOver" />
           <p v-else class="paper-today__empty" data-empty-state="carry-over">

@@ -71,6 +71,9 @@ describe('PaperTodayView', () => {
 
     expect(text).toContain('Today, at a glance.')
     expect(text).toContain('No events are being invented')
+    expect(text).toContain('Live ledger unavailable')
+    expect(text).toContain('Live carry-over unavailable')
+    expect(text).not.toContain('0 entries')
     expect(text).not.toContain('A quiet Saturday')
     expect(text).not.toContain('haiku')
     expect(text).not.toContain('Sprint 12')
