@@ -109,6 +109,25 @@ public sealed class PdfPigArtefactExtractionTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldNotEndInWhitespaceAtCharacterCap()
+    {
+        // First page fills the budget to exactly one character short; the second page's
+        // leading separator then lands on the cap boundary. Without trimming, the
+        // extracted text would end in a stray '\n'.
+        var firstPage = new string('a', PdfPigArtefactTextExtractor.MaxExtractedCharacters - 1);
+        var pdf = BuildPdf([firstPage, "tail"]);
+        await using var stream = new MemoryStream(pdf);
+
+        var result = await _extractor.ExtractAsync(stream);
+
+        result.Warnings.Should().Contain(ArtefactExtractionWarningCodes.CharacterLimit);
+        result.ExtractedText.Should().NotBeNullOrEmpty();
+        result.ExtractedText.Should().Be(
+            result.ExtractedText.TrimEnd(),
+            "persisted extractions must never end in stray whitespace at the cap");
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldNotClaimNoTextLayerWhenPagesWereSkipped()
     {
         // First MaxPages pages are image-only; a later (skipped) page carries text.

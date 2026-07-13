@@ -132,6 +132,15 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
                 warnings.Add(ArtefactExtractionWarningCodes.CharacterLimit);
 
             var extractedText = text.ToString();
+            if (characterLimitReached)
+            {
+                // At the exact cap boundary the last character appended can be a page
+                // or word separator (the following word had zero remaining budget), so
+                // strip trailing whitespace to never persist an extraction that ends in
+                // a stray ' ' or '\n'. The CharacterLimit warning above is unaffected.
+                extractedText = extractedText.TrimEnd();
+            }
+
             if (string.IsNullOrWhiteSpace(extractedText))
             {
                 // Only assert "no text layer" when every page was actually inspected.
