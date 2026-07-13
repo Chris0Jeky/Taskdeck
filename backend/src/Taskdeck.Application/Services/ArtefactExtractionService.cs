@@ -205,7 +205,8 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
             {
                 if (string.IsNullOrWhiteSpace(warning) ||
                     warning.Length > ArtefactExtraction.MaxWarningLength ||
-                    warning.Any(char.IsControl))
+                    warning.Any(char.IsControl) ||
+                    ArtefactTextNormalization.HasUnpairedSurrogate(warning))
                 {
                     contractError = true;
                     continue;
@@ -254,7 +255,8 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
     private static bool HasValidIdentity(string value, int maxLength)
         => !string.IsNullOrWhiteSpace(value) &&
            value.Length <= maxLength &&
-           !value.Any(char.IsControl);
+           !value.Any(char.IsControl) &&
+           !ArtefactTextNormalization.HasUnpairedSurrogate(value);
 
     private static void AddPriorityWarning(List<string> warnings, string warning)
     {
@@ -262,7 +264,7 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
             return;
         while (warnings.Count >= ArtefactExtraction.MaxWarningCount)
             warnings.RemoveAt(warnings.Count - 1);
-        warnings.Add(warning);
+        warnings.Insert(0, warning);
     }
 
     private static ArtefactExtractionResult WarningResult(

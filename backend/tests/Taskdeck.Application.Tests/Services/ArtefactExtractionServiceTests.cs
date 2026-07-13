@@ -137,7 +137,11 @@ public sealed class ArtefactExtractionServiceTests
             .ToArray();
         var extractor = new StubExtractor(
             "text/plain",
-            new ArtefactExtractionResult("content", warnings, "First", "1.0"),
+            new ArtefactExtractionResult(
+                new string('x', ArtefactExtraction.MaxExtractedTextLength + 1),
+                warnings,
+                "First",
+                "1.0"),
             "First");
 
         var result = await CreateService(extractor).ExtractAsync(_userId, _artefactId);
@@ -145,6 +149,7 @@ public sealed class ArtefactExtractionServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Warnings.Should().HaveCount(ArtefactExtraction.MaxWarningCount);
         result.Value.Warnings.Should().Contain(ArtefactExtractionWarningCodes.ExtractorContractError);
+        result.Value.Warnings.Should().Contain(ArtefactExtractionWarningCodes.CharacterLimit);
     }
 
     [Fact]

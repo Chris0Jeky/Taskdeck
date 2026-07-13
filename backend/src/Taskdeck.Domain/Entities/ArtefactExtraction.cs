@@ -42,13 +42,19 @@ public sealed class ArtefactExtraction : Entity
     {
         if (sourceArtefactId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "Source artefact ID cannot be empty");
-        if (string.IsNullOrWhiteSpace(extractorName) || extractorName.Length > MaxExtractorNameLength)
+        if (string.IsNullOrWhiteSpace(extractorName) ||
+            extractorName.Length > MaxExtractorNameLength ||
+            extractorName.Any(char.IsControl) ||
+            HasUnpairedSurrogate(extractorName))
         {
             throw new DomainException(
                 ErrorCodes.ValidationError,
                 $"Extractor name is required and cannot exceed {MaxExtractorNameLength} characters");
         }
-        if (string.IsNullOrWhiteSpace(extractorVersion) || extractorVersion.Length > MaxExtractorVersionLength)
+        if (string.IsNullOrWhiteSpace(extractorVersion) ||
+            extractorVersion.Length > MaxExtractorVersionLength ||
+            extractorVersion.Any(char.IsControl) ||
+            HasUnpairedSurrogate(extractorVersion))
         {
             throw new DomainException(
                 ErrorCodes.ValidationError,
@@ -87,7 +93,8 @@ public sealed class ArtefactExtraction : Entity
         if (warningList.Any(warning =>
                 string.IsNullOrWhiteSpace(warning) ||
                 warning.Length > MaxWarningLength ||
-                warning.Any(char.IsControl)))
+                warning.Any(char.IsControl) ||
+                HasUnpairedSurrogate(warning)))
         {
             throw new DomainException(
                 ErrorCodes.ValidationError,
