@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
@@ -25,12 +26,15 @@ internal static class ArtefactMultipartReader
     private const int MaxFieldBytes = 128;
     private const int MaxBoundaryLength = 128;
     private const int CopyBufferBytes = 64 * 1024;
+    internal const long MultipartRequestOverheadBytes = 128L * 1024;
 
     public static async Task<Result<BufferedArtefactUpload>> ReadAsync(
         HttpRequest request,
         ArtefactStorageSettings settings,
         CancellationToken cancellationToken)
     {
+        ConfigureRequestBodyLimit(request.HttpContext, settings.MaxBytesPerArtefact);
+
         if (string.IsNullOrWhiteSpace(request.ContentType))
             return Invalid("Artefact upload requires multipart/form-data content");
 
@@ -119,6 +123,10 @@ internal static class ArtefactMultipartReader
                 }
             }
         }
+        catch (InvalidDataException)
+        {
+            return Invalid("Artefact upload contains malformed multipart data");
+        }
         catch (IOException)
         {
             return Invalid("Artefact upload contains malformed multipart data");
@@ -133,6 +141,21 @@ internal static class ArtefactMultipartReader
             mimeType,
             boardId,
             createdFromCaptureId));
+    }
+
+    internal static void ConfigureRequestBodyLimit(HttpContext context, long maxArtefactBytes)
+    {
+        if (maxArtefactBytes <= 0 || maxArtefactBytes > int.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(maxArtefactBytes));
+
+        var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (feature is null || feature.IsReadOnly)
+            return;
+
+        // Kestrel's default body cap is about 30 MB. Keep its outer request bound
+        // aligned with the configured file cap while allowing the reader's bounded
+        // preamble, three valid sections, headers, fields, boundaries, and trailer.
+        feature.MaxRequestBodySize = checked(maxArtefactBytes + MultipartRequestOverheadBytes);
     }
 
     internal static async Task<Result<byte[]>> ReadBoundedBytesAsync(

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
@@ -46,5 +47,47 @@ public sealed class ArtefactMultipartReaderTests
         result.Value.FileName.Should().Be("notes.txt");
         result.Value.BoardId.Should().Be(boardId);
         result.Value.Content.Should().Equal("notes"u8.ToArray());
+    }
+
+    [Fact]
+    public async Task ReadAsync_ShouldReturnValidationErrorForInvalidMultipartHeaderLine()
+    {
+        const string boundary = "artefact-invalid-header";
+        var body = $"--{boundary}\r\nnot-a-header\r\n\r\nnotes\r\n--{boundary}--\r\n";
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = $"multipart/form-data; boundary={boundary}";
+        context.Request.Body = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(body));
+
+        var result = await ArtefactMultipartReader.ReadAsync(
+            context.Request,
+            new ArtefactStorageSettings { MaxBytesPerArtefact = 1024, MaxBytesPerUser = 1024 },
+            default);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("malformed multipart");
+    }
+
+    [Fact]
+    public void ConfigureRequestBodyLimit_ShouldAllowConfiguredFilePlusBoundedMultipartOverhead()
+    {
+        var context = new DefaultHttpContext();
+        var feature = new MutableMaxRequestBodySizeFeature
+        {
+            MaxRequestBodySize = 30_000_000
+        };
+        context.Features.Set<IHttpMaxRequestBodySizeFeature>(feature);
+        const long configuredFileBytes = 50L * 1024 * 1024;
+
+        ArtefactMultipartReader.ConfigureRequestBodyLimit(context, configuredFileBytes);
+
+        feature.MaxRequestBodySize.Should().Be(
+            configuredFileBytes + ArtefactMultipartReader.MultipartRequestOverheadBytes);
+    }
+
+    private sealed class MutableMaxRequestBodySizeFeature : IHttpMaxRequestBodySizeFeature
+    {
+        public bool IsReadOnly => false;
+        public long? MaxRequestBodySize { get; set; }
     }
 }
