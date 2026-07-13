@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
@@ -711,7 +712,12 @@ public class AutomationProposalService : IAutomationProposalService
         var verb = HumanizeActionVerb(operation.ActionType);
         var targetType = HumanizeTargetType(operation.TargetType).ToLowerInvariant();
         var isCardTarget = string.Equals(operation.TargetType, "card", StringComparison.OrdinalIgnoreCase);
-        var namedTarget = ExtractNamedTarget(operation.Parameters);
+        var normalizedAction = operation.ActionType
+            .Replace("-", string.Empty)
+            .Replace("_", string.Empty)
+            .ToLowerInvariant();
+        var isLabelOperation = isCardTarget && normalizedAction is "addlabel" or "removelabel";
+        var namedTarget = isLabelOperation ? null : ExtractNamedTarget(operation.Parameters);
 
         // Try to resolve card title from lookup when not embedded in parameters
         // Only attempt card-specific lookups when the operation targets a card
@@ -727,6 +733,22 @@ public class AutomationProposalService : IAutomationProposalService
             var cardIdFromParams = ExtractGuidParameter(operation.Parameters, "cardId");
             if (cardIdFromParams.HasValue && cardTitles.TryGetValue(cardIdFromParams.Value, out var title))
                 namedTarget = title;
+        }
+
+        if (isLabelOperation)
+        {
+            var labelName = ExtractStringParameter(operation.Parameters, "labelName");
+            var labelId = ExtractGuidParameter(operation.Parameters, "labelId");
+            var labelDisplay = labelName is not null
+                ? $"\"{labelName}\""
+                : labelId?.ToString() ?? "(unspecified)";
+            var cardDisplay = namedTarget is not null
+                ? $"\"{namedTarget}\""
+                : !string.IsNullOrWhiteSpace(operation.TargetId)
+                    ? operation.TargetId
+                    : ExtractGuidParameter(operation.Parameters, "cardId")?.ToString() ?? "(unspecified)";
+            var preposition = normalizedAction == "addlabel" ? "to" : "from";
+            return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
         }
 
         // Build description, falling back to raw TargetId when no name is available
@@ -750,7 +772,47 @@ public class AutomationProposalService : IAutomationProposalService
                 description += $" in column {columnDisplay}";
         }
 
+        var cardEffects = DescribeCardParameterEffects(operation.Parameters);
+        if (isCardTarget && cardEffects.Count > 0)
+            description += $"; {string.Join("; ", cardEffects)}";
+
         return description;
+    }
+
+    private static IReadOnlyList<string> DescribeCardParameterEffects(string parameters)
+    {
+        if (!OperationParameterParser.TryDeserializeParameters(parameters, out var parsed, out _))
+            return Array.Empty<string>();
+
+        var effects = new List<string>();
+        if (OperationParameterParser.TryGetOptionalDateTimeOffset(
+                parsed, "dueDate", out var dueDateProvided, out var dueDate, out _)
+            && dueDateProvided)
+        {
+            effects.Add(dueDate.HasValue
+                ? $"set due date to {dueDate.Value:O}"
+                : "clear due date");
+        }
+
+        if (parsed.TryGetProperty("clearDueDate", out var clearProperty)
+            && clearProperty.ValueKind == JsonValueKind.True)
+        {
+            effects.RemoveAll(effect => effect.StartsWith("set due date", StringComparison.Ordinal));
+            if (!effects.Contains("clear due date", StringComparer.Ordinal))
+                effects.Add("clear due date");
+        }
+
+        if (OperationParameterParser.TryGetOptionalStringArray(
+                parsed, "labels", out var labelsProvided, out var labels, out _)
+            && labelsProvided)
+        {
+            var effectiveLabels = labels.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            effects.Add(effectiveLabels.Count == 0
+                ? "replace labels with none"
+                : $"replace labels with [{string.Join(", ", effectiveLabels.Select(label => $"\"{label}\""))}]");
+        }
+
+        return effects;
     }
 
     /// <summary>
@@ -780,6 +842,30 @@ public class AutomationProposalService : IAutomationProposalService
         }
 
         return null;
+    }
+
+    private static string? ExtractStringParameter(string parameters, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(parameters))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(parameters);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty(propertyName, out var propertyValue)
+                || propertyValue.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var value = propertyValue.GetString()?.Trim();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static string? ExtractNamedTarget(string parameters)

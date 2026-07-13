@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Services.Tools;
@@ -52,6 +53,15 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
         var columnName = arguments.TryGetProperty("column_name", out var cn) ? cn.GetString() : null;
         var description = arguments.TryGetProperty("description", out var d) ? d.GetString() : null;
         var labels = ExtractStringArray(arguments, "labels");
+        if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
+                arguments, "due_date", out _, out var dueDate, out var dueDateError))
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = dueDateError,
+                suggestion = "Use YYYY-MM-DD or an ISO-8601 timestamp with an offset"
+            }, ToolJsonOptions.Default);
+        }
 
         // Resolve column
         var columns = await _unitOfWork.Columns.GetByBoardIdAsync(context.BoardId, ct);
@@ -91,14 +101,18 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
         }
 
         // Build proposal operations
-        var parameters = JsonSerializer.Serialize(new
+        var createParameters = new Dictionary<string, object?>
         {
-            title,
-            description,
-            columnId,
-            boardId = context.BoardId,
-            labels
-        });
+            ["title"] = title,
+            ["description"] = description,
+            ["columnId"] = columnId,
+            ["boardId"] = context.BoardId,
+            ["labels"] = labels
+        };
+        if (dueDate.HasValue)
+            createParameters["dueDate"] = dueDate.Value.ToString("O");
+
+        var parameters = JsonSerializer.Serialize(createParameters);
 
         var operations = new List<CreateProposalOperationDto>
         {

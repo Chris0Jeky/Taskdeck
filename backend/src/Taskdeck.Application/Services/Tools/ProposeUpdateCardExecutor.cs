@@ -1,13 +1,14 @@
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Services.Tools;
 
 /// <summary>
 /// Executes the propose_update_card tool: creates a proposal to update a card's
-/// title, description, or labels. Always produces a proposal (GP-06 compliance).
+/// title, description, due date, or labels. Always produces a proposal (GP-06 compliance).
 /// </summary>
 public sealed class ProposeUpdateCardExecutor : IToolExecutor
 {
@@ -54,12 +55,46 @@ public sealed class ProposeUpdateCardExecutor : IToolExecutor
         var newLabels = ExtractStringArray(arguments, "labels");
         var hasLabels = arguments.TryGetProperty("labels", out _);
 
-        // At least one field must be provided
-        if (string.IsNullOrWhiteSpace(newTitle) && newDescription == null && !hasLabels)
+        if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
+                arguments, "due_date", out var hasDueDate, out var newDueDate, out var dueDateError))
         {
             return JsonSerializer.Serialize(new
             {
-                error = "At least one field (title, description, or labels) must be provided",
+                error = dueDateError,
+                suggestion = "Use YYYY-MM-DD or an ISO-8601 timestamp with an offset"
+            }, ToolJsonOptions.Default);
+        }
+
+        var clearDueDate = false;
+        if (arguments.TryGetProperty("clear_due_date", out var clearDueDateProperty))
+        {
+            if (clearDueDateProperty.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    error = "clear_due_date must be a boolean",
+                    suggestion = "Set clear_due_date to true to remove the current due date"
+                }, ToolJsonOptions.Default);
+            }
+
+            clearDueDate = clearDueDateProperty.GetBoolean();
+        }
+
+        if (newDueDate.HasValue && clearDueDate)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = "due_date and clear_due_date cannot both be set",
+                suggestion = "Choose a new due date or clear the current one"
+            }, ToolJsonOptions.Default);
+        }
+
+        // At least one field must be provided
+        if (string.IsNullOrWhiteSpace(newTitle) && newDescription == null && !hasLabels && !hasDueDate && !clearDueDate)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = "At least one field (title, description, due_date, clear_due_date, or labels) must be provided",
                 suggestion = "Specify what to update on the card"
             }, ToolJsonOptions.Default);
         }
@@ -85,6 +120,10 @@ public sealed class ProposeUpdateCardExecutor : IToolExecutor
             updateParams["title"] = newTitle;
         if (newDescription != null)
             updateParams["description"] = newDescription;
+        if (newDueDate.HasValue)
+            updateParams["dueDate"] = newDueDate.Value.ToString("O");
+        if (clearDueDate || (hasDueDate && !newDueDate.HasValue))
+            updateParams["clearDueDate"] = true;
         if (hasLabels)
             updateParams["labels"] = newLabels;
 
@@ -106,6 +145,8 @@ public sealed class ProposeUpdateCardExecutor : IToolExecutor
         var updateParts = new List<string>();
         if (!string.IsNullOrWhiteSpace(newTitle)) updateParts.Add($"title to '{newTitle}'");
         if (newDescription != null) updateParts.Add("description");
+        if (newDueDate.HasValue) updateParts.Add($"due date to {newDueDate.Value:yyyy-MM-dd}");
+        if (clearDueDate || (hasDueDate && !newDueDate.HasValue)) updateParts.Add("clear due date");
         if (hasLabels) updateParts.Add($"labels to [{string.Join(", ", newLabels)}]");
         var summary = $"Update card '{card.Title}': {string.Join(", ", updateParts)}";
         if (summary.Length > 500) summary = summary[..497] + "...";
