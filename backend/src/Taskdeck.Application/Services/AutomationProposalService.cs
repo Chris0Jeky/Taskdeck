@@ -741,11 +741,9 @@ public class AutomationProposalService : IAutomationProposalService
         var verb = HumanizeActionVerb(operation.ActionType);
         var targetType = HumanizeTargetType(operation.TargetType).ToLowerInvariant();
         var isCardTarget = string.Equals(operation.TargetType, "card", StringComparison.OrdinalIgnoreCase);
-        var normalizedAction = operation.ActionType
-            .Replace("-", string.Empty)
-            .Replace("_", string.Empty)
-            .ToLowerInvariant();
-        var isLabelOperation = isCardTarget && normalizedAction is "addlabel" or "removelabel";
+        var labelAction = CardLabelOperationVocabulary.Classify(operation.ActionType);
+        var isLabelOperation = isCardTarget &&
+            labelAction is CardLabelOperationAction.Add or CardLabelOperationAction.Remove;
         var namedTarget = isLabelOperation ? null : ExtractNamedTarget(operation.Parameters);
 
         // Try to resolve card title from lookup when not embedded in parameters
@@ -778,7 +776,7 @@ public class AutomationProposalService : IAutomationProposalService
                 : !string.IsNullOrWhiteSpace(operation.TargetId)
                     ? operation.TargetId
                     : ExtractGuidParameter(operation.Parameters, "cardId")?.ToString() ?? "(unspecified)";
-            var preposition = normalizedAction == "addlabel" ? "to" : "from";
+            var preposition = labelAction == CardLabelOperationAction.Add ? "to" : "from";
             return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
         }
 

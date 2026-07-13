@@ -20,14 +20,31 @@ public static class ProposalOperationContractValidator
         IEnumerable<ProposalOperationDto> operations,
         CancellationToken cancellationToken = default)
     {
+        var validationContext = new BoardValidationContext(unitOfWork, proposalBoardId);
+
         foreach (var operation in operations)
         {
             if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
                 return Result.Failure(ErrorCodes.ValidationError, parseError);
 
+            var labelAction = CardLabelOperationVocabulary.Classify(operation.ActionType);
+            if (labelAction == CardLabelOperationAction.InvalidAlias)
+            {
+                return Result.Failure(
+                    ErrorCodes.ValidationError,
+                    $"Unsupported card label action alias: {operation.ActionType}");
+            }
+
+            if ((labelAction is CardLabelOperationAction.Add or CardLabelOperationAction.Remove) &&
+                !operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result.Failure(
+                    ErrorCodes.ValidationError,
+                    $"Card label action '{operation.ActionType}' requires targetType 'card'");
+            }
+
             var scopeResult = await ValidateEntityScopeAsync(
-                unitOfWork,
-                proposalBoardId,
+                validationContext,
                 operation,
                 parameters,
                 cancellationToken);
@@ -35,10 +52,10 @@ public static class ProposalOperationContractValidator
                 return scopeResult;
 
             var fieldResult = await ValidateCardFieldsAsync(
-                unitOfWork,
-                proposalBoardId,
+                validationContext,
                 operation,
                 parameters,
+                labelAction,
                 cancellationToken);
             if (!fieldResult.IsSuccess)
                 return fieldResult;
@@ -48,8 +65,7 @@ public static class ProposalOperationContractValidator
     }
 
     private static async Task<Result> ValidateEntityScopeAsync(
-        IUnitOfWork unitOfWork,
-        Guid? proposalBoardId,
+        BoardValidationContext validationContext,
         ProposalOperationDto operation,
         JsonElement parameters,
         CancellationToken cancellationToken)
@@ -62,7 +78,8 @@ public static class ProposalOperationContractValidator
             parameterBoardId = parsedBoardId;
         }
 
-        if (parameterBoardId.HasValue && (!proposalBoardId.HasValue || parameterBoardId != proposalBoardId))
+        if (parameterBoardId.HasValue &&
+            (!validationContext.BoardId.HasValue || parameterBoardId != validationContext.BoardId))
             return ScopeFailure("Operation boardId is outside the proposal board scope");
 
         Guid? cardId = null;
@@ -90,7 +107,7 @@ public static class ProposalOperationContractValidator
 
         if (cardId.HasValue)
         {
-            var cardResult = await ValidateCardBoardAsync(unitOfWork, proposalBoardId, cardId.Value, cancellationToken);
+            var cardResult = await validationContext.ValidateCardBoardAsync(cardId.Value, cancellationToken);
             if (!cardResult.IsSuccess)
                 return cardResult;
         }
@@ -98,7 +115,7 @@ public static class ProposalOperationContractValidator
                  operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
                  !operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
         {
-            var cardResult = await ValidateCardBoardAsync(unitOfWork, proposalBoardId, targetId.Value, cancellationToken);
+            var cardResult = await validationContext.ValidateCardBoardAsync(targetId.Value, cancellationToken);
             if (!cardResult.IsSuccess)
                 return cardResult;
         }
@@ -111,11 +128,9 @@ public static class ProposalOperationContractValidator
             if (!OperationParameterParser.TryGetRequiredGuid(parameters, columnParameter, out var columnId, out var columnError))
                 return Result.Failure(ErrorCodes.ValidationError, columnError);
 
-            if (!proposalBoardId.HasValue)
-                return ScopeFailure("Operation column is outside the proposal board scope");
-            var columns = await unitOfWork.Columns.GetByBoardIdAsync(proposalBoardId.Value, cancellationToken);
-            if (columns.All(column => column.Id != columnId))
-                return ScopeFailure("Operation column is outside the proposal board scope");
+            var columnResult = await validationContext.ValidateColumnBoardAsync(columnId, cancellationToken);
+            if (!columnResult.IsSuccess)
+                return columnResult;
 
             if (targetId.HasValue &&
                 operation.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase) &&
@@ -127,7 +142,7 @@ public static class ProposalOperationContractValidator
 
         if (targetId.HasValue && operation.TargetType.Equals("board", StringComparison.OrdinalIgnoreCase))
         {
-            if (!proposalBoardId.HasValue || targetId != proposalBoardId ||
+            if (!validationContext.BoardId.HasValue || targetId != validationContext.BoardId ||
                 (parameterBoardId.HasValue && targetId != parameterBoardId))
             {
                 return ScopeFailure("Operation targetId is outside the proposal board scope");
@@ -139,30 +154,25 @@ public static class ProposalOperationContractValidator
             !parameters.TryGetProperty("columnId", out _) &&
             !operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
         {
-            if (!proposalBoardId.HasValue)
-                return ScopeFailure("Operation column is outside the proposal board scope");
-            var columns = await unitOfWork.Columns.GetByBoardIdAsync(proposalBoardId.Value, cancellationToken);
-            if (columns.All(column => column.Id != targetId.Value))
-                return ScopeFailure("Operation column is outside the proposal board scope");
+            var columnResult = await validationContext.ValidateColumnBoardAsync(targetId.Value, cancellationToken);
+            if (!columnResult.IsSuccess)
+                return columnResult;
         }
 
         return Result.Success();
     }
 
     private static async Task<Result> ValidateCardFieldsAsync(
-        IUnitOfWork unitOfWork,
-        Guid? proposalBoardId,
+        BoardValidationContext validationContext,
         ProposalOperationDto operation,
         JsonElement parameters,
+        CardLabelOperationAction labelAction,
         CancellationToken cancellationToken)
     {
         if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase))
             return Result.Success();
 
-        var normalizedAction = operation.ActionType
-            .Replace("-", string.Empty)
-            .Replace("_", string.Empty)
-            .ToLowerInvariant();
+        var normalizedAction = operation.ActionType.ToLowerInvariant();
         if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase) ||
             normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase))
         {
@@ -183,7 +193,7 @@ public static class ProposalOperationContractValidator
             if (dueDate.HasValue && clearDueDate)
                 return Result.Failure(ErrorCodes.ValidationError, "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
 
-            var labelsResult = await ValidateLabelsAsync(unitOfWork, proposalBoardId, parameters, cancellationToken);
+            var labelsResult = await ValidateLabelsAsync(validationContext, parameters, cancellationToken);
             if (!labelsResult.IsSuccess)
                 return labelsResult;
 
@@ -203,7 +213,7 @@ public static class ProposalOperationContractValidator
             }
         }
 
-        if (normalizedAction is "addlabel" or "removelabel")
+        if (labelAction is CardLabelOperationAction.Add or CardLabelOperationAction.Remove)
         {
             if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
                 return Result.Failure(ErrorCodes.ValidationError, cardIdError);
@@ -213,22 +223,21 @@ public static class ProposalOperationContractValidator
             if (hasLabelId == hasLabelName)
                 return Result.Failure(ErrorCodes.ValidationError, "Provide exactly one of 'labelId' or 'labelName'");
 
-            if (!proposalBoardId.HasValue)
+            if (!validationContext.BoardId.HasValue)
                 return ScopeFailure("Label operation requires a proposal board scope");
 
-            var boardLabels = (await unitOfWork.Labels.GetByBoardIdAsync(proposalBoardId.Value, cancellationToken)).ToList();
             if (hasLabelId)
             {
                 if (!OperationParameterParser.TryGetRequiredGuid(parameters, "labelId", out var labelId, out var labelError))
                     return Result.Failure(ErrorCodes.ValidationError, labelError);
-                if (boardLabels.All(label => label.Id != labelId))
+                if (!await validationContext.ContainsLabelIdAsync(labelId, cancellationToken))
                     return Result.Failure(ErrorCodes.NotFound, "Label was not found on the proposal board");
             }
             else
             {
                 if (!OperationParameterParser.TryGetRequiredString(parameters, "labelName", out var labelName, out var labelError))
                     return Result.Failure(ErrorCodes.ValidationError, labelError);
-                if (boardLabels.All(label => !string.Equals(label.Name, labelName, StringComparison.OrdinalIgnoreCase)))
+                if (!await validationContext.ContainsLabelNameAsync(labelName, cancellationToken))
                     return Result.Failure(ErrorCodes.NotFound, "Label was not found on the proposal board");
             }
         }
@@ -237,8 +246,7 @@ public static class ProposalOperationContractValidator
     }
 
     private static async Task<Result> ValidateLabelsAsync(
-        IUnitOfWork unitOfWork,
-        Guid? proposalBoardId,
+        BoardValidationContext validationContext,
         JsonElement parameters,
         CancellationToken cancellationToken)
     {
@@ -253,40 +261,93 @@ public static class ProposalOperationContractValidator
             return Result.Success();
         if (namesProvided && idsProvided)
             return Result.Failure(ErrorCodes.ValidationError, "Provide exactly one of 'labels' or 'labelIds'");
-        if (!proposalBoardId.HasValue)
+        if (!validationContext.BoardId.HasValue)
             return ScopeFailure("Card labels require a proposal board scope");
 
-        var boardLabels = (await unitOfWork.Labels.GetByBoardIdAsync(proposalBoardId.Value, cancellationToken)).ToList();
         if (namesProvided)
         {
-            var missingName = labelNames.FirstOrDefault(name =>
-                boardLabels.All(label => !string.Equals(label.Name, name, StringComparison.OrdinalIgnoreCase)));
-            if (missingName != null)
-                return Result.Failure(ErrorCodes.NotFound, $"Label '{missingName}' was not found on the proposal board");
+            foreach (var labelName in labelNames)
+            {
+                if (!await validationContext.ContainsLabelNameAsync(labelName, cancellationToken))
+                    return Result.Failure(ErrorCodes.NotFound, $"Label '{labelName}' was not found on the proposal board");
+            }
         }
         else
         {
-            var missingId = labelIds.FirstOrDefault(id => boardLabels.All(label => label.Id != id));
-            if (missingId != Guid.Empty)
-                return Result.Failure(ErrorCodes.NotFound, "Label was not found on the proposal board");
+            foreach (var labelId in labelIds)
+            {
+                if (!await validationContext.ContainsLabelIdAsync(labelId, cancellationToken))
+                    return Result.Failure(ErrorCodes.NotFound, "Label was not found on the proposal board");
+            }
         }
 
         return Result.Success();
     }
 
-    private static async Task<Result> ValidateCardBoardAsync(
-        IUnitOfWork unitOfWork,
-        Guid? proposalBoardId,
-        Guid cardId,
-        CancellationToken cancellationToken)
+    private sealed class BoardValidationContext(IUnitOfWork unitOfWork, Guid? boardId)
     {
-        if (!proposalBoardId.HasValue)
-            return ScopeFailure("Operation card is outside the proposal board scope");
-        var cards = await unitOfWork.Cards.GetByBoardIdAsync(proposalBoardId.Value, cancellationToken);
-        if (cards.All(card => card.Id != cardId))
-            return ScopeFailure("Operation card is outside the proposal board scope");
+        private readonly Dictionary<Guid, Guid?> _cardBoardIds = [];
+        private readonly Dictionary<Guid, Guid?> _columnBoardIds = [];
+        private HashSet<Guid>? _labelIds;
+        private HashSet<string>? _labelNames;
 
-        return Result.Success();
+        public Guid? BoardId { get; } = boardId;
+
+        public async Task<Result> ValidateCardBoardAsync(Guid cardId, CancellationToken cancellationToken)
+        {
+            if (!BoardId.HasValue)
+                return ScopeFailure("Operation card is outside the proposal board scope");
+
+            if (!_cardBoardIds.TryGetValue(cardId, out var cardBoardId))
+            {
+                cardBoardId = (await unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken))?.BoardId;
+                _cardBoardIds[cardId] = cardBoardId;
+            }
+
+            return cardBoardId == BoardId
+                ? Result.Success()
+                : ScopeFailure("Operation card is outside the proposal board scope");
+        }
+
+        public async Task<Result> ValidateColumnBoardAsync(Guid columnId, CancellationToken cancellationToken)
+        {
+            if (!BoardId.HasValue)
+                return ScopeFailure("Operation column is outside the proposal board scope");
+
+            if (!_columnBoardIds.TryGetValue(columnId, out var columnBoardId))
+            {
+                columnBoardId = (await unitOfWork.Columns.GetByIdAsync(columnId, cancellationToken))?.BoardId;
+                _columnBoardIds[columnId] = columnBoardId;
+            }
+
+            return columnBoardId == BoardId
+                ? Result.Success()
+                : ScopeFailure("Operation column is outside the proposal board scope");
+        }
+
+        public async Task<bool> ContainsLabelIdAsync(Guid labelId, CancellationToken cancellationToken)
+        {
+            await EnsureLabelsLoadedAsync(cancellationToken);
+            return _labelIds!.Contains(labelId);
+        }
+
+        public async Task<bool> ContainsLabelNameAsync(string labelName, CancellationToken cancellationToken)
+        {
+            await EnsureLabelsLoadedAsync(cancellationToken);
+            return _labelNames!.Contains(labelName);
+        }
+
+        private async Task EnsureLabelsLoadedAsync(CancellationToken cancellationToken)
+        {
+            if (_labelIds != null)
+                return;
+
+            var labels = (BoardId.HasValue
+                ? await unitOfWork.Labels.GetByBoardIdAsync(BoardId.Value, cancellationToken)
+                : []).ToList();
+            _labelIds = labels.Select(label => label.Id).ToHashSet();
+            _labelNames = labels.Select(label => label.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     private static Result ScopeFailure(string message) => Result.Failure(ErrorCodes.Forbidden, message);

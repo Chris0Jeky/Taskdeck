@@ -64,6 +64,12 @@ public class OperationHandlerRegistry
         if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
 
+        var labelAction = CardLabelOperationVocabulary.Classify(actionType);
+        if (labelAction == CardLabelOperationAction.Add)
+            return await ChangeCardLabelAsync(parameters, add: true, cancellationToken);
+        if (labelAction == CardLabelOperationAction.Remove)
+            return await ChangeCardLabelAsync(parameters, add: false, cancellationToken);
+
         switch (actionType)
         {
             case "create":
@@ -77,16 +83,6 @@ public class OperationHandlerRegistry
 
             case "archive":
                 return await ArchiveCardAsync(parameters, cancellationToken);
-
-            case "add-label":
-            case "add_label":
-            case "addlabel":
-                return await ChangeCardLabelAsync(parameters, add: true, cancellationToken);
-
-            case "remove-label":
-            case "remove_label":
-            case "removelabel":
-                return await ChangeCardLabelAsync(parameters, add: false, cancellationToken);
 
             default:
                 return Result.Failure(ErrorCodes.ValidationError, $"Unsupported card action: {actionType}");

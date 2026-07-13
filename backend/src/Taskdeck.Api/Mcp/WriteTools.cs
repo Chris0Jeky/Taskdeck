@@ -79,7 +79,7 @@ public class WriteTools
         if (!string.IsNullOrWhiteSpace(label_ids))
         {
             if (!TryParseGuidList(label_ids, out var labelIds))
-                return Error("label_ids must contain only comma-separated UUIDs");
+                return Error("label_ids must contain only comma-separated non-empty UUIDs");
             parameters["labelIds"] = labelIds;
         }
 
@@ -218,7 +218,7 @@ public class WriteTools
         if (label_ids != null)
         {
             if (!TryParseGuidList(label_ids, out var labelIds))
-                return Error("label_ids must contain only comma-separated UUIDs");
+                return Error("label_ids must contain only comma-separated non-empty UUIDs");
             parameters["labelIds"] = labelIds;
         }
 
@@ -417,7 +417,7 @@ public class WriteTools
         var parts = commaSeparated.Split(',', StringSplitOptions.TrimEntries);
         foreach (var part in parts)
         {
-            if (string.IsNullOrWhiteSpace(part) || !Guid.TryParse(part, out var value))
+            if (string.IsNullOrWhiteSpace(part) || !Guid.TryParse(part, out var value) || value == Guid.Empty)
                 return false;
             values.Add(value);
         }

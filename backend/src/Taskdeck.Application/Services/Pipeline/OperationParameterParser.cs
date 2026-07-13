@@ -249,9 +249,9 @@ public static class OperationParameterParser
         var parsed = new List<Guid>();
         foreach (var rawValue in rawValues)
         {
-            if (!Guid.TryParse(rawValue, out var value))
+            if (!Guid.TryParse(rawValue, out var value) || value == Guid.Empty)
             {
-                error = $"Parameter '{parameterName}' must contain only valid UUID strings";
+                error = $"Parameter '{parameterName}' must contain only non-empty UUID strings";
                 return false;
             }
 
