@@ -2,8 +2,10 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PaperCard from '../../components/paper/PaperCard.vue'
+import PaperEmptyState from '../../components/paper/PaperEmptyState.vue'
 import PaperKbd from '../../components/paper/PaperKbd.vue'
 import PaperTagstamp from '../../components/paper/PaperTagstamp.vue'
+import WorkspaceSetupModal from '../../components/workspace/WorkspaceSetupModal.vue'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useCaptureStore } from '../../store/captureStore'
@@ -40,6 +42,7 @@ const workspace = useWorkspaceStore()
 const capture = useCaptureStore()
 
 const summary = computed(() => workspace.homeSummary)
+const onboarding = computed(() => summary.value?.onboarding ?? workspace.onboarding)
 
 // ── Greeting ─────────────────────────────────────────────────────────────
 
@@ -149,7 +152,26 @@ const queueCards = computed<QueueCardModel[]>(() => {
   return cards
 })
 
-const showEmptyState = computed(() => summary.value !== null && queueCards.value.length === 0)
+const showFirstBoardSetup = computed(() => summary.value?.boards.totalBoards === 0)
+const showEmptyState = computed(() =>
+  summary.value !== null && queueCards.value.length === 0 && !showFirstBoardSetup.value,
+)
+const completedMilestones = computed(() =>
+  onboarding.value?.steps.filter((step) => step.isComplete).length ?? 0,
+)
+const showSetupModal = ref(false)
+
+function openSetupModal() {
+  showSetupModal.value = true
+}
+
+function closeSetupModal() {
+  showSetupModal.value = false
+}
+
+function handleSetupCreated() {
+  showSetupModal.value = false
+}
 
 // ── Quick capture ────────────────────────────────────────────────────────
 
@@ -307,6 +329,27 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     </section>
 
     <section
+      v-else-if="showFirstBoardSetup"
+      class="paper-home__first-board"
+      data-testid="paper-home-first-board"
+    >
+      <PaperEmptyState tone="ember" mark="✦">
+        <template #title>Shape your first useful board.</template>
+        Start blank or reuse a starter workflow. The existing setup guide will create the board and take you straight into it.
+        <template #cta>
+          <button
+            type="button"
+            class="paper-home__setup-button"
+            data-testid="paper-home-setup-cta"
+            @click="openSetupModal"
+          >
+            Start guided setup
+          </button>
+        </template>
+      </PaperEmptyState>
+    </section>
+
+    <section
       v-else-if="showEmptyState"
       class="paper-home__empty"
       data-testid="paper-home-empty"
@@ -347,6 +390,42 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
       </div>
     </section>
 
+    <section
+      v-if="onboarding?.steps.length"
+      class="paper-home__milestones"
+      aria-labelledby="paper-home-milestones-title"
+      data-testid="paper-home-milestones"
+    >
+      <div class="paper-home__milestones-heading">
+        <div>
+          <p class="tk-eyebrow">III · Your first loop</p>
+          <h2 id="paper-home-milestones-title" class="paper-home__milestones-title">
+            From thought to trusted action
+          </h2>
+        </div>
+        <span class="tk-meta">{{ completedMilestones }}/{{ onboarding.steps.length }} complete</span>
+      </div>
+      <ol class="paper-home__milestone-list">
+        <li
+          v-for="step in onboarding.steps"
+          :key="step.stepId"
+          :class="['paper-home__milestone', { 'paper-home__milestone--complete': step.isComplete }]"
+        >
+          <span class="paper-home__milestone-mark" aria-hidden="true">
+            {{ step.isComplete ? '✓' : '○' }}
+          </span>
+          <span>
+            <strong>{{ step.title }}</strong>
+            <small>{{ step.description }}</small>
+          </span>
+          <span class="sr-only">{{ step.isComplete ? 'Complete' : 'Not complete' }}</span>
+        </li>
+      </ol>
+      <p class="tk-meta paper-home__milestones-note">
+        These milestones stay in this workspace; they are not sent as analytics.
+      </p>
+    </section>
+
     <section class="paper-home__capture" aria-label="Quick capture">
       <form class="paper-home__capture-row" @submit.prevent="submitCapture">
         <label class="sr-only" for="paper-home-capture-input">Capture a thought</label>
@@ -367,6 +446,14 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
         </span>
       </form>
     </section>
+
+    <Teleport v-if="showSetupModal" to="body">
+      <WorkspaceSetupModal
+        :is-open="true"
+        @close="closeSetupModal"
+        @created="handleSetupCreated"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -509,8 +596,115 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   font-style: italic;
 }
 
+.paper-home__setup-button {
+  padding: 9px 14px;
+  border: 1px solid var(--ember-deep);
+  border-radius: var(--r-1);
+  background: var(--ember);
+  color: var(--td-text-inverse);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-stamp);
+}
+
+.paper-home__setup-button:hover {
+  background: var(--ember-deep);
+}
+
+.paper-home__setup-button:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 3px;
+}
+
+.paper-home__milestones {
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-card);
+}
+
+.paper-home__milestones-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.paper-home__milestones-heading p {
+  margin: 0 0 4px;
+}
+
+.paper-home__milestones-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--ink-deep);
+}
+
+.paper-home__milestone-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.paper-home__milestone {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  color: var(--ink-2);
+}
+
+.paper-home__milestone strong,
+.paper-home__milestone small {
+  display: block;
+}
+
+.paper-home__milestone strong {
+  color: var(--ink-deep);
+  font-family: var(--serif);
+  font-size: 14px;
+}
+
+.paper-home__milestone small {
+  margin-top: 3px;
+  color: var(--mute);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.paper-home__milestone-mark {
+  color: var(--faint);
+  font-family: var(--mono);
+}
+
+.paper-home__milestone--complete {
+  border-color: var(--applied);
+  background: var(--applied-tint);
+}
+
+.paper-home__milestone--complete .paper-home__milestone-mark {
+  color: var(--applied);
+}
+
+.paper-home__milestones-note {
+  margin: 12px 0 0;
+}
+
 @media (max-width: 1024px) {
   .paper-home__queue-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .paper-home__milestone-list {
     grid-template-columns: 1fr;
   }
 }

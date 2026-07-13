@@ -9,7 +9,8 @@
 #   1. Create a Railway project at https://railway.app
 #   2. Link this repo
 #   3. Set Config Path to "deploy/railway.toml" in service settings
-#   4. Set environment variables (see deploy/.env.production.template)
+#   4. Set environment variables (see deploy/.env.production.template), including
+#      Auth__Registration__Mode=Closed; mint the first-owner invite in a private shell
 #   5. Attach a persistent volume at /app/data
 #   6. Deploy
 #

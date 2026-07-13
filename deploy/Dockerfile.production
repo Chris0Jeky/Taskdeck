@@ -56,9 +56,11 @@ COPY backend/src/Taskdeck.Domain/Taskdeck.Domain.csproj backend/src/Taskdeck.Dom
 COPY backend/src/Taskdeck.Application/Taskdeck.Application.csproj backend/src/Taskdeck.Application/
 COPY backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj backend/src/Taskdeck.Infrastructure/
 COPY backend/src/Taskdeck.Api/Taskdeck.Api.csproj backend/src/Taskdeck.Api/
+COPY backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj backend/src/Taskdeck.Cli/
 
 # Restore from .csproj layer (cached if deps haven't changed)
 RUN dotnet restore backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+RUN dotnet restore backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj
 
 # Copy all backend source
 COPY backend/ backend/
@@ -67,6 +69,10 @@ COPY backend/ backend/
 RUN dotnet publish backend/src/Taskdeck.Api/Taskdeck.Api.csproj \
     -c Release \
     -o /app/publish \
+    /p:UseAppHost=false
+RUN dotnet publish backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj \
+    -c Release \
+    -o /app/cli \
     /p:UseAppHost=false
 
 # ---------------------------------------------------------------------------
@@ -92,6 +98,7 @@ RUN mkdir -p /app/data && chown taskdeck:taskdeck /app/data
 # Copy published .NET application (owned by taskdeck so the non-root user can
 # read everything; also allows future writes to AppContext.BaseDirectory if needed).
 COPY --chown=taskdeck:taskdeck --from=backend-build /app/publish ./
+COPY --chown=taskdeck:taskdeck --from=backend-build /app/cli ./cli/
 
 # Copy frontend build output into wwwroot/ so the .NET app serves it
 # (PipelineConfiguration.cs: UseDefaultFiles + UseStaticFiles + MapFallbackToFile)

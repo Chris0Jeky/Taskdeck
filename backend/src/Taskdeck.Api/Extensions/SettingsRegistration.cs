@@ -46,6 +46,11 @@ public static class SettingsRegistration
         jwtSettings = configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
         services.AddSingleton(jwtSettings);
 
+        var registrationSettings = configuration
+            .GetSection("Auth:Registration")
+            .Get<RegistrationSettings>() ?? new RegistrationSettings();
+        services.AddSingleton(registrationSettings);
+
         gitHubOAuthSettings = configuration.GetSection("GitHubOAuth").Get<GitHubOAuthSettings>() ?? new GitHubOAuthSettings();
         services.AddSingleton(gitHubOAuthSettings);
 

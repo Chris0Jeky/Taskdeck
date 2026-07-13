@@ -192,7 +192,11 @@ public class AccountLinkingTests
     private static (AuthenticationService Service, Mock<IUnitOfWork> UnitOfWork) CreateService()
     {
         var uow = new Mock<IUnitOfWork>();
-        var service = new AuthenticationService(uow.Object, DefaultJwtSettings);
+        var service = new AuthenticationService(
+            uow.Object,
+            DefaultJwtSettings,
+            Mock.Of<IRegistrationPolicyService>(),
+            new BcryptPasswordHasher());
         return (service, uow);
     }
 

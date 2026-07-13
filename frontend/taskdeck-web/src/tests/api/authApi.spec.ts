@@ -77,17 +77,33 @@ describe('authApi', () => {
 
   describe('getProviders', () => {
     it('should send GET to /auth/providers', async () => {
-      const mockResponse = { gitHub: true }
+      const mockResponse = {
+        gitHub: true,
+        oidc: [],
+        registration: {
+          mode: 'Open',
+          isRegistrationAvailable: true,
+          inviteRequired: false,
+        },
+      }
       vi.mocked(http.get).mockResolvedValue({ data: mockResponse })
 
       const result = await authApi.getProviders()
 
       expect(http.get).toHaveBeenCalledWith('/auth/providers')
-      expect(result).toEqual({ gitHub: true })
+      expect(result).toEqual(mockResponse)
     })
 
     it('should return false when GitHub is not configured', async () => {
-      const mockResponse = { gitHub: false }
+      const mockResponse = {
+        gitHub: false,
+        oidc: [],
+        registration: {
+          mode: 'Closed',
+          isRegistrationAvailable: false,
+          inviteRequired: false,
+        },
+      }
       vi.mocked(http.get).mockResolvedValue({ data: mockResponse })
 
       const result = await authApi.getProviders()

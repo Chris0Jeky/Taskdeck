@@ -7,6 +7,7 @@ export interface RegisterRequest {
   username: string
   email: string
   password: string
+  inviteCode?: string
 }
 
 export interface ChangePasswordRequest {
@@ -47,6 +48,15 @@ export interface OidcProviderInfo {
 export interface AuthProviders {
   gitHub: boolean
   oidc: OidcProviderInfo[]
+  registration: RegistrationAvailability
+}
+
+export type RegistrationMode = 'Open' | 'InviteOnly' | 'Closed'
+
+export interface RegistrationAvailability {
+  mode: RegistrationMode
+  isRegistrationAvailable: boolean
+  inviteRequired: boolean
 }
 
 export interface MfaStatus {

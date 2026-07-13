@@ -9,6 +9,7 @@ COPY global.json ./
 COPY backend/ ./backend/
 RUN dotnet restore backend/src/Taskdeck.Api/Taskdeck.Api.csproj
 RUN dotnet publish backend/src/Taskdeck.Api/Taskdeck.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj -c Release -o /app/cli /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
@@ -40,6 +41,7 @@ RUN groupadd --system --gid 10001 appuser \
     && chown appuser:appuser /app /app/data
 
 COPY --from=build --chown=appuser:appuser /app/publish ./
+COPY --from=build --chown=appuser:appuser /app/cli ./cli/
 
 # Entrypoint handles upgrade-time volume ownership and drops to appuser via
 # setpriv. We keep the container starting as root so the entrypoint can chown

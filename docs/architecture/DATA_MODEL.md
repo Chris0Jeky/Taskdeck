@@ -1,6 +1,6 @@
 # Data Model Reference
 
-This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. All entities (except the `CardLabel` join table) inherit from a common `Entity` base class.
+This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. Most entities inherit from a common `Entity` base class; `CardLabel` and the singleton `RegistrationBootstrap` are the exceptions.
 
 > **FK vs. logical references:** Fields marked **FK** have an enforced foreign key constraint in the database (with cascade/restrict behavior). Fields marked **references** store a related entity's ID but have no database-level FK constraint -- referential integrity is maintained by application code only.
 
@@ -391,6 +391,32 @@ MCP HTTP transport authentication key.
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
 **Computed:** `IsActive` = not revoked and not expired.
+
+### RegistrationBootstrap
+
+Singleton claim used to make the first-user bypass atomic. Existing databases
+with a non-system user receive the row during migration; fresh databases create
+it in the same transaction as the first successful registration.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `string` | Yes | PK, fixed `registration` | Singleton key |
+| ClaimedAt | `DateTimeOffset` | Yes | | First-user claim timestamp |
+
+### RegistrationInvite
+
+Expiring, one-time invite for restrictive registration, including the first
+owner in `Closed` or `InviteOnly`. Plaintext is never persisted.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| CodeHash | `string` | Yes | Unique, 64 chars | SHA-256 hash of the plaintext code |
+| DisplayPrefix | `string` | Yes | Max 12 chars | Non-secret identification prefix |
+| ExpiresAt | `DateTimeOffset` | Yes | | Expiration cutoff |
+| ConsumedAt | `DateTimeOffset?` | No | | Set atomically on successful redemption |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | | |
 
 ### ExternalLogin
 

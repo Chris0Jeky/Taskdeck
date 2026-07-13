@@ -16,7 +16,8 @@ public record CreateUserDto(
     string Username,
     string Email,
     string Password,
-    UserRole DefaultRole = UserRole.Editor);
+    UserRole DefaultRole = UserRole.Editor,
+    string? InviteCode = null);
 
 public record UpdateUserDto(
     string? Username = null,
@@ -36,7 +37,8 @@ public record ExternalLoginDto(
     string Username,
     string Email,
     string? DisplayName = null,
-    string? AvatarUrl = null);
+    string? AvatarUrl = null,
+    string? InviteCode = null);
 
 public record LinkedAccountDto(
     string Provider,

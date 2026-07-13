@@ -1,6 +1,6 @@
 # Cloud Deployment Guide
 
-Last Updated: 2026-04-16
+Last Updated: 2026-07-13
 Issue: `#538` CLD-01 Deploy Taskdeck to managed cloud platform
 
 > **⚠️ REFERENCE ONLY — cloud / multi-instance track de-scoped 2026-06-13.** Taskdeck is being finished as a single-instance, SQLite-based, personal-use tool (archive pivot) and will not be distributed or scaled out. The cloud / scale-out / PostgreSQL procedures below are retained as historical reference, not active plans. SQLite + single-instance + local-first are the permanent architecture. See `docs/STATUS.md`.
@@ -64,6 +64,8 @@ docker build -f deploy/Dockerfile.production -t taskdeck-prod .
 # Run locally
 docker run -p 5000:5000 \
   -e Jwt__SecretKey=$(openssl rand -base64 48) \
+  -e Connectors__EncryptionKey=$(openssl rand -base64 32) \
+  -e Auth__Registration__Mode=Closed \
   -e Cors__AllowedOrigins=http://localhost:5000 \
   -v taskdeck-data:/app/data \
   taskdeck-prod
@@ -99,6 +101,8 @@ In the Railway dashboard, go to **Variables** and add:
 | Variable | Value | Required |
 |----------|-------|----------|
 | `Jwt__SecretKey` | Output of `openssl rand -base64 48` | Yes |
+| `Connectors__EncryptionKey` | Output of `openssl rand -base64 32` | Yes |
+| `Auth__Registration__Mode` | `Closed` or `InviteOnly` | Yes |
 | `Cors__AllowedOrigins` | Your Railway URL (e.g., `https://taskdeck-production.up.railway.app`) | Yes |
 | `ConnectionStrings__DefaultConnection` | `Data Source=/app/data/taskdeck.db` | Yes |
 | `ASPNETCORE_ENVIRONMENT` | `Production` | Yes |
@@ -162,7 +166,7 @@ If creating manually:
 
 ### Step 3: Set environment variables
 
-In the Render dashboard, go to **Environment** and add the same variables as Railway (see table above). The `render.yaml` blueprint pre-populates safe defaults; you must set `Jwt__SecretKey` and `Cors__AllowedOrigins` manually.
+In the Render dashboard, go to **Environment** and add the same variables as Railway (see table above). The `render.yaml` blueprint pre-populates restrictive defaults; you must set `Jwt__SecretKey`, `Connectors__EncryptionKey`, and `Cors__AllowedOrigins` manually.
 
 ### Step 4: Deploy
 
@@ -190,6 +194,7 @@ See `deploy/.env.production.template` for the authoritative list with descriptio
 | Variable | Purpose |
 |----------|---------|
 | `Jwt__SecretKey` | JWT signing secret (min 32 bytes, `openssl rand -base64 48`) |
+| `Connectors__EncryptionKey` | AES-256 connector credential key (`openssl rand -base64 32`) |
 | `Cors__AllowedOrigins` | Comma-separated allowed origins for CORS |
 | `ConnectionStrings__DefaultConnection` | SQLite connection string (use `/app/data/` path) |
 
@@ -203,6 +208,7 @@ See `deploy/.env.production.template` for the authoritative list with descriptio
 | `FirstRun__ResolveAppDataDbPath` | `false` | Use explicit DB path, not OS AppData |
 | `DevelopmentSandbox__Enabled` | `false` | Disable sandbox mode |
 | `TASKDECK_HEADLESS` | `true` | Prevent ephemeral JWT secret generation on restart |
+| `Auth__Registration__Mode` | `Closed` | Require an operator invite for the first owner, then deny later signup |
 
 ### Optional variables
 
@@ -218,6 +224,25 @@ See `deploy/.env.production.template` for the authoritative list with descriptio
 | `Observability__OtlpEndpoint` | (empty) | OTLP endpoint for metrics export |
 | `Sentry__Enabled` | `false` | Enable Sentry error tracking |
 | `Sentry__Dsn` | (empty) | Sentry DSN |
+
+### Restrictive-mode operator flow
+
+Keep the service URL private/unannounced while provisioning the owner. From a
+Railway or Render private shell, mint the first-owner invite as the non-root
+application user:
+
+```bash
+gosu taskdeck dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
+```
+
+The command writes JSON containing the plaintext code once. Use it immediately
+to create the first owner; the database stores only its SHA-256 hash. In
+`Closed`, every later registration is denied. To admit later users, switch to
+`InviteOnly`, restart the API, and mint a separate code per account. New
+OAuth/OIDC identities cannot redeem an invite directly in this v0.1 CLI-only
+flow; register first, then link the external account. Existing linked external
+logins continue to work. The production image includes `gosu`; use it as shown
+so CLI-created SQLite WAL/journal files retain the same owner as the API process.
 
 ---
 

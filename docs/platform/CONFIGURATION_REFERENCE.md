@@ -135,6 +135,30 @@ Developers can alternatively supply the secret via `dotnet user-secrets` or the
 | `Jwt:Audience` | `string` | `TaskdeckUsers` | `aud` claim and validation value. | Yes |
 | `Jwt:ExpirationMinutes` | `int` | `1440` (24h) | Access-token lifetime in minutes. | No |
 
+### `Auth:Registration`
+
+Bound to `RegistrationSettings`. The application default is `Open` so local
+development, demo seeding, and existing integrations keep their current
+behavior. Production container templates override this to restrictive `Closed`.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Auth:Registration:Mode` | `RegistrationMode` | `Open` | `Open` allows new accounts. `InviteOnly` requires a valid one-time, expiring invite for every account. `Closed` requires such an invite for the first owner, then denies every later registration. | No |
+
+For either restrictive mode, a local operator mints the first-owner code with
+`taskdeck invite create --expires 7`. Production images include the CLI at
+`/app/cli/Taskdeck.Cli.dll`; for Compose use
+`docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7`.
+Run the container command as the documented non-root UID so CLI-created SQLite
+sidecars remain accessible to the API. Only a SHA-256 hash is stored and the
+plaintext code is shown once. In `Closed`, only the first owner can redeem a
+code; use `InviteOnly` and mint a separate code for each later account. OAuth/OIDC
+logins for already-linked accounts remain available in every mode. Until
+[#1301](https://github.com/Chris0Jeky/Taskdeck/issues/1301) adds invite entry to
+the browser form, redeem the code with `POST /api/auth/register` as shown in
+[`AUTHENTICATION.md`](../api/AUTHENTICATION.md), then link an external account
+from settings.
+
 ### `GitHubOAuth`
 
 Bound to `GitHubOAuthSettings`. GitHub OAuth is only registered when
@@ -611,6 +635,7 @@ Examples:
 | JSON key | Environment variable |
 | --- | --- |
 | `Jwt:SecretKey` | `Jwt__SecretKey` |
+| `Auth:Registration:Mode` | `Auth__Registration__Mode` |
 | `Llm:OpenAi:ApiKey` | `Llm__OpenAi__ApiKey` |
 | `Workers:RetryBackoffSeconds:0` | `Workers__RetryBackoffSeconds__0` |
 | `RateLimiting:AuthPerIp:PermitLimit` | `RateLimiting__AuthPerIp__PermitLimit` |
@@ -629,6 +654,7 @@ container as standard ASP.NET Core environment variables.
 | `TASKDECK_JWT_ISSUER` | `Jwt__Issuer` | `Taskdeck` | No |
 | `TASKDECK_JWT_AUDIENCE` | `Jwt__Audience` | `TaskdeckUsers` | No |
 | `TASKDECK_JWT_EXPIRATION_MINUTES` | `Jwt__ExpirationMinutes` | `1440` | No |
+| `TASKDECK_REGISTRATION_MODE` | `Auth__Registration__Mode` | `Closed` | No |
 | `TASKDECK_LLM_ENABLE_LIVE_PROVIDERS` | `Llm__EnableLiveProviders` | `false` | No |
 | `TASKDECK_LLM_PROVIDER` | `Llm__Provider` | `Mock` | No |
 | `TASKDECK_LLM_OPENAI_API_KEY` | `Llm__OpenAi__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=OpenAi` |

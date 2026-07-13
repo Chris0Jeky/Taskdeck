@@ -179,7 +179,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetActorStatus_ShouldReturnForbidden_ForEditorUser()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-editor");
+        var user = await AuthenticateAsEditorAsync(client, "abuse-editor");
 
         var response = await client.GetAsync($"/api/abuse/actors/{user.UserId}/status");
 
@@ -190,7 +190,7 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task Override_ShouldReturnForbidden_ForEditorUser()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-editor-override");
+        var user = await AuthenticateAsEditorAsync(client, "abuse-editor-override");
 
         var response = await client.PostAsJsonAsync("/api/abuse/actors/override",
             new AbuseOverrideRequestDto(user.UserId, AbuseState.Restricted, "should be denied"));
@@ -202,10 +202,18 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task EvaluateActor_ShouldReturnForbidden_ForEditorUser()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "abuse-editor-eval");
+        var user = await AuthenticateAsEditorAsync(client, "abuse-editor-eval");
 
         var response = await client.PostAsync($"/api/abuse/actors/{user.UserId}/evaluate", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    private static async Task<TestUserContext> AuthenticateAsEditorAsync(HttpClient client, string stem)
+    {
+        // The first committed account is deliberately Owner. Register a disposable
+        // bootstrap account so this helper remains order-independent in a fresh test DB.
+        await ApiTestHarness.AuthenticateAsync(client, $"{stem}-bootstrap");
+        return await ApiTestHarness.AuthenticateAsync(client, stem);
     }
 }

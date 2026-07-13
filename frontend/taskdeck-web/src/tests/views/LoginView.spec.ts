@@ -76,7 +76,15 @@ describe('LoginView', () => {
     sessionMock.loginAsDemo.mockReturnValue(undefined)
     sessionMock.exchangeOAuthCode.mockResolvedValue(undefined)
     sessionMock.exchangeOidcCode.mockResolvedValue(undefined)
-    authApiMock.getProviders.mockResolvedValue({ gitHub: false, oidc: [] })
+    authApiMock.getProviders.mockResolvedValue({
+      gitHub: false,
+      oidc: [],
+      registration: {
+        mode: 'Open',
+        isRegistrationAvailable: true,
+        inviteRequired: false,
+      },
+    })
   })
 
   it('renders the sign-in title', async () => {
@@ -92,6 +100,24 @@ describe('LoginView', () => {
 
     expect(wrapper.find('#login-username').exists()).toBe(true)
     expect(wrapper.find('#login-password').exists()).toBe(true)
+  })
+
+  it('replaces the register link when the instance is closed', async () => {
+    authApiMock.getProviders.mockResolvedValue({
+      gitHub: false,
+      oidc: [],
+      registration: {
+        mode: 'Closed',
+        isRegistrationAvailable: false,
+        inviteRequired: false,
+      },
+    })
+
+    const wrapper = mount(LoginView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Registration is closed on this Taskdeck instance.')
+    expect(wrapper.text()).not.toContain("Don't have an account?")
   })
 
   it('shows validation error when submitting with empty fields', async () => {

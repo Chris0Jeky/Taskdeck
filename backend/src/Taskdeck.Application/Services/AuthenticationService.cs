@@ -6,6 +6,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -16,11 +17,19 @@ public class AuthenticationService : IAuthenticationService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly JwtSettings _jwtSettings;
+    private readonly IRegistrationPolicyService _registrationPolicy;
+    private readonly IPasswordHasher _passwordHasher;
 
-    public AuthenticationService(IUnitOfWork unitOfWork, JwtSettings jwtSettings)
+    public AuthenticationService(
+        IUnitOfWork unitOfWork,
+        JwtSettings jwtSettings,
+        IRegistrationPolicyService registrationPolicy,
+        IPasswordHasher passwordHasher)
     {
         _unitOfWork = unitOfWork;
         _jwtSettings = jwtSettings;
+        _registrationPolicy = registrationPolicy;
+        _passwordHasher = passwordHasher;
     }
 
     public async Task<Result<AuthResultDto>> LoginAsync(LoginDto dto)
@@ -42,7 +51,7 @@ public class AuthenticationService : IAuthenticationService
             var hasInactivePasswordMatch = false;
             foreach (var candidate in users)
             {
-                if (!BCrypt.Net.BCrypt.Verify(dto.Password, candidate.PasswordHash))
+                if (!_passwordHasher.VerifyPassword(dto.Password, candidate.PasswordHash))
                     continue;
 
                 if (!candidate.IsActive)
@@ -78,6 +87,7 @@ public class AuthenticationService : IAuthenticationService
 
     public async Task<Result<AuthResultDto>> RegisterAsync(CreateUserDto dto)
     {
+        var transactionStarted = false;
         try
         {
             if (!TryValidateJwtSettings(out var jwtValidationError))
@@ -92,31 +102,72 @@ public class AuthenticationService : IAuthenticationService
             if (string.IsNullOrWhiteSpace(normalizedEmail))
                 return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Email is required");
 
+            // Reject requests that cannot currently satisfy restrictive policy before
+            // paying BCrypt's cost. The authoritative claim/consumption is repeated
+            // transactionally below so races and duplicate identities still roll back.
+            var registrationEligibility = await _registrationPolicy.CheckNewUserEligibilityAsync(dto.InviteCode);
+            if (!registrationEligibility.IsSuccess)
+            {
+                return Result.Failure<AuthResultDto>(
+                    registrationEligibility.ErrorCode,
+                    registrationEligibility.ErrorMessage);
+            }
+
+            var passwordHash = _passwordHasher.HashPassword(dto.Password);
+
+            await _unitOfWork.BeginTransactionAsync();
+            transactionStarted = true;
+
+            var registrationAuthorization = await _registrationPolicy.AuthorizeNewUserAsync(dto.InviteCode);
+            if (!registrationAuthorization.IsSuccess)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                transactionStarted = false;
+                return Result.Failure<AuthResultDto>(
+                    registrationAuthorization.ErrorCode,
+                    registrationAuthorization.ErrorMessage);
+            }
+
             var exists = await _unitOfWork.Users.ExistsAsync(normalizedUsername, normalizedEmail);
             if (exists)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                transactionStarted = false;
                 return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "An account with that username or email already exists. Sign in with your existing credentials.");
+            }
 
-            var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
-            var user = new User(normalizedUsername, normalizedEmail, passwordHash, dto.DefaultRole);
+            var assignedRole = registrationAuthorization.Value.ClaimedFirstUserBootstrap
+                ? UserRole.Owner
+                : dto.DefaultRole;
+            var user = new User(normalizedUsername, normalizedEmail, passwordHash, assignedRole);
 
             await _unitOfWork.Users.AddAsync(user);
             await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.CommitTransactionAsync();
+            transactionStarted = false;
 
             var token = GenerateJwtToken(user);
             return Result.Success(new AuthResultDto(token, MapToDto(user)));
         }
         catch (DomainException ex)
         {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync();
+
             return Result.Failure<AuthResultDto>(ex.ErrorCode, ex.Message);
         }
         catch (Exception ex)
         {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync();
+
             return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, $"Registration failed: {ex.Message}");
         }
     }
 
     public async Task<Result<AuthResultDto>> ExternalLoginAsync(ExternalLoginDto dto)
     {
+        var transactionStarted = false;
         try
         {
             if (!TryValidateJwtSettings(out var jwtValidationError))
@@ -158,7 +209,31 @@ public class AuthenticationService : IAuthenticationService
             // their account, because GitHub does not guarantee email verification.
             // Instead, always create a new account for unlinked external logins.
 
-            // New user — create account with a random unusable password hash
+            // Apply the same cheap policy boundary to new external accounts. Existing
+            // linked accounts return above and remain unaffected by registration mode.
+            var registrationEligibility = await _registrationPolicy.CheckNewUserEligibilityAsync(dto.InviteCode);
+            if (!registrationEligibility.IsSuccess)
+            {
+                return Result.Failure<AuthResultDto>(
+                    registrationEligibility.ErrorCode,
+                    registrationEligibility.ErrorMessage);
+            }
+
+            var randomPassword = _passwordHasher.HashPassword(Guid.NewGuid().ToString());
+
+            await _unitOfWork.BeginTransactionAsync();
+            transactionStarted = true;
+
+            var registrationAuthorization = await _registrationPolicy.AuthorizeNewUserAsync(dto.InviteCode);
+            if (!registrationAuthorization.IsSuccess)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                transactionStarted = false;
+                return Result.Failure<AuthResultDto>(
+                    registrationAuthorization.ErrorCode,
+                    registrationAuthorization.ErrorMessage);
+            }
+
             var normalizedEmail = dto.Email.Trim();
             var normalizedUsername = dto.Username.Trim();
 
@@ -186,24 +261,34 @@ public class AuthenticationService : IAuthenticationService
                 candidateUsername = $"{normalizedUsername}{suffix}";
             }
 
-            var randomPassword = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString());
-            var newUser = new User(candidateUsername, candidateEmail, randomPassword);
+            var assignedRole = registrationAuthorization.Value.ClaimedFirstUserBootstrap
+                ? UserRole.Owner
+                : UserRole.Editor;
+            var newUser = new User(candidateUsername, candidateEmail, randomPassword, assignedRole);
 
             await _unitOfWork.Users.AddAsync(newUser);
 
             var newExternalLogin = new ExternalLogin(newUser.Id, dto.Provider, dto.ProviderUserId, dto.DisplayName, dto.AvatarUrl);
             await _unitOfWork.ExternalLogins.AddAsync(newExternalLogin);
             await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.CommitTransactionAsync();
+            transactionStarted = false;
 
             var newToken = GenerateJwtToken(newUser);
             return Result.Success(new AuthResultDto(newToken, MapToDto(newUser)));
         }
         catch (DomainException ex)
         {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync();
+
             return Result.Failure<AuthResultDto>(ex.ErrorCode, ex.Message);
         }
         catch (Exception)
         {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync();
+
             // Do not expose internal details in error messages
             return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, "External login failed due to an unexpected error");
         }
@@ -328,10 +413,10 @@ public class AuthenticationService : IAuthenticationService
             if (!user.IsActive)
                 return Result.Failure(ErrorCodes.Forbidden, "User account is inactive");
 
-            if (!BCrypt.Net.BCrypt.Verify(currentPassword, user.PasswordHash))
+            if (!_passwordHasher.VerifyPassword(currentPassword, user.PasswordHash))
                 return Result.Failure(ErrorCodes.AuthenticationFailed, "Current password is incorrect");
 
-            var newHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+            var newHash = _passwordHasher.HashPassword(newPassword);
             user.UpdatePassword(newHash);
 
             await _unitOfWork.SaveChangesAsync();
