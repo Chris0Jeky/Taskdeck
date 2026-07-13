@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
-const indexHtml = readFileSync('index.html', 'utf8')
-const paperFonts = readFileSync('src/paper-fonts.css', 'utf8')
-const viteConfig = readFileSync('vite.config.ts', 'utf8')
-const favicon = readFileSync('public/favicon.svg', 'utf8')
+const indexHtml = readFileSync(resolve(import.meta.dirname, '../../../index.html'), 'utf8')
+const paperFonts = readFileSync(resolve(import.meta.dirname, '../../paper-fonts.css'), 'utf8')
+const viteConfig = readFileSync(resolve(import.meta.dirname, '../../../vite.config.ts'), 'utf8')
+const favicon = readFileSync(resolve(import.meta.dirname, '../../../public/favicon.svg'), 'utf8')
 
 describe('Paper branding assets', () => {
   it('bundles only the required Latin WOFF2 Paper font faces', () => {
