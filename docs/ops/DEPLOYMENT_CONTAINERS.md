@@ -76,12 +76,14 @@ one-time invites instead, set `TASKDECK_REGISTRATION_MODE=InviteOnly` in
 `deploy/.env` and mint a code from the packaged CLI:
 
 ```bash
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec api \
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api \
   dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
 ```
 
 The plaintext appears once; only its hash is stored. Register invited users
-with username/password before linking GitHub/OIDC.
+with username/password before linking GitHub/OIDC. Keep the explicit `--user`
+flag: running the CLI as root can leave SQLite WAL/journal files that the
+non-root API process cannot reopen.
 
 4. Stop stack:
 

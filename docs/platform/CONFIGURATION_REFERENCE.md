@@ -149,7 +149,7 @@ public-deployment default.
 For `InviteOnly`, a local operator mints a code with
 `taskdeck invite create --expires 7`. Production images include the CLI at
 `/app/cli/Taskdeck.Cli.dll`; for Compose use
-`docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec api dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7`.
+`docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7`.
 Only a SHA-256 hash is stored and the plaintext code is shown once. OAuth/OIDC
 logins for already-linked accounts remain available in every mode. In this
 v0.1 CLI-only slice, a new invited user registers with username/password first,

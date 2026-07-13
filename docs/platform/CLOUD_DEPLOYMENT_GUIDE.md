@@ -229,14 +229,16 @@ normal registration screen, then mint later one-time invites from a Railway or
 Render shell:
 
 ```bash
-dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
+gosu taskdeck dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7
 ```
 
 The command writes JSON containing the plaintext code once. Share it through a
 secure channel; the database stores only its SHA-256 hash. Invited users enter
 the code during password registration. New OAuth/OIDC identities cannot redeem
 an invite directly in this v0.1 CLI-only flow; register first, then link the
-external account. Existing linked external logins continue to work.
+external account. Existing linked external logins continue to work. The
+production image includes `gosu`; use it as shown so CLI-created SQLite
+WAL/journal files retain the same owner as the API process.
 
 ---
 
