@@ -76,6 +76,7 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 - [ ] **#1327 project sync access** — Run `gh auth refresh -s project`, then rerun `scripts/github/Sync-TaskdeckProjectPriority.ps1` in audit and apply modes and verify no issue/PR project item has an empty Priority.
 - [ ] **#1330** — Repair the CI Extended reusable-workflow permission contract; affected PRs remain ineligible while the workflow startup failure is red.
 - [ ] **#1282 / #1332 / #1335** — Stabilize the required full-suite harness: SQLite concurrency, Redis connect/dispose, and hosted-worker/presence lifecycle isolation. Narrow passes do not clear the recorded full-suite failures.
+- [ ] **#1338** — Map HTTP MCP and its API-key middleware to the same `/mcp` route before documenting or exposing HTTP transport; the current parameterless mapping serves MCP at an unintended unauthenticated root route.
 
 ---
 
