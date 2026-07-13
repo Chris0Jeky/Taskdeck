@@ -211,7 +211,7 @@ public class McpToolsTests : IDisposable
     }
 
     [Fact]
-    public async Task MoveCard_ReturnsProposalId()
+    public async Task MoveCard_NormalizesCanonicalColumnIdAndAppliesAfterApproval()
     {
         using var scope = _serviceProvider.CreateScope();
         var (user, boardId, colId) = await SetupBoardAsync(scope);
@@ -229,8 +229,90 @@ public class McpToolsTests : IDisposable
         var json = await tools.MoveCard(boardId.ToString(), card.Value.Id.ToString(), col2.Value.Id.ToString());
 
         using var doc = JsonDocument.Parse(json);
-        doc.RootElement.TryGetProperty("proposalId", out _).Should().BeTrue("move_card must return proposalId");
+        doc.RootElement.TryGetProperty("proposalId", out var proposalIdElement).Should().BeTrue("move_card must return proposalId");
         doc.RootElement.GetProperty("status").GetString().Should().Be("Pending");
+        var proposalId = proposalIdElement.GetGuid();
+        var proposal = await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>()
+            .GetProposalByIdAsync(proposalId);
+        proposal.IsSuccess.Should().BeTrue(proposal.ErrorMessage);
+        using (var parameters = JsonDocument.Parse(proposal.Value.Operations.Single().Parameters))
+        {
+            parameters.RootElement.GetProperty("columnId").GetGuid().Should().Be(col2.Value.Id);
+            parameters.RootElement.TryGetProperty("targetColumnId", out _).Should().BeFalse();
+        }
+
+        await ApproveAndExecuteAsync(scope, user.Id, proposalId);
+
+        var movedCard = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>()
+            .Cards.GetByIdAsync(card.Value.Id);
+        movedCard!.ColumnId.Should().Be(col2.Value.Id);
+    }
+
+    [Fact]
+    public async Task ProposalBatch_CanReferenceCardCreatedEarlierBySequence()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, sourceColumnId) = await SetupBoardAsync(scope);
+        var targetColumn = await scope.ServiceProvider.GetRequiredService<ColumnService>()
+            .CreateColumnAsync(new CreateColumnDto(boardId, "Done", null, null));
+        var label = await scope.ServiceProvider.GetRequiredService<LabelService>()
+            .CreateLabelAsync(new CreateLabelDto(boardId, "urgent", "#FF0000"));
+        var createdCardId = Guid.NewGuid();
+        var operations = new List<CreateProposalOperationDto>
+        {
+            new(
+                0,
+                "create",
+                "card",
+                JsonSerializer.Serialize(new
+                {
+                    boardId,
+                    columnId = sourceColumnId,
+                    title = "Draft card"
+                }),
+                Guid.NewGuid().ToString(),
+                TargetId: createdCardId.ToString()),
+            new(
+                1,
+                "update",
+                "card",
+                JsonSerializer.Serialize(new { cardId = createdCardId, title = "Ready card" }),
+                Guid.NewGuid().ToString(),
+                TargetId: createdCardId.ToString()),
+            new(
+                2,
+                "move",
+                "card",
+                JsonSerializer.Serialize(new { cardId = createdCardId, columnId = targetColumn.Value.Id }),
+                Guid.NewGuid().ToString(),
+                TargetId: createdCardId.ToString()),
+            new(
+                3,
+                "add-label",
+                "card",
+                JsonSerializer.Serialize(new { cardId = createdCardId, labelId = label.Value.Id }),
+                Guid.NewGuid().ToString(),
+                TargetId: createdCardId.ToString())
+        };
+        var proposal = await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>()
+            .CreateProposalAsync(new CreateProposalDto(
+                ProposalSourceType.Manual,
+                user.Id,
+                "Create and refine one card",
+                RiskLevel.Low,
+                Guid.NewGuid().ToString(),
+                boardId,
+                Operations: operations));
+        proposal.IsSuccess.Should().BeTrue(proposal.ErrorMessage);
+
+        await ApproveAndExecuteAsync(scope, user.Id, proposal.Value.Id);
+
+        var created = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>()
+            .Cards.GetByIdWithLabelsAsync(createdCardId);
+        created.Should().NotBeNull();
+        created!.Title.Should().Be("Ready card");
+        created.ColumnId.Should().Be(targetColumn.Value.Id);
+        created.CardLabels.Should().ContainSingle(cardLabel => cardLabel.LabelId == label.Value.Id);
     }
 
     [Fact]

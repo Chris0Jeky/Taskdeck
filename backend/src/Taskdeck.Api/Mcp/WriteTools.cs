@@ -143,8 +143,9 @@ public class WriteTools
         {
             ["boardId"] = boardGuid,
             ["cardId"] = cardGuid,
-            ["targetColumnId"] = targetColumnGuid,
-            ["targetPosition"] = 0
+            // The proposal executor's canonical move contract is columnId. Keep
+            // target_column_id as the public MCP argument, but normalize it here.
+            ["columnId"] = targetColumnGuid
         };
 
         var dto = new CreateProposalDto(
