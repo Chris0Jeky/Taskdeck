@@ -43,6 +43,10 @@ public static class SettingsRegistration
         };
         services.AddSingleton(databaseExportImportSettings);
 
+        var artefactStorageSettings = configuration.GetSection("Artefacts").Get<ArtefactStorageSettings>()
+            ?? new ArtefactStorageSettings();
+        services.AddSingleton(artefactStorageSettings);
+
         jwtSettings = configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
         services.AddSingleton(jwtSettings);
 
