@@ -56,6 +56,7 @@ Source files used to build this reference:
   - [`ConnectionStrings`](#connectionstrings)
   - [`Database`](#database)
   - [`ExportImport`](#exportimport)
+  - [`Artefacts`](#artefacts)
   - [`FirstRun`](#firstrun)
   - [`DevelopmentSandbox`](#developmentsandbox)
 - [Connectors](#connectors)
@@ -523,6 +524,20 @@ Consumed directly by `SettingsRegistration.cs`. Backs
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `ExportImport:MaxDatabaseImportBytes` | `int` | `52428800` (50 MiB) | Maximum accepted size of a SQLite database file on import. | No |
+
+### `Artefacts`
+
+Bound to `ArtefactStorageSettings`
+(`Taskdeck.Application.Services.ArtefactStorageSettings`) and validated at
+startup. Source artefact metadata and blobs stay in the same SQLite database;
+the blob table is queried only for explicit content retrieval and GDPR export.
+Both limits are enforced from server configuration, never from multipart form
+fields. Concurrent uploads serialize the quota check with the SQLite write.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Artefacts:MaxBytesPerArtefact` | `long` | `10485760` (10 MiB) | Maximum bytes accepted for one PNG, JPEG, WebP, PDF, TXT, or Markdown artefact. The upload stream stops and returns HTTP 413 once this bound is crossed. This setting is capped at `int.MaxValue` because the current encrypted SQLite blob adapter materializes one artefact as a `byte[]`. Environment variable: `Artefacts__MaxBytesPerArtefact`. | No |
+| `Artefacts:MaxBytesPerUser` | `long` | `209715200` (200 MiB) | Aggregate source-artefact quota for one user, including blob bytes. Uploads that would cross it return HTTP 413. Environment variable: `Artefacts__MaxBytesPerUser`. | No |
 
 ### `FirstRun`
 
