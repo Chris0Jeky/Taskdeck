@@ -353,6 +353,47 @@ public class CardServiceTests
     }
 
     [Fact]
+    public async Task UpdateCardAsync_ShouldClearDueDate_WhenExplicitlyRequested()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(
+            board.Id,
+            column.Id,
+            "Dated task",
+            dueDate: new DateTimeOffset(2026, 7, 14, 0, 0, 0, TimeSpan.Zero));
+        var dto = new UpdateCardDto(null, null, null, null, null, null, ClearDueDate: true);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default)).ReturnsAsync(card);
+
+        var result = await _service.UpdateCardAsync(card.Id, dto);
+
+        result.IsSuccess.Should().BeTrue();
+        card.DueDate.Should().BeNull();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateCardAsync_ShouldRejectDueDateAndClearDueDateTogether()
+    {
+        var dto = new UpdateCardDto(
+            null,
+            null,
+            DateTimeOffset.UtcNow.AddDays(1),
+            null,
+            null,
+            null,
+            ClearDueDate: true);
+
+        var result = await _service.UpdateCardAsync(Guid.NewGuid(), dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _cardRepoMock.Verify(
+            repository => repository.GetByIdWithLabelsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task UpdateCardAsync_ShouldBlockCard_WhenBlockedIsTrue()
     {
         // Arrange

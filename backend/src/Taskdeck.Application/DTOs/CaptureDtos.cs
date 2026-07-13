@@ -43,10 +43,16 @@ public record CaptureTriageEnqueueResultDto(
     CaptureStatus Status,
     bool AlreadyTriaging);
 
+/// <summary>
+/// Result of a capture triage run. <see cref="ProposalId"/> is null for the "triaged, nothing to
+/// propose" outcome (an LLM run that deliberately found zero action items): the workers mark the
+/// item Completed WITHOUT a linked proposal, which the capture status policy renders as the
+/// terminal Triaged state — not Failed, because a correct empty verdict is a successful triage.
+/// </summary>
 public record CaptureTriageProposalResultDto(
     Guid CaptureItemId,
     Guid TriageRunId,
-    Guid ProposalId,
+    Guid? ProposalId,
     int OperationCount,
     string PromptVersion,
     string Provider,

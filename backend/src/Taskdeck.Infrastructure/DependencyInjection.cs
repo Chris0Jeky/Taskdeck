@@ -87,6 +87,9 @@ public static class DependencyInjection
         services.AddScoped<ITomorrowNoteRepository, TomorrowNoteRepository>();
         services.AddScoped<IMcpToolHashRepository, McpToolHashRepository>();
         services.AddScoped<IRegistrationPolicyStore, RegistrationPolicyStore>();
+        services.AddScoped<ISourceArtefactRepository, SourceArtefactRepository>();
+        services.AddScoped<IArtefactExtractionRepository, ArtefactExtractionRepository>();
+        services.AddScoped<IArtefactTextExtractor, PdfPigArtefactTextExtractor>();
 
         // Vector index is local; hash-based in-memory embeddings are development/test
         // oriented and stay disabled unless explicitly opted in.

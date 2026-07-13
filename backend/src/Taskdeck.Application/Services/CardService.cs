@@ -101,6 +101,9 @@ public class CardService
     {
         try
         {
+            if (dto.ClearDueDate && dto.DueDate.HasValue)
+                return Result.Failure<CardDto>(ErrorCodes.ValidationError, "DueDate and ClearDueDate cannot both be set");
+
             var card = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             if (card == null)
                 return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Card with ID {id} not found");
@@ -123,6 +126,8 @@ public class CardService
             // Update basic fields
             if (dto.Title != null || dto.Description != null || dto.DueDate.HasValue)
                 card.Update(dto.Title, dto.Description, dto.DueDate);
+            if (dto.ClearDueDate)
+                card.ClearDueDate();
 
             // Update blocked status
             if (dto.IsBlocked.HasValue)
@@ -178,7 +183,9 @@ public class CardService
             parts.Add($"Title: '{oldTitle}' -> '{dto.Title}'");
         if (dto.Description != null && dto.Description != oldDescription)
             parts.Add("Description changed");
-        if (dto.DueDate.HasValue && dto.DueDate.Value != oldDueDate)
+        if (dto.ClearDueDate && oldDueDate.HasValue)
+            parts.Add($"DueDate: '{oldDueDate.Value:O}' -> 'none'");
+        else if (dto.DueDate.HasValue && dto.DueDate.Value != oldDueDate)
             parts.Add($"DueDate: '{oldDueDate?.ToString("O") ?? "none"}' -> '{dto.DueDate.Value:O}'");
         if (dto.IsBlocked.HasValue && dto.IsBlocked.Value != oldIsBlocked)
         {

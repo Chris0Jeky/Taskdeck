@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
@@ -15,18 +17,26 @@ namespace Taskdeck.Application.Services;
 public class DataExportService : IDataExportService
 {
     private const string ExportVersion = "1.0";
+    private const long MaxBufferedArtefactBytes = ArtefactStorageSettings.DefaultMaxBytesPerArtefact;
+    private const int MaxBufferedArtefactRows = 10_000;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
     private readonly ILogger<DataExportService>? _logger;
+    private readonly ISourceArtefactRepository _artefacts;
+    private readonly IArtefactExtractionRepository _extractions;
 
     public DataExportService(
         IUnitOfWork unitOfWork,
         IHistoryService historyService,
+        ISourceArtefactRepository artefacts,
+        IArtefactExtractionRepository extractions,
         ILogger<DataExportService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
         _logger = logger;
+        _artefacts = artefacts;
+        _extractions = extractions;
     }
 
     public async Task<Result<UserDataExportDto>> ExportUserDataAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -40,6 +50,26 @@ public class DataExportService : IDataExportService
 
         try
         {
+            var artefactBytes = await _artefacts.GetTotalByteSizeByUserAsync(userId, cancellationToken);
+            var extractionBytes = await _extractions.GetEstimatedSerializedBytesByUserAsync(
+                userId,
+                cancellationToken);
+            if (artefactBytes > MaxBufferedArtefactBytes ||
+                extractionBytes > MaxBufferedArtefactBytes - artefactBytes)
+            {
+                return Result.Failure<UserDataExportDto>(
+                    ErrorCodes.PayloadTooLarge,
+                    "This export contains too much artefact or extraction content to buffer; use the streaming export endpoint");
+            }
+
+            var artefactMetadata = await GetBufferedArtefactMetadataAsync(userId, cancellationToken);
+            if (artefactMetadata.Count > MaxBufferedArtefactRows)
+            {
+                return Result.Failure<UserDataExportDto>(
+                    ErrorCodes.PayloadTooLarge,
+                    "This export contains too many artefacts to buffer; use the streaming export endpoint");
+            }
+
             // Gather all user-scoped data in parallel where safe
             var boardAccessesTask = _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
             var notificationsTask = _unitOfWork.Notifications.GetByUserIdAsync(userId, limit: 10000, cancellationToken: cancellationToken);
@@ -55,7 +85,6 @@ public class DataExportService : IDataExportService
             // the export must include for portability. Use the uncapped export read -- the cohort
             // helper's 1000-row cap would silently truncate a heavy reporter's export.
             var feedbackTask = _unitOfWork.ProposalFeedbacks.GetAllByUserIdForExportAsync(userId, cancellationToken);
-
             await Task.WhenAll(
                 boardAccessesTask, notificationsTask, capturesTask,
                 proposalsTask, chatSessionsTask, auditLogsTask,
@@ -70,7 +99,6 @@ public class DataExportService : IDataExportService
             var preferences = await preferencesTask;
             var notificationPrefs = await notificationPrefsTask;
             var proposalFeedback = await feedbackTask;
-
             // Resolve board names for accessible boards
             var boardIds = boardAccesses.Select(ba => ba.BoardId).Distinct().ToList();
             var boards = boardIds.Count > 0
@@ -158,6 +186,20 @@ public class DataExportService : IDataExportService
                 f.Reason.ToString(),
                 f.ReportedAt)).ToList();
 
+            var exportArtefacts = new List<UserDataExportArtefactDto>(artefactMetadata.Count);
+            foreach (var artefact in artefactMetadata)
+            {
+                var bytes = await _artefacts.GetContentForUserAsync(artefact.Id, userId, cancellationToken);
+                if (bytes is null)
+                    throw new InvalidOperationException($"Artefact {artefact.Id} is missing its blob.");
+
+                var extractionHistory = await GetAllExtractionHistoryAsync(
+                    artefact.Id,
+                    userId,
+                    cancellationToken);
+                exportArtefacts.Add(MapArtefactForExport(artefact, bytes, extractionHistory));
+            }
+
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -167,7 +209,8 @@ public class DataExportService : IDataExportService
                 exportAuditEntries,
                 exportPreferences,
                 exportNotificationPrefs,
-                exportFeedback);
+                exportFeedback,
+                exportArtefacts);
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -387,9 +430,13 @@ public class DataExportService : IDataExportService
                 writer.WriteNull("notificationPreferences");
             }
 
-            writer.WriteEndObject(); // data
-            writer.WriteEndObject(); // root
+            // Artefact content is the only export value that can exceed
+            // Utf8JsonWriter's single-token Base64 limit. Flush and end this
+            // writer segment while the data/root objects remain open; the
+            // bounded raw tail below writes the final property and delimiters.
+            // No writer calls may follow the raw tail because it owns those closes.
             await writer.FlushAsync(cancellationToken);
+            await WriteArtefactsTailAsync(userId, destination, cancellationToken);
 
             // Log the export action
             await _historyService.LogActionAsync(
@@ -415,7 +462,229 @@ public class DataExportService : IDataExportService
     // Private streaming helpers — page through large tables without a hard cap
     // -----------------------------------------------------------------------
 
+    private static readonly byte[] ArtefactsPropertyPrefix = ",\"artefacts\":["u8.ToArray();
+    private static readonly byte[] ArtefactSeparator = ","u8.ToArray();
+    private static readonly byte[] ArtefactContentPrefix = ",\"contentBase64\":\""u8.ToArray();
+    private static readonly byte[] ArtefactExtractionsPrefix = "\",\"extractions\":["u8.ToArray();
+    private static readonly byte[] ArtefactObjectSuffix = "]}"u8.ToArray();
+    private static readonly byte[] ExportSuffix = "]}}"u8.ToArray();
+
     private const int StreamPageSize = 500;
+
+    private async Task WriteArtefactsTailAsync(
+        Guid userId,
+        Stream destination,
+        CancellationToken cancellationToken)
+    {
+        await destination.WriteAsync(ArtefactsPropertyPrefix, cancellationToken);
+
+        var first = true;
+        var offset = 0;
+        while (true)
+        {
+            var page = await _artefacts.GetByUserAsync(
+                userId,
+                StreamPageSize,
+                offset,
+                cancellationToken);
+            if (page.Count == 0)
+                break;
+
+            foreach (var artefact in page)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!first)
+                    await destination.WriteAsync(ArtefactSeparator, cancellationToken);
+                first = false;
+
+                var metadataBuffer = new ArrayBufferWriter<byte>(512);
+                using (var metadataWriter = new Utf8JsonWriter(metadataBuffer))
+                {
+                    metadataWriter.WriteStartObject();
+                    metadataWriter.WriteString("id", artefact.Id);
+                    if (artefact.BoardId.HasValue)
+                        metadataWriter.WriteString("boardId", artefact.BoardId.Value);
+                    else
+                        metadataWriter.WriteNull("boardId");
+                    metadataWriter.WriteString("kind", artefact.Kind.ToString());
+                    metadataWriter.WriteString("mimeType", artefact.MimeType);
+                    metadataWriter.WriteString("fileName", artefact.FileName);
+                    metadataWriter.WriteNumber("byteSize", artefact.ByteSize);
+                    metadataWriter.WriteString("sha256", artefact.Sha256);
+                    metadataWriter.WriteString("captureSource", artefact.CaptureSource.ToString());
+                    metadataWriter.WriteString("originReference", artefact.OriginReference);
+                    if (artefact.CreatedFromCaptureId.HasValue)
+                        metadataWriter.WriteString("createdFromCaptureId", artefact.CreatedFromCaptureId.Value);
+                    else
+                        metadataWriter.WriteNull("createdFromCaptureId");
+                    metadataWriter.WriteString("createdAt", artefact.CreatedAt);
+                    metadataWriter.WriteEndObject();
+                    metadataWriter.Flush();
+                }
+
+                if (metadataBuffer.WrittenCount == 0 || metadataBuffer.WrittenSpan[^1] != (byte)'}')
+                    throw new InvalidOperationException("Artefact export metadata was not a JSON object.");
+
+                await destination.WriteAsync(metadataBuffer.WrittenMemory[..^1], cancellationToken);
+                await destination.WriteAsync(ArtefactContentPrefix, cancellationToken);
+
+                using var base64Transform = new ToBase64Transform();
+                await using (var base64Stream = new CryptoStream(
+                    destination,
+                    base64Transform,
+                    CryptoStreamMode.Write,
+                    leaveOpen: true))
+                {
+                    var copied = await _artefacts.CopyContentForUserAsync(
+                        artefact.Id,
+                        userId,
+                        base64Stream,
+                        cancellationToken);
+                    if (!copied)
+                        throw new InvalidOperationException($"Artefact {artefact.Id} is missing its blob.");
+
+                    await base64Stream.FlushFinalBlockAsync(cancellationToken);
+                }
+
+                await destination.WriteAsync(ArtefactExtractionsPrefix, cancellationToken);
+                await WriteExtractionHistoryAsync(
+                    artefact.Id,
+                    userId,
+                    destination,
+                    cancellationToken);
+                await destination.WriteAsync(ArtefactObjectSuffix, cancellationToken);
+                await destination.FlushAsync(cancellationToken);
+            }
+
+            offset += page.Count;
+            if (page.Count < StreamPageSize)
+                break;
+        }
+
+        await destination.WriteAsync(ExportSuffix, cancellationToken);
+        await destination.FlushAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<Domain.Entities.SourceArtefact>> GetBufferedArtefactMetadataAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var all = new List<Domain.Entities.SourceArtefact>(MaxBufferedArtefactRows + 1);
+        while (all.Count <= MaxBufferedArtefactRows)
+        {
+            var remaining = MaxBufferedArtefactRows + 1 - all.Count;
+            var page = await _artefacts.GetByUserAsync(
+                userId,
+                Math.Min(StreamPageSize, remaining),
+                all.Count,
+                cancellationToken);
+            all.AddRange(page);
+            if (page.Count < StreamPageSize)
+                return all;
+        }
+
+        return all;
+    }
+
+    private static UserDataExportArtefactDto MapArtefactForExport(
+        Domain.Entities.SourceArtefact artefact,
+        byte[] content,
+        IReadOnlyList<UserDataExportArtefactExtractionDto> extractions)
+        => new(
+            artefact.Id,
+            artefact.BoardId,
+            artefact.Kind.ToString(),
+            artefact.MimeType,
+            artefact.FileName,
+            artefact.ByteSize,
+            artefact.Sha256,
+            artefact.CaptureSource.ToString(),
+            artefact.OriginReference,
+            artefact.CreatedFromCaptureId,
+            artefact.CreatedAt,
+            Convert.ToBase64String(content),
+            extractions);
+
+    private async Task<IReadOnlyList<UserDataExportArtefactExtractionDto>> GetAllExtractionHistoryAsync(
+        Guid artefactId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var all = new List<UserDataExportArtefactExtractionDto>();
+        while (true)
+        {
+            var page = await _extractions.GetByArtefactForUserAsync(
+                artefactId,
+                userId,
+                limit: 50,
+                offset: all.Count,
+                cancellationToken: cancellationToken);
+            all.AddRange(page.Select(MapExtractionForExport));
+            if (page.Count < 50)
+                return all;
+        }
+    }
+
+    private async Task WriteExtractionHistoryAsync(
+        Guid artefactId,
+        Guid userId,
+        Stream destination,
+        CancellationToken cancellationToken)
+    {
+        var first = true;
+        var offset = 0;
+        while (true)
+        {
+            var page = await _extractions.GetByArtefactForUserAsync(
+                artefactId,
+                userId,
+                limit: 50,
+                offset: offset,
+                cancellationToken: cancellationToken);
+            foreach (var extraction in page)
+            {
+                if (!first)
+                    await destination.WriteAsync(ArtefactSeparator, cancellationToken);
+                first = false;
+
+                var buffer = new ArrayBufferWriter<byte>(
+                    Math.Min(extraction.TextLength + 512, 64 * 1024));
+                using (var writer = new Utf8JsonWriter(buffer))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("id", extraction.Id);
+                    writer.WriteString("extractorName", extraction.ExtractorName);
+                    writer.WriteString("extractorVersion", extraction.ExtractorVersion);
+                    writer.WriteStartArray("warnings");
+                    foreach (var warning in extraction.Warnings)
+                        writer.WriteStringValue(warning);
+                    writer.WriteEndArray();
+                    writer.WriteString("extractedText", extraction.ExtractedText);
+                    writer.WriteNumber("textLength", extraction.TextLength);
+                    writer.WriteString("createdAt", extraction.CreatedAt);
+                    writer.WriteEndObject();
+                    writer.Flush();
+                }
+
+                await destination.WriteAsync(buffer.WrittenMemory, cancellationToken);
+            }
+
+            offset += page.Count;
+            if (page.Count < 50)
+                return;
+        }
+    }
+
+    private static UserDataExportArtefactExtractionDto MapExtractionForExport(
+        Domain.Entities.ArtefactExtraction extraction)
+        => new(
+            extraction.Id,
+            extraction.ExtractorName,
+            extraction.ExtractorVersion,
+            extraction.Warnings,
+            extraction.ExtractedText,
+            extraction.TextLength,
+            extraction.CreatedAt);
 
     private async IAsyncEnumerable<Domain.Entities.Notification> StreamNotificationsAsync(
         Guid userId,

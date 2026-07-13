@@ -170,10 +170,56 @@ public class HealthController : ControllerBase
             {
                 isReady = false;
             }
+
+            // Transcript lane (REVIVAL-08): the heartbeat only beats between ticks, and one tick
+            // legitimately blocks for minutes — it processes up to MaxBatchSize LLM-backed triages
+            // SEQUENTIALLY, each bounded by the provider HTTP timeout (worst shipped default:
+            // Ollama 120s). The fast worker's pollInterval*3 staleness model would false-alarm
+            // here, so the threshold budgets 180s per batch slot on top of the poll allowance
+            // (defaults: ~15.5 min). A heartbeat stale beyond even that bound means the worker is
+            // genuinely wedged — transcripts silently stop triaging — so it degrades readiness.
+            var transcriptWorkerLastHeartbeat = _workerHeartbeatRegistry.GetLastHeartbeat(nameof(TranscriptTriageWorker));
+            var maxTranscriptWorkerStaleness = TimeSpan.FromSeconds(
+                Math.Max(_workerSettings.QueuePollIntervalSeconds * 3, 30) +
+                (long)Math.Max(1, _workerSettings.MaxBatchSize) * 180);
+            var transcriptWorkerStaleness = transcriptWorkerLastHeartbeat.HasValue
+                ? DateTimeOffset.UtcNow - transcriptWorkerLastHeartbeat.Value
+                : (TimeSpan?)null;
+            var transcriptWorkerHealthy = (transcriptWorkerLastHeartbeat.HasValue &&
+                                           transcriptWorkerStaleness <= maxTranscriptWorkerStaleness)
+                                          || (!transcriptWorkerLastHeartbeat.HasValue && withinStartupGrace);
+
+            if (transcriptWorkerStaleness.HasValue)
+            {
+                TaskdeckTelemetry.WorkerHeartbeatStalenessSeconds.Record(
+                    transcriptWorkerStaleness.Value.TotalSeconds,
+                    new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(TranscriptTriageWorker)),
+                    new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, transcriptWorkerHealthy ? "healthy" : "stale"));
+            }
+
+            workerChecks["transcriptTriage"] = new
+            {
+                status = transcriptWorkerLastHeartbeat.HasValue
+                    ? (transcriptWorkerHealthy ? "Healthy" : "Stale")
+                    : (withinStartupGrace ? "Starting" : "Stale"),
+                lastHeartbeat = transcriptWorkerLastHeartbeat,
+                stalenessSeconds = transcriptWorkerStaleness?.TotalSeconds,
+                maxStalenessSeconds = maxTranscriptWorkerStaleness.TotalSeconds
+            };
+
+            if (!transcriptWorkerHealthy)
+            {
+                isReady = false;
+            }
         }
         else
         {
             workerChecks["queueToProposal"] = new
+            {
+                status = "Disabled",
+                lastHeartbeat = (DateTimeOffset?)null
+            };
+            workerChecks["transcriptTriage"] = new
             {
                 status = "Disabled",
                 lastHeartbeat = (DateTimeOffset?)null

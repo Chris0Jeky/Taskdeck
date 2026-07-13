@@ -94,6 +94,39 @@ public class LlmQueueServiceTests
     }
 
     [Fact]
+    public async Task AddToQueueAsync_ShouldNormalizeToTranscriptRequestType_WhenPayloadSourceIsTranscript()
+    {
+        // REVIVAL-08: the request type is resolved from the parsed payload's source, not the
+        // caller's string, so a transcript payload enqueued under the general capture type still
+        // lands in the transcript worker lane.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        var dto = new CreateLlmRequestDto(
+            CaptureRequestContract.RequestTypeV1,
+            """{"version":1,"source":"transcriptPaste","text":"Alice: I will send the report."}""",
+            boardId);
+        LlmRequest? persistedRequest = null;
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+        _authorizationServiceMock.Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+        _llmQueueRepoMock.Setup(r => r.AddAsync(It.IsAny<LlmRequest>(), default))
+            .Callback<LlmRequest, CancellationToken>((request, _) => persistedRequest = request)
+            .ReturnsAsync((LlmRequest request, CancellationToken _) => request);
+
+        var result = await _service.AddToQueueAsync(userId, dto);
+
+        result.IsSuccess.Should().BeTrue();
+        persistedRequest.Should().NotBeNull();
+        persistedRequest!.RequestType.Should().Be(CaptureRequestContract.RequestTypeTranscriptV1);
+        var payloadResult = CaptureRequestContract.ParsePayload(persistedRequest.Payload);
+        payloadResult.IsSuccess.Should().BeTrue();
+        payloadResult.Value.Source.Should().Be(Domain.Enums.CaptureSource.TranscriptPaste);
+    }
+
+    [Fact]
     public async Task AddToQueueAsync_ShouldReturnValidationError_WhenCapturePayloadContainsSpoofedProvenanceAttribution()
     {
         var userId = Guid.NewGuid();

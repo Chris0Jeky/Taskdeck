@@ -1,8 +1,8 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-07-04
+Last Updated: 2026-07-10
 <br>
-Planning Horizon: the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive), then archival — _(historical: this was an open "Next 8 to 12 weeks" release horizon before the 2026-06-13 archive pivot)_
+Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -12,11 +12,26 @@ Companion Active Docs:
 
 ## Purpose
 
-This is the active execution guide for sequencing past, current, and the finite archive-pivot waves (Paper UI activation → easy local run → general quality → archive) that remain before archival.
+This is the active execution guide for sequencing past, current, and the revival waves defined in `docs/REVIVAL_PLAN.md` (truth + safety before strangers → transcript engine → open-beta launch → traction checkpoint).
 `docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
 Update this file at the end of each meaningful delivery cycle or when new work is seeded.
 
-## Direction (2026-06-13, maintainer-decided): finish-for-personal-use → archive
+## Direction (2026-07-10, maintainer-decided): revival — free open beta → commercial horizon
+
+**The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. Everything shipped under MIT stays MIT — no retroactive relicensing (ADR-0044 Decision 3).
+
+The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), plus the other scoped exceptions enumerated in the plan's §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. The finite-work discipline from `COURSE_CORRECTION.md` carries over — work not on the ratified wave list is, by definition, not taken.
+
+Goals, in order:
+
+1. **Truth + safety before strangers** — de-stub the fabricated Today dossier (`#1272`), remove the fake undo affordance, gate registration, protect main, ship v0.1.0 through the never-exercised release pipeline, make the README/onboarding/fonts honest and welcoming (REVIVAL wave, Phase 1).
+2. **The transcript engine** — LLM-backed triage for transcript sources behind `ICaptureTriageService`, durable Transcript entity, evidence-span deep links, OpenAI-compatible provider, risk-tiered approvals (REVIVAL wave, Phase 2).
+3. **Open-beta launch** — dead-surface amputation, MCP packaging, privacy-respecting feedback channel, launch (REVIVAL wave, Phase 3).
+4. **Checkpoint** — fall back to archive only if there is no organic traction and dogfooding has not stuck; any mixed outcome requires an explicit maintainer assessment/plan amendment.
+
+## Direction (2026-06-13, superseded 2026-07-10): finish-for-personal-use → archive
+
+> **Superseded by the 2026-07-10 revival pivot above (ADR-0044).** Retained because the closeout analysis and most of its work items remain load-bearing: the archive exit criteria (#1278) are repurposed as the v0.1 ship gate, and the archive path is the documented fallback if the beta checkpoint fails.
 
 **Taskdeck will not be distributed.** The maintainer's decision is to finish it as a personal-use tool, then archive it as a completed project. This **supersedes** both the 2026-06-05 ship-first framing (v0.1.0 → … → v1.0.0 GA) and the 2026-03-29 platform-expansion "four pillars" framing. Goals, in order:
 
@@ -29,7 +44,7 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 
 ## Planning Principles
 
-> **Precedence note (2026-06-13):** The ordered goals in the **Direction** section above take precedence wherever these principles conflict. In particular, "Security and identity convergence remains the highest-priority engineering track" and the "package the shipped substrate into stakeholder-legible business workflows" / "ship to first users" framing reflect the pre-pivot product phase and are **historical** — the active priorities are now Paper-canonical, easy local run, general quality, then archive. The review-first / capture-friction / novice-legibility principles remain valid.
+> **Precedence note (2026-07-10):** ADR-0044 and `docs/REVIVAL_PLAN.md` take precedence wherever the historical tranches or principles below imply a different execution order. The active priorities are truth + safety before strangers, the transcript engine, and the bounded open-beta launch, followed by the checkpoint. The review-first / capture-friction / novice-legibility principles remain mandatory throughout.
 
 - `docs/STATUS.md` is authoritative for current shipped reality.
 - Product north star: make capture nearly free and keep automation safe through review-first proposals.
@@ -920,7 +935,7 @@ Implementation carry-forward from the full source audit:
 
 ## Roadmap by Horizon
 
-> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** This entire block — the RFAI v4 roadmap (Tracker `#972`, slices `#973`–`#984` and their `#986`/`#989`–`#994` execution sequence) plus every week-numbered / Post-R1 / Post-R2 horizon below (Horizons A–F) — is **historical**. It is retained as a delivery record, not an active plan. The active sequence is the finite archive-pivot **waves** in the **Direction** section above (Paper UI activation → easy local run → general quality → archive). The RFAI track is **complete (12/12 slices delivered)** — including RFAI-10/11/12 (`#982`/`#983`/`#984`), which **were delivered and ship live** (merged `#1078`/`#1079`/`#1080`): PWA share-target capture, the VS Code / browser-extension prototype, the Ollama provider, and the ProvenanceDrawer all remain in the codebase (consistent with STATUS.md, the source of truth). What the archive pivot retires is only their **onward productization** — extension-store publishing, the public beta gate, and ambient-channel hardening beyond prototype — **not the shipped code**, which stays live for personal use. Items annotated *delivered* below remain accurate as history; un-delivered week-numbered work is either complete-as-history or de-scoped (distribution/beta only). **Blanket rule:** any `Focus:` / `remaining` / future-tense ("add …") bullet in the horizons below that describes functionality STATUS.md records as **shipped** has in fact been delivered — the forward phrasing is the original pre-delivery plan preserved as a record, not current outstanding work. When this block and STATUS.md disagree on whether something shipped, **STATUS.md wins** (it is the source of truth).
+> **⚠️ HISTORICAL — superseded first by the 2026-06-13 archive pivot and then by ADR-0044.** This entire block — the RFAI v4 roadmap (Tracker `#972`, slices `#973`–`#984` and their `#986`/`#989`–`#994` execution sequence) plus every week-numbered / Post-R1 / Post-R2 horizon below (Horizons A–F) — is retained as a delivery record, not an active plan. The active sequence is the finite REVIVAL wave in `docs/REVIVAL_PLAN.md`. The RFAI track is **complete (12/12 slices delivered)** — including RFAI-10/11/12 (`#982`/`#983`/`#984`), which **were delivered and ship live** (merged `#1078`/`#1079`/`#1080`): PWA share-target capture, the VS Code / browser-extension prototype, the Ollama provider, and the ProvenanceDrawer all remain in the codebase (consistent with STATUS.md, the source of truth). ADR-0044 does not reactivate this old roadmap wholesale; only work admitted by the ratified REVIVAL wave is active. Items annotated *delivered* below remain accurate as history. **Blanket rule:** any `Focus:` / `remaining` / future-tense ("add …") bullet in the horizons below that describes functionality STATUS.md records as **shipped** has in fact been delivered — the forward phrasing is the original pre-delivery plan preserved as a record, not current outstanding work. When this block and STATUS.md disagree on whether something shipped, **STATUS.md wins**.
 
 ### Roadmap v4 Adoption: Review-First AI Without the Rewrite (Tracker `#972`)
 
@@ -1065,7 +1080,7 @@ These continue in parallel where they protect trust, performance, or operator po
 
 ## Release Framing
 
-> **SUPERSEDED 2026-06-13 — archive pivot.** The maintainer ended the product effort: Taskdeck will **not** be distributed. It is being finished as a personal-use tool and then archived (see `docs/STATUS.md` and **ADR-0038**). The multi-version platform release plan below (packaging → cloud → mobile → collaboration, `v0.2.0`–`v1.0.0`) is **no longer the roadmap** — it is retained only as historical record of the abandoned distribution strategy. The distribution-era tracks (GTM `#544`/`#546`/`#550`, cloud `#537`/`#548`, mobile `#540`, code-signing `#1167`, `#531` master) are de-scoped and will be closed as not-planned during archive closeout. `v0.1.0` survives only as an *optional* unsigned local build for the maintainer's own convenience, not a published release. Current work is tracked against the archive-pivot waves: finish + activate the Paper UI (canonical per ADR-0038), make the app trivially easy to run locally, land general quality improvements, then archive cleanly.
+> **HISTORICAL PLAN — superseded first by the 2026-06-13 archive pivot and then by ADR-0044.** The multi-version platform plan below (packaging → cloud → mobile → collaboration, `v0.2.0`–`v1.0.0`) is still **not** the roadmap; ADR-0044 does not reactivate it wholesale. Public-beta distribution and v0.1 release work are active only through `docs/REVIVAL_PLAN.md`; the cloud/mobile/collaboration/GTM items below remain historical unless individually re-triaged into that ratified wave.
 
 ### Platform Release Plan (2026-03-29 — SUPERSEDED, historical)
 
@@ -1122,7 +1137,7 @@ Master tracker: `#531`.
 
 ### Feature Milestones (Original)
 
-> **⚠️ SUPERSEDED — 2026-06-13 archive pivot.** The `R1`→`v0.1.0`/`v0.2.0`, `R2`→`v1.0.0+`, `R3`→`post-v1.0.0` ladder and its beta/alpha framing are **retired** — there is no distribution, no public beta/alpha, and no `v0.x`→`v1.0.0` release ladder. This is kept only as a historical map of which capability cohorts were delivered. Active sequencing is the archive-pivot **waves** in the **Direction** section above.
+> **⚠️ HISTORICAL RELEASE LADDER.** The old `R1`→`v0.1.0`/`v0.2.0`, `R2`→`v1.0.0+`, `R3`→`post-v1.0.0` mapping remains retired and is kept only as a historical map of delivered capability cohorts. ADR-0044 introduces a different bounded `v0.1`→`v0.3` beta horizon; active sequencing is `docs/REVIVAL_PLAN.md`.
 
 - `R1` novice-first beta (largely delivered — maps to v0.1.0/v0.2.0):
   - `Home`, `Today`, `Review`, onboarding/help coherence
@@ -1141,7 +1156,7 @@ Master tracker: `#531`.
 
 ## Active Backlog (Priority-Labeled)
 
-> **Archive-pivot note (2026-06-13):** The `Priority I`–`V` / "Phase 4" tranche framing below is the **pre-pivot** priority model, retained for historical traceability. Active sequencing now follows the archive-pivot **waves** in the Direction section above (Paper UI activation → easy local run → general quality → archive); most items below are already annotated *(delivered)*, and the distribution/cloud/mobile/GTM tranches are de-scoped.
+> **Historical priority-model note:** The `Priority I`–`V` / "Phase 4" tranche framing below is retained for traceability, not issue selection. Active sequencing follows the REVIVAL wave in `docs/REVIVAL_PLAN.md`; historical distribution/cloud/mobile/GTM tranches are not reactivated unless that plan admits a specific item.
 
 ### Priority I (Current Phase 4 Completion Path)
 
@@ -1473,7 +1488,7 @@ Analysis: `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
 
 ## Active Blockers (2026-03-29 Manual Test Session) — ✅ RESOLVED (historical)
 
-> **Both P0 bugs below were fixed** (regression coverage per `#777`; see STATUS.md). This section is retained as a historical record. The "before Phase 4 sign-off / external user onboarding" framing is also moot under the 2026-06-13 archive pivot (finish-for-personal-use → archive; no external onboarding).
+> **Both P0 bugs below were fixed** (regression coverage per `#777`; see STATUS.md). This section is retained as a historical record. Its original "before Phase 4 sign-off / external user onboarding" framing is not an active gate; stranger-readiness is now defined by the v0.1 ship gate in `docs/REVIVAL_PLAN.md`.
 
 - ~~**`#508`** — Queue list endpoint not scoped to the authenticated user~~ — **RESOLVED**: `LlmQueueService.GetUserQueueAsync(userId)` scopes the queue via `LlmQueue.GetByUserAsync(userId)`; cross-user isolation regression tests cover it.
 - ~~**`#509`** — Board view auto-switches between boards~~ — **RESOLVED**: `boardStore` preserves `activeBoardId` across `fetchBoards` when it still exists; regression test covers the auto-switch.
@@ -1482,7 +1497,7 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 
 ## Next Best Steps (Immediate)
 
-> **⚠️ SUPERSEDED 2026-06-13 — archive pivot.** The "Current active order (2026-04-25)" RFAI roadmap below (`#973`→`#984`, Stage 8, tracker `#972`) is **no longer the active sequence**. Current execution order is the archive-pivot **waves** in the Direction section at the top of this file (Paper UI activation → easy local run → general quality → archive). The list below is retained only as historical continuity — do not restart the RFAI/Stage-8 roadmap from it.
+> **⚠️ HISTORICAL ORDER.** The "Current active order (2026-04-25)" RFAI roadmap below (`#973`→`#984`, Stage 8, tracker `#972`) is **not** the active sequence. Current execution follows `docs/REVIVAL_PLAN.md`; the list below is retained only for historical continuity — do not restart the RFAI/Stage-8 roadmap from it.
 
 Current active order (2026-04-25) — **HISTORICAL, superseded by the archive pivot**:
 1. Start the RFAI roadmap through `#973` first: safety invariants, IA cut, eval seed, and recertification.
@@ -1491,7 +1506,7 @@ Current active order (2026-04-25) — **HISTORICAL, superseded by the archive pi
 4. Keep `#982` and `#983` behind the proposal/provenance/edit/egress foundation; store publishing remains post-beta.
 5. Use `#970` for measured test-total recertification rather than editing counts from estimates.
 
-Historical next-step list below is retained for continuity with earlier waves. The Stage 8 sequence in `docs/ISSUE_EXECUTION_GUIDE.md` and tracker `#972` it referenced is **historical and no longer the active execution order** — the current execution order is the archive-pivot waves in the **Direction** section at the top of this file.
+Historical next-step list below is retained for continuity with earlier waves. The Stage 8 sequence in `docs/ISSUE_EXECUTION_GUIDE.md` and tracker `#972` it referenced is **historical and no longer the active execution order** — current execution follows `docs/REVIVAL_PLAN.md`.
 
 1. **Resolve `#508` and `#509` (P0 blockers above) before any other backlog work.**
 2. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
@@ -1510,7 +1525,7 @@ Historical next-step list below is retained for continuity with earlier waves. T
 17. **Security + testing + MCP wave (2026-04-04)**: 8 issues across 8 PRs (`#732`–`#739`) with two rounds of adversarial self-review. ~300 new tests added. Key deliveries: SEC-20 ChangePassword identity bypass fix (`#722`/`#732`), golden-path capture→board integration test (`#703`/`#735`), cross-user data isolation tests (`#704`/`#733` — 38 tests, 3 false-positive tests caught in review), worker integration tests (`#700`/`#734` — 24 tests, fake repo status-tracking fixed in review), controller HTTP tests (`#702`/`#738` — 67 tests, 6 controllers, 2 pre-existing bugs found), proposal lifecycle edge cases (`#708`/`#736` — 74 tests, clock-flakiness fixed in review), OAuth/auth edge cases (`#707`/`#737` — 44 tests, found+fixed `ExternalLoginAsync` Substring overflow production bug), MCP full inventory (`#653`/`#739` — 9 resources + 11 tools, user-scoping gap found+fixed in review). Test expansion wave (`#721`) progress: 7 of 22 issues now delivered (`#699`, `#700`, `#702`, `#703`, `#704`, `#707`, `#708`); remaining 15 open.
 18. **Tech-debt, security, and feature hardening wave (2026-04-04)**: 7 issues across 7 PRs (`#765`–`#770`, `#776`) with two rounds of adversarial review per PR (~65 new tests: 32 backend + 33 frontend). Key deliveries: Agent API 500 fix (`#758`/`#776` — `DateTimeOffset` ORDER BY in SQLite, `AgentRunRepository` upgraded to `IsSqlite()` SQL-level pattern, round 2 caught load-all-before-limit perf bug), DataExport exception logging (`#759`/`#766` — `ILogger` added to `DataExportService`/`AccountDeletionService`, round 2 added `OperationCanceledException` filter + `CancellationToken.None` rollback), streaming chat token usage (`#763`/`#768` — `LlmTokenEvent` extended, all 3 providers populated, `StreamResponseAsync` now persists messages + records quota), EF Core version alignment (`#760`/`#767` — 9.0.14→8.0.14, EF9-only API removed, `FrameworkReference` swap, round 2 added `PrivateAssets`), frontend HTTP interceptor/auth guard tests (`#725`/`#765` — 33 tests, round 2 fixed ESLint `no-import-assign` CI breaker), OAuth token lifecycle tests (`#723`/`#769` — 19 tests covering auth code store + JWT lifecycle + SignalR auth, round 2 fixed `HttpClient` leak + misleading test names), tool argument replay (`#673`/`#770` — `Arguments` field on `ToolCallResult`, OpenAI/Gemini replay now uses real arguments). Test expansion wave (`#721`) progress: 23 of 25 issues now delivered (waves 4+5 added `#711`, `#712`, `#716`, `#720`, `#723`, `#725`); remaining 2 open (`#705`, `#717`).
 19. **Feature, analytics, MCP, chat, testing, and UX expansion wave (2026-04-08)**: 7 issues across 7 PRs (`#787`–`#793`) with two rounds of adversarial review per PR (~390+ new tests). Key deliveries: exportable analytics CSV (`#78`/`#787` — `MetricsExportService` with CSV injection protection, `ADR-0022` deferring PDF, 29 tests, adversarial review caught embedded-newline injection HIGH), forecasting service (`#79`/`#790` — heuristic `ForecastingService` with rolling-average throughput, std-dev confidence bands, frontend MetricsView section, 32 tests, adversarial review caught throughput double-counting HIGH + history window bug), MCP HTTP transport + API key auth (`#654`/`#792` — `ApiKey` entity with SHA-256, `ApiKeyMiddleware`, `HttpUserContextProvider`, `MapMcp()`, REST key management, rate limiting, 31 tests, adversarial review caught key-existence oracle + modulo bias), conversational refinement loop (`#576`/`#791` — `ClarificationDetector` with strong/weak signal split, max 2 rounds + skip, Mock simulation, frontend badge + skip button, 41 tests, adversarial review caught false-positive heuristic HIGH), concurrency stress tests (`#705`/`#793` — 13 `SemaphoreSlim`-barrier stress tests for queue claims, card conflicts, proposal races, rate limiting, multi-user), property-based adversarial tests (`#717`/`#789` — 211 FsCheck + fast-check tests across domain/API/frontend, no 500s from any input), inbox premium primitives (`#249`/`#788` — `TdSkeleton`/`TdInlineAlert`/`TdEmptyState`/`TdBadge` rework, 7 tests). Test expansion wave (`#721`) progress: 25 of 25 issues now delivered (this wave closed `#705` and `#717`). Additional issues closed: `#78`, `#79`, `#249`, `#576`, `#654`.
-10. Treat `#107` **and the RFAI roadmap tracker `#972`** as closed/historical (RFAI complete 2026-05-29, superseded by the archive-pivot waves in the Direction section — `#972` is no longer the active execution order); maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+10. Treat `#107` **and the RFAI roadmap tracker `#972`** as closed/historical (RFAI complete 2026-05-29; `#972` is no longer the active execution order); use `docs/REVIVAL_PLAN.md` for active sequencing and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 12. Test suite baseline counts recertified 2026-04-09: backend ~3,600+ passing, frontend ~1,984+ passing, combined ~5,600+. Rigorous test expansion wave (`#721`) fully delivered (25/25 issues).
 13. **Mutation testing pilot** (`#90`): Stryker.NET (backend Domain) and Stryker JS (frontend captureStore/boardStore) configured with non-blocking weekly CI lane; policy at `docs/testing/MUTATION_TESTING_POLICY.md`; scope expansion to Application layer and additional stores planned after baseline calibration from first 3-4 runs.
