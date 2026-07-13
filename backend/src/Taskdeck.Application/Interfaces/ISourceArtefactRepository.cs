@@ -29,13 +29,14 @@ public interface ISourceArtefactRepository : IRepository<SourceArtefact>
 
     /// <summary>
     /// Atomically rechecks the active user, board write authority, and byte quota,
-    /// then persists metadata, blob, and the content-free audit entry.
+    /// then persists metadata, blob, and the content-free audit entries.
     /// </summary>
     Task<ArtefactStoreResult> TryAddWithinQuotaAsync(
         SourceArtefact artefact,
         byte[] content,
         long quotaBytes,
         AuditLog auditLog,
+        AuditLog? boardAuditLog,
         CancellationToken cancellationToken = default);
 
     Task<byte[]?> GetContentForUserAsync(
@@ -57,5 +58,6 @@ public interface ISourceArtefactRepository : IRepository<SourceArtefact>
         Guid id,
         Guid userId,
         AuditLog auditLog,
+        AuditLog? boardAuditLog,
         CancellationToken cancellationToken = default);
 }

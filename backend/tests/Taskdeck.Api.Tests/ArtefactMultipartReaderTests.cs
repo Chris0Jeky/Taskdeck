@@ -69,6 +69,23 @@ public sealed class ArtefactMultipartReaderTests
     }
 
     [Fact]
+    public async Task ReadAsync_ShouldPreservePayloadTooLargeWhenHostRejectsRequestBody()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "multipart/form-data; boundary=host-body-limit";
+        context.Request.Body = new HostRejectedBodyStream();
+
+        var result = await ArtefactMultipartReader.ReadAsync(
+            context.Request,
+            new ArtefactStorageSettings { MaxBytesPerArtefact = 1024, MaxBytesPerUser = 1024 },
+            default);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        result.ErrorMessage.Should().Contain("1024-byte size limit");
+    }
+
+    [Fact]
     public void ConfigureRequestBodyLimit_ShouldAllowConfiguredFilePlusBoundedMultipartOverhead()
     {
         var context = new DefaultHttpContext();
@@ -89,5 +106,40 @@ public sealed class ArtefactMultipartReaderTests
     {
         public bool IsReadOnly => false;
         public long? MaxRequestBodySize { get; set; }
+    }
+
+    private sealed class HostRejectedBodyStream : Stream
+    {
+        private static BadHttpRequestException CreateException()
+            => new("Request body too large", StatusCodes.Status413PayloadTooLarge);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw CreateException();
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+            => Task.FromException<int>(CreateException());
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromException<int>(CreateException());
+
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

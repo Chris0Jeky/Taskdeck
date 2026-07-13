@@ -177,6 +177,50 @@ public class DataExportServiceTests
     }
 
     [Fact]
+    public async Task ExportUserDataAsync_ShouldRejectTooManyArtefactRowsBeforeLoadingAnyBlob()
+    {
+        SetupUserFound();
+        var page = Enumerable.Range(0, 500)
+            .Select(index => new SourceArtefact(
+                _userId,
+                ArtefactKind.TextFile,
+                "text/plain",
+                $"note-{index}.txt",
+                1,
+                new string('a', SourceArtefact.Sha256HexLength),
+                CaptureSource.Import))
+            .ToArray();
+        var finalRow = new SourceArtefact(
+            _userId,
+            ArtefactKind.TextFile,
+            "text/plain",
+            "overflow.txt",
+            1,
+            new string('b', SourceArtefact.Sha256HexLength),
+            CaptureSource.Import);
+        _artefactRepoMock
+            .Setup(r => r.GetByUserAsync(
+                _userId,
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, int limit, int offset, CancellationToken _) =>
+                offset < 10_000 ? page.Take(limit).ToArray() : [finalRow]);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        result.ErrorMessage.Should().Contain("too many artefacts");
+        _artefactRepoMock.Verify(
+            r => r.GetContentForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _artefactRepoMock.Verify(
+            r => r.GetByUserAsync(_userId, 1, 10_000, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ExportUserDataAsync_IncludesBoardsWithAccessInfo()
     {
         // Arrange

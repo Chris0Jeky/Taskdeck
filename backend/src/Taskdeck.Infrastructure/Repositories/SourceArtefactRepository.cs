@@ -60,6 +60,7 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
         byte[] content,
         long quotaBytes,
         AuditLog auditLog,
+        AuditLog? boardAuditLog,
         CancellationToken cancellationToken = default)
     {
         return ExecuteInImmediateWriteTransactionAsync(async () =>
@@ -94,6 +95,8 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
                 new ArtefactBlob(artefact.Id, content),
                 cancellationToken);
             await _context.AuditLogs.AddAsync(auditLog, cancellationToken);
+            if (boardAuditLog is not null)
+                await _context.AuditLogs.AddAsync(boardAuditLog, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
             return ArtefactStoreResult.Stored;
         }, cancellationToken);
@@ -176,6 +179,7 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
         Guid id,
         Guid userId,
         AuditLog auditLog,
+        AuditLog? boardAuditLog,
         CancellationToken cancellationToken = default)
     {
         return ExecuteInImmediateWriteTransactionAsync(async () =>
@@ -188,6 +192,8 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
 
             _dbSet.Remove(artefact);
             await _context.AuditLogs.AddAsync(auditLog, cancellationToken);
+            if (boardAuditLog is not null)
+                await _context.AuditLogs.AddAsync(boardAuditLog, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
             return true;
         }, cancellationToken);
