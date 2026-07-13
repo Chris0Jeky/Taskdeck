@@ -138,6 +138,10 @@ jobs:
             --summary-export frontend/taskdeck-web/test-results/load/k6-summary.json \
             | tee frontend/taskdeck-web/test-results/load/k6-output.log
 
+      - name: Require k6 summary artifact
+        if: always()
+        run: node scripts/ci/require-k6-summary.mjs frontend/taskdeck-web/test-results/load/k6-summary.json
+
       - name: Run Playwright concurrency harness
         timeout-minutes: 12
         working-directory: frontend/taskdeck-web

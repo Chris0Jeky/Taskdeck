@@ -177,17 +177,17 @@ jobs:
 
           echo "k6_exit_code=$k6_exit" >> "$GITHUB_ENV"
 
+      - name: Require k6 summary artifact
+        if: always()
+        run: node scripts/ci/require-k6-summary.mjs frontend/taskdeck-web/test-results/perf/k6-summary.json
+
       - name: Analyze k6 thresholds
         if: always()
         run: |
-          if [ -f frontend/taskdeck-web/test-results/perf/k6-summary.json ]; then
-            node scripts/ci/check-k6-thresholds.mjs \
-              frontend/taskdeck-web/test-results/perf/k6-summary.json \
-              --fail-on-breach \
-              --output-json frontend/taskdeck-web/test-results/perf/k6-threshold-report.json
-          else
-            echo "::warning::k6 summary file not found — threshold analysis skipped."
-          fi
+          node scripts/ci/check-k6-thresholds.mjs \
+            frontend/taskdeck-web/test-results/perf/k6-summary.json \
+            --fail-on-breach \
+            --output-json frontend/taskdeck-web/test-results/perf/k6-threshold-report.json
 
       - name: Fail if k6 thresholds breached
         if: always()
