@@ -110,6 +110,7 @@ function formatLocalDossierDateParts(date: Date): { yyyy: string; mm: string; dd
 function formatUtcTime(iso: string | null): string {
   if (!iso) return '--:--'
   const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '--:--'
   return `${date.getUTCHours().toString().padStart(2, '0')}:${date.getUTCMinutes().toString().padStart(2, '0')}`
 }
 
@@ -388,13 +389,24 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     }
   }
 
-  watch(now, () => {
+  watch(now, (currentNow, previousNow) => {
+    const didCrossLocalDay = previousNow !== undefined
+      && formatLocalDossierDate(currentNow) !== formatLocalDossierDate(previousNow)
+
     liveCadence.value = null
     liveStreak.value = null
     liveLineForTomorrow.value = ''
     tomorrowNoteMutationGeneration += 1
     sealMutationGeneration += 1
     sealed.value = false
+
+    if (didCrossLocalDay) {
+      workspace.clearTodaySummary()
+      void workspace.fetchTodaySummary().catch(() => {
+        // The workspace store retains the error for PaperToday's visible retry state.
+      })
+    }
+
     void fetchLiveData()
   }, { immediate: true })
 
