@@ -13,13 +13,17 @@ namespace Taskdeck.Infrastructure.Services;
 /// </summary>
 public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
 {
+    private static readonly string PdfPigVersion =
+        typeof(PdfDocument).Assembly.GetName().Version?.ToString(3)
+        ?? throw new InvalidOperationException("PdfPig assembly version is unavailable.");
+
     public const long MaxInputBytes = ArtefactStorageSettings.DefaultMaxBytesPerArtefact;
     public const int MaxPages = 100;
     public const int MaxExtractedCharacters = CaptureRequestContract.MaxTranscriptTextLength;
     public const int MaxParserStackDepth = 64;
 
     public string ExtractorName => "PdfPig";
-    public string ExtractorVersion => "0.1.15";
+    public string ExtractorVersion => PdfPigVersion;
     public long InputByteLimit => MaxInputBytes;
 
     public bool CanExtract(string mimeType)
