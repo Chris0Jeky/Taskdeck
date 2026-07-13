@@ -1,9 +1,11 @@
-using System.Net.Http.Headers;
+using ContentDispositionHeaderValue = System.Net.Http.Headers.ContentDispositionHeaderValue;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Net.Http.Headers;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Api.Filters;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -18,40 +20,40 @@ namespace Taskdeck.Api.Controllers;
 public class ArtefactsController : AuthenticatedControllerBase
 {
     private readonly IArtefactService _artefactService;
+    private readonly ArtefactStorageSettings _settings;
 
     public ArtefactsController(
         IArtefactService artefactService,
+        ArtefactStorageSettings settings,
         IUserContext userContext)
         : base(userContext)
     {
         _artefactService = artefactService;
+        _settings = settings;
     }
 
     [HttpPost]
     [Consumes("multipart/form-data")]
+    [DisableFormValueModelBinding]
     [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
-    public async Task<IActionResult> Upload(
-        [FromForm] ArtefactUploadRequest request,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> Upload(CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
-        if (request.File is null)
-        {
-            return Domain.Common.Result
-                .Failure(ErrorCodes.ValidationError, "Artefact upload requires a file")
-                .ToErrorActionResult();
-        }
 
-        await using var stream = request.File.OpenReadStream();
+        var upload = await ArtefactMultipartReader.ReadAsync(Request, _settings, cancellationToken);
+        if (!upload.IsSuccess)
+            return upload.ToErrorActionResult();
+
+        await using var stream = new MemoryStream(upload.Value.Content, writable: false);
         var result = await _artefactService.CreateAsync(
             userId,
             new CreateArtefactRequest(
                 stream,
-                request.File.FileName,
-                request.File.ContentType,
-                request.BoardId,
-                request.CreatedFromCaptureId),
+                upload.Value.FileName,
+                upload.Value.MimeType,
+                upload.Value.BoardId,
+                upload.Value.CreatedFromCaptureId),
             cancellationToken);
 
         return result.IsSuccess
@@ -96,7 +98,12 @@ public class ArtefactsController : AuthenticatedControllerBase
             Response.Body,
             cancellationToken);
         if (!result.IsSuccess && !Response.HasStarted)
+        {
+            Response.ContentType = null;
+            Response.ContentLength = null;
+            Response.Headers.Remove(HeaderNames.ContentDisposition);
             return result.ToErrorActionResult();
+        }
 
         return new EmptyResult();
     }

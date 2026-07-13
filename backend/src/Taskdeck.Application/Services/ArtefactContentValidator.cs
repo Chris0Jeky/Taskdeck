@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using Taskdeck.Domain.Common;
@@ -142,14 +143,18 @@ public static class ArtefactContentValidator
 
     private static bool HasValidUtf8Text(ReadOnlyMemory<byte> bytes)
     {
-        try
+        var remaining = bytes.Span;
+        while (!remaining.IsEmpty)
         {
-            var text = new UTF8Encoding(false, true).GetString(bytes.Span);
-            return text.All(c => c is '\r' or '\n' or '\t' || !char.IsControl(c));
+            var status = Rune.DecodeFromUtf8(remaining, out var rune, out var consumed);
+            if (status != OperationStatus.Done)
+                return false;
+            if (Rune.IsControl(rune) && rune.Value is not '\r' and not '\n' and not '\t')
+                return false;
+
+            remaining = remaining[consumed..];
         }
-        catch (DecoderFallbackException)
-        {
-            return false;
-        }
+
+        return true;
     }
 }
