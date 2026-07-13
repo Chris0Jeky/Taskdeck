@@ -58,7 +58,7 @@ Direction: **free open beta → commercial horizon** (`docs/REVIVAL_PLAN.md` is 
 - [ ] **Phase 0 — dogfooding starts now** (#1271, unchanged): real personal use including WhisperX transcripts through the existing transcript capture tab.
 - [ ] **Phase 1 — truth + safety before strangers**: registration gating flag; remove the fake undo timeline; de-stub Today dossier (#1272); Paper fonts + favicon; Paper onboarding/first-board path; README revival rewrite + demo GIF + MCP section; v0.1.0 tag → exercise release pipeline → GHCR image; fix render.yaml; branch protection (#1173); CI keep/kill (#1275); Paper E2E/axe re-point (#1274).
 - [ ] **Phase 2 — transcript engine** (authorized new-surface exception): LLM triage strategy behind `ICaptureTriageService` for transcript sources; chunking + cap raise; triage schema v2 (type/assignee/due + model-derived confidence); Transcript entity + evidence spans; OpenAICompatible provider + true SSE streaming; risk-tiered review prioritization and batch-confirm ergonomics (**never auto-apply or bypass ADR-0003's approve-then-execute gate**); (2b, gated on dogfooding value) audio upload + WhisperX sidecar.
-- [ ] **Phase 3 — slim + launch**: dead-surface amputation (#1276 expanded); MCP packaging + scoped keys + hash-pin wiring (#1154); privacy-respecting beta feedback channel; launch checklist (r/selfhosted, Show HN, awesome-selfhosted, hosted demo).
+- [ ] **Phase 3 — slim + launch**: dead-surface amputation (#1276 expanded); MCP packaging + scoped keys + hash-pin wiring (#1154) + explicit multi-user-safe stdio identity (#1309); privacy-respecting beta feedback channel; launch checklist (r/selfhosted, Show HN, awesome-selfhosted, hosted demo).
 - [ ] **Checkpoint (~8 weeks)**: fall back to the §D archive plan only if there is no organic traction **and** dogfooding has not stuck; any mixed outcome requires an explicit maintainer assessment/plan amendment.
 
 ## D. Historical archive closeout wave — re-scoped by ADR-0044
@@ -70,12 +70,12 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 - [ ] **#1270** — ARCHIVE-02: backlog triage hour — close ~16 already-decided issues with dated pivot notes. *(Maintainer sign-off on the list.)*
 - [ ] **#1271** — ARCHIVE-03: dogfooding sprint — ≥10 days of real personal use (the pivot's acceptance test; cannot be delegated).
 - [ ] **#1272** — ARCHIVE-04: Today dossier truth — de-stub the fabricated default daily surface (`useTodayDossier.ts` buildStubDossier).
-- [ ] **#1273** — ARCHIVE-05: capture-triage provenance names the deterministic extractor, not the uninvolved LLM provider.
+- [ ] **#1273** — **record-only maintainer check-off:** capture-triage provenance now names the deterministic extractor, delivered by #1283; the v0.1 ship-gate item is done. Checkbox intentionally remains human-owned per rule 3.
 - [ ] **#1274** — ARCHIVE-06: re-point E2E + axe coverage at the Paper UI (currently the least-tested UI).
 - [ ] **#1275** — ARCHIVE-07: CI estate right-sizing — keep/kill/gate per lane + short ADR (nightly red 28 days; mutation red 10+ weeks).
 - [ ] **#1276** — ARCHIVE-08: dead-surface removal — ink-bleed decision, orphaned Paper code, cohorts stub, voice capture, Ollama marking.
 - [ ] **#1277** — originally ARCHIVE-09; now the revival checkpoint/fallback record. Beta-facing README, release tag, and ship-gate checks live in REVIVAL-06/07/14; archive-only edits wait unless ADR-0044's checkpoint condition is met.
-- [ ] **#1235** (re-scoped) — top engineering priority: revision-aware proposal diff (preview must equal what Apply executes).
+- [ ] **#1235** — **record-only maintainer check-off:** revision-aware proposal diff (preview equals what Apply executes) was delivered by #1280 with regression coverage; the v0.1 ship-gate item is done. Checkbox intentionally remains human-owned per rule 3.
 - [ ] **#1291** — Adopt agent-harness T3 profile: one-home policy collapse, .codex mirror retirement, skill read-first diet, region maps, review-twin merge, ledger triage cadence. *(Blueprint: sibling checkout `C:/Users/jekyt/source/agent-harness/BLUEPRINT.md` — outside this repo; complements #1138/#1269/#1275/#1276, no duplication.)*
 - *(Record, already done 2026-07-02:)* re-scope comments posted on #996, #1123/#1139, #1128, #1134 (+#1154 decision), #1135, #1138, #1173, #1175 (+#1174), #1210, #1215, #1222 (+#1227), #1228 — each carries updated finish-or-close ACs.
 

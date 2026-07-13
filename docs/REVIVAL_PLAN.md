@@ -59,7 +59,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 ### Phase 1 — truth + safety before strangers (v0.1)
 | Item | Issue | Notes |
 |---|---|---|
-| Registration gating: `Auth:Registration` = `Open`/`InviteOnly`/`Closed` | REVIVAL-01 | verified blocker: `/api/auth/register` is AllowAnonymous with no flag |
+| Registration gating: `Auth:Registration:Mode` = `Open`/`InviteOnly`/`Closed` | REVIVAL-01 | verified blocker: `/api/auth/register` is AllowAnonymous with no flag; environment key `Auth__Registration__Mode` |
 | Remove the fake undo timeline + correct side-effect copy | REVIVAL-02 | verified: no revert endpoint exists anywhere |
 | Licensing posture pack: LICENSING.md, license commitment, DCO + CI check, `ee/` placeholder, trademark search | REVIVAL-03 | hours now, impossible-cleanly later |
 | Self-host Paper fonts + favicon + theme-color | REVIVAL-04 | verified: Fraunces/Inter/JetBrains Mono never load |
@@ -85,7 +85,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 |---|---|---|
 | Dead-surface amputation (cohorts stub, Integrations shell, voice composable, forecast/knowledge/agents views, fake semantic search, ink-bleed decision) | #1276 (scope expanded) | shrink the first 30 minutes to the honest core |
 | Beta feedback + telemetry posture (Discussions, in-app feedback link, opt-in telemetry card + TELEMETRY.md, beta badge) | REVIVAL-12 | §2 posture |
-| MCP packaging: README/docs, one-command setup, scoped API keys, wire hash-pinning | REVIVAL-13 | folds #1154 |
+| MCP packaging: README/docs, one-command setup, scoped API keys, wire hash-pinning, replace the stdio first-user identity fallback with explicit multi-user-safe configuration | REVIVAL-13 | folds #1154; identity must fail closed instead of misattributing an MCP action |
 | Launch: r/selfhosted + Show HN + awesome-selfhosted PR + hosted static demo + 48h presence plan | REVIVAL-14 | expect probing on phone-home, license permanence, missing features — answers pre-written |
 
 Bounded finish-or-close slices from the archive plan (#1134, #1135, #1128, #1175, #1138, #1222/#1227) continue as capacity allows, unchanged.
@@ -113,7 +113,7 @@ Bounded finish-or-close slices from the archive plan (#1134, #1135, #1128, #1175
 
 ## 7. New-surface exceptions (everything else stays under the #1269 rule)
 
-Authorized: REVIVAL-01 (registration gate), REVIVAL-08/-09/-10/-11 (transcript engine), REVIVAL-12 (feedback/telemetry), REVIVAL-13 (key scopes + hash-pin wiring). Not authorized without a plan amendment: new views, new dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens).
+Authorized: REVIVAL-01 (registration gate), REVIVAL-08/-09/-10/-11 (transcript engine), REVIVAL-12 (feedback/telemetry), REVIVAL-13 (key scopes + hash-pin wiring + explicit multi-user-safe stdio identity). Not authorized without a plan amendment: new views, new dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens).
 
 ## 8. Metrics and the checkpoint
 
