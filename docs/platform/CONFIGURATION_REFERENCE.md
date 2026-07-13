@@ -536,7 +536,7 @@ fields. Concurrent uploads serialize the quota check with the SQLite write.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Artefacts:MaxBytesPerArtefact` | `long` | `10485760` (10 MiB) | Maximum bytes accepted for one PNG, JPEG, WebP, PDF, TXT, or Markdown artefact. The upload stream stops and returns HTTP 413 once this bound is crossed. Environment variable: `Artefacts__MaxBytesPerArtefact`. | No |
+| `Artefacts:MaxBytesPerArtefact` | `long` | `10485760` (10 MiB) | Maximum bytes accepted for one PNG, JPEG, WebP, PDF, TXT, or Markdown artefact. The upload stream stops and returns HTTP 413 once this bound is crossed. This setting is capped at `int.MaxValue` because the current encrypted SQLite blob adapter materializes one artefact as a `byte[]`. Environment variable: `Artefacts__MaxBytesPerArtefact`. | No |
 | `Artefacts:MaxBytesPerUser` | `long` | `209715200` (200 MiB) | Aggregate source-artefact quota for one user, including blob bytes. Uploads that would cross it return HTTP 413. Environment variable: `Artefacts__MaxBytesPerUser`. | No |
 
 ### `FirstRun`

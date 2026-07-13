@@ -29,6 +29,7 @@ Every error response body has this structure:
 | `UnexpectedError` | 500 | An unexpected server-side error occurred |
 | `Unauthorized` | 401 | The request lacks valid authentication credentials |
 | `Forbidden` | 403 | The authenticated user does not have permission for this operation |
+| `PayloadTooLarge` | 413 | An upload exceeds its configured per-item or per-user byte limit, or a buffered export must use its streaming path |
 | `TooManyRequests` | 429 | Rate limit exceeded; retry after the indicated period |
 | `AuthenticationFailed` | 401 | Login credentials are invalid or the token has expired |
 | `InvalidOperation` | 400 | The operation is not valid in the current resource state |
@@ -49,6 +50,7 @@ Every error response body has this structure:
 | `403 Forbidden` | Authenticated but insufficient permissions |
 | `404 Not Found` | Resource not found or not accessible |
 | `409 Conflict` | Concurrent modification conflict |
+| `413 Payload Too Large` | Request content or the resulting user quota exceeds a configured byte limit |
 | `429 Too Many Requests` | Rate limit exceeded |
 | `500 Internal Server Error` | Unexpected server error |
 | `503 Service Unavailable` | Dependent service is unavailable (e.g., LLM kill switch) |
@@ -73,6 +75,7 @@ You can also supply your own correlation ID by sending the `X-Request-Id` header
 | `LlmQuotaExceeded` | Yes (later) | Wait for quota reset period |
 | `UnexpectedError` | Maybe | Retry with backoff, report if persistent |
 | `Conflict` | Yes | Re-fetch the resource, resolve conflict, retry |
+| `PayloadTooLarge` | No | Reduce the upload, remove stored artefacts to free quota, or use the streaming export endpoint named in the error |
 | `LlmKillSwitchActive` | No (temporary) | Wait for operator to re-enable the provider |
 | All others | No | Fix the request and retry |
 

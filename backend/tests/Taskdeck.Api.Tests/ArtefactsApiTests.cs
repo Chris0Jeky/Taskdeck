@@ -6,6 +6,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -142,6 +147,184 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Upload_ShouldRejectNonCaptureAndMismatchedBoardProvenance()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-provenance");
+        var captureBoard = await ApiTestHarness.CreateBoardAsync(client, "artefact-capture-board");
+        var otherBoard = await ApiTestHarness.CreateBoardAsync(client, "artefact-other-board");
+        Guid nonCaptureId;
+        Guid captureId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var nonCapture = new LlmRequest(user.UserId, "summarize", "{}", captureBoard.Id);
+            var capture = new LlmRequest(
+                user.UserId,
+                CaptureRequestContract.RequestTypeV1,
+                "{}",
+                captureBoard.Id);
+            db.LlmRequests.AddRange(nonCapture, capture);
+            await db.SaveChangesAsync();
+            nonCaptureId = nonCapture.Id;
+            captureId = capture.Id;
+        }
+
+        using var nonCaptureUpload = CreateUpload(
+            PngBytes(),
+            "non-capture.png",
+            "image/png",
+            createdFromCaptureId: nonCaptureId);
+        using var mismatchedUpload = CreateUpload(
+            PngBytes(),
+            "mismatch.png",
+            "image/png",
+            otherBoard.Id,
+            captureId);
+
+        var nonCaptureResponse = await client.PostAsync("/api/artefacts", nonCaptureUpload);
+        var mismatchResponse = await client.PostAsync("/api/artefacts", mismatchedUpload);
+
+        await ApiTestHarness.AssertErrorContractAsync(nonCaptureResponse, HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(mismatchResponse, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task Upload_ShouldDeriveBoardScopeFromLinkedCapture()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-capture-board-scope");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "artefact-derived-board");
+        Guid captureId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var capture = new LlmRequest(
+                user.UserId,
+                CaptureRequestContract.RequestTypeV1,
+                "{}",
+                board.Id);
+            db.LlmRequests.Add(capture);
+            await db.SaveChangesAsync();
+            captureId = capture.Id;
+        }
+
+        using var upload = CreateUpload(
+            PngBytes(),
+            "derived.png",
+            "image/png",
+            createdFromCaptureId: captureId);
+        using var response = await client.PostAsync("/api/artefacts", upload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await response.Content.ReadFromJsonAsync<SourceArtefactDto>();
+        created!.BoardId.Should().Be(board.Id);
+        created.CreatedFromCaptureId.Should().Be(captureId);
+    }
+
+    [Fact]
+    public async Task Upload_ShouldRecheckActiveUserInsideCommitTransaction()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "artefact-active-race");
+        await using var serviceScope = _factory.Services.CreateAsyncScope();
+        var service = serviceScope.ServiceProvider.GetRequiredService<IArtefactService>();
+        await using var content = new GateReadStream(PngBytes());
+
+        var createTask = service.CreateAsync(
+            user.UserId,
+            new CreateArtefactRequest(content, "race.png", "image/png"));
+        await content.ReadStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await using var mutationScope = _factory.Services.CreateAsyncScope();
+            var db = mutationScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var persistedUser = await db.Users.SingleAsync(candidate => candidate.Id == user.UserId);
+            persistedUser.Deactivate();
+            await db.SaveChangesAsync();
+        }
+        finally
+        {
+            content.Release();
+        }
+
+        var result = await createTask;
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Unauthorized);
+        await AssertNoArtefactRowsAsync(user.UserId);
+    }
+
+    [Fact]
+    public async Task Upload_ShouldRecheckBoardEditorAccessInsideCommitTransaction()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var editorClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "artefact-access-owner");
+        var editor = await ApiTestHarness.AuthenticateAsync(editorClient, "artefact-access-editor");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "artefact-access-race");
+
+        await using (var setupScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = setupScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            db.BoardAccesses.Add(new BoardAccess(board.Id, editor.UserId, UserRole.Editor, owner.UserId));
+            await db.SaveChangesAsync();
+        }
+
+        await using var serviceScope = _factory.Services.CreateAsyncScope();
+        var service = serviceScope.ServiceProvider.GetRequiredService<IArtefactService>();
+        await using var content = new GateReadStream(PngBytes());
+        var createTask = service.CreateAsync(
+            editor.UserId,
+            new CreateArtefactRequest(content, "race.png", "image/png", board.Id));
+        await content.ReadStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await using var mutationScope = _factory.Services.CreateAsyncScope();
+            var db = mutationScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            await db.BoardAccesses
+                .Where(access => access.BoardId == board.Id && access.UserId == editor.UserId)
+                .ExecuteDeleteAsync();
+        }
+        finally
+        {
+            content.Release();
+        }
+
+        var result = await createTask;
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        await AssertNoArtefactRowsAsync(editor.UserId);
+    }
+
+    [Fact]
+    public async Task Download_ShouldClearBlobHeadersWhenContentDisappearsAfterMetadataRead()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "artefact-missing-blob");
+        var created = await UploadAsync(client, PngBytes(), "missing.png", "image/png");
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            await db.ArtefactBlobs
+                .Where(blob => blob.SourceArtefactId == created.Id)
+                .ExecuteDeleteAsync();
+        }
+
+        using var response = await client.GetAsync($"/api/artefacts/{created.Id}/content");
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+        response.Content.Headers.ContentDisposition.Should().BeNull();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    [Fact]
     public async Task Artefacts_ShouldExposeNoUpdateEndpoint()
     {
         using var client = _factory.CreateClient();
@@ -197,7 +380,10 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         string mimeType)
     {
         using var response = await PostUploadAsync(client, bytes, fileName, mimeType);
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(
+            HttpStatusCode.Created,
+            $"upload response body was: {body}");
         return (await response.Content.ReadFromJsonAsync<SourceArtefactDto>())!;
     }
 
@@ -215,7 +401,8 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         byte[] bytes,
         string fileName,
         string mimeType,
-        Guid? boardId = null)
+        Guid? boardId = null,
+        Guid? createdFromCaptureId = null)
     {
         var form = new MultipartFormDataContent();
         var file = new ByteArrayContent(bytes);
@@ -223,7 +410,44 @@ public sealed class ArtefactsApiTests : IClassFixture<TestWebApplicationFactory>
         form.Add(file, "file", fileName);
         if (boardId.HasValue)
             form.Add(new StringContent(boardId.Value.ToString()), "boardId");
+        if (createdFromCaptureId.HasValue)
+            form.Add(new StringContent(createdFromCaptureId.Value.ToString()), "createdFromCaptureId");
         return form;
+    }
+
+    private async Task AssertNoArtefactRowsAsync(Guid userId)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.SourceArtefacts.CountAsync(artefact => artefact.UserId == userId)).Should().Be(0);
+    }
+
+    private sealed class GateReadStream : MemoryStream
+    {
+        private readonly TaskCompletionSource _readStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _blocked;
+
+        public GateReadStream(byte[] bytes) : base(bytes, writable: false)
+        {
+        }
+
+        public Task ReadStarted => _readStarted.Task;
+
+        public void Release() => _release.TrySetResult();
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _blocked, 1) == 0)
+            {
+                _readStarted.TrySetResult();
+                await _release.Task.WaitAsync(cancellationToken);
+            }
+
+            return await base.ReadAsync(buffer, cancellationToken);
+        }
     }
 
     private static byte[] PngBytes(int length = 8)

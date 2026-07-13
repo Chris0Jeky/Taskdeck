@@ -58,7 +58,37 @@ public sealed class ArtefactContentValidatorTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
-        stream.Position.Should().BeLessThanOrEqualTo(1025);
+        stream.Position.Should().Be(1025);
+    }
+
+    [Fact]
+    public async Task ReadAndValidateAsync_ShouldAcceptUnicodeThroughRuneValidation()
+    {
+        await using var stream = new MemoryStream("Notes: café 🚀"u8.ToArray());
+
+        var result = await ArtefactContentValidator.ReadAndValidateAsync(
+            stream,
+            "notes.txt",
+            "text/plain",
+            1024);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidTextFixtures))]
+    public async Task ReadAndValidateAsync_ShouldRejectInvalidUtf8AndDisallowedControls(byte[] bytes)
+    {
+        await using var stream = new MemoryStream(bytes);
+
+        var result = await ArtefactContentValidator.ReadAndValidateAsync(
+            stream,
+            "notes.txt",
+            "text/plain",
+            1024);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
     [Theory]
@@ -85,6 +115,12 @@ public sealed class ArtefactContentValidatorTests
         yield return ["document.pdf", "application/pdf", "%PDF-1.7"u8.ToArray(), ArtefactKind.Pdf];
         yield return ["notes.txt", "text/plain", "plain notes"u8.ToArray(), ArtefactKind.TextFile];
         yield return ["notes.md", "text/markdown", "# Notes"u8.ToArray(), ArtefactKind.TextFile];
+    }
+
+    public static IEnumerable<object[]> InvalidTextFixtures()
+    {
+        yield return [new byte[] { 0xC3, 0x28 }];
+        yield return [new byte[] { (byte)'a', 0x00, (byte)'b' }];
     }
 
     private static byte[] PngBytes()

@@ -67,6 +67,8 @@ public class DataExportServiceTests
             .ReturnsAsync(Array.Empty<ProposalFeedback>());
         _artefactRepoMock.Setup(r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<SourceArtefact>());
+        _artefactRepoMock.Setup(r => r.GetTotalByteSizeByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0L);
 
         _testUser = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -119,6 +121,26 @@ public class DataExportServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_ShouldRejectLargeArtefactSetBeforeLoadingAnyBlob()
+    {
+        SetupUserFound();
+        _artefactRepoMock
+            .Setup(r => r.GetTotalByteSizeByUserAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ArtefactStorageSettings.DefaultMaxBytesPerArtefact + 1);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        _artefactRepoMock.Verify(
+            r => r.GetContentForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _artefactRepoMock.Verify(
+            r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
