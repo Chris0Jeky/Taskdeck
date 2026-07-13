@@ -4,6 +4,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -30,7 +31,8 @@ public class AuthenticationServiceTests
             .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
         _registrationPolicyMock
             .Setup(policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default))
-            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success(
+                new RegistrationAuthorization(ClaimedFirstUserBootstrap: false)));
     }
 
     [Fact]
@@ -123,6 +125,37 @@ public class AuthenticationServiceTests
         capturedUser.Email.Should().Be("newuser@example.com");
     }
 
+    [Theory]
+    [InlineData(true, UserRole.Owner)]
+    [InlineData(false, UserRole.Editor)]
+    public async Task RegisterAsync_ShouldAssignOwnerOnlyToTransactionalBootstrapWinner(
+        bool claimedFirstUserBootstrap,
+        UserRole expectedRole)
+    {
+        User? capturedUser = null;
+        _registrationPolicyMock
+            .Setup(policy => policy.AuthorizeNewUserAsync(null, default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success(
+                new RegistrationAuthorization(claimedFirstUserBootstrap)));
+        _userRepoMock
+            .Setup(repository => repository.ExistsAsync("bootstrap-user", "bootstrap@example.com", default))
+            .ReturnsAsync(false);
+        _userRepoMock
+            .Setup(repository => repository.AddAsync(It.IsAny<User>(), default))
+            .Callback<User, CancellationToken>((user, _) => capturedUser = user)
+            .ReturnsAsync((User user, CancellationToken _) => user);
+        var service = CreateService();
+
+        var result = await service.RegisterAsync(new CreateUserDto(
+            "bootstrap-user",
+            "bootstrap@example.com",
+            "password123"));
+
+        result.IsSuccess.Should().BeTrue();
+        capturedUser.Should().NotBeNull();
+        capturedUser!.DefaultRole.Should().Be(expectedRole);
+    }
+
     [Fact]
     public async Task LoginAsync_ShouldReturnUnexpectedError_WhenJwtConfigIsInvalid()
     {
@@ -171,7 +204,7 @@ public class AuthenticationServiceTests
             InviteCode: "supplied-code");
         _registrationPolicyMock
             .Setup(policy => policy.AuthorizeNewUserAsync(dto.InviteCode, default))
-            .ReturnsAsync(Taskdeck.Domain.Common.Result.Failure(
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Failure<RegistrationAuthorization>(
                 ErrorCodes.Forbidden,
                 RegistrationPolicyService.RegistrationClosedMessage));
 

@@ -54,7 +54,7 @@ public sealed class RegistrationPolicyService : IRegistrationPolicyService
         return available ? Result.Success() : GetRestrictiveFailure();
     }
 
-    public async Task<Result> AuthorizeNewUserAsync(
+    public async Task<Result<RegistrationAuthorization>> AuthorizeNewUserAsync(
         string? inviteCode,
         CancellationToken cancellationToken = default)
     {
@@ -68,18 +68,14 @@ public sealed class RegistrationPolicyService : IRegistrationPolicyService
         var claimedBootstrap = await _store.TryClaimFirstUserBootstrapAsync(now, cancellationToken);
 
         if (_settings.Mode == RegistrationMode.Open)
-            return Result.Success();
+            return Result.Success(new RegistrationAuthorization(claimedBootstrap));
 
         if (_settings.Mode == RegistrationMode.Closed && !claimedBootstrap)
-            return Result.Failure(ErrorCodes.Forbidden, RegistrationClosedMessage);
+            return GetRestrictiveAuthorizationFailure();
 
         if (!IsWellFormedInviteCode(inviteCode))
         {
-            return Result.Failure(
-                ErrorCodes.Forbidden,
-                _settings.Mode == RegistrationMode.Closed
-                    ? RegistrationClosedMessage
-                    : InviteRequiredMessage);
+            return GetRestrictiveAuthorizationFailure();
         }
 
         var consumed = await _store.TryConsumeInviteAsync(
@@ -88,9 +84,14 @@ public sealed class RegistrationPolicyService : IRegistrationPolicyService
             cancellationToken);
 
         if (consumed)
-            return Result.Success();
+            return Result.Success(new RegistrationAuthorization(claimedBootstrap));
 
-        return Result.Failure(
+        return GetRestrictiveAuthorizationFailure();
+    }
+
+    private Result<RegistrationAuthorization> GetRestrictiveAuthorizationFailure()
+    {
+        return Result.Failure<RegistrationAuthorization>(
             ErrorCodes.Forbidden,
             _settings.Mode == RegistrationMode.Closed
                 ? RegistrationClosedMessage

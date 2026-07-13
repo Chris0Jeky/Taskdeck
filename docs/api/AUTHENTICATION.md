@@ -27,7 +27,7 @@ Response (`200 OK`):
     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "username": "alice",
     "email": "alice@example.com",
-    "defaultRole": "Editor",
+    "defaultRole": "Owner",
     "isActive": true,
     "createdAt": "2026-03-30T10:00:00Z",
     "updatedAt": "2026-03-30T10:00:00Z"
@@ -43,19 +43,26 @@ Registration behavior is controlled by `Auth:Registration:Mode`:
 - `Closed` requires an operator-minted `inviteCode` for the first owner, then
   rejects every later registration with a stable `403 Forbidden` error.
 
+The first successfully committed account is assigned the server-derived
+`Owner` role. Later accounts are assigned `Editor`; caller-supplied roles are
+never trusted.
+
 On a fresh restrictive deployment, mint the first-owner code locally with
 `taskdeck invite create --expires 1` or from the container/provider's private
 shell as the non-root application user. Do not expose the URL as ready for use
-until the owner has registered. For an invited registration, add the code to
-the request:
+until the owner has registered. The browser form does not accept invite codes
+yet ([#1301](https://github.com/Chris0Jeky/Taskdeck/issues/1301)); until that
+follow-up lands, redeem the invite explicitly through the API:
 
-```json
-{
-  "username": "bob",
-  "email": "bob@example.com",
-  "password": "SecureP@ss1",
-  "inviteCode": "tdi_..."
-}
+```bash
+curl -s -X POST http://localhost:5000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "bob",
+    "email": "bob@example.com",
+    "password": "SecureP@ss1",
+    "inviteCode": "tdi_..."
+  }'
 ```
 
 Invites are expiring and single-use. New OAuth/OIDC identities are subject to

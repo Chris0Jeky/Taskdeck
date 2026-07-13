@@ -1,13 +1,16 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
@@ -51,6 +54,9 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
         var bootstrapInvite = await CreateInviteAsync(factory);
         var first = await RegisterAsync(client, "closed-first", bootstrapInvite);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstPayload = await first.Content.ReadFromJsonAsync<AuthResultDto>();
+        firstPayload.Should().NotBeNull();
+        firstPayload!.User.DefaultRole.Should().Be(UserRole.Owner);
 
         var second = await RegisterAsync(client, "closed-second");
         await ApiTestHarness.AssertErrorContractAsync(second, HttpStatusCode.Forbidden, ErrorCodes.Forbidden);
@@ -80,6 +86,9 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
         var bootstrapInvite = await CreateInviteAsync(factory);
         var bootstrap = await RegisterAsync(client, "invite-bootstrap", bootstrapInvite);
         bootstrap.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bootstrapPayload = await bootstrap.Content.ReadFromJsonAsync<AuthResultDto>();
+        bootstrapPayload.Should().NotBeNull();
+        bootstrapPayload!.User.DefaultRole.Should().Be(UserRole.Owner);
 
         var inviteCode = await CreateInviteAsync(factory);
         var accepted = await RegisterAsync(client, "invite-accepted", inviteCode);
@@ -180,6 +189,7 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
         var existingLogin = await authentication.ExternalLoginAsync(owner with { InviteCode = null });
 
         firstLogin.IsSuccess.Should().BeTrue();
+        firstLogin.Value.User.DefaultRole.Should().Be(UserRole.Owner);
         newIdentity.IsSuccess.Should().BeFalse();
         newIdentity.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         newIdentity.ErrorMessage.Should().Be(RegistrationPolicyService.RegistrationClosedMessage);
@@ -189,6 +199,43 @@ public sealed class RegistrationGatingApiTests : IClassFixture<TestWebApplicatio
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         dbContext.Users.Count().Should().Be(1);
         dbContext.ExternalLogins.Count().Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(RegistrationMode.Closed)]
+    [InlineData(RegistrationMode.InviteOnly)]
+    public async Task RestrictiveMode_DisablesAuthenticatedDirectUserCreation(
+        RegistrationMode mode)
+    {
+        using var factory = CreateFactory(mode);
+        using var client = factory.CreateClient();
+        var bootstrapInvite = await CreateInviteAsync(factory);
+        var bootstrap = await RegisterAsync(client, "direct-create-owner", bootstrapInvite);
+        bootstrap.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bootstrapPayload = await bootstrap.Content.ReadFromJsonAsync<AuthResultDto>();
+        bootstrapPayload.Should().NotBeNull();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            bootstrapPayload!.Token);
+        var unusedInvite = await CreateInviteAsync(factory);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/users",
+            new CreateUserDto(
+                "direct-create-bypass",
+                "direct-create-bypass@example.test",
+                "password123",
+                InviteCode: unusedInvite));
+
+        var error = await AssertForbiddenAndReadErrorAsync(response);
+        error.GetProperty("message").GetString()
+            .Should()
+            .Be(UsersController.RestrictedCreationMessage);
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        dbContext.Users.Count().Should().Be(1);
+        dbContext.RegistrationInvites.Count(invite => invite.ConsumedAt != null).Should().Be(1,
+            "the direct endpoint must not consume the unused invite");
     }
 
     private WebApplicationFactory<Program> CreateFactory(RegistrationMode mode)

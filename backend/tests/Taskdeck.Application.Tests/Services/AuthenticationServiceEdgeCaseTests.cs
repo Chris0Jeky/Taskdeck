@@ -50,7 +50,8 @@ public class AuthenticationServiceEdgeCaseTests
             .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
         _registrationPolicyMock
             .Setup(policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default))
-            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success(
+                new RegistrationAuthorization(ClaimedFirstUserBootstrap: false)));
     }
 
     // ─────────────────────────────────────────────────────────

@@ -153,9 +153,11 @@ Run the container command as the documented non-root UID so CLI-created SQLite
 sidecars remain accessible to the API. Only a SHA-256 hash is stored and the
 plaintext code is shown once. In `Closed`, only the first owner can redeem a
 code; use `InviteOnly` and mint a separate code for each later account. OAuth/OIDC
-logins for already-linked accounts remain available in every mode. In this
-v0.1 CLI-only slice, a new invited user registers with username/password first,
-then links an external account from settings.
+logins for already-linked accounts remain available in every mode. Until
+[#1301](https://github.com/Chris0Jeky/Taskdeck/issues/1301) adds invite entry to
+the browser form, redeem the code with `POST /api/auth/register` as shown in
+[`AUTHENTICATION.md`](../api/AUTHENTICATION.md), then link an external account
+from settings.
 
 ### `GitHubOAuth`
 

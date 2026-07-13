@@ -28,7 +28,15 @@ internal sealed class InvitesCommandHandler
     private async Task<int> CreateAsync(string[] args)
     {
         var expirationDays = DefaultExpirationDays;
+        var hasExpiresOption = ArgParser.HasFlag(args, "--expires");
         var expiresText = ArgParser.GetOption(args, "--expires");
+        if (hasExpiresOption && expiresText is null)
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing value for --expires. Provide 1 to 365 days (for example, 7 or 7d).",
+                "taskdeck invite create [--expires <days>]");
+        }
+
         if (expiresText is not null)
         {
             var daysText = expiresText.TrimEnd('d', 'D');

@@ -56,6 +56,22 @@ public sealed class InviteCommandTests
         result.StdErr.Should().Contain("Invalid --expires value");
     }
 
+    [Fact]
+    public async Task InviteCreate_RejectsExpiresWithoutValue()
+    {
+        await using var harness = new CliTestHarness("cli-invite-missing-expiration");
+
+        var result = await harness.RunAsync("invite create --expires");
+
+        result.ExitCode.Should().Be(2);
+        result.StdErr.Should().Contain("Missing value for --expires");
+        await using var connection = new SqliteConnection($"Data Source={harness.DatabasePath}");
+        await connection.OpenAsync();
+        (await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM RegistrationInvites"))
+            .Should()
+            .Be(0);
+    }
+
     private static async Task<T> ExecuteScalarAsync<T>(SqliteConnection connection, string sql)
     {
         await using var command = connection.CreateCommand();

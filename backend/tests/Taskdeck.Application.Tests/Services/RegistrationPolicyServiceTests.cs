@@ -128,6 +128,7 @@ public sealed class RegistrationPolicyServiceTests
         var result = await service.AuthorizeNewUserAsync(inviteCode: null);
 
         result.IsSuccess.Should().BeTrue();
+        result.Value.ClaimedFirstUserBootstrap.Should().BeTrue();
         _store.Verify(
             store => store.TryConsumeInviteAsync(
                 It.IsAny<string>(),
@@ -183,6 +184,7 @@ public sealed class RegistrationPolicyServiceTests
         var result = await service.AuthorizeNewUserAsync(code);
 
         result.IsSuccess.Should().BeTrue();
+        result.Value.ClaimedFirstUserBootstrap.Should().BeTrue();
         _store.VerifyAll();
     }
 
@@ -195,6 +197,7 @@ public sealed class RegistrationPolicyServiceTests
         var result = await service.AuthorizeNewUserAsync(inviteCode: null);
 
         result.IsSuccess.Should().BeTrue();
+        result.Value.ClaimedFirstUserBootstrap.Should().BeFalse();
     }
 
     [Fact]
@@ -233,6 +236,7 @@ public sealed class RegistrationPolicyServiceTests
         var result = await service.AuthorizeNewUserAsync(code);
 
         result.IsSuccess.Should().BeTrue();
+        result.Value.ClaimedFirstUserBootstrap.Should().BeFalse();
         _store.VerifyAll();
     }
 

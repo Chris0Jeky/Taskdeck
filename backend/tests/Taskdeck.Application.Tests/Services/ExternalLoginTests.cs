@@ -33,7 +33,8 @@ public class ExternalLoginTests
             .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
         _registrationPolicyMock
             .Setup(policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default))
-            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success(
+                new RegistrationAuthorization(ClaimedFirstUserBootstrap: false)));
     }
 
     [Fact]
@@ -137,7 +138,7 @@ public class ExternalLoginTests
             .ReturnsAsync((ExternalLogin?)null);
         _registrationPolicyMock
             .Setup(policy => policy.AuthorizeNewUserAsync(null, default))
-            .ReturnsAsync(Taskdeck.Domain.Common.Result.Failure(
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Failure<RegistrationAuthorization>(
                 ErrorCodes.Forbidden,
                 RegistrationPolicyService.InviteRequiredMessage));
 

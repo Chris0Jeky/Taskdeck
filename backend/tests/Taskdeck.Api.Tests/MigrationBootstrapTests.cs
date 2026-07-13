@@ -208,6 +208,7 @@ public class MigrationBootstrapTests : IDisposable
 
         eligibility.IsSuccess.Should().BeTrue();
         authorization.IsSuccess.Should().BeTrue();
+        authorization.Value.ClaimedFirstUserBootstrap.Should().BeTrue();
         GetRegistrationBootstrapCount().Should().Be(1);
         _context.ChangeTracker.Clear();
         var persistedInvite = await _context.RegistrationInvites.SingleAsync(

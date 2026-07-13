@@ -6,6 +6,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -135,7 +136,10 @@ public class AuthenticationService : IAuthenticationService
                 return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "An account with that username or email already exists. Sign in with your existing credentials.");
             }
 
-            var user = new User(normalizedUsername, normalizedEmail, passwordHash, dto.DefaultRole);
+            var assignedRole = registrationAuthorization.Value.ClaimedFirstUserBootstrap
+                ? UserRole.Owner
+                : dto.DefaultRole;
+            var user = new User(normalizedUsername, normalizedEmail, passwordHash, assignedRole);
 
             await _unitOfWork.Users.AddAsync(user);
             await _unitOfWork.SaveChangesAsync();
@@ -257,7 +261,10 @@ public class AuthenticationService : IAuthenticationService
                 candidateUsername = $"{normalizedUsername}{suffix}";
             }
 
-            var newUser = new User(candidateUsername, candidateEmail, randomPassword);
+            var assignedRole = registrationAuthorization.Value.ClaimedFirstUserBootstrap
+                ? UserRole.Owner
+                : UserRole.Editor;
+            var newUser = new User(candidateUsername, candidateEmail, randomPassword, assignedRole);
 
             await _unitOfWork.Users.AddAsync(newUser);
 

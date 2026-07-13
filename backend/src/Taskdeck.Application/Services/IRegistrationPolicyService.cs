@@ -9,13 +9,16 @@ public sealed record RegistrationInviteResult(
     DateTimeOffset CreatedAt,
     DateTimeOffset ExpiresAt);
 
+public sealed record RegistrationAuthorization(
+    bool ClaimedFirstUserBootstrap);
+
 public interface IRegistrationPolicyService
 {
     Task<Result> CheckNewUserEligibilityAsync(
         string? inviteCode,
         CancellationToken cancellationToken = default);
 
-    Task<Result> AuthorizeNewUserAsync(
+    Task<Result<RegistrationAuthorization>> AuthorizeNewUserAsync(
         string? inviteCode,
         CancellationToken cancellationToken = default);
 
