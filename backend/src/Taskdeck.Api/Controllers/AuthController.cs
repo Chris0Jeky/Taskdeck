@@ -95,6 +95,7 @@ public class AuthController : AuthenticatedControllerBase
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Register([FromBody] CreateUserDto dto)
     {

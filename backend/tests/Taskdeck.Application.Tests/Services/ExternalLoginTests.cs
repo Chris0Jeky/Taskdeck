@@ -14,15 +14,23 @@ public class ExternalLoginTests
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IUserRepository> _userRepoMock;
     private readonly Mock<IExternalLoginRepository> _externalLoginRepoMock;
+    private readonly Mock<IRegistrationPolicyService> _registrationPolicyMock;
 
     public ExternalLoginTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _userRepoMock = new Mock<IUserRepository>();
         _externalLoginRepoMock = new Mock<IExternalLoginRepository>();
+        _registrationPolicyMock = new Mock<IRegistrationPolicyService>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.ExternalLogins).Returns(_externalLoginRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.BeginTransactionAsync(default)).Returns(Task.CompletedTask);
+        _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
+        _unitOfWorkMock.Setup(u => u.RollbackTransactionAsync(default)).Returns(Task.CompletedTask);
+        _registrationPolicyMock
+            .Setup(policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
     }
 
     [Fact]
@@ -107,6 +115,39 @@ public class ExternalLoginTests
 
         // Should not create a new user
         _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Never);
+        _registrationPolicyMock.Verify(
+            policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExternalLoginAsync_ShouldGateOnlyNewExternalUsers()
+    {
+        var service = CreateService();
+        var dto = new ExternalLoginDto(
+            Provider: "GitHub",
+            ProviderUserId: "new-closed-user",
+            Username: "new-closed-user",
+            Email: "new-closed-user@example.com");
+        _externalLoginRepoMock
+            .Setup(repository => repository.GetByProviderAsync(dto.Provider, dto.ProviderUserId, default))
+            .ReturnsAsync((ExternalLogin?)null);
+        _registrationPolicyMock
+            .Setup(policy => policy.AuthorizeNewUserAsync(null, default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Failure(
+                ErrorCodes.Forbidden,
+                RegistrationPolicyService.InviteRequiredMessage));
+
+        var result = await service.ExternalLoginAsync(dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be(RegistrationPolicyService.InviteRequiredMessage);
+        _unitOfWorkMock.Verify(unit => unit.RollbackTransactionAsync(default), Times.Once);
+        _userRepoMock.Verify(repository => repository.AddAsync(It.IsAny<User>(), default), Times.Never);
+        _externalLoginRepoMock.Verify(
+            repository => repository.AddAsync(It.IsAny<ExternalLogin>(), default),
+            Times.Never);
     }
 
     [Fact]
@@ -321,6 +362,9 @@ public class ExternalLoginTests
             ExpirationMinutes = 60
         };
 
-        return new AuthenticationService(_unitOfWorkMock.Object, jwtSettings);
+        return new AuthenticationService(
+            _unitOfWorkMock.Object,
+            jwtSettings,
+            _registrationPolicyMock.Object);
     }
 }

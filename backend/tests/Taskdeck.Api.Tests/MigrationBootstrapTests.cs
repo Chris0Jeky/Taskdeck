@@ -144,6 +144,43 @@ public class MigrationBootstrapTests : IDisposable
     }
 
     [Fact]
+    public void AddRegistrationGating_LeavesFreshDatabaseBootstrapUnclaimed()
+    {
+        _context.Database.Migrate();
+
+        GetRegistrationBootstrapCount().Should().Be(0,
+            "a fresh database must permit exactly one first-user bootstrap");
+    }
+
+    [Fact]
+    public void AddRegistrationGating_MarksExistingInstallationAsAlreadyBootstrapped()
+    {
+        _context.GetService<IMigrator>()
+            .Migrate("20260627003457_AddProposalFeedback");
+        InsertLegacyUser("existing-user", "existing@example.test");
+
+        _context.GetService<IMigrator>()
+            .Migrate("20260713022601_AddRegistrationGating");
+
+        GetRegistrationBootstrapCount().Should().Be(1,
+            "upgrading an installation with users must not reopen first-user registration");
+    }
+
+    [Fact]
+    public void AddRegistrationGating_DoesNotTreatCliSystemActorAsFirstUser()
+    {
+        _context.GetService<IMigrator>()
+            .Migrate("20260627003457_AddProposalFeedback");
+        InsertLegacyUser("taskdeck-cli", "cli@system.taskdeck");
+
+        _context.GetService<IMigrator>()
+            .Migrate("20260713022601_AddRegistrationGating");
+
+        GetRegistrationBootstrapCount().Should().Be(0,
+            "a CLI-only database must still permit the first human account bootstrap");
+    }
+
+    [Fact]
     public void ExtendProposalOutcomesForMetrics_preserves_legacy_outcome_type_decisions()
     {
         // Arrange — stop just before the metrics-extension migration, then seed rows
@@ -318,6 +355,35 @@ public class MigrationBootstrapTests : IDisposable
         }
 
         return tables;
+    }
+
+    private long GetRegistrationBootstrapCount()
+    {
+        var connection = _context.Database.GetDbConnection();
+        _context.Database.OpenConnection();
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM RegistrationBootstraps";
+            return Convert.ToInt64(command.ExecuteScalar());
+        }
+        finally
+        {
+            _context.Database.CloseConnection();
+        }
+    }
+
+    private void InsertLegacyUser(string username, string email)
+    {
+        var now = DateTimeOffset.UtcNow;
+        _context.Database.ExecuteSqlInterpolated($"""
+            INSERT INTO "Users"
+                ("Id", "Username", "Email", "PasswordHash", "DefaultRole", "IsActive",
+                 "TokenInvalidatedAt", "MfaEnabled", "CreatedAt", "UpdatedAt")
+            VALUES
+                ({Guid.NewGuid()}, {username}, {email}, {"hash"},
+                 {2}, {true}, {(DateTimeOffset?)null}, {false}, {now}, {now});
+            """);
     }
 
     public void Dispose()

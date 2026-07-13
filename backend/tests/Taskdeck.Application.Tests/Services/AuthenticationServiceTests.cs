@@ -13,13 +13,21 @@ public class AuthenticationServiceTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IUserRepository> _userRepoMock;
+    private readonly Mock<IRegistrationPolicyService> _registrationPolicyMock;
 
     public AuthenticationServiceTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _userRepoMock = new Mock<IUserRepository>();
+        _registrationPolicyMock = new Mock<IRegistrationPolicyService>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.BeginTransactionAsync(default)).Returns(Task.CompletedTask);
+        _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
+        _unitOfWorkMock.Setup(u => u.RollbackTransactionAsync(default)).Returns(Task.CompletedTask);
+        _registrationPolicyMock
+            .Setup(policy => policy.AuthorizeNewUserAsync(It.IsAny<string?>(), default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Success());
     }
 
     [Fact]
@@ -146,6 +154,34 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
+    public async Task RegisterAsync_ShouldReturnPolicyForbiddenAndRollbackWithoutCreatingUser()
+    {
+        var service = CreateService();
+        var dto = new CreateUserDto(
+            "closed-user",
+            "closed-user@example.com",
+            "password123",
+            InviteCode: "supplied-code");
+        _userRepoMock
+            .Setup(repository => repository.ExistsAsync(dto.Username, dto.Email, default))
+            .ReturnsAsync(false);
+        _registrationPolicyMock
+            .Setup(policy => policy.AuthorizeNewUserAsync(dto.InviteCode, default))
+            .ReturnsAsync(Taskdeck.Domain.Common.Result.Failure(
+                ErrorCodes.Forbidden,
+                RegistrationPolicyService.RegistrationClosedMessage));
+
+        var result = await service.RegisterAsync(dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be(RegistrationPolicyService.RegistrationClosedMessage);
+        _unitOfWorkMock.Verify(unit => unit.BeginTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(unit => unit.RollbackTransactionAsync(default), Times.Once);
+        _userRepoMock.Verify(repository => repository.AddAsync(It.IsAny<User>(), default), Times.Never);
+    }
+
+    [Fact]
     public async Task RegisterAsync_ShouldNotCreateUser_WhenJwtConfigIsInvalid()
     {
         var service = CreateService(new JwtSettings
@@ -217,6 +253,9 @@ public class AuthenticationServiceTests
             ExpirationMinutes = 60
         };
 
-        return new AuthenticationService(_unitOfWorkMock.Object, jwtSettings);
+        return new AuthenticationService(
+            _unitOfWorkMock.Object,
+            jwtSettings,
+            _registrationPolicyMock.Object);
     }
 }

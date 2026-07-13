@@ -16,11 +16,16 @@ public class AuthenticationService : IAuthenticationService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly JwtSettings _jwtSettings;
+    private readonly IRegistrationPolicyService _registrationPolicy;
 
-    public AuthenticationService(IUnitOfWork unitOfWork, JwtSettings jwtSettings)
+    public AuthenticationService(
+        IUnitOfWork unitOfWork,
+        JwtSettings jwtSettings,
+        IRegistrationPolicyService registrationPolicy)
     {
         _unitOfWork = unitOfWork;
         _jwtSettings = jwtSettings;
+        _registrationPolicy = registrationPolicy;
     }
 
     public async Task<Result<AuthResultDto>> LoginAsync(LoginDto dto)
@@ -78,6 +83,7 @@ public class AuthenticationService : IAuthenticationService
 
     public async Task<Result<AuthResultDto>> RegisterAsync(CreateUserDto dto)
     {
+        var transactionStarted = false;
         try
         {
             if (!TryValidateJwtSettings(out var jwtValidationError))
@@ -96,27 +102,49 @@ public class AuthenticationService : IAuthenticationService
             if (exists)
                 return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "An account with that username or email already exists. Sign in with your existing credentials.");
 
+            await _unitOfWork.BeginTransactionAsync();
+            transactionStarted = true;
+
+            var registrationAuthorization = await _registrationPolicy.AuthorizeNewUserAsync(dto.InviteCode);
+            if (!registrationAuthorization.IsSuccess)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                transactionStarted = false;
+                return Result.Failure<AuthResultDto>(
+                    registrationAuthorization.ErrorCode,
+                    registrationAuthorization.ErrorMessage);
+            }
+
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
             var user = new User(normalizedUsername, normalizedEmail, passwordHash, dto.DefaultRole);
 
             await _unitOfWork.Users.AddAsync(user);
             await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.CommitTransactionAsync();
+            transactionStarted = false;
 
             var token = GenerateJwtToken(user);
             return Result.Success(new AuthResultDto(token, MapToDto(user)));
         }
         catch (DomainException ex)
         {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync();
+
             return Result.Failure<AuthResultDto>(ex.ErrorCode, ex.Message);
         }
         catch (Exception ex)
         {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync();
+
             return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, $"Registration failed: {ex.Message}");
         }
     }
 
     public async Task<Result<AuthResultDto>> ExternalLoginAsync(ExternalLoginDto dto)
     {
+        var transactionStarted = false;
         try
         {
             if (!TryValidateJwtSettings(out var jwtValidationError))
@@ -159,6 +187,19 @@ public class AuthenticationService : IAuthenticationService
             // Instead, always create a new account for unlinked external logins.
 
             // New user — create account with a random unusable password hash
+            await _unitOfWork.BeginTransactionAsync();
+            transactionStarted = true;
+
+            var registrationAuthorization = await _registrationPolicy.AuthorizeNewUserAsync(dto.InviteCode);
+            if (!registrationAuthorization.IsSuccess)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                transactionStarted = false;
+                return Result.Failure<AuthResultDto>(
+                    registrationAuthorization.ErrorCode,
+                    registrationAuthorization.ErrorMessage);
+            }
+
             var normalizedEmail = dto.Email.Trim();
             var normalizedUsername = dto.Username.Trim();
 
@@ -194,16 +235,24 @@ public class AuthenticationService : IAuthenticationService
             var newExternalLogin = new ExternalLogin(newUser.Id, dto.Provider, dto.ProviderUserId, dto.DisplayName, dto.AvatarUrl);
             await _unitOfWork.ExternalLogins.AddAsync(newExternalLogin);
             await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.CommitTransactionAsync();
+            transactionStarted = false;
 
             var newToken = GenerateJwtToken(newUser);
             return Result.Success(new AuthResultDto(newToken, MapToDto(newUser)));
         }
         catch (DomainException ex)
         {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync();
+
             return Result.Failure<AuthResultDto>(ex.ErrorCode, ex.Message);
         }
         catch (Exception)
         {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync();
+
             // Do not expose internal details in error messages
             return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, "External login failed due to an unexpected error");
         }

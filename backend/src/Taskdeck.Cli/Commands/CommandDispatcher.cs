@@ -30,6 +30,7 @@ internal sealed class CommandDispatcher
             "columns" => await scope.ServiceProvider.GetRequiredService<ColumnsCommandHandler>().HandleAsync(command, remainingArgs),
             "cards" => await scope.ServiceProvider.GetRequiredService<CardsCommandHandler>().HandleAsync(command, remainingArgs),
             "api-key" => await scope.ServiceProvider.GetRequiredService<ApiKeysCommandHandler>().HandleAsync(command, remainingArgs),
+            "invite" => await scope.ServiceProvider.GetRequiredService<InvitesCommandHandler>().HandleAsync(command, remainingArgs),
             "help" => ReturnHelp(),
             _ => ReturnUnknownCommand(group)
         };

@@ -29,6 +29,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<CardCommentService>();
         services.AddScoped<LabelService>();
         services.AddScoped<AuthenticationService>();
+        services.AddScoped<IRegistrationPolicyService, RegistrationPolicyService>();
         services.AddScoped<AuthorizationService>();
         services.AddScoped<MfaService>();
         services.AddSingleton<OAuthScopeValidator>();
