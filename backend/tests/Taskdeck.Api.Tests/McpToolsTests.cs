@@ -366,8 +366,10 @@ public class McpToolsTests : IDisposable
         document.RootElement.TryGetProperty("error", out _).Should().BeTrue();
     }
 
-    [Fact]
-    public async Task UpdateCard_MalformedLabelIds_ReturnsError()
+    [Theory]
+    [InlineData("not-a-guid")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task UpdateCard_InvalidLabelIds_ReturnsError(string invalidLabelId)
     {
         using var scope = _serviceProvider.CreateScope();
         var (user, boardId, colId) = await SetupBoardAsync(scope);
@@ -375,7 +377,7 @@ public class McpToolsTests : IDisposable
             .CreateCardAsync(new CreateCardDto(boardId, colId, "MCP update card", null, null, null));
 
         var json = await CreateWriteTools(scope, user.Id)
-            .UpdateCard(boardId.ToString(), card.Value.Id.ToString(), label_ids: $"{Guid.NewGuid()},not-a-guid");
+            .UpdateCard(boardId.ToString(), card.Value.Id.ToString(), label_ids: $"{Guid.NewGuid()},{invalidLabelId}");
 
         using var document = JsonDocument.Parse(json);
         document.RootElement.TryGetProperty("error", out _).Should().BeTrue();

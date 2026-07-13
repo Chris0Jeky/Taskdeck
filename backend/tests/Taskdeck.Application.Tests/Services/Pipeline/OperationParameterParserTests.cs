@@ -363,4 +363,23 @@ public class OperationParameterParserTests
     }
 
     #endregion
+
+    #region TryGetOptionalGuidArray
+
+    [Fact]
+    public void TryGetOptionalGuidArray_ShouldRejectEmptyGuid()
+    {
+        var json = JsonSerializer.Deserialize<JsonElement>(
+            """{"labelIds":["00000000-0000-0000-0000-000000000000"]}""");
+
+        var result = OperationParameterParser.TryGetOptionalGuidArray(
+            json, "labelIds", out var provided, out var values, out var error);
+
+        result.Should().BeFalse();
+        provided.Should().BeTrue();
+        values.Should().BeEmpty();
+        error.Should().Contain("non-empty UUID strings");
+    }
+
+    #endregion
 }

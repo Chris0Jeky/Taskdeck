@@ -1022,6 +1022,8 @@ public class AutomationProposalServiceTests
             .ReturnsAsync(proposal);
 
         var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(columnId, default))
+            .ReturnsAsync(column);
         columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
             .ReturnsAsync(new[] { column });
         _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
@@ -1073,12 +1075,16 @@ public class AutomationProposalServiceTests
             .ReturnsAsync(proposal);
 
         var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(columnId, default))
+            .ReturnsAsync(column);
         columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
             .ReturnsAsync(new[] { column });
         _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
 
         var cardRepoMock = new Mock<ICardRepository>();
         var card = new Card(cardId, boardId, columnId, "Fix login bug");
+        cardRepoMock.Setup(r => r.GetByIdAsync(cardId, default))
+            .ReturnsAsync(card);
         cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
             .ReturnsAsync(new[] { card });
         _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
@@ -1120,6 +1126,7 @@ public class AutomationProposalServiceTests
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
         var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(column.Id, default)).ReturnsAsync(column);
         columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
         _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
         var cardRepoMock = new Mock<ICardRepository>();
@@ -1166,6 +1173,7 @@ public class AutomationProposalServiceTests
         columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
         _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
         var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
         cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card });
         _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
         var labelRepoMock = new Mock<ILabelRepository>();
@@ -1210,6 +1218,7 @@ public class AutomationProposalServiceTests
         columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Column>());
         _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
         var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
         cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card });
         _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
         var labelRepoMock = new Mock<ILabelRepository>();
@@ -1315,6 +1324,8 @@ public class AutomationProposalServiceTests
             .ReturnsAsync(revision);
 
         var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(columnId, default))
+            .ReturnsAsync(column);
         columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
             .ReturnsAsync(new[] { column });
         _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);

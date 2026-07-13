@@ -430,6 +430,76 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task RevisedUpdate_WithEmptyLabelId_ShouldFailPreviewAndApply()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-empty-label-id");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-empty-label-id-board");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged empty label card");
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = JsonSerializer.Serialize(new { cardId = card.Id, labelIds = new[] { Guid.Empty } });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload(
+                    "update", "card", parameters, card.Id.ToString()),
+                reason = "attempt an empty label identity"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
+    }
+
+    [Theory]
+    [InlineData("add--label")]
+    [InlineData("add_-label")]
+    [InlineData("remove__label")]
+    [InlineData("add..label")]
+    public async Task RevisedLabelOperation_WithUnregisteredAlias_ShouldFailPreviewAndApply(string actionType)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, $"rev-label-alias-{suffix}");
+        var (board, column) = await CreateBoardWithColumnAsync(client, $"rev-label-alias-board-{suffix}");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged alias card");
+        var label = await CreateLabelAsync(client, board.Id, $"urgent-{suffix}");
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = JsonSerializer.Serialize(new { cardId = card.Id, labelId = label.Id });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload(
+                    actionType, "card", parameters, card.Id.ToString()),
+                reason = "attempt an unregistered label alias"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
+    }
+
+    [Fact]
     public async Task CreateRevision_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
     {
         var ownerClient = _factory.CreateClient();
