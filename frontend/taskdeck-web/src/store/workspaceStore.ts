@@ -39,6 +39,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const todayError = ref<string | null>(null)
   let preferenceRequestVersion = 0
   let pendingPreferenceRequests = 0
+  let todayRequestVersion = 0
 
   const hasHomeSummary = computed(() => homeSummary.value !== null)
   const hasTodaySummary = computed(() => todaySummary.value !== null)
@@ -195,14 +196,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function fetchTodaySummary(): Promise<TodaySummary> {
+    const requestVersion = ++todayRequestVersion
+
     if (isDemoMode) {
       todayLoading.value = true
       todayError.value = null
       const summary = buildDemoTodaySummary()
-      todaySummary.value = summary
-      applyMode(summary.workspaceMode)
-      syncOnboarding(summary.onboarding)
-      todayLoading.value = false
+      if (requestVersion === todayRequestVersion) {
+        todaySummary.value = summary
+        applyMode(summary.workspaceMode)
+        syncOnboarding(summary.onboarding)
+        todayLoading.value = false
+      }
       return summary
     }
 
@@ -210,15 +215,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       todayLoading.value = true
       todayError.value = null
       const summary = await workspaceApi.getTodaySummary()
-      todaySummary.value = summary
-      applyMode(summary.workspaceMode)
-      syncOnboarding(summary.onboarding)
+      if (requestVersion === todayRequestVersion) {
+        todaySummary.value = summary
+        applyMode(summary.workspaceMode)
+        syncOnboarding(summary.onboarding)
+      }
       return summary
     } catch (e: unknown) {
-      todayError.value = getErrorMessage(e, "We couldn't load today's overview")
+      if (requestVersion === todayRequestVersion) {
+        todayError.value = getErrorMessage(e, "We couldn't load today's overview")
+      }
       throw e
     } finally {
-      todayLoading.value = false
+      if (requestVersion === todayRequestVersion) {
+        todayLoading.value = false
+      }
     }
   }
 
@@ -253,8 +264,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function clearTodaySummary() {
+    todayRequestVersion += 1
     todaySummary.value = null
     todayError.value = null
+    todayLoading.value = false
   }
 
   function resetForLogout() {

@@ -26,7 +26,8 @@ public record UserDataExportContentDto(
     IReadOnlyList<UserDataExportAuditEntryDto> AuditTrail,
     UserDataExportPreferencesDto? Preferences,
     UserDataExportNotificationPreferencesDto? NotificationPreferences,
-    IReadOnlyList<UserDataExportProposalFeedbackDto> ProposalFeedback);
+    IReadOnlyList<UserDataExportProposalFeedbackDto> ProposalFeedback,
+    IReadOnlyList<UserDataExportArtefactDto>? Artefacts = null);
 
 public record UserDataExportBoardDto(
     Guid BoardId,
@@ -112,4 +113,5 @@ public record AccountDeletionResultDto(
     int CaptureItemsDeleted,
     int ChatSessionsAnonymized,
     int ExternalLoginsDeleted,
-    int PreferencesDeleted);
+    int PreferencesDeleted,
+    int ArtefactsDeleted = 0);

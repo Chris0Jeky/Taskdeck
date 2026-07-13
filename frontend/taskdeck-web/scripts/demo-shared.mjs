@@ -68,6 +68,30 @@ export function hasMoreListItems(response) {
   return Boolean(response.hasMore ?? response.HasMore)
 }
 
+export async function collectAllListItems(
+  fetchPage,
+  { contextLabel = 'response', limit = 50 } = {},
+) {
+  const items = []
+  let offset = 0
+
+  while (true) {
+    const response = (await fetchPage({ offset, limit })) ?? []
+    const pageItems = extractListItems(response, contextLabel)
+    items.push(...pageItems)
+
+    if (!hasMoreListItems(response)) {
+      return items
+    }
+
+    if (pageItems.length === 0) {
+      throw new Error(`${contextLabel} pagination reported more items without returning a page`)
+    }
+
+    offset += pageItems.length
+  }
+}
+
 export function isoDaysFromNow(days) {
   const value = new Date()
   value.setDate(value.getDate() + Number(days || 0))

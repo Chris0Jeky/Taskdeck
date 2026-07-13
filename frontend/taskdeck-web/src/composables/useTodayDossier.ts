@@ -4,7 +4,7 @@ import { todayApi, type CadenceApiResponse, type StreakApiResponse } from '../ap
 import { logError } from '../utils/errorReporting'
 import type { TodaySummary } from '../types/workspace'
 
-export type DossierLedgerWho = 'you' | 'haiku' | 'system'
+export type DossierLedgerWho = 'you' | 'system'
 export type DossierLedgerTone = 'ember' | 'applied' | 'active' | 'passive' | 'mute'
 
 export interface DossierLedgerEntry {
@@ -41,9 +41,9 @@ export interface DossierCarryOverCard {
 }
 
 export interface DossierStatCard {
-  id: 'cards-moved' | 'proposals-applied' | 'captures-triaged' | 'longest-focus' | 'overdue'
-  value: number | string
-  numeric: boolean
+  id: 'captures-needing-triage' | 'proposals-pending-review' | 'overdue' | 'due-today' | 'blocked'
+  value: number
+  numeric: true
   label: string
   sub: string
   tone: 'ink' | 'ember' | 'applied' | 'overdue'
@@ -67,16 +67,18 @@ export interface DossierStreak {
 export interface DossierData {
   serial: string
   date: Date
-  headlineCardsMoved: number
+  headlineCardsMoved: number | null
   lede: string
-  autoSealsIn: string
+  autoSealsIn: string | null
   stats: DossierStatCard[]
   cadence: DossierCadence
+  cadenceAvailable: boolean
   ledger: DossierLedgerEntry[]
   decisions: DossierDecision[]
   boards: DossierBoardLine[]
   carryOver: DossierCarryOverCard[]
   streak: DossierStreak
+  streakAvailable: boolean
   lineForTomorrow: string
 }
 
@@ -107,37 +109,42 @@ function formatLocalDossierDateParts(date: Date): { yyyy: string; mm: string; dd
 
 function formatUtcTime(iso: string | null): string {
   if (!iso) return '--:--'
-  const d = new Date(iso)
-  return `${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}`
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '--:--'
+  return `${date.getUTCHours().toString().padStart(2, '0')}:${date.getUTCMinutes().toString().padStart(2, '0')}`
+}
+
+function formatCarryOverDueDate(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return 'overdue'
+  return `due ${new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)}`
 }
 
 function mapCadenceResponse(response: CadenceApiResponse): DossierCadence {
-  const weights = Array.from({ length: 24 }, (_, i) => {
-    const bucket = response.buckets.find((b) => b.hour === i)
+  const weights = Array.from({ length: 24 }, (_, hour) => {
+    const bucket = response.buckets.find(candidate => candidate.hour === hour)
     return bucket?.eventCount ?? 0
   })
-
   const peakHourIndex = response.peakHour
-
-  const firstTime = formatUtcTime(response.firstActionAt)
-  const lastTime = formatUtcTime(response.lastActionAt)
-
   const peakEvents = peakHourIndex != null ? (weights[peakHourIndex] ?? 0) : 0
-  const peakAction = peakHourIndex != null
-    ? `${peakHourIndex.toString().padStart(2, '0')}:00-${((peakHourIndex + 1) % 24).toString().padStart(2, '0')}:00 UTC · ${peakEvents} events`
-    : 'no peak'
 
   return {
     weights,
     peakHourIndex,
-    firstAction: `${firstTime} UTC · first action`,
-    peakAction,
-    lastAction: `${lastTime} UTC · last action`,
+    firstAction: `${formatUtcTime(response.firstActionAt)} UTC · first action`,
+    peakAction: peakHourIndex != null
+      ? `${peakHourIndex.toString().padStart(2, '0')}:00-${((peakHourIndex + 1) % 24).toString().padStart(2, '0')}:00 UTC · ${peakEvents} events`
+      : 'no peak',
+    lastAction: `${formatUtcTime(response.lastActionAt)} UTC · last action`,
   }
 }
 
 function mapStreakResponse(response: StreakApiResponse): DossierStreak {
-  const cells = response.days.map((d) => d.intensityBucket)
+  const cells = response.days.map(day => day.intensityBucket)
   return {
     cells,
     todayIndex: Math.max(0, cells.length - 1),
@@ -146,133 +153,90 @@ function mapStreakResponse(response: StreakApiResponse): DossierStreak {
   }
 }
 
-function buildStubDossier(now: Date, summary: TodaySummary | null): DossierData {
-  const overdueCount = summary?.summary.overdueCards ?? 2
-  const capturesTriaged = 11
-  const cardsMoved = 9
-  const proposalsApplied = 3
+function buildHonestDossier(now: Date, summary: TodaySummary | null): DossierData {
+  const stats: DossierStatCard[] = summary
+    ? [
+        {
+          id: 'captures-needing-triage',
+          value: summary.summary.capturesNeedingTriage,
+          numeric: true,
+          label: 'captures to triage',
+          sub: 'waiting in Inbox',
+          tone: 'ink',
+        },
+        {
+          id: 'proposals-pending-review',
+          value: summary.summary.proposalsPendingReview,
+          numeric: true,
+          label: 'proposals to review',
+          sub: 'waiting for your decision',
+          tone: 'ember',
+        },
+        {
+          id: 'overdue',
+          value: summary.summary.overdueCards,
+          numeric: true,
+          label: 'overdue',
+          sub: 'need attention',
+          tone: 'overdue',
+        },
+        {
+          id: 'due-today',
+          value: summary.summary.dueTodayCards,
+          numeric: true,
+          label: 'due today',
+          sub: 'scheduled for today',
+          tone: 'applied',
+        },
+        {
+          id: 'blocked',
+          value: summary.summary.blockedCards,
+          numeric: true,
+          label: 'blocked',
+          sub: 'currently blocked',
+          tone: 'overdue',
+        },
+      ]
+    : []
 
-  const stats: DossierStatCard[] = [
-    {
-      id: 'cards-moved',
-      value: cardsMoved,
-      numeric: true,
-      label: 'cards moved',
-      sub: '+2 vs your wk avg',
-      tone: 'ink',
-    },
-    {
-      id: 'proposals-applied',
-      value: proposalsApplied,
-      numeric: true,
-      label: 'proposals applied',
-      sub: 'of 4 reviewed · 75%',
-      tone: 'ember',
-    },
-    {
-      id: 'captures-triaged',
-      value: capturesTriaged,
-      numeric: true,
-      label: 'captures triaged',
-      sub: '0 left in inbox',
-      tone: 'ink',
-    },
-    {
-      id: 'longest-focus',
-      value: '2h 14m',
-      numeric: false,
-      label: 'focus time · longest',
-      sub: '13:02 — 15:16 · uninterrupted',
-      tone: 'applied',
-    },
-    {
-      id: 'overdue',
-      value: overdueCount,
-      numeric: true,
-      label: 'overdue',
-      sub: 'C-072, C-061',
-      tone: 'overdue',
-    },
-  ]
+  const carryOver: DossierCarryOverCard[] = (summary?.overdueCards ?? []).map(card => ({
+    serial: `C-${card.cardId.slice(0, 8)}`,
+    title: card.title,
+    age: card.dueDate ? formatCarryOverDueDate(card.dueDate) : 'overdue',
+    reason: `Board: ${card.boardName}`,
+  }))
 
-  const cadenceWeights = [
-    0, 0, 0, 0, 0, 0, 0, 0,
-    1, 3, 2, 1, 3, 4, 2, 3, 4, 2,
-    0, 0, 0, 0, 0, 0,
-  ]
-
-  const cadence: DossierCadence = {
-    weights: cadenceWeights,
-    peakHourIndex: 13,
-    firstAction: '08:42 · capture',
-    peakAction: '13:00 — 14:00 · 7 events',
-    lastAction: '17:18 · seal',
-  }
-
-  const ledger: DossierLedgerEntry[] = [
-    { serial: 'L-018', time: '17:18', who: 'you', what: "Sealed proposal #011 · Set up CI → Done", tone: 'applied' },
-    { serial: 'L-017', time: '16:04', who: 'haiku', what: 'Proposed split · #014 · ready for review', tone: 'ember' },
-    { serial: 'L-016', time: '15:42', who: 'you', what: 'Triaged 7 captures into Product Backlog', tone: 'active' },
-    { serial: 'L-015', time: '15:16', who: 'you', what: 'End of focus block (2h 14m)', tone: 'passive' },
-    { serial: 'L-014', time: '13:55', who: 'haiku', what: 'Proposed merge of duplicates · #008 · rejected', tone: 'mute' },
-    { serial: 'L-013', time: '13:02', who: 'you', what: 'Started focus block · DnD off · 2h 14m', tone: 'active' },
-    { serial: 'L-012', time: '12:48', who: 'you', what: "Renamed board · 'Sprint 12 · QA'", tone: 'active' },
-    { serial: 'L-011', time: '11:42', who: 'you', what: 'Applied #014 · 3 cards land · undo 6h', tone: 'applied' },
-    { serial: 'L-010', time: '11:38', who: 'haiku', what: 'Proposed split · #014 · 0.84 confidence', tone: 'ember' },
-    { serial: 'L-009', time: '10:14', who: 'you', what: "Deferred #012 · 'Add Blocked column'", tone: 'passive' },
-    { serial: 'L-008', time: '09:18', who: 'you', what: "Applied #011 · 'Set up CI' → Done", tone: 'applied' },
-    { serial: 'L-007', time: '09:00', who: 'system', what: 'Day opened · 5 cards on Today board', tone: 'passive' },
-  ]
-
-  const decisions: DossierDecision[] = [
-    { serial: '#014', title: 'Split: Implement dark mode', verdict: 'applied', confidence: 0.84, when: '11:42' },
-    { serial: '#012', title: "Add 'Blocked' column", verdict: 'deferred', confidence: 0.71, when: '10:14' },
-    { serial: '#011', title: "Move 'Set up CI' → Done", verdict: 'applied', confidence: 0.91, when: '09:18' },
-    { serial: '#008', title: 'Merge duplicates', verdict: 'rejected', confidence: 0.62, when: 'yest', stale: true },
-  ]
-
-  const boards: DossierBoardLine[] = [
-    { id: 'product-backlog', name: 'Product Backlog', moves: 6, proposals: 2 },
-    { id: 'sprint-12', name: 'Sprint 12', moves: 3, proposals: 1 },
-    { id: 'personal', name: 'Personal', moves: 1, proposals: 0 },
-    { id: 'side-projects', name: 'Side projects', moves: 0, proposals: 0 },
-    { id: 'notes-references', name: 'Notes & references', moves: 0, proposals: 0 },
-  ]
-
-  const carryOver: DossierCarryOverCard[] = [
-    { serial: 'C-072', title: 'Audit AA contrast on toasts', age: '3d overdue', reason: 'rolled over twice' },
-    { serial: 'C-061', title: 'Reply: design system intro', age: '1d overdue', reason: 'snoozed yesterday' },
-  ]
-
-  const cells = Array.from({ length: 90 }, (_, i) => {
-    if (i === 89) return 4
-    if (i === 73) return 0
-    return ((i * 31) % 5)
-  })
-
-  const streak: DossierStreak = {
-    cells,
-    todayIndex: 89,
-    totalDays: 17,
-    longestThisYear: 23,
-  }
+  const lede = summary
+    ? `${summary.summary.capturesNeedingTriage} captures need triage, ${summary.summary.proposalsPendingReview} proposals await review, and ${summary.summary.overdueCards} cards are overdue.`
+    : 'Activity totals are unavailable. Live cadence, streak, seal status, and your note remain available below.'
 
   return {
     serial: formatDossierSerial(now),
     date: now,
-    headlineCardsMoved: cardsMoved,
-    lede:
-      "A quiet Saturday. You triaged the morning inbox, applied two of haiku's proposals, and closed the dark-mode hand-off. Two cards drifted past their due — bring them up tomorrow.",
-    autoSealsIn: '2h 18m',
+    headlineCardsMoved: null,
+    lede,
+    autoSealsIn: null,
     stats,
-    cadence,
-    ledger,
-    decisions,
-    boards,
+    cadence: {
+      weights: Array.from({ length: 24 }, () => 0),
+      peakHourIndex: null,
+      firstAction: 'No cadence data available',
+      peakAction: 'No cadence data available',
+      lastAction: 'No cadence data available',
+    },
+    cadenceAvailable: false,
+    ledger: [],
+    decisions: [],
+    boards: [],
     carryOver,
-    streak,
-    lineForTomorrow:
-      "Pick up the AA contrast audit first — it's been carried twice. Aim to seal Sprint 12 by Wednesday.",
+    streak: {
+      cells: [],
+      todayIndex: -1,
+      totalDays: 0,
+      longestThisYear: 0,
+    },
+    streakAvailable: false,
+    lineForTomorrow: '',
   }
 }
 
@@ -323,17 +287,16 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   const liveStreak = ref<DossierStreak | null>(null)
   const liveLineForTomorrow = ref('')
 
-  const stubDossier = computed<DossierData>(() => buildStubDossier(now.value, workspace.todaySummary))
+  const honestDossier = computed<DossierData>(() => buildHonestDossier(now.value, workspace.todaySummary))
 
-  const dossier = computed<DossierData>(() => {
-    const base = stubDossier.value
-    return {
-      ...base,
-      cadence: liveCadence.value ?? base.cadence,
-      streak: liveStreak.value ?? base.streak,
-      lineForTomorrow: liveLineForTomorrow.value,
-    }
-  })
+  const dossier = computed<DossierData>(() => ({
+    ...honestDossier.value,
+    cadence: liveCadence.value ?? honestDossier.value.cadence,
+    cadenceAvailable: liveCadence.value !== null,
+    streak: liveStreak.value ?? honestDossier.value.streak,
+    streakAvailable: liveStreak.value !== null,
+    lineForTomorrow: liveLineForTomorrow.value,
+  }))
 
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
   let tomorrowNoteMutationGeneration = 0
@@ -364,10 +327,10 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
       } else {
         pending.reject(new Error(SUPERSEDED_AUTOSAVE_ERROR))
       }
-    } catch (err) {
+    } catch (error) {
       if (pending.saveGeneration === tomorrowNoteSaveGeneration) {
-        logError('Tomorrow note autosave failed', { message: (err as Error)?.message })
-        pending.reject(err)
+        logError('Tomorrow note autosave failed', { message: (error as Error)?.message })
+        pending.reject(error)
       } else {
         pending.reject(new Error(SUPERSEDED_AUTOSAVE_ERROR))
       }
@@ -407,11 +370,10 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   let fetchGeneration = 0
 
   async function fetchLiveData() {
-    const gen = ++fetchGeneration
+    const generation = ++fetchGeneration
     const dateStr = formatLocalDossierDate(now.value)
-    const tomorrowNoteMutationGenerationAtFetch = tomorrowNoteMutationGeneration
-    const sealMutationGenerationAtFetch = sealMutationGeneration
-
+    const noteMutationAtFetch = tomorrowNoteMutationGeneration
+    const sealMutationAtFetch = sealMutationGeneration
     const results = await Promise.allSettled([
       todayApi.getCadence(dateStr),
       todayApi.getStreak(90),
@@ -419,7 +381,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
       todayApi.getTomorrowNote(dateStr),
     ])
 
-    if (gen !== fetchGeneration) return
+    if (generation !== fetchGeneration) return
 
     if (results[0].status === 'fulfilled') {
       liveCadence.value = mapCadenceResponse(results[0].value)
@@ -427,27 +389,34 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     if (results[1].status === 'fulfilled') {
       liveStreak.value = mapStreakResponse(results[1].value)
     }
-    if (sealMutationGenerationAtFetch === sealMutationGeneration) {
-      if (results[2].status === 'fulfilled') {
-        sealed.value = results[2].value.isSealed
-      }
+    if (sealMutationAtFetch === sealMutationGeneration && results[2].status === 'fulfilled') {
+      sealed.value = results[2].value.isSealed
     }
-    if (tomorrowNoteMutationGenerationAtFetch === tomorrowNoteMutationGeneration) {
-      if (results[3].status === 'fulfilled') {
-        liveLineForTomorrow.value = results[3].value?.text ?? ''
-      } else {
-        liveLineForTomorrow.value = ''
-      }
+    if (noteMutationAtFetch === tomorrowNoteMutationGeneration) {
+      liveLineForTomorrow.value = results[3].status === 'fulfilled'
+        ? (results[3].value?.text ?? '')
+        : ''
     }
   }
 
-  watch(now, () => {
+  watch(now, (currentNow, previousNow) => {
+    const didCrossLocalDay = previousNow !== undefined
+      && formatLocalDossierDate(currentNow) !== formatLocalDossierDate(previousNow)
+
     liveCadence.value = null
     liveStreak.value = null
     liveLineForTomorrow.value = ''
     tomorrowNoteMutationGeneration += 1
     sealMutationGeneration += 1
     sealed.value = false
+
+    if (didCrossLocalDay) {
+      workspace.clearTodaySummary()
+      void workspace.fetchTodaySummary().catch(() => {
+        // The workspace store retains the error for PaperToday's visible retry state.
+      })
+    }
+
     void fetchLiveData()
   }, { immediate: true })
 
@@ -463,8 +432,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
 
     sealingInProgress = true
     try {
-      const dateStr = formatLocalDossierDate(now.value)
-      const response = await todayApi.sealDay(dateStr)
+      const response = await todayApi.sealDay(formatLocalDossierDate(now.value))
       sealMutationGeneration += 1
       sealed.value = true
       return { sealed: true, alreadySealed: response.wasAlreadySealed }

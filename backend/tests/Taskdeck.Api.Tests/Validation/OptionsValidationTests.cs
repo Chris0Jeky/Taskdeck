@@ -16,6 +16,49 @@ namespace Taskdeck.Api.Tests.Validation;
 /// </summary>
 public class OptionsValidationTests
 {
+    [Fact]
+    public void ArtefactStorageSettings_AcceptsAggregateQuotaAboveTwoGiB()
+    {
+        var settings = new ArtefactStorageSettings
+        {
+            MaxBytesPerArtefact = int.MaxValue,
+            MaxBytesPerUser = (long)int.MaxValue + 1
+        };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings,
+            context,
+            results,
+            validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_RejectsSingleArtefactAboveByteArrayLimit()
+    {
+        var settings = new ArtefactStorageSettings
+        {
+            MaxBytesPerArtefact = (long)int.MaxValue + 1,
+            MaxBytesPerUser = (long)int.MaxValue + 1
+        };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings,
+            context,
+            results,
+            validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, result => result.MemberNames.Contains(nameof(settings.MaxBytesPerArtefact)));
+    }
+
     // ── JwtSettingsValidator ─────────────────────────────────────────────
 
     [Fact]

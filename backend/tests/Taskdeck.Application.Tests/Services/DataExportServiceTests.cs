@@ -27,6 +27,7 @@ public class DataExportServiceTests
     private readonly Mock<IUserPreferenceRepository> _userPrefRepoMock;
     private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
     private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
+    private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
     private readonly DataExportService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -48,6 +49,7 @@ public class DataExportServiceTests
         _userPrefRepoMock = new Mock<IUserPreferenceRepository>();
         _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
         _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
+        _artefactRepoMock = new Mock<ISourceArtefactRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -63,6 +65,10 @@ public class DataExportServiceTests
         _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
         _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ProposalFeedback>());
+        _artefactRepoMock.Setup(r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SourceArtefact>());
+        _artefactRepoMock.Setup(r => r.GetTotalByteSizeByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0L);
 
         _testUser = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -70,7 +76,7 @@ public class DataExportServiceTests
             .Setup(h => h.LogActionAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
             .ReturnsAsync(Result.Success());
 
-        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object);
+        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object);
     }
 
     [Fact]
@@ -115,6 +121,70 @@ public class DataExportServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_ShouldRejectLargeArtefactSetBeforeLoadingAnyBlob()
+    {
+        SetupUserFound();
+        _artefactRepoMock
+            .Setup(r => r.GetTotalByteSizeByUserAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ArtefactStorageSettings.DefaultMaxBytesPerArtefact + 1);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        _artefactRepoMock.Verify(
+            r => r.GetContentForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _artefactRepoMock.Verify(
+            r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_ShouldRejectTooManyArtefactRowsBeforeLoadingAnyBlob()
+    {
+        SetupUserFound();
+        var page = Enumerable.Range(0, 500)
+            .Select(index => new SourceArtefact(
+                _userId,
+                ArtefactKind.TextFile,
+                "text/plain",
+                $"note-{index}.txt",
+                1,
+                new string('a', SourceArtefact.Sha256HexLength),
+                CaptureSource.Import))
+            .ToArray();
+        var finalRow = new SourceArtefact(
+            _userId,
+            ArtefactKind.TextFile,
+            "text/plain",
+            "overflow.txt",
+            1,
+            new string('b', SourceArtefact.Sha256HexLength),
+            CaptureSource.Import);
+        _artefactRepoMock
+            .Setup(r => r.GetByUserAsync(
+                _userId,
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, int limit, int offset, CancellationToken _) =>
+                offset < 10_000 ? page.Take(limit).ToArray() : [finalRow]);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        result.ErrorMessage.Should().Contain("too many artefacts");
+        _artefactRepoMock.Verify(
+            r => r.GetContentForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _artefactRepoMock.Verify(
+            r => r.GetByUserAsync(_userId, 1, 10_000, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -348,7 +418,7 @@ public class DataExportServiceTests
 
         var loggerMock = new Mock<ILogger<DataExportService>>();
         var serviceWithLogger = new DataExportService(
-            _unitOfWorkMock.Object, _historyServiceMock.Object, loggerMock.Object);
+            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, loggerMock.Object);
 
         var expectedException = new InvalidOperationException("Database connection lost");
         _boardAccessRepoMock
@@ -437,6 +507,7 @@ public class DataExportServiceStreamingTests
     private readonly Mock<IUserPreferenceRepository> _userPrefRepoMock;
     private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
     private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
+    private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
     private readonly DataExportService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -458,6 +529,7 @@ public class DataExportServiceStreamingTests
         _userPrefRepoMock = new Mock<IUserPreferenceRepository>();
         _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
         _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
+        _artefactRepoMock = new Mock<ISourceArtefactRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -473,6 +545,8 @@ public class DataExportServiceStreamingTests
         _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
         _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ProposalFeedback>());
+        _artefactRepoMock.Setup(r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SourceArtefact>());
 
         _testUser = new User("streamuser", "stream@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -480,7 +554,7 @@ public class DataExportServiceStreamingTests
             .Setup(h => h.LogActionAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
             .ReturnsAsync(Result.Success());
 
-        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object);
+        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object);
     }
 
     [Fact]
@@ -553,6 +627,70 @@ public class DataExportServiceStreamingTests
         dataProp.TryGetProperty("proposals", out _).Should().BeTrue();
         dataProp.TryGetProperty("chatSessions", out _).Should().BeTrue();
         dataProp.TryGetProperty("auditTrail", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_ShouldIncrementallyBase64EncodeArtefactContent()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var content = "stream me"u8.ToArray();
+        var artefact = new SourceArtefact(
+            _userId,
+            ArtefactKind.TextFile,
+            "text/plain",
+            "notes.txt",
+            // Deliberately above Utf8JsonWriter's single-value Base64 input limit:
+            // export must use the repository copy primitive, not a byte[] token write.
+            125_000_001,
+            new string('a', SourceArtefact.Sha256HexLength),
+            CaptureSource.Import);
+        _artefactRepoMock
+            .Setup(r => r.GetByUserAsync(_userId, 500, 0, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([artefact]);
+        _artefactRepoMock
+            .Setup(r => r.GetByUserAsync(_userId, 500, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SourceArtefact>());
+        _artefactRepoMock
+            .Setup(r => r.CopyContentForUserAsync(
+                artefact.Id,
+                _userId,
+                It.IsAny<Stream>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(async (Guid _, Guid _, Stream destination, CancellationToken token) =>
+            {
+                await destination.WriteAsync(content.AsMemory(0, 2), token);
+                await destination.WriteAsync(content.AsMemory(2), token);
+                return true;
+            });
+
+        using var stream = new MemoryStream();
+        var result = await _service.StreamUserDataExportAsync(_userId, stream);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        stream.Position = 0;
+        using var doc = System.Text.Json.JsonDocument.Parse(stream);
+        var exported = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("artefacts")
+            .EnumerateArray()
+            .Single();
+        exported.GetProperty("byteSize").GetInt64().Should().Be(artefact.ByteSize);
+        Convert.FromBase64String(exported.GetProperty("contentBase64").GetString()!)
+            .Should().Equal(content);
+        _artefactRepoMock.Verify(
+            r => r.GetContentForUserAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _artefactRepoMock.Verify(
+            r => r.CopyContentForUserAsync(
+                artefact.Id,
+                _userId,
+                It.IsAny<Stream>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
