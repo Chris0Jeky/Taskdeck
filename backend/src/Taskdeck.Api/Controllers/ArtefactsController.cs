@@ -1,8 +1,10 @@
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Enums;
@@ -27,6 +29,7 @@ public sealed class ArtefactsController : AuthenticatedControllerBase
 
     [HttpPost]
     [Consumes("multipart/form-data")]
+    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
     public async Task<IActionResult> Upload(
         [FromForm] ArtefactUploadRequest request,
         CancellationToken cancellationToken)

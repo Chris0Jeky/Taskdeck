@@ -27,6 +27,7 @@ public class DataExportServiceTests
     private readonly Mock<IUserPreferenceRepository> _userPrefRepoMock;
     private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
     private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
+    private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
     private readonly DataExportService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -48,6 +49,7 @@ public class DataExportServiceTests
         _userPrefRepoMock = new Mock<IUserPreferenceRepository>();
         _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
         _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
+        _artefactRepoMock = new Mock<ISourceArtefactRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -63,6 +65,8 @@ public class DataExportServiceTests
         _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
         _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ProposalFeedback>());
+        _artefactRepoMock.Setup(r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SourceArtefact>());
 
         _testUser = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -70,7 +74,7 @@ public class DataExportServiceTests
             .Setup(h => h.LogActionAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
             .ReturnsAsync(Result.Success());
 
-        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object);
+        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object);
     }
 
     [Fact]
@@ -348,7 +352,7 @@ public class DataExportServiceTests
 
         var loggerMock = new Mock<ILogger<DataExportService>>();
         var serviceWithLogger = new DataExportService(
-            _unitOfWorkMock.Object, _historyServiceMock.Object, loggerMock.Object);
+            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, loggerMock.Object);
 
         var expectedException = new InvalidOperationException("Database connection lost");
         _boardAccessRepoMock
@@ -437,6 +441,7 @@ public class DataExportServiceStreamingTests
     private readonly Mock<IUserPreferenceRepository> _userPrefRepoMock;
     private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
     private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
+    private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
     private readonly DataExportService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -458,6 +463,7 @@ public class DataExportServiceStreamingTests
         _userPrefRepoMock = new Mock<IUserPreferenceRepository>();
         _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
         _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
+        _artefactRepoMock = new Mock<ISourceArtefactRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -473,6 +479,8 @@ public class DataExportServiceStreamingTests
         _unitOfWorkMock.Setup(u => u.ProposalFeedbacks).Returns(_feedbackRepoMock.Object);
         _feedbackRepoMock.Setup(r => r.GetAllByUserIdForExportAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ProposalFeedback>());
+        _artefactRepoMock.Setup(r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SourceArtefact>());
 
         _testUser = new User("streamuser", "stream@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -480,7 +488,7 @@ public class DataExportServiceStreamingTests
             .Setup(h => h.LogActionAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
             .ReturnsAsync(Result.Success());
 
-        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object);
+        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object);
     }
 
     [Fact]

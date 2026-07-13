@@ -78,7 +78,8 @@ public static class ArtefactContentValidator
         if (normalizedFileName.Length > Domain.Entities.SourceArtefact.MaxFileNameLength ||
             Path.GetFileName(normalizedFileName) != normalizedFileName ||
             normalizedFileName.Contains('\\') ||
-            normalizedFileName.Any(char.IsControl))
+            normalizedFileName.Any(char.IsControl) ||
+            normalizedFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
         {
             return Result.Failure<ValidatedArtefactContent>(ErrorCodes.ValidationError, "Artefact file name is invalid");
         }
