@@ -400,8 +400,10 @@ public class OperationHandlerRegistry
         if (newPosition < 0)
             return Result.Failure(ErrorCodes.ValidationError, "Invalid position: must be non-negative");
 
-        var dto = new UpdateColumnDto(null, newPosition, null);
-        var result = await _columnService.UpdateColumnAsync(columnId, dto, cancellationToken);
+        // Reorder is an atomic, lossless board reindex — it moves the column to the
+        // requested slot without clearing its WipLimit or colliding with the unique
+        // (BoardId, Position) index.
+        var result = await _columnService.ReorderColumnAsync(columnId, newPosition, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
