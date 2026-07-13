@@ -14,6 +14,13 @@ namespace Taskdeck.Application.Services.Pipeline;
 /// </summary>
 public static class ProposalOperationContractValidator
 {
+    // These mirror the Card/Board domain aggregate limits so the shared preview
+    // contract rejects exactly what Apply would reject (#1319 preview == apply).
+    private const int MaxCardTitleLength = 200;
+    private const int MaxCardDescriptionLength = 2000;
+    private const int MaxBoardNameLength = 100;
+    private const int MaxBoardDescriptionLength = 1000;
+
     public static async Task<Result> ValidateAsync(
         IUnitOfWork unitOfWork,
         Guid? proposalBoardId,
@@ -233,6 +240,17 @@ public static class ProposalOperationContractValidator
                 return Result.Failure(ErrorCodes.ValidationError, cardIdError);
             }
 
+            // Enforce the Card aggregate string limits before preview so an
+            // over-length title/description cannot preview successfully and then
+            // fail during Apply.
+            var titleValue = OperationParameterParser.GetOptionalString(parameters, "title");
+            if (titleValue != null && titleValue.Length > MaxCardTitleLength)
+                return Result.Failure(ErrorCodes.ValidationError, $"Card title cannot exceed {MaxCardTitleLength} characters");
+
+            var descriptionValue = OperationParameterParser.GetOptionalString(parameters, "description");
+            if (descriptionValue != null && descriptionValue.Length > MaxCardDescriptionLength)
+                return Result.Failure(ErrorCodes.ValidationError, $"Card description cannot exceed {MaxCardDescriptionLength} characters");
+
             if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
                     parameters, "dueDate", out var dueDateProvided, out var dueDate, out var dueDateError))
                 return Result.Failure(ErrorCodes.ValidationError, dueDateError);
@@ -343,6 +361,13 @@ public static class ProposalOperationContractValidator
         var name = OperationParameterParser.GetOptionalString(parameters, "name");
         var description = OperationParameterParser.GetOptionalString(parameters, "description");
         var isArchived = OperationParameterParser.GetOptionalBoolean(parameters, "isArchived");
+
+        // Mirror the Board aggregate string limits before preview.
+        if (name != null && name.Length > MaxBoardNameLength)
+            return Result.Failure(ErrorCodes.ValidationError, $"Board name cannot exceed {MaxBoardNameLength} characters");
+        if (description != null && description.Length > MaxBoardDescriptionLength)
+            return Result.Failure(ErrorCodes.ValidationError, $"Board description cannot exceed {MaxBoardDescriptionLength} characters");
+
         return name == null && description == null && !isArchived.HasValue
             ? Result.Failure(
                 ErrorCodes.ValidationError,
@@ -426,6 +451,12 @@ public static class ProposalOperationContractValidator
 
         public async Task<Result> ValidateNewCardIdAsync(Guid cardId, CancellationToken cancellationToken)
         {
+            // A create-card targetId of Guid.Empty parses successfully but the Card
+            // aggregate rejects it at Apply. Reject it before preview so the approval
+            // gate never registers an unusable planned card (#1319 preview == apply).
+            if (cardId == Guid.Empty)
+                return Result.Failure(ErrorCodes.ValidationError, "Create card targetId must be a non-empty identifier");
+
             if (_plannedCardIds.Contains(cardId))
                 return Result.Failure(ErrorCodes.Conflict, "Create card targetId is duplicated within the proposal");
 
