@@ -463,6 +463,7 @@ public class AutomationProposalService : IAutomationProposalService
         // Batch-load entity names for resolving IDs to human-readable labels
         var columnNames = new Dictionary<Guid, string>();
         var cardTitles = new Dictionary<Guid, string>();
+        var labelNames = new Dictionary<Guid, string>();
 
         if (boardId.HasValue)
         {
@@ -475,6 +476,10 @@ public class AutomationProposalService : IAutomationProposalService
                 var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
                 foreach (var card in cards)
                     cardTitles[card.Id] = card.Title;
+
+                var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId.Value, cancellationToken);
+                foreach (var label in labels)
+                    labelNames[label.Id] = label.Name;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -484,7 +489,7 @@ public class AutomationProposalService : IAutomationProposalService
 
         return string.Join(
             Environment.NewLine,
-            orderedOperations.Select(o => DescribeOperationReadable(o, columnNames, cardTitles)));
+            orderedOperations.Select(o => DescribeOperationReadable(o, columnNames, cardTitles, labelNames)));
     }
 
     public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
@@ -730,7 +735,8 @@ public class AutomationProposalService : IAutomationProposalService
     private static string DescribeOperationReadable(
         DiffOperationView operation,
         IReadOnlyDictionary<Guid, string> columnNames,
-        IReadOnlyDictionary<Guid, string> cardTitles)
+        IReadOnlyDictionary<Guid, string> cardTitles,
+        IReadOnlyDictionary<Guid, string> labelNames)
     {
         var verb = HumanizeActionVerb(operation.ActionType);
         var targetType = HumanizeTargetType(operation.TargetType).ToLowerInvariant();
@@ -764,7 +770,9 @@ public class AutomationProposalService : IAutomationProposalService
             var labelId = ExtractGuidParameter(operation.Parameters, "labelId");
             var labelDisplay = labelName is not null
                 ? $"\"{labelName}\""
-                : labelId?.ToString() ?? "(unspecified)";
+                : labelId.HasValue
+                    ? DescribeLabel(labelId.Value, labelNames)
+                    : "(unspecified)";
             var cardDisplay = namedTarget is not null
                 ? $"\"{namedTarget}\""
                 : !string.IsNullOrWhiteSpace(operation.TargetId)
@@ -795,14 +803,16 @@ public class AutomationProposalService : IAutomationProposalService
                 description += $" in column {columnDisplay}";
         }
 
-        var cardEffects = DescribeCardParameterEffects(operation.Parameters);
+        var cardEffects = DescribeCardParameterEffects(operation.Parameters, labelNames);
         if (isCardTarget && cardEffects.Count > 0)
             description += $"; {string.Join("; ", cardEffects)}";
 
         return description;
     }
 
-    private static IReadOnlyList<string> DescribeCardParameterEffects(string parameters)
+    private static IReadOnlyList<string> DescribeCardParameterEffects(
+        string parameters,
+        IReadOnlyDictionary<Guid, string> labelNames)
     {
         if (!OperationParameterParser.TryDeserializeParameters(parameters, out var parsed, out _))
             return Array.Empty<string>();
@@ -835,7 +845,24 @@ public class AutomationProposalService : IAutomationProposalService
                 : $"replace labels with [{string.Join(", ", effectiveLabels.Select(label => $"\"{label}\""))}]");
         }
 
+        if (OperationParameterParser.TryGetOptionalGuidArray(
+                parsed, "labelIds", out var labelIdsProvided, out var labelIds, out _)
+            && labelIdsProvided)
+        {
+            var effectiveLabelIds = labelIds.Distinct().ToList();
+            effects.Add(effectiveLabelIds.Count == 0
+                ? "replace labels with none"
+                : $"replace labels with [{string.Join(", ", effectiveLabelIds.Select(labelId => DescribeLabel(labelId, labelNames)))}]");
+        }
+
         return effects;
+    }
+
+    private static string DescribeLabel(Guid labelId, IReadOnlyDictionary<Guid, string> labelNames)
+    {
+        return labelNames.TryGetValue(labelId, out var labelName)
+            ? $"\"{labelName}\""
+            : labelId.ToString();
     }
 
     /// <summary>

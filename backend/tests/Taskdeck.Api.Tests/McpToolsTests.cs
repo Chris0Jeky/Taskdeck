@@ -306,18 +306,39 @@ public class McpToolsTests : IDisposable
         var label = await scope.ServiceProvider.GetRequiredService<LabelService>()
             .CreateLabelAsync(new CreateLabelDto(boardId, "urgent", "#FF0000"));
         var tools = CreateWriteTools(scope, user.Id);
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
 
         var setJson = await tools.UpdateCard(
             boardId.ToString(),
             card.Value.Id.ToString(),
             label_ids: label.Value.Id.ToString(),
             due_date: "2026-07-20");
-        using (var setDocument = JsonDocument.Parse(setJson))
-            await ApproveAndExecuteAsync(scope, user.Id, setDocument.RootElement.GetProperty("proposalId").GetGuid());
+        using var setDocument = JsonDocument.Parse(setJson);
+        var setProposalId = setDocument.RootElement.GetProperty("proposalId").GetGuid();
+        var setDiff = await proposalService.GetProposalDiffAsync(setProposalId);
+        setDiff.IsSuccess.Should().BeTrue(setDiff.ErrorMessage);
+        setDiff.Value.Should().Contain("replace labels with [\"urgent\"]");
+        await ApproveAndExecuteAsync(scope, user.Id, setProposalId);
 
         var afterSet = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Cards.GetByIdWithLabelsAsync(card.Value.Id);
         afterSet!.DueDate.Should().Be(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero));
         afterSet.CardLabels.Should().ContainSingle(cardLabel => cardLabel.LabelId == label.Value.Id);
+
+        var clearLabelsJson = await tools.UpdateCard(
+            boardId.ToString(),
+            card.Value.Id.ToString(),
+            label_ids: string.Empty);
+        using var clearLabelsDocument = JsonDocument.Parse(clearLabelsJson);
+        var clearLabelsProposalId = clearLabelsDocument.RootElement.GetProperty("proposalId").GetGuid();
+        var clearLabelsDiff = await proposalService.GetProposalDiffAsync(clearLabelsProposalId);
+        clearLabelsDiff.IsSuccess.Should().BeTrue(clearLabelsDiff.ErrorMessage);
+        clearLabelsDiff.Value.Should().Contain("replace labels with none");
+        await ApproveAndExecuteAsync(scope, user.Id, clearLabelsProposalId);
+
+        var afterLabelClear = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>()
+            .Cards.GetByIdWithLabelsAsync(card.Value.Id);
+        afterLabelClear!.DueDate.Should().Be(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero));
+        afterLabelClear.CardLabels.Should().BeEmpty();
 
         var clearJson = await tools.UpdateCard(
             boardId.ToString(),

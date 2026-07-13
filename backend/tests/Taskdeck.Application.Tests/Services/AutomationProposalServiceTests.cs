@@ -960,6 +960,37 @@ public class AutomationProposalServiceTests
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("\"text\"")]
+    public async Task GetProposalDiffAsync_ShouldReturnValidationError_ForNonObjectParameters(string parameters)
+    {
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Invalid parameters",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "create",
+            "card",
+            parameters,
+            Guid.NewGuid().ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("JSON object");
+    }
+
     [Fact]
     public async Task GetProposalDiffAsync_ShouldReturnReadableDescriptions_ForCreateCardOperations()
     {
@@ -1099,6 +1130,52 @@ public class AutomationProposalServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Contain("set due date to 2026-07-14T07:30:00.0000000+00:00");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldResolveUpdateLabelIdsToNames()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "To Do", 0);
+        var card = new Card(Guid.NewGuid(), boardId, column.Id, "File return");
+        var urgent = new Label(boardId, "urgent", "#FF0000");
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Replace card labels",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            cardId = card.Id,
+            labelIds = new[] { urgent.Id }
+        });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "update",
+            "card",
+            parameters,
+            Guid.NewGuid().ToString(),
+            targetId: card.Id.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card });
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+        var labelRepoMock = new Mock<ILabelRepository>();
+        labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { urgent });
+        _unitOfWorkMock.Setup(u => u.Labels).Returns(labelRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Contain("replace labels with [\"urgent\"]");
     }
 
     [Fact]
