@@ -92,9 +92,9 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 
 Bounded finish-or-close slices from the archive plan (#1134, #1135, #1128, #1175, #1138, #1222/#1227) continue as capacity allows, unchanged.
 
-### Phase 4 — every artefact, everyone (v0.4; ADR-0046, tracker `#1327`)
+### Phase 4 — every artefact, everyone (v0.4; ADR-0046 **Proposed**, tracker `#1327`)
 
-Seeded 2026-07-13 from the maintainer's twin-app evaluation (decision: extend the single app, defer the twin behind the GEN-12 evidence gate). **Strictly subordinate to the v0.1 ship gate** — lane **G-A** is parallel-safe immediately (stays off the transcript-lane files while PR #1312 is open), lane **G-B** waits for REVIVAL-08 M1 (`#1312`) to merge, lane **G-C** follows Phase 1.
+Seeded 2026-07-13 from the maintainer's twin-app evaluation (decision: extend the single app, defer the twin behind the GEN-12 evidence gate). **Ratification pending on GEN-00 `#1327`** — until the maintainer ratifies ADR-0046, only lane **G-A** foundational work is authorized (per maintainer instruction 2026-07-13); lanes G-B/G-C wait for ratification in addition to their technical dependencies. **Strictly subordinate to the v0.1 ship gate** — lane **G-A** is parallel-safe immediately (stays off the transcript-lane files while PR #1312 is open), lane **G-B** waits for REVIVAL-08 M1 (`#1312`) to merge, lane **G-C** follows Phase 1.
 
 | Item | Issue | Lane |
 |---|---|---|
@@ -136,7 +136,7 @@ Seeded 2026-07-13 from the maintainer's twin-app evaluation (decision: extend th
 
 Authorized: REVIVAL-01 (registration gate), REVIVAL-08/-09/-10/-11 (transcript engine), REVIVAL-12 (feedback/telemetry), REVIVAL-13 (key scopes + hash-pin wiring).
 
-**Phase-4 additions (ADR-0046, 2026-07-13):** GEN-01/-02/-03/-04/-05 (the artefact intake pipeline — `SourceArtefact` entity + blob store + upload endpoint, extraction abstraction + records, provider multimodal content parts + consent-gated vision, triage routing for artefact sources, due-date/label apply operations), GEN-07 (board dossier read model + Paper panel), GEN-08 (Today attention aggregations), GEN-10 (mode-scoped navigation + guided-first default).
+**Phase-4 additions (ADR-0046, 2026-07-13 — Proposed, pending GEN-00 `#1327` ratification; only lane G-A pre-authorized):** GEN-01/-02/-03/-04/-05 (the artefact intake pipeline — `SourceArtefact` entity + blob store + upload endpoint, extraction abstraction + records, provider multimodal content parts + consent-gated vision, triage routing for artefact sources, due-date/label apply operations), GEN-07 (board dossier read model + Paper panel), GEN-08 (Today attention aggregations), GEN-10 (mode-scoped navigation + guided-first default).
 
 Not authorized without a plan amendment: the twin generalist application (GEN-12 `#1326` is the evidence gate), other new views/dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens).
 
@@ -162,4 +162,4 @@ The GEN-11 friends-family channel (`#1325`) adds a second signal stream — non-
 - `docs/analysis/2026-07-10_revival_assessment.md` — evidence base (code + market)
 - `docs/COURSE_CORRECTION.md` / `docs/PROJECT_TRAJECTORY.md` — the 2026-07-02 analysis pair; fallback plan + finite-work discipline
 - `docs/IMPLEMENTATION_MASTERPLAN.md` — Direction section (points here)
-- `OUTSTANDING_TASKS.md` §E — the maintainer-visible checklist mirror
+- `OUTSTANDING_TASKS.md` §E/§F — the maintainer-visible checklist mirrors (revival wave / Phase-4 generalist wave)
