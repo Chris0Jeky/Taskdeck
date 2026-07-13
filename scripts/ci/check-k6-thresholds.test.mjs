@@ -4,8 +4,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 
-const analyzerPath = join(process.cwd(), 'scripts', 'ci', 'check-k6-thresholds.mjs')
+const analyzerPath = fileURLToPath(new URL('./check-k6-thresholds.mjs', import.meta.url))
 
 function createSummary(boardWriteP95, boardWriteThresholdOk) {
   return {
@@ -44,14 +45,14 @@ function createSummary(boardWriteP95, boardWriteThresholdOk) {
   }
 }
 
-async function runAnalyzer(boardWriteP95, boardWriteThresholdOk) {
+async function runAnalyzer(boardWriteP95, boardWriteThresholdOk, cwd = process.cwd()) {
   const tempDir = await mkdtemp(join(tmpdir(), 'taskdeck-k6-thresholds-'))
   const summaryPath = join(tempDir, 'k6-summary.json')
 
   try {
     await writeFile(summaryPath, JSON.stringify(createSummary(boardWriteP95, boardWriteThresholdOk)), 'utf8')
     return spawnSync(process.execPath, [analyzerPath, summaryPath, '--fail-on-breach'], {
-      cwd: process.cwd(),
+      cwd,
       encoding: 'utf8',
     })
   } finally {
@@ -73,4 +74,17 @@ test('fails when tagged board-write p95 reaches the jitter-adjusted hard gate', 
   assert.equal(result.status, 1)
   assert.match(result.stdout, /exceeds 2200ms hard gate/)
   assert.match(result.stdout, /measured SQLite capacity: 2000ms plus 10% jitter allowance/)
+})
+
+test('resolves the analyzer relative to the test module from another working directory', async () => {
+  const alternateCwd = await mkdtemp(join(tmpdir(), 'taskdeck-k6-cwd-'))
+
+  try {
+    const result = await runAnalyzer(2010, true, alternateCwd)
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /at or above measured 2000ms SQLite capacity/)
+  } finally {
+    await rm(alternateCwd, { recursive: true, force: true })
+  }
 })
