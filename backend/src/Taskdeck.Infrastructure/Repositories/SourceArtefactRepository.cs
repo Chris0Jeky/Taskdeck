@@ -125,7 +125,7 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
             var connection = _context.Database.GetDbConnection();
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT b.Content
+                SELECT b.rowid, b.Content
                 FROM ArtefactBlobs AS b
                 INNER JOIN SourceArtefacts AS a ON a.Id = b.SourceArtefactId
                 WHERE a.Id = @id AND a.UserId = @userId
@@ -146,7 +146,10 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
             if (!await reader.ReadAsync(cancellationToken))
                 return false;
 
-            await using var source = reader.GetStream(0);
+            // Microsoft.Data.Sqlite returns a true incremental SqliteBlob stream only
+            // when the result set includes rowid. Without b.rowid above, GetStream
+            // materializes the complete BLOB into a MemoryStream before this copy starts.
+            await using var source = reader.GetStream(1);
             await source.CopyToAsync(destination, 64 * 1024, cancellationToken);
             return true;
         }

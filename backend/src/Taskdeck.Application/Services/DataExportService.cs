@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
@@ -280,59 +282,6 @@ public class DataExportService : IDataExportService
             writer.WriteEndArray();
             await writer.FlushAsync(cancellationToken);
 
-            // source artefacts -- metadata pages never join the blob table; one bounded
-            // blob is loaded at a time and written immediately as base64.
-            writer.WriteStartArray("artefacts");
-            var artefactOffset = 0;
-            while (true)
-            {
-                var page = await _artefacts.GetByUserAsync(
-                    userId,
-                    limit: StreamPageSize,
-                    artefactOffset,
-                    cancellationToken);
-                if (page.Count == 0)
-                    break;
-
-                foreach (var artefact in page)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var bytes = await _artefacts.GetContentForUserAsync(
-                        artefact.Id,
-                        userId,
-                        cancellationToken)
-                        ?? throw new InvalidOperationException($"Artefact {artefact.Id} is missing its blob.");
-
-                    writer.WriteStartObject();
-                    writer.WriteString("id", artefact.Id);
-                    if (artefact.BoardId.HasValue)
-                        writer.WriteString("boardId", artefact.BoardId.Value);
-                    else
-                        writer.WriteNull("boardId");
-                    writer.WriteString("kind", artefact.Kind.ToString());
-                    writer.WriteString("mimeType", artefact.MimeType);
-                    writer.WriteString("fileName", artefact.FileName);
-                    writer.WriteNumber("byteSize", artefact.ByteSize);
-                    writer.WriteString("sha256", artefact.Sha256);
-                    writer.WriteString("captureSource", artefact.CaptureSource.ToString());
-                    writer.WriteString("originReference", artefact.OriginReference);
-                    if (artefact.CreatedFromCaptureId.HasValue)
-                        writer.WriteString("createdFromCaptureId", artefact.CreatedFromCaptureId.Value);
-                    else
-                        writer.WriteNull("createdFromCaptureId");
-                    writer.WriteString("createdAt", artefact.CreatedAt);
-                    writer.WriteBase64String("contentBase64", bytes);
-                    writer.WriteEndObject();
-                }
-
-                await writer.FlushAsync(cancellationToken);
-                artefactOffset += page.Count;
-                if (page.Count < StreamPageSize)
-                    break;
-            }
-            writer.WriteEndArray();
-            await writer.FlushAsync(cancellationToken);
-
             // notifications — streamed page-by-page to avoid loading all into memory
             writer.WriteStartArray("notifications");
             await foreach (var n in StreamNotificationsAsync(userId, cancellationToken))
@@ -466,9 +415,13 @@ public class DataExportService : IDataExportService
                 writer.WriteNull("notificationPreferences");
             }
 
-            writer.WriteEndObject(); // data
-            writer.WriteEndObject(); // root
+            // Artefact content is the only export value that can exceed
+            // Utf8JsonWriter's single-token Base64 limit. Flush and end this
+            // writer segment while the data/root objects remain open; the
+            // bounded raw tail below writes the final property and delimiters.
+            // No writer calls may follow the raw tail because it owns those closes.
             await writer.FlushAsync(cancellationToken);
+            await WriteArtefactsTailAsync(userId, destination, cancellationToken);
 
             // Log the export action
             await _historyService.LogActionAsync(
@@ -494,7 +447,101 @@ public class DataExportService : IDataExportService
     // Private streaming helpers — page through large tables without a hard cap
     // -----------------------------------------------------------------------
 
+    private static readonly byte[] ArtefactsPropertyPrefix = ",\"artefacts\":["u8.ToArray();
+    private static readonly byte[] ArtefactSeparator = ","u8.ToArray();
+    private static readonly byte[] ArtefactContentPrefix = ",\"contentBase64\":\""u8.ToArray();
+    private static readonly byte[] ArtefactObjectSuffix = "\"}"u8.ToArray();
+    private static readonly byte[] ExportSuffix = "]}}"u8.ToArray();
+
     private const int StreamPageSize = 500;
+
+    private async Task WriteArtefactsTailAsync(
+        Guid userId,
+        Stream destination,
+        CancellationToken cancellationToken)
+    {
+        await destination.WriteAsync(ArtefactsPropertyPrefix, cancellationToken);
+
+        var first = true;
+        var offset = 0;
+        while (true)
+        {
+            var page = await _artefacts.GetByUserAsync(
+                userId,
+                StreamPageSize,
+                offset,
+                cancellationToken);
+            if (page.Count == 0)
+                break;
+
+            foreach (var artefact in page)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!first)
+                    await destination.WriteAsync(ArtefactSeparator, cancellationToken);
+                first = false;
+
+                var metadataBuffer = new ArrayBufferWriter<byte>(512);
+                using (var metadataWriter = new Utf8JsonWriter(metadataBuffer))
+                {
+                    metadataWriter.WriteStartObject();
+                    metadataWriter.WriteString("id", artefact.Id);
+                    if (artefact.BoardId.HasValue)
+                        metadataWriter.WriteString("boardId", artefact.BoardId.Value);
+                    else
+                        metadataWriter.WriteNull("boardId");
+                    metadataWriter.WriteString("kind", artefact.Kind.ToString());
+                    metadataWriter.WriteString("mimeType", artefact.MimeType);
+                    metadataWriter.WriteString("fileName", artefact.FileName);
+                    metadataWriter.WriteNumber("byteSize", artefact.ByteSize);
+                    metadataWriter.WriteString("sha256", artefact.Sha256);
+                    metadataWriter.WriteString("captureSource", artefact.CaptureSource.ToString());
+                    metadataWriter.WriteString("originReference", artefact.OriginReference);
+                    if (artefact.CreatedFromCaptureId.HasValue)
+                        metadataWriter.WriteString("createdFromCaptureId", artefact.CreatedFromCaptureId.Value);
+                    else
+                        metadataWriter.WriteNull("createdFromCaptureId");
+                    metadataWriter.WriteString("createdAt", artefact.CreatedAt);
+                    metadataWriter.WriteEndObject();
+                    metadataWriter.Flush();
+                }
+
+                if (metadataBuffer.WrittenCount == 0 || metadataBuffer.WrittenSpan[^1] != (byte)'}')
+                    throw new InvalidOperationException("Artefact export metadata was not a JSON object.");
+
+                await destination.WriteAsync(metadataBuffer.WrittenMemory[..^1], cancellationToken);
+                await destination.WriteAsync(ArtefactContentPrefix, cancellationToken);
+
+                using var base64Transform = new ToBase64Transform();
+                await using (var base64Stream = new CryptoStream(
+                    destination,
+                    base64Transform,
+                    CryptoStreamMode.Write,
+                    leaveOpen: true))
+                {
+                    var copied = await _artefacts.CopyContentForUserAsync(
+                        artefact.Id,
+                        userId,
+                        base64Stream,
+                        cancellationToken);
+                    if (!copied)
+                        throw new InvalidOperationException($"Artefact {artefact.Id} is missing its blob.");
+
+                    await base64Stream.FlushFinalBlockAsync(cancellationToken);
+                }
+
+                await destination.WriteAsync(ArtefactObjectSuffix, cancellationToken);
+                await destination.FlushAsync(cancellationToken);
+            }
+
+            offset += page.Count;
+            if (page.Count < StreamPageSize)
+                break;
+        }
+
+        await destination.WriteAsync(ExportSuffix, cancellationToken);
+        await destination.FlushAsync(cancellationToken);
+    }
 
     private async Task<IReadOnlyList<Domain.Entities.SourceArtefact>> GetAllArtefactMetadataAsync(
         Guid userId,
