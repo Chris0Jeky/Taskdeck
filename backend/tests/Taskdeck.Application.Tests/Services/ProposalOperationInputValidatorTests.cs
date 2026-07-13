@@ -123,6 +123,20 @@ public class ProposalOperationInputValidatorTests
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("\"text\"")]
+    public void Validate_NonObjectParameters_Fails(string parameters)
+    {
+        var result = ProposalOperationInputValidator.Validate(One(parameters: parameters));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("JSON object");
+    }
+
     [Fact]
     public void Validate_ParametersWithinDepthBound_Succeeds()
     {

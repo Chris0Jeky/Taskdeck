@@ -69,6 +69,20 @@ public class CardTests
     }
 
     [Fact]
+    public void ClearDueDate_ShouldRemoveExistingDueDate()
+    {
+        var card = new Card(
+            _boardId,
+            _columnId,
+            "Dated task",
+            dueDate: DateTimeOffset.UtcNow.AddDays(5));
+
+        card.ClearDueDate();
+
+        card.DueDate.Should().BeNull();
+    }
+
+    [Fact]
     public void Block_ShouldSetBlockedState()
     {
         // Arrange
