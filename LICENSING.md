@@ -16,23 +16,23 @@ redistributable under the MIT terms that accompanied them.
 
 Contributions to the MIT-licensed core are accepted under the same MIT terms
 (inbound equals outbound). Taskdeck uses the Developer Certificate of Origin
-rather than a contributor licence agreement; see [CONTRIBUTING.md](CONTRIBUTING.md).
+rather than a contributor license agreement; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Additive Commercial Modules
 
 Future commercial capabilities, if any, will be additive and separately
 licensed. They may live under the reserved [`ee/`](ee/) path or in a separate
-repository, and each such module will carry its own explicit licence terms.
+repository, and each such module will carry its own explicit license terms.
 Commercial development will not be implemented by relicensing or re-gating an
 existing MIT-licensed feature.
 
-The `ee/` directory currently contains only a licence placeholder. It contains
+The `ee/` directory currently contains only a license placeholder. It contains
 no commercial product code and is outside the root MIT grant.
 
 ## Free Boundary
 
 The following capabilities are part of Taskdeck's permanent free boundary and
-will never be gated behind a commercial licence:
+will never be gated behind a commercial license:
 
 - the core capture -> proposal -> review -> apply loop;
 - data export and portability;
@@ -45,8 +45,8 @@ managed services, but it will not subtract from this boundary.
 
 ## Name and Logo
 
-The MIT licence covers the software and documentation identified by the root
-licence. It does not grant permission to use the Taskdeck name, logo, or other
+The MIT license covers the software and documentation identified by the root
+license. It does not grant permission to use the Taskdeck name, logo, or other
 brand identifiers as trademarks, or to imply endorsement by the Taskdeck
 project. Descriptive references to the project remain permitted as applicable
 law allows.

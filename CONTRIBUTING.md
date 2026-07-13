@@ -240,9 +240,9 @@ git commit -s -m "Add booking validation to application layer"
 ```
 
 The DCO is a lightweight statement that you created the contribution, or have
-the right to submit it under Taskdeck's licence, and understand that the public
+the right to submit it under Taskdeck's license, and understand that the public
 record is retained. Taskdeck uses this inbound-equals-outbound model instead of
-a contributor licence agreement: contributions arrive under the same MIT terms
+a contributor license agreement: contributions arrive under the same MIT terms
 under which the core is distributed, so the
 [MIT-forever commitment](LICENSING.md) does not depend on collecting unilateral
 relicensing rights.
