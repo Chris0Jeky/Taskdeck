@@ -18,6 +18,7 @@ public class DataExportService : IDataExportService
 {
     private const string ExportVersion = "1.0";
     private const long MaxBufferedArtefactBytes = ArtefactStorageSettings.DefaultMaxBytesPerArtefact;
+    private const int MaxBufferedArtefactRows = 10_000;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
     private readonly ILogger<DataExportService>? _logger;
@@ -54,6 +55,14 @@ public class DataExportService : IDataExportService
                     "This export contains too much artefact content to buffer; use the streaming export endpoint");
             }
 
+            var artefactMetadata = await GetBufferedArtefactMetadataAsync(userId, cancellationToken);
+            if (artefactMetadata.Count > MaxBufferedArtefactRows)
+            {
+                return Result.Failure<UserDataExportDto>(
+                    ErrorCodes.PayloadTooLarge,
+                    "This export contains too many artefacts to buffer; use the streaming export endpoint");
+            }
+
             // Gather all user-scoped data in parallel where safe
             var boardAccessesTask = _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
             var notificationsTask = _unitOfWork.Notifications.GetByUserIdAsync(userId, limit: 10000, cancellationToken: cancellationToken);
@@ -83,11 +92,6 @@ public class DataExportService : IDataExportService
             var preferences = await preferencesTask;
             var notificationPrefs = await notificationPrefsTask;
             var proposalFeedback = await feedbackTask;
-            // This repository shares the scoped EF DbContext with the unit of work.
-            // Start it only after the existing parallel read group completes; EF does
-            // not permit another operation while one is still in flight.
-            var artefactMetadata = await GetAllArtefactMetadataAsync(userId, cancellationToken);
-
             // Resolve board names for accessible boards
             var boardIds = boardAccesses.Select(ba => ba.BoardId).Distinct().ToList();
             var boards = boardIds.Count > 0
@@ -543,22 +547,25 @@ public class DataExportService : IDataExportService
         await destination.FlushAsync(cancellationToken);
     }
 
-    private async Task<IReadOnlyList<Domain.Entities.SourceArtefact>> GetAllArtefactMetadataAsync(
+    private async Task<IReadOnlyList<Domain.Entities.SourceArtefact>> GetBufferedArtefactMetadataAsync(
         Guid userId,
         CancellationToken cancellationToken)
     {
-        var all = new List<Domain.Entities.SourceArtefact>();
-        while (true)
+        var all = new List<Domain.Entities.SourceArtefact>(MaxBufferedArtefactRows + 1);
+        while (all.Count <= MaxBufferedArtefactRows)
         {
+            var remaining = MaxBufferedArtefactRows + 1 - all.Count;
             var page = await _artefacts.GetByUserAsync(
                 userId,
-                StreamPageSize,
+                Math.Min(StreamPageSize, remaining),
                 all.Count,
                 cancellationToken);
             all.AddRange(page);
             if (page.Count < StreamPageSize)
                 return all;
         }
+
+        return all;
     }
 
     private static UserDataExportArtefactDto MapArtefactForExport(
