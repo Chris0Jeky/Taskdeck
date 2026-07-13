@@ -2,17 +2,20 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace Taskdeck.Infrastructure.Migrations
+namespace Taskdeck.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260713022601_AddRegistrationGating")]
+    partial class AddRegistrationGating
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.28");
@@ -334,64 +337,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasIndex("EntityType", "EntityId");
 
                     b.ToTable("ArchiveItems", (string)null);
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ArtefactBlob", b =>
-                {
-                    b.Property<Guid>("SourceArtefactId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<byte[]>("Content")
-                        .IsRequired()
-                        .HasColumnType("BLOB");
-
-                    b.HasKey("SourceArtefactId");
-
-                    b.ToTable("ArtefactBlobs", (string)null);
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ArtefactExtraction", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ExtractedText")
-                        .IsRequired()
-                        .HasMaxLength(102400)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ExtractorName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ExtractorVersion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("SourceArtefactId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("TextLength")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("WarningsJson")
-                        .IsRequired()
-                        .HasMaxLength(4096)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SourceArtefactId", "CreatedAt");
-
-                    b.ToTable("ArtefactExtractions", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.AuditLog", b =>
@@ -2087,65 +2032,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("RegistrationInvites", (string)null);
                 });
 
-            modelBuilder.Entity("Taskdeck.Domain.Entities.SourceArtefact", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("BoardId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("ByteSize")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("CaptureSource")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("CreatedFromCaptureId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("MimeType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("OriginReference")
-                        .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Sha256")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BoardId");
-
-                    b.HasIndex("UserId", "CreatedAt");
-
-                    b.HasIndex("UserId", "Sha256");
-
-                    b.ToTable("SourceArtefacts", (string)null);
-                });
-
             modelBuilder.Entity("Taskdeck.Domain.Entities.TomorrowNote", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2291,24 +2177,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasOne("Taskdeck.Domain.Entities.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ArtefactBlob", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.SourceArtefact", null)
-                        .WithOne()
-                        .HasForeignKey("Taskdeck.Domain.Entities.ArtefactBlob", "SourceArtefactId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ArtefactExtraction", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.SourceArtefact", null)
-                        .WithMany()
-                        .HasForeignKey("SourceArtefactId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -2673,20 +2541,6 @@ namespace Taskdeck.Infrastructure.Migrations
                         .WithMany("Fields")
                         .HasForeignKey("ProposalProvenanceId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.SourceArtefact", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.Board", null)
-                        .WithMany()
-                        .HasForeignKey("BoardId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Taskdeck.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

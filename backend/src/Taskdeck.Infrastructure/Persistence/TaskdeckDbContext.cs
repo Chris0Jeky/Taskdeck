@@ -56,6 +56,8 @@ public class TaskdeckDbContext : DbContext
     public DbSet<DailySnapshot> DailySnapshots => Set<DailySnapshot>();
     public DbSet<TomorrowNote> TomorrowNotes => Set<TomorrowNote>();
     public DbSet<McpToolHash> McpToolHashes => Set<McpToolHash>();
+    public DbSet<RegistrationBootstrap> RegistrationBootstraps => Set<RegistrationBootstrap>();
+    public DbSet<RegistrationInvite> RegistrationInvites => Set<RegistrationInvite>();
     public DbSet<SourceArtefact> SourceArtefacts => Set<SourceArtefact>();
     public DbSet<ArtefactBlob> ArtefactBlobs => Set<ArtefactBlob>();
     public DbSet<ArtefactExtraction> ArtefactExtractions => Set<ArtefactExtraction>();

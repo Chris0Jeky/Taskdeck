@@ -86,6 +86,7 @@ public static class DependencyInjection
         services.AddScoped<IDailySnapshotRepository, DailySnapshotRepository>();
         services.AddScoped<ITomorrowNoteRepository, TomorrowNoteRepository>();
         services.AddScoped<IMcpToolHashRepository, McpToolHashRepository>();
+        services.AddScoped<IRegistrationPolicyStore, RegistrationPolicyStore>();
         services.AddScoped<ISourceArtefactRepository, SourceArtefactRepository>();
         services.AddScoped<IArtefactExtractionRepository, ArtefactExtractionRepository>();
         services.AddScoped<IArtefactTextExtractor, PdfPigArtefactTextExtractor>();

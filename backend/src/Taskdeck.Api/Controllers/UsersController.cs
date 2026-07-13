@@ -14,12 +14,20 @@ namespace Taskdeck.Api.Controllers;
 [Route("api/[controller]")]
 public class UsersController : AuthenticatedControllerBase
 {
-    private readonly UserService _userService;
+    public const string RestrictedCreationMessage =
+        "Create users through /api/auth/register when registration is restricted.";
 
-    public UsersController(UserService userService, IUserContext userContext)
+    private readonly UserService _userService;
+    private readonly RegistrationSettings _registrationSettings;
+
+    public UsersController(
+        UserService userService,
+        IUserContext userContext,
+        RegistrationSettings registrationSettings)
         : base(userContext)
     {
         _userService = userService;
+        _registrationSettings = registrationSettings;
     }
 
     [HttpGet]
@@ -67,6 +75,13 @@ public class UsersController : AuthenticatedControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserDto dto)
     {
+        if (_registrationSettings.Mode != RegistrationMode.Open)
+        {
+            return Result
+                .Failure(Taskdeck.Domain.Exceptions.ErrorCodes.Forbidden, RestrictedCreationMessage)
+                .ToErrorActionResult();
+        }
+
         var sanitized = dto with { DefaultRole = UserRole.Editor };
         var result = await _userService.CreateUserAsync(sanitized);
         return result.IsSuccess

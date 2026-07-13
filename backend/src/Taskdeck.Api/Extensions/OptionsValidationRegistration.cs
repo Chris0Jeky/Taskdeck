@@ -22,6 +22,7 @@ public static class OptionsValidationRegistration
         // ── Settings from SettingsRegistration ──────────────────────────────
 
         services.RegisterValidatedOptions<JwtSettings>(configuration, "Jwt");
+        services.RegisterValidatedOptions<RegistrationSettings>(configuration, "Auth:Registration");
         services.RegisterValidatedOptions<ObservabilitySettings>(configuration, "Observability");
         services.RegisterValidatedOptions<RateLimitingSettings>(configuration, "RateLimiting");
         services.RegisterValidatedOptions<SecurityHeadersSettings>(configuration, "SecurityHeaders");
