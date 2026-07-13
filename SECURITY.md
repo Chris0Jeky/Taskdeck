@@ -86,3 +86,4 @@ We will not pursue legal action against researchers who:
 - [`docs/security/SECURITY_OWASP_BASELINE.md`](docs/security/SECURITY_OWASP_BASELINE.md) — baseline hardening posture
 - [`docs/security/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`](docs/security/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md) — dependency vulnerability management policy
 - [`docs/security/SECRETS_MANAGEMENT_BASELINE.md`](docs/security/SECRETS_MANAGEMENT_BASELINE.md) — secrets handling
+- [`docs/security/UNTRUSTED_ARTEFACT_THREAT_MODEL.md`](docs/security/UNTRUSTED_ARTEFACT_THREAT_MODEL.md) — attacker-supplied content, extraction, prompt-injection, preview, and file-serving boundaries
