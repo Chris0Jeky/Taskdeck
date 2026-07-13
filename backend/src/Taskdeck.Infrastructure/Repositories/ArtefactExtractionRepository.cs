@@ -48,6 +48,13 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        // SQLite cannot translate ORDER BY on a DateTimeOffset column (CreatedAt) from
+        // LINQ, so the ordering + LIMIT are pushed into raw SQL to keep the "latest"
+        // selection deterministic in the database. This mirrors the established pattern
+        // in ChatSessionRepository / LlmQueueRepository / AuditLogRepository; collapsing
+        // to a pure LINQ query would silently change ordering semantics under SQLite.
+        // Other providers translate the equivalent LINQ correctly. Coverage:
+        // ArtefactExtractionPersistenceTests.Queries_ReturnDeterministicHistoryWithinUserBoundary.
         if (_context.Database.IsSqlite())
         {
             return await _context.ArtefactExtractions
@@ -85,6 +92,12 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
         var boundedLimit = Math.Clamp(limit, 1, MaxPageSize);
         var boundedOffset = Math.Max(offset, 0);
 
+        // SQLite cannot translate ORDER BY on the DateTimeOffset CreatedAt column from
+        // LINQ, so ordering + LIMIT/OFFSET are pushed into raw SQL to keep pagination
+        // deterministic in the database (same rationale and codebase convention as
+        // GetLatestForArtefactForUserAsync above). Other providers translate the LINQ
+        // branch below correctly. Coverage:
+        // ArtefactExtractionPersistenceTests.Queries_ReturnDeterministicHistoryWithinUserBoundary.
         if (_context.Database.IsSqlite())
         {
             return await _context.ArtefactExtractions
