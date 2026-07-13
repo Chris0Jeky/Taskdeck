@@ -51,7 +51,7 @@ The governing constraints: ADR-0044's finite-work discipline (a ratified wave li
 - `docs/REVIVAL_PLAN.md` gains Phase 4, a v0.4 horizon row, §7 new-surface authorizations for GEN-01/02/03/04/05/07/08/10, and a friends-family signal at the checkpoint. The twin app, real undo, Postgres, and new connector types remain unauthorized.
 - Prompt-injection rails (GEN-09) become a **merge prerequisite** for wiring artefact text into LLM prompts (GEN-04) — the review gate stops being the only defense layer before hostile documents flow in.
 - The scope-regrowth risk named in REVIVAL_PLAN §9 grows: mitigated by lane subordination to the v0.1 gate, the unchanged ~8-week checkpoint, the GEN-12 gate, and this wave being seeded complete (admission ticket discipline — new GEN work requires a plan amendment, same as REVIVAL).
-- The `.codex`/`.claude` active-gate snapshots are refreshed to the revival + generalist direction so overnight autonomous agents do not execute against the superseded archive framing.
+- `.codex/memories/00_ACTIVE.md` (the Codex active-gate snapshot, which still declared the superseded archive pivot) is refreshed to the revival + generalist direction so overnight autonomous agents do not execute against stale framing. The Claude-side direction snapshot lives in out-of-repo session memory and is refreshed there, outside this change.
 - Ratification: this ADR ships as **Proposed**; the maintainer ratifies via the GEN-00 (`#1327`) checklist. Foundational lane G-A execution was authorized by maintainer instruction on 2026-07-13 pending ratification.
 
 ## References
