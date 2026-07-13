@@ -7,16 +7,27 @@ const favicon = readFileSync('public/favicon.svg', 'utf8')
 
 describe('Paper branding assets', () => {
   it('bundles only the required Latin WOFF2 Paper font faces', () => {
+    const bundledFaces = Array.from(
+      paperFonts.matchAll(/url\('@fontsource\/([^']+\.woff2)'\)/g),
+      ([, face]) => face,
+    )
+
     expect(paperFonts.match(/@font-face/g)).toHaveLength(11)
-    expect(paperFonts.match(/\.woff2/g)).toHaveLength(11)
+    expect(bundledFaces).toEqual([
+      'fraunces/files/fraunces-latin-300-normal.woff2',
+      'fraunces/files/fraunces-latin-400-normal.woff2',
+      'fraunces/files/fraunces-latin-400-italic.woff2',
+      'fraunces/files/fraunces-latin-500-normal.woff2',
+      'fraunces/files/fraunces-latin-500-italic.woff2',
+      'inter/files/inter-latin-400-normal.woff2',
+      'inter/files/inter-latin-500-normal.woff2',
+      'inter/files/inter-latin-600-normal.woff2',
+      'jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2',
+      'jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2',
+      'jetbrains-mono/files/jetbrains-mono-latin-600-normal.woff2',
+    ])
     expect(paperFonts).not.toMatch(/\.woff(?:['")])/)
     expect(paperFonts).not.toContain('fonts.googleapis.com')
-
-    expect(paperFonts).toContain('fraunces-latin-300-normal.woff2')
-    expect(paperFonts).toContain('fraunces-latin-400-italic.woff2')
-    expect(paperFonts).toContain('fraunces-latin-500-italic.woff2')
-    expect(paperFonts).toContain('inter-latin-600-normal.woff2')
-    expect(paperFonts).toContain('jetbrains-mono-latin-600-normal.woff2')
   })
 
   it('uses Paper branding for favicon and install metadata', () => {
