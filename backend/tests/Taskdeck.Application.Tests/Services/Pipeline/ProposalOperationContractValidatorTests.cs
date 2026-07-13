@@ -77,6 +77,219 @@ public class ProposalOperationContractValidatorTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task ValidateAsync_ShouldAllowReferencesToCardsCreatedEarlierBySequence()
+    {
+        var boardId = Guid.NewGuid();
+        var sourceColumn = new Column(boardId, "Backlog", 0);
+        var targetColumn = new Column(boardId, "Done", 1);
+        var createdCardId = Guid.NewGuid();
+        var label = new Label(boardId, "urgent", "#FF0000");
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        var labels = new Mock<ILabelRepository>();
+        unitOfWork.Setup(instance => instance.Cards).Returns(cards.Object);
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        unitOfWork.Setup(instance => instance.Labels).Returns(labels.Object);
+        columns.Setup(repository => repository.GetByIdAsync(sourceColumn.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(sourceColumn);
+        columns.Setup(repository => repository.GetByIdAsync(targetColumn.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(targetColumn);
+        labels.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { label });
+
+        // Deliberately supply the list out of order. Apply is sequence-ordered, so
+        // shared validation must use the same ordering contract.
+        var operations = new[]
+        {
+            CreateOperation(3, "add-label", createdCardId, new { cardId = createdCardId, labelId = label.Id }),
+            CreateOperation(2, "move", createdCardId, new { cardId = createdCardId, columnId = targetColumn.Id }),
+            CreateOperation(1, "update", createdCardId, new { cardId = createdCardId, title = "Ready" }),
+            CreateOperation(
+                0,
+                "create",
+                createdCardId,
+                new { boardId, columnId = sourceColumn.Id, title = "New card" })
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        cards.Verify(
+            repository => repository.GetByIdAsync(createdCardId, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "the create target is checked for collisions once, then later references use the planned-card set");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectDuplicateCreateCardTargetIds()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Backlog", 0);
+        var createdCardId = Guid.NewGuid();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        unitOfWork.Setup(instance => instance.Cards).Returns(cards.Object);
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        cards.Setup(repository => repository.GetByIdAsync(createdCardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Card?)null);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operations = new[]
+        {
+            CreateOperation(
+                0,
+                "create",
+                createdCardId,
+                new { boardId, columnId = column.Id, title = "First card" }),
+            CreateOperation(
+                1,
+                "create",
+                createdCardId,
+                new { boardId, columnId = column.Id, title = "Duplicate card" })
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("duplicated");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectCardReferenceBeforeItsCreateSequence()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Backlog", 0);
+        var createdCardId = Guid.NewGuid();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        unitOfWork.Setup(instance => instance.Cards).Returns(cards.Object);
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        cards.Setup(repository => repository.GetByIdAsync(createdCardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Card?)null);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operations = new[]
+        {
+            CreateOperation(
+                1,
+                "create",
+                createdCardId,
+                new { boardId, columnId = column.Id, title = "New card" }),
+            CreateOperation(0, "update", createdCardId, new { cardId = createdCardId, title = "Too early" })
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("outside the proposal board scope");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRequireColumnIdForMoveCardApplyContract()
+    {
+        var boardId = Guid.NewGuid();
+        var sourceColumn = new Column(boardId, "Backlog", 0);
+        var targetColumn = new Column(boardId, "Done", 1);
+        var card = new Card(boardId, sourceColumn.Id, "Move me");
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        unitOfWork.Setup(instance => instance.Cards).Returns(cards.Object);
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        cards.Setup(repository => repository.GetByIdAsync(card.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        columns.Setup(repository => repository.GetByIdAsync(targetColumn.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(targetColumn);
+        var operation = CreateOperation(
+            0,
+            "move",
+            card.Id,
+            new { cardId = card.Id, targetColumnId = targetColumn.Id });
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Missing required parameter 'columnId'");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRequirePositionForColumnReorder()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Backlog", 0);
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var columns = new Mock<IColumnRepository>();
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operation = CreateOperation(
+            0,
+            "reorder",
+            column.Id,
+            new { columnId = column.Id },
+            targetType: "column");
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Missing required parameter 'position'");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRequireAnUpdateFieldForBoardUpdate()
+    {
+        var boardId = Guid.NewGuid();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var operation = CreateOperation(
+            0,
+            "update",
+            boardId,
+            new { boardId },
+            targetType: "board");
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("requires at least one");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldAcceptValidBoardAndColumnOperations()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Backlog", 0);
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var columns = new Mock<IColumnRepository>();
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operations = new[]
+        {
+            CreateOperation(0, "update", boardId, new { boardId, name = "Renamed" }, targetType: "board"),
+            CreateOperation(1, "reorder", column.Id, new { columnId = column.Id, position = 1 }, targetType: "column")
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
     [Theory]
     [InlineData("title")]
     [InlineData("boardId")]
@@ -169,14 +382,15 @@ public class ProposalOperationContractValidatorTests
         int sequence,
         string actionType,
         Guid? targetId,
-        object parameters)
+        object parameters,
+        string targetType = "card")
     {
         return new ProposalOperationDto(
             Guid.NewGuid(),
             Guid.NewGuid(),
             sequence,
             actionType,
-            "card",
+            targetType,
             targetId?.ToString(),
             JsonSerializer.Serialize(parameters),
             Guid.NewGuid().ToString(),

@@ -22,7 +22,10 @@ public static class ProposalOperationContractValidator
     {
         var validationContext = new BoardValidationContext(unitOfWork, proposalBoardId);
 
-        foreach (var operation in operations)
+        // Apply executes operations in Sequence order. Validate in that same order so
+        // an operation may safely reference an entity created by an earlier step,
+        // while references to not-yet-created entities still fail closed.
+        foreach (var operation in operations.OrderBy(operation => operation.Sequence))
         {
             if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
                 return Result.Failure(ErrorCodes.ValidationError, parseError);
@@ -51,7 +54,7 @@ public static class ProposalOperationContractValidator
             if (!scopeResult.IsSuccess)
                 return scopeResult;
 
-            var fieldResult = await ValidateCardFieldsAsync(
+            var fieldResult = await ValidateOperationFieldsAsync(
                 validationContext,
                 operation,
                 parameters,
@@ -59,6 +62,13 @@ public static class ProposalOperationContractValidator
                 cancellationToken);
             if (!fieldResult.IsSuccess)
                 return fieldResult;
+
+            if (operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
+                operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase) &&
+                Guid.TryParse(operation.TargetId, out var createdCardId))
+            {
+                validationContext.RegisterPlannedCard(createdCardId);
+            }
         }
 
         return Result.Success();
@@ -113,7 +123,14 @@ public static class ProposalOperationContractValidator
         }
         else if (targetId.HasValue &&
                  operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
-                 !operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
+                 operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
+        {
+            var cardResult = await validationContext.ValidateNewCardIdAsync(targetId.Value, cancellationToken);
+            if (!cardResult.IsSuccess)
+                return cardResult;
+        }
+        else if (targetId.HasValue &&
+                 operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase))
         {
             var cardResult = await validationContext.ValidateCardBoardAsync(targetId.Value, cancellationToken);
             if (!cardResult.IsSuccess)
@@ -160,6 +177,34 @@ public static class ProposalOperationContractValidator
         }
 
         return Result.Success();
+    }
+
+    private static Task<Result> ValidateOperationFieldsAsync(
+        BoardValidationContext validationContext,
+        ProposalOperationDto operation,
+        JsonElement parameters,
+        CardLabelOperationAction labelAction,
+        CancellationToken cancellationToken)
+    {
+        if (operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase))
+        {
+            return ValidateCardFieldsAsync(
+                validationContext,
+                operation,
+                parameters,
+                labelAction,
+                cancellationToken);
+        }
+
+        if (operation.TargetType.Equals("board", StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult(ValidateBoardFields(operation, parameters));
+
+        if (operation.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult(ValidateColumnFields(operation, parameters));
+
+        return Task.FromResult(Result.Failure(
+            ErrorCodes.ValidationError,
+            $"Unsupported target type: {operation.TargetType}"));
     }
 
     private static async Task<Result> ValidateCardFieldsAsync(
@@ -257,9 +302,72 @@ public static class ProposalOperationContractValidator
                 if (matchingLabelCount > 1)
                     return AmbiguousLabelFailure(labelName);
             }
+
+            return Result.Success();
         }
 
-        return Result.Success();
+        if (normalizedAction is "create" or "update")
+            return Result.Success();
+
+        if (normalizedAction is "move" or "archive")
+        {
+            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
+                return Result.Failure(ErrorCodes.ValidationError, cardIdError);
+
+            if (normalizedAction == "move" &&
+                !OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
+            {
+                return Result.Failure(ErrorCodes.ValidationError, columnIdError);
+            }
+
+            return Result.Success();
+        }
+
+        return Result.Failure(
+            ErrorCodes.ValidationError,
+            $"Unsupported card action: {operation.ActionType}");
+    }
+
+    private static Result ValidateBoardFields(ProposalOperationDto operation, JsonElement parameters)
+    {
+        if (!operation.ActionType.Equals("update", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Unsupported board action: {operation.ActionType}");
+        }
+
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "boardId", out _, out var boardIdError))
+            return Result.Failure(ErrorCodes.ValidationError, boardIdError);
+
+        var name = OperationParameterParser.GetOptionalString(parameters, "name");
+        var description = OperationParameterParser.GetOptionalString(parameters, "description");
+        var isArchived = OperationParameterParser.GetOptionalBoolean(parameters, "isArchived");
+        return name == null && description == null && !isArchived.HasValue
+            ? Result.Failure(
+                ErrorCodes.ValidationError,
+                "Update board operation requires at least one of 'name', 'description', or 'isArchived'")
+            : Result.Success();
+    }
+
+    private static Result ValidateColumnFields(ProposalOperationDto operation, JsonElement parameters)
+    {
+        if (!operation.ActionType.Equals("reorder", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Unsupported column action: {operation.ActionType}");
+        }
+
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
+            return Result.Failure(ErrorCodes.ValidationError, columnIdError);
+
+        if (!OperationParameterParser.TryGetRequiredInt32(parameters, "position", out var position, out var positionError))
+            return Result.Failure(ErrorCodes.ValidationError, positionError);
+
+        return position < 0
+            ? Result.Failure(ErrorCodes.ValidationError, "Invalid position: must be non-negative")
+            : Result.Success();
     }
 
     private static async Task<Result> ValidateLabelsAsync(
@@ -308,15 +416,37 @@ public static class ProposalOperationContractValidator
     {
         private readonly Dictionary<Guid, Guid?> _cardBoardIds = [];
         private readonly Dictionary<Guid, Guid?> _columnBoardIds = [];
+        private readonly HashSet<Guid> _plannedCardIds = [];
         private HashSet<Guid>? _labelIds;
         private Dictionary<string, int>? _labelNameCounts;
 
         public Guid? BoardId { get; } = boardId;
 
+        public void RegisterPlannedCard(Guid cardId) => _plannedCardIds.Add(cardId);
+
+        public async Task<Result> ValidateNewCardIdAsync(Guid cardId, CancellationToken cancellationToken)
+        {
+            if (_plannedCardIds.Contains(cardId))
+                return Result.Failure(ErrorCodes.Conflict, "Create card targetId is duplicated within the proposal");
+
+            if (!_cardBoardIds.TryGetValue(cardId, out var existingCardBoardId))
+            {
+                existingCardBoardId = (await unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken))?.BoardId;
+                _cardBoardIds[cardId] = existingCardBoardId;
+            }
+
+            return existingCardBoardId.HasValue
+                ? Result.Failure(ErrorCodes.Conflict, "Create card targetId already exists")
+                : Result.Success();
+        }
+
         public async Task<Result> ValidateCardBoardAsync(Guid cardId, CancellationToken cancellationToken)
         {
             if (!BoardId.HasValue)
                 return ScopeFailure("Operation card is outside the proposal board scope");
+
+            if (_plannedCardIds.Contains(cardId))
+                return Result.Success();
 
             if (!_cardBoardIds.TryGetValue(cardId, out var cardBoardId))
             {
