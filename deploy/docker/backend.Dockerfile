@@ -22,7 +22,6 @@ ENV ASPNETCORE_URLS=http://+:8080
 # connector credentials unrecoverable. Only the self-contained desktop exe (not built from this image)
 # auto-generates and persists the key locally. See ADR-0041.
 ENV TASKDECK_HEADLESS=true
-ENV Auth__Registration__Mode=Closed
 
 # Install curl for HEALTHCHECK probes. aspnet:8.0 is Debian-based and has no
 # HTTP client by default. util-linux (for setpriv) is already in the base

@@ -121,7 +121,6 @@ ENV FirstRun__AutoOpenBrowser=false
 ENV FirstRun__ResolveAppDataDbPath=false
 # Development sandbox disabled in production
 ENV DevelopmentSandbox__Enabled=false
-ENV Auth__Registration__Mode=Closed
 # Headless mode: prevents FirstRunBootstrapper from auto-generating ephemeral
 # JWT secrets on each restart. The operator MUST supply Jwt__SecretKey explicitly.
 ENV TASKDECK_HEADLESS=true
