@@ -5,7 +5,7 @@ import { assertOk } from './support/httpAsserts'
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'ops-logs-health')
+  auth = await registerAndAttachSession(page, request, 'ops-logs-health', { theme: 'legacy' })
 })
 
 test.describe('Ops Console — CLI Runner', () => {

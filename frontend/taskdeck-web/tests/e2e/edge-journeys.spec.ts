@@ -35,7 +35,7 @@ import { assertOk } from './support/httpAsserts'
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'edge-journeys')
+  auth = await registerAndAttachSession(page, request, 'edge-journeys', { theme: 'legacy' })
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

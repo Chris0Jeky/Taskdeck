@@ -8,11 +8,81 @@ import {
   waitForProposalCreated,
 } from './support/captureFlow'
 
-let auth: AuthResult
+let paperAuth: AuthResult
 
-test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'capture-loop')
+test.describe('Paper capture-review-apply loop', () => {
+  test.beforeEach(async ({ page, request }) => {
+    paperAuth = await registerAndAttachSession(page, request, 'capture-loop-paper')
+  })
+
+  test('captures, reviews, and applies a card through the Paper DOM', async ({ page, request }) => {
+    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const boardId = await createBoardWithColumn(request, paperAuth, seed, {
+      boardNamePrefix: 'Paper Capture Loop',
+      description: 'Paper capture triage e2e board',
+      columnNamePrefix: 'Inbox',
+    })
+    const cardTitle = `Paper capture loop card ${seed}`
+
+    await page.goto(`/workspace/boards/${boardId}`)
+    await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+    await page.getByRole('button', { name: 'Capture here' }).click()
+    await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
+
+    const captureBody = page.getByRole('textbox', { name: 'Capture body' })
+    await expect(captureBody).toBeVisible()
+    const createCaptureResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === 'POST'
+      && /\/api\/capture\/items$/i.test(response.url())
+      && response.ok())
+    await captureBody.fill(`- [ ] ${cardTitle}`)
+    await page.getByRole('button', { name: 'Capture' }).click()
+    const capturePayload = await (await createCaptureResponsePromise).json() as { id?: string }
+    expect(capturePayload.id).toBeTruthy()
+
+    const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
+    await expect(captureRow).toBeVisible()
+    await captureRow.getByRole('button', { name: 'Accept' }).click()
+
+    const triagedCapture = await waitForProposalCreated(request, paperAuth, capturePayload.id!)
+    const proposalId = triagedCapture.provenance?.proposalId
+    expect(proposalId).toBeTruthy()
+    expect(await listBoardCards(request, paperAuth, boardId)).toHaveLength(0)
+
+    await page.getByRole('link', { name: /Review$/ }).click()
+    await expect(page).toHaveURL(/\/workspace\/review$/)
+    await expect(page.getByTestId('paper-review-view')).toBeVisible()
+    await expect(
+      page.getByRole('heading', { level: 1, name: `Capture triage: ${cardTitle}` }),
+    ).toBeVisible({ timeout: 15_000 })
+
+    const approveResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === 'POST'
+      && response.url().endsWith(`/automation/proposals/${proposalId}/approve`))
+    await page.getByTestId('decision-apply').click()
+    expect((await approveResponsePromise).ok()).toBeTruthy()
+    expect(await listBoardCards(request, paperAuth, boardId)).toHaveLength(0)
+
+    const executeResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === 'POST'
+      && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
+    page.once('dialog', (dialog) => dialog.accept())
+    await page.getByTestId('decision-apply').click()
+    expect((await executeResponsePromise).ok()).toBeTruthy()
+    const createdCard = await waitForCardWithTitle(request, paperAuth, boardId, cardTitle)
+
+    await page.goto(`/workspace/boards/${boardId}`)
+    await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+    await expect(page.getByRole('button', { name: `Card ${createdCard.title}` })).toBeVisible()
+  })
 })
+
+test.describe('Legacy provenance selector coverage', () => {
+  let auth: AuthResult
+
+  test.beforeEach(async ({ page, request }) => {
+    auth = await registerAndAttachSession(page, request, 'capture-loop-legacy', { theme: 'legacy' })
+  })
 
 test('capture triage should create proposal and apply card with provenance links', async ({ page, request }) => {
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
@@ -82,4 +152,5 @@ test('capture triage should create proposal and apply card with provenance links
   if (triageRunId) {
     await expect(page.getByText(`Triage run: ${triageRunId}`)).toBeVisible()
   }
+})
 })

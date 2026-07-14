@@ -22,7 +22,7 @@ import { assertOk } from './support/httpAsserts'
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'error-recovery')
+  auth = await registerAndAttachSession(page, request, 'error-recovery', { theme: 'legacy' })
 })
 
 // ─── Scenario 1: Board load failure → error state shown → retry succeeds ─────

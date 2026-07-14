@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { registerAndAttachSession } from './support/authSession'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'workspace-help')
+  await registerAndAttachSession(page, request, 'workspace-help', { theme: 'legacy' })
 })
 
 test('workspace help should dismiss and replay across home, today, review, inbox, and selector routes', async ({ page }) => {

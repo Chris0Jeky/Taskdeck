@@ -24,11 +24,82 @@ async function parseCreatedCaptureId(response: APIResponse | Response): Promise<
 
 let auth: AuthResult
 
-test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'first-run')
+const LEGACY_FIRST_RUN_TITLE = 'Legacy first-run path retains frozen selector coverage'
+
+test.beforeEach(async ({ page, request }, testInfo) => {
+  auth = await registerAndAttachSession(
+    page,
+    request,
+    'first-run',
+    testInfo.title === LEGACY_FIRST_RUN_TITLE ? { theme: 'legacy' } : {},
+  )
 })
 
-test('first-run path should guide home to capture to review to execute to board', async ({ page, request }) => {
+test('Paper first-run path guides setup through capture, review, apply, and board', async ({ page, request }) => {
+  test.setTimeout(90_000)
+
+  const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+  const boardName = `Paper First Run ${seed}`
+  const cardTitle = `Paper first-run card ${seed}`
+
+  await page.goto('/workspace/home')
+  await expect(page.getByTestId('paper-home-first-board')).toBeVisible()
+  await page.getByTestId('paper-home-setup-cta').click()
+
+  const setupDialog = page.getByRole('dialog', { name: 'Workspace setup' })
+  await expect(setupDialog).toBeVisible()
+  await setupDialog.getByPlaceholder('For example: Product Sprint').fill(boardName)
+  await setupDialog.getByRole('radio', { name: /Engineering sprint/i }).check()
+  await setupDialog.getByRole('button', { name: 'Create Board' }).click()
+
+  await expect(page).toHaveURL(/\/workspace\/boards\/[a-f0-9-]+$/)
+  const boardId = extractBoardIdFromBoardUrl(page.url())
+  await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+  await page.getByRole('button', { name: 'Capture here' }).click()
+  await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
+
+  const captureBody = page.getByRole('textbox', { name: 'Capture body' })
+  const createCaptureResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && /\/api\/capture\/items$/i.test(response.url())
+    && response.ok())
+  await captureBody.fill(`- [ ] ${cardTitle}`)
+  await page.getByRole('button', { name: 'Capture' }).click()
+  const captureId = await parseCreatedCaptureId(await createCaptureResponse)
+
+  const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
+  await expect(captureRow).toBeVisible()
+  await captureRow.getByRole('button', { name: 'Accept' }).click()
+  const triagedCapture = await waitForProposalCreated(request, auth, captureId)
+  const proposalId = triagedCapture.provenance?.proposalId
+  expect(proposalId).toBeTruthy()
+
+  await page.getByRole('link', { name: /Review$/ }).click()
+  await expect(page.getByTestId('paper-review-view')).toBeVisible()
+  await expect(
+    page.getByRole('heading', { level: 1, name: `Capture triage: ${cardTitle}` }),
+  ).toBeVisible({ timeout: 15_000 })
+
+  const approveResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && response.url().endsWith(`/automation/proposals/${proposalId}/approve`))
+  await page.getByTestId('decision-apply').click()
+  expect((await approveResponse).ok()).toBeTruthy()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  const executeResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
+  await page.getByTestId('decision-apply').click()
+  expect((await executeResponse).ok()).toBeTruthy()
+  const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
+
+  await page.goto(`/workspace/boards/${boardId}`)
+  await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+  await expect(page.getByRole('button', { name: `Card ${createdCard.title}` })).toBeVisible()
+})
+
+test(LEGACY_FIRST_RUN_TITLE, async ({ page, request }) => {
   test.setTimeout(90_000)
 
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
@@ -202,14 +273,16 @@ test('home should recover from loading and error states on first-run summary ref
   })
 
   await page.goto('/workspace/home')
-  await expect(page.getByText('Loading your workspace summary...')).toBeVisible()
+  await expect(page.getByTestId('paper-home-loading')).toContainText('Loading your workspace summary...')
   releaseFirstRequest!()
   // Generous timeout because the retry interceptor waits 1s+2s+4s between
   // attempts before surfacing the terminal rejection.
-  await expect(page.getByRole('alert')).toContainText('Temporary home summary failure', { timeout: 20_000 })
+  await expect(page.getByTestId('paper-home-error')).toContainText(
+    'Temporary home summary failure',
+    { timeout: 20_000 },
+  )
 
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
-  await expect(page.getByText('Setup loop')).toBeVisible()
-  await expect(page.getByText('No boards yet. Start setup from Home or Today so captures and review can land somewhere useful.')).toBeVisible()
+  await expect(page.getByTestId('paper-home-first-board')).toBeVisible()
+  await expect(page.getByText('From thought to trusted action')).toBeVisible()
 })

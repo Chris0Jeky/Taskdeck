@@ -47,7 +47,7 @@ async function addCard(page: Page, columnName: string, cardTitle: string) {
 }
 
 test('concurrent stale card edit should return conflict hint and preserve latest saved state', async ({ browser, page, request }) => {
-  const auth = await registerAndAttachSession(page, request, 'concurrency')
+  const auth = await registerAndAttachSession(page, request, 'concurrency', { theme: 'legacy' })
   const boardName = `Concurrency Board ${Date.now()}`
   const columnName = `Concurrency Column ${Date.now()}`
   const initialTitle = `Concurrency Card ${Date.now()}`
@@ -61,7 +61,7 @@ test('concurrent stale card edit should return conflict hint and preserve latest
 
   const secondaryContext = await browser.newContext()
   const secondaryPage = await secondaryContext.newPage()
-  await attachSessionToPage(secondaryPage, auth)
+  await attachSessionToPage(secondaryPage, auth, { theme: 'legacy' })
   await secondaryPage.goto(boardUrl)
 
   try {
@@ -94,7 +94,7 @@ test('concurrent stale card edit should return conflict hint and preserve latest
 })
 
 test('secondary session should receive new cards without manual refresh', async ({ browser, page, request }) => {
-  const auth = await registerAndAttachSession(page, request, 'concurrency-realtime')
+  const auth = await registerAndAttachSession(page, request, 'concurrency-realtime', { theme: 'legacy' })
   const boardName = `Concurrency Realtime Board ${Date.now()}`
   const columnName = `Concurrency Realtime Column ${Date.now()}`
   const cardTitle = `Realtime Card ${Date.now()}`
@@ -105,7 +105,7 @@ test('secondary session should receive new cards without manual refresh', async 
 
   const secondaryContext = await browser.newContext()
   const secondaryPage = await secondaryContext.newPage()
-  await attachSessionToPage(secondaryPage, auth)
+  await attachSessionToPage(secondaryPage, auth, { theme: 'legacy' })
   await secondaryPage.goto(boardUrl)
 
   try {

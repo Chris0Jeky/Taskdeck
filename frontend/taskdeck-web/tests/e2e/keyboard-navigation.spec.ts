@@ -13,7 +13,7 @@ import { expect, test } from '@playwright/test'
 import { registerAndAttachSession } from './support/authSession'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'keyboard-nav')
+  await registerAndAttachSession(page, request, 'keyboard-nav', { theme: 'legacy' })
 })
 
 // --- Helper ---

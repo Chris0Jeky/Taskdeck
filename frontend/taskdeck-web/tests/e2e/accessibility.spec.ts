@@ -1,15 +1,18 @@
 /**
  * Automated accessibility checks using axe-core via @axe-core/playwright.
  *
- * Runs against core workspace views to catch WCAG 2.1 AA violations.
+ * Runs against the canonical Paper workspace views to catch WCAG 2.1 AA violations.
  * This is a baseline — not a substitute for manual screen reader testing.
  */
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { registerAndAttachSession } from './support/authSession'
+import { registerAndAttachSession, type AuthResult } from './support/authSession'
+import { createBoardWithColumn } from './support/boardHelpers'
+
+let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'a11y')
+  auth = await registerAndAttachSession(page, request, 'a11y')
 })
 
 /**
@@ -50,34 +53,39 @@ async function expectNoAxeViolations(
   ).toHaveLength(0)
 }
 
-test('Home view has no WCAG 2.1 AA violations', async ({ page }) => {
+test('Paper Home view has no WCAG 2.1 AA violations', async ({ page }) => {
   await page.goto('/workspace/home')
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
-  await expectNoAxeViolations(page, 'HomeView')
+  await expect(page.getByTestId('paper-home')).toBeVisible()
+  await expectNoAxeViolations(page, 'PaperHomeView')
 })
 
-test('Today view has no WCAG 2.1 AA violations', async ({ page }) => {
+test('Paper Today view has no WCAG 2.1 AA violations', async ({ page }) => {
   await page.goto('/workspace/today')
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
-  await expectNoAxeViolations(page, 'TodayView')
+  await expect(page.locator('.paper-today')).toBeVisible()
+  await expectNoAxeViolations(page, 'PaperTodayView')
 })
 
-test('Inbox view has no WCAG 2.1 AA violations', async ({ page }) => {
+test('Paper Inbox view has no WCAG 2.1 AA violations', async ({ page }) => {
   await page.goto('/workspace/inbox')
-  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
-  await expectNoAxeViolations(page, 'InboxView')
+  await expect(page.getByTestId('paper-inbox-capture')).toBeVisible()
+  await expectNoAxeViolations(page, 'PaperInboxView')
 })
 
-test('Review view has no WCAG 2.1 AA violations', async ({ page }) => {
+test('Paper Review view has no WCAG 2.1 AA violations', async ({ page }) => {
   await page.goto('/workspace/review')
-  await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
-  await expectNoAxeViolations(page, 'ReviewView')
+  await expect(page.getByTestId('paper-review-view')).toBeVisible()
+  await expectNoAxeViolations(page, 'PaperReviewView')
 })
 
-test('Boards list view has no WCAG 2.1 AA violations', async ({ page }) => {
-  await page.goto('/workspace/boards')
-  await expect(page.getByRole('heading', { name: 'My Boards', exact: true })).toBeVisible()
-  await expectNoAxeViolations(page, 'BoardsListView')
+test('Paper Board view has no WCAG 2.1 AA violations', async ({ page, request }) => {
+  const boardId = await createBoardWithColumn(request, auth, 'a11y-board', {
+    boardNamePrefix: 'Paper A11y',
+    description: 'Paper board accessibility regression',
+    columnNamePrefix: 'Backlog',
+  })
+  await page.goto(`/workspace/boards/${boardId}`)
+  await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+  await expectNoAxeViolations(page, 'PaperBoardView')
 })
 
 test('Login view has no WCAG 2.1 AA violations', async ({ browser, baseURL }) => {
@@ -94,7 +102,7 @@ test('Login view has no WCAG 2.1 AA violations', async ({ browser, baseURL }) =>
 
 test('skip-to-content link exists and targets main content', async ({ page }) => {
   await page.goto('/workspace/home')
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
+  await expect(page.getByTestId('paper-home')).toBeVisible()
 
   const skipLink = page.locator('a.td-skip-link')
   await expect(skipLink).toHaveAttribute('href', '#td-main-content')
