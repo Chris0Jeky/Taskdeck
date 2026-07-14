@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-05-16
+Last Updated: 2026-07-14
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -522,7 +522,15 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Oidc"
 
 ### MCP HTTP Transport Tests (`#654`/`#819`)
 
-31 tests (11 domain + 20 integration) covering API key entity (`tdsk_` prefix, SHA-256 hashing), `ApiKeyMiddleware` Bearer validation, HTTP user context mapping, REST key management, and rate limiting per API key.
+41 tests (11 domain + 30 integration) covering the API key entity (`tdsk_` prefix, SHA-256 hashing), real Streamable HTTP initialize/session/resource traffic at `/mcp`, missing/invalid/revoked/valid Bearer keys, root-route exclusion, cross-user board isolation, telemetry, standalone loopback/host-filter defaults, REST key management, and literal per-key rate-limit partitioning.
+
+Focused gate:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~McpHttpTransportApiKeyTests"
+```
+
+The standalone runtime proof also starts the normal API and `--mcp --transport http` against one throwaway SQLite database, creates a user/board/key through REST, then verifies `401 / 200 / 202 / 200` for missing-key, initialize, initialized notification, and `taskdeck://boards`, plus `404` at `/`. On Windows PowerShell 5.1, capture non-2xx status from `WebException.Response`; `Invoke-WebRequest -SkipHttpErrorCheck` is PowerShell 7-only.
 
 ## E2E Parallelization (TST-60, `#867`/`#949`)
 

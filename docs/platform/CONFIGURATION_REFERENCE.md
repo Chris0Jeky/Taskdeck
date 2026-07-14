@@ -360,12 +360,14 @@ enabled.
 
 ### `AllowedHosts`
 
-ASP.NET Core built-in. Defaults to `*` in `appsettings.json`. Restrict to
-your deployed host name(s) for defense-in-depth against host-header attacks.
+ASP.NET Core built-in. The full API defaults to `*` in `appsettings.json`;
+restrict it to deployed host names for defense-in-depth against host-header
+attacks. Standalone MCP HTTP mode replaces a blank or wildcard value with
+`localhost;127.0.0.1;[::1]`. An explicit exact allowlist is preserved.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `AllowedHosts` | `string` | `*` | Semicolon-separated list of allowed `Host` header values. `*` accepts all. | No |
+| `AllowedHosts` | `string` | Full API: `*`; standalone MCP: loopback allowlist | Semicolon-separated allowed `Host` values. Remote MCP deployments must set exact public host names and terminate TLS; `--host` changes the bind address but does not relax this filter. | Required for non-loopback MCP HTTP |
 
 ## Rate limiting
 
@@ -613,6 +615,15 @@ integration credentials (e.g., GitHub tokens) at rest in the SQLite database.
 Docker Compose variable: `TASKDECK_CONNECTORS_ENCRYPTION_KEY`
 
 ## MCP server
+
+Standalone HTTP listens at `http://127.0.0.1:5001/mcp` by default. `--port`
+changes the port and `--host` changes the bind host. Non-loopback binds require
+an exact `AllowedHosts` value and TLS termination before untrusted network
+traffic. Browser cross-origin access is intentionally disabled. The co-hosted
+API exposes the same authenticated `/mcp` route on its configured base URL.
+Every HTTP request must send `Authorization: Bearer tdsk_...`; rate limiting
+partitions by the validated opaque API-key ID, while resource/tool authorization
+uses the key owner's user ID.
 
 Read directly from configuration by
 `Taskdeck.Infrastructure.Mcp.StdioUserContextProvider`. Only consulted when
