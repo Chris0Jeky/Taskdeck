@@ -1,8 +1,15 @@
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Taskdeck.Api.Controllers;
+using Taskdeck.Api.RateLimiting;
+using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
@@ -231,6 +238,166 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task McpEndpoint_ValidKey_InitializesAtDocumentedRoute()
+    {
+        using var jwtClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-initialize");
+        var apiKey = await CreateApiKeyAsync(jwtClient, "Initialize Key");
+
+        using var mcpClient = CreateMcpClient(apiKey);
+        using var response = await PostMcpAsync(mcpClient, "/mcp", CreateInitializeRequest(1));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            ExtractMcpJson(await response.Content.ReadAsStringAsync()));
+        document.RootElement.TryGetProperty("result", out var result).Should().BeTrue();
+        result.TryGetProperty("serverInfo", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RootRoute_DoesNotExposeAlternateMcpEndpoint()
+    {
+        using var jwtClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-root-route");
+
+        using var response = await PostMcpAsync(jwtClient, "/", CreateInitializeRequest(1));
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Headers.Contains("Mcp-Session-Id").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task McpEndpoint_UserScopedResource_IsolatedByApiKeyOwner()
+    {
+        using var jwtClientA = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClientA, "mcp-owner-a");
+        var boardA = await ApiTestHarness.CreateBoardAsync(jwtClientA, "mcp-visible-a");
+        var apiKeyA = await CreateApiKeyAsync(jwtClientA, "Owner A Key");
+
+        using var jwtClientB = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClientB, "mcp-owner-b");
+        var boardB = await ApiTestHarness.CreateBoardAsync(jwtClientB, "mcp-visible-b");
+        var apiKeyB = await CreateApiKeyAsync(jwtClientB, "Owner B Key");
+
+        using var mcpClientA = CreateMcpClient(apiKeyA);
+        using var mcpClientB = CreateMcpClient(apiKeyB);
+
+        var boardsForA = await ReadBoardsResourceAsync(mcpClientA);
+        var boardsForB = await ReadBoardsResourceAsync(mcpClientB);
+
+        boardsForA.Should().Contain(boardA.Name).And.NotContain(boardB.Name);
+        boardsForB.Should().Contain(boardB.Name).And.NotContain(boardA.Name);
+    }
+
+    [Fact]
+    public async Task McpEndpoint_RateLimit_IsPartitionedByApiKey()
+    {
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("RateLimiting:Enabled", "true");
+            builder.UseSetting("RateLimiting:McpPerApiKey:PermitLimit", "1");
+            builder.UseSetting("RateLimiting:McpPerApiKey:WindowSeconds", "60");
+        });
+        using var jwtClient = factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-rate-limit");
+        var apiKeyA = await CreateApiKeyAsync(jwtClient, "Rate Key A");
+        var apiKeyB = await CreateApiKeyAsync(jwtClient, "Rate Key B");
+
+        using var mcpClientA = factory.CreateClient();
+        mcpClientA.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKeyA);
+        using var mcpClientB = factory.CreateClient();
+        mcpClientB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKeyB);
+
+        using var firstA = await PostMcpAsync(mcpClientA, "/mcp", CreateInitializeRequest(1));
+        using var firstB = await PostMcpAsync(mcpClientB, "/mcp", CreateInitializeRequest(1));
+        using var secondA = await PostMcpAsync(mcpClientA, "/mcp", CreateInitializeRequest(2));
+
+        firstA.StatusCode.Should().Be(HttpStatusCode.OK);
+        firstB.StatusCode.Should().Be(HttpStatusCode.OK,
+            "a different key owned by the same user must have an independent budget");
+        secondA.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        secondA.Headers.TryGetValues("Retry-After", out _).Should().BeTrue();
+        secondA.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
+            .Which.Should().Be(RateLimitingPolicyNames.McpPerApiKey);
+    }
+
+    [Fact]
+    public async Task McpEndpoint_RealRequest_EmitsTelemetry()
+    {
+        var telemetryObserved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name == TaskdeckTelemetry.McpMeterName
+                && instrument.Name == "taskdeck.mcp.requests")
+            {
+                meterListener.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, _) =>
+        {
+            var isHttpTransport = false;
+            var isUnsuccessful = false;
+            foreach (var tag in tags)
+            {
+                isHttpTransport |= tag.Key == TaskdeckTelemetryTags.McpTransport && Equals(tag.Value, "http");
+                isUnsuccessful |= tag.Key == TaskdeckTelemetryTags.McpSuccess && Equals(tag.Value, false);
+            }
+
+            if (measurement > 0 && isHttpTransport && isUnsuccessful)
+            {
+                telemetryObserved.TrySetResult(true);
+            }
+        });
+        listener.Start();
+
+        using var client = _factory.CreateClient();
+        using var response = await PostMcpAsync(client, "/mcp", CreateInitializeRequest(1));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await telemetryObserved.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("*")]
+    public void StandaloneMcpHostSecurity_ReplacesPermissiveAllowedHosts(string? configuredHosts)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AllowedHosts"] = configuredHosts
+            })
+            .Build();
+
+        Program.ApplyStandaloneMcpHostSecurity(configuration);
+
+        configuration["AllowedHosts"].Should().Be(Program.StandaloneMcpLoopbackAllowedHosts);
+    }
+
+    [Fact]
+    public void StandaloneMcpHostSecurity_PreservesExplicitAllowedHosts()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AllowedHosts"] = "mcp.example.test"
+            })
+            .Build();
+
+        Program.ApplyStandaloneMcpHostSecurity(configuration);
+
+        configuration["AllowedHosts"].Should().Be("mcp.example.test");
+    }
+
+    [Fact]
+    public void StandaloneMcpHostSecurity_DefaultBindIsLoopback()
+    {
+        IPAddress.IsLoopback(IPAddress.Parse(Program.StandaloneMcpDefaultBindHost)).Should().BeTrue();
+    }
+
     // ── Cross-user API Key Isolation ───────────────────────────────────────────
 
     [Fact]
@@ -250,6 +417,93 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         listA!.Keys.Should().NotContain(k => k.Name == "User B Key");
         listB!.Keys.Should().NotContain(k => k.Name == "User A Key");
     }
+
+    private async Task<string> CreateApiKeyAsync(HttpClient jwtClient, string name)
+    {
+        using var response = await jwtClient.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest(name));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await response.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        created.Should().NotBeNull();
+        return created!.Key;
+    }
+
+    private HttpClient CreateMcpClient(string apiKey)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        return client;
+    }
+
+    private static async Task<string> ReadBoardsResourceAsync(HttpClient client)
+    {
+        using var initializeResponse = await PostMcpAsync(client, "/mcp", CreateInitializeRequest(1));
+        initializeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        initializeResponse.Headers.TryGetValues("Mcp-Session-Id", out var sessionValues).Should().BeTrue();
+        var sessionId = sessionValues!.Single();
+
+        using var initializedResponse = await PostMcpAsync(client, "/mcp", new
+        {
+            jsonrpc = "2.0",
+            method = "notifications/initialized"
+        }, sessionId);
+        initializedResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        using var resourceResponse = await PostMcpAsync(client, "/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 2,
+            method = "resources/read",
+            @params = new { uri = "taskdeck://boards" }
+        }, sessionId);
+        resourceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await resourceResponse.Content.ReadAsStringAsync();
+    }
+
+    private static string ExtractMcpJson(string responseBody)
+    {
+        if (!responseBody.StartsWith("event:", StringComparison.Ordinal))
+        {
+            return responseBody;
+        }
+
+        var dataLine = responseBody
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Single(line => line.StartsWith("data:", StringComparison.Ordinal));
+        return dataLine["data:".Length..].TrimStart();
+    }
+
+    private static async Task<HttpResponseMessage> PostMcpAsync(
+        HttpClient client,
+        string path,
+        object payload,
+        string? sessionId = null)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        if (sessionId is not null)
+        {
+            request.Headers.Add("Mcp-Session-Id", sessionId);
+            request.Headers.Add("Mcp-Protocol-Version", "2025-11-25");
+        }
+        return await client.SendAsync(request);
+    }
+
+    private static object CreateInitializeRequest(int id) => new
+    {
+        jsonrpc = "2.0",
+        id,
+        method = "initialize",
+        @params = new
+        {
+            protocolVersion = "2025-11-25",
+            capabilities = new { },
+            clientInfo = new { name = "Taskdeck.Api.Tests", version = "1.0" }
+        }
+    };
 
     // ── Key Generation and Hashing ─────────────────────────────────────────────
 

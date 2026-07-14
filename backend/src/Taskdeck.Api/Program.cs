@@ -37,7 +37,7 @@ if (args.Contains("--mcp"))
         // Minimal web server exposing only the MCP endpoint with API key auth.
         // No controllers, no SignalR, no Swagger, no frontend — just MCP.
         var mcpPort = 5001;
-        var mcpBindHost = "0.0.0.0";
+        var mcpBindHost = Program.StandaloneMcpDefaultBindHost;
         for (int i = 0; i < args.Length - 1; i++)
         {
             if (string.Equals(args[i], "--port", StringComparison.OrdinalIgnoreCase))
@@ -69,6 +69,10 @@ if (args.Contains("--mcp"))
         // servers are often launched from an arbitrary working directory), and inserts the source
         // BEFORE the env-var sources so operator-supplied environment config keeps priority.
         mcpHttpBuilder.AddLocalConfigFile();
+
+        // The standalone server is local-only by default. Replace the repository-wide wildcard
+        // host setting with loopback hosts unless an operator supplied an exact allowlist.
+        Program.ApplyStandaloneMcpHostSecurity(mcpHttpBuilder.Configuration);
 
         mcpHttpBuilder.WebHost.UseUrls($"http://{mcpBindHost}:{mcpPort}");
 
@@ -137,12 +141,8 @@ if (args.Contains("--mcp"))
             mcpHttpApp.UseRateLimiter();
         }
 
-        // Map the MCP endpoint with per-API-key rate limiting.
-        var mcpEndpoint = mcpHttpApp.MapMcp();
-        if (mcpRateLimitingSettings.Enabled)
-        {
-            mcpEndpoint.RequireRateLimiting(Taskdeck.Api.RateLimiting.RateLimitingPolicyNames.McpPerApiKey);
-        }
+        // Use the same authenticated route mapping as the co-hosted API.
+        mcpHttpApp.MapTaskdeckMcpEndpoint(mcpRateLimitingSettings.Enabled);
 
         var mcpHttpLogger = mcpHttpApp.Services.GetRequiredService<ILogger<Program>>();
         mcpHttpLogger.LogInformation("Taskdeck MCP HTTP server starting on http://{Host}:{Port}", mcpBindHost, mcpPort);
@@ -411,4 +411,17 @@ appLifetime.ApplicationStarted.Register(() =>
 app.Run();
 return 0;
 
-public partial class Program { }
+public partial class Program
+{
+    internal const string StandaloneMcpDefaultBindHost = "127.0.0.1";
+    internal const string StandaloneMcpLoopbackAllowedHosts = "localhost;127.0.0.1;[::1]";
+
+    internal static void ApplyStandaloneMcpHostSecurity(IConfiguration configuration)
+    {
+        var allowedHosts = configuration["AllowedHosts"];
+        if (string.IsNullOrWhiteSpace(allowedHosts) || allowedHosts == "*")
+        {
+            configuration["AllowedHosts"] = StandaloneMcpLoopbackAllowedHosts;
+        }
+    }
+}
