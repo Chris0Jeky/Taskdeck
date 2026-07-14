@@ -522,7 +522,7 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Oidc"
 
 ### MCP HTTP Transport Tests (`#654`/`#819`)
 
-41 tests (11 domain + 30 integration) covering the API key entity (`tdsk_` prefix, SHA-256 hashing), real Streamable HTTP initialize/session/resource traffic at `/mcp`, missing/invalid/revoked/valid Bearer keys, root-route exclusion, cross-user board isolation, telemetry, standalone loopback/host-filter defaults, REST key management, and literal per-key rate-limit partitioning.
+49 tests (11 domain + 38 integration) covering the API key entity (`tdsk_` prefix, SHA-256 hashing), real Streamable HTTP initialize/session/resource traffic at `/mcp`, missing/invalid/expired/revoked/valid Bearer keys, root-route exclusion, cross-user board isolation, correlation-matched telemetry, pre-authentication IP throttling, literal per-key partitioning, explicit no-CORS preflight behavior, all ASP.NET any-host forms, standalone loopback defaults, and REST key management.
 
 Focused gate:
 
@@ -530,7 +530,7 @@ Focused gate:
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~McpHttpTransportApiKeyTests"
 ```
 
-The standalone runtime proof also starts the normal API and `--mcp --transport http` against one throwaway SQLite database, creates a user/board/key through REST, then verifies `401 / 200 / 202 / 200` for missing-key, initialize, initialized notification, and `taskdeck://boards`, plus `404` at `/`. On Windows PowerShell 5.1, capture non-2xx status from `WebException.Response`; `Invoke-WebRequest -SkipHttpErrorCheck` is PowerShell 7-only.
+The standalone runtime proof also starts the normal API and `--mcp --transport http` against one throwaway SQLite database, creates a user/board/key through REST, then verifies `401 / 200 / 202 / 200` for missing-key, initialize, initialized notification, and `taskdeck://boards`, plus `404` at `/`. The security repair probe starts standalone with `AllowedHosts=localhost;*` and a one-request authentication window, proving hostile Host `400`, then missing-key `401`, repeated-attempt `429`, and root `404`. On Windows PowerShell 5.1, capture non-2xx status from `WebException.Response`; `Invoke-WebRequest -SkipHttpErrorCheck` is PowerShell 7-only.
 
 ## E2E Parallelization (TST-60, `#867`/`#949`)
 

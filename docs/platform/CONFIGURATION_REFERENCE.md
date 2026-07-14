@@ -362,7 +362,8 @@ enabled.
 
 ASP.NET Core built-in. The full API defaults to `*` in `appsettings.json`;
 restrict it to deployed host names for defense-in-depth against host-header
-attacks. Standalone MCP HTTP mode replaces a blank or wildcard value with
+attacks. Standalone MCP HTTP mode replaces blank or ASP.NET any-host values
+(`*`, `0.0.0.0`, `[::]`, including mixed lists) with
 `localhost;127.0.0.1;[::1]`. An explicit exact allowlist is preserved.
 
 | Key | Type | Default | Description | Required? |
@@ -393,6 +394,8 @@ defaults** come from `RateLimitingSettings` constructors; the
 | `RateLimiting:NoteImportPerUser:WindowSeconds` | `int` | `60` | same | Window length in seconds. | No |
 | `RateLimiting:McpPerApiKey:PermitLimit` | `int` | `60` (class default) | same | Per-API-key permits for the MCP HTTP transport. | No |
 | `RateLimiting:McpPerApiKey:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
+| `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `int` | `120` (class default) | same | Aggregate permits per client address before MCP API-key parsing/database lookup. Valid requests also use the per-key policy. | No |
+| `RateLimiting:McpAuthenticationPerIp:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds for pre-authentication MCP attempts. | No |
 | `RateLimiting:TokenRefreshPerUser:PermitLimit` | `int` | `5` (class default) | same | Per-user permits for the token refresh endpoint. Tight limit to prevent token farming. | No |
 | `RateLimiting:TokenRefreshPerUser:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
 
@@ -619,11 +622,13 @@ Docker Compose variable: `TASKDECK_CONNECTORS_ENCRYPTION_KEY`
 Standalone HTTP listens at `http://127.0.0.1:5001/mcp` by default. `--port`
 changes the port and `--host` changes the bind host. Non-loopback binds require
 an exact `AllowedHosts` value and TLS termination before untrusted network
-traffic. Browser cross-origin access is intentionally disabled. The co-hosted
+traffic. Browser cross-origin access is disabled explicitly on the MCP endpoint,
+even when the co-hosted frontend CORS policy allows that origin. The co-hosted
 API exposes the same authenticated `/mcp` route on its configured base URL.
-Every HTTP request must send `Authorization: Bearer tdsk_...`; rate limiting
-partitions by the validated opaque API-key ID, while resource/tool authorization
-uses the key owner's user ID.
+Every HTTP request must send `Authorization: Bearer tdsk_...`; a 120 requests /
+60 seconds client-address limit bounds work before key validation, then the
+60 requests / 60 seconds policy partitions valid traffic by the opaque API-key
+ID. Resource/tool authorization uses the key owner's user ID.
 
 Read directly from configuration by
 `Taskdeck.Infrastructure.Mcp.StdioUserContextProvider`. Only consulted when
@@ -683,6 +688,8 @@ Examples:
 | `Llm:OpenAi:ApiKey` | `Llm__OpenAi__ApiKey` |
 | `Workers:RetryBackoffSeconds:0` | `Workers__RetryBackoffSeconds__0` |
 | `RateLimiting:AuthPerIp:PermitLimit` | `RateLimiting__AuthPerIp__PermitLimit` |
+| `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `RateLimiting__McpAuthenticationPerIp__PermitLimit` |
+| `RateLimiting:McpPerApiKey:PermitLimit` | `RateLimiting__McpPerApiKey__PermitLimit` |
 | `SignalR:Redis:ConnectionString` | `SignalR__Redis__ConnectionString` |
 | `Cors:AllowedOrigins` (as comma-separated string) | `Cors__AllowedOrigins` |
 
