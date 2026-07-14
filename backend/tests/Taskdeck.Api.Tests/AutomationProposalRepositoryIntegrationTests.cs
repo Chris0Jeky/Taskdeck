@@ -526,6 +526,142 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
     }
 
     [Fact]
+    public async Task GetTerminalByActionTypeAsync_OnSqlite_WithNoTerminalHistory_ReturnsEmpty()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User(
+            $"ap-similar-past-{Guid.NewGuid():N}",
+            $"ap-similar-past-{Guid.NewGuid():N}@example.com",
+            "hash");
+        var board = new Board("Similar-past SQLite board", ownerId: user.Id);
+        var pending = new AutomationProposal(
+            ProposalSourceType.Queue,
+            user.Id,
+            "Pending capture proposal",
+            RiskLevel.Low,
+            $"corr-similar-{Guid.NewGuid():N}",
+            boardId: board.Id);
+        pending.AddOperation(new AutomationProposalOperation(
+            pending.Id,
+            0,
+            "create",
+            "card",
+            "{\"title\":\"Captured card\"}",
+            $"key-similar-{Guid.NewGuid():N}"));
+
+        db.Users.Add(user);
+        db.Boards.Add(board);
+        db.AutomationProposals.Add(pending);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await repo.GetTerminalByActionTypeAsync(
+            "create",
+            board.Id,
+            user.Id,
+            limit: 200);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetTerminalByActionTypeAsync_OnSqlite_BoardScope_ReturnsBoundedTerminalHistory()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var owner = new User(
+            $"ap-history-owner-{Guid.NewGuid():N}",
+            $"ap-history-owner-{Guid.NewGuid():N}@example.com",
+            "hash");
+        var collaborator = new User(
+            $"ap-history-collab-{Guid.NewGuid():N}",
+            $"ap-history-collab-{Guid.NewGuid():N}@example.com",
+            "hash");
+        var board = new Board("Similar-past scoped board", ownerId: owner.Id);
+        var otherBoard = new Board("Similar-past other board", ownerId: owner.Id);
+        db.Users.AddRange(owner, collaborator);
+        db.Boards.AddRange(board, otherBoard);
+
+        var oldestApplied = CreateTerminalProposal(owner.Id, board.Id, "Old applied", "create", ProposalStatus.Applied);
+        var middleRejected = CreateTerminalProposal(owner.Id, board.Id, "Middle rejected", "create", ProposalStatus.Rejected);
+        var newestCollaboratorApplied = CreateTerminalProposal(collaborator.Id, board.Id, "Newest collaborator applied", "create", ProposalStatus.Applied);
+        var otherBoardApplied = CreateTerminalProposal(owner.Id, otherBoard.Id, "Other board", "create", ProposalStatus.Applied);
+        var wrongActionApplied = CreateTerminalProposal(owner.Id, board.Id, "Wrong action", "move", ProposalStatus.Applied);
+        db.AutomationProposals.AddRange(
+            oldestApplied,
+            middleRejected,
+            newestCollaboratorApplied,
+            otherBoardApplied,
+            wrongActionApplied);
+
+        var now = DateTime.UtcNow;
+        SetDecisionTimestamps(db, oldestApplied, now.AddMinutes(-3));
+        SetDecisionTimestamps(db, middleRejected, now.AddMinutes(-2));
+        SetDecisionTimestamps(db, newestCollaboratorApplied, now.AddMinutes(-1));
+        SetDecisionTimestamps(db, otherBoardApplied, now);
+        SetDecisionTimestamps(db, wrongActionApplied, now);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await repo.GetTerminalByActionTypeAsync(
+            "create",
+            board.Id,
+            owner.Id,
+            limit: 2);
+
+        result.Select(proposal => proposal.Id).Should().Equal(
+            newestCollaboratorApplied.Id,
+            middleRejected.Id);
+        result.Should().OnlyContain(proposal =>
+            proposal.BoardId == board.Id &&
+            proposal.Operations.Any(operation => operation.ActionType == "create"));
+        result.Should().NotContain(proposal => proposal.Id == oldestApplied.Id, "the database-side limit is two");
+        result.Should().NotContain(proposal => proposal.Id == otherBoardApplied.Id);
+        result.Should().NotContain(proposal => proposal.Id == wrongActionApplied.Id);
+    }
+
+    [Fact]
+    public async Task GetTerminalByActionTypeAsync_OnSqlite_WithoutBoard_ScopesToRequestingUser()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var caller = new User(
+            $"ap-history-caller-{Guid.NewGuid():N}",
+            $"ap-history-caller-{Guid.NewGuid():N}@example.com",
+            "hash");
+        var otherUser = new User(
+            $"ap-history-other-{Guid.NewGuid():N}",
+            $"ap-history-other-{Guid.NewGuid():N}@example.com",
+            "hash");
+        db.Users.AddRange(caller, otherUser);
+
+        var callerApplied = CreateTerminalProposal(caller.Id, null, "Caller applied", "create", ProposalStatus.Applied);
+        var callerRejected = CreateTerminalProposal(caller.Id, null, "Caller rejected", "create", ProposalStatus.Rejected);
+        var otherApplied = CreateTerminalProposal(otherUser.Id, null, "Other applied", "create", ProposalStatus.Applied);
+        db.AutomationProposals.AddRange(callerApplied, callerRejected, otherApplied);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await repo.GetTerminalByActionTypeAsync(
+            "create",
+            boardId: null,
+            userId: caller.Id,
+            limit: 10);
+
+        result.Select(proposal => proposal.Id).Should().BeEquivalentTo(
+            new[] { callerApplied.Id, callerRejected.Id });
+        result.Should().OnlyContain(proposal => proposal.RequestedByUserId == caller.Id);
+        result.Should().NotContain(proposal => proposal.Id == otherApplied.Id);
+    }
+
+    [Fact]
     public async Task GetExpiredAsync_WithExpiresAtExactlyNow_ShouldNotReturnAsExpired()
     {
         // Locks in that GetExpiredAsync uses strict < (not <=) for ExpiresAt comparison.
@@ -757,5 +893,53 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         typeof(AutomationProposal)
             .GetProperty(nameof(AutomationProposal.DeferredUntil))!
             .SetValue(proposal, deferredUntil);
+    }
+
+    private static AutomationProposal CreateTerminalProposal(
+        Guid userId,
+        Guid? boardId,
+        string summary,
+        string actionType,
+        ProposalStatus status)
+    {
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            summary,
+            RiskLevel.Low,
+            $"corr-history-{Guid.NewGuid():N}",
+            boardId: boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            actionType,
+            "card",
+            "{\"title\":\"History card\"}",
+            $"key-history-{Guid.NewGuid():N}"));
+
+        if (status == ProposalStatus.Applied)
+        {
+            proposal.Approve(userId);
+            proposal.MarkAsApplied();
+        }
+        else if (status == ProposalStatus.Rejected)
+        {
+            proposal.Reject(userId);
+        }
+        else
+        {
+            throw new ArgumentOutOfRangeException(nameof(status), status, "Expected Applied or Rejected.");
+        }
+
+        return proposal;
+    }
+
+    private static void SetDecisionTimestamps(
+        TaskdeckDbContext db,
+        AutomationProposal proposal,
+        DateTime decidedAt)
+    {
+        db.Entry(proposal).Property(nameof(AutomationProposal.DecidedAt)).CurrentValue = decidedAt;
+        db.Entry(proposal).Property(nameof(AutomationProposal.UpdatedAt)).CurrentValue = new DateTimeOffset(decidedAt);
     }
 }
