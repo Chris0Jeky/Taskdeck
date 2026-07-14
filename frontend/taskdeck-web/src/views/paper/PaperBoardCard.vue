@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable vuejs-accessibility/no-static-element-interactions -- the article and aria-hidden drag glyph are pointer drag boundaries; named-button activation and board keyboard movement remain separate */
 import { computed } from 'vue'
 import type { Card, Label } from '../../types/board'
 
@@ -130,7 +131,6 @@ function onDragHandleMouseDown() {
 </script>
 
 <template>
-  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- article is the native drag event boundary; activation remains on the named button and keyboard movement uses board shortcuts -->
   <article
     :class="[
       'paper-board-card',
