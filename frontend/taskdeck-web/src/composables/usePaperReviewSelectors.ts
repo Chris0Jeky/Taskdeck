@@ -58,7 +58,7 @@ export interface HistoryRow {
   serial: string
   event: string
   age: string
-  status: 'pending' | 'applied' | 'past'
+  status: 'pending' | 'applied' | 'past' | 'unknown'
 }
 
 export interface SimilarPastRow {
@@ -124,11 +124,11 @@ function mapConflictTone(tone: ConflictToneWireValue): 'warn' | 'info' | 'ok' {
     case conflictToneWireValues.Ok:
       return 'ok'
     default:
-      return unexpectedWireEnum('ConflictTone', tone, 'info')
+      return unexpectedWireEnum('ConflictTone', tone, 'warn')
   }
 }
 
-function mapHistoryStatus(status: CardHistoryStatusWireValue): 'pending' | 'applied' | 'past' {
+function mapHistoryStatus(status: CardHistoryStatusWireValue): HistoryRow['status'] {
   switch (status) {
     case cardHistoryStatusWireValues.Pending:
       return 'pending'
@@ -137,7 +137,7 @@ function mapHistoryStatus(status: CardHistoryStatusWireValue): 'pending' | 'appl
     case cardHistoryStatusWireValues.Past:
       return 'past'
     default:
-      return unexpectedWireEnum('CardHistoryStatus', status, 'past')
+      return unexpectedWireEnum('CardHistoryStatus', status, 'unknown')
   }
 }
 

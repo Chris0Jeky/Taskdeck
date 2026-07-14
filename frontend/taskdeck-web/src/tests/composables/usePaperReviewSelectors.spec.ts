@@ -168,7 +168,7 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.history.value[2].status).toBe('past')
   })
 
-  it('keeps unexpected runtime enum values visible while rendering safe defaults', async () => {
+  it('fails closed for unexpected runtime enum values without crashing', async () => {
     mockAllEndpointsEmpty()
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const conflicts = JSON.parse('[{"tone":99,"key":"unknown","value":"v"}]') as ConflictRowDto[]
@@ -185,8 +185,8 @@ describe('usePaperReviewSelectors', () => {
       expect(selectors.history.value).toHaveLength(1)
     })
 
-    expect(selectors.conflicts.value[0].tone).toBe('info')
-    expect(selectors.history.value[0].status).toBe('past')
+    expect(selectors.conflicts.value[0].tone).toBe('warn')
+    expect(selectors.history.value[0].status).toBe('unknown')
     expect(consoleError).toHaveBeenCalledWith(
       '[Paper Review] Unexpected ConflictTone wire value',
       99,
