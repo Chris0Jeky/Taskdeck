@@ -96,14 +96,18 @@ describe('PaperBoardCard', () => {
     expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
   })
 
-  it('keeps the card opener and drag handle as sibling controls', () => {
+  it('keeps the card opener separate from the pointer-only drag affordance', () => {
     const wrapper = mount(PaperBoardCard, { props: { card: makeCard() } })
     const opener = wrapper.find('.paper-board-card__open')
     const dragHandle = wrapper.find('[data-action="drag-card-handle"]')
 
     expect(opener.element.tagName).toBe('BUTTON')
-    expect(dragHandle.element.tagName).toBe('BUTTON')
+    expect(opener.attributes('data-action')).toBe('open-card')
+    expect(dragHandle.element.tagName).toBe('SPAN')
     expect(opener.element.contains(dragHandle.element)).toBe(false)
+    expect(dragHandle.attributes('aria-hidden')).toBe('true')
+    expect(dragHandle.attributes('tabindex')).toBeUndefined()
+    expect(dragHandle.attributes('title')).toBe('Drag Set up CI pipeline')
     expect(wrapper.attributes('role')).toBeUndefined()
     expect(wrapper.attributes('tabindex')).toBeUndefined()
   })

@@ -17,6 +17,10 @@ export function useBoardKeyboardNav(
   const selectedCardId = ref<string | null>(null)
   const selectedColumnIndex = ref<number>(0)
 
+  function cardActivator(cardElement: HTMLElement): HTMLElement {
+    return cardElement.querySelector<HTMLElement>('[data-action="open-card"]') ?? cardElement
+  }
+
   function cardsForColumn(columnId: string): Card[] {
     return cardsByColumnSource?.value.get(columnId) ?? boardStore.cardsByColumn.get(columnId) ?? []
   }
@@ -115,7 +119,7 @@ export function useBoardKeyboardNav(
     if (!cardElement) return
 
     cardElement.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    cardElement.click()
+    cardActivator(cardElement).click()
   }
 
   function createCardInSelectedColumn() {
@@ -159,7 +163,7 @@ export function useBoardKeyboardNav(
     ) as HTMLElement | null
     if (el) {
       el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-      el.focus()
+      cardActivator(el).focus()
     }
   }
 

@@ -150,10 +150,13 @@ describe('useBoardKeyboardNav', () => {
   })
 
   describe('openSelectedCard', () => {
-    it('selects the first card and clicks its DOM element when no card is selected', () => {
+    it('selects the first card and clicks its nested Paper opener', () => {
+      const mockActivator = {
+        click: vi.fn(),
+      } as unknown as HTMLElement
       const mockElement = {
         scrollIntoView: vi.fn(),
-        click: vi.fn(),
+        querySelector: vi.fn().mockReturnValue(mockActivator),
       } as unknown as HTMLElement
 
       const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(mockElement)
@@ -166,15 +169,17 @@ describe('useBoardKeyboardNav', () => {
       expect(nav.selectedCardId.value).toBe('card-1')
       expect(querySpy).toHaveBeenCalledWith('[data-card-id="card-1"]')
       expect(mockElement.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
-      expect(mockElement.click).toHaveBeenCalled()
+      expect(mockElement.querySelector).toHaveBeenCalledWith('[data-action="open-card"]')
+      expect(mockActivator.click).toHaveBeenCalled()
 
       querySpy.mockRestore()
     })
 
-    it('clicks the DOM element for an already-selected card', () => {
+    it('falls back to the focusable legacy card root', () => {
       const mockElement = {
         scrollIntoView: vi.fn(),
         click: vi.fn(),
+        querySelector: vi.fn().mockReturnValue(null),
       } as unknown as HTMLElement
 
       const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(mockElement)
@@ -378,10 +383,13 @@ describe('useBoardKeyboardNav', () => {
       moveCard.mockResolvedValue(undefined)
     })
 
-    it('scrolls and focuses the card element after a successful move', async () => {
+    it('scrolls the card and focuses its nested Paper opener after a successful move', async () => {
+      const mockActivator = {
+        focus: vi.fn(),
+      } as unknown as HTMLElement
       const mockElement = {
         scrollIntoView: vi.fn(),
-        focus: vi.fn(),
+        querySelector: vi.fn().mockReturnValue(mockActivator),
       } as unknown as HTMLElement
 
       const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(mockElement)
@@ -393,7 +401,8 @@ describe('useBoardKeyboardNav', () => {
       await nav.moveCardToNextColumn()
 
       expect(mockElement.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
-      expect(mockElement.focus).toHaveBeenCalled()
+      expect(mockElement.querySelector).toHaveBeenCalledWith('[data-action="open-card"]')
+      expect(mockActivator.focus).toHaveBeenCalled()
 
       querySpy.mockRestore()
     })

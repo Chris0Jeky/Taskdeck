@@ -172,4 +172,38 @@ test.describe('Paper board card drag', () => {
     expect(focusStyle.outlineOffset).toBe('1px')
     expect(focusStyle.outlineColor).toBe(focusStyle.expectedEmber)
   })
+
+  test('board shortcuts open and move the selected Paper card while restoring opener focus', async ({ page, request }) => {
+    await enablePaperMode(page)
+    const auth = await registerAndAttachSession(page, request, 'paper-keyboard-card')
+    const seed = `${Date.now()}`
+    const boardId = await createBoardWith2Columns(request, auth, seed)
+
+    const columns = await getColumns(request, auth, boardId)
+    const backlogCol = columns.find((c) => c.name === 'Backlog')!
+    const cardTitle = `Keyboard Paper ${seed}`
+    await addCardViaApi(request, auth, boardId, backlogCol.id, cardTitle)
+
+    await page.goto(`/workspace/boards/${boardId}`)
+    await expect(page.locator('[data-testid="paper-board-lanes"]')).toBeVisible()
+
+    const card = page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
+    const cardOpener = card.getByRole('button', { name: `Card ${cardTitle}` })
+
+    await page.keyboard.press('j')
+    await expect(card).toHaveClass(/paper-board-card--selected/)
+
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog', { name: 'Edit Card' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Edit Card' })).toHaveCount(0)
+
+    await page.keyboard.press('Alt+ArrowRight')
+    const doneLane = page
+      .locator('[data-column-dnd-id]')
+      .filter({ has: page.getByRole('heading', { name: 'Done', exact: true }) })
+      .first()
+    await expect(doneLane.locator('[data-card-id]').filter({ hasText: cardTitle })).toHaveCount(1)
+    await expect(cardOpener).toBeFocused()
+  })
 })

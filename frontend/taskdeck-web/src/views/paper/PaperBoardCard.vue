@@ -130,6 +130,7 @@ function onDragHandleMouseDown() {
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- article is the native drag event boundary; activation remains on the named button and keyboard movement uses board shortcuts -->
   <article
     :class="[
       'paper-board-card',
@@ -146,6 +147,7 @@ function onDragHandleMouseDown() {
     <button
       type="button"
       class="paper-board-card__open"
+      data-action="open-card"
       :aria-label="`Card ${card.title}`"
       @click="onClick"
       @keydown.enter.prevent="onClick"
@@ -172,18 +174,16 @@ function onDragHandleMouseDown() {
               tagstampTone === 'applied' ? 'var(--applied)' :
               'var(--overdue)' }"
           >{{ (tone ?? '').toUpperCase() }}</span>
-          <button
-            type="button"
+          <span
             class="paper-board-card__drag-handle"
             data-action="drag-card-handle"
             draggable="true"
-            title="Drag Card"
-            aria-label="Drag Card"
-            @click.stop
-            @mousedown="onDragHandleMouseDown"
+            :title="`Drag ${card.title}`"
+            aria-hidden="true"
+            @pointerdown="onDragHandleMouseDown"
           >
             <span aria-hidden="true">⋮⋮</span>
-          </button>
+          </span>
         </span>
       </header>
 
