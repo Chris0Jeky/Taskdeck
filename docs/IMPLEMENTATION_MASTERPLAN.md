@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-07-13
+Last Updated: 2026-07-14
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -9,6 +9,10 @@ Companion Active Docs:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Delivery update (2026-07-14)
+
+- **Paper-default regression alignment (`#1274`):** the shared authenticated Playwright session now follows the production Paper default, while frozen Legacy-selector suites opt out explicitly. Core coverage now exercises the real capture → Accept → Review → approve/apply → board flow and axe-checks Paper Home, Today, Inbox, Review, and a populated Board, plus Login and skip-link behavior. The global Vitest Legacy pin remains documented and intentional because those unit tests directly assert the frozen Legacy DOM. Focused Chromium verification: 37/37 across six core specs.
 
 ## Purpose
 
