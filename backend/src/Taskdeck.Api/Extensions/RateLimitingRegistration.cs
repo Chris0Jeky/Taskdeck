@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Taskdeck.Api.Contracts;
+using Taskdeck.Api.Middleware;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
@@ -17,6 +18,7 @@ public static class RateLimitingRegistration
         RateLimitingSettings settings)
     {
         services.AddRateLimiter(options => ConfigureRateLimiting(options, settings));
+        services.AddSingleton(new McpAuthenticationAttemptLimiter(settings.McpAuthenticationPerIp));
         return services;
     }
 
@@ -82,8 +84,10 @@ public static class RateLimitingRegistration
 
         options.AddPolicy(RateLimitingPolicyNames.McpPerApiKey, httpContext =>
         {
-            // Partition by API key user or fall back to IP for unauthenticated attempts.
-            var partitionKey = $"mcp-apikey:{ResolveUserOrClientIdentifier(httpContext)}";
+            // ApiKeyMiddleware stores the validated opaque key ID before rate limiting runs.
+            // Partitioning by user ID here would make independent keys owned by the same user
+            // consume one shared budget, contrary to the policy contract.
+            var partitionKey = $"mcp-apikey:{ResolveApiKeyOrClientIdentifier(httpContext)}";
             return BuildFixedWindowPartition(partitionKey, settings.McpPerApiKey);
         });
 
@@ -123,6 +127,17 @@ public static class RateLimitingRegistration
         // ApiKeyMiddleware sets this after validating the Bearer token.
         if (context.Items.TryGetValue(HttpUserContextProvider.UserIdItemKey, out var apiKeyUserId)
             && apiKeyUserId is Guid apiKeyGuid)
+        {
+            return apiKeyGuid.ToString();
+        }
+
+        return ResolveClientAddress(context);
+    }
+
+    private static string ResolveApiKeyOrClientIdentifier(HttpContext context)
+    {
+        if (context.Items.TryGetValue(ApiKeyMiddleware.ApiKeyIdItemKey, out var apiKeyId)
+            && apiKeyId is Guid apiKeyGuid)
         {
             return apiKeyGuid.ToString();
         }

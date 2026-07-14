@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Infrastructure.Mcp;
@@ -17,8 +18,6 @@ public sealed partial class McpTelemetryMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<McpTelemetryMiddleware> _logger;
 
-    private const string McpPathPrefix = "/mcp";
-
     public McpTelemetryMiddleware(RequestDelegate next, ILogger<McpTelemetryMiddleware> logger)
     {
         _next = next;
@@ -27,7 +26,7 @@ public sealed partial class McpTelemetryMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!context.Request.Path.StartsWithSegments(McpPathPrefix, StringComparison.OrdinalIgnoreCase))
+        if (!context.Request.Path.StartsWithSegments(McpEndpointMapping.HttpRoute, StringComparison.OrdinalIgnoreCase))
         {
             await _next(context);
             return;
