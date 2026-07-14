@@ -85,15 +85,27 @@ describe('PaperBoardCard', () => {
   it('emits click with the card payload when activated', async () => {
     const card = makeCard()
     const wrapper = mount(PaperBoardCard, { props: { card } })
-    await wrapper.trigger('click')
+    await wrapper.find('.paper-board-card__open').trigger('click')
     expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
   })
 
   it('emits click with the card payload from Space key activation', async () => {
     const card = makeCard()
     const wrapper = mount(PaperBoardCard, { props: { card } })
-    await wrapper.trigger('keydown', { key: ' ' })
+    await wrapper.find('.paper-board-card__open').trigger('keydown', { key: ' ' })
     expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
+  })
+
+  it('keeps the card opener and drag handle as sibling controls', () => {
+    const wrapper = mount(PaperBoardCard, { props: { card: makeCard() } })
+    const opener = wrapper.find('.paper-board-card__open')
+    const dragHandle = wrapper.find('[data-action="drag-card-handle"]')
+
+    expect(opener.element.tagName).toBe('BUTTON')
+    expect(dragHandle.element.tagName).toBe('BUTTON')
+    expect(opener.element.contains(dragHandle.element)).toBe(false)
+    expect(wrapper.attributes('role')).toBeUndefined()
+    expect(wrapper.attributes('tabindex')).toBeUndefined()
   })
 
   it('emits dragstart and dragend events', async () => {

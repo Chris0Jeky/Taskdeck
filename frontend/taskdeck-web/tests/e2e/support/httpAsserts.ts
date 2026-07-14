@@ -1,6 +1,6 @@
-import type { APIResponse } from '@playwright/test'
+import type { APIResponse, Response } from '@playwright/test'
 
-export async function assertOk(response: APIResponse, context: string): Promise<void> {
+export async function assertOk(response: APIResponse | Response, context: string): Promise<void> {
   if (response.ok()) {
     return
   }

@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, triageCaptureItem, waitForCardWithTitle, waitForProposalCreated } from './support/captureFlow'
+import { assertOk } from './support/httpAsserts'
 
 function extractBoardIdFromBoardUrl(url: string): string {
   const match = /\/workspace\/boards\/([a-f0-9-]+)$/i.exec(url)
@@ -65,7 +66,7 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
   await captureBody.fill(`- [ ] ${cardTitle}`)
   await page.getByRole('button', { name: 'Capture' }).click()
   const response = await createCaptureResponse
-  expect(response.ok(), 'Paper first-run capture request should succeed').toBeTruthy()
+  await assertOk(response, 'create Paper first-run capture')
   const captureId = await parseCreatedCaptureId(response)
 
   const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
@@ -85,14 +86,14 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/approve`))
   await page.getByTestId('decision-apply').click()
-  expect((await approveResponse).ok()).toBeTruthy()
+  await assertOk(await approveResponse, `approve Paper first-run proposal ${proposalId}`)
 
   page.once('dialog', (dialog) => dialog.accept())
   const executeResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
   await page.getByTestId('decision-apply').click()
-  expect((await executeResponse).ok()).toBeTruthy()
+  await assertOk(await executeResponse, `execute Paper first-run proposal ${proposalId}`)
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
 
   await page.goto(`/workspace/boards/${boardId}`)
@@ -154,7 +155,7 @@ test(LEGACY_FIRST_RUN_TITLE, async ({ page, request }) => {
   await captureModal.getByPlaceholder('Capture a thought, task, or follow-up...').fill(captureText)
   await captureModal.getByRole('button', { name: 'Save Capture' }).click()
   const response = await createCaptureResponse
-  expect(response.ok(), 'Legacy first-run capture request should succeed').toBeTruthy()
+  await assertOk(response, 'create Legacy first-run capture')
   const captureId = await parseCreatedCaptureId(response)
   await expect(captureModal).toHaveCount(0)
 

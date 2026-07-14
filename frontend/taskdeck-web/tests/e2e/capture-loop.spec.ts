@@ -7,6 +7,7 @@ import {
   waitForCardWithTitle,
   waitForProposalCreated,
 } from './support/captureFlow'
+import { assertOk } from './support/httpAsserts'
 
 let paperAuth: AuthResult
 
@@ -37,7 +38,7 @@ test.describe('Paper capture-review-apply loop', () => {
     await captureBody.fill(`- [ ] ${cardTitle}`)
     await page.getByRole('button', { name: 'Capture' }).click()
     const createCaptureResponse = await createCaptureResponsePromise
-    expect(createCaptureResponse.ok(), 'Paper capture request should succeed').toBeTruthy()
+    await assertOk(createCaptureResponse, 'create Paper capture')
     const capturePayload = await createCaptureResponse.json() as { id?: string }
     expect(capturePayload.id).toBeTruthy()
 
@@ -61,7 +62,7 @@ test.describe('Paper capture-review-apply loop', () => {
       response.request().method() === 'POST'
       && response.url().endsWith(`/automation/proposals/${proposalId}/approve`))
     await page.getByTestId('decision-apply').click()
-    expect((await approveResponsePromise).ok()).toBeTruthy()
+    await assertOk(await approveResponsePromise, `approve Paper proposal ${proposalId}`)
     expect(await listBoardCards(request, paperAuth, boardId)).toHaveLength(0)
 
     const executeResponsePromise = page.waitForResponse((response) =>
@@ -69,7 +70,7 @@ test.describe('Paper capture-review-apply loop', () => {
       && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
     page.once('dialog', (dialog) => dialog.accept())
     await page.getByTestId('decision-apply').click()
-    expect((await executeResponsePromise).ok()).toBeTruthy()
+    await assertOk(await executeResponsePromise, `execute Paper proposal ${proposalId}`)
     const createdCard = await waitForCardWithTitle(request, paperAuth, boardId, cardTitle)
 
     await page.goto(`/workspace/boards/${boardId}`)

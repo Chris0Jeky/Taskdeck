@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_ORIGIN, registerAndAttachSession } from './support/authSession'
+import { assertOk } from './support/httpAsserts'
 
 async function gotoBoardsWorkspace(page: Page) {
   await page.goto('/workspace/boards')
@@ -41,7 +42,7 @@ test('home landing and workspace mode preference should persist across navigatio
     response.request().method() === 'PUT')
 
   await workspaceModeSelect.selectOption('workbench')
-  expect((await savePreferenceResponse).ok(), 'workspace preference save should succeed').toBeTruthy()
+  await assertOk(await savePreferenceResponse, 'save workspace preference')
   await expect(workspaceModeSelect).toHaveValue('workbench')
 
   await page.goto('/workspace/boards')
@@ -102,7 +103,7 @@ async function addColumn(page: Page, columnName: string) {
     response.request().method() === 'POST'
     && /\/api\/boards\/[a-f0-9-]+\/columns$/i.test(response.url()))
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  expect((await createColumnResponse).ok(), 'column create should succeed').toBeTruthy()
+  await assertOk(await createColumnResponse, `create column '${columnName}'`)
   // Wait for the create dialog to close so the DOM settles to exactly one heading
   await expect(columnNameInput).toBeHidden()
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
@@ -135,7 +136,7 @@ async function addCard(
   const created = await createCardResponse
 
   if (expectVisible) {
-    expect(created.ok(), 'card create should succeed').toBeTruthy()
+    await assertOk(created, `create card '${cardTitle}'`)
     await expect(cardByTitle(page, cardTitle)).toBeVisible()
   } else {
     // A card added beyond the WIP limit must be rejected (WipLimitExceeded -> 400).
@@ -349,7 +350,7 @@ test('column WIP limit should reject additional cards', async ({ page }) => {
     response.request().method() === 'PATCH'
     && /\/api\/boards\/[a-f0-9-]+\/columns\/[a-f0-9-]+$/i.test(response.url()))
   await page.getByRole('button', { name: 'Save Changes' }).click()
-  expect((await saveColumnResponse).ok(), 'column WIP limit save should succeed').toBeTruthy()
+  await assertOk(await saveColumnResponse, `save WIP limit for column '${columnName}'`)
   await expect(page.getByRole('heading', { name: 'Edit Column' })).toHaveCount(0)
 
   await addCard(page, columnName, firstCard)

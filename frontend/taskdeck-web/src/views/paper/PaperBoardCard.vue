@@ -140,15 +140,18 @@ function onDragHandleMouseDown() {
     :data-variant="variant"
     :data-tone="tone || undefined"
     draggable="false"
-    tabindex="0"
-    role="button"
-    :aria-label="`Card ${card.title}`"
-    @click="onClick"
-    @keydown.enter.prevent="onClick"
-    @keydown.space.prevent="onClick"
     @dragstart="onDragStart"
     @dragend="onDragEnd"
   >
+    <button
+      type="button"
+      class="paper-board-card__open"
+      :aria-label="`Card ${card.title}`"
+      @click="onClick"
+      @keydown.enter.prevent="onClick"
+      @keydown.space.prevent="onClick"
+    />
+
     <span
       v-if="variant === 'ribbon'"
       class="paper-board-card__ribbon"
@@ -242,10 +245,22 @@ function onDragHandleMouseDown() {
 }
 
 .paper-board-card--selected,
-.paper-board-card:focus-visible {
+.paper-board-card:has(.paper-board-card__open:focus-visible) {
   outline: 2px solid var(--ember);
   outline-offset: 1px;
   border-color: var(--ember);
+}
+
+.paper-board-card__open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
 }
 
 .paper-board-card__ribbon {
@@ -290,6 +305,8 @@ function onDragHandleMouseDown() {
 }
 
 .paper-board-card__drag-handle {
+  position: relative;
+  z-index: 2;
   display: inline-grid;
   place-items: center;
   width: 24px;

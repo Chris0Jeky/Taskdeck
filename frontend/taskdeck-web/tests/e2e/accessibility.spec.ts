@@ -6,8 +6,9 @@
  */
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { registerAndAttachSession, type AuthResult } from './support/authSession'
+import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
+import { assertOk } from './support/httpAsserts'
 
 let auth: AuthResult
 
@@ -76,13 +77,34 @@ test('Paper Review view has no WCAG 2.1 AA violations', async ({ page }) => {
 })
 
 test('Paper Board view has no WCAG 2.1 AA violations', async ({ page, request }) => {
-  const boardId = await createBoardWithColumn(request, auth, 'a11y-board', {
+  const seed = `a11y-board-${Date.now()}`
+  const boardId = await createBoardWithColumn(request, auth, seed, {
     boardNamePrefix: 'Paper A11y',
     description: 'Paper board accessibility regression',
     columnNamePrefix: 'Backlog',
   })
+  const headers = { Authorization: `Bearer ${auth.token}` }
+  const columnsResponse = await request.get(`${API_BASE_URL}/boards/${boardId}/columns`, { headers })
+  await assertOk(columnsResponse, `list columns for Paper a11y board ${boardId}`)
+  const columns = await columnsResponse.json() as Array<{ id: string }>
+  expect(columns).toHaveLength(1)
+
+  const cardTitle = `Paper accessibility card ${seed}`
+  const cardResponse = await request.post(`${API_BASE_URL}/boards/${boardId}/cards`, {
+    headers,
+    data: {
+      boardId,
+      columnId: columns[0]!.id,
+      title: cardTitle,
+      description: 'Keyboard and drag affordance coverage',
+      position: 0,
+    },
+  })
+  await assertOk(cardResponse, `create Paper a11y card '${cardTitle}'`)
+
   await page.goto(`/workspace/boards/${boardId}`)
   await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+  await expect(page.locator('.paper-board-card').filter({ hasText: cardTitle })).toBeVisible()
   await expectNoAxeViolations(page, 'PaperBoardView')
 })
 

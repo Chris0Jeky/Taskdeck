@@ -15,6 +15,7 @@ import {
   triageCaptureItem,
   waitForProposalCreated,
 } from './support/captureFlow'
+import { assertOk } from './support/httpAsserts'
 
 let auth: AuthResult
 
@@ -84,7 +85,7 @@ test(PAPER_ENUM_TEST_TITLE, async ({
   await captureBody.fill(captureText)
   await page.getByRole('button', { name: 'Capture' }).click()
   const createCaptureResponse = await createCaptureResponsePromise
-  expect(createCaptureResponse.ok(), 'Paper review capture request should succeed').toBeTruthy()
+  await assertOk(createCaptureResponse, 'create Paper review capture')
   const capturePayload = await createCaptureResponse.json() as { id?: string }
   const captureId = capturePayload.id
   expect(captureId).toBeTruthy()
@@ -252,14 +253,14 @@ test('applied proposal should appear in the recently-applied ledger', async ({ p
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/approve`))
   await page.getByTestId('decision-apply').click()
-  expect((await approveResponse).ok()).toBeTruthy()
+  await assertOk(await approveResponse, `approve proposal ${proposalId}`)
 
   page.once('dialog', (dialog) => dialog.accept())
   const executeResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
   await page.getByTestId('decision-apply').click()
-  expect((await executeResponse).ok()).toBeTruthy()
+  await assertOk(await executeResponse, `execute proposal ${proposalId}`)
   await expect(queueItem).toHaveCount(0)
 
   await expect(
