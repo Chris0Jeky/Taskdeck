@@ -1,31 +1,32 @@
 namespace Taskdeck.Domain.Entities;
 
 /// <summary>
-/// Value object representing the reversibility window for a proposal.
-/// Describes how long a user has to undo the effects and the effort required.
+/// Compatibility value object behind the side-effect endpoint's historical reversibility field.
+/// Its copy describes apply risk and possible manual recovery. WindowMs is legacy
+/// review-attention metadata and does not represent an undo capability.
 /// </summary>
 public sealed class Reversibility : IEquatable<Reversibility>
 {
-    /// <summary>Default reversibility window: 6 hours in milliseconds.</summary>
+    /// <summary>Legacy default review-attention horizon: 6 hours in milliseconds.</summary>
     public const long DefaultWindowMs = 6L * 60 * 60 * 1000; // 21_600_000
 
-    /// <summary>Short summary (e.g. "6 hours - single keystroke").</summary>
+    /// <summary>Short apply-risk summary.</summary>
     public string Summary { get; }
 
-    /// <summary>Detailed description of the reversibility posture.</summary>
+    /// <summary>Detailed description of the apply risk and possible manual recovery.</summary>
     public string Description { get; }
 
-    /// <summary>Reversibility window in milliseconds.</summary>
+    /// <summary>Legacy review-attention metadata retained for contract compatibility.</summary>
     public long WindowMs { get; }
 
     public Reversibility(string summary, string description, long windowMs)
     {
         if (string.IsNullOrWhiteSpace(summary))
-            throw new ArgumentException("Reversibility summary cannot be empty.", nameof(summary));
+            throw new ArgumentException("Apply-risk summary cannot be empty.", nameof(summary));
         if (string.IsNullOrWhiteSpace(description))
-            throw new ArgumentException("Reversibility description cannot be empty.", nameof(description));
+            throw new ArgumentException("Apply-risk description cannot be empty.", nameof(description));
         if (windowMs <= 0)
-            throw new ArgumentOutOfRangeException(nameof(windowMs), "Reversibility window must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(windowMs), "Review-attention metadata must be positive.");
 
         Summary = summary;
         Description = description;

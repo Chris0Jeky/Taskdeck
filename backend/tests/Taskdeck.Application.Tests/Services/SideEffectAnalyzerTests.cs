@@ -353,10 +353,10 @@ public class SideEffectAnalyzerTests
 
     #endregion
 
-    #region Reversibility Tests
+    #region Apply Risk Posture Tests
 
     [Fact]
-    public async Task AnalyzeAsync_Reversibility_ShouldUseDefaultWindow_ForLowRisk()
+    public async Task AnalyzeAsync_ApplyRisk_ShouldKeepCompatibilityWindow_ForLowRisk()
     {
         var proposal = CreateProposal(RiskLevel.Low, null, ("create", "card"));
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
@@ -368,7 +368,7 @@ public class SideEffectAnalyzerTests
     }
 
     [Fact]
-    public async Task AnalyzeAsync_Reversibility_ShouldUseDefaultWindow_ForMediumRisk()
+    public async Task AnalyzeAsync_ApplyRisk_ShouldKeepCompatibilityWindow_ForMediumRisk()
     {
         var proposal = CreateProposal(RiskLevel.Medium, null, ("move", "card"));
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
@@ -380,7 +380,7 @@ public class SideEffectAnalyzerTests
     }
 
     [Fact]
-    public async Task AnalyzeAsync_Reversibility_ShouldUseDefaultWindow_ForHighRisk()
+    public async Task AnalyzeAsync_ApplyRisk_ShouldKeepCompatibilityWindow_ForHighRisk()
     {
         var proposal = CreateProposal(RiskLevel.High, null, ("archive", "card"));
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
@@ -392,7 +392,7 @@ public class SideEffectAnalyzerTests
     }
 
     [Fact]
-    public async Task AnalyzeAsync_Reversibility_ShouldUseHalfWindow_ForCriticalRisk()
+    public async Task AnalyzeAsync_ApplyRisk_ShouldKeepTighterAttentionMetadata_ForCriticalRisk()
     {
         var proposal = CreateProposal(RiskLevel.Critical, null, ("delete", "card"));
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
@@ -404,7 +404,7 @@ public class SideEffectAnalyzerTests
     }
 
     [Fact]
-    public async Task AnalyzeAsync_Reversibility_ShouldDescribeNoOps_WhenNoOperations()
+    public async Task AnalyzeAsync_ApplyRisk_ShouldDescribeNoOps_WhenNoOperations()
     {
         var proposal = CreateProposal(RiskLevel.Low, null);
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
@@ -412,12 +412,12 @@ public class SideEffectAnalyzerTests
 
         var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
-        result.Value.Reversibility.Summary.Should().Contain("no operations");
+        result.Value.Reversibility.Summary.Should().Be("No operations to apply");
         result.Value.Reversibility.WindowMs.Should().Be(Reversibility.DefaultWindowMs);
     }
 
     [Fact]
-    public async Task AnalyzeAsync_Reversibility_CriticalRisk_ShouldMentionManualIntervention()
+    public async Task AnalyzeAsync_ApplyRisk_CriticalRisk_ShouldMentionManualRecovery()
     {
         var proposal = CreateProposal(RiskLevel.Critical, null, ("delete", "card"));
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
@@ -425,8 +425,28 @@ public class SideEffectAnalyzerTests
 
         var result = await _analyzer.AnalyzeAsync(proposal.Id);
 
-        result.Value.Reversibility.Summary.Should().Contain("manual intervention");
+        result.Value.Reversibility.Summary.Should().Contain("manual recovery");
         result.Value.Reversibility.Description.Should().Contain("Critical-risk");
+    }
+
+    [Theory]
+    [InlineData(RiskLevel.Low)]
+    [InlineData(RiskLevel.Medium)]
+    [InlineData(RiskLevel.High)]
+    [InlineData(RiskLevel.Critical)]
+    public async Task AnalyzeAsync_ApplyRisk_ShouldNotPromiseUndo(RiskLevel riskLevel)
+    {
+        var proposal = CreateProposal(riskLevel, null, ("create", "card"));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _analyzer.AnalyzeAsync(proposal.Id);
+
+        var copy = $"{result.Value.Reversibility.Summary} {result.Value.Reversibility.Description}"
+            .ToLowerInvariant();
+        copy.Should().NotContain("undo");
+        copy.Should().NotContain("revers");
+        copy.Should().NotContain("single keystroke");
     }
 
     #endregion
@@ -511,37 +531,37 @@ public class SideEffectAnalyzerTests
 
     #endregion
 
-    #region ComputeReversibility Static Tests
+    #region ComputeApplyRiskPosture Static Tests
 
     [Theory]
     [InlineData(RiskLevel.Low)]
     [InlineData(RiskLevel.Medium)]
     [InlineData(RiskLevel.High)]
-    public void ComputeReversibility_NonCritical_ShouldUseDefaultWindow(RiskLevel level)
+    public void ComputeApplyRiskPosture_NonCritical_ShouldKeepCompatibilityWindow(RiskLevel level)
     {
         var op = new AutomationProposalOperation(
             Guid.NewGuid(), 0, "create", "card", "{}", Guid.NewGuid().ToString());
-        var rev = SideEffectAnalyzer.ComputeReversibility(new List<AutomationProposalOperation> { op }, level);
+        var rev = SideEffectAnalyzer.ComputeApplyRiskPosture(new List<AutomationProposalOperation> { op }, level);
 
         rev.WindowMs.Should().Be(Reversibility.DefaultWindowMs);
     }
 
     [Fact]
-    public void ComputeReversibility_Critical_ShouldUseHalfWindow()
+    public void ComputeApplyRiskPosture_Critical_ShouldKeepTighterAttentionMetadata()
     {
         var op = new AutomationProposalOperation(
             Guid.NewGuid(), 0, "delete", "card", "{}", Guid.NewGuid().ToString());
-        var rev = SideEffectAnalyzer.ComputeReversibility(new List<AutomationProposalOperation> { op }, RiskLevel.Critical);
+        var rev = SideEffectAnalyzer.ComputeApplyRiskPosture(new List<AutomationProposalOperation> { op }, RiskLevel.Critical);
 
         rev.WindowMs.Should().Be(Reversibility.DefaultWindowMs / 2);
     }
 
     [Fact]
-    public void ComputeReversibility_NoOperations_ShouldDescribeNoOps()
+    public void ComputeApplyRiskPosture_NoOperations_ShouldDescribeNoOps()
     {
-        var rev = SideEffectAnalyzer.ComputeReversibility(new List<AutomationProposalOperation>(), RiskLevel.Low);
+        var rev = SideEffectAnalyzer.ComputeApplyRiskPosture(new List<AutomationProposalOperation>(), RiskLevel.Low);
 
-        rev.Summary.Should().Contain("no operations");
+        rev.Summary.Should().Be("No operations to apply");
         rev.Description.Should().Contain("no operations");
         rev.WindowMs.Should().Be(Reversibility.DefaultWindowMs);
     }

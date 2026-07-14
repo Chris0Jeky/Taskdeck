@@ -7,7 +7,7 @@ namespace Taskdeck.Domain.Tests.Entities;
 public class ProposalSideEffectsTests
 {
     private static Reversibility DefaultReversibility()
-        => new("6 hours · single keystroke", "Fully reversible.", Reversibility.DefaultWindowMs);
+        => new("Low risk · confirm before apply", "Confirm affected items.", Reversibility.DefaultWindowMs);
 
     private static List<SideEffectRow> DefaultRows()
         => new()
