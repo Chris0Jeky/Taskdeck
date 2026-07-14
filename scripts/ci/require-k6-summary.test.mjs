@@ -277,6 +277,41 @@ test('accepts nested metric values and threshold ok objects', async () => {
   assert.match(analyzerResult.stdout, /All k6 performance thresholds passed/)
 })
 
+for (const thresholdEvidence of [false, { ok: true }]) {
+  const encoding = typeof thresholdEvidence === 'boolean' ? 'flattened' : 'nested'
+
+  test(`rejects conflicting nested and flattened metric values with ${encoding} threshold evidence`, async () => {
+    const summary = await loadFixture()
+    const boardWrite = summary.metrics['http_req_duration{workload:board-write}']
+    boardWrite['p(95)'] = 2200
+    boardWrite.values = { 'p(95)': 1900 }
+    boardWrite.thresholds['p(95)<2200'] = thresholdEvidence
+
+    const contents = JSON.stringify(summary)
+    const validatorResult = await runWithContents(contents)
+    const analyzerResult = await runWithContents(contents, runAnalyzer)
+
+    assert.equal(validatorResult.status, 1)
+    assert.match(validatorResult.stderr, /conflicting nested \(1900\) and flattened \(2200\) evidence/)
+    assert.equal(analyzerResult.status, 1)
+    assert.match(analyzerResult.stderr, /conflicting nested \(1900\) and flattened \(2200\) evidence/)
+  })
+}
+
+test('accepts duplicate nested and flattened metric values only when they agree', async () => {
+  const summary = await loadFixture()
+  const boardWrite = summary.metrics['http_req_duration{workload:board-write}']
+  boardWrite.values = { 'p(95)': boardWrite['p(95)'] }
+
+  const contents = JSON.stringify(summary)
+  const validatorResult = await runWithContents(contents)
+  const analyzerResult = await runWithContents(contents, runAnalyzer)
+
+  assert.equal(validatorResult.status, 0, validatorResult.stderr)
+  assert.equal(analyzerResult.status, 0, analyzerResult.stderr)
+  assert.match(analyzerResult.stdout, /All k6 performance thresholds passed/)
+})
+
 test('accepts a nested boolean breach result when the numeric evidence reaches equality', async () => {
   const summary = await loadFixture()
   summary.metrics.http_req_failed.value = 0.01

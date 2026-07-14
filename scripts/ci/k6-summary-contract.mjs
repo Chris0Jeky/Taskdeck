@@ -48,16 +48,35 @@ function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function readK6MetricValue(metric, valueName) {
-  if (!isRecord(metric)) return undefined;
+function readK6MetricValueEvidence(metric, valueName) {
+  if (!isRecord(metric)) return { value: undefined };
 
-  const nestedValue = isRecord(metric.values) ? metric.values[valueName] : undefined;
-  if (Number.isFinite(nestedValue)) return nestedValue;
+  const hasNestedValue = isRecord(metric.values) && Object.hasOwn(metric.values, valueName);
 
   // k6 0.49 --summary-export flattens trend values and calls rate values "value".
   const exportedName = valueName === "rate" ? "value" : valueName;
+  const hasExportedValue = Object.hasOwn(metric, exportedName);
+  const nestedValue = hasNestedValue ? metric.values[valueName] : undefined;
   const exportedValue = metric[exportedName];
-  return Number.isFinite(exportedValue) ? exportedValue : undefined;
+
+  if (hasNestedValue && hasExportedValue) {
+    if (!Number.isFinite(nestedValue) || !Number.isFinite(exportedValue)) {
+      return { error: "has duplicate nested/flattened evidence that is not finite" };
+    }
+
+    if (nestedValue !== exportedValue) {
+      return { error: `has conflicting nested (${nestedValue}) and flattened (${exportedValue}) evidence` };
+    }
+
+    return { value: nestedValue };
+  }
+
+  const value = hasNestedValue ? nestedValue : exportedValue;
+  return { value: Number.isFinite(value) ? value : undefined };
+}
+
+export function readK6MetricValue(metric, valueName) {
+  return readK6MetricValueEvidence(metric, valueName).value;
 }
 
 export function readK6ThresholdOk(result) {
@@ -96,7 +115,12 @@ export function validateK6HardGateSummary(summary) {
     }
 
     for (const valueName of requirement.values) {
-      const value = readK6MetricValue(metric, valueName);
+      const evidence = readK6MetricValueEvidence(metric, valueName);
+      if (evidence.error) {
+        return `metric "${requirement.name}" value "${valueName}" ${evidence.error}`;
+      }
+
+      const value = evidence.value;
       if (value === undefined) {
         return `metric "${requirement.name}" must contain finite numeric value "${valueName}"`;
       }
