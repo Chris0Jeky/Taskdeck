@@ -104,6 +104,13 @@ public static class PipelineConfiguration
         // rejected with 401 (missing/invalid/revoked API keys).
         app.UseMiddleware<Taskdeck.Api.Mcp.McpTelemetryMiddleware>();
 
+        // Bound all MCP authentication attempts by trusted client address before parsing a key
+        // or querying the database. Valid requests also reach the later per-key endpoint policy.
+        if (rateLimitingSettings.Enabled)
+        {
+            app.UseMiddleware<McpAuthenticationRateLimitingMiddleware>();
+        }
+
         // API key authentication for MCP HTTP transport (/mcp path).
         // Must run before UseAuthentication so MCP requests are handled by API key auth,
         // not JWT auth. Non-MCP requests pass through unaffected.

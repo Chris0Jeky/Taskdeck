@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Cors;
 using Taskdeck.Api.RateLimiting;
 
 namespace Taskdeck.Api.Extensions;
@@ -15,7 +17,12 @@ public static class McpEndpointMapping
         this IEndpointRouteBuilder endpoints,
         bool rateLimitingEnabled)
     {
+        ArgumentNullException.ThrowIfNull(endpoints);
+
         var mcpEndpoint = endpoints.MapMcp(HttpRoute);
+        // MCP bearer keys are not a browser credential. The co-hosted API's global
+        // credentialed frontend policy must not enable cross-origin MCP requests.
+        mcpEndpoint.WithMetadata(new DisableCorsAttribute());
         if (rateLimitingEnabled)
         {
             mcpEndpoint.RequireRateLimiting(RateLimitingPolicyNames.McpPerApiKey);

@@ -18,6 +18,7 @@ public static class RateLimitingRegistration
         RateLimitingSettings settings)
     {
         services.AddRateLimiter(options => ConfigureRateLimiting(options, settings));
+        services.AddSingleton(new McpAuthenticationAttemptLimiter(settings.McpAuthenticationPerIp));
         return services;
     }
 

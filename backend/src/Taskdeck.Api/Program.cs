@@ -132,6 +132,13 @@ if (args.Contains("--mcp"))
         // rejected with 401 (missing/invalid/revoked API keys).
         mcpHttpApp.UseMiddleware<McpTelemetryMiddleware>();
 
+        // Bound all authentication attempts by client address before parsing a key or
+        // querying the database. Valid requests also reach the later per-key policy.
+        if (mcpRateLimitingSettings.Enabled)
+        {
+            mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.McpAuthenticationRateLimitingMiddleware>();
+        }
+
         // API key authentication for MCP requests.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.ApiKeyMiddleware>();
 
@@ -418,8 +425,13 @@ public partial class Program
 
     internal static void ApplyStandaloneMcpHostSecurity(IConfiguration configuration)
     {
+        ArgumentNullException.ThrowIfNull(configuration);
+
         var allowedHosts = configuration["AllowedHosts"];
-        if (string.IsNullOrWhiteSpace(allowedHosts) || allowedHosts == "*")
+        var containsAnyHost = allowedHosts?
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(host => host is "*" or "0.0.0.0" or "[::]") == true;
+        if (string.IsNullOrWhiteSpace(allowedHosts) || containsAnyHost)
         {
             configuration["AllowedHosts"] = StandaloneMcpLoopbackAllowedHosts;
         }

@@ -6,7 +6,9 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Api.RateLimiting;
@@ -14,6 +16,7 @@ using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -221,6 +224,34 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task McpEndpoint_ExpiredKey_Returns401()
+    {
+        using var jwtClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-expired");
+        using var createResponse = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Expired Key", 1));
+        var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        created.Should().NotBeNull();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            DateTimeOffset? expiredAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+            await dbContext.ApiKeys
+                .Where(key => key.Id == created!.Id)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(key => key.ExpiresAt, expiredAt));
+        }
+
+        using var mcpClient = CreateMcpClient(created!.Key);
+        using var response = await PostMcpAsync(mcpClient, "/mcp", CreateInitializeRequest(1));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.Contains("Mcp-Session-Id").Should().BeFalse();
+    }
+
+    [Fact]
     public async Task McpEndpoint_ValidKey_PassesAuth()
     {
         var jwtClient = _factory.CreateClient();
@@ -269,6 +300,23 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task McpEndpoint_Preflight_DoesNotEnableBrowserCors()
+    {
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/mcp");
+        request.Headers.TryAddWithoutValidation("Origin", "http://localhost:5173");
+        request.Headers.TryAddWithoutValidation("Access-Control-Request-Method", "POST");
+        request.Headers.TryAddWithoutValidation("Access-Control-Request-Headers", "Authorization,Content-Type");
+
+        using var response = await client.SendAsync(request);
+
+        response.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+        response.Headers.Contains("Access-Control-Allow-Credentials").Should().BeFalse();
+        response.Headers.Contains("Access-Control-Allow-Methods").Should().BeFalse();
+        response.Headers.Contains("Access-Control-Allow-Headers").Should().BeFalse();
+    }
+
+    [Fact]
     public async Task McpEndpoint_UserScopedResource_IsolatedByApiKeyOwner()
     {
         using var jwtClientA = _factory.CreateClient();
@@ -297,6 +345,8 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         using var factory = _factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("RateLimiting:Enabled", "true");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIp:PermitLimit", "10");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIp:WindowSeconds", "60");
             builder.UseSetting("RateLimiting:McpPerApiKey:PermitLimit", "1");
             builder.UseSetting("RateLimiting:McpPerApiKey:WindowSeconds", "60");
         });
@@ -321,6 +371,32 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         secondA.Headers.TryGetValues("Retry-After", out _).Should().BeTrue();
         secondA.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
             .Which.Should().Be(RateLimitingPolicyNames.McpPerApiKey);
+    }
+
+    [Fact]
+    public async Task McpEndpoint_RejectedCredentials_AreRateLimitedBeforeDatabaseLookup()
+    {
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("RateLimiting:Enabled", "true");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIp:PermitLimit", "1");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIp:WindowSeconds", "60");
+            builder.UseSetting("RateLimiting:McpPerApiKey:PermitLimit", "10");
+            builder.UseSetting("RateLimiting:McpPerApiKey:WindowSeconds", "60");
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            "tdsk_000000000000000000000000000000000000");
+
+        using var first = await PostMcpAsync(client, "/mcp", CreateInitializeRequest(1));
+        using var second = await PostMcpAsync(client, "/mcp", CreateInitializeRequest(2));
+
+        first.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        second.Headers.TryGetValues("Retry-After", out _).Should().BeTrue();
+        second.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
+            .Which.Should().Be(RateLimitingPolicyNames.McpAuthenticationPerIp);
     }
 
     [Fact]
@@ -359,6 +435,11 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     [InlineData(null)]
     [InlineData("")]
     [InlineData("*")]
+    [InlineData(" * ")]
+    [InlineData("localhost;*")]
+    [InlineData("0.0.0.0")]
+    [InlineData("[::]")]
+    [InlineData("mcp.example.test;[::]")]
     public void StandaloneMcpHostSecurity_ReplacesPermissiveAllowedHosts(string? configuredHosts)
     {
         var configuration = new ConfigurationBuilder()
