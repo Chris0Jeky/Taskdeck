@@ -54,14 +54,21 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             configBuilder.AddInMemoryCollection(overrideSettings);
         });
 
-        builder.ConfigureServices(services =>
+        builder.ConfigureServices((context, services) =>
         {
+            var databaseSettings = context.Configuration.GetSection("Database").Get<DatabaseSettings>()
+                ?? new DatabaseSettings();
+
             services.RemoveAll<DbContextOptions<TaskdeckDbContext>>();
             services.RemoveAll<TaskdeckDbContext>();
             services.RemoveAll<LlmProviderSettings>();
             services.RemoveAll<ArtefactStorageSettings>();
             services.AddDbContext<TaskdeckDbContext>(options =>
-                options.UseSqlite($"Data Source={dbPath}"));
+                options
+                    .UseSqlite($"Data Source={dbPath}", sqliteOptions =>
+                        sqliteOptions.CommandTimeout(databaseSettings.CommandTimeoutSeconds))
+                    .AddInterceptors(new SqlitePragmaConnectionInterceptor(
+                        databaseSettings.BusyTimeoutMilliseconds)));
             services.AddSingleton(new LlmProviderSettings
             {
                 EnableLiveProviders = false,
