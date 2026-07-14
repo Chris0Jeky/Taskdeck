@@ -885,6 +885,14 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             $"the {phase} barrier should contain exactly the users whose hub operations succeeded");
     }
 
+    private static async Task InvokePresenceMutationAndRecordSuccessAsync(
+        Func<Task> invoke,
+        Action recordSuccess)
+    {
+        await invoke();
+        recordSuccess();
+    }
+
     [Fact]
     public async Task PresenceBarrier_UsesMarker_WhenTimestampsTieAndDeliveryIsReordered()
     {
@@ -987,6 +995,37 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             .WithMessage("*No presence snapshot contained the requested owner editing marker*Observed 1 total snapshots*");
     }
 
+    [Theory]
+    [InlineData("JoinBoard")]
+    [InlineData("LeaveBoard")]
+    public async Task PresenceMutation_PostMutationFailure_PropagatesWithoutRecordingSuccess(
+        string operation)
+    {
+        var trackerMutationApplied = false;
+        var successRecorded = false;
+        Exception expectedException = operation == "JoinBoard"
+            ? new HubException("broadcast failed after tracker mutation")
+            : new HttpRequestException("transport lost the result after tracker mutation");
+
+        async Task InvokeWithPostMutationFailure()
+        {
+            trackerMutationApplied = true;
+            await Task.Yield();
+            throw expectedException;
+        }
+
+        var act = () => InvokePresenceMutationAndRecordSuccessAsync(
+            InvokeWithPostMutationFailure,
+            () => successRecorded = true);
+
+        var assertion = await act.Should().ThrowAsync<Exception>();
+        assertion.Which.Should().BeSameAs(expectedException,
+            $"the ambiguous {operation} failure must propagate unchanged");
+        trackerMutationApplied.Should().BeTrue("the control simulates a post-mutation failure");
+        successRecorded.Should().BeFalse(
+            "an ambiguous outcome must abort before expected membership is inferred");
+    }
+
     /// <summary>
     /// Scenario 14: Rapid join/leave stress.
     /// Multiple connections rapidly join and leave a board.
@@ -1027,9 +1066,10 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // All users join simultaneously via Barrier for true synchronization.
         // Unlike SemaphoreSlim, Barrier ensures all participants reach the
         // barrier point before any of them proceed past it.
-        // Under load, some SignalR invocations may fail with transient 500
-        // errors (e.g., SQLite contention). We track join successes to set
-        // correct expectations for the eventual-consistency assertion.
+        // Every invocation must complete successfully before its identity is
+        // used in the exact barrier expectation. A transport or hub failure can
+        // happen after the server mutates the tracker, so swallowing it would
+        // leave the expected state ambiguous and recreate a false-red assertion.
         var connections = new List<HubConnection>();
         var joinedConnections = new ConcurrentBag<(HubConnection Connection, Guid UserId)>();
         try
@@ -1042,25 +1082,16 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 await conn.StartAsync();
                 lock (connections) { connections.Add(conn); }
                 joinBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
-                try
-                {
-                    await conn.InvokeAsync("JoinBoard", board.Id);
-                    joinedConnections.Add((conn, user.UserId));
-                }
-                catch (Exception ex) when (ex is HubException or HttpRequestException)
-                {
-                    // Tolerate transient HubException (e.g., SQLite contention
-                    // under rapid-fire stress). The eventual-consistency check
-                    // below uses the actual success count.
-                }
+                await InvokePresenceMutationAndRecordSuccessAsync(
+                    () => conn.InvokeAsync("JoinBoard", board.Id),
+                    () => joinedConnections.Add((conn, user.UserId)));
             }).ToArray();
 
             joinBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
             await Task.WhenAll(joinTasks);
 
-            var actualJoined = joinedConnections.Count;
-            actualJoined.Should().BeGreaterThanOrEqualTo(1,
-                "at least one concurrent join must succeed to validate rapid join/leave behavior");
+            joinedConnections.Should().HaveCount(connectionCount,
+                "every concurrent join must complete unambiguously before evaluating presence");
 
             // Publish a uniquely identifiable current-state barrier after every
             // join invocation settles. Earlier snapshots cannot contain this
@@ -1088,24 +1119,16 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             var leaveTasks = leavingConns.Select(async leaving =>
             {
                 leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
-                try
-                {
-                    await leaving.Connection.InvokeAsync("LeaveBoard", board.Id);
-                    leftUserIds.Add(leaving.UserId);
-                }
-                catch (Exception ex) when (ex is HubException or HttpRequestException)
-                {
-                    // Tolerate individual transient failures, but require at least
-                    // one successful leave below so this test still covers leave behavior.
-                }
+                await InvokePresenceMutationAndRecordSuccessAsync(
+                    () => leaving.Connection.InvokeAsync("LeaveBoard", board.Id),
+                    () => leftUserIds.Add(leaving.UserId));
             }).ToArray();
 
             leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
             await Task.WhenAll(leaveTasks);
 
-            var actualLeft = leftUserIds.Count;
-            actualLeft.Should().BeGreaterThan(0,
-                "at least one LeaveBoard invocation must succeed to validate rapid leave behavior");
+            leftUserIds.Should().HaveCount(leavingConns.Count,
+                "every concurrent leave must complete unambiguously before evaluating presence");
 
             // A second unique marker identifies the current state after every
             // leave attempt. Exact identities prove each successful leave took
