@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Api.RateLimiting;
@@ -16,6 +17,7 @@ using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -397,6 +399,11 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         second.Headers.TryGetValues("Retry-After", out _).Should().BeTrue();
         second.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
             .Which.Should().Be(RateLimitingPolicyNames.McpAuthenticationPerIp);
+        second.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var error = await second.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.TooManyRequests);
+        error.Message.Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]
