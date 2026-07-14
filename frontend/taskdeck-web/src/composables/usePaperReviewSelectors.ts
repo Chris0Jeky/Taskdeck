@@ -1,12 +1,18 @@
 import { computed, onScopeDispose, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { Proposal as ApiProposal } from '../types/automation'
-import { proposalDeepReviewApi } from '../api/proposalDeepReviewApi'
+import {
+  proposalDeepReviewApi,
+  conflictToneWireValues,
+  cardHistoryStatusWireValues,
+} from '../api/proposalDeepReviewApi'
 import type {
   ProvenanceRowDto,
   ConfidenceBreakdownDto,
   ProposalSideEffectsDto,
   ConflictRowDto,
   CardHistoryRowDto,
+  ConflictToneWireValue,
+  CardHistoryStatusWireValue,
   SimilarPastResultDto,
 } from '../api/proposalDeepReviewApi'
 
@@ -52,7 +58,7 @@ export interface HistoryRow {
   serial: string
   event: string
   age: string
-  status: 'pending' | 'applied' | 'past'
+  status: 'pending' | 'applied' | 'past' | 'unknown'
 }
 
 export interface SimilarPastRow {
@@ -104,25 +110,34 @@ function mapProvenanceRow(dto: ProvenanceRowDto): ProvenanceRow {
   }
 }
 
-function mapConflictTone(tone: string): 'warn' | 'info' | 'ok' {
-  switch (tone.toLowerCase()) {
-    case 'warn':
+function unexpectedWireEnum<T>(name: string, value: unknown, fallback: T): T {
+  console.error(`[Paper Review] Unexpected ${name} wire value`, value)
+  return fallback
+}
+
+function mapConflictTone(tone: ConflictToneWireValue): 'warn' | 'info' | 'ok' {
+  switch (tone) {
+    case conflictToneWireValues.Warn:
       return 'warn'
-    case 'ok':
+    case conflictToneWireValues.Info:
+      return 'info'
+    case conflictToneWireValues.Ok:
       return 'ok'
     default:
-      return 'info'
+      return unexpectedWireEnum('ConflictTone', tone, 'warn')
   }
 }
 
-function mapHistoryStatus(status: string): 'pending' | 'applied' | 'past' {
-  switch (status.toLowerCase()) {
-    case 'pending':
+function mapHistoryStatus(status: CardHistoryStatusWireValue): HistoryRow['status'] {
+  switch (status) {
+    case cardHistoryStatusWireValues.Pending:
       return 'pending'
-    case 'applied':
+    case cardHistoryStatusWireValues.Applied:
       return 'applied'
-    default:
+    case cardHistoryStatusWireValues.Past:
       return 'past'
+    default:
+      return unexpectedWireEnum('CardHistoryStatus', status, 'unknown')
   }
 }
 

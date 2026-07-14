@@ -15,8 +15,9 @@ function statusLabel(status: HistoryRow['status']): string {
     case 'applied':
       return 'APPLIED'
     case 'past':
-    default:
       return 'past'
+    case 'unknown':
+      return 'UNKNOWN'
   }
 }
 </script>
@@ -104,5 +105,9 @@ function statusLabel(status: HistoryRow['status']): string {
 }
 .paper-review-history__row[data-status='applied'] .paper-review-history__status {
   color: var(--applied);
+}
+.paper-review-history__row[data-status='unknown'] .paper-review-history__status {
+  color: var(--overdue);
+  font-weight: 700;
 }
 </style>
