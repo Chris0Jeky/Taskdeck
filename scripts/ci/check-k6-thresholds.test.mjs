@@ -1,48 +1,22 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const analyzerPath = fileURLToPath(new URL('./check-k6-thresholds.mjs', import.meta.url))
+const fixturePath = fileURLToPath(new URL('./k6-summary-minimal.fixture.json', import.meta.url))
+const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
 
 function createSummary(boardWriteP95, boardWriteThresholdOk) {
-  return {
-    metrics: {
-      http_req_duration: {
-        values: {
-          avg: 100,
-          med: 80,
-          'p(90)': 200,
-          'p(95)': 300,
-          'p(99)': 500,
-          max: 800,
-        },
-        thresholds: {
-          'p(95)<2000': { ok: true },
-          'p(99)<2500': { ok: true },
-        },
-      },
-      'http_req_duration{workload:board-read}': {
-        values: { 'p(95)': 200 },
-        thresholds: { 'p(95)<900': { ok: true } },
-      },
-      'http_req_duration{workload:board-write}': {
-        values: { 'p(95)': boardWriteP95 },
-        thresholds: { 'p(95)<2200': { ok: boardWriteThresholdOk } },
-      },
-      http_req_failed: {
-        values: { rate: 0 },
-        thresholds: { 'rate<0.01': { ok: true } },
-      },
-      checks: {
-        values: { rate: 1 },
-        thresholds: { 'rate>0.99': { ok: true } },
-      },
-    },
-  }
+  const summary = structuredClone(fixture)
+  const boardWrite = summary.metrics['http_req_duration{workload:board-write}']
+  boardWrite['p(95)'] = boardWriteP95
+  // k6 0.49 exports threshold breach flags, so false means the threshold passed.
+  boardWrite.thresholds['p(95)<2200'] = !boardWriteThresholdOk
+  return summary
 }
 
 async function runAnalyzer(boardWriteP95, boardWriteThresholdOk, cwd = process.cwd()) {
@@ -72,8 +46,16 @@ test('fails when tagged board-write p95 reaches the jitter-adjusted hard gate', 
   const result = await runAnalyzer(2200, false)
 
   assert.equal(result.status, 1)
+  assert.match(result.stdout, /k6 threshold breached: http_req_duration\{workload:board-write\} p\(95\)<2200/)
   assert.match(result.stdout, /exceeds 2200ms hard gate/)
   assert.match(result.stdout, /measured SQLite capacity: 2000ms plus 10% jitter allowance/)
+})
+
+test('honors a real k6 boolean breach flag independently of the metric value', async () => {
+  const result = await runAnalyzer(1000, false)
+
+  assert.equal(result.status, 1)
+  assert.match(result.stdout, /k6 threshold breached: http_req_duration\{workload:board-write\} p\(95\)<2200/)
 })
 
 test('resolves the analyzer relative to the test module from another working directory', async () => {

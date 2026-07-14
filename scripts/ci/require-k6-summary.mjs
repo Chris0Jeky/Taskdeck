@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync } from 'node:fs'
+import { validateK6HardGateSummary } from './k6-summary-contract.mjs'
 
 const summaryPath = process.argv[2]
 
@@ -31,12 +32,9 @@ try {
   fail(`Required k6 summary is not valid JSON: ${summaryPath} (${error.message})`)
 }
 
-if (summary === null || typeof summary !== 'object' || Array.isArray(summary)) {
-  fail(`Required k6 summary must be a JSON object: ${summaryPath}`)
-}
-
-if (summary.metrics === null || typeof summary.metrics !== 'object' || Array.isArray(summary.metrics)) {
-  fail(`Required k6 summary must contain a metrics object: ${summaryPath}`)
+const validationError = validateK6HardGateSummary(summary)
+if (validationError) {
+  fail(`Required k6 summary ${validationError}: ${summaryPath}`)
 }
 
 console.log(`k6 summary validated: ${summaryPath}`)

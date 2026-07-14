@@ -5,13 +5,38 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { K6_HARD_GATE_METRICS } from './k6-summary-contract.mjs'
 
 const validatorPath = fileURLToPath(new URL('./require-k6-summary.mjs', import.meta.url))
+const analyzerPath = fileURLToPath(new URL('./check-k6-thresholds.mjs', import.meta.url))
+const fixturePath = fileURLToPath(new URL('./k6-summary-minimal.fixture.json', import.meta.url))
 
 function runValidator(summaryPath) {
   return spawnSync(process.execPath, [validatorPath, summaryPath], {
     encoding: 'utf8',
   })
+}
+
+function runAnalyzer(summaryPath) {
+  return spawnSync(process.execPath, [analyzerPath, summaryPath, '--fail-on-breach'], {
+    encoding: 'utf8',
+  })
+}
+
+async function runWithContents(contents, runner = runValidator) {
+  const tempDir = await mkdtemp(join(tmpdir(), 'taskdeck-k6-summary-'))
+  const summaryPath = join(tempDir, 'k6-summary.json')
+
+  try {
+    await writeFile(summaryPath, contents, 'utf8')
+    return runner(summaryPath)
+  } finally {
+    await rm(tempDir, { recursive: true, force: true })
+  }
+}
+
+async function loadFixture() {
+  return JSON.parse(await readFile(fixturePath, 'utf8'))
 }
 
 test('fails when the required k6 summary is missing', async () => {
@@ -29,62 +54,162 @@ test('fails when the required k6 summary is missing', async () => {
 })
 
 test('fails when the required k6 summary is empty', async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), 'taskdeck-k6-summary-'))
-  const summaryPath = join(tempDir, 'k6-summary.json')
+  const result = await runWithContents('')
 
-  try {
-    await writeFile(summaryPath, '', 'utf8')
-    const result = runValidator(summaryPath)
-
-    assert.equal(result.status, 1)
-    assert.match(result.stderr, /Required k6 summary is empty/)
-  } finally {
-    await rm(tempDir, { recursive: true, force: true })
-  }
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /Required k6 summary is empty/)
 })
 
 test('fails when the required k6 summary is malformed JSON', async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), 'taskdeck-k6-summary-'))
-  const summaryPath = join(tempDir, 'k6-summary.json')
+  const result = await runWithContents('{not-json}')
 
-  try {
-    await writeFile(summaryPath, '{not-json}', 'utf8')
-    const result = runValidator(summaryPath)
-
-    assert.equal(result.status, 1)
-    assert.match(result.stderr, /Required k6 summary is not valid JSON/)
-  } finally {
-    await rm(tempDir, { recursive: true, force: true })
-  }
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /Required k6 summary is not valid JSON/)
 })
 
 test('fails when parseable JSON lacks a k6 metrics object', async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), 'taskdeck-k6-summary-'))
-  const summaryPath = join(tempDir, 'k6-summary.json')
+  const result = await runWithContents(JSON.stringify({}))
 
-  try {
-    await writeFile(summaryPath, JSON.stringify({}), 'utf8')
-    const result = runValidator(summaryPath)
-
-    assert.equal(result.status, 1)
-    assert.match(result.stderr, /must contain a metrics object/)
-  } finally {
-    await rm(tempDir, { recursive: true, force: true })
-  }
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /must contain a metrics object/)
 })
 
-test('accepts a parseable k6 summary with a metrics object', async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), 'taskdeck-k6-summary-'))
-  const summaryPath = join(tempDir, 'k6-summary.json')
+test('fails when the k6 metrics object is empty in both validator and analyzer paths', async () => {
+  const contents = JSON.stringify({ metrics: {} })
+  const validatorResult = await runWithContents(contents)
+  const analyzerResult = await runWithContents(contents, runAnalyzer)
 
-  try {
-    await writeFile(summaryPath, JSON.stringify({ metrics: {} }), 'utf8')
-    const result = runValidator(summaryPath)
+  assert.equal(validatorResult.status, 1)
+  assert.match(validatorResult.stderr, /metrics object must not be empty/)
+  assert.equal(analyzerResult.status, 1)
+  assert.match(analyzerResult.stderr, /Invalid k6 hard-gate summary: metrics object must not be empty/)
+})
 
-    assert.equal(result.status, 0, result.stderr)
-    assert.match(result.stdout, /k6 summary validated/)
-  } finally {
-    await rm(tempDir, { recursive: true, force: true })
+for (const requirement of K6_HARD_GATE_METRICS) {
+  test(`fails when required hard-gate metric ${requirement.name} is missing`, async () => {
+    const summary = await loadFixture()
+    delete summary.metrics[requirement.name]
+    const contents = JSON.stringify(summary)
+
+    const validatorResult = await runWithContents(contents)
+    const analyzerResult = await runWithContents(contents, runAnalyzer)
+
+    assert.equal(validatorResult.status, 1)
+    assert.ok(validatorResult.stderr.includes(`required metric "${requirement.name}"`))
+    assert.equal(analyzerResult.status, 1)
+    assert.ok(analyzerResult.stderr.includes(`required metric "${requirement.name}"`))
+  })
+}
+
+const malformedCases = [
+  {
+    name: 'required metric is not an object',
+    mutate(summary) {
+      summary.metrics.http_req_failed = null
+    },
+    expected: /required metric "http_req_failed" as an object/,
+  },
+  {
+    name: 'required value is a NaN-like JSON string',
+    mutate(summary) {
+      summary.metrics.http_req_duration['p(95)'] = 'NaN'
+    },
+    expected: /finite numeric value "p\(95\)"/,
+  },
+  {
+    name: 'required threshold is missing',
+    mutate(summary) {
+      delete summary.metrics.http_req_duration.thresholds['p(99)<2500']
+    },
+    expected: /must contain threshold "p\(99\)<2500"/,
+  },
+  {
+    name: 'required threshold result is not boolean evidence',
+    mutate(summary) {
+      summary.metrics.checks.thresholds['rate>0.99'] = { ok: 'true' }
+    },
+    expected: /must contain boolean result evidence/,
+  },
+]
+
+for (const scenario of malformedCases) {
+  test(`fails when ${scenario.name}`, async () => {
+    const summary = await loadFixture()
+    scenario.mutate(summary)
+    const contents = JSON.stringify(summary)
+
+    const validatorResult = await runWithContents(contents)
+    const analyzerResult = await runWithContents(contents, runAnalyzer)
+
+    assert.equal(validatorResult.status, 1)
+    assert.match(validatorResult.stderr, scenario.expected)
+    assert.equal(analyzerResult.status, 1)
+    assert.match(analyzerResult.stderr, scenario.expected)
+  })
+}
+
+test('accepts a realistic minimal k6 0.49 summary export and analyzer path', () => {
+  const validatorResult = runValidator(fixturePath)
+  const analyzerResult = runAnalyzer(fixturePath)
+
+  assert.equal(validatorResult.status, 0, validatorResult.stderr)
+  assert.match(validatorResult.stdout, /k6 summary validated/)
+  assert.equal(analyzerResult.status, 0, analyzerResult.stderr)
+  assert.match(analyzerResult.stdout, /HTTP request duration/)
+  assert.match(analyzerResult.stdout, /All k6 performance thresholds passed/)
+})
+
+test('accepts nested metric values and threshold ok objects', async () => {
+  const summary = await loadFixture()
+
+  for (const requirement of K6_HARD_GATE_METRICS) {
+    const metric = summary.metrics[requirement.name]
+    metric.values = {}
+
+    for (const valueName of requirement.values) {
+      const exportedName = valueName === 'rate' ? 'value' : valueName
+      metric.values[valueName] = metric[exportedName]
+      delete metric[exportedName]
+    }
+
+    for (const thresholdName of requirement.thresholds) {
+      metric.thresholds[thresholdName] = { ok: !metric.thresholds[thresholdName] }
+    }
+  }
+
+  const contents = JSON.stringify(summary)
+  const validatorResult = await runWithContents(contents)
+  const analyzerResult = await runWithContents(contents, runAnalyzer)
+
+  assert.equal(validatorResult.status, 0, validatorResult.stderr)
+  assert.equal(analyzerResult.status, 0, analyzerResult.stderr)
+  assert.match(analyzerResult.stdout, /All k6 performance thresholds passed/)
+})
+
+test('accepts a boolean ok field even when it records a threshold breach', async () => {
+  const summary = await loadFixture()
+  summary.metrics.http_req_failed.thresholds['rate<0.01'] = { ok: false }
+
+  const validatorResult = await runWithContents(JSON.stringify(summary))
+  const analyzerResult = await runWithContents(JSON.stringify(summary), runAnalyzer)
+
+  assert.equal(validatorResult.status, 0, validatorResult.stderr)
+  assert.equal(analyzerResult.status, 1)
+  assert.match(analyzerResult.stdout, /k6 threshold breached: http_req_failed rate<0.01/)
+})
+
+test('validator hard-gate contract matches the board-heavy k6 profile', async () => {
+  const profile = await readFile(new URL('../../tests/load/k6/board-heavy-load.js', import.meta.url), 'utf8')
+  const expectedThresholds = [
+    'http_req_failed: ["rate<0.01"]',
+    'checks: ["rate>0.99"]',
+    'http_req_duration: ["p(95)<2000", "p(99)<2500"]',
+    '"http_req_duration{workload:board-read}": ["p(95)<900"]',
+    '"http_req_duration{workload:board-write}": ["p(95)<2200"]',
+  ]
+
+  for (const expectedThreshold of expectedThresholds) {
+    assert.ok(profile.includes(expectedThreshold), `Missing profile threshold: ${expectedThreshold}`)
   }
 })
 
