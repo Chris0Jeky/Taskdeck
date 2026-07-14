@@ -1,4 +1,4 @@
-using System.Diagnostics.Metrics;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -8,6 +8,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Taskdeck.Api.Controllers;
+using Taskdeck.Api.Middleware;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Tests.Support;
@@ -325,38 +326,33 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task McpEndpoint_RealRequest_EmitsTelemetry()
     {
-        var telemetryObserved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, meterListener) =>
+        var correlationId = $"mcp-telemetry-{Guid.NewGuid():N}";
+        var telemetryObserved = new TaskCompletionSource<Activity>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var listener = new ActivityListener
         {
-            if (instrument.Meter.Name == TaskdeckTelemetry.McpMeterName
-                && instrument.Name == "taskdeck.mcp.requests")
+            ShouldListenTo = source => source.Name == TaskdeckTelemetry.McpActivitySourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
             {
-                meterListener.EnableMeasurementEvents(instrument);
+                if (activity.OperationName == "mcp.request"
+                    && Equals(activity.GetTagItem(TaskdeckTelemetryTags.CorrelationId), correlationId))
+                {
+                    telemetryObserved.TrySetResult(activity);
+                }
             }
         };
-        listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, _) =>
-        {
-            var isHttpTransport = false;
-            var isUnsuccessful = false;
-            foreach (var tag in tags)
-            {
-                isHttpTransport |= tag.Key == TaskdeckTelemetryTags.McpTransport && Equals(tag.Value, "http");
-                isUnsuccessful |= tag.Key == TaskdeckTelemetryTags.McpSuccess && Equals(tag.Value, false);
-            }
-
-            if (measurement > 0 && isHttpTransport && isUnsuccessful)
-            {
-                telemetryObserved.TrySetResult(true);
-            }
-        });
-        listener.Start();
+        ActivitySource.AddActivityListener(listener);
 
         using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add(CorrelationIdMiddleware.HeaderName, correlationId);
         using var response = await PostMcpAsync(client, "/mcp", CreateInitializeRequest(1));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        (await telemetryObserved.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+        var activity = await telemetryObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        activity.GetTagItem(TaskdeckTelemetryTags.McpTransport).Should().Be("http");
+        activity.GetTagItem(TaskdeckTelemetryTags.McpSuccess).Should().Be(false);
+        activity.GetTagItem("http.status_code").Should().Be((int)HttpStatusCode.Unauthorized);
     }
 
     [Theory]
