@@ -142,11 +142,12 @@ test.describe('Paper board card drag', () => {
       .locator('[data-card-id]')
       .filter({ hasText: `Focus Card ${seed}` })
       .first()
+    const cardOpener = card.getByRole('button', { name: `Card Focus Card ${seed}` })
     for (let i = 0; i < 40; i += 1) {
-      if (await card.evaluate((el) => document.activeElement === el)) break
+      if (await cardOpener.evaluate((el) => document.activeElement === el)) break
       await page.keyboard.press('Tab')
     }
-    await expect(card).toBeFocused()
+    await expect(cardOpener).toBeFocused()
 
     const focusStyle = await card.evaluate((el) => {
       const style = window.getComputedStyle(el)
