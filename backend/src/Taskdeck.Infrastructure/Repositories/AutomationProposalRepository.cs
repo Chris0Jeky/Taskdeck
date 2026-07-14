@@ -380,6 +380,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .AsNoTracking()
             .OrderByDescending(p => p.DecidedAt)
             .ThenByDescending(p => p.UpdatedAt)
+            .ThenBy(p => p.Id)
             .Take(boundedLimit)
             .Select(p => p.Id)
             .ToListAsync(cancellationToken);
