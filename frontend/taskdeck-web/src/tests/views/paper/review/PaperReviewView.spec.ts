@@ -84,7 +84,14 @@ vi.mock('../../../../api/proposalDeepReviewApi', () => ({
   proposalDeepReviewApi: {
     getProvenance: vi.fn().mockResolvedValue([]),
     getConfidence: vi.fn().mockResolvedValue({ overall: 0.8, components: [], note: null, threshold: 0.5, meetsThreshold: true }),
-    getSideEffects: vi.fn().mockResolvedValue({ rows: [], reversibility: { summary: '', tone: 'safe' } }),
+    getSideEffects: vi.fn().mockResolvedValue({
+      rows: [],
+      reversibility: {
+        summary: 'Low risk · confirm before apply',
+        description: 'Confirm affected items.',
+        windowMs: 6 * 60 * 60 * 1000,
+      },
+    }),
     getConflicts: vi.fn().mockResolvedValue([]),
     getHistory: vi.fn().mockResolvedValue([]),
     getSimilarPast: vi.fn().mockResolvedValue({ decisions: [], applyRate: 0 }),
@@ -142,10 +149,6 @@ async function mountView(proposals: Proposal[], path = '/workspace/review') {
   const wrapper = mount(PaperReviewView, {
     global: {
       plugins: [router],
-      stubs: {
-        // Avoid PaperUndoTimeline triggering rAF/matchMedia paths in jsdom.
-        PaperUndoTimeline: true,
-      },
     },
   })
   await flushPromises()
@@ -176,8 +179,8 @@ describe('PaperReviewView', () => {
     mocks.getSideEffects.mockResolvedValue({
       rows: [],
       reversibility: {
-        summary: '6 hours',
-        description: 'Undo restores affected cards.',
+        summary: 'Low risk · confirm before apply',
+        description: 'Confirm affected items before applying.',
         windowMs: 6 * 60 * 60 * 1000,
       },
     })
@@ -300,11 +303,14 @@ describe('PaperReviewView', () => {
     expect(emptyText).not.toContain('Nothing waiting')
   })
 
-  it('does not start the undo timeline for pending proposals', async () => {
+  it('shows apply-risk guidance without promising an undo action', async () => {
     const wrapper = await mountView([makeProposal()])
 
-    expect(wrapper.text()).toContain('Undo window starts after apply.')
-    expect(wrapper.find('paper-undo-timeline-stub').exists()).toBe(false)
+    const posture = wrapper.get('[data-testid="apply-risk-posture"]')
+    expect(posture.text()).toContain('Apply considerations')
+    expect(posture.text()).toContain('Low risk · confirm before apply')
+    expect(posture.text().toLowerCase()).not.toContain('undo')
+    expect(posture.text().toLowerCase()).not.toContain('reversib')
   })
 
   it('retargets decision actions to the visible proposal after queue filtering', async () => {

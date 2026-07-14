@@ -33,11 +33,9 @@ export interface SideEffectRow {
 
 export interface SideEffects {
   rows: SideEffectRow[]
-  reversibility: {
+  applyRisk: {
     summary: string
     description: string
-    windowMs: number
-    appliedAt: number | null
   }
 }
 
@@ -85,12 +83,10 @@ const EMPTY_HISTORY: HistoryRow[] = Object.freeze([] as HistoryRow[]) as History
 const EMPTY_SIMILAR: SimilarPastRow[] = Object.freeze([] as SimilarPastRow[]) as SimilarPastRow[]
 const EMPTY_SIDE_EFFECTS: SideEffects = Object.freeze({
   rows: Object.freeze([] as SideEffectRow[]) as SideEffectRow[],
-  reversibility: Object.freeze({
-    summary: '6 hours · single keystroke',
-    description: 'Undo restores the prior state. Nothing is lost.',
-    windowMs: 6 * 60 * 60 * 1000,
-    appliedAt: null,
-  }) as SideEffects['reversibility'],
+  applyRisk: Object.freeze({
+    summary: 'Risk details unavailable',
+    description: 'Review the declared side effects before applying.',
+  }) as SideEffects['applyRisk'],
 }) as SideEffects
 const EMPTY_CONFIDENCE: ConfidenceBreakdown = Object.freeze({
   overall: 0,
@@ -148,20 +144,23 @@ function clamp01(v: number): number {
 function mapConfidence(dto: ConfidenceBreakdownDto): ConfidenceBreakdown {
   return {
     overall: clamp01(dto.overall),
-    components: dto.components.map((c) => ({ key: c.key, value: clamp01(c.value) })),
+    components: dto.components.map((c) => ({
+      key: c.key === 'Reversibility' ? 'Operation safety' : c.key,
+      value: clamp01(c.value),
+    })),
     note: dto.note ?? undefined,
     threshold: dto.threshold,
   }
 }
 
-function mapSideEffects(dto: ProposalSideEffectsDto, appliedAt: number | null): SideEffects {
+function mapSideEffects(dto: ProposalSideEffectsDto): SideEffects {
   return {
     rows: dto.rows.map((r) => ({ key: r.key, value: r.value, tone: r.tone })),
-    reversibility: {
+    // The API property name is retained for compatibility. Its current semantics are
+    // apply risk/manual recovery, not an available undo action.
+    applyRisk: {
       summary: dto.reversibility.summary,
       description: dto.reversibility.description,
-      windowMs: dto.reversibility.windowMs,
-      appliedAt,
     },
   }
 }
@@ -227,9 +226,6 @@ export function usePaperReviewSelectors(
       abortController = controller
       const signal = controller.signal
 
-      const proposal = activeProposal.value
-      const appliedAt = proposal?.appliedAt ? new Date(proposal.appliedAt).getTime() : null
-
       isLoading.value = true
 
       const results = await Promise.allSettled([
@@ -254,7 +250,7 @@ export function usePaperReviewSelectors(
         conf.status === 'fulfilled' ? mapConfidence(conf.value) : EMPTY_CONFIDENCE
 
       sideEffectsData.value =
-        side.status === 'fulfilled' ? mapSideEffects(side.value, appliedAt) : EMPTY_SIDE_EFFECTS
+        side.status === 'fulfilled' ? mapSideEffects(side.value) : EMPTY_SIDE_EFFECTS
 
       conflictsData.value =
         confl.status === 'fulfilled' ? mapConflicts(confl.value) : EMPTY_CONFLICTS

@@ -49,7 +49,6 @@ const groups: ShortcutGroup[] = [
       { kbd: '⏎', label: 'Apply / commit decision' },
       { kbd: '⌫', label: 'Reject / dismiss' },
       { kbd: 'E', label: 'Request edit' },
-      { kbd: '⌘Z', label: 'Undo last apply' },
       { kbd: 'P', label: 'Provenance pane', note: 'during review' },
     ],
   },

@@ -27,8 +27,11 @@ export interface SideEffectRowDto {
 }
 
 export interface ReversibilityDto {
+  /** Apply-risk summary exposed through the endpoint's stable historical field name. */
   summary: string
+  /** Manual-recovery/impact guidance; does not promise an undo capability. */
   description: string
+  /** Legacy review-attention metadata retained for compatibility. */
   windowMs: number
 }
 
