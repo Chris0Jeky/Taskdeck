@@ -51,11 +51,11 @@ test('fails when tagged board-write p95 reaches the jitter-adjusted hard gate', 
   assert.match(result.stdout, /measured SQLite capacity: 2000ms plus 10% jitter allowance/)
 })
 
-test('honors a real k6 boolean breach flag independently of the metric value', async () => {
+test('rejects a real k6 breach flag that contradicts the metric value', async () => {
   const result = await runAnalyzer(1000, false)
 
   assert.equal(result.status, 1)
-  assert.match(result.stdout, /k6 threshold breached: http_req_duration\{workload:board-write\} p\(95\)<2200/)
+  assert.match(result.stderr, /threshold "p\(95\)<2200" contradicts value "p\(95\)"=1000/)
 })
 
 test('resolves the analyzer relative to the test module from another working directory', async () => {

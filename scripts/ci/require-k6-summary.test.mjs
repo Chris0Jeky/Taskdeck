@@ -39,6 +39,26 @@ async function loadFixture() {
   return JSON.parse(await readFile(fixturePath, 'utf8'))
 }
 
+function setMetricValue(metric, valueName, value) {
+  const exportedName = valueName === 'rate' ? 'value' : valueName
+  metric[exportedName] = value
+}
+
+function preserveAggregatePercentileOrder(requirement, metric, valueName, value) {
+  if (requirement.name === 'http_req_duration' && valueName === 'p(95)') {
+    metric['p(99)'] = Math.max(metric['p(99)'], value)
+  }
+}
+
+function createBreachingValue(requirement, check) {
+  const domain = requirement.valueDomains[check.valueName]
+  if (check.operator === '<') {
+    return domain.maximum === undefined ? check.limit + 1 : (check.limit + domain.maximum) / 2
+  }
+
+  return (domain.minimum + check.limit) / 2
+}
+
 test('fails when the required k6 summary is missing', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'taskdeck-k6-summary-'))
   const missingPath = join(tempDir, 'missing-k6-summary.json')
@@ -130,6 +150,35 @@ const malformedCases = [
     },
     expected: /must contain boolean result evidence/,
   },
+  {
+    name: 'a duration value is negative',
+    mutate(summary) {
+      summary.metrics.http_req_duration['p(95)'] = -1
+    },
+    expected: /value "p\(95\)" must be at least 0/,
+  },
+  {
+    name: 'a rate value is negative',
+    mutate(summary) {
+      summary.metrics.http_req_failed.value = -0.01
+    },
+    expected: /value "rate" must be at least 0 and at most 1/,
+  },
+  {
+    name: 'a rate value is above one',
+    mutate(summary) {
+      summary.metrics.checks.value = 1.01
+    },
+    expected: /value "rate" must be at least 0 and at most 1/,
+  },
+  {
+    name: 'aggregate percentile evidence is not monotonic',
+    mutate(summary) {
+      summary.metrics.http_req_duration['p(95)'] = 1800
+      summary.metrics.http_req_duration['p(99)'] = 1700
+    },
+    expected: /value "p\(95\)"=1800 must not exceed "p\(99\)"=1700/,
+  },
 ]
 
 for (const scenario of malformedCases) {
@@ -146,6 +195,48 @@ for (const scenario of malformedCases) {
     assert.equal(analyzerResult.status, 1)
     assert.match(analyzerResult.stderr, scenario.expected)
   })
+}
+
+for (const requirement of K6_HARD_GATE_METRICS) {
+  for (const thresholdName of requirement.thresholds) {
+    const check = requirement.thresholdChecks[thresholdName]
+
+    test(`rejects contradictory pass evidence for ${requirement.name} ${thresholdName}`, async () => {
+      const summary = await loadFixture()
+      const metric = summary.metrics[requirement.name]
+      const contradictoryValue = createBreachingValue(requirement, check)
+      setMetricValue(metric, check.valueName, contradictoryValue)
+      preserveAggregatePercentileOrder(requirement, metric, check.valueName, contradictoryValue)
+      // Numeric evidence breaches the hard gate, but flattened false claims a pass.
+      metric.thresholds[thresholdName] = false
+
+      const contents = JSON.stringify(summary)
+      const validatorResult = await runWithContents(contents)
+      const analyzerResult = await runWithContents(contents, runAnalyzer)
+
+      assert.equal(validatorResult.status, 1)
+      assert.match(validatorResult.stderr, /contradicts value/)
+      assert.equal(analyzerResult.status, 1)
+      assert.match(analyzerResult.stderr, /contradicts value/)
+    })
+
+    test(`accepts consistent equality-boundary breach evidence for ${requirement.name} ${thresholdName}`, async () => {
+      const summary = await loadFixture()
+      const metric = summary.metrics[requirement.name]
+      setMetricValue(metric, check.valueName, check.limit)
+      preserveAggregatePercentileOrder(requirement, metric, check.valueName, check.limit)
+      // Equality breaches every strict hard gate, and flattened true records that breach.
+      metric.thresholds[thresholdName] = true
+
+      const contents = JSON.stringify(summary)
+      const validatorResult = await runWithContents(contents)
+      const analyzerResult = await runWithContents(contents, runAnalyzer)
+
+      assert.equal(validatorResult.status, 0, validatorResult.stderr)
+      assert.equal(analyzerResult.status, 1)
+      assert.match(analyzerResult.stdout, /k6 threshold breached/)
+    })
+  }
 }
 
 test('accepts a realistic minimal k6 0.49 summary export and analyzer path', () => {
@@ -186,8 +277,9 @@ test('accepts nested metric values and threshold ok objects', async () => {
   assert.match(analyzerResult.stdout, /All k6 performance thresholds passed/)
 })
 
-test('accepts a boolean ok field even when it records a threshold breach', async () => {
+test('accepts a nested boolean breach result when the numeric evidence reaches equality', async () => {
   const summary = await loadFixture()
+  summary.metrics.http_req_failed.value = 0.01
   summary.metrics.http_req_failed.thresholds['rate<0.01'] = { ok: false }
 
   const validatorResult = await runWithContents(JSON.stringify(summary))
