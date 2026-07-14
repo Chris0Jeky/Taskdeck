@@ -841,17 +841,20 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
     // ── SignalR Presence Concurrency ────────────────────────────────────────
 
     /// <summary>
-    /// Waits for the presence snapshot to stabilize (no new events for
-    /// <paramref name="stableFor"/>) and returns the last snapshot.
-    /// Tracks total event count rather than member count so that events
+    /// Waits for eligible presence snapshots to stabilize (no new eligible
+    /// events for <paramref name="stableFor"/>) and returns the snapshot with
+    /// the newest server occurrence time. Tracks eligible event count rather
+    /// than member count so that events
     /// with the same member count (e.g., simultaneous join + leave) still
-    /// reset the stabilization timer. Throws when no stable window is observed
-    /// before timeout.
+    /// reset the stabilization timer. Snapshots older than <paramref name="notBefore"/>
+    /// are ignored so delayed delivery from a previous phase cannot become the
+    /// apparent final state. Throws when no stable window is observed before timeout.
     /// </summary>
     private static async Task<BoardPresenceSnapshot?> WaitForPresenceStabilizationAsync(
         EventCollector<BoardPresenceSnapshot> events,
         TimeSpan? timeout = null,
-        TimeSpan? stableFor = null)
+        TimeSpan? stableFor = null,
+        DateTimeOffset? notBefore = null)
     {
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(30);
         var effectiveStableFor = stableFor ?? TimeSpan.FromSeconds(2);
@@ -862,27 +865,96 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         while (DateTimeOffset.UtcNow < deadline)
         {
             var allSnapshots = events.ToList();
-            var currentEventCount = allSnapshots.Count;
+            var eligibleSnapshots = allSnapshots
+                .Where(snapshot => !notBefore.HasValue || snapshot.OccurredAt >= notBefore.Value)
+                .ToList();
+            var currentEventCount = eligibleSnapshots.Count;
 
             if (currentEventCount != lastEventCount)
             {
                 lastEventCount = currentEventCount;
                 lastChangeTime = DateTimeOffset.UtcNow;
             }
-            else if (currentEventCount > 0 && DateTimeOffset.UtcNow - lastChangeTime >= effectiveStableFor)
+            else if (currentEventCount > 0
+                && DateTimeOffset.UtcNow - lastChangeTime >= effectiveStableFor)
             {
-                // No new events have arrived for the required duration
-                return allSnapshots.Last();
+                // SignalR delivery order can differ from the order in which the
+                // tracker created snapshots. Return the newest server occurrence,
+                // not merely the last event delivered to this observer.
+                return eligibleSnapshots.MaxBy(snapshot => snapshot.OccurredAt);
             }
 
             await Task.Delay(50);
         }
 
-        var last = events.ToList().LastOrDefault();
-        var snapshotCount = events.ToList().Count;
+        var allObservedSnapshots = events.ToList();
+        var eligibleObservedSnapshots = allObservedSnapshots
+            .Where(snapshot => !notBefore.HasValue || snapshot.OccurredAt >= notBefore.Value)
+            .ToList();
+        var last = eligibleObservedSnapshots.MaxBy(snapshot => snapshot.OccurredAt);
         throw new TimeoutException(
             $"Presence snapshots did not stabilize for {effectiveStableFor.TotalSeconds}s within {effectiveTimeout.TotalSeconds}s. " +
-            $"Observed {snapshotCount} snapshots; last member count was {last?.Members.Count ?? 0}.");
+            $"Observed {eligibleObservedSnapshots.Count} eligible snapshots " +
+            $"({allObservedSnapshots.Count} total); " +
+            $"newest member count was {last?.Members.Count ?? 0}.");
+    }
+
+    private static void AssertPresenceDidNotGrowAfterLeaves(
+        int settledJoinCount,
+        BoardPresenceSnapshot afterLeave)
+    {
+        afterLeave.Members.Count.Should().BeLessThanOrEqualTo(settledJoinCount,
+            "presence count should not grow after members leave");
+        afterLeave.Members.Count.Should().BeGreaterThanOrEqualTo(1,
+            "the observer owner should always remain in presence");
+    }
+
+    [Fact]
+    public async Task PresenceStabilization_UsesServerOccurrenceOrder_WhenDeliveryIsReordered()
+    {
+        var boardId = Guid.NewGuid();
+        var phaseStartedAt = DateTimeOffset.UtcNow;
+        var newestSnapshot = new BoardPresenceSnapshot(
+            boardId,
+            [new BoardPresenceMember(Guid.NewGuid(), "Remaining", null)],
+            phaseStartedAt.AddMilliseconds(2));
+        var delayedOlderSnapshot = new BoardPresenceSnapshot(
+            boardId,
+            [
+                new BoardPresenceMember(Guid.NewGuid(), "Late A", null),
+                new BoardPresenceMember(Guid.NewGuid(), "Late B", null)
+            ],
+            phaseStartedAt.AddMilliseconds(1));
+        var events = new EventCollector<BoardPresenceSnapshot>();
+        events.Add(newestSnapshot);
+        events.Add(delayedOlderSnapshot);
+
+        var stabilized = await WaitForPresenceStabilizationAsync(
+            events,
+            timeout: TimeSpan.FromSeconds(1),
+            stableFor: TimeSpan.FromMilliseconds(50));
+
+        stabilized.Should().BeSameAs(newestSnapshot,
+            "delivery order can differ from the tracker occurrence order");
+    }
+
+    [Fact]
+    public void PresenceStabilization_StillRejectsNewerGrowthAfterLeaves()
+    {
+        var grownSnapshot = new BoardPresenceSnapshot(
+            Guid.NewGuid(),
+            [
+                new BoardPresenceMember(Guid.NewGuid(), "Owner", null),
+                new BoardPresenceMember(Guid.NewGuid(), "Member A", null),
+                new BoardPresenceMember(Guid.NewGuid(), "Member B", null),
+                new BoardPresenceMember(Guid.NewGuid(), "Unexpected growth", null)
+            ],
+            DateTimeOffset.UtcNow);
+
+        var act = () => AssertPresenceDidNotGrowAfterLeaves(3, grownSnapshot);
+
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*presence count should not grow after members leave*");
     }
 
     /// <summary>
@@ -960,6 +1032,14 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             actualJoined.Should().BeGreaterThanOrEqualTo(1,
                 "at least one concurrent join must succeed to validate rapid join/leave behavior");
 
+            // Publish a causal snapshot after every join invocation has settled.
+            // Concurrent SignalR broadcasts are not guaranteed to arrive at the
+            // observer in tracker order, and the observer may not receive one
+            // distinct callback per successful invocation. The owner's existing
+            // no-op editing update supplies a current-state barrier snapshot.
+            var joinSnapshotBarrierAt = DateTimeOffset.UtcNow;
+            await observer.InvokeAsync("SetEditingCard", board.Id, (Guid?)null);
+
             // Wait for presence to stabilize after the burst of joins.
             // On resource-constrained CI runners, SignalR presence broadcasts
             // from concurrent joins may take time to propagate. Rather than
@@ -968,7 +1048,10 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             // or coalesced), we wait for the snapshot to stop changing and
             // then verify it settled to a reasonable value.
             var afterJoin = await WaitForPresenceStabilizationAsync(
-                observerEvents, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(2));
+                observerEvents,
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(2),
+                notBefore: joinSnapshotBarrierAt);
             afterJoin.Should().NotBeNull("at least one presence snapshot should arrive after joins");
             var settledJoinCount = afterJoin!.Members.Count;
             // Must include the owner plus at least one joined user
@@ -1009,15 +1092,20 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             actualLeft.Should().BeGreaterThan(0,
                 "at least one LeaveBoard invocation must succeed to validate rapid leave behavior");
 
+            // Publish the same causal barrier after all leaves settle. Delayed
+            // join broadcasts have an earlier OccurredAt and are excluded; a
+            // genuinely newer growth snapshot still wins and fails the invariant.
+            var leaveSnapshotBarrierAt = DateTimeOffset.UtcNow;
+            await observer.InvokeAsync("SetEditingCard", board.Id, (Guid?)null);
+
             // Wait for presence to stabilize after the burst of leaves.
             var afterLeave = await WaitForPresenceStabilizationAsync(
-                observerEvents, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(2));
+                observerEvents,
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(2),
+                notBefore: leaveSnapshotBarrierAt);
             afterLeave.Should().NotBeNull("at least one presence snapshot should arrive after leaves");
-            var settledLeaveCount = afterLeave!.Members.Count;
-            settledLeaveCount.Should().BeLessThanOrEqualTo(settledJoinCount,
-                "presence count should not grow after members leave");
-            settledLeaveCount.Should().BeGreaterThanOrEqualTo(1,
-                "the observer owner should always remain in presence");
+            AssertPresenceDidNotGrowAfterLeaves(settledJoinCount, afterLeave!);
         }
         finally
         {
