@@ -7,7 +7,7 @@
  * - Applied proposal visibility via the Show Completed toggle
  */
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type ConsoleMessage } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
@@ -18,8 +18,101 @@ import {
 
 let auth: AuthResult
 
-test.beforeEach(async ({ page, request }) => {
+const PAPER_ENUM_TEST_TITLE =
+  'Paper Review renders numeric deep-review enums without browser or API errors'
+
+test.beforeEach(async ({ page, request }, testInfo) => {
+  if (testInfo.title === PAPER_ENUM_TEST_TITLE) {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('td.paper.mode.v2', 'paper')
+    })
+  }
   auth = await registerAndAttachSession(page, request, 'review-proposals')
+})
+
+test(PAPER_ENUM_TEST_TITLE, async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000)
+
+  const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+  const boardId = await createBoardWithColumn(request, auth, seed, {
+    boardNamePrefix: 'Deep Review Enum',
+    description: 'numeric deep-review enum contract regression',
+    columnNamePrefix: 'Backlog',
+  })
+  const cardTitle = `Review numeric enum payload ${seed}`
+  const capture = await createCaptureItem(
+    request,
+    auth,
+    boardId,
+    `- [ ] ${cardTitle}`,
+  )
+  await triageCaptureItem(request, auth, capture.id)
+  const triaged = await waitForProposalCreated(request, auth, capture.id)
+  const proposalId = triaged.provenance?.proposalId
+  expect(proposalId).toBeTruthy()
+
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  const failedDeepReviewResponses: string[] = []
+  page.on('console', (message: ConsoleMessage) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('response', (response) => {
+    if (
+      response.url().includes(`/automation/proposals/${proposalId}/`) &&
+      response.status() >= 400
+    ) {
+      failedDeepReviewResponses.push(`${response.status()} ${response.url()}`)
+    }
+  })
+
+  // Similar-past has an independent SQLite failure tracked by #1348. Isolate
+  // that endpoint here so this regression proves the real conflict/history
+  // wire payloads without turning a separate known bug into a false signal.
+  await page.route(`**/automation/proposals/${proposalId}/similar-past`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: '{"decisions":[],"applyRate":0}',
+    })
+  })
+
+  const conflictsResponsePromise = page.waitForResponse(
+    (response) => response.url().endsWith(`/automation/proposals/${proposalId}/conflicts`),
+  )
+  const historyResponsePromise = page.waitForResponse(
+    (response) => response.url().endsWith(`/automation/proposals/${proposalId}/history`),
+  )
+
+  await page.goto(`/workspace/review?boardId=${boardId}#proposal-${proposalId}`)
+  await expect(
+    page.getByRole('heading', { level: 1, name: `Capture triage: ${cardTitle}` }),
+  ).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Conflicts & warnings' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /History/ })).toBeVisible()
+
+  const [conflictsResponse, historyResponse] = await Promise.all([
+    conflictsResponsePromise,
+    historyResponsePromise,
+  ])
+  expect(conflictsResponse.status()).toBe(200)
+  expect(historyResponse.status()).toBe(200)
+
+  const conflicts = await conflictsResponse.json() as Array<{ tone: unknown }>
+  const history = await historyResponse.json() as Array<{ status: unknown }>
+  expect(conflicts.length).toBeGreaterThan(0)
+  expect(history.length).toBeGreaterThan(0)
+  expect(conflicts.every((row) => typeof row.tone === 'number')).toBe(true)
+  expect(history.every((row) => typeof row.status === 'number')).toBe(true)
+
+  await expect(page.getByText('Something went wrong', { exact: true })).toHaveCount(0)
+  expect(failedDeepReviewResponses).toEqual([])
+  expect(pageErrors).toEqual([])
+  expect(consoleErrors).toEqual([])
 })
 
 // --- Board-scoped proposal filtering ---
