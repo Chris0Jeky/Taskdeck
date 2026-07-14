@@ -172,9 +172,8 @@ test('question mark shortcut should toggle keyboard shortcuts help', async ({ pa
 test('question mark shortcut should toggle the Paper shortcuts overlay in Paper mode', async ({ page }) => {
   // Seed Paper mode before app load (same pattern as paper-night.spec.ts)
   await page.addInitScript(() => {
-    // Default is Legacy in E2E (authSession pins td.paper.mode.v2='off'); seed Paper unless a
-    // paper-family value is already set — overrides the off-pin AND preserves a value the test
-    // toggled (e.g. paper-night) across reloads. Order-independent vs the auth pin.
+    // This mixed suite opts into Legacy for its frozen keyboard selectors; override it for
+    // the Paper-specific scenario while preserving paper-family values across reloads.
     const m = window.localStorage.getItem('td.paper.mode.v2')
     if (m !== 'paper' && m !== 'paper-night' && m !== 'auto') {
       window.localStorage.setItem('td.paper.mode.v2', 'paper')

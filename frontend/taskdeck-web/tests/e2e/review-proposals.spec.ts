@@ -7,7 +7,7 @@
  * - Applied proposal visibility in Paper's recently-applied ledger
  */
 
-import { expect, test, type ConsoleMessage } from '@playwright/test'
+import { expect, test, type ConsoleMessage, type Page } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
@@ -25,8 +25,10 @@ function proposalSerial(proposalId: string): string {
   return `#${proposalId.slice(0, 4).toUpperCase()}`
 }
 
-function proposalQueueItem(page: import('@playwright/test').Page, proposalId: string) {
-  return page.locator(`[data-serial="${proposalSerial(proposalId)}"]`)
+function proposalQueueItem(page: Page, proposalId: string, cardTitle: string) {
+  return page
+    .locator(`[data-serial="${proposalSerial(proposalId)}"]`)
+    .filter({ hasText: cardTitle })
 }
 
 test.beforeEach(async ({ page, request }) => {
@@ -77,12 +79,12 @@ test(PAPER_ENUM_TEST_TITLE, async ({
 
   const createCaptureResponsePromise = page.waitForResponse((response) =>
     response.request().method() === 'POST'
-    && /\/api\/capture\/items$/i.test(response.url())
-    && response.ok())
+    && /\/api\/capture\/items$/i.test(response.url()))
 
   await captureBody.fill(captureText)
   await page.getByRole('button', { name: 'Capture' }).click()
   const createCaptureResponse = await createCaptureResponsePromise
+  expect(createCaptureResponse.ok(), 'Paper review capture request should succeed').toBeTruthy()
   const capturePayload = await createCaptureResponse.json() as { id?: string }
   const captureId = capturePayload.id
   expect(captureId).toBeTruthy()
@@ -161,13 +163,15 @@ test('review view with boardId filter should only show proposals for that board'
   })
 
   // Create and triage captures on both boards
-  const captureA = await createCaptureItem(request, auth, boardIdA, `- [ ] Card on A ${seed}`)
+  const cardTitleA = `Card on A ${seed}`
+  const captureA = await createCaptureItem(request, auth, boardIdA, `- [ ] ${cardTitleA}`)
   await triageCaptureItem(request, auth, captureA.id)
   const triagedA = await waitForProposalCreated(request, auth, captureA.id)
   const proposalIdA = triagedA.provenance?.proposalId
   expect(proposalIdA).toBeTruthy()
 
-  const captureB = await createCaptureItem(request, auth, boardIdB, `- [ ] Card on B ${seed}`)
+  const cardTitleB = `Card on B ${seed}`
+  const captureB = await createCaptureItem(request, auth, boardIdB, `- [ ] ${cardTitleB}`)
   await triageCaptureItem(request, auth, captureB.id)
   const triagedB = await waitForProposalCreated(request, auth, captureB.id)
   const proposalIdB = triagedB.provenance?.proposalId
@@ -177,9 +181,9 @@ test('review view with boardId filter should only show proposals for that board'
   await page.goto(`/workspace/review?boardId=${boardIdA}`)
 
   await expect(page.getByTestId('paper-review-view')).toBeVisible()
-  await expect(proposalQueueItem(page, proposalIdA as string)).toBeVisible({ timeout: 15_000 })
+  await expect(proposalQueueItem(page, proposalIdA as string, cardTitleA)).toBeVisible({ timeout: 15_000 })
 
-  await expect(proposalQueueItem(page, proposalIdB as string)).toHaveCount(0)
+  await expect(proposalQueueItem(page, proposalIdB as string, cardTitleB)).toHaveCount(0)
 })
 
 // --- Multiple proposals on one board ---
@@ -195,13 +199,15 @@ test('review view should display multiple pending proposals for the same board',
   })
 
   // Create two captures and triage them both
-  const capture1 = await createCaptureItem(request, auth, boardId, `- [ ] First proposal card ${seed}`)
+  const cardTitle1 = `First proposal card ${seed}`
+  const capture1 = await createCaptureItem(request, auth, boardId, `- [ ] ${cardTitle1}`)
   await triageCaptureItem(request, auth, capture1.id)
   const triaged1 = await waitForProposalCreated(request, auth, capture1.id)
   const proposalId1 = triaged1.provenance?.proposalId
   expect(proposalId1).toBeTruthy()
 
-  const capture2 = await createCaptureItem(request, auth, boardId, `- [ ] Second proposal card ${seed}`)
+  const cardTitle2 = `Second proposal card ${seed}`
+  const capture2 = await createCaptureItem(request, auth, boardId, `- [ ] ${cardTitle2}`)
   await triageCaptureItem(request, auth, capture2.id)
   const triaged2 = await waitForProposalCreated(request, auth, capture2.id)
   const proposalId2 = triaged2.provenance?.proposalId
@@ -211,8 +217,8 @@ test('review view should display multiple pending proposals for the same board',
   await page.goto(`/workspace/review?boardId=${boardId}`)
 
   await expect(page.getByTestId('paper-review-view')).toBeVisible()
-  await expect(proposalQueueItem(page, proposalId1 as string)).toBeVisible({ timeout: 15_000 })
-  await expect(proposalQueueItem(page, proposalId2 as string)).toBeVisible({ timeout: 15_000 })
+  await expect(proposalQueueItem(page, proposalId1 as string, cardTitle1)).toBeVisible({ timeout: 15_000 })
+  await expect(proposalQueueItem(page, proposalId2 as string, cardTitle2)).toBeVisible({ timeout: 15_000 })
 })
 
 // --- Applied proposal appears in the Paper filing ledger ---
@@ -238,7 +244,7 @@ test('applied proposal should appear in the recently-applied ledger', async ({ p
 
   // Navigate to review and approve+apply the proposal
   await page.goto(`/workspace/review?boardId=${boardId}#proposal-${proposalId}`)
-  const queueItem = proposalQueueItem(page, proposalId as string)
+  const queueItem = proposalQueueItem(page, proposalId as string, cardTitle)
   await expect(queueItem).toBeVisible({ timeout: 15_000 })
   await expect(queueItem).toHaveAttribute('aria-pressed', 'true')
 
@@ -257,6 +263,9 @@ test('applied proposal should appear in the recently-applied ledger', async ({ p
   await expect(queueItem).toHaveCount(0)
 
   await expect(
-    page.locator('.paper-review-recent__row').filter({ hasText: proposalSerial(proposalId as string) }),
+    page
+      .locator('.paper-review-recent__row')
+      .filter({ hasText: proposalSerial(proposalId as string) })
+      .filter({ hasText: cardTitle }),
   ).toBeVisible({ timeout: 10_000 })
 })

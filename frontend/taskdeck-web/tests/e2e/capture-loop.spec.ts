@@ -33,11 +33,12 @@ test.describe('Paper capture-review-apply loop', () => {
     await expect(captureBody).toBeVisible()
     const createCaptureResponsePromise = page.waitForResponse((response) =>
       response.request().method() === 'POST'
-      && /\/api\/capture\/items$/i.test(response.url())
-      && response.ok())
+      && /\/api\/capture\/items$/i.test(response.url()))
     await captureBody.fill(`- [ ] ${cardTitle}`)
     await page.getByRole('button', { name: 'Capture' }).click()
-    const capturePayload = await (await createCaptureResponsePromise).json() as { id?: string }
+    const createCaptureResponse = await createCaptureResponsePromise
+    expect(createCaptureResponse.ok(), 'Paper capture request should succeed').toBeTruthy()
+    const capturePayload = await createCaptureResponse.json() as { id?: string }
     expect(capturePayload.id).toBeTruthy()
 
     const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()

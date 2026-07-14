@@ -15,28 +15,23 @@ test.beforeEach(async ({ page, request }) => {
   auth = await registerAndAttachSession(page, request, 'a11y')
 })
 
-/**
- * Helper: run axe-core on the current page and assert zero violations.
- * Disables specific rules that are expected to have residual warnings
- * during the initial audit rollout.
- */
+/** Run the full axe-core WCAG 2.1 A/AA ruleset on a settled page. */
 async function expectNoAxeViolations(
   page: import('@playwright/test').Page,
   context?: string,
 ) {
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-    // color-contrast is disabled because axe-core cannot statically resolve CSS custom
-    // properties (--td-* design tokens). Color contrast must be validated manually or
-    // via browser DevTools accessibility audit when design tokens change.
-    .disableRules(['color-contrast'])
     .analyze()
 
   const violations = results.violations.map((v) => ({
     id: v.id,
     impact: v.impact,
     description: v.description,
-    nodes: v.nodes.length,
+    nodes: v.nodes.map((node) => ({
+      target: node.target,
+      failureSummary: node.failureSummary,
+    })),
     help: v.helpUrl,
   }))
 
@@ -55,25 +50,28 @@ async function expectNoAxeViolations(
 
 test('Paper Home view has no WCAG 2.1 AA violations', async ({ page }) => {
   await page.goto('/workspace/home')
-  await expect(page.getByTestId('paper-home')).toBeVisible()
+  await expect(page.getByTestId('paper-home-first-board')).toBeVisible()
   await expectNoAxeViolations(page, 'PaperHomeView')
 })
 
 test('Paper Today view has no WCAG 2.1 AA violations', async ({ page }) => {
   await page.goto('/workspace/today')
-  await expect(page.locator('.paper-today')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today, at a glance.' })).toBeVisible()
   await expectNoAxeViolations(page, 'PaperTodayView')
 })
 
 test('Paper Inbox view has no WCAG 2.1 AA violations', async ({ page }) => {
   await page.goto('/workspace/inbox')
   await expect(page.getByTestId('paper-inbox-capture')).toBeVisible()
+  await expect(page.getByText('A pen and a phrase. Drop a thought above to start.')).toBeVisible()
   await expectNoAxeViolations(page, 'PaperInboxView')
 })
 
 test('Paper Review view has no WCAG 2.1 AA violations', async ({ page }) => {
   await page.goto('/workspace/review')
-  await expect(page.getByTestId('paper-review-view')).toBeVisible()
+  const emptyReview = page.getByTestId('paper-review-empty')
+  await expect(emptyReview.getByText(/Loading proposals/)).toHaveCount(0)
+  await expect(emptyReview.getByRole('heading', { name: 'Nothing waiting. Good.' })).toBeVisible()
   await expectNoAxeViolations(page, 'PaperReviewView')
 })
 
@@ -102,16 +100,17 @@ test('Login view has no WCAG 2.1 AA violations', async ({ browser, baseURL }) =>
 
 test('skip-to-content link exists and targets main content', async ({ page }) => {
   await page.goto('/workspace/home')
-  await expect(page.getByTestId('paper-home')).toBeVisible()
+  await expect(page.getByTestId('paper-home-first-board')).toBeVisible()
 
   const skipLink = page.locator('a.td-skip-link')
   await expect(skipLink).toHaveAttribute('href', '#td-main-content')
 
-  // The skip link should be visually hidden until focused
-  await skipLink.focus()
+  await page.keyboard.press('Tab')
+  await expect(skipLink).toBeFocused()
   await expect(skipLink).toBeVisible()
 
-  // The target should exist
   const mainContent = page.locator('#td-main-content')
-  await expect(mainContent).toBeAttached()
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/#td-main-content$/)
+  await expect(mainContent).toBeFocused()
 })

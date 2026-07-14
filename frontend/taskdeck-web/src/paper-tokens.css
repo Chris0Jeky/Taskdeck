@@ -25,7 +25,8 @@
   --ink-deep:     #0a0908;
   --ink-2:        #3a352d;
   --mute:         #6c6557;
-  --faint:        #a39c8b;
+  /* Small text uses this token, so it must clear 4.5:1 on the darkest Paper surface. */
+  --faint:        #6c6557;
   --whisper:      #c2bba8;
 
   /* --- Ember --- */
@@ -102,7 +103,7 @@
   --ink-deep:     #fbf3df;
   --ink-2:        #c8bfa9;
   --mute:         #9a8f7a;
-  --faint:        #685e4c;
+  --faint:        #8f846f;
   --whisper:      #3e362a;
 
   --ember:        #d96a3e;

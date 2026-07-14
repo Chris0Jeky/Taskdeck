@@ -273,7 +273,7 @@ onUnmounted(() => {
       />
       <ShellTopbar v-else @open-command-palette="openCommandPalette" />
 
-      <main id="td-main-content" class="td-content">
+      <main id="td-main-content" class="td-content" tabindex="-1">
         <!--
           Per-view ErrorBoundary keeps the sidebar and topbar usable when a
           single route component crashes. The outer boundary in App.vue is

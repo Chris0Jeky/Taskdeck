@@ -10,7 +10,7 @@ import { registerAndAttachSession } from '../e2e/support/authSession'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-inbox')
+  await registerAndAttachSession(page, request, 'visual-inbox', { theme: 'legacy' })
 })
 
 test('inbox view empty state', async ({ page }) => {

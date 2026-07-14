@@ -38,11 +38,10 @@ test('home landing and workspace mode preference should persist across navigatio
   const workspaceModeSelect = page.getByLabel('Workspace mode')
   const savePreferenceResponse = page.waitForResponse((response) =>
     response.url().includes('/api/workspace/preferences') &&
-    response.request().method() === 'PUT' &&
-    response.ok())
+    response.request().method() === 'PUT')
 
   await workspaceModeSelect.selectOption('workbench')
-  await savePreferenceResponse
+  expect((await savePreferenceResponse).ok(), 'workspace preference save should succeed').toBeTruthy()
   await expect(workspaceModeSelect).toHaveValue('workbench')
 
   await page.goto('/workspace/boards')
@@ -101,10 +100,9 @@ async function addColumn(page: Page, columnName: string) {
   await columnNameInput.fill(columnName)
   const createColumnResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
-    && /\/api\/boards\/[a-f0-9-]+\/columns$/i.test(response.url())
-    && response.ok())
+    && /\/api\/boards\/[a-f0-9-]+\/columns$/i.test(response.url()))
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await createColumnResponse
+  expect((await createColumnResponse).ok(), 'column create should succeed').toBeTruthy()
   // Wait for the create dialog to close so the DOM settles to exactly one heading
   await expect(columnNameInput).toBeHidden()
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()

@@ -61,11 +61,12 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
   const captureBody = page.getByRole('textbox', { name: 'Capture body' })
   const createCaptureResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
-    && /\/api\/capture\/items$/i.test(response.url())
-    && response.ok())
+    && /\/api\/capture\/items$/i.test(response.url()))
   await captureBody.fill(`- [ ] ${cardTitle}`)
   await page.getByRole('button', { name: 'Capture' }).click()
-  const captureId = await parseCreatedCaptureId(await createCaptureResponse)
+  const response = await createCaptureResponse
+  expect(response.ok(), 'Paper first-run capture request should succeed').toBeTruthy()
+  const captureId = await parseCreatedCaptureId(response)
 
   const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
   await expect(captureRow).toBeVisible()
@@ -148,12 +149,13 @@ test(LEGACY_FIRST_RUN_TITLE, async ({ page, request }) => {
 
   const createCaptureResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
-    && /\/api\/capture\/items$/i.test(response.url())
-    && response.ok())
+    && /\/api\/capture\/items$/i.test(response.url()))
 
   await captureModal.getByPlaceholder('Capture a thought, task, or follow-up...').fill(captureText)
   await captureModal.getByRole('button', { name: 'Save Capture' }).click()
-  const captureId = await parseCreatedCaptureId(await createCaptureResponse)
+  const response = await createCaptureResponse
+  expect(response.ok(), 'Legacy first-run capture request should succeed').toBeTruthy()
+  const captureId = await parseCreatedCaptureId(response)
   await expect(captureModal).toHaveCount(0)
 
   const controlBoardId = await createBoardWithColumn(request, auth, `${seed}-control`, {
