@@ -43,32 +43,54 @@ test(PAPER_ENUM_TEST_TITLE, async ({
     columnNamePrefix: 'Backlog',
   })
   const cardTitle = `Review numeric enum payload ${seed}`
-  const capture = await createCaptureItem(
-    request,
-    auth,
-    boardId,
-    `- [ ] ${cardTitle}`,
-  )
-  await triageCaptureItem(request, auth, capture.id)
-  const triaged = await waitForProposalCreated(request, auth, capture.id)
-  const proposalId = triaged.provenance?.proposalId
-  expect(proposalId).toBeTruthy()
+  const captureText = `- [ ] ${cardTitle}`
 
   const consoleErrors: string[] = []
   const pageErrors: string[] = []
   const failedDeepReviewResponses: string[] = []
+  let proposalId: string | undefined
   page.on('console', (message: ConsoleMessage) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
   page.on('pageerror', (error) => pageErrors.push(error.message))
   page.on('response', (response) => {
     if (
+      proposalId &&
       response.url().includes(`/automation/proposals/${proposalId}/`) &&
       response.status() >= 400
     ) {
       failedDeepReviewResponses.push(`${response.status()} ${response.url()}`)
     }
   })
+
+  await page.goto(`/workspace/boards/${boardId}`)
+  const captureHereButton = page.getByRole('button', { name: 'Capture here' })
+  await expect(captureHereButton).toBeVisible()
+
+  await captureHereButton.click()
+  await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
+  const captureBody = page.getByRole('textbox', { name: 'Capture body' })
+  await expect(captureBody).toBeVisible()
+
+  const createCaptureResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && /\/api\/capture\/items$/i.test(response.url())
+    && response.ok())
+
+  await captureBody.fill(captureText)
+  await page.getByRole('button', { name: 'Capture' }).click()
+  const createCaptureResponse = await createCaptureResponsePromise
+  const capturePayload = await createCaptureResponse.json() as { id?: string }
+  const captureId = capturePayload.id
+  expect(captureId).toBeTruthy()
+
+  const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
+  await expect(captureRow).toBeVisible()
+  await captureRow.getByRole('button', { name: 'Accept' }).click()
+
+  const triaged = await waitForProposalCreated(request, auth, captureId!)
+  proposalId = triaged.provenance?.proposalId
+  expect(proposalId).toBeTruthy()
 
   // Similar-past has an independent SQLite failure tracked by #1348. Isolate
   // that endpoint here so this regression proves the real conflict/history
@@ -88,7 +110,8 @@ test(PAPER_ENUM_TEST_TITLE, async ({
     (response) => response.url().endsWith(`/automation/proposals/${proposalId}/history`),
   )
 
-  await page.goto(`/workspace/review?boardId=${boardId}#proposal-${proposalId}`)
+  await page.getByRole('link', { name: /Review$/ }).click()
+  await expect(page).toHaveURL(/\/workspace\/review$/)
   await expect(
     page.getByRole('heading', { level: 1, name: `Capture triage: ${cardTitle}` }),
   ).toBeVisible({ timeout: 15_000 })
@@ -108,6 +131,17 @@ test(PAPER_ENUM_TEST_TITLE, async ({
   expect(history.length).toBeGreaterThan(0)
   expect(conflicts.every((row) => typeof row.tone === 'number')).toBe(true)
   expect(history.every((row) => typeof row.status === 'number')).toBe(true)
+  expect(conflicts.some((row) => row.tone === 2)).toBe(true)
+  expect(history.some((row) => row.status === 0)).toBe(true)
+
+  // These are mapped UI values from the real numeric responses. Waiting for
+  // them proves all selector requests have settled and the enum mapper ran.
+  await expect(
+    page.locator('.paper-review-conflicts__row').filter({ hasText: 'CLEAR' }).first(),
+  ).toBeVisible()
+  await expect(page.locator('.paper-review-history__row[data-status="pending"]').first()).toContainText(
+    'PENDING',
+  )
 
   await expect(page.getByText('Something went wrong', { exact: true })).toHaveCount(0)
   expect(failedDeepReviewResponses).toEqual([])
