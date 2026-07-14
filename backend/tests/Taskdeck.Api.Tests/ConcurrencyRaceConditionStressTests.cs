@@ -841,120 +841,150 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
     // ── SignalR Presence Concurrency ────────────────────────────────────────
 
     /// <summary>
-    /// Waits for eligible presence snapshots to stabilize (no new eligible
-    /// events for <paramref name="stableFor"/>) and returns the snapshot with
-    /// the newest server occurrence time. Tracks eligible event count rather
-    /// than member count so that events
-    /// with the same member count (e.g., simultaneous join + leave) still
-    /// reset the stabilization timer. Snapshots older than <paramref name="notBefore"/>
-    /// are ignored so delayed delivery from a previous phase cannot become the
-    /// apparent final state. Throws when no stable window is observed before timeout.
+    /// Waits for the snapshot published by an owner's uniquely identifiable
+    /// editing-state barrier. The marker supplies causal identity that wall-clock
+    /// timestamps cannot: delayed pre-barrier snapshots cannot contain it, even
+    /// when their timestamps tie or callbacks arrive out of order.
     /// </summary>
-    private static async Task<BoardPresenceSnapshot?> WaitForPresenceStabilizationAsync(
+    private static async Task<BoardPresenceSnapshot> WaitForPresenceBarrierAsync(
         EventCollector<BoardPresenceSnapshot> events,
-        TimeSpan? timeout = null,
-        TimeSpan? stableFor = null,
-        DateTimeOffset? notBefore = null)
+        Guid ownerUserId,
+        Guid editingMarker,
+        TimeSpan? timeout = null)
     {
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(30);
-        var effectiveStableFor = stableFor ?? TimeSpan.FromSeconds(2);
         var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
-        var lastEventCount = -1;
-        var lastChangeTime = DateTimeOffset.UtcNow;
 
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var allSnapshots = events.ToList();
-            var eligibleSnapshots = allSnapshots
-                .Where(snapshot => !notBefore.HasValue || snapshot.OccurredAt >= notBefore.Value)
-                .ToList();
-            var currentEventCount = eligibleSnapshots.Count;
+            var barrierSnapshot = events.ToList().LastOrDefault(snapshot =>
+                snapshot.Members.Any(member =>
+                    member.UserId == ownerUserId
+                    && member.EditingCardId == editingMarker));
 
-            if (currentEventCount != lastEventCount)
-            {
-                lastEventCount = currentEventCount;
-                lastChangeTime = DateTimeOffset.UtcNow;
-            }
-            else if (currentEventCount > 0
-                && DateTimeOffset.UtcNow - lastChangeTime >= effectiveStableFor)
-            {
-                // SignalR delivery order can differ from the order in which the
-                // tracker created snapshots. Return the newest server occurrence,
-                // not merely the last event delivered to this observer.
-                return eligibleSnapshots.MaxBy(snapshot => snapshot.OccurredAt);
-            }
+            if (barrierSnapshot is not null)
+                return barrierSnapshot;
 
             await Task.Delay(50);
         }
 
-        var allObservedSnapshots = events.ToList();
-        var eligibleObservedSnapshots = allObservedSnapshots
-            .Where(snapshot => !notBefore.HasValue || snapshot.OccurredAt >= notBefore.Value)
-            .ToList();
-        var last = eligibleObservedSnapshots.MaxBy(snapshot => snapshot.OccurredAt);
+        var observedSnapshots = events.ToList();
         throw new TimeoutException(
-            $"Presence snapshots did not stabilize for {effectiveStableFor.TotalSeconds}s within {effectiveTimeout.TotalSeconds}s. " +
-            $"Observed {eligibleObservedSnapshots.Count} eligible snapshots " +
-            $"({allObservedSnapshots.Count} total); " +
-            $"newest member count was {last?.Members.Count ?? 0}.");
+            $"No presence snapshot contained the requested owner editing marker within {effectiveTimeout.TotalSeconds}s. " +
+            $"Observed {observedSnapshots.Count} total snapshots; " +
+            $"owner={ownerUserId:N}, marker={editingMarker:N}.");
     }
 
-    private static void AssertPresenceDidNotGrowAfterLeaves(
-        int settledJoinCount,
-        BoardPresenceSnapshot afterLeave)
+    private static void AssertPresenceMembers(
+        BoardPresenceSnapshot snapshot,
+        IEnumerable<Guid> expectedUserIds,
+        string phase)
     {
-        afterLeave.Members.Count.Should().BeLessThanOrEqualTo(settledJoinCount,
-            "presence count should not grow after members leave");
-        afterLeave.Members.Count.Should().BeGreaterThanOrEqualTo(1,
-            "the observer owner should always remain in presence");
+        var expected = expectedUserIds.Distinct().ToList();
+        snapshot.Members.Select(member => member.UserId).Should().BeEquivalentTo(expected,
+            $"the {phase} barrier should contain exactly the users whose hub operations succeeded");
     }
 
     [Fact]
-    public async Task PresenceStabilization_UsesServerOccurrenceOrder_WhenDeliveryIsReordered()
+    public async Task PresenceBarrier_UsesMarker_WhenTimestampsTieAndDeliveryIsReordered()
     {
         var boardId = Guid.NewGuid();
-        var phaseStartedAt = DateTimeOffset.UtcNow;
-        var newestSnapshot = new BoardPresenceSnapshot(
-            boardId,
-            [new BoardPresenceMember(Guid.NewGuid(), "Remaining", null)],
-            phaseStartedAt.AddMilliseconds(2));
-        var delayedOlderSnapshot = new BoardPresenceSnapshot(
+        var ownerUserId = Guid.NewGuid();
+        var remainingUserId = Guid.NewGuid();
+        var editingMarker = Guid.NewGuid();
+        var tiedOccurrence = DateTimeOffset.UtcNow;
+        var staleSnapshot = new BoardPresenceSnapshot(
             boardId,
             [
-                new BoardPresenceMember(Guid.NewGuid(), "Late A", null),
-                new BoardPresenceMember(Guid.NewGuid(), "Late B", null)
+                new BoardPresenceMember(ownerUserId, "Owner", null),
+                new BoardPresenceMember(Guid.NewGuid(), "Stale member", null),
+                new BoardPresenceMember(Guid.NewGuid(), "Stale growth", null)
             ],
-            phaseStartedAt.AddMilliseconds(1));
+            tiedOccurrence);
+        var barrierSnapshot = new BoardPresenceSnapshot(
+            boardId,
+            [
+                new BoardPresenceMember(ownerUserId, "Owner", editingMarker),
+                new BoardPresenceMember(remainingUserId, "Remaining", null)
+            ],
+            tiedOccurrence);
         var events = new EventCollector<BoardPresenceSnapshot>();
-        events.Add(newestSnapshot);
-        events.Add(delayedOlderSnapshot);
+        events.Add(staleSnapshot);
+        events.Add(barrierSnapshot);
 
-        var stabilized = await WaitForPresenceStabilizationAsync(
+        var selected = await WaitForPresenceBarrierAsync(
             events,
-            timeout: TimeSpan.FromSeconds(1),
-            stableFor: TimeSpan.FromMilliseconds(50));
+            ownerUserId,
+            editingMarker,
+            timeout: TimeSpan.FromSeconds(1));
 
-        stabilized.Should().BeSameAs(newestSnapshot,
-            "delivery order can differ from the tracker occurrence order");
+        selected.Should().BeSameAs(barrierSnapshot,
+            "the causal marker, not a tied timestamp or callback order, identifies current state");
+        AssertPresenceMembers(selected, [ownerUserId, remainingUserId], "post-leave");
     }
 
     [Fact]
-    public void PresenceStabilization_StillRejectsNewerGrowthAfterLeaves()
+    public async Task PresenceBarrier_StillRejectsGrowthAfterLeaves()
     {
-        var grownSnapshot = new BoardPresenceSnapshot(
-            Guid.NewGuid(),
+        var boardId = Guid.NewGuid();
+        var ownerUserId = Guid.NewGuid();
+        var remainingUserId = Guid.NewGuid();
+        var unexpectedUserId = Guid.NewGuid();
+        var editingMarker = Guid.NewGuid();
+        var tiedOccurrence = DateTimeOffset.UtcNow;
+        var grownBarrierSnapshot = new BoardPresenceSnapshot(
+            boardId,
             [
-                new BoardPresenceMember(Guid.NewGuid(), "Owner", null),
-                new BoardPresenceMember(Guid.NewGuid(), "Member A", null),
-                new BoardPresenceMember(Guid.NewGuid(), "Member B", null),
-                new BoardPresenceMember(Guid.NewGuid(), "Unexpected growth", null)
+                new BoardPresenceMember(ownerUserId, "Owner", editingMarker),
+                new BoardPresenceMember(remainingUserId, "Remaining", null),
+                new BoardPresenceMember(unexpectedUserId, "Unexpected growth", null)
             ],
-            DateTimeOffset.UtcNow);
+            tiedOccurrence);
+        var delayedStaleSnapshot = new BoardPresenceSnapshot(
+            boardId,
+            [
+                new BoardPresenceMember(ownerUserId, "Owner", null),
+                new BoardPresenceMember(remainingUserId, "Remaining", null)
+            ],
+            tiedOccurrence);
+        var events = new EventCollector<BoardPresenceSnapshot>();
+        events.Add(grownBarrierSnapshot);
+        events.Add(delayedStaleSnapshot);
 
-        var act = () => AssertPresenceDidNotGrowAfterLeaves(3, grownSnapshot);
+        var selected = await WaitForPresenceBarrierAsync(
+            events,
+            ownerUserId,
+            editingMarker,
+            timeout: TimeSpan.FromSeconds(1));
+
+        var act = () => AssertPresenceMembers(
+            selected,
+            [ownerUserId, remainingUserId],
+            "post-leave");
 
         act.Should().Throw<Xunit.Sdk.XunitException>()
-            .WithMessage("*presence count should not grow after members leave*");
+            .WithMessage("*post-leave barrier should contain exactly*");
+    }
+
+    [Fact]
+    public async Task PresenceBarrier_WithoutMatchingMarker_ThrowsDiagnosticTimeout()
+    {
+        var ownerUserId = Guid.NewGuid();
+        var editingMarker = Guid.NewGuid();
+        var events = new EventCollector<BoardPresenceSnapshot>();
+        events.Add(new BoardPresenceSnapshot(
+            Guid.NewGuid(),
+            [new BoardPresenceMember(ownerUserId, "Owner", null)],
+            DateTimeOffset.UtcNow));
+
+        var act = () => WaitForPresenceBarrierAsync(
+            events,
+            ownerUserId,
+            editingMarker,
+            timeout: TimeSpan.FromMilliseconds(150));
+
+        await act.Should().ThrowAsync<TimeoutException>()
+            .WithMessage("*No presence snapshot contained the requested owner editing marker*Observed 1 total snapshots*");
     }
 
     /// <summary>
@@ -1001,7 +1031,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // errors (e.g., SQLite contention). We track join successes to set
         // correct expectations for the eventual-consistency assertion.
         var connections = new List<HubConnection>();
-        var joinedConnections = new ConcurrentBag<HubConnection>();
+        var joinedConnections = new ConcurrentBag<(HubConnection Connection, Guid UserId)>();
         try
         {
             using var joinBarrier = new Barrier(connectionCount + 1);
@@ -1015,7 +1045,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 try
                 {
                     await conn.InvokeAsync("JoinBoard", board.Id);
-                    joinedConnections.Add(conn);
+                    joinedConnections.Add((conn, user.UserId));
                 }
                 catch (Exception ex) when (ex is HubException or HttpRequestException)
                 {
@@ -1032,51 +1062,36 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             actualJoined.Should().BeGreaterThanOrEqualTo(1,
                 "at least one concurrent join must succeed to validate rapid join/leave behavior");
 
-            // Publish a causal snapshot after every join invocation has settled.
-            // Concurrent SignalR broadcasts are not guaranteed to arrive at the
-            // observer in tracker order, and the observer may not receive one
-            // distinct callback per successful invocation. The owner's existing
-            // no-op editing update supplies a current-state barrier snapshot.
-            var joinSnapshotBarrierAt = DateTimeOffset.UtcNow;
-            await observer.InvokeAsync("SetEditingCard", board.Id, (Guid?)null);
-
-            // Wait for presence to stabilize after the burst of joins.
-            // On resource-constrained CI runners, SignalR presence broadcasts
-            // from concurrent joins may take time to propagate. Rather than
-            // asserting an exact count (which is fragile when some joins
-            // succeed at the Hub level but the presence broadcast is delayed
-            // or coalesced), we wait for the snapshot to stop changing and
-            // then verify it settled to a reasonable value.
-            var afterJoin = await WaitForPresenceStabilizationAsync(
+            // Publish a uniquely identifiable current-state barrier after every
+            // join invocation settles. Earlier snapshots cannot contain this
+            // marker, so timestamp ties and callback reordering are irrelevant.
+            var joinEditingMarker = Guid.NewGuid();
+            await observer.InvokeAsync("SetEditingCard", board.Id, joinEditingMarker);
+            var afterJoin = await WaitForPresenceBarrierAsync(
                 observerEvents,
-                TimeSpan.FromSeconds(30),
-                TimeSpan.FromSeconds(2),
-                notBefore: joinSnapshotBarrierAt);
-            afterJoin.Should().NotBeNull("at least one presence snapshot should arrive after joins");
-            var settledJoinCount = afterJoin!.Members.Count;
-            // Must include the owner plus at least one joined user
-            settledJoinCount.Should().BeGreaterThanOrEqualTo(2,
-                "presence should include the owner plus at least one joined user");
-            // Should not exceed theoretical maximum (all joined + owner)
-            settledJoinCount.Should().BeLessThanOrEqualTo(actualJoined + 1,
-                "presence should not exceed the number of successfully joined users plus the owner");
+                owner.UserId,
+                joinEditingMarker,
+                TimeSpan.FromSeconds(30));
+            var expectedAfterJoin = joinedConnections
+                .Select(joined => joined.UserId)
+                .Append(owner.UserId)
+                .ToHashSet();
+            AssertPresenceMembers(afterJoin, expectedAfterJoin, "post-join");
 
             // First half of successfully-joined connections leave rapidly.
-            // Use the settled count from the join phase (not client-side
-            // joinedConnections count) to set realistic leave expectations.
             observerEvents.Clear();
             var leavingConns = joinedConnections.Take(Math.Max(1, joinedConnections.Count / 2)).ToList();
             leavingConns.Should().NotBeEmpty(
                 "rapid join/leave stress must attempt at least one leave");
-            var leaveSuccessCount = 0;
+            var leftUserIds = new ConcurrentBag<Guid>();
             using var leaveBarrier = new Barrier(leavingConns.Count + 1);
-            var leaveTasks = leavingConns.Select(async conn =>
+            var leaveTasks = leavingConns.Select(async leaving =>
             {
                 leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
                 try
                 {
-                    await conn.InvokeAsync("LeaveBoard", board.Id);
-                    Interlocked.Increment(ref leaveSuccessCount);
+                    await leaving.Connection.InvokeAsync("LeaveBoard", board.Id);
+                    leftUserIds.Add(leaving.UserId);
                 }
                 catch (Exception ex) when (ex is HubException or HttpRequestException)
                 {
@@ -1088,24 +1103,24 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
             await Task.WhenAll(leaveTasks);
 
-            var actualLeft = Interlocked.CompareExchange(ref leaveSuccessCount, 0, 0);
+            var actualLeft = leftUserIds.Count;
             actualLeft.Should().BeGreaterThan(0,
                 "at least one LeaveBoard invocation must succeed to validate rapid leave behavior");
 
-            // Publish the same causal barrier after all leaves settle. Delayed
-            // join broadcasts have an earlier OccurredAt and are excluded; a
-            // genuinely newer growth snapshot still wins and fails the invariant.
-            var leaveSnapshotBarrierAt = DateTimeOffset.UtcNow;
-            await observer.InvokeAsync("SetEditingCard", board.Id, (Guid?)null);
-
-            // Wait for presence to stabilize after the burst of leaves.
-            var afterLeave = await WaitForPresenceStabilizationAsync(
+            // A second unique marker identifies the current state after every
+            // leave attempt. Exact identities prove each successful leave took
+            // effect; an unchanged/no-op leave can no longer pass by equality.
+            var leaveEditingMarker = Guid.NewGuid();
+            await observer.InvokeAsync("SetEditingCard", board.Id, leaveEditingMarker);
+            var afterLeave = await WaitForPresenceBarrierAsync(
                 observerEvents,
-                TimeSpan.FromSeconds(30),
-                TimeSpan.FromSeconds(2),
-                notBefore: leaveSnapshotBarrierAt);
-            afterLeave.Should().NotBeNull("at least one presence snapshot should arrive after leaves");
-            AssertPresenceDidNotGrowAfterLeaves(settledJoinCount, afterLeave!);
+                owner.UserId,
+                leaveEditingMarker,
+                TimeSpan.FromSeconds(30));
+            var expectedAfterLeave = expectedAfterJoin
+                .Except(leftUserIds)
+                .ToHashSet();
+            AssertPresenceMembers(afterLeave, expectedAfterLeave, "post-leave");
         }
         finally
         {
