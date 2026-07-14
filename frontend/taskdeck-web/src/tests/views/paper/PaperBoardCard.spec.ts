@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PaperBoardCard from '../../../views/paper/PaperBoardCard.vue'
 import type { Card } from '../../../types/board'
@@ -94,6 +94,25 @@ describe('PaperBoardCard', () => {
     const wrapper = mount(PaperBoardCard, { props: { card } })
     await wrapper.find('.paper-board-card__open').trigger('keydown', { key: ' ' })
     expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
+  })
+
+  it('handles opener Enter without reaching the global board shortcut', () => {
+    const card = makeCard()
+    const wrapper = mount(PaperBoardCard, { props: { card }, attachTo: document.body })
+    const globalKeydown = vi.fn()
+    window.addEventListener('keydown', globalKeydown)
+
+    try {
+      wrapper.find('.paper-board-card__open').element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      )
+
+      expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
+      expect(globalKeydown).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('keydown', globalKeydown)
+      wrapper.unmount()
+    }
   })
 
   it('keeps the card opener separate from the pointer-only drag affordance', () => {

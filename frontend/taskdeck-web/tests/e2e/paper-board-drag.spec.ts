@@ -41,12 +41,13 @@ async function addCardViaApi(
   boardId: string,
   columnId: string,
   title: string,
+  position = 0,
 ) {
   const response = await request.post(
     `${API_BASE_URL}/boards/${boardId}/cards`,
     {
       headers: { Authorization: `Bearer ${auth.token}` },
-      data: { title, description: '', columnId, position: 0 },
+      data: { title, description: '', columnId, position },
     },
   )
   await assertOk(response, `Create card '${title}'`)
@@ -181,14 +182,26 @@ test.describe('Paper board card drag', () => {
 
     const columns = await getColumns(request, auth, boardId)
     const backlogCol = columns.find((c) => c.name === 'Backlog')!
-    const cardTitle = `Keyboard Paper ${seed}`
-    await addCardViaApi(request, auth, boardId, backlogCol.id, cardTitle)
+    const cardTitle = `Keyboard Paper First ${seed}`
+    const secondCardTitle = `Keyboard Paper Second ${seed}`
+    await addCardViaApi(request, auth, boardId, backlogCol.id, cardTitle, 0)
+    await addCardViaApi(request, auth, boardId, backlogCol.id, secondCardTitle, 1)
 
     await page.goto(`/workspace/boards/${boardId}`)
     await expect(page.locator('[data-testid="paper-board-lanes"]')).toBeVisible()
 
     const card = page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
     const cardOpener = card.getByRole('button', { name: `Card ${cardTitle}` })
+    const secondCard = page.locator('[data-card-id]').filter({ hasText: secondCardTitle }).first()
+    const secondCardOpener = secondCard.getByRole('button', { name: `Card ${secondCardTitle}` })
+
+    await secondCardOpener.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#card-title')).toHaveValue(secondCardTitle)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Edit Card' })).toHaveCount(0)
+
+    await page.locator('.paper-board-view__title').click()
 
     await page.keyboard.press('j')
     await expect(card).toHaveClass(/paper-board-card--selected/)

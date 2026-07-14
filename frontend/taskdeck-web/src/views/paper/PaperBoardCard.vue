@@ -150,8 +150,8 @@ function onDragHandleMouseDown() {
       data-action="open-card"
       :aria-label="`Card ${card.title}`"
       @click="onClick"
-      @keydown.enter.prevent="onClick"
-      @keydown.space.prevent="onClick"
+      @keydown.enter.stop.prevent="onClick"
+      @keydown.space.stop.prevent="onClick"
     />
 
     <span
