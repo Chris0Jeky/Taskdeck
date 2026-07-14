@@ -878,6 +878,27 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task GetSimilarPast_ForPendingCaptureProposalWithoutHistory_ReturnsEmptyResult()
+    {
+        var userId = await AuthenticateAsync("automation-similar-past-empty");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposalAsync(
+            _client,
+            userId,
+            boardId,
+            RiskLevel.Low,
+            ProposalSourceType.Queue);
+
+        var response = await _client.GetAsync($"/api/automation/proposals/{proposal.Id}/similar-past");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<SimilarPastResultDto>();
+        result.Should().NotBeNull();
+        result!.Decisions.Should().BeEmpty();
+        result.ApplyRate.Should().Be(0);
+    }
+
     private async Task<List<ProposalDto>> GetBoardProposalsAsync(Guid boardId)
     {
         var response = await _client.GetAsync($"/api/automation/proposals?boardId={boardId}");
@@ -890,10 +911,15 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         return await CreateTestProposalAsync(_client, userId, boardId, riskLevel);
     }
 
-    private static async Task<ProposalDto> CreateTestProposalAsync(HttpClient client, Guid userId, Guid boardId, RiskLevel riskLevel)
+    private static async Task<ProposalDto> CreateTestProposalAsync(
+        HttpClient client,
+        Guid userId,
+        Guid boardId,
+        RiskLevel riskLevel,
+        ProposalSourceType sourceType = ProposalSourceType.Chat)
     {
         var createRequest = new CreateProposalDto(
-            SourceType: ProposalSourceType.Chat,
+            SourceType: sourceType,
             RequestedByUserId: userId,
             Summary: $"Test proposal {Guid.NewGuid()}",
             RiskLevel: riskLevel,
