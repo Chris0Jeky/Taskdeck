@@ -7,5 +7,6 @@ public static class RateLimitingPolicyNames
     public const string CaptureWritePerUser = "CaptureWritePerUser";
     public const string NoteImportPerUser = "NoteImportPerUser";
     public const string McpPerApiKey = "McpPerApiKey";
+    public const string McpAuthenticationPerIp = "McpAuthenticationPerIp";
     public const string TokenRefreshPerUser = "TokenRefreshPerUser";
 }

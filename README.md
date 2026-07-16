@@ -94,11 +94,13 @@ For the first guided run, see [START_HERE.md](docs/START_HERE.md).
 
 Taskdeck includes an MCP server for AI clients such as Claude Code and Cursor. Read tools expose boards, cards, captures, and proposal status. Board-mutating tools stop at proposals, and MCP intentionally exposes no approve or apply tool, so an agent cannot approve its own suggested board changes. Bounded workflow actions such as creating a capture or dismissing a proposal are direct writes.
 
-The verified local launch mode is stdio:
+Taskdeck supports local stdio plus API-key-authenticated Streamable HTTP at `/mcp`:
 
 | Mode | Command / endpoint | Intended use |
 |---|---|---|
 | Local stdio | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp` | Local editor or agent client; zero network listener |
+| Standalone HTTP | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp --transport http` → `http://127.0.0.1:5001/mcp` | Local HTTP client or same-host sidecar |
+| Co-hosted HTTP | `<your Taskdeck API base>/mcp` | Reuse the normal API process and database |
 
 Every Taskdeck process that should share a workspace must use the same `ConnectionStrings__DefaultConnection`. `dev-up` prints the database path, but its environment override belongs only to the API process it launches; a later MCP process does not inherit it. The launchers use these stable paths:
 
@@ -107,7 +109,9 @@ Every Taskdeck process that should share a workspace must use the same `Connecti
 
 Before using stdio, run the web app once and create a local user. Then copy [mcp.example.json](mcp.example.json) into your client's MCP configuration, replace `REPLACE_WITH_THE_ABSOLUTE_taskdeck-dev.db_PATH` with the absolute database path printed by `dev-up`, and adjust the project path if Taskdeck is not the working directory. The stdio server uses the first user in that database unless `McpServer__DefaultUserId` names an existing user. It also needs the connector encryption key written by the normal first-run flow; for an explicit headless setup, provide `Connectors__EncryptionKey` yourself.
 
-Streamable HTTP code is present, but its route and API-key boundary do not currently line up. Until [#1338](https://github.com/Chris0Jeky/Taskdeck/issues/1338) is fixed and security-reviewed, standalone and co-hosted HTTP MCP are **not supported run paths**. Do not expose or connect to the accidental root MCP route. One-command packaging and scoped-key hardening remain planned for [REVIVAL-13](https://github.com/Chris0Jeky/Taskdeck/issues/1309).
+For HTTP, create a key in **Settings → API Keys** and start the standalone command with the same `ConnectionStrings__DefaultConnection` as the web app. Claude Code can use [mcp-claude-code-http.example.json](mcp-claude-code-http.example.json), whose `${VAR}` / `${VAR:-default}` expansion is Claude Code-specific. In Cursor or another client, configure the same URL and `Authorization` header through that client's native secret/environment support rather than committing a raw key. The real route requires `Authorization: Bearer tdsk_...`; missing, invalid, expired, or revoked keys receive `401`, and `/` is not an MCP endpoint. Authentication attempts are bounded by client IP before key lookup, and valid requests are rate-limited independently by the key's opaque ID.
+
+The standalone server binds only to `127.0.0.1` by default and replaces blank or ASP.NET any-host `AllowedHosts` values (`*`, `0.0.0.0`, `[::]`, including mixed lists) with the loopback allowlist. Keep bearer keys on loopback. If you deliberately use `--host` for a container, tunnel, or deployment, terminate TLS before the request reaches an untrusted network and set `AllowedHosts` to the exact public host names; `--host` does not relax host-header validation. Cross-origin browser MCP is not enabled. One-command packaging and scoped-key hardening remain planned for [REVIVAL-13](https://github.com/Chris0Jeky/Taskdeck/issues/1309).
 
 ## Current scope
 

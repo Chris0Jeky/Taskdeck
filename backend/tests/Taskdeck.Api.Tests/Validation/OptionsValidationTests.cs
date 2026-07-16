@@ -282,6 +282,22 @@ public class OptionsValidationTests
     }
 
     [Fact]
+    public void RateLimitingValidator_Fails_WhenMcpAuthenticationPolicyIsInvalid()
+    {
+        var validator = new RateLimitingSettingsValidator();
+        var settings = new RateLimitingSettings
+        {
+            Enabled = true,
+            McpAuthenticationPerIp = new RateLimitPolicySettings(0, 60)
+        };
+
+        var result = validator.Validate(null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("McpAuthenticationPerIp", result.FailureMessage);
+    }
+
+    [Fact]
     public void RateLimitingValidator_Succeeds_WithDefaultSettings()
     {
         var validator = new RateLimitingSettingsValidator();

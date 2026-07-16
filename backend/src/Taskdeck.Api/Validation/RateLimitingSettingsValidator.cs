@@ -25,6 +25,7 @@ public sealed class RateLimitingSettingsValidator : IValidateOptions<RateLimitin
         ValidatePolicy(failures, nameof(options.CaptureWritePerUser), options.CaptureWritePerUser);
         ValidatePolicy(failures, nameof(options.NoteImportPerUser), options.NoteImportPerUser);
         ValidatePolicy(failures, nameof(options.McpPerApiKey), options.McpPerApiKey);
+        ValidatePolicy(failures, nameof(options.McpAuthenticationPerIp), options.McpAuthenticationPerIp);
         ValidatePolicy(failures, nameof(options.TokenRefreshPerUser), options.TokenRefreshPerUser);
 
         return failures.Count > 0

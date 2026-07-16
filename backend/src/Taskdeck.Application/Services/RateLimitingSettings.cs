@@ -26,6 +26,13 @@ public sealed class RateLimitingSettings
     public RateLimitPolicySettings McpPerApiKey { get; set; } = new(60, 60);
 
     /// <summary>
+    /// Aggregate pre-authentication limit for MCP HTTP attempts from one client address.
+    /// This bounds missing/invalid-key database work before the per-key policy can run.
+    /// </summary>
+    [Required]
+    public RateLimitPolicySettings McpAuthenticationPerIp { get; set; } = new(120, 60);
+
+    /// <summary>
     /// Rate limit for token refresh endpoint. Tight limit to prevent token farming:
     /// max 5 refreshes per 60 seconds per user.
     /// </summary>
