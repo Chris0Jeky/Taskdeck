@@ -447,6 +447,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     [InlineData("0.0.0.0")]
     [InlineData("[::]")]
     [InlineData("mcp.example.test;[::]")]
+    [InlineData(";")]
+    [InlineData(";;")]
+    [InlineData(" ; ")]
     public void StandaloneMcpHostSecurity_ReplacesPermissiveAllowedHosts(string? configuredHosts)
     {
         var configuration = new ConfigurationBuilder()
@@ -461,19 +464,22 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         configuration["AllowedHosts"].Should().Be(Program.StandaloneMcpLoopbackAllowedHosts);
     }
 
-    [Fact]
-    public void StandaloneMcpHostSecurity_PreservesExplicitAllowedHosts()
+    [Theory]
+    [InlineData("mcp.example.test")]
+    [InlineData("mcp.example.com")]
+    [InlineData("good; ;")]
+    public void StandaloneMcpHostSecurity_PreservesExplicitAllowedHosts(string configuredHosts)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["AllowedHosts"] = "mcp.example.test"
+                ["AllowedHosts"] = configuredHosts
             })
             .Build();
 
         Program.ApplyStandaloneMcpHostSecurity(configuration);
 
-        configuration["AllowedHosts"].Should().Be("mcp.example.test");
+        configuration["AllowedHosts"].Should().Be(configuredHosts);
     }
 
     [Fact]

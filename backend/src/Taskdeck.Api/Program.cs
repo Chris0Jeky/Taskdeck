@@ -427,11 +427,16 @@ public partial class Program
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var allowedHosts = configuration["AllowedHosts"];
-        var containsAnyHost = allowedHosts?
+        var configuredHosts = configuration["AllowedHosts"]?
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Any(host => host is "*" or "0.0.0.0" or "[::]") == true;
-        if (string.IsNullOrWhiteSpace(allowedHosts) || containsAnyHost)
+            ?? Array.Empty<string>();
+        var containsAnyHost = configuredHosts.Any(host => host is "*" or "0.0.0.0" or "[::]");
+
+        // Fail closed to the loopback allowlist whenever the configured value parses to zero
+        // non-empty hosts (blank, or separator-only such as ";" / ";;" / " ; ") -- which
+        // HostFilteringMiddleware would otherwise treat as "no filter" and allow every host --
+        // or when it names an any-host wildcard.
+        if (configuredHosts.Length == 0 || containsAnyHost)
         {
             configuration["AllowedHosts"] = StandaloneMcpLoopbackAllowedHosts;
         }
