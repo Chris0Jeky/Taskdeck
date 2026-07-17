@@ -187,17 +187,33 @@ public class DataExportService : IDataExportService
                 f.ReportedAt)).ToList();
 
             var exportArtefacts = new List<UserDataExportArtefactDto>(artefactMetadata.Count);
-            foreach (var artefact in artefactMetadata)
+            // #1355: batch the blob loads in bounded chunks instead of one round-trip per artefact.
+            // The chunk size mirrors StreamPageSize so each IN-clause stays well within SQLite's
+            // parameter budget. Memory: the raw byte[] dictionary holds at most one chunk at a time
+            // (released between chunks), while the mapped DTOs' base64 strings DO accumulate across
+            // chunks — both halves stay bounded because the pre-load MaxBufferedArtefactBytes guard
+            // caps the total artefact bytes this path may buffer. Metadata keeps its original (Id)
+            // order, so the exported artefact array is byte-for-byte identical to the former
+            // per-item path.
+            foreach (var chunk in artefactMetadata.Chunk(StreamPageSize))
             {
-                var bytes = await _artefacts.GetContentForUserAsync(artefact.Id, userId, cancellationToken);
-                if (bytes is null)
-                    throw new InvalidOperationException($"Artefact {artefact.Id} is missing its blob.");
-
-                var extractionHistory = await GetAllExtractionHistoryAsync(
-                    artefact.Id,
+                cancellationToken.ThrowIfCancellationRequested();
+                var blobs = await _artefacts.GetContentsForUserAsync(
+                    chunk.Select(a => a.Id).ToList(),
                     userId,
                     cancellationToken);
-                exportArtefacts.Add(MapArtefactForExport(artefact, bytes, extractionHistory));
+
+                foreach (var artefact in chunk)
+                {
+                    if (!blobs.TryGetValue(artefact.Id, out var bytes) || bytes is null)
+                        throw new InvalidOperationException($"Artefact {artefact.Id} is missing its blob.");
+
+                    var extractionHistory = await GetAllExtractionHistoryAsync(
+                        artefact.Id,
+                        userId,
+                        cancellationToken);
+                    exportArtefacts.Add(MapArtefactForExport(artefact, bytes, extractionHistory));
+                }
             }
 
             var content = new UserDataExportContentDto(
