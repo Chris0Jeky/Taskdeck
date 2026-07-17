@@ -450,10 +450,6 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     [InlineData(";")]
     [InlineData(";;")]
     [InlineData(" ; ")]
-    [InlineData("0.0.0.0:5001")]
-    [InlineData("*:5000")]
-    [InlineData("[::]:80")]
-    [InlineData("good.example;0.0.0.0:5001")]
     public void StandaloneMcpHostSecurity_ReplacesPermissiveAllowedHosts(string? configuredHosts)
     {
         var configuration = new ConfigurationBuilder()
@@ -472,10 +468,22 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     // never normalizes or rewrites a value that names at least one real host (e.g. "good; ;"
     // keeps its separator noise; the middleware parses out the real host itself). Making the
     // guard normalize valid configs would be a deliberate contract change, not a cleanup.
+    //
+    // Port-suffixed wildcard-LOOKING entries ("0.0.0.0:5001", "*:5000", "[::]:80") are also
+    // preserved: HostFilteringMiddleware normalizes entries via HostString.ToUriComponent(),
+    // which retains the port, so its IsTopLevelWildcard test does NOT match them -- they are
+    // literal patterns no real Host header can match (request hosts are compared portless),
+    // an operator misconfiguration that already fails closed (deny-all). Rewriting them to
+    // the loopback allowlist would WEAKEN that (spoofed loopback Host headers would pass on
+    // a non-loopback bind).
     [Theory]
     [InlineData("mcp.example.test")]
     [InlineData("mcp.example.com")]
     [InlineData("good; ;")]
+    [InlineData("0.0.0.0:5001")]
+    [InlineData("*:5000")]
+    [InlineData("[::]:80")]
+    [InlineData("good.example;0.0.0.0:5001")]
     public void StandaloneMcpHostSecurity_PreservesExplicitAllowedHosts(string configuredHosts)
     {
         var configuration = new ConfigurationBuilder()
