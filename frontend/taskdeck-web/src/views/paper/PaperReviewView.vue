@@ -304,15 +304,15 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
     .filter((p) => matchesActiveBoardFilter(p.boardId))
     .filter((p) => normalizeProposalStatus(p.status) === 'Applied' && p.appliedAt)
     .sort((a, b) => new Date(b.appliedAt as string).getTime() - new Date(a.appliedAt as string).getTime())
-    .map((p) => {
-      const appliedMs = new Date(p.appliedAt as string).getTime()
-      return {
-        id: p.id,
-        serial: `#${p.id.slice(0, 4).toUpperCase()}`,
-        title: p.summary || '(applied)',
-        age: ageLabel(new Date(appliedMs).toISOString()),
-      }
-    })
+    .map((p) => ({
+      id: p.id,
+      serial: `#${p.id.slice(0, 4).toUpperCase()}`,
+      title: p.summary || '(applied)',
+      // Pass the backend ISO string straight through (same pattern as queueItems):
+      // ageLabel degrades gracefully on an unparseable value, whereas the previous
+      // Date→ms→Date→toISOString roundtrip threw RangeError on an invalid date.
+      age: ageLabel(p.appliedAt as string),
+    }))
     .slice(0, 4)
 })
 
