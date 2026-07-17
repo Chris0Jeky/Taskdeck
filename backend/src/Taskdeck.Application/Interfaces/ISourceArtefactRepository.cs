@@ -50,6 +50,7 @@ public interface ISourceArtefactRepository : IRepository<SourceArtefact>
     /// user, or have no blob are simply absent from the result (never surfaced across users).
     /// Callers must bound <paramref name="ids"/> so the IN-clause stays within SQLite's parameter
     /// limit (SQLITE_MAX_VARIABLE_NUMBER = 999); the buffered export path pages ids in chunks of 500.
+    /// Passing more than the implementation's batch cap throws <see cref="ArgumentException"/>.
     /// </summary>
     Task<IReadOnlyDictionary<Guid, byte[]>> GetContentsForUserAsync(
         IReadOnlyCollection<Guid> ids,

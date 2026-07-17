@@ -16,6 +16,15 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
     private static readonly IReadOnlyDictionary<Guid, byte[]> EmptyContentMap =
         new Dictionary<Guid, byte[]>();
 
+    /// <summary>
+    /// Upper bound on ids accepted by <see cref="GetContentsForUserAsync"/> in one call. EF Core 8
+    /// parameterises the id set via <c>json_each</c> (a single SQLite parameter), so this is
+    /// defense-in-depth against a future translation/provider change reintroducing per-id
+    /// parameters — it keeps the worst case well under SQLITE_MAX_VARIABLE_NUMBER (999). Callers
+    /// page in chunks of 500, comfortably below this bound.
+    /// </summary>
+    private const int MaxBatchIdCount = 900;
+
     public SourceArtefactRepository(TaskdeckDbContext context) : base(context)
     {
     }
@@ -127,9 +136,14 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
         if (ids.Count == 0)
             return EmptyContentMap;
 
-        // De-duplicate to keep the IN-clause parameter count minimal; the caller bounds the
-        // set size (<= 500) so it stays under SQLITE_MAX_VARIABLE_NUMBER. Same user-scoped blob
-        // join as GetContentForUserAsync, so a foreign artefact id can never surface content.
+        if (ids.Count > MaxBatchIdCount)
+            throw new ArgumentException(
+                $"Cannot batch more than {MaxBatchIdCount} artefact ids in one query; page the ids.",
+                nameof(ids));
+
+        // De-duplicate to keep the IN-clause parameter footprint minimal; the caller bounds the
+        // set size (<= 500) and the guard above caps it. Same user-scoped blob join as
+        // GetContentForUserAsync, so a foreign artefact id can never surface content.
         var idList = ids.Distinct().ToList();
 
         var rows = await (
