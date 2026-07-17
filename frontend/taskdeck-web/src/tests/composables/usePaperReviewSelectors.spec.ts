@@ -53,7 +53,11 @@ function mockAllEndpointsEmpty() {
   })
   vi.mocked(proposalDeepReviewApi.getSideEffects).mockResolvedValue({
     rows: [],
-    reversibility: { summary: '6h', description: 'Safe', windowMs: 21600000 },
+    reversibility: {
+      summary: 'Low risk · confirm before apply',
+      description: 'Confirm affected items.',
+      windowMs: 21600000,
+    },
   })
   vi.mocked(proposalDeepReviewApi.getConflicts).mockResolvedValue([])
   vi.mocked(proposalDeepReviewApi.getHistory).mockResolvedValue([])
@@ -306,7 +310,11 @@ describe('usePaperReviewSelectors', () => {
     })
     vi.mocked(proposalDeepReviewApi.getSideEffects).mockResolvedValue({
       rows: [],
-      reversibility: { summary: '6h', description: 'Safe', windowMs: 21600000 },
+      reversibility: {
+        summary: 'Low risk · confirm before apply',
+        description: 'Confirm affected items.',
+        windowMs: 21600000,
+      },
     })
     vi.mocked(proposalDeepReviewApi.getConflicts).mockResolvedValue([])
     vi.mocked(proposalDeepReviewApi.getHistory).mockResolvedValue([])
@@ -337,16 +345,18 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.loading.value).toBe(true)
   })
 
-  it('maps side effects with appliedAt from proposal', async () => {
+  it('maps the stable reversibility contract into an apply-risk posture', async () => {
     mockAllEndpointsEmpty()
     vi.mocked(proposalDeepReviewApi.getSideEffects).mockResolvedValue({
       rows: [{ key: 'Cards', value: '1 created', tone: 'active' }],
-      reversibility: { summary: '6h', description: 'Undo works', windowMs: 21600000 },
+      reversibility: {
+        summary: 'High risk · inspect every change',
+        description: 'Review targets and downstream effects before applying.',
+        windowMs: 21600000,
+      },
     })
 
-    const proposal = ref<ApiProposal | null>(
-      makeProposal({ appliedAt: '2026-05-01T10:00:00Z' }),
-    )
+    const proposal = ref<ApiProposal | null>(makeProposal())
     const activeProposal = computed(() => proposal.value)
     const selectors = usePaperReviewSelectors(activeProposal)
 
@@ -354,8 +364,28 @@ describe('usePaperReviewSelectors', () => {
       expect(selectors.sideEffects.value.rows.length).toBe(1)
     })
 
-    expect(selectors.sideEffects.value.reversibility.appliedAt).toBe(
-      new Date('2026-05-01T10:00:00Z').getTime(),
-    )
+    expect(selectors.sideEffects.value.applyRisk).toEqual({
+      summary: 'High risk · inspect every change',
+      description: 'Review targets and downstream effects before applying.',
+    })
+    expect('windowMs' in selectors.sideEffects.value.applyRisk).toBe(false)
+  })
+
+  it('maps the stable confidence key to truthful user-facing copy', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getConfidence).mockResolvedValue({
+      overall: 0.8,
+      components: [{ key: 'Reversibility', value: 0.75 }],
+      note: null,
+      threshold: 0.7,
+      meetsThreshold: true,
+    })
+    const selectors = usePaperReviewSelectors(computed(() => makeProposal()))
+
+    await vi.waitFor(() => {
+      expect(selectors.confidenceBreakdown.value.components).toEqual([
+        { key: 'Operation safety', value: 0.75 },
+      ])
+    })
   })
 })

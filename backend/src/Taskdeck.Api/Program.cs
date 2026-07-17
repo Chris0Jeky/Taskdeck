@@ -115,6 +115,11 @@ if (args.Contains("--mcp"))
 
         var mcpHttpApp = mcpHttpBuilder.Build();
 
+        // Test seam: lets the standalone MCP host-filtering integration test observe the
+        // built app when it drives this real entry point in-process, so it can await
+        // startup and stop the host cleanly. Never set in production.
+        Program.OnStandaloneMcpHttpAppBuilt?.Invoke(mcpHttpApp);
+
         // Apply EF Core migrations before starting, serialized across processes via a
         // cross-process file lock so the MCP HTTP host does not race the API/CLI (#1164).
         using (var scope = mcpHttpApp.Services.CreateScope())
@@ -423,15 +428,38 @@ public partial class Program
     internal const string StandaloneMcpDefaultBindHost = "127.0.0.1";
     internal const string StandaloneMcpLoopbackAllowedHosts = "localhost;127.0.0.1;[::1]";
 
+    /// <summary>
+    /// Test seam for the standalone MCP HTTP integration test (see
+    /// <c>StandaloneMcpHostFilteringTests</c>): invoked with the built app just before it
+    /// runs, so the test can await startup and stop the host. Never set in production.
+    /// </summary>
+    internal static Action<WebApplication>? OnStandaloneMcpHttpAppBuilt;
+
     internal static void ApplyStandaloneMcpHostSecurity(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var allowedHosts = configuration["AllowedHosts"];
-        var containsAnyHost = allowedHosts?
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Any(host => host is "*" or "0.0.0.0" or "[::]") == true;
-        if (string.IsNullOrWhiteSpace(allowedHosts) || containsAnyHost)
+        // Single rule: rewrite exactly when HostFilteringMiddleware itself would DISABLE
+        // filtering; every other value is preserved because the middleware fails closed on
+        // it. To decide that, mirror the middleware's parse EXACTLY:
+        //   1. Split(';', RemoveEmptyEntries) with NO trimming -- so null/""/";"/";;" parse
+        //      to zero entries (the middleware then falls back to allow-all: the true #1367
+        //      fail-open), while whitespace-bearing values like " ; " or " * " parse to
+        //      literal whitespace entries, an ACTIVE filter that rejects every real host.
+        //   2. Normalize each entry via new HostString(entry).ToUriComponent() -- which
+        //      RETAINS any :port suffix -- before the ordinal top-level-wildcard test for
+        //      "*" / "0.0.0.0" / "[::]". Port-suffixed pseudo-wildcards ("0.0.0.0:5001")
+        //      are therefore literals no real Host header matches, i.e. deny-all.
+        // Rewriting any of those fail-closed literals to the loopback allowlist would be
+        // strictly WEAKER (spoofed loopback Host headers would pass on a non-loopback
+        // bind), so they are preserved. Do not reintroduce TrimEntries or HostString.Host
+        // (port-stripping) here without re-reading the middleware source.
+        var configuredHosts = configuration["AllowedHosts"]?
+            .Split(';', StringSplitOptions.RemoveEmptyEntries)
+            ?? Array.Empty<string>();
+        var containsAnyHost = configuredHosts
+            .Any(host => new HostString(host).ToUriComponent() is "*" or "0.0.0.0" or "[::]");
+        if (configuredHosts.Length == 0 || containsAnyHost)
         {
             configuration["AllowedHosts"] = StandaloneMcpLoopbackAllowedHosts;
         }

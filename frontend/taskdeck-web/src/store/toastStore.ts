@@ -17,7 +17,7 @@ export interface Toast {
   duration: number
   /** Optional title, used by paper-mode rendering for the strong line. */
   title?: string
-  /** Optional inline action (e.g. "undo · 6h"). */
+  /** Optional inline action (e.g. an "open" shortcut). */
   action?: ToastAction
 }
 

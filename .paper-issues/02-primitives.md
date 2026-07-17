@@ -1,5 +1,9 @@
 # PAPER-02 · Component primitives — Stamp, HLBtn, Tagstamp, Card variants, Kbd, Hairline icons
 
+> **Partially superseded by `#1298` (REVIVAL-02, 2026-07-17):** the `PaperUndoTimeline.vue` primitive
+> below was built and then **removed** — it advertised an undo window but no revert endpoint exists.
+> Do not rebuild it from this spec.
+
 Part of the Paper overhaul (master tracker: PAPER-00). **Blocked by:** PAPER-01.
 
 ## Goal
@@ -17,7 +21,7 @@ Provide reusable Vue SFC primitives that every Paper surface composes from. Matc
 - **`PaperStatusPill.vue`** — `kind: 'proposed' | 'applied' | 'overdue' | 'draft' | 'live'`. `live` pulses at 0.6Hz.
 - **`PaperLedgerRow.vue`** — `idx`, `title`, `meta`, `status?`, click-to-open.
 - **`PaperConfidenceDial.vue`** — `value: number 0..1`, 84px SVG, ember stroke-dasharray, serif italic value, mono "CONF" caption.
-- **`PaperUndoTimeline.vue`** — `appliedAt`, `windowMs = 6h`, dashed timeline crossfading dashes left-to-right. `requestAnimationFrame` capped at 1Hz with reduced-motion fallback.
+- ~~**`PaperUndoTimeline.vue`** — `appliedAt`, `windowMs = 6h`, dashed timeline crossfading dashes left-to-right. `requestAnimationFrame` capped at 1Hz with reduced-motion fallback.~~ *[superseded by `#1298` (2026-07-17): fake undo removed — no revert endpoint exists]*
 
 ## Tests
 

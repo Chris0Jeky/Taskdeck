@@ -11,7 +11,6 @@ import PaperIcon from '../components/paper/PaperIcon.vue'
 import PaperStatusPill from '../components/paper/PaperStatusPill.vue'
 import PaperLedgerRow from '../components/paper/PaperLedgerRow.vue'
 import PaperConfidenceDial from '../components/paper/PaperConfidenceDial.vue'
-import PaperUndoTimeline from '../components/paper/PaperUndoTimeline.vue'
 import { PAPER_ICON_SHAPES, type PaperIconName } from '../components/paper/paperIconPaths'
 
 const themeStore = usePaperThemeStore()
@@ -43,12 +42,10 @@ function replayInkBleed() {
 
 const iconNames = Object.keys(PAPER_ICON_SHAPES) as PaperIconName[]
 
-// Stamp showroom — let visitors flip between proposed/applied to feel the undo
+// Stamp showroom — let visitors flip between proposed/applied to see the state
 // crossfade.  Default to applied so the embossed style is visible immediately.
 const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>('applied')
 
-// PaperUndoTimeline — anchor in the past so a partial bar is visible by default.
-const undoApplied = new Date(Date.now() - 90 * 60 * 1000) // 90 min ago
 </script>
 
 <template>
@@ -92,7 +89,7 @@ const undoApplied = new Date(Date.now() - 90 * 60 * 1000) // 90 min ago
           <div><span class="tk-eyebrow">.tk-display</span><span class="tk-display">Today, you moved <em>nine cards.</em></span></div>
           <div><span class="tk-eyebrow">.tk-h1</span><span class="tk-h1">Split <em>"Implement dark mode"</em> into <em>three smaller cards.</em></span></div>
           <div><span class="tk-eyebrow">.tk-h2</span><span class="tk-h2">Provenance &amp; <em>side effects</em></span></div>
-          <div><span class="tk-eyebrow">.tk-h3</span><span class="tk-h3">Recently applied · undoable</span></div>
+          <div><span class="tk-eyebrow">.tk-h3</span><span class="tk-h3">Recently applied</span></div>
           <div><span class="tk-eyebrow">.tk-lede</span><span class="tk-lede">Haiku read the card body, the linked design doc, and 7 prior activity entries on this board.</span></div>
           <div><span class="tk-eyebrow">.tk-body</span><span class="tk-body">Original 4 comments stay on the archived parent.</span></div>
           <div><span class="tk-eyebrow">.tk-meta</span><span class="tk-meta">2026-04-25 · 11:42 PT</span></div>
@@ -194,13 +191,6 @@ const undoApplied = new Date(Date.now() - 90 * 60 * 1000) // 90 min ago
             headline="Split &quot;Implement dark mode&quot; into three smaller cards."
           />
         </div>
-
-        <hr class="hr-line sg-rule" />
-
-        <h3 class="tk-eyebrow">Erasing reversibility line</h3>
-        <p class="tk-body">
-          <span class="erase-line">undo within 6 hours · single keystroke</span>
-        </p>
 
         <hr class="hr-double sg-rule" />
 
@@ -322,11 +312,6 @@ const undoApplied = new Date(Date.now() - 90 * 60 * 1000) // 90 min ago
           <PaperConfidenceDial :value="0.5" subline="haiku" />
           <PaperConfidenceDial :value="0.84" subline="opus" />
           <PaperConfidenceDial :value="1" caption="LIVE" subline="local" />
-        </div>
-
-        <h3 class="tk-eyebrow sg-section-eyebrow">PaperUndoTimeline</h3>
-        <div class="sg-undo-demo">
-          <PaperUndoTimeline :applied-at="undoApplied" :window-ms="6 * 60 * 60 * 1000" />
         </div>
 
         <hr class="hr-line sg-rule" />
@@ -514,13 +499,6 @@ const undoApplied = new Date(Date.now() - 90 * 60 * 1000) // 90 min ago
   border: 1px solid var(--line-soft);
   border-radius: 2px;
   background: var(--paper-card);
-}
-.sg-undo-demo {
-  padding: 12px 14px;
-  border: 1px solid var(--line-soft);
-  border-radius: 2px;
-  background: var(--paper-2);
-  max-width: 480px;
 }
 .sg-frame-mini {
   margin-top: 16px;

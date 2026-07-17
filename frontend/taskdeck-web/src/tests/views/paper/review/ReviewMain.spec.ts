@@ -37,11 +37,9 @@ const provenance: ProvenanceRow[] = [
 
 const sideEffects: SideEffects = {
   rows: [{ key: 'Cards', value: '1 created', tone: 'active' }],
-  reversibility: {
-    summary: '6 hours',
-    description: 'Undo restores',
-    windowMs: 6 * 60 * 60 * 1000,
-    appliedAt: Date.now(),
+  applyRisk: {
+    summary: 'Low risk · confirm before apply',
+    description: 'Confirm affected items.',
   },
 }
 
@@ -62,7 +60,7 @@ function mountMain(
         { text: ' into 3 cards' },
       ],
       lede: 'Lede text.',
-      decisionSummary: '3 ops · undo 6h · atomic',
+      decisionSummary: '3 ops · explicit review · atomic apply',
       busy: false,
       confidence: {
         overall: confidence.overall ?? 0.84,

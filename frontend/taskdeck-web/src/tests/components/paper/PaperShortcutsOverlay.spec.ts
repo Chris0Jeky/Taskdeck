@@ -65,6 +65,14 @@ describe('PaperShortcutsOverlay', () => {
     expect(rows).not.toContainEqual({ key: 'O', label: 'Open card' })
   })
 
+  it('does not advertise an undo shortcut that the product does not implement', () => {
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const root = teleportContent().querySelector('[data-paper-shortcuts]') as HTMLElement
+
+    expect(root.textContent).not.toContain('Undo last apply')
+    expect(root.textContent).not.toContain('⌘Z')
+  })
+
   it('does not handle ? because AppShell owns the toggle', async () => {
     wrapper = mount(PaperShortcutsOverlay, { props: { visible: false }, attachTo: document.body })
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))

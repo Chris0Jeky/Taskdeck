@@ -300,33 +300,21 @@ const queueItems = computed<QueueRailItem[]>(() =>
 )
 
 const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
-  const cutoff = nowMs.value - 6 * 60 * 60 * 1000 // 6h undo window
   return proposals.value
     .filter((p) => matchesActiveBoardFilter(p.boardId))
     .filter((p) => normalizeProposalStatus(p.status) === 'Applied' && p.appliedAt)
     .sort((a, b) => new Date(b.appliedAt as string).getTime() - new Date(a.appliedAt as string).getTime())
-    .map((p) => {
-      const appliedMs = new Date(p.appliedAt as string).getTime()
-      const left = appliedMs + 6 * 60 * 60 * 1000 - nowMs.value
-      const expired = appliedMs < cutoff || left <= 0
-      return {
-        id: p.id,
-        serial: `#${p.id.slice(0, 4).toUpperCase()}`,
-        title: p.summary || '(applied)',
-        left: expired ? null : formatRemaining(left),
-        expired,
-      }
-    })
+    .map((p) => ({
+      id: p.id,
+      serial: `#${p.id.slice(0, 4).toUpperCase()}`,
+      title: p.summary || '(applied)',
+      // Pass the backend ISO string straight through (same pattern as queueItems):
+      // ageLabel degrades gracefully on an unparseable value, whereas the previous
+      // Date→ms→Date→toISOString roundtrip threw RangeError on an invalid date.
+      age: ageLabel(p.appliedAt as string),
+    }))
     .slice(0, 4)
 })
-
-function formatRemaining(ms: number): string {
-  const totalMin = Math.max(0, Math.floor(ms / 60_000))
-  const h = Math.floor(totalMin / 60)
-  const m = totalMin % 60
-  if (h <= 0) return `${m}m`
-  return `${h}h ${m.toString().padStart(2, '0')}m`
-}
 
 // --- Main column data --------------------------------------------------
 
@@ -376,7 +364,7 @@ const decisionSummary = computed(() => {
   const p = activeProposal.value
   if (!p) return 'Nothing to decide right now'
   const ops = p.operations?.length ?? 0
-  return `${ops} ${ops === 1 ? 'operation' : 'operations'} · undo 6h · atomic`
+  return `${ops} ${ops === 1 ? 'operation' : 'operations'} · explicit review · atomic apply`
 })
 
 const headerSerial = computed(() => {
