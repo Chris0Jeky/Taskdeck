@@ -91,6 +91,22 @@ if (args.Contains("--mcp"))
             .GetSection("RateLimiting")
             .Get<Taskdeck.Application.Services.RateLimitingSettings>()
             ?? new Taskdeck.Application.Services.RateLimitingSettings();
+
+        // Fail fast on invalid RateLimiting configuration BEFORE the pre-auth limiter is
+        // constructed (AddTaskdeckRateLimiting instantiates it eagerly at registration, and its
+        // constructor only lower-clamps, so an over-maximum value would otherwise be silently
+        // accepted). The standalone host does not run the co-hosted AddOptionsValidation /
+        // ValidateOnStart pipeline, so apply the same validator here with the same semantics:
+        // skipped when RateLimiting:Enabled=false, fail-fast with the validation message otherwise.
+        var mcpRateLimitingValidation = new Taskdeck.Api.Validation.RateLimitingSettingsValidator()
+            .Validate(null, mcpRateLimitingSettings);
+        if (mcpRateLimitingValidation.Failed)
+        {
+            Console.Error.WriteLine(
+                $"Error: invalid RateLimiting configuration. {mcpRateLimitingValidation.FailureMessage}");
+            return 1;
+        }
+
         mcpHttpBuilder.Services.AddSingleton(mcpRateLimitingSettings);
         if (mcpRateLimitingSettings.Enabled)
         {

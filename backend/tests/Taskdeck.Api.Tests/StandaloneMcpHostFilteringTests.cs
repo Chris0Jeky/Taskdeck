@@ -234,6 +234,83 @@ public class StandaloneMcpHostFilteringTests
         });
     }
 
+    // Fail-fast proof for the standalone host's RateLimiting validation: the co-hosted API runs
+    // AddOptionsValidation/ValidateOnStart, but standalone binds RateLimitingSettings manually and
+    // constructs the pre-auth limiter eagerly — whose constructor only lower-clamps, so an
+    // over-maximum concurrency would otherwise be silently accepted. The explicit validator call in
+    // Program.cs must reject it BEFORE the limiter is constructed (the app-built seam never fires)
+    // with the clean validation message on stderr and exit code 1.
+    [Fact]
+    public async Task StandaloneMcpHttpHost_OutOfRangeConcurrency_FailsFastWithValidationMessage()
+    {
+        var port = ReserveFreeLoopbackPort();
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-mcp-badconc-{Guid.NewGuid():N}.db");
+        var envKeys = new[]
+        {
+            "ConnectionStrings__DefaultConnection",
+            "Connectors__EncryptionKey",
+            "AllowedHosts",
+            "RateLimiting__Enabled",
+            "RateLimiting__McpAuthenticationPerIpConcurrency"
+        };
+        var originalEnvironment = envKeys.ToDictionary(
+            key => key,
+            Environment.GetEnvironmentVariable);
+
+        var appBuiltFired = false;
+        Program.OnStandaloneMcpHttpAppBuilt = _ => appBuiltFired = true;
+
+        var originalError = Console.Error;
+        using var capturedError = new StringWriter();
+        try
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", $"Data Source={dbPath}");
+            Environment.SetEnvironmentVariable(
+                "Connectors__EncryptionKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
+            Environment.SetEnvironmentVariable("AllowedHosts", null);
+            Environment.SetEnvironmentVariable("RateLimiting__Enabled", "true");
+            // Above the 10000 maximum: the one direction the limiter constructor cannot clamp.
+            Environment.SetEnvironmentVariable("RateLimiting__McpAuthenticationPerIpConcurrency", "10001");
+
+            Console.SetError(capturedError);
+
+            var entryPoint = typeof(Program).Assembly.EntryPoint
+                ?? throw new InvalidOperationException("Taskdeck.Api assembly has no entry point.");
+            var args = new[] { "--mcp", "--transport", "http", "--port", port.ToString() };
+            var hostTask = Task.Run(async () =>
+            {
+                var result = entryPoint.Invoke(null, new object[] { args });
+                return result switch
+                {
+                    int exit => exit,
+                    Task<int> asyncExit => await asyncExit,
+                    Task plainTask => await ContinueWithZero(plainTask),
+                    _ => throw new InvalidOperationException(
+                        $"Unexpected entry point return: {result?.GetType().ToString() ?? "null"}.")
+                };
+            });
+
+            var exitCode = await hostTask.WaitAsync(StartupTimeout);
+
+            exitCode.Should().Be(1, "an out-of-range concurrency value must fail fast, not start the host");
+            appBuiltFired.Should().BeFalse(
+                "validation must reject the configuration before the host (and the limiter) is built");
+            capturedError.ToString().Should().Contain("McpAuthenticationPerIpConcurrency",
+                "the operator must see the clean validation message naming the offending setting");
+        }
+        finally
+        {
+            Console.SetError(originalError);
+            Program.OnStandaloneMcpHttpAppBuilt = null;
+            foreach (var (name, value) in originalEnvironment)
+            {
+                Environment.SetEnvironmentVariable(name, value);
+            }
+
+            TryDeleteDatabase(dbPath);
+        }
+    }
+
     /// <summary>
     /// Boots the real standalone MCP HTTP entry point with the pre-auth failure budget set to
     /// 1 permit / 300s and <c>ForwardedHeaders:KnownProxies</c> set to <paramref name="knownProxy"/>,
