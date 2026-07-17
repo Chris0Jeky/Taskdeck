@@ -158,6 +158,84 @@ describe('useReviewActions', () => {
 
     expect(actions.selectedDiffProposalId.value).toBeNull()
     expect(actions.selectedDiff.value).toBeNull()
+    expect(actions.selectedDiffMode.value).toBeNull()
+  })
+
+  // --- #1397: read-only / expired proposals never fire the live diff ---
+
+  it('presents the stored preview without fetching for an expired proposal', async () => {
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'Expired', diffPreview: 'stored diff text' }),
+    ]
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+
+    expect(automationApi.getProposalDiff).not.toHaveBeenCalled()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored diff text')
+  })
+
+  it('presents the stored mode with no content when a read-only proposal has no stored preview', async () => {
+    proposals.value = [makeProposal({ id: 'p-1', status: 'Applied', diffPreview: null })]
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+
+    expect(automationApi.getProposalDiff).not.toHaveBeenCalled()
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBeNull()
+  })
+
+  it('classifies a proposal as read-only via the injected expiry rule (client-side clock)', async () => {
+    // Status is still PendingReview, but the surface reports it expired (its
+    // expiresAt passed mid-session). It must be treated as read-only, not fetched.
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'PendingReview', diffPreview: 'stored' }),
+    ]
+
+    const actions = useReviewActions(
+      proposals,
+      dismissableIds,
+      loadProposals,
+      () => true, // isProposalExpired
+    )
+    await actions.handleToggleDiff('p-1')
+
+    expect(automationApi.getProposalDiff).not.toHaveBeenCalled()
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored')
+  })
+
+  it('renders the invalid verdict (not a cleared pane) when /diff returns a 400 ValidationError', async () => {
+    proposals.value = [makeProposal({ id: 'p-1', status: 'PendingReview' })]
+    vi.mocked(automationApi.getProposalDiff).mockRejectedValue({
+      response: { status: 400, data: { errorCode: 'ValidationError', message: 'Proposal must contain at least one operation' } },
+    })
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+
+    expect(automationApi.getProposalDiff).toHaveBeenCalledWith('p-1')
+    // The pane stays open on this proposal, presenting the invalid verdict.
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiffMode.value).toBe('invalid')
+    expect(actions.selectedDiff.value).toBeNull()
+  })
+
+  it('tears the pane down and toasts for a non-validation diff error (e.g. 404)', async () => {
+    proposals.value = [makeProposal({ id: 'p-1', status: 'PendingReview' })]
+    vi.mocked(automationApi.getProposalDiff).mockRejectedValue({
+      response: { status: 404, data: { errorCode: 'NotFound', message: 'Proposal not found' } },
+    })
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+    expect(actions.selectedDiffMode.value).toBeNull()
+    expect(actions.selectedDiff.value).toBeNull()
   })
 
   it('should dismiss a proposal successfully', async () => {

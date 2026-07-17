@@ -961,7 +961,7 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('shows the empty-diff state without fetching for a no-operation proposal', async () => {
+  it('shows the invalid state without fetching for a no-operation proposal (#1397)', async () => {
     const wrapper = await mountView([
       makeProposal({ id: 'diff-noop', diffPreview: null, operations: [] }),
     ])
@@ -969,10 +969,92 @@ describe('PaperReviewView', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
     await flushPromises()
 
-    // No diffPreview + no operations → the backend `/diff` would 404, so the view
-    // shows the empty state directly without firing the request.
+    // No operations → the backend `/diff` would 400 ("must contain at least one
+    // operation"), the same verdict Apply gives. The reviewer must see that
+    // rejection BEFORE approving, so the view shows the explicit invalid state
+    // without firing the request — never a "No changes" surface it could approve.
     expect(mocks.getProposalDiff).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="paper-review-diff-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-diff-empty"]').exists()).toBe(false)
+    const invalid = wrapper.find('[data-testid="paper-review-diff-invalid"]')
+    expect(invalid.exists()).toBe(true)
+    expect(invalid.text()).toContain('no operations')
+    expect(invalid.text()).toContain('reject')
+
+    wrapper.unmount()
+  })
+
+  it('presents the stored preview under a read-only banner for an expired proposal without firing /diff (#1397)', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-expired',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Archived plan"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    // Expired proposals stay inspectable via their stored preview, but the live
+    // `/diff` (which now 400s for them) is never fired.
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Expired')
+    expect(banner.text()).toContain('read-only')
+    expect(banner.text()).toContain('stored preview')
+    const pre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+    expect(pre.exists()).toBe(true)
+    expect(pre.text()).toContain('Archived plan')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('shows the banner and a no-stored-preview note for an expired proposal with no stored content (#1397)', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-expired-empty',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    const storedEmpty = wrapper.find('[data-testid="paper-review-diff-stored-empty"]')
+    expect(storedEmpty.exists()).toBe(true)
+    expect(storedEmpty.text()).toContain('No stored preview')
+    // Never an error toast + cleared pane for a settled proposal.
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('renders the invalid verdict (not a toast) when /diff 400s for a pending proposal (#1397)', async () => {
+    mocks.getProposalDiff.mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: { errorCode: 'ValidationError', message: 'Proposal must contain at least one operation' },
+      },
+    })
+    const wrapper = await mountView([makeProposal({ id: 'diff-400' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-400')
+    // The 400 is presented inline, not toasted, and the pane is not torn down.
+    const invalid = wrapper.find('[data-testid="paper-review-diff-invalid"]')
+    expect(invalid.exists()).toBe(true)
+    expect(invalid.text()).toContain('no operations')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(true)
 
     wrapper.unmount()
   })

@@ -87,6 +87,27 @@ describe('ReviewProposalActions gating', () => {
     expect(wrapper.findAll('button').some((b) => b.text() === 'Reject')).toBe(false)
   })
 
+  it('labels the diff button as a stored preview on the expired path (#1397)', () => {
+    // Expired proposals no longer offer a live "View Diff" (which now 400s); the
+    // button reveals the stored preview instead, so its label must say so.
+    const wrapper = mountActions({
+      proposal: makeProposal({ status: 'Expired' }),
+      isExpired: true,
+    })
+    expect(wrapper.findAll('button').some((b) => b.text() === 'View stored preview')).toBe(true)
+    expect(wrapper.findAll('button').some((b) => b.text() === 'View Diff')).toBe(false)
+  })
+
+  it('toggles the stored-preview label when the expired proposal diff is open (#1397)', () => {
+    const proposal = makeProposal({ status: 'Expired' })
+    const wrapper = mountActions({
+      proposal,
+      isExpired: true,
+      selectedDiffProposalId: proposal.id,
+    })
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Hide stored preview')).toBe(true)
+  })
+
   it('disables every transition button while busy', () => {
     const wrapper = mountActions({
       proposal: makeProposal({ status: 'PendingReview' }),
