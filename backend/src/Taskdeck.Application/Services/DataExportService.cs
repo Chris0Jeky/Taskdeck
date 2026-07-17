@@ -196,18 +196,19 @@ public class DataExportService : IDataExportService
             for (var offset = 0; offset < artefactMetadata.Count; offset += StreamPageSize)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var count = Math.Min(StreamPageSize, artefactMetadata.Count - offset);
-                var chunk = new List<Domain.Entities.SourceArtefact>(count);
-                for (var i = offset; i < offset + count; i++)
-                    chunk.Add(artefactMetadata[i]);
+                var end = Math.Min(offset + StreamPageSize, artefactMetadata.Count);
+                var chunkIds = new List<Guid>(end - offset);
+                for (var i = offset; i < end; i++)
+                    chunkIds.Add(artefactMetadata[i].Id);
 
                 var blobs = await _artefacts.GetContentsForUserAsync(
-                    chunk.Select(a => a.Id).ToList(),
+                    chunkIds,
                     userId,
                     cancellationToken);
 
-                foreach (var artefact in chunk)
+                for (var i = offset; i < end; i++)
                 {
+                    var artefact = artefactMetadata[i];
                     if (!blobs.TryGetValue(artefact.Id, out var bytes) || bytes is null)
                         throw new InvalidOperationException($"Artefact {artefact.Id} is missing its blob.");
 
