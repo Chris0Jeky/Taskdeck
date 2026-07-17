@@ -1535,9 +1535,10 @@ public class ChatServiceTests
             .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
             .Returns(StreamEventsWithUsage());
 
+        var reservationId = Guid.NewGuid();
         var quotaMock = new Mock<ILlmQuotaService>();
-        quotaMock.Setup(q => q.CheckQuotaAsync(userId, Domain.Enums.LlmSurface.Chat, default))
-            .ReturnsAsync(new DTOs.QuotaCheckResultDto(true, null, 10000, 100));
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100));
 
         var serviceWithQuota = new ChatService(
             _unitOfWorkMock.Object,
@@ -1552,14 +1553,15 @@ public class ChatServiceTests
         // Consume the stream
         await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
 
-        quotaMock.Verify(q => q.RecordUsageAsync(
-            userId,
-            Domain.Enums.LlmSurface.Chat,
+        // The reservation is finalized with the actual streamed token count (issue #1313).
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
             "Mock",
             "mock-default",
             42,
             0,
             default), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

@@ -498,12 +498,13 @@ public class ToolCallingFeatureFlagAndCostTests
             orchestratorProviderMock.Object, registry,
             new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
 
+        var reservationId = Guid.NewGuid();
         var quotaService = new Mock<ILlmQuotaService>();
         quotaService
-            .Setup(q => q.CheckQuotaAsync(It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QuotaCheckResultDto(true, null, long.MaxValue, long.MaxValue));
+            .Setup(q => q.ReserveAsync(It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QuotaReservationDto(true, null, reservationId, long.MaxValue, long.MaxValue));
         quotaService
-            .Setup(q => q.RecordUsageAsync(It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(),
+            .Setup(q => q.CommitReservationAsync(It.IsAny<Guid>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -551,11 +552,10 @@ public class ToolCallingFeatureFlagAndCostTests
 
         result.IsSuccess.Should().BeTrue();
 
-        // Quota service should be called once with the TOTAL accumulated tokens (30 + 70 = 100)
+        // The reservation is committed once with the TOTAL accumulated tokens (30 + 70 = 100).
         quotaService.Verify(
-            q => q.RecordUsageAsync(
-                userId,
-                Domain.Enums.LlmSurface.Chat,
+            q => q.CommitReservationAsync(
+                reservationId,
                 "TestProvider",
                 "test-v1",
                 100, // Total accumulated tokens across all rounds
