@@ -483,7 +483,7 @@ public class AutomationProposalService : IAutomationProposalService
     /// so preview rejects exactly what Apply would reject (#1376 preview == apply).
     /// </summary>
     private static Result ValidateProposalNotExpired(AutomationProposal proposal)
-        => DateTime.UtcNow > proposal.ExpiresAt
+        => proposal.IsExpired
             ? Result.Failure(ErrorCodes.ValidationError, "Proposal has expired")
             : Result.Success();
 
