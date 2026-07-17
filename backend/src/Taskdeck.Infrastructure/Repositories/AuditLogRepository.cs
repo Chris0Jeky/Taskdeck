@@ -263,16 +263,23 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             // SQLite stores DateTimeOffset as a string; use SUBSTR to extract the date portion
             // and push the GROUP BY into SQL. The IX_AuditLogs_UserId_Timestamp index covers
             // the WHERE clause so this avoids a full table scan.
-            var fromStr = from.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
-            var toStr = to.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
-
+            //
+            // Pass the DateTimeOffset bounds as parameters (not hand-built ".fffffff" strings): EF's
+            // SQLite provider serializes BOTH the parameter and the stored Timestamp column with the
+            // same "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz" mapping (trailing fraction zeros trimmed, and the
+            // dot dropped entirely at a zero fraction). A row stored at exactly `from` with a
+            // zero-fraction tick then compares EQUAL, so the `Timestamp >= from` contract counts it
+            // instead of excluding it — a fixed-width ".fffffff" bound sorts above the stored
+            // "...ss+00:00" because '+' (0x2B) < '.' (0x2E) (issue #1403). Mirrors the proven
+            // parameterized raw-SQL pattern in LlmQueueRepository.GetStuckProcessingNonCaptureAsync.
             var rows = await _context.Database
-                .SqlQueryRaw<DateCountRow>(
-                    "SELECT SUBSTR(Timestamp, 1, 10) AS DateStr, COUNT(*) AS Count " +
-                    "FROM AuditLogs " +
-                    "WHERE UserId = {0} AND Timestamp >= {1} AND Timestamp <= {2} " +
-                    "GROUP BY SUBSTR(Timestamp, 1, 10)",
-                    userId, fromStr, toStr)
+                .SqlQuery<DateCountRow>(
+                    $"""
+                    SELECT SUBSTR(Timestamp, 1, 10) AS DateStr, COUNT(*) AS Count
+                    FROM AuditLogs
+                    WHERE UserId = {userId} AND Timestamp >= {from} AND Timestamp <= {to}
+                    GROUP BY SUBSTR(Timestamp, 1, 10)
+                    """)
                 .ToListAsync(cancellationToken);
 
             return rows
@@ -307,17 +314,16 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             int deleted;
             if (_context.Database.IsSqlite())
             {
-                // SQLite stores DateTimeOffset as a string in "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm" format.
-                // We must format the cutoff identically so the < comparison (string ordering) works correctly.
-                // See OAuthAuthCodeRepository.DeleteExpiredAsync for the same pattern.
-                // Normalize to UTC first so that a non-UTC DateTimeOffset (e.g. -05:00) is converted to
-                // its UTC-equivalent time before the "+00:00" suffix is appended; without this the time
-                // component would be wrong and entries in the wrong window could be kept or deleted.
-                var utcCutoff = olderThan.UtcDateTime;
-                var olderThanStr = utcCutoff.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
-                deleted = await _context.Database.ExecuteSqlRawAsync(
-                    "DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM AuditLogs WHERE Timestamp < {0} ORDER BY Timestamp ASC LIMIT {1})",
-                    new object[] { olderThanStr, batchSize },
+                // Pass the DateTimeOffset cutoff as a parameter (not a hand-built ".fffffff" string):
+                // EF's SQLite provider serializes both the parameter and the stored Timestamp column with
+                // the same "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz" mapping (trailing fraction zeros trimmed, dot
+                // dropped at a zero fraction), and normalizes any non-UTC offset consistently on both
+                // sides. A row stored at exactly the cutoff with a zero-fraction tick then compares EQUAL,
+                // so the strictly-older `Timestamp < cutoff` contract KEEPS it instead of deleting it —
+                // a fixed-width bound sorts above the stored "...ss+00:00" because '+' (0x2B) < '.' (0x2E)
+                // (issue #1403). See OAuthAuthCodeRepository.DeleteExpiredAsync for the same shape.
+                deleted = await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $"DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM AuditLogs WHERE Timestamp < {olderThan} ORDER BY Timestamp ASC LIMIT {batchSize})",
                     cancellationToken);
             }
             else
