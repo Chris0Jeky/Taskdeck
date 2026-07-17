@@ -8,11 +8,19 @@ using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
-public class OutboundWebhookDeliveryRepositoryTests : IClassFixture<TestWebApplicationFactory>
+/// <summary>
+/// Uses <see cref="HostedWorkerDisabledTestWebApplicationFactory"/> (issue #1335): fresh
+/// deliveries are seeded Pending with NextAttemptAt = now — exactly what the live
+/// <c>OutboundWebhookDeliveryWorker</c> polls for at 1s intervals in tests. Without worker
+/// isolation the worker can claim a delivery between seed and the test's stale-token claim
+/// (TryClaimPendingAsync would observe zero successes) or dead-letter the revoked-subscription
+/// delivery before GetDuePendingAsync reads it.
+/// </summary>
+public class OutboundWebhookDeliveryRepositoryTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
 
-    public OutboundWebhookDeliveryRepositoryTests(TestWebApplicationFactory factory)
+    public OutboundWebhookDeliveryRepositoryTests(HostedWorkerDisabledTestWebApplicationFactory factory)
     {
         _factory = factory;
     }
