@@ -5,7 +5,7 @@ import { useToastStore } from '../store/toastStore'
 import { createRequestId } from '../utils/requestId'
 import { normalizeProposalRiskLevel } from '../utils/automation'
 import type { Proposal as ApiProposal } from '../types/automation'
-import { getErrorDisplay, isValidationError } from './useErrorMapper'
+import { getErrorDisplay, getValidationReason, isValidationError } from './useErrorMapper'
 import { isProposalReadOnly } from './useReviewProposals'
 import { usePerformanceMark } from './usePerformanceMark'
 
@@ -251,10 +251,10 @@ export function useReviewActions(
       if (isValidationError(e)) {
         selectedDiff.value = null
         selectedDiffMode.value = 'invalid'
-        selectedDiffInvalidReason.value = getErrorDisplay(
-          e,
-          'The backend rejected this proposal preview',
-        ).message
+        // Use the backend's ACTUAL reason, but treat a blank message as absent so
+        // the card's specific "no operations" fallback copy applies rather than
+        // the generic ValidationError string masking it (#1397 / #1414 review).
+        selectedDiffInvalidReason.value = getValidationReason(e)
         return
       }
 

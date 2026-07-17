@@ -102,7 +102,9 @@ vi.mock('../../api/proposalRevisionsApi', () => ({
 
 // Mirrors the real getErrorDisplay closely enough for shell tests: the backend
 // message wins when present, else the fallback. isValidationError follows the
-// real 400-AND-ValidationError rule (#1397).
+// real 400-AND-ValidationError rule (#1397). getValidationReason returns the
+// trimmed backend message or null when blank, so the caller's specific fallback
+// copy applies rather than a masking generic string (#1397 / #1414).
 vi.mock('../../composables/useErrorMapper', () => ({
   getErrorDisplay: (error: unknown, fallback: string) => {
     const typed = error as { response?: { data?: { message?: string } } } | null
@@ -111,6 +113,11 @@ vi.mock('../../composables/useErrorMapper', () => ({
   isValidationError: (error: unknown) => {
     const typed = error as { response?: { status?: number; data?: { errorCode?: string } } } | null
     return typed?.response?.status === 400 && typed?.response?.data?.errorCode === 'ValidationError'
+  },
+  getValidationReason: (error: unknown) => {
+    const typed = error as { response?: { data?: { message?: string } } } | null
+    const message = typed?.response?.data?.message?.trim()
+    return message && message.length > 0 ? message : null
   },
 }))
 

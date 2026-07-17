@@ -234,6 +234,24 @@ describe('useReviewActions', () => {
     expect(actions.selectedDiff.value).toBeNull()
   })
 
+  it('leaves the invalid reason null for a 400 with a blank message so the card fallback applies (#1397 / #1414)', async () => {
+    // A ValidationError 400 with an empty/whitespace message previously mapped to
+    // the generic "Please check your input" copy, which then MASKED the card's
+    // specific "no operations" fallback. Derive the reason as null instead so the
+    // caller-level fallback copy applies.
+    proposals.value = [makeProposal({ id: 'p-1', status: 'PendingReview' })]
+    vi.mocked(automationApi.getProposalDiff).mockRejectedValue({
+      response: { status: 400, data: { errorCode: 'ValidationError', message: '   ' } },
+    })
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+
+    expect(actions.selectedDiffMode.value).toBe('invalid')
+    expect(actions.selectedDiffInvalidReason.value).toBeNull()
+    expect(actions.selectedDiffInvalidReason.value).not.toBe('Please check your input and try again.')
+  })
+
   it('carries the backend expiry reason for a 400 on the expiry race, not the zero-op copy', async () => {
     // The 60s review clock can lag a server-side expiry: the proposal still
     // classifies live client-side, the live diff fires, and the backend answers
