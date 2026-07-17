@@ -8,6 +8,40 @@ public record QuotaCheckResultDto(
     long RemainingTokens,
     long RemainingRequests);
 
+/// <summary>
+/// Result of an atomic quota reservation (issue #1313). When <see cref="Allowed"/> is true a
+/// <see cref="ReservationId"/> is returned that must later be committed (with actual token counts) or
+/// released. When false, <see cref="DeniedReason"/> carries the same message a synchronous quota check
+/// would produce so the HTTP surface maps it identically.
+/// </summary>
+public record QuotaReservationDto(
+    bool Allowed,
+    string? DeniedReason,
+    Guid? ReservationId,
+    long RemainingTokens,
+    long RemainingRequests);
+
+/// <summary>Which quota limit (if any) an atomic reservation attempt hit.</summary>
+public enum QuotaReservationDecision
+{
+    Allowed,
+    RequestsExceeded,
+    TokensExceeded,
+    GlobalExceeded
+}
+
+/// <summary>
+/// Low-level outcome of the repository's atomic reserve operation: the decision plus the live
+/// (committed + non-expired reserved) counts observed inside the serialized transaction, so the
+/// service can compute remaining headroom without a second, racy read.
+/// </summary>
+public readonly record struct QuotaReservationOutcome(
+    QuotaReservationDecision Decision,
+    Guid? ReservationId,
+    long RequestCount,
+    long UserTokens,
+    long GlobalTokens);
+
 public record UsageSummaryDto(
     Guid? UserId,
     LlmSurface? Surface,
