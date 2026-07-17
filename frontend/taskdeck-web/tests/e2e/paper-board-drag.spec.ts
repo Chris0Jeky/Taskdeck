@@ -219,4 +219,48 @@ test.describe('Paper board card drag', () => {
     await expect(doneLane.locator('[data-card-id]').filter({ hasText: cardTitle })).toHaveCount(1)
     await expect(cardOpener).toBeFocused()
   })
+
+  test('selection movement pulls focus so Enter opens the newly selected card', async ({ page, request }) => {
+    await enablePaperMode(page)
+    const auth = await registerAndAttachSession(page, request, 'paper-focus-follow')
+    const seed = `${Date.now()}`
+    const boardId = await createBoardWith2Columns(request, auth, seed)
+
+    const columns = await getColumns(request, auth, boardId)
+    const backlogCol = columns.find((c) => c.name === 'Backlog')!
+    const firstTitle = `Focus Follow First ${seed}`
+    const secondTitle = `Focus Follow Second ${seed}`
+    await addCardViaApi(request, auth, boardId, backlogCol.id, firstTitle, 0)
+    await addCardViaApi(request, auth, boardId, backlogCol.id, secondTitle, 1)
+
+    await page.goto(`/workspace/boards/${boardId}`)
+    await expect(page.locator('[data-testid="paper-board-lanes"]')).toBeVisible()
+
+    const firstCard = page.locator('[data-card-id]').filter({ hasText: firstTitle }).first()
+    const firstOpener = firstCard.getByRole('button', { name: `Card ${firstTitle}` })
+    const secondCard = page.locator('[data-card-id]').filter({ hasText: secondTitle }).first()
+    const secondOpener = secondCard.getByRole('button', { name: `Card ${secondTitle}` })
+
+    // Tab to card A's opener — the real keyboard entry path.
+    for (let i = 0; i < 40; i += 1) {
+      if (await firstOpener.evaluate((el) => document.activeElement === el)) break
+      await page.keyboard.press('Tab')
+    }
+    await expect(firstOpener).toBeFocused()
+
+    // First J selects card A (nothing was selected yet); focus stays with it.
+    await page.keyboard.press('j')
+    await expect(firstCard).toHaveClass(/paper-board-card--selected/)
+    await expect(firstOpener).toBeFocused()
+
+    // Second J moves the selection to card B — focus must follow, so the
+    // visible highlight and the focused opener can never disagree.
+    await page.keyboard.press('j')
+    await expect(secondCard).toHaveClass(/paper-board-card--selected/)
+    await expect(secondOpener).toBeFocused()
+
+    // Enter now unambiguously opens the visibly selected card B.
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#card-title')).toHaveValue(secondTitle)
+  })
 })
