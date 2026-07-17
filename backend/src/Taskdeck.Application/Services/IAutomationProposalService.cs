@@ -59,14 +59,18 @@ public interface IAutomationProposalService
 
     /// <summary>
     /// Serves the STORED diff preview for a decided (terminal) proposal — Applied, Rejected,
-    /// Failed, Expired, or Dismissed — after re-running the requester/board-access gate the
-    /// live diff path runs via <see cref="GetProposalDiffAsync"/> (requester exists → 404,
-    /// board exists → 404, requester has board access → 403; #1398/#1413). A reviewer who lost
-    /// board access, or whose board/requester was deleted, is therefore denied the stored
-    /// preview rather than reading stale board contents through it (#1415). The pre-decision
-    /// structure/expiry gates are deliberately skipped: they no longer apply once a proposal is
-    /// decided, and a live rebuild would describe a board that has since moved (the #1397
-    /// decision). Non-terminal proposals must use <see cref="GetProposalDiffAsync"/> instead.
+    /// Failed, Expired, or Dismissed — after re-running ONLY the requester/board-access half of
+    /// the gate, via the shared <c>IAutomationPolicyEngine.ValidateBoardAccessAsync</c> (requester
+    /// exists → 404, board exists → 404, requester has board access → 403; #1398/#1413). A
+    /// reviewer who lost board access, or whose board/requester was deleted, is therefore denied
+    /// the stored preview rather than reading stale board contents through it (#1415). The
+    /// operation-contract validator and the pre-decision structure/expiry gates are deliberately
+    /// NOT run: they no longer apply once a proposal is decided, and re-validating a historical
+    /// preview against live board state would wrongly deny it when referenced entities were later
+    /// deleted, or always for an Applied create whose TargetId now resolves (the #1397 decision:
+    /// terminal previews are historical, never rebuilt or re-checked against the moving board).
+    /// A never-stored preview is returned as null (not empty) so callers can distinguish absence.
+    /// Non-terminal proposals must use <see cref="GetProposalDiffAsync"/> instead.
     /// </summary>
     Task<Result<string>> GetTerminalProposalStoredPreviewAsync(Guid id, CancellationToken cancellationToken = default);
 
