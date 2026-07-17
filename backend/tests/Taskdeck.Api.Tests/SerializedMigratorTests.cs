@@ -340,6 +340,47 @@ public sealed class SerializedMigratorTests : IDisposable
             "colliding means the tolerance branch was not exercised at all");
     }
 
+    [Fact]
+    public void AcquireLock_is_exclusive_while_held_and_reacquirable_after_release()
+    {
+        // Direct contract test at the AcquireLock seam (#1164 serialization guarantee). The
+        // state-based migration tests above cannot catch a lock that silently stops excluding
+        // (e.g. FileShare.None weakened to ReadWrite, or the stream disposed early): migrations
+        // would still converge to the correct schema through the fail-open re-check. This test
+        // pins exclusivity itself.
+        var lockPath = Path.GetFullPath(_dbPath) + ".migrate.lock";
+        var logger = new InMemoryLogger<SerializedMigratorTests>();
+
+        var first = SerializedMigrator.AcquireLock(lockPath, TimeSpan.FromSeconds(5), logger);
+        first.Should().NotBeNull("an uncontended migration lock must be acquirable");
+
+        try
+        {
+            // While held, a second acquisition of the SAME path must NOT succeed: it must
+            // degrade to the fail-open outcome (null) after its short timeout, with the
+            // documented warning.
+            using var second = SerializedMigrator.AcquireLock(
+                lockPath, TimeSpan.FromMilliseconds(300), logger);
+            second.Should().BeNull(
+                "a held migration lock must exclude every other acquirer until it is released — " +
+                "a second successful acquisition means FileShare.None exclusivity is broken");
+
+            logger.Entries.Should().Contain(
+                e => e.Level == LogLevel.Warning &&
+                     e.Message.Contains("could not acquire migration lock"),
+                "the excluded acquirer must log the documented fail-open warning");
+        }
+        finally
+        {
+            first!.Dispose();
+        }
+
+        // After release the lock must be acquirable again: the winner releasing is what
+        // unblocks the waiting migrators.
+        using var third = SerializedMigrator.AcquireLock(lockPath, TimeSpan.FromSeconds(5), logger);
+        third.Should().NotBeNull("releasing the migration lock must let the next acquirer take it");
+    }
+
     /// <summary>
     /// Returns <c>true</c> when <paramref name="exception"/> is (or wraps, anywhere in its
     /// inner-exception chain) a <see cref="SqliteException"/> — the signature of a losing
