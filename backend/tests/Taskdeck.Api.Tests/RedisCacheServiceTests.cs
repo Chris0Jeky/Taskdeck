@@ -168,7 +168,31 @@ public sealed class RedisCacheServiceTests : IDisposable
         };
 
         // Park a connecting thread inside the seam (simulated mid-connect).
-        var connectingCall = Task.Run(() => _cache.GetAsync<TestData>("connector").GetAwaiter().GetResult());
+        //
+        // Mechanism note (#1332): use a DEDICATED, named background Thread — NOT Task.Run. A
+        // Task.Run work item is queued to the thread pool, and under full-API-suite load the pool
+        // is saturated; its injection throttle then delays running the item, so the connecting
+        // worker could fail to reach OnBeforeConnect before the wait window elapsed (the observed
+        // flake: "connectEntered.Wait(5s) ... found False"). A dedicated Thread is created and
+        // scheduled by the OS immediately, independent of thread-pool saturation, so the connect
+        // seam is reached deterministically. This is a synchronization guarantee, not a bigger
+        // timeout — GetConnection invokes OnBeforeConnect synchronously on this thread before any
+        // await, so the handshake below is a real rendezvous.
+        TestData? connectorResult = null;
+        Exception? connectorError = null;
+        var connectingThread = new Thread(() =>
+        {
+            try
+            {
+                connectorResult = _cache.GetAsync<TestData>("connector").GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                connectorError = ex;
+            }
+        })
+        { IsBackground = true, Name = "redis-connector" };
+        connectingThread.Start();
 
         connectEntered.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue(
             "the connect seam must be reached so Dispose is timed against a real mid-connect window");
@@ -181,7 +205,9 @@ public sealed class RedisCacheServiceTests : IDisposable
 
         // Let the parked connecting thread proceed and finish (it must not throw post-dispose).
         releaseConnect.Set();
-        var connectorResult = connectingCall.GetAwaiter().GetResult();
+        connectingThread.Join(TimeSpan.FromSeconds(5)).Should().BeTrue(
+            "the connecting thread must complete once the simulated connect is released");
+        connectorError.Should().BeNull("the parked connector must degrade cleanly post-dispose, not throw");
         connectorResult.Should().BeNull("an unreachable Redis degrades the connector to a miss");
 
         // On the fixed path Dispose acquires the free lock in microseconds. On the old path it would
