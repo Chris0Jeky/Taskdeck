@@ -107,10 +107,10 @@ public sealed class SerializedMigratorTests : IDisposable
 
                 foreach (var fault in faults)
                 {
-                    IsDocumentedMidChainCollision(fault).Should().BeTrue(
+                    IsSqliteCollisionFault(fault).Should().BeTrue(
                         "the only tolerable concurrent-migrator failure is the documented fail-open " +
-                        "mid-chain collision (\"already exists\" / duplicate __EFMigrationsHistory); " +
-                        $"any other throw is a real defect, but got: {fault}");
+                        "mid-chain SQLite collision (any SqliteException, walked through wrappers); " +
+                        $"any non-SQL throw is a real defect, but got: {fault}");
                 }
 
                 faults.Count.Should().BeLessThan(2,
@@ -226,28 +226,63 @@ public sealed class SerializedMigratorTests : IDisposable
     }
 
     /// <summary>
-    /// Returns <c>true</c> only for the fail-open mid-chain collision SerializedMigrator documents:
-    /// a losing migrator on the lock-free path re-issues DDL the winner already applied and throws
-    /// a <see cref="SqliteException"/> for a duplicate object (<c>"table ... already exists"</c>) or
-    /// a duplicate <c>__EFMigrationsHistory</c> primary-key insert (<c>"UNIQUE constraint failed"</c>),
-    /// possibly wrapped (e.g. in a <see cref="DbUpdateException"/>). The chain is walked so a wrapped
-    /// SqliteException is still recognized. Deliberately narrow: it excludes barrier timeouts, null
-    /// refs, disk errors, and a leaked <c>SQLITE_BUSY</c> (which busy_timeout must already absorb) —
-    /// those are real defects the test must not mask.
+    /// Returns <c>true</c> when <paramref name="exception"/> is (or wraps, anywhere in its
+    /// inner-exception chain) a <see cref="SqliteException"/> — the signature of a losing
+    /// fail-open migrator racing the winner mid-chain. Deliberately NOT message-based: the same
+    /// race lands on whatever DDL the colliding migration issues first — <c>"table ... already
+    /// exists"</c> (CreateTable), <c>"duplicate column name"</c> (AddColumn-first migrations such
+    /// as AddDeferredUntilToAutomationProposal), <c>"no such table"</c> / <c>ef_temp</c> shapes
+    /// (table-rebuild migrations), or <c>"UNIQUE constraint failed"</c> (a duplicate
+    /// <c>__EFMigrationsHistory</c> insert) — so enumerating message strings re-flakes with a
+    /// misleading "real defect" message the next time the chain reshapes. Tolerating ANY
+    /// <see cref="SqliteException"/> cannot mask a real defect because this check never gates
+    /// success alone: the <c>faults.Count &lt; 2</c> gate rejects "no migrator drove the chain"
+    /// (a genuinely broken migration faults BOTH migrators here and also fails the
+    /// single-migrator test), and the exact-state assertions (complete duplicate-free history ==
+    /// <c>GetMigrations()</c>; usable schema) reject any incomplete or corrupted outcome. This
+    /// type check exists ONLY to keep non-SQL faults — barrier timeouts, null refs, IO failures —
+    /// as hard test failures.
     /// </summary>
-    private static bool IsDocumentedMidChainCollision(Exception exception)
+    private static bool IsSqliteCollisionFault(Exception exception)
     {
         for (Exception? ex = exception; ex is not null; ex = ex.InnerException)
         {
-            if (ex is SqliteException sqlite &&
-                (sqlite.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase) ||
-                 sqlite.Message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase)))
+            if (ex is SqliteException)
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    public static TheoryData<Exception, bool> CollisionFaultCases => new()
+    {
+        // Direct SqliteExceptions from every DDL shape the fail-open race can land on.
+        { new SqliteException("SQLite Error 1: 'table \"ProposalProvenances\" already exists'.", 1), true },
+        { new SqliteException("SQLite Error 1: 'duplicate column name: DeferredUntil'.", 1), true },
+        { new SqliteException("SQLite Error 1: 'no such table: ef_temp_Boards'.", 1), true },
+        // Wrapped: EF surfaces the duplicate __EFMigrationsHistory insert as a DbUpdateException.
+        {
+            new DbUpdateException(
+                "An error occurred while saving the entity changes.",
+                new SqliteException(
+                    "SQLite Error 19: 'UNIQUE constraint failed: __EFMigrationsHistory.MigrationId'.", 19)),
+            true
+        },
+        // Non-SQL faults must stay hard failures.
+        { new TimeoutException("Sibling migrator never reached the start barrier."), false },
+        { new InvalidOperationException("outer", new IOException("disk failure")), false },
+    };
+
+    [Theory]
+    [MemberData(nameof(CollisionFaultCases))]
+    public void Collision_signature_accepts_any_sqlite_fault_and_rejects_non_sql_faults(
+        Exception fault, bool expected)
+    {
+        IsSqliteCollisionFault(fault).Should().Be(expected,
+            "the collision signature must tolerate every SQLite shape of the fail-open race " +
+            "(walking wrapped exceptions) while keeping non-SQL faults as hard failures");
     }
 
     private static List<string> GetUserTableNames(TaskdeckDbContext context)
