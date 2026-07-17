@@ -1,9 +1,15 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Taskdeck.Api.RateLimiting;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -232,6 +238,158 @@ public class StandaloneMcpHostFilteringTests
                     .Which.Should().Be("McpAuthenticationPerIp");
             }
         });
+    }
+
+    // Parity proof for #1384 in the STANDALONE MCP host (#1372 exact-mirroring discipline): the
+    // per-key budget is enforced by ApiKeyMiddleware, which the standalone host wires identically to
+    // the co-hosted API. Boots the real --mcp --transport http entry point with McpPerApiKey=1/300s,
+    // seeds one valid API key directly into the host's SQLite database, then drives two requests on a
+    // single (serialized) connection: the first valid request is admitted (auth passes, one permit
+    // spent) and the second — the same key, now over quota — is rejected with the per-key 429 by
+    // ApiKeyMiddleware, before the endpoint. The pre-auth IP budget is raised out of the way so only
+    // the per-key budget can reject (a valid key never spends the IP failure budget anyway).
+    [Fact]
+    public async Task StandaloneMcpHttpHost_PerKeyBudget_RejectsOverQuotaValidKey()
+    {
+        const string plaintextKey = "tdsk_standalone_perkey_000000000000000000";
+        var port = ReserveFreeLoopbackPort();
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-mcp-perkey-{Guid.NewGuid():N}.db");
+        var envKeys = new[]
+        {
+            "ConnectionStrings__DefaultConnection",
+            "Connectors__EncryptionKey",
+            "AllowedHosts",
+            "RateLimiting__Enabled",
+            "RateLimiting__McpPerApiKey__PermitLimit",
+            "RateLimiting__McpPerApiKey__WindowSeconds",
+            "RateLimiting__McpAuthenticationPerIp__PermitLimit",
+            "RateLimiting__McpAuthenticationPerIp__WindowSeconds"
+        };
+        var originalEnvironment = envKeys.ToDictionary(key => key, Environment.GetEnvironmentVariable);
+
+        var appBuilt = new TaskCompletionSource<WebApplication>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Program.OnStandaloneMcpHttpAppBuilt = app =>
+        {
+            app.Lifetime.ApplicationStarted.Register(() => started.TrySetResult());
+            appBuilt.TrySetResult(app);
+        };
+
+        WebApplication? runningApp = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", $"Data Source={dbPath}");
+            Environment.SetEnvironmentVariable(
+                "Connectors__EncryptionKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
+            Environment.SetEnvironmentVariable("AllowedHosts", null);
+            Environment.SetEnvironmentVariable("RateLimiting__Enabled", "true");
+            // One request per key, long window: the second request from the same key is over quota.
+            Environment.SetEnvironmentVariable("RateLimiting__McpPerApiKey__PermitLimit", "1");
+            Environment.SetEnvironmentVariable("RateLimiting__McpPerApiKey__WindowSeconds", "300");
+            // Raise the pre-auth IP failure budget out of the way — only the per-key budget must reject.
+            Environment.SetEnvironmentVariable("RateLimiting__McpAuthenticationPerIp__PermitLimit", "1000");
+            Environment.SetEnvironmentVariable("RateLimiting__McpAuthenticationPerIp__WindowSeconds", "60");
+
+            var entryPoint = typeof(Program).Assembly.EntryPoint
+                ?? throw new InvalidOperationException("Taskdeck.Api assembly has no entry point.");
+            var args = new[] { "--mcp", "--transport", "http", "--port", port.ToString() };
+            var hostTask = Task.Run(async () =>
+            {
+                var result = entryPoint.Invoke(null, new object[] { args });
+                return result switch
+                {
+                    int exit => exit,
+                    Task<int> asyncExit => await asyncExit,
+                    Task plainTask => await ContinueWithZero(plainTask),
+                    _ => throw new InvalidOperationException(
+                        $"Unexpected entry point return: {result?.GetType().ToString() ?? "null"}.")
+                };
+            });
+
+            var completed = await Task.WhenAny(appBuilt.Task, hostTask).WaitAsync(StartupTimeout);
+            if (completed == hostTask)
+            {
+                var earlyExit = await hostTask;
+                throw new InvalidOperationException(
+                    $"Standalone MCP host exited during startup with code {earlyExit}.");
+            }
+
+            var app = await appBuilt.Task;
+            runningApp = app;
+            await started.Task.WaitAsync(StartupTimeout);
+
+            // Seed a valid key into the host's (already-migrated) database. The host serves only /mcp
+            // and no key-management REST surface, so the key is inserted directly. WAL + busy_timeout
+            // (same PRAGMAs the host uses) let this second connection write while the host is running.
+            await SeedApiKeyAsync(dbPath, plaintextKey);
+
+            using (var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") })
+            {
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", plaintextKey);
+
+                using (var first = await client.PostAsync("/mcp", new StringContent("{}")))
+                {
+                    first.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized,
+                        "a valid key must pass API-key authentication");
+                    first.StatusCode.Should().NotBe(HttpStatusCode.TooManyRequests,
+                        "the first request is within the per-key budget");
+                }
+
+                using (var second = await client.PostAsync("/mcp", new StringContent("{}")))
+                {
+                    second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+                        "the same key is now over its per-key budget and rejected by ApiKeyMiddleware");
+                    second.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
+                        .Which.Should().Be(RateLimitingPolicyNames.McpPerApiKey);
+                    second.Headers.TryGetValues("Retry-After", out _).Should().BeTrue();
+                }
+            }
+
+            await app.StopAsync();
+            runningApp = null;
+            var exitCode = await hostTask.WaitAsync(ShutdownTimeout);
+            exitCode.Should().Be(0, "the standalone MCP host must shut down cleanly");
+        }
+        finally
+        {
+            Program.OnStandaloneMcpHttpAppBuilt = null;
+            if (runningApp is not null)
+            {
+                try
+                {
+                    await runningApp.StopAsync();
+                }
+                catch
+                {
+                }
+            }
+
+            foreach (var (name, value) in originalEnvironment)
+            {
+                Environment.SetEnvironmentVariable(name, value);
+            }
+
+            TryDeleteDatabase(dbPath);
+        }
+    }
+
+    private static async Task SeedApiKeyAsync(string dbPath, string plaintextKey)
+    {
+        var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+            .UseSqlite($"Data Source={dbPath}")
+            .AddInterceptors(new SqlitePragmaConnectionInterceptor(5000))
+            .Options;
+        await using (var db = new TaskdeckDbContext(options))
+        {
+            var user = new User("standalone-perkey", "standalone-perkey@example.com", "hash");
+            db.Users.Add(user);
+            db.ApiKeys.Add(new ApiKey(
+                user.Id, ApiKeyService.HashKey(plaintextKey), plaintextKey[..8], "Standalone per-key"));
+            await db.SaveChangesAsync();
+        }
+
+        // Release the pooled seed connection so the host is never blocked on this file handle.
+        SqliteConnection.ClearAllPools();
     }
 
     // Fail-fast proof for the standalone host's RateLimiting validation: the co-hosted API runs
