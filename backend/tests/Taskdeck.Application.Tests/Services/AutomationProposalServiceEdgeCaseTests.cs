@@ -20,6 +20,7 @@ public class AutomationProposalServiceEdgeCaseTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IAutomationProposalRepository> _proposalRepoMock;
+    private readonly Mock<IProposalRevisionRepository> _revisionRepoMock;
     private readonly Mock<INotificationService> _notificationServiceMock;
     private readonly AutomationProposalService _service;
 
@@ -27,9 +28,16 @@ public class AutomationProposalServiceEdgeCaseTests
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _proposalRepoMock = new Mock<IAutomationProposalRepository>();
+        _revisionRepoMock = new Mock<IProposalRevisionRepository>();
         _notificationServiceMock = new Mock<INotificationService>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ProposalRevisions).Returns(_revisionRepoMock.Object);
+        // Default: no saved revision, so the approve-time structure gate (#1416) validates the
+        // proposal's original operations rather than an effective revision.
+        _revisionRepoMock
+            .Setup(r => r.GetLatestByProposalIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposalRevision?)null);
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
@@ -42,8 +50,11 @@ public class AutomationProposalServiceEdgeCaseTests
     [Fact]
     public async Task ApproveProposalAsync_ShouldReturnFailure_WhenProposalIsExpired()
     {
-        // Arrange: proposal whose ExpiresAt is in the past
+        // Arrange: proposal whose ExpiresAt is in the past. It carries an operation so it clears
+        // the approve-time structure gate (#1416) and the domain expiry guard is what rejects it.
         var proposal = CreatePendingProposal();
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", "{\"title\":\"Test\"}", Guid.NewGuid().ToString()));
         SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
 
         _proposalRepoMock
@@ -78,6 +89,10 @@ public class AutomationProposalServiceEdgeCaseTests
     public async Task ApproveProposalAsync_ShouldReturnConflict_WhenSaveChangesDetectsConcurrency()
     {
         var proposal = CreatePendingProposal();
+        // Carries an operation so approve clears the structure gate (#1416) and reaches SaveChanges,
+        // where the simulated concurrency collision surfaces.
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", "{\"title\":\"Test\"}", Guid.NewGuid().ToString()));
         var deciderId = Guid.NewGuid();
 
         _proposalRepoMock

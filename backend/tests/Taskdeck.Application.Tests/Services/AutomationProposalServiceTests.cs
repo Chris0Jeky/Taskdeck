@@ -413,6 +413,10 @@ public class AutomationProposalServiceTests
             "Test proposal",
             RiskLevel.Low,
             Guid.NewGuid().ToString());
+        // A structurally valid proposal (#1416): approve now runs Apply's structure gate, so the
+        // happy path must carry at least one operation just as a real approvable proposal does.
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", "{\"title\":\"Test\"}", Guid.NewGuid().ToString()));
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync(proposal);
@@ -433,6 +437,124 @@ public class AutomationProposalServiceTests
                     n.Type == NotificationType.ProposalOutcome),
                 default),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldRejectZeroOperationProposal_MatchingApplyStructureGate()
+    {
+        // #1416 approve == apply: a zero-operation PendingReview proposal previously approved
+        // cleanly (status → Approved) and only failed later at Apply with 400 "Proposal must
+        // contain at least one operation". Approve now runs the SAME structure gate Apply runs via
+        // AutomationPolicyEngine.ValidateOperationStructure (and that GetProposalDiffAsync mirrors),
+        // rejecting it with the identical ValidationError before the transition commits.
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Zero-op proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.ApproveProposalAsync(proposalId, Guid.NewGuid());
+
+        // Assert: same failure Apply's structure validation produces, and the transition is refused.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Proposal must contain at least one operation");
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldRejectExpiredProposal_WithConflict()
+    {
+        // #1416 expiry contract: an expired PendingReview proposal must not be approvable. Approve
+        // enforces this through the domain transition itself (AutomationProposal.Approve throws
+        // InvalidOperation → 409), the established approve-time expiry semantics this slice
+        // preserves — deliberately NOT the diff/preview path's 400 "Proposal has expired" read
+        // shape, because approving is a state transition and 409 conflict is the correct code for
+        // refusing to advance an expired proposal. The proposal carries an operation so it clears
+        // the structure gate and the expiry guard is what rejects it.
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Expiring proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", "{\"title\":\"Test\"}", Guid.NewGuid().ToString()));
+        // Force the proposal past its expiry without changing status (mirrors a proposal that
+        // expired while pending). ExpiresAt is private-set on the entity.
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.ApproveProposalAsync(proposalId, Guid.NewGuid());
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Contain("expired");
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldValidateEffectiveRevision_NotOriginalOperations()
+    {
+        // #1416 approve == apply, revision-aware: Apply executes the latest saved revision
+        // (AutomationExecutorService.MaterializeEffectiveProposalAsync), so approve's structure
+        // gate must validate that SAME effective set. A proposal whose ORIGINAL operations are
+        // empty but whose latest revision is valid is approvable — matching Apply — rather than
+        // being falsely rejected by the zero-op check on the stale original operations.
+        var proposalId = Guid.NewGuid();
+        var deciderId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Originally empty, revised valid",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "create",
+                    targetType = "card",
+                    parameters = "{\"title\":\"Revised\"}",
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposal.Id, 1, deciderId, revisedPayload, "Add an operation");
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+        _revisionRepoMock
+            .Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
+            .ReturnsAsync(revision);
+
+        // Act
+        var result = await _service.ApproveProposalAsync(proposalId, deciderId);
+
+        // Assert: the valid effective revision clears the structure gate and the proposal approves.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(ProposalStatus.Approved);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
     [Fact]
