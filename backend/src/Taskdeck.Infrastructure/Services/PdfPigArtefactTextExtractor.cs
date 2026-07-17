@@ -198,12 +198,17 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
                 ExtractorName,
                 ExtractorVersion);
         }
-        catch (Exception ex) when (boundedProvider is not null &&
+        catch (Exception ex) when (ex is not OperationCanceledException &&
+                                   boundedProvider is not null &&
                                    (boundedProvider.LimitExceeded || HasDecodedSizeLimitCause(ex)))
         {
             // Decompression ceiling breach — surfaced either as the flag or as our
             // exception somewhere in the chain (PdfPig may wrap filter faults). Record
-            // the same content-free warning outcome, never an extractor error.
+            // the same content-free warning outcome, never an extractor error. A real
+            // breach always throws ExtractionDecodedSizeLimitException, never an OCE, so
+            // excluding OCE here guarantees a genuine caller/budget cancellation still
+            // propagates to the service for its abandonment handling rather than being
+            // masked as a decoded-size outcome.
             return Warning(ArtefactExtractionWarningCodes.DecodedSizeLimit);
         }
         finally
