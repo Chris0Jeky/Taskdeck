@@ -523,6 +523,25 @@ public class AutomationProposalService : IAutomationProposalService
         if (!accessValidation.IsSuccess)
             return Result.Failure<string>(accessValidation.ErrorCode, accessValidation.ErrorMessage);
 
+        // ValidatePermissionsAsync short-circuits to success for a proposal that carries NO
+        // operations, BEFORE it reaches the board gate — so a board-scoped decided proposal with
+        // zero operations (creatable: CreateProposalAsync enforces no minimum op count) would skip
+        // the board-exists / board-access check and leak its stored preview to a revoked reviewer.
+        // Re-run exactly that half of the gate for the empty case, with the engine's own codes and
+        // messages, so the fail-closed guarantee holds uniformly (#1415). The requester-exists half
+        // already ran above (ValidatePermissionsAsync checks it ahead of its empty short-circuit).
+        if (operations.Count == 0 && proposal.BoardId.HasValue)
+        {
+            var board = await _unitOfWork.Boards.GetByIdAsync(proposal.BoardId.Value, cancellationToken);
+            if (board == null)
+                return Result.Failure<string>(ErrorCodes.NotFound, $"Board with ID {proposal.BoardId} not found");
+
+            var hasAccess = await _unitOfWork.BoardAccesses.HasAccessAsync(
+                proposal.BoardId.Value, proposal.RequestedByUserId, null, cancellationToken);
+            if (!hasAccess)
+                return Result.Failure<string>(ErrorCodes.Forbidden, $"User does not have access to board {proposal.BoardId}");
+        }
+
         return Result.Success(proposal.DiffPreview ?? string.Empty);
     }
 
