@@ -22,15 +22,22 @@ namespace Taskdeck.Api.Tests;
 ///
 /// Each test seeds rows with LITERAL invariant timestamp strings (culture-immune), then invokes the
 /// repository under a hostile culture — a clone of the invariant culture whose only difference is
-/// <c>TimeSeparator = "."</c>. The seeded rows share the hour+minute of the comparison bound so the
+/// <c>TimeSeparator = "."</c>. The literals use the REAL EF Core SQLite storage shape:
+/// <c>yyyy-MM-dd HH:mm:ss.FFFFFFFzzz</c> — trailing fraction zeros are TRIMMED and the dot is
+/// dropped entirely at a zero fraction (empirically verified on PR #1391), so whole-second seeds
+/// must be written as e.g. <c>2020-06-15 12:00:00+00:00</c> for the tests to exercise the shapes
+/// production string comparisons actually run against (the fixed-vs-trimmed boundary residual is
+/// tracked as issue #1403). The seeded rows share the hour+minute of the comparison bound so the
 /// divergence is forced into the seconds separator, making the assertion fail on the unfixed code.
 /// The culture is set before the await chain starts (it flows across awaits via ExecutionContext)
 /// and restored in a finally.
 ///
 /// Uses <see cref="HostedWorkerDisabledTestWebApplicationFactory"/> because these tests seed audit
 /// rows that <c>AuditRetentionWorker</c> polls and deletes — see that factory's decision rule.
-/// Each test uses a distinct year so the table-wide retention delete in one test cannot touch the
-/// rows seeded by another (the class shares one database across its methods).
+/// Each backdated test uses a distinct year so the table-wide retention delete in one test cannot
+/// touch the rows seeded by another (the class shares one database across its methods). The consume
+/// test seeds at real current time with a unique code and completes all assertions within itself
+/// (a consumed row may later be swept by DeleteExpiredAsync's IsConsumed=1 clause — that is fine).
 /// </summary>
 public class AuditCultureInvariantRepositoryTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
@@ -74,9 +81,10 @@ public class AuditCultureInvariantRepositoryTests : IClassFixture<HostedWorkerDi
         await db.SaveChangesAsync();
 
         // Literal invariant timestamps sharing 2020-06-15 12:00 with the cutoff (12:00:05) so the
-        // string divergence lands in the seconds separator, not an earlier digit.
-        await SetTimestampAsync(db, oldEntry.Id, "2020-06-15 12:00:00.0000000+00:00");
-        await SetTimestampAsync(db, recentEntry.Id, "2020-06-15 12:00:10.0000000+00:00");
+        // string divergence lands in the seconds separator, not an earlier digit. EF-realistic
+        // trimmed shape: whole-second values carry NO fraction (see class doc).
+        await SetTimestampAsync(db, oldEntry.Id, "2020-06-15 12:00:00+00:00");
+        await SetTimestampAsync(db, recentEntry.Id, "2020-06-15 12:00:10+00:00");
 
         var cutoff = new DateTimeOffset(2020, 6, 15, 12, 0, 5, TimeSpan.Zero);
 
@@ -115,7 +123,8 @@ public class AuditCultureInvariantRepositoryTests : IClassFixture<HostedWorkerDi
 
         // Row at 2021-06-15 12:00:05; range bounds share the hour+minute (12:00:00..12:00:10) so a
         // corrupted time separator on either bound would wrongly exclude the row at the range edge.
-        await SetTimestampAsync(db, entry.Id, "2021-06-15 12:00:05.0000000+00:00");
+        // EF-realistic trimmed shape: no fraction on a whole-second value (see class doc).
+        await SetTimestampAsync(db, entry.Id, "2021-06-15 12:00:05+00:00");
 
         var from = new DateTimeOffset(2021, 6, 15, 12, 0, 0, TimeSpan.Zero);
         var to = new DateTimeOffset(2021, 6, 15, 12, 0, 10, TimeSpan.Zero);
@@ -145,9 +154,10 @@ public class AuditCultureInvariantRepositoryTests : IClassFixture<HostedWorkerDi
         await db.SaveChangesAsync();
 
         // Both codes share 2022-06-15 12:00 with the cutoff (12:00:05); the expired one precedes it,
-        // the live one follows it, forcing the divergence into the seconds separator.
-        await SetExpiresAtAsync(db, expiredCode.Id, "2022-06-15 12:00:00.0000000+00:00");
-        await SetExpiresAtAsync(db, liveCode.Id, "2022-06-15 12:00:10.0000000+00:00");
+        // the live one follows it, forcing the divergence into the seconds separator. EF-realistic
+        // trimmed shape: no fraction on whole-second values (see class doc).
+        await SetExpiresAtAsync(db, expiredCode.Id, "2022-06-15 12:00:00+00:00");
+        await SetExpiresAtAsync(db, liveCode.Id, "2022-06-15 12:00:10+00:00");
 
         var cutoff = new DateTimeOffset(2022, 6, 15, 12, 0, 5, TimeSpan.Zero);
 
@@ -163,6 +173,48 @@ public class AuditCultureInvariantRepositoryTests : IClassFixture<HostedWorkerDi
             .ToListAsync();
         remaining.Should().NotContain(expiredCode.Id, "the pre-cutoff code must be deleted");
         remaining.Should().Contain(liveCode.Id, "the post-cutoff code must survive");
+    }
+
+    [Fact]
+    public async Task TryConsumeAtomicAsync_UnderNonInvariantTimeSeparator_ConsumesAndPersistsInvariantTimestamps()
+    {
+        // MED-B1 (PR #1400 round 2): TryConsumeAtomicAsync is the live OAuth code-exchange path.
+        // Its hand-built nowStr feeds BOTH the ExpiresAt > {now} comparison AND the persisted
+        // ConsumedAt/UpdatedAt values — pre-fix, a hostile culture WROTE the malformed string
+        // (with '.' time separators) into those columns. This runs the real SQL path.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IOAuthAuthCodeRepository>();
+
+        // Seed THROUGH EF so ExpiresAt is stored in the real trimmed invariant shape.
+        var code = $"consume-{Guid.NewGuid():N}";
+        var authCode = new OAuthAuthCode(code, Guid.NewGuid(), "token", DateTimeOffset.UtcNow.AddMinutes(5));
+        db.Set<OAuthAuthCode>().Add(authCode);
+        await db.SaveChangesAsync();
+
+        var consumed = await UnderHostileTimeSeparatorCultureAsync(
+            () => repo.TryConsumeAtomicAsync(code));
+
+        consumed.Should().BeTrue(
+            "an unexpired, unconsumed code must consume successfully under a non-':' culture");
+
+        var reloaded = await db.Set<OAuthAuthCode>().AsNoTracking()
+            .SingleAsync(c => c.Id == authCode.Id);
+        reloaded.IsConsumed.Should().BeTrue();
+
+        // Assert the raw persisted TEXT, not the materialized DateTimeOffset: a malformed write
+        // is only visible at the string level (EF materialization may still parse or throw later).
+        var consumedAtRaw = (await db.Database
+            .SqlQueryRaw<string>("SELECT ConsumedAt AS Value FROM OAuthAuthCodes WHERE Id = {0}", authCode.Id)
+            .ToListAsync()).Single();
+        consumedAtRaw.Should().MatchRegex(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{7}\+00:00$",
+            "ConsumedAt must be persisted in the invariant SQLite timestamp shape with ':' time separators");
+
+        var updatedAtRaw = (await db.Database
+            .SqlQueryRaw<string>("SELECT UpdatedAt AS Value FROM OAuthAuthCodes WHERE Id = {0}", authCode.Id)
+            .ToListAsync()).Single();
+        updatedAtRaw.Should().MatchRegex(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{7}\+00:00$",
+            "UpdatedAt must be persisted in the invariant SQLite timestamp shape with ':' time separators");
     }
 
     private static Task SetTimestampAsync(TaskdeckDbContext db, Guid id, string invariantTimestamp)
