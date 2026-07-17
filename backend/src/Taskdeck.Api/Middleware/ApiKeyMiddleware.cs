@@ -37,6 +37,15 @@ public sealed class ApiKeyMiddleware
     /// </summary>
     public const string ApiKeyIdItemKey = "McpApiKeyId";
 
+    /// <summary>
+    /// Context item set when API-key authentication rejects the request, BEFORE the 401 body is
+    /// written. <see cref="McpAuthenticationRateLimitingMiddleware"/> consumes the pre-auth IP
+    /// failure budget on this marker in a finally block, so a client that aborts the connection
+    /// mid-response (making the write throw) cannot evade the failure charge — the key
+    /// parse/lookup work has already been spent by that point.
+    /// </summary>
+    public const string AuthenticationFailedItemKey = "McpAuthenticationFailed";
+
     public ApiKeyMiddleware(RequestDelegate next, ILogger<ApiKeyMiddleware> logger)
     {
         _next = next;
@@ -165,6 +174,11 @@ public sealed class ApiKeyMiddleware
 
     private static async Task WriteErrorResponse(HttpContext context, int statusCode, string message)
     {
+        // Mark the authentication failure BEFORE any response write: if the client aborts while
+        // the 401 body is being written, WriteAsJsonAsync throws and unwinds past the pre-auth
+        // failure-budget middleware — the marker guarantees its finally block still counts the
+        // failed attempt (the lookup cost was already paid).
+        context.Items[AuthenticationFailedItemKey] = true;
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json";
         await context.Response.WriteAsJsonAsync(new ApiErrorResponse(

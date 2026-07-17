@@ -104,8 +104,11 @@ public static class PipelineConfiguration
         // rejected with 401 (missing/invalid/revoked API keys).
         app.UseMiddleware<Taskdeck.Api.Mcp.McpTelemetryMiddleware>();
 
-        // Bound all MCP authentication attempts by trusted client address before parsing a key
-        // or querying the database. Valid requests also reach the later per-key endpoint policy.
+        // Bound the cost of MCP authentication FAILURES by trusted client address: reject before a
+        // key parse or database lookup once the address's failure budget is spent, but let valid
+        // requests through without consuming so they reach the per-key endpoint policy with
+        // independent budgets. UseForwardedHeaders (above, when configured) has already corrected
+        // Connection.RemoteIpAddress, so the budget keys on the real client behind a proxy.
         if (rateLimitingSettings.Enabled)
         {
             app.UseMiddleware<McpAuthenticationRateLimitingMiddleware>();

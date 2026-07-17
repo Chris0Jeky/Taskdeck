@@ -407,6 +407,49 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task McpEndpoint_ProductionDefaultIpBudget_DoesNotStarveMultipleKeysBehindOneAddress()
+    {
+        // Exercises the #1368 blind spot. Precisely: only the pre-auth IP budget — the setting under
+        // test — is at its production default (120/60s); McpPerApiKey is deliberately raised to 500
+        // (NOT a production value) so 130 valid requests can exceed the 120-permit IP bucket without
+        // tripping the per-key 60/min limit. This is NOT a full production-defaults configuration.
+        // Two keys sit behind ONE client address (TestServer reports no remote IP, so both share the
+        // same "unknown" pre-auth bucket). Under the old acquire-on-every-request behavior the 121st
+        // valid request would spuriously 429; the failure budget must never charge valid traffic.
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("RateLimiting:Enabled", "true");
+            builder.UseSetting("RateLimiting:McpPerApiKey:PermitLimit", "500");
+            builder.UseSetting("RateLimiting:McpPerApiKey:WindowSeconds", "60");
+            // McpAuthenticationPerIp intentionally left at its production default (120 / 60s).
+        });
+        using var jwtClient = factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-ip-budget-multikey");
+        var apiKeyA = await CreateApiKeyAsync(jwtClient, "IP Budget Key A");
+        var apiKeyB = await CreateApiKeyAsync(jwtClient, "IP Budget Key B");
+
+        using var mcpClientA = factory.CreateClient();
+        mcpClientA.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKeyA);
+        using var mcpClientB = factory.CreateClient();
+        mcpClientB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKeyB);
+
+        // 65 per key = 130 valid requests > the 120-permit shared IP bucket.
+        const int requestsPerKey = 65;
+        for (var i = 0; i < requestsPerKey; i++)
+        {
+            using var responseA = await mcpClientA.PostAsync("/mcp", new StringContent("{}"));
+            using var responseB = await mcpClientB.PostAsync("/mcp", new StringContent("{}"));
+
+            responseA.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+            responseA.StatusCode.Should().NotBe(HttpStatusCode.TooManyRequests,
+                "valid requests must never spend the pre-auth IP failure budget");
+            responseB.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+            responseB.StatusCode.Should().NotBe(HttpStatusCode.TooManyRequests,
+                "a second key behind the same address must not be starved by the shared IP bucket");
+        }
+    }
+
+    [Fact]
     public async Task McpEndpoint_RealRequest_EmitsTelemetry()
     {
         var correlationId = $"mcp-telemetry-{Guid.NewGuid():N}";

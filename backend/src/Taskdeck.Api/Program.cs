@@ -91,6 +91,22 @@ if (args.Contains("--mcp"))
             .GetSection("RateLimiting")
             .Get<Taskdeck.Application.Services.RateLimitingSettings>()
             ?? new Taskdeck.Application.Services.RateLimitingSettings();
+
+        // Fail fast on invalid RateLimiting configuration BEFORE the pre-auth limiter is
+        // constructed (AddTaskdeckRateLimiting instantiates it eagerly at registration, and its
+        // constructor only lower-clamps, so an over-maximum value would otherwise be silently
+        // accepted). The standalone host does not run the co-hosted AddOptionsValidation /
+        // ValidateOnStart pipeline, so apply the same validator here with the same semantics:
+        // skipped when RateLimiting:Enabled=false, fail-fast with the validation message otherwise.
+        var mcpRateLimitingValidation = new Taskdeck.Api.Validation.RateLimitingSettingsValidator()
+            .Validate(null, mcpRateLimitingSettings);
+        if (mcpRateLimitingValidation.Failed)
+        {
+            Console.Error.WriteLine(
+                $"Error: invalid RateLimiting configuration. {mcpRateLimitingValidation.FailureMessage}");
+            return 1;
+        }
+
         mcpHttpBuilder.Services.AddSingleton(mcpRateLimitingSettings);
         if (mcpRateLimitingSettings.Enabled)
         {
@@ -129,6 +145,19 @@ if (args.Contains("--mcp"))
             Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, migrationLogger);
         }
 
+        // Honour trusted forwarded headers (default OFF) so the pre-auth failure-budget limiter and
+        // per-key partitioning key on the real client address behind a reverse proxy instead of
+        // collapsing every client into the proxy's single socket address. Mirrors the co-hosted API
+        // pipeline: only active when the operator configures ForwardedHeaders:KnownProxies /
+        // KnownNetworks, and X-Forwarded-For is never trusted from an unknown peer. Runs before the
+        // limiter and telemetry so all downstream see the corrected Connection.RemoteIpAddress.
+        var mcpForwardedHeadersOptions = Taskdeck.Api.Extensions.PipelineConfiguration
+            .BuildForwardedHeadersOptions(mcpHttpApp.Configuration);
+        if (mcpForwardedHeadersOptions is not null)
+        {
+            mcpHttpApp.UseForwardedHeaders(mcpForwardedHeadersOptions);
+        }
+
         // Correlation ID propagation: honours client X-Request-Id header.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.CorrelationIdMiddleware>();
 
@@ -137,8 +166,9 @@ if (args.Contains("--mcp"))
         // rejected with 401 (missing/invalid/revoked API keys).
         mcpHttpApp.UseMiddleware<McpTelemetryMiddleware>();
 
-        // Bound all authentication attempts by client address before parsing a key or
-        // querying the database. Valid requests also reach the later per-key policy.
+        // Bound the cost of authentication FAILURES by client address: reject before a key parse or
+        // database lookup once the address's failure budget is spent, but let valid requests through
+        // without consuming so they reach the per-key policy with independent budgets.
         if (mcpRateLimitingSettings.Enabled)
         {
             mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.McpAuthenticationRateLimitingMiddleware>();

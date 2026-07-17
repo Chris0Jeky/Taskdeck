@@ -347,10 +347,19 @@ hit CORS and are unaffected.
 
 ### `ForwardedHeaders`
 
-Consumed directly by `PipelineConfiguration.BuildForwardedHeadersOptions`.
-If both `KnownProxies` and `KnownNetworks` are empty, forwarded-header
-handling is left disabled and a warning is logged when rate limiting is
-enabled.
+Consumed directly by `PipelineConfiguration.BuildForwardedHeadersOptions`,
+in both the co-hosted API pipeline and the standalone MCP HTTP host
+(`--mcp --transport http`). If both `KnownProxies` and `KnownNetworks` are
+empty, forwarded-header handling is left disabled (**default OFF**) and a
+warning is logged when rate limiting is enabled in the co-hosted API.
+
+**Security caveat:** `X-Forwarded-For` is never trusted by default. Enable it
+only by naming the trusted reverse proxy under `KnownProxies` (or its network
+under `KnownNetworks`) — a spoofed `X-Forwarded-For` from an untrusted peer is
+ignored, so it cannot let a caller rotate to a fresh rate-limit bucket. When
+enabled, `UseForwardedHeaders` runs before the MCP pre-auth failure-budget
+limiter and per-key policy, so both key on the real client behind the proxy
+instead of collapsing every client into the proxy's single address.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
@@ -403,8 +412,9 @@ defaults** come from `RateLimitingSettings` constructors; the
 | `RateLimiting:NoteImportPerUser:WindowSeconds` | `int` | `60` | same | Window length in seconds. | No |
 | `RateLimiting:McpPerApiKey:PermitLimit` | `int` | `60` (class default) | same | Per-API-key permits for the MCP HTTP transport. | No |
 | `RateLimiting:McpPerApiKey:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
-| `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `int` | `120` (class default) | same | Aggregate permits per client address before MCP API-key parsing/database lookup. Valid requests also use the per-key policy. | No |
-| `RateLimiting:McpAuthenticationPerIp:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds for pre-authentication MCP attempts. | No |
+| `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `int` | `120` (class default) | same | Per-client-address MCP authentication **failure** budget. A permit is spent only when authentication fails (401); once spent, further attempts from that address are rejected with 429 before the API-key parse/database lookup. Successful requests never spend this budget, so multiple valid keys behind one egress address (NAT/proxy/CI) keep their independent per-key budgets. Keys on the trusted client address (see `ForwardedHeaders`). | No |
+| `RateLimiting:McpAuthenticationPerIp:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds for the MCP authentication-failure budget. A pre-check 429 always reports the FULL window as `Retry-After` — a deliberate safe over-estimate: the non-consuming availability check does not expose the exact replenishment instant, so clients may be told to wait longer than strictly necessary. | No |
+| `RateLimiting:McpAuthenticationPerIpConcurrency` | `int` | `16` (class default) | same | Maximum concurrent in-flight `/mcp` requests per client address admitted past the pre-authentication gate; the excess is rejected immediately with 429 (`Retry-After: 1`). Admission control for pre-auth work: the failure budget bounds cumulative failures per window, this cap bounds instantaneous concurrency — failed-auth key lookups per address per window never exceed `McpAuthenticationPerIp:PermitLimit` plus this cap. Long-lived (e.g. streaming) requests hold a slot for their full duration; raise this for clients that legitimately multiplex many concurrent requests through one address. | No |
 | `RateLimiting:TokenRefreshPerUser:PermitLimit` | `int` | `5` (class default) | same | Per-user permits for the token refresh endpoint. Tight limit to prevent token farming. | No |
 | `RateLimiting:TokenRefreshPerUser:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
 
