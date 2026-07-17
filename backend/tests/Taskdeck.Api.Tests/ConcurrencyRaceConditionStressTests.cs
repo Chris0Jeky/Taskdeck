@@ -909,6 +909,40 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             .ToList();
 
     /// <summary>
+    /// Drains the observer's phase broadcasts until every expected join/leave
+    /// delta has been received (or a bounded timeout elapses). The owner's marker
+    /// snapshot ends the causal barrier, but the observer's later marker send is
+    /// not a delivery fence for the OTHER connections' join/leave broadcasts, so a
+    /// legitimate delta can land just after the barrier resolves. Waiting for the
+    /// full expected count both (a) prevents a false-red when a delta is merely
+    /// slow, and (b) guarantees every phase broadcast has been consumed before the
+    /// caller clears the collector — so no straggler from this phase can leak into
+    /// the next and masquerade as one of its deltas. If a delta is genuinely
+    /// dropped, the timeout elapses and the delivery assertion fails closed on the
+    /// short count. Extra broadcasts beyond the expected count are impossible here
+    /// (one per successful invocation), so the count is exact on the green path.
+    /// </summary>
+    private static async Task<IReadOnlyList<BoardPresenceSnapshot>> DrainPhaseBroadcastsAsync(
+        EventCollector<BoardPresenceSnapshot> events,
+        Guid ownerUserId,
+        Guid editingMarker,
+        int expectedDeliveryCount,
+        TimeSpan? timeout = null)
+    {
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(15);
+        var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(events.ToList(), ownerUserId, editingMarker);
+        while (phaseBroadcasts.Count < expectedDeliveryCount && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+            phaseBroadcasts = SelectPhaseBroadcasts(events.ToList(), ownerUserId, editingMarker);
+        }
+
+        return phaseBroadcasts;
+    }
+
+    /// <summary>
     /// Asserts every successful join was delivered to the observer as its own
     /// presence broadcast, not merely reflected in the marker snapshot. Each
     /// JoinBoard publishes exactly one snapshot, and the owner marker fence keeps
@@ -1441,8 +1475,12 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             // even if every JoinBoard broadcast were dropped, because SetEditingCard
             // republishes full tracker state. Require the join burst to have reached
             // the observer as its own presence deltas, carrying each joined identity.
-            var observedJoinBroadcasts = SelectPhaseBroadcasts(
-                observerEvents.ToList(), owner.UserId, joinEditingMarker);
+            // Drain until every join delta has arrived (the observer's marker send is
+            // not a delivery fence for the other connections' broadcasts), which also
+            // consumes every join broadcast before the clear below so none can leak
+            // into the leave phase.
+            var observedJoinBroadcasts = await DrainPhaseBroadcastsAsync(
+                observerEvents, owner.UserId, joinEditingMarker, joinedConnections.Count);
             AssertJoinBroadcastsObserved(
                 observedJoinBroadcasts,
                 joinedConnections.Select(joined => joined.UserId));
@@ -1485,9 +1523,11 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
 
             // Delivery coverage (issue #1371): prove each leave reached the observer
             // as its own shrink broadcast, not only via the SetEditingCard marker
-            // snapshot which republishes the already-mutated tracker state.
-            var observedLeaveBroadcasts = SelectPhaseBroadcasts(
-                observerEvents.ToList(), owner.UserId, leaveEditingMarker);
+            // snapshot which republishes the already-mutated tracker state. Drain
+            // until every leave delta has arrived; the join phase was fully drained
+            // before the clear above, so these non-marker deltas are leave-only.
+            var observedLeaveBroadcasts = await DrainPhaseBroadcastsAsync(
+                observerEvents, owner.UserId, leaveEditingMarker, leftUserIds.Count);
             AssertLeaveBroadcastsObserved(observedLeaveBroadcasts, leftUserIds);
         }
         finally
