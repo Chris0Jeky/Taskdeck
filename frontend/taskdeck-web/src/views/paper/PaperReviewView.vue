@@ -13,7 +13,7 @@ import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useProposalRevisions } from '../../composables/useProposalRevisions'
-import { getErrorDisplay, isValidationError } from '../../composables/useErrorMapper'
+import { getErrorDisplay, getValidationReason, isValidationError } from '../../composables/useErrorMapper'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
@@ -636,7 +636,7 @@ function onFileAwayBulk() {
   void handleDismissApplied()
 }
 
-function onApply() {
+async function onApply() {
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
@@ -652,12 +652,18 @@ function onApply() {
     void handleExecuteProposal(p.id)
     return
   }
-  // #1397 LOW-3: approving a zero-operation proposal only defers a guaranteed
-  // Apply 400 ("Proposal must contain at least one operation"). Block it here —
-  // but only when the revision list is authoritatively loaded and empty, because
-  // a saved revision carries operations the backend applies revision-aware
-  // (#1235). If revisions are unknown (load pending/failed), let the backend
-  // decide (approve-time validation is tracked in #1416).
+  // #1397 P2-A: approving a zero-operation proposal only defers a guaranteed
+  // Apply 400 ("Proposal must contain at least one operation") — UNLESS a saved
+  // revision carries operations the backend applies revision-aware (#1235). The
+  // revision list is the authority for that, so settle it FIRST when it hasn't
+  // loaded yet — exactly as the read-only diff path does (onPreviewDiff) —
+  // instead of letting a still-pending GET skip the guard and fall through to
+  // approve.
+  if ((p.operations?.length ?? 0) === 0 && !revisionsLoaded.value) {
+    await loadRevisionState(p.id)
+    // The active proposal can change during the await; only keep deciding on it.
+    if (activeProposal.value?.id !== p.id) return
+  }
   if (
     (p.operations?.length ?? 0) === 0 &&
     revisionsLoaded.value &&
@@ -666,6 +672,9 @@ function onApply() {
     toast.info('This proposal contains no operations to apply — Apply will reject it. Reject or file it away instead.')
     return
   }
+  // A revision load that FAILED leaves revisionsLoaded false: we cannot prove the
+  // proposal is zero-op, so defer to the backend (approve-time validation is
+  // tracked in #1416). This fall-through now only happens AFTER a load attempt.
   void handleApproveProposal(p.id)
 }
 
@@ -823,10 +832,10 @@ async function onPreviewDiff() {
     if (isValidationError(e)) {
       previewDiff.value = null
       previewDiffMode.value = 'invalid'
-      previewDiffInvalidReason.value = getErrorDisplay(
-        e,
-        'The backend rejected this proposal preview',
-      ).message
+      // Use the backend's ACTUAL reason, but treat a blank message as absent so
+      // the template's specific "no operations" fallback copy applies rather than
+      // the generic ValidationError string masking it (#1397 / #1414 review).
+      previewDiffInvalidReason.value = getValidationReason(e)
       previewDiffLoading.value = false
       scrollDiffIntoView()
       return
@@ -979,16 +988,27 @@ function onQueueFilterChange(filter: QueueFilter) {
           original submission.
         </p>
         <!-- diffPreview is creation-time content revisions never update, so a revised
-             proposal's stored preview is NOT what a revision-aware Apply would have
-             executed — disclose it (#1397 MEDIUM-2). -->
+             proposal's stored preview — or the recorded-operations fallback when no
+             preview was captured — is NOT what a revision-aware Apply would have
+             executed. Disclose it, and word it for whichever is actually on screen
+             (the fallback is not a "stored preview") (#1397 MEDIUM-2 / #1414 review). -->
         <p
-          v-if="previewDiffMode === 'stored' && revisionCount > 0"
+          v-if="previewDiffMode === 'stored' && revisionCount > 0 && previewDiff"
           class="paper-review-deep__diff-caveat tk-meta"
           role="status"
           data-testid="paper-review-diff-revised-note"
         >
           ✎ This proposal was <strong>revised</strong> after submission — the stored
           preview shows the original operations, not the revised ones.
+        </p>
+        <p
+          v-else-if="previewDiffMode === 'stored' && revisionCount > 0 && storedOperationsFallback"
+          class="paper-review-deep__diff-caveat tk-meta"
+          role="status"
+          data-testid="paper-review-diff-revised-note"
+        >
+          ✎ This proposal was <strong>revised</strong> after submission — the recorded
+          operations show the original submission, not the revised one.
         </p>
         <p
           v-if="revisionCount > 0 && previewDiffMode === 'live'"

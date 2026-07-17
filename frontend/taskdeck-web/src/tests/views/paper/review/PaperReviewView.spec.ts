@@ -1171,6 +1171,101 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('awaits an in-flight revision load before blocking Approve on a zero-op proposal (#1397 P2-A)', async () => {
+    // The revision list is the authority for whether a zero-op proposal is truly
+    // empty (a saved revision carries operations Apply runs revision-aware). If
+    // the revision GET is still in flight when Apply is clicked, the guard must
+    // settle it FIRST — not skip the guard and fall through to approve (which the
+    // old guard did whenever revisionsLoaded was false).
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'noop-inflight', diffPreview: null, operations: [] }),
+    ])
+
+    // Revision load is still pending → the guard is not yet authoritative.
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+
+    // The click is parked on the revision load — approve has NOT fired.
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    // Settle the revision GET with an empty list → the proposal is truly zero-op.
+    resolveRevisions?.([])
+    await flushPromises()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(expect.stringContaining('no operations'))
+
+    wrapper.unmount()
+  })
+
+  it('falls through to the backend Apply when the revision load fails for a zero-op proposal (#1397 P2-A)', async () => {
+    // A FAILED revision load leaves revisionsLoaded false: emptiness cannot be
+    // proven, so the guard defers to the backend rather than blocking (approve-
+    // time backend validation is tracked in #1416). This fall-through now only
+    // happens AFTER a load attempt.
+    mocks.getRevisions.mockRejectedValue(new Error('revisions boom'))
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'noop-failload', status: 'Approved' }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'noop-failload', diffPreview: null, operations: [] }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).toHaveBeenCalledWith('noop-failload')
+    expect(mocks.infoToast).not.toHaveBeenCalledWith(expect.stringContaining('no operations'))
+
+    wrapper.unmount()
+  })
+
+  it('discloses a revision on the recorded-operations fallback when no stored preview was captured (#1397 MEDIUM-2 / #1414)', async () => {
+    // A revised-then-settled proposal that never captured a diffPreview renders
+    // the recorded-operations fallback, not a stored preview — so the disclosure
+    // copy must say the RECORDED OPERATIONS show the original submission, never
+    // "the stored preview" (which does not exist here).
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'diff-revised-ops',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-revised-ops',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    // The ops fallback is what's on screen (no captured stored preview).
+    expect(wrapper.find('[data-testid="paper-review-diff-stored-operations"]').exists()).toBe(true)
+    const revisedNote = wrapper.find('[data-testid="paper-review-diff-revised-note"]')
+    expect(revisedNote.exists()).toBe(true)
+    expect(revisedNote.text()).toContain('revised')
+    expect(revisedNote.text()).toContain('recorded operations')
+    expect(revisedNote.text()).not.toContain('stored preview')
+
+    wrapper.unmount()
+  })
+
   it('re-derives an open live pane to the stored presentation when the expiry clock passes (#1397 LOW-5)', async () => {
     // Open the live diff on a pending proposal that expires in 30s, then tick
     // the 60s review clock past its expiresAt: the pane must flip to the stored
