@@ -10,6 +10,19 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-17, wave 2)
+
+Overnight correctness + test-reliability wave #2 — **7 PRs merged** (per-PR gate: independent adversarial review, all-severity findings fixed, required CI green; the late-evening/overnight follow-on to the 11-PR sweep below):
+
+- **Hosted-worker test isolation (`#1394`, `#1335`):** a new `HostedWorkerDisabledTestWebApplicationFactory` removes app-assembly hosted services from the test host through a shared predicate (also carried by a guard test), adopted by the LLM-queue, outbound-webhook, and automation-proposal integration suites plus a new `ProcessNextClaimRaceTests` split out from `QueueClaimRaceTests`. Retires the hosted-worker pre-emption flake family and resolves the `test/background-workers` failure-ledger row (with `#1391`).
+- **AuditRetention determinism (`#1391`, `#1383`):** the AuditRetention integration suite adopts the workerless factory and hardens read-back (affected-count assertion, InvariantCulture, `ReloadAsync`); root cause was the live `AuditRetentionWorker` startup pass racing 100/200-day backdated seeds. Pins the EF SQLite `DateTimeOffset` storage format empirically.
+- **Deterministic Redis dispose/connect seam (`#1392`, `#1332`):** `RedisCacheServiceTests` reaches the connect seam via a dedicated named background `Thread` (not `Task.Run`), eliminating the thread-pool-saturation flake, and disposes its `ManualResetEventSlim`s. Resolves the `test/redis-lifecycle` failure-ledger row.
+- **Preview==apply parity, third path (`#1395`, `#1376`):** `GetProposalDiffAsync` now runs the structure-then-expiry gates on every diff path including the cached `DiffPreview` fast path (expired/zero-op now `400`, was `200`/`404`), extending the `#1374` parity contract. Seeded `#1397` (frontend UX + coverage) and `#1398` (fold permission gates into diff).
+- **Export extraction-history N+1 removed (`#1396`, `#1387`):** a new `IArtefactExtractionRepository.GetByArtefactsForUserAsync` batch read (user-scoped IN query, 900-id cap, SQLite TEXT-ordering parity) is fed by the export's 500-id chunks. Seeded `#1399` (streaming-path N+1).
+- **Production timestamp culture-invariance (`#1400`, `#1393`):** InvariantCulture on 5 hand-built SQLite timestamp string sites (`AuditLogRepository`, `OAuthAuthCodeRepository` — now `.UtcDateTime`-normalized — and `KnowledgeFtsSearchService`) with hostile-culture regression tests. Seeded `#1403` (fixed-digit vs EF-trimmed boundary residual).
+- **MCP per-key budget enforcement point (`#1401`, `#1384`):** the 60/min per-key budget is charged once inside `ApiKeyMiddleware` immediately after key resolution — before the Users lookup and `UpdateLastUsedAsync` — so over-quota keys no longer drive auth-stage DB work; the endpoint-stage policy is removed (one budget, checked once) on both pipelines, preserving `#1381` pre-auth-IP semantics and the `429` contract. Seeded `#1402` (swallowed `UpdateLastUsedAsync` persistence failure) and `#1404` (stale-owner-key IP-budget escape).
+- **Seeded this wave:** `#1397`, `#1398`, `#1399`, `#1402`, `#1403`, `#1404`. **Still open / not shipped:** `#1386` (wave-1 final review round); standing human-gated holds `#1295`, `#1337`, `#1359`.
+
 ## Delivery update (2026-07-17)
 
 Overnight substrate + correctness wave — **11 PRs merged** (per-PR gate: independent adversarial review, all-severity findings fixed, required CI green; full backend suite reported 7223 passed / 0 failed / 1 skipped after `#1373`):
