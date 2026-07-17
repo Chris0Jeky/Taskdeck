@@ -334,7 +334,8 @@ public class OptionsValidationTests
         var settings = new RateLimitingSettings
         {
             Enabled = false,
-            AuthPerIp = new RateLimitPolicySettings(0, 0) // invalid, but should be skipped
+            AuthPerIp = new RateLimitPolicySettings(0, 0), // invalid, but should be skipped
+            McpAuthenticationPerIpConcurrency = 0 // invalid, but should be skipped
         };
 
         var result = validator.Validate(null, settings);
@@ -809,6 +810,30 @@ public class OptionsValidationTests
             response.IsSuccessStatusCode,
             $"App should start successfully with default valid config. " +
             $"Status: {(int)response.StatusCode}, Body: {body}");
+    }
+
+    [Fact]
+    public async Task App_StartsSuccessfully_WhenRateLimitingDisabled_WithOutOfRangeMcpConcurrency()
+    {
+        // With RateLimiting:Enabled=false the MCP pre-auth limiter is never constructed, so a
+        // stale or experimental out-of-range concurrency value must not fail ValidateOnStart.
+        // The range (1-10000) is deliberately enforced only by RateLimitingSettingsValidator —
+        // which skips when disabled, like the nested policy settings — and NOT by a data
+        // annotation, which ValidateDataAnnotations() would apply regardless of Enabled.
+        await using var baseFactory = new TestWebApplicationFactory();
+        await using var factory = baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("RateLimiting:Enabled", "false");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIpConcurrency", "0");
+        });
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health/live");
+
+        Assert.True(
+            response.IsSuccessStatusCode,
+            "A disabled rate-limiting configuration with an out-of-range MCP concurrency value " +
+            $"must still boot. Status: {(int)response.StatusCode}");
     }
 
     [Fact]

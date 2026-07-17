@@ -39,9 +39,14 @@ public sealed class RateLimitingSettings
     /// pre-authentication gate. The failure budget bounds cumulative failures per window; this cap
     /// bounds instantaneous pre-auth (key parse + database lookup) concurrency, so failed-auth
     /// lookups per address per window never exceed the failure PermitLimit plus this cap.
+    /// <para>
+    /// Deliberately NOT range-checked via a data annotation: <c>ValidateDataAnnotations()</c> would
+    /// reject an out-of-range value even when <see cref="Enabled"/> is <c>false</c> and the limiter
+    /// is never constructed. The range (1-10000) is enforced by the API layer's
+    /// <c>RateLimitingSettingsValidator</c>, which — like the nested policy settings — skips
+    /// validation while rate limiting is disabled and fails startup fast when it is enabled.
+    /// </para>
     /// </summary>
-    [Range(RateLimitPolicySettings.MinPermitLimit, RateLimitPolicySettings.MaxPermitLimit,
-        ErrorMessage = "McpAuthenticationPerIpConcurrency must be between 1 and 10000.")]
     public int McpAuthenticationPerIpConcurrency { get; set; } = 16;
 
     /// <summary>
