@@ -412,4 +412,20 @@ test('workspace preferences save failure should show error and not silently disc
   // The user's selection is kept locally rather than silently discarded, even
   // after the late `guided` summary landed.
   await expect(workspaceModeSelect).toHaveValue('workbench')
+
+  // Post-failed-save re-navigation (issue #1343 unsaved-choice seam): a FRESH
+  // summary fetched after the failed save still carries the server's stale
+  // mode — the intercepted PUT never reached the server, so it truly holds
+  // `guided`. The session-scoped unsaved-choice flag must keep `workbench`.
+  // Navigate client-side only: a full reload starts a new session, which
+  // legitimately re-syncs from server truth.
+  const todaySummaryFetch = page.waitForResponse((response) =>
+    response.url().includes('/api/workspace/today') &&
+    response.request().method() === 'GET')
+  await page.getByRole('link', { name: 'Today' }).click()
+  await todaySummaryFetch
+
+  // The fresh Today summary (server mode `guided`) must not revert the
+  // unsaved local choice.
+  await expect(workspaceModeSelect).toHaveValue('workbench')
 })
