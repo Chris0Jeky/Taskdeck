@@ -14,4 +14,5 @@ public static class ArtefactExtractionWarningCodes
     public const string ExtractorError = "extractor-error";
     public const string ExtractorContractError = "extractor-contract-error";
     public const string ExtractionTimeout = "extraction-timeout";
+    public const string DecodedSizeLimit = "decoded-size-limit";
 }
