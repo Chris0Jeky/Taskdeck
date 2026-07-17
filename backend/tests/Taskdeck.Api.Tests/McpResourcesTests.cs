@@ -274,6 +274,31 @@ public class McpResourcesTests : IDisposable
     }
 
     [Fact]
+    public async Task ProposalResources_GetProposalDetail_Approved_ReturnsLiveGatedDiff()
+    {
+        // Approved is an OPEN state (not terminal): a legitimate detail read of an approved,
+        // not-yet-executed proposal must succeed through the live gated diff path.
+        using var scope = _serviceProvider.CreateScope();
+        var userId = await CreateBoardScopedUserAsync(scope, "gate-approved");
+        var (proposalId, _) = await CreateBoardScopedProposalAsync(scope, userId);
+
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        (await proposalService.ApproveProposalAsync(proposalId, userId)).IsSuccess.Should().BeTrue();
+
+        var resources = new ProposalResources(
+            proposalService,
+            new McpBoardResourcesTests.FixedUserContextProvider(userId));
+
+        var json = await resources.GetProposalDetail(proposalId.ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetString().Should().Be("Approved");
+        root.GetProperty("diffPreviewSource").GetString().Should().Be("live");
+        root.GetProperty("diffPreview").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task ProposalResources_GetProposalDetail_Terminal_WithAccess_ReturnsStoredPreviewWithMarker()
     {
         using var scope = _serviceProvider.CreateScope();
