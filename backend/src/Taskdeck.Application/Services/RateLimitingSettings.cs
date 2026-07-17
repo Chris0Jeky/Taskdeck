@@ -26,11 +26,23 @@ public sealed class RateLimitingSettings
     public RateLimitPolicySettings McpPerApiKey { get; set; } = new(60, 60);
 
     /// <summary>
-    /// Aggregate pre-authentication limit for MCP HTTP attempts from one client address.
-    /// This bounds missing/invalid-key database work before the per-key policy can run.
+    /// Pre-authentication FAILURE budget for MCP HTTP attempts from one client address. A permit
+    /// is spent only when authentication fails (401); once spent, further attempts from the
+    /// address are rejected before missing/invalid-key database work. Valid requests never spend
+    /// this budget — the per-key policy is their only throttle.
     /// </summary>
     [Required]
     public RateLimitPolicySettings McpAuthenticationPerIp { get; set; } = new(120, 60);
+
+    /// <summary>
+    /// Maximum concurrent in-flight /mcp requests per client address admitted past the
+    /// pre-authentication gate. The failure budget bounds cumulative failures per window; this cap
+    /// bounds instantaneous pre-auth (key parse + database lookup) concurrency, so failed-auth
+    /// lookups per address per window never exceed the failure PermitLimit plus this cap.
+    /// </summary>
+    [Range(RateLimitPolicySettings.MinPermitLimit, RateLimitPolicySettings.MaxPermitLimit,
+        ErrorMessage = "McpAuthenticationPerIpConcurrency must be between 1 and 10000.")]
+    public int McpAuthenticationPerIpConcurrency { get; set; } = 16;
 
     /// <summary>
     /// Rate limit for token refresh endpoint. Tight limit to prevent token farming:

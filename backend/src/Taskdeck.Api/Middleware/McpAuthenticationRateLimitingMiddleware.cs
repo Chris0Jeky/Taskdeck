@@ -4,10 +4,13 @@ using Taskdeck.Api.RateLimiting;
 namespace Taskdeck.Api.Middleware;
 
 /// <summary>
-/// Applies the client-address MCP authentication FAILURE budget around API-key parsing and the
-/// database lookup. The budget is spent only on requests that fail authentication (401): an
-/// exhausted address is rejected before any key lookup, but valid requests pass through without
-/// consuming, so multiple keys behind one egress address keep their independent per-key budgets.
+/// Applies the client-address MCP authentication FAILURE budget and per-address concurrency gate
+/// around API-key parsing and the database lookup. The failure budget is spent only on requests
+/// that fail authentication (401): an exhausted address is rejected before any key lookup, but
+/// valid requests pass through without consuming, so multiple keys behind one egress address keep
+/// their independent per-key budgets. The concurrency gate supplies the admission control the
+/// failure budget cannot (its consumption is post-response): at most the configured cap of /mcp
+/// requests per address may be in flight past the pre-check at once.
 /// </summary>
 public sealed class McpAuthenticationRateLimitingMiddleware
 {
@@ -46,7 +49,19 @@ public sealed class McpAuthenticationRateLimitingMiddleware
             return;
         }
 
-        // Let the request proceed through authentication WITHOUT consuming budget.
+        // Admission control: the pre-check alone cannot bound CONCURRENT pre-auth work (its
+        // consumption happens after the response is known), so a per-address concurrency slot is
+        // required to proceed. Held for the request's full duration and released on completion via
+        // dispose, it caps in-flight key-lookup work per address at the configured cap at any
+        // instant — total failed-auth lookups per window <= failure PermitLimit + concurrency cap.
+        using var preAuthSlot = limiter.TryAcquirePreAuthSlot(context);
+        if (!preAuthSlot.IsAcquired)
+        {
+            await limiter.WriteConcurrencyRejectedAsync(context, context.RequestAborted);
+            return;
+        }
+
+        // Let the request proceed through authentication WITHOUT consuming failure budget.
         await _next(context);
 
         // Spend exactly one permit only when authentication failed. ApiKeyMiddleware is the sole
