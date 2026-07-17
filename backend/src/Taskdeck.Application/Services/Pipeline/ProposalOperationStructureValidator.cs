@@ -34,9 +34,15 @@ public static class ProposalOperationStructureValidator
         if (sequences.Any(s => s < 0))
             return Result.Failure(ErrorCodes.ValidationError, "Operation sequences must be non-negative");
 
-        // Validate parameters size
+        // Validate parameters presence and size. The DTO declares Parameters non-nullable,
+        // but legacy rows / nullable DB data can surface null at runtime; fail closed with
+        // the same ValidationError on preview and apply (both share this validator) rather
+        // than throw.
         foreach (var operation in operations)
         {
+            if (operation.Parameters is null)
+                return Result.Failure(ErrorCodes.ValidationError, "Operation parameters must be provided");
+
             if (operation.Parameters.Length > MaxParametersLength)
                 return Result.Failure(ErrorCodes.ValidationError, $"Operation parameters exceed maximum length of {MaxParametersLength}");
         }
