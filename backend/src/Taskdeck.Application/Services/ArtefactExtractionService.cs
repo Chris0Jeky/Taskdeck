@@ -156,9 +156,13 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                         ArtefactExtractionWarningCodes.ExtractionTimeout);
                 }
                 catch (OperationCanceledException)
+                    when (cancellationToken.IsCancellationRequested)
                 {
                     // Caller-driven cancellation (request aborted): abandon the worker
-                    // and propagate without recording an extraction outcome.
+                    // and propagate without recording an extraction outcome. A stray
+                    // OCE from a future extractor whose own token is unrelated to ours
+                    // falls through to the extractor-error handler below instead of
+                    // masquerading as caller cancellation.
                     ObserveAbandonedExtraction(extractTask);
                     throw;
                 }

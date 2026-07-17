@@ -369,6 +369,36 @@ public sealed class ArtefactExtractionServiceTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldRecordExtractorErrorForUnrelatedCancellation()
+    {
+        // An extractor that throws OperationCanceledException from a token unrelated
+        // to the caller's or the budget's is an extractor fault, not a caller
+        // cancellation: it must be recorded as a content-free extractor-error row
+        // rather than propagated as a spurious cancellation with no history.
+        ArrangeStoredArtefact("application/pdf", [1, 2, 3]);
+        ArtefactExtraction? stored = null;
+        _extractions
+            .Setup(repository => repository.TryAddForUserAsync(
+                It.IsAny<ArtefactExtraction>(),
+                _userId,
+                It.IsAny<CancellationToken>()))
+            .Callback<ArtefactExtraction, Guid, CancellationToken>((value, _, _) => stored = value)
+            .ReturnsAsync(ArtefactExtractionStoreResult.Stored);
+        var extractor = new StubExtractor(
+            "application/pdf",
+            exception: new OperationCanceledException("unrelated token"));
+        var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = 30 };
+        var service = CreateService(settings, extractor);
+
+        var result = await service.ExtractAsync(_userId, _artefactId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ExtractedText.Should().BeEmpty();
+        result.Value.Warnings.Should().Equal(ArtefactExtractionWarningCodes.ExtractorError);
+        stored!.Warnings.Should().Equal(ArtefactExtractionWarningCodes.ExtractorError);
+    }
+
+    [Fact]
     public async Task GetLatestAsync_ShouldReturnRepositoryWinner()
     {
         var extraction = new ArtefactExtraction(
