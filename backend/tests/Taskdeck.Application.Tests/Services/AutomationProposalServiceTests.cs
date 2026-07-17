@@ -2172,6 +2172,130 @@ public class AutomationProposalServiceTests
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
     }
 
+    // The REAL Apply trust boundary over the same shared mocks: a concrete
+    // AutomationExecutorService wired with the real proposal service under test and a real
+    // AutomationPolicyEngine (no mocked gates). Parity tests drive this instead of calling
+    // the engine method directly, so they fail if the executor's gate sequence ever diverges
+    // from what the diff path mirrors — not just if the shared engine changes (#1413 LOW-3).
+    private AutomationExecutorService BuildRealApplyExecutor()
+        => new(
+            _unitOfWorkMock.Object,
+            _service,
+            new AutomationPolicyEngine(_unitOfWorkMock.Object),
+            new CardService(_unitOfWorkMock.Object),
+            new BoardService(_unitOfWorkMock.Object),
+            new ColumnService(_unitOfWorkMock.Object));
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldMatchRealApplyExecutor_WhenBoardAccessRevoked()
+    {
+        // #1413 LOW-3: the ...MatchingApplyPermissionGate tests above compare preview against
+        // the same engine method the service delegates to, so they cannot detect the REAL
+        // Apply path diverging. This test drives AutomationExecutorService.ExecuteProposalAsync
+        // end-to-end on an APPROVED, non-terminal, non-expired proposal over the same fixture
+        // state (requester board access revoked) and asserts the diff rejection is
+        // code-and-message identical to the executor's rejection.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+        proposal.Approve(Guid.NewGuid());
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act: preview, then the real Apply boundary.
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+        var applyResult = await BuildRealApplyExecutor()
+            .ExecuteProposalAsync(proposalId, Guid.NewGuid().ToString());
+
+        // Assert: the real executor rejects 403 at its permission gate, and preview rejects
+        // identically — code AND message.
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(applyResult.ErrorCode);
+        previewResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectRevokedAccess_ForTerminalAppliedProposal()
+    {
+        // #1413 LOW-1 behavior-change pin: for a TERMINAL Applied proposal whose requester
+        // later lost board access, diff previously returned the stored preview (200); it now
+        // returns 403. This is INTENDED: Apply short-circuits terminal status to idempotent
+        // success BEFORE its permission gate, so preview is deliberately stricter than Apply's
+        // terminal no-op — a revoked reviewer can no longer read board contents through a
+        // terminal proposal's diff. Coherent with the #1397 maintainer decision (frontend
+        // stops firing live diffs for terminal items). Both sides are pinned here so any
+        // future drift in either direction fails this test.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+        proposal.SetDiffPreview("0. Create card \"Task\"");
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+        var applyResult = await BuildRealApplyExecutor()
+            .ExecuteProposalAsync(proposalId, Guid.NewGuid().ToString());
+
+        // Assert: preview rejects 403 (stored preview NOT surfaced) while the real Apply
+        // boundary short-circuits the already-applied proposal to idempotent success.
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        previewResult.Value.Should().BeNull();
+
+        applyResult.IsSuccess.Should().BeTrue(applyResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldReportExpiry_NotForbidden_WhenExpiredAndAccessRevoked()
+    {
+        // #1413 LOW-4 gate-ordering pin: a proposal that is BOTH expired AND has revoked
+        // requester access must fail with the expiry ValidationError — not Forbidden — from
+        // BOTH trust boundaries, because both run structure → expiry (ValidatePolicy order)
+        // BEFORE the permission gate. If either side ever reorders permissions ahead of
+        // structure/expiry, its error flips to Forbidden and this test fails on that side.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+        // Approve while still valid (the domain forbids approving an expired proposal),
+        // then force expiry — mirrors a proposal that expired after approval.
+        proposal.Approve(Guid.NewGuid());
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+        var applyResult = await BuildRealApplyExecutor()
+            .ExecuteProposalAsync(proposalId, Guid.NewGuid().ToString());
+
+        // Assert: BOTH sides report the expiry ValidationError, never Forbidden.
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        previewResult.ErrorMessage.Should().Be("Proposal has expired");
+
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(previewResult.ErrorCode);
+        applyResult.ErrorMessage.Should().Be(previewResult.ErrorMessage);
+    }
+
     #endregion
 
     #region GetProposalsAsync Tests
