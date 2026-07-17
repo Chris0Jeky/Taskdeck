@@ -350,13 +350,20 @@ public sealed class SerializedMigratorTests : IDisposable
 
         if (!interceptedMidChain)
         {
-            // Documented graceful outcome — never a failure on unrelated PRs. Staging the race
-            // requires observing A mid-chain; if that was impossible on this run (pathological
-            // scheduling on every attempt), the exactly-once end state was still verified above
-            // on every attempt, and the tolerance signature itself keeps direct unit coverage
-            // via the CollisionFaultCases theory.
+            // Documented graceful outcome — deliberately NOT a failure (ruled on in PR #1390
+            // review). A required-collision assertion is exactly what made the previous barrier
+            // design flake unrelated PRs (run 29552875836). Staging the race requires observing
+            // A mid-chain; if that was impossible on this run (pathological scheduling on every
+            // attempt), the exactly-once end state was still verified above on every attempt,
+            // and the tolerance signature keeps direct unit coverage via the CollisionFaultCases
+            // theory. The miss is loudly logged so a recurring pattern in CI output is
+            // unmistakable rather than silent.
             _output.WriteLine(
-                "mid-chain interception was never observed; the race could not be staged this run.");
+                "WARNING: STAGING MISSED on all attempts — migrator A was never observed " +
+                "mid-chain, so the fail-open collision path was NOT exercised end-to-end this " +
+                "run; collision tolerance was exercised only via the CollisionFaultCases unit " +
+                "theory. Solo-migration exactly-once state WAS verified on every attempt. If " +
+                "this message recurs across CI runs, the staging poll needs attention (PR #1390).");
             return;
         }
 
