@@ -18,6 +18,7 @@
 import { expect, test } from '@playwright/test'
 import type { StarterPackManifest } from '../../src/types/starter-packs'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
+import { expectDialog } from './support/dialogs'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, waitForProposalCreated, waitForCardWithTitle, listBoardCards } from './support/captureFlow'
 
@@ -109,8 +110,10 @@ test('V-02: register to create board to capture to triage to approve to board st
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
   // Step 9: Apply the approved proposal (S1 board mutation)
-  page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
+  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
+    type: 'confirm',
+    message: 'Apply this approved proposal to the board now?',
+  })
   await expect(proposalCard).not.toBeVisible()
 
   // Step 10: Verify card appeared on the board (S1 board state)
@@ -184,8 +187,10 @@ test('V-03: login to create board to apply starter pack to archive to restore', 
 
   // Step 4: Archive the board via Board Settings (S5 archive)
   await page.locator('button[title="Board Settings"]').click()
-  page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Move to Archive' }).click()
+  await expectDialog(page, () => page.getByRole('button', { name: 'Move to Archive' }).click(), {
+    type: 'confirm',
+    message: /^Archive "/,
+  })
 
   // Step 5: Verify board is no longer in boards list (S1 board list)
   await expect(page).toHaveURL(/\/workspace\/boards$/)
@@ -198,8 +203,10 @@ test('V-03: login to create board to apply starter pack to archive to restore', 
   await expect(archivedBoardRow).toBeVisible()
 
   // Step 7: Restore the board from archive (S5 restore)
-  page.once('dialog', (dialog) => dialog.accept())
-  await archivedBoardRow.getByRole('button', { name: 'Restore Board' }).click()
+  await expectDialog(page, () => archivedBoardRow.getByRole('button', { name: 'Restore Board' }).click(), {
+    type: 'confirm',
+    message: /^Restore board "/,
+  })
   await expect(page.locator('.td-archive-row').filter({ hasText: boardName })).toHaveCount(0)
 
   // Step 8: Verify restored board is back in boards list (S1 board)

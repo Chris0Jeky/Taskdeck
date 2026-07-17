@@ -667,13 +667,16 @@ async function onPreviewDiff() {
     if (activeProposal.value?.id !== p.id) return
   }
 
-  // No-op proposals: the backend `/diff` (GetProposalDiffAsync) returns 404 when
-  // there is no stored DiffPreview AND no operations. The view already renders a
-  // "No operation preview" change section for that state, so show the empty-diff
-  // surface directly rather than firing a request that 404s. Only take this path
-  // when the revision list is authoritatively loaded and empty — a saved revision
-  // carries operations the backend renders revision-aware (#1235), and if the
-  // revision load failed we fetch so the backend, not a stale count, decides.
+  // No-op proposals: the backend `/diff` (GetProposalDiffAsync) rejects a
+  // zero-operation proposal with 400 ValidationError "Proposal must contain at
+  // least one operation" — the same rejection Apply gives (#1376 preview == apply;
+  // 404 now only means the proposal itself was not found). The view already
+  // renders a "No operation preview" change section for that state, so show the
+  // empty-diff surface directly rather than firing a request that 400s. Only take
+  // this path when the revision list is authoritatively loaded and empty — a
+  // saved revision carries operations the backend renders revision-aware (#1235),
+  // and if the revision load failed we fetch so the backend, not a stale count,
+  // decides.
   if (
     !p.diffPreview &&
     (p.operations?.length ?? 0) === 0 &&
@@ -705,9 +708,11 @@ async function onPreviewDiff() {
   } catch (e: unknown) {
     if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
     // The no-op case (no diff to show) is handled by the guard above BEFORE
-    // fetching, so a failure here is a real error — most often a 404 because the
-    // proposal was deleted/dismissed from another session. Surface it rather than
-    // silently rendering an empty diff for a proposal that no longer exists.
+    // fetching, so a failure here is a real error: a 404 because the proposal was
+    // deleted/dismissed from another session, or a 400 ValidationError because the
+    // backend now runs Apply's gates at diff time (#1376) — "Proposal has expired"
+    // or "Proposal must contain at least one operation". Surface it rather than
+    // silently rendering an empty diff for a proposal Apply would reject.
     previewDiffProposalId.value = null
     previewDiff.value = null
     toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)

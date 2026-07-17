@@ -2,8 +2,10 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Api.RateLimiting;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Mcp;
@@ -112,6 +114,35 @@ public sealed class ApiKeyMiddleware
             return;
         }
 
+        // Enforce the per-key request budget (McpPerApiKey) at the EARLIEST point the key identity is
+        // known — right after the key row is resolved and confirmed active, and BEFORE the user-account
+        // lookup and the last-used write below (#1384). The opaque key ID is the budget partition, so
+        // store it first. This is the SINGLE charge point for the per-key budget: the /mcp endpoint no
+        // longer carries an endpoint-stage McpPerApiKey policy, so a request passing this check is never
+        // charged again downstream. A valid-but-over-quota key is rejected with 429 here without setting
+        // AuthenticationFailedItemKey and without a 401, so the pre-auth IP FAILURE budget is not spent
+        // — valid keys never touch that budget (#1368/#1381), only failed authentications do.
+        //
+        // Resolved optionally: the limiter is registered only when rate limiting is enabled, so when it
+        // is absent the check is skipped (no MCP throttling when disabled), matching prior behaviour.
+        // Deliberately NO null-conditional on RequestServices: ASP.NET Core populates the scoped
+        // provider before application middleware runs, and a ?. here would add a second SILENT skip
+        // path for a security charge (fail-open). The only intended skip is GetService returning null
+        // when rate limiting is disabled; a genuinely missing provider should throw loudly.
+        context.Items[ApiKeyIdItemKey] = apiKey.Id;
+
+        var perKeyLimiter = context.RequestServices.GetService<McpPerApiKeyRateLimiter>();
+        if (perKeyLimiter is not null)
+        {
+            using var perKeyLease = perKeyLimiter.AttemptAcquire(context);
+            if (!perKeyLease.IsAcquired)
+            {
+                _logger.LogDebug("MCP per-key rate limit exceeded for key {KeyId}", apiKey.Id);
+                await McpPerApiKeyRateLimiter.WriteRejectedAsync(context, perKeyLease, context.RequestAborted);
+                return;
+            }
+        }
+
         // Verify the user account is active
         var user = await dbContext.Users
             .AsNoTracking()
@@ -125,9 +156,9 @@ public sealed class ApiKeyMiddleware
             return;
         }
 
-        // Set the authenticated user ID for HttpUserContextProvider
+        // Set the authenticated user ID for HttpUserContextProvider. The API key ID item was set
+        // above, before the per-key budget check.
         context.Items[HttpUserContextProvider.UserIdItemKey] = apiKey.UserId;
-        context.Items[ApiKeyIdItemKey] = apiKey.Id;
 
         // Establish an authenticated principal so the global authorization FallbackPolicy
         // (RequireAuthenticatedUser, #1132 AC4) is satisfied for valid-key MCP requests — a valid
@@ -140,8 +171,9 @@ public sealed class ApiKeyMiddleware
             new[] { new Claim(ClaimTypes.NameIdentifier, apiKey.UserId.ToString()) },
             authenticationType: AuthenticationType));
 
-        // Update last-used timestamp before continuing the pipeline.
-        // This is non-critical so failures are swallowed.
+        // Update last-used timestamp before continuing the pipeline. This is a non-critical usage
+        // stamp: a failure here must NOT fail an otherwise-valid authentication, so it is caught and
+        // logged inside UpdateLastUsedAsync (never rethrown) — the request proceeds regardless.
         await UpdateLastUsedAsync(dbContext, apiKey.Id);
 
         await _next(context);
@@ -156,19 +188,33 @@ public sealed class ApiKeyMiddleware
 
     private async Task UpdateLastUsedAsync(TaskdeckDbContext dbContext, Guid keyId)
     {
+        // Hoist the timestamps into locals BEFORE building the ExecuteUpdate. Passing
+        // DateTimeOffset.UtcNow directly into SetProperty makes EF Core treat it as a value
+        // expression it must translate to SQL; the SQLite provider cannot map UtcNow and refuses the
+        // whole statement ("The following lambda argument to 'SetProperty' does not represent a valid
+        // value: 'DateTimeOffset.UtcNow'"), so the previous form silently never wrote LastUsedAt (or
+        // UpdatedAt) at all (#1402). A captured local is evaluated client-side and passed as a
+        // parameter, which translates cleanly. The LastUsedAt local is typed as the nullable target
+        // property so no (DateTimeOffset?)-cast node is introduced either. Both stamps share one
+        // instant.
+        var now = DateTimeOffset.UtcNow;
+        DateTimeOffset? lastUsedAt = now;
         try
         {
-            // Direct update to avoid concurrency issues with the read-only query above.
+            // Direct update to avoid concurrency issues with the read-only (AsNoTracking) query above.
             await dbContext.ApiKeys
                 .Where(k => k.Id == keyId)
                 .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(k => k.LastUsedAt, DateTimeOffset.UtcNow)
-                    .SetProperty(k => k.UpdatedAt, DateTimeOffset.UtcNow));
+                    .SetProperty(k => k.LastUsedAt, lastUsedAt)
+                    .SetProperty(k => k.UpdatedAt, now));
         }
         catch (Exception ex)
         {
-            // Non-critical: if usage tracking fails, authentication still succeeds.
-            _logger.LogDebug(ex, "Failed to update API key last-used timestamp for key {KeyId}", keyId);
+            // Non-critical: last-used is a usage stamp, not an auth gate. Swallowing here keeps a
+            // failed timestamp write from failing an otherwise-valid authentication, but it is logged
+            // at Warning (not silently) so a regression like #1402 — where the write was broken for
+            // months — is visible in operational logs instead of hidden.
+            _logger.LogWarning(ex, "Failed to update API key last-used timestamp for key {KeyId}", keyId);
         }
     }
 

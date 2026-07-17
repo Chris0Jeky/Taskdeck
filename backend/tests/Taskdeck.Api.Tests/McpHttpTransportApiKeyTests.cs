@@ -376,6 +376,50 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task McpEndpoint_PerKeyBudget_AllowsExactlyPermitLimitRequests_ThenRejects()
+    {
+        // #1384 "one budget, checked once": the per-key budget is now enforced in ApiKeyMiddleware
+        // (before the user lookup and last-used write) instead of as an endpoint-stage policy. A
+        // request that passes the early check must NOT be charged again downstream, so exactly
+        // PermitLimit valid requests succeed in a window and the next is 429. A double-charge would
+        // let fewer than PermitLimit through. The pre-auth IP budget is raised out of the way so only
+        // the per-key budget can reject (valid keys never spend the IP failure budget anyway).
+        const int permitLimit = 3;
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("RateLimiting:Enabled", "true");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIp:PermitLimit", "1000");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIp:WindowSeconds", "60");
+            builder.UseSetting("RateLimiting:McpPerApiKey:PermitLimit", permitLimit.ToString());
+            builder.UseSetting("RateLimiting:McpPerApiKey:WindowSeconds", "60");
+        });
+        using var jwtClient = factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-perkey-count");
+        var apiKey = await CreateApiKeyAsync(jwtClient, "Count Budget Key");
+
+        using var mcpClient = factory.CreateClient();
+        mcpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        for (var i = 0; i < permitLimit; i++)
+        {
+            using var admitted = await PostMcpAsync(mcpClient, "/mcp", CreateInitializeRequest(i + 1));
+            admitted.StatusCode.Should().Be(HttpStatusCode.OK,
+                $"request {i + 1} of {permitLimit} is within the per-key budget and charged exactly once");
+        }
+
+        using var rejected = await PostMcpAsync(mcpClient, "/mcp", CreateInitializeRequest(permitLimit + 1));
+        rejected.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+            "the request past the per-key budget is rejected");
+        rejected.Headers.TryGetValues("Retry-After", out _).Should().BeTrue();
+        rejected.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
+            .Which.Should().Be(RateLimitingPolicyNames.McpPerApiKey);
+        rejected.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var error = await rejected.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.TooManyRequests);
+    }
+
+    [Fact]
     public async Task McpEndpoint_RejectedCredentials_AreRateLimitedBeforeDatabaseLookup()
     {
         using var factory = _factory.WithWebHostBuilder(builder =>

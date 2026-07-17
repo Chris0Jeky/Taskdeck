@@ -45,6 +45,17 @@ public class AutomationProposalServiceTests
             _provenanceRepoMock.Object);
     }
 
+    // ExpiresAt is private-set on the AutomationProposal aggregate; force it into the past
+    // to simulate a proposal that expired before its diff was requested (mirrors the
+    // reflection seam used in AutomationProposalServiceEdgeCaseTests).
+    private static void SetExpiresAt(AutomationProposal proposal, DateTime expiresAt)
+    {
+        typeof(AutomationProposal).GetProperty(
+            nameof(AutomationProposal.ExpiresAt),
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(proposal, expiresAt);
+    }
+
     #region CreateProposalAsync Tests
 
     [Fact]
@@ -913,17 +924,26 @@ public class AutomationProposalServiceTests
     #region GetProposalDiffAsync Tests
 
     [Fact]
-    public async Task GetProposalDiffAsync_ShouldReturnDiff_WhenAvailable()
+    public async Task GetProposalDiffAsync_ShouldReturnStoredPreview_ForWellFormedNonEmptyProposal()
     {
-        // Arrange
+        // Back-compat regression (#1376): a non-expired, well-formed proposal with a
+        // stored DiffPreview still returns that preview byte-for-byte through the cached
+        // fast path — the new expiry/structure gates run ahead of it but pass cleanly, so
+        // behavior is unchanged for the healthy case.
         var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
         var proposal = new AutomationProposal(
             ProposalSourceType.Chat,
             Guid.NewGuid(),
             "Test proposal",
             RiskLevel.Low,
-            Guid.NewGuid().ToString());
+            Guid.NewGuid().ToString(),
+            boardId);
 
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { name = "Renamed board", boardId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
         proposal.SetDiffPreview("+ New card created\n- Old card removed");
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
@@ -932,15 +952,18 @@ public class AutomationProposalServiceTests
         // Act
         var result = await _service.GetProposalDiffAsync(proposalId);
 
-        // Assert
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Contain("New card created");
+        // Assert: the stored preview is returned unchanged.
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Be("+ New card created\n- Old card removed");
     }
 
     [Fact]
-    public async Task GetProposalDiffAsync_ShouldReturnNotFound_WhenDiffNotAvailable()
+    public async Task GetProposalDiffAsync_ShouldRejectZeroOperationProposal_WhenNoStoredPreview()
     {
-        // Arrange
+        // #1376 asymmetry (2): a zero-operation proposal previously returned 404
+        // "Diff preview not available for this proposal" here, while Apply's structure
+        // gate rejects it with 400 "Proposal must contain at least one operation". Preview
+        // now runs the same structure gate and returns the identical ValidationError.
         var proposalId = Guid.NewGuid();
         var proposal = new AutomationProposal(
             ProposalSourceType.Chat,
@@ -948,6 +971,35 @@ public class AutomationProposalServiceTests
             "Test proposal",
             RiskLevel.Low,
             Guid.NewGuid().ToString());
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: same failure Apply's structure validation produces.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Proposal must contain at least one operation");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectZeroOperationProposal_EvenWithStoredPreview()
+    {
+        // #1376 asymmetry (2), cached-preview fast path: a zero-operation proposal that
+        // carries a stored DiffPreview previously previewed 200 with that stale preview,
+        // yet Apply always rejects it. The structure gate now rejects it BEFORE the cached
+        // preview is consulted, so preview == apply (400 "must contain at least one
+        // operation") whether or not a DiffPreview is stored.
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Test proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+        proposal.SetDiffPreview("0. Create card \"Stale preview\"");
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync(proposal);
@@ -957,7 +1009,112 @@ public class AutomationProposalServiceTests
 
         // Assert
         result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Proposal must contain at least one operation");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectExpiredProposal_MatchingApplyPolicyGate()
+    {
+        // #1376 asymmetry (1): GetProposalDiffAsync never checked ExpiresAt, so an expired
+        // proposal previewed a clean diff and then failed Apply after approval. Preview now
+        // runs the same expiry gate the executor runs via AutomationPolicyEngine.ValidatePolicy.
+        // True parity contract: the SAME expired proposal is fed to both trust boundaries and
+        // the ErrorCode + ErrorMessage must be identical — no drift allowed.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Test proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { name = "Renamed board", boardId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+        // Force the proposal past its expiry without changing status (mirrors a proposal
+        // that expired between preview requests). ExpiresAt is private-set on the entity.
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act (preview)
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+
+        // Act (apply-side policy gate) on an equivalent DTO — the expiry semantics live here.
+        var applyOperations = new List<ProposalOperationDto>
+        {
+            new ProposalOperationDto(Guid.NewGuid(), proposal.Id, 0, "update", "board", boardId.ToString(), parameters, Guid.NewGuid().ToString(), null)
+        };
+        var applyProposal = new ProposalDto(
+            proposal.Id,
+            ProposalSourceType.Chat,
+            null,
+            boardId,
+            Guid.NewGuid(),
+            ProposalStatus.Approved,
+            RiskLevel.Low,
+            "Test proposal",
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            proposal.ExpiresAt,
+            null,
+            null,
+            null,
+            null,
+            Guid.NewGuid().ToString(),
+            applyOperations);
+        var applyResult = new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePolicy(applyProposal);
+
+        // Assert: preview rejects, and rejects identically to Apply.
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        applyResult.ErrorMessage.Should().Be("Proposal has expired");
+
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(applyResult.ErrorCode);
+        previewResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectExpiredProposal_EvenWithStoredPreview()
+    {
+        // #1376 asymmetry (1), cached-preview fast path: an expired proposal with a stored
+        // DiffPreview previously previewed 200 with that preview and then failed Apply. The
+        // expiry gate now runs ahead of the cached-preview return, so preview == apply.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Test proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { name = "Renamed board", boardId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+        proposal.SetDiffPreview("0. Update board \"Renamed board\"");
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: the cached preview is NOT returned; the expiry rejection is.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Proposal has expired");
     }
 
     [Theory]
@@ -1729,6 +1886,63 @@ public class AutomationProposalServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectExpiredProposal_OnRevisedPath()
+    {
+        // #1376 asymmetry (1) on the revision-aware path: Apply materializes the latest
+        // revision and runs ValidatePolicy (structure, then expiry) on it, so an expired
+        // proposal with a saved revision is rejected at Apply. The revised diff path now
+        // runs the same expiry gate, so preview == apply (400 "Proposal has expired")
+        // instead of previewing the revised diff cleanly.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "To Do", 0);
+        var columnId = column.Id;
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Create card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var revisedParams = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            title = "Revised card",
+            columnId,
+            boardId
+        });
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "create",
+                    targetType = "card",
+                    parameters = revisedParams,
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposalId, default))
+            .ReturnsAsync(revision);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: the revised diff is not rendered; the expiry rejection surfaces instead.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Proposal has expired");
     }
 
     #endregion

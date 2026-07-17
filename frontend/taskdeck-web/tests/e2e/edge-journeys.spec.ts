@@ -25,6 +25,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
+import { expectDialog } from './support/dialogs'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -174,8 +175,17 @@ test('rejecting a proposal should remove it from the review queue', async ({ pag
     .first()
   await expect(rejectButton).toBeVisible()
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await rejectButton.click()
+  // handleRejectProposal (useReviewActions.ts) has TWO prompt templates:
+  // 'Optional rejection reason:' for Low/Medium risk and 'Reason is required
+  // for this risk level:' for High/Critical — match both, and submit a
+  // non-empty reason so the rejection succeeds regardless of how this
+  // fixture's proposal is risk-classified (High/Critical rejects an empty
+  // reason and would leave the proposal in the queue).
+  await expectDialog(page, () => rejectButton.click(), {
+    type: 'prompt',
+    message: /reason/i,
+    promptText: 'e2e: rejected by test',
+  })
 
   // Proposal card must disappear from the review queue
   await expect(proposalCard).toHaveCount(0, { timeout: 10_000 })
@@ -210,8 +220,10 @@ test('proposal approve should reflect on board immediately without manual refres
   await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
+  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
+    type: 'confirm',
+    message: 'Apply this approved proposal to the board now?',
+  })
   await expect(proposalCard).not.toBeVisible()
 
   // Navigate to board and check card appears without manual refresh

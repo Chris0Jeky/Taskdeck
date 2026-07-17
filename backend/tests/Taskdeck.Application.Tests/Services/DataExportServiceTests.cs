@@ -75,6 +75,8 @@ public class DataExportServiceTests
             .ReturnsAsync(0L);
         _extractionRepoMock.Setup(r => r.GetByArtefactForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ArtefactExtraction>());
+        _extractionRepoMock.Setup(r => r.GetByArtefactsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>>)new Dictionary<Guid, IReadOnlyList<ArtefactExtraction>>());
 
         _testUser = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -589,6 +591,146 @@ public class DataExportServiceTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once,
             "the batched path must surface the same InvalidOperationException missing-blob contract as the per-item path");
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_BatchLoadsExtractionHistory_InOneCall_NotOnePerArtefact()
+    {
+        // #1387 regression: a single-chunk export must resolve every artefact's extraction history
+        // in ONE batch query, never the former one-paged-query-per-artefact N+1
+        // (GetByArtefactForUserAsync). Order + content per artefact must match the batch result.
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var (artefacts, _) = SeedArtefactsWithBlobBatch(3);
+        var historyByArtefact = SeedExtractionHistoryBatch(artefacts, extractionsPerArtefact: 2);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        var exported = result.Value.Data.Artefacts!;
+        exported.Select(a => a.Id).Should().Equal(artefacts.Select(a => a.Id));
+        foreach (var artefact in artefacts)
+        {
+            var exportedArtefact = exported.Single(a => a.Id == artefact.Id);
+            exportedArtefact.Extractions!.Select(e => e.Id)
+                .Should().Equal(historyByArtefact[artefact.Id].Select(e => e.Id),
+                    "each artefact's exported extraction order must match the batch group order");
+            exportedArtefact.Extractions!.Select(e => e.ExtractedText)
+                .Should().Equal(historyByArtefact[artefact.Id].Select(e => e.ExtractedText));
+        }
+
+        _extractionRepoMock.Verify(
+            r => r.GetByArtefactsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _extractionRepoMock.Verify(
+            r => r.GetByArtefactForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "the buffered export must not fall back to the per-artefact extraction-history read");
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_BatchesExtractionHistoryAcrossChunks_TwoQueriesFor501()
+    {
+        // #1387: 501 artefacts must page extraction-history loads into exactly two batch queries
+        // (500 + 1), matching the blob-batch chunk arithmetic — never 501 sequential reads.
+        SetupUserFound();
+        SetupEmptyRepositories();
+        SeedArtefactsWithBlobBatch(501);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        _extractionRepoMock.Verify(
+            r => r.GetByArtefactsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+        _extractionRepoMock.Verify(
+            r => r.GetByArtefactsForUserAsync(It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 500), _userId, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "the first chunk must carry exactly the 500-id StreamPageSize batch");
+        _extractionRepoMock.Verify(
+            r => r.GetByArtefactsForUserAsync(It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1), _userId, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "the trailing chunk must carry the single remaining id");
+        _extractionRepoMock.Verify(
+            r => r.GetByArtefactForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_ExtractionHistoryBatch_ScopedToRequestingUserOnly()
+    {
+        // #1387 user-scoping: every extraction-history batch load must pass the requesting user's
+        // id and never another. The REAL scoping enforcement proof lives in
+        // ArtefactExtractionRepositoryBatchIntegrationTests against real SQLite.
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var (artefacts, _) = SeedArtefactsWithBlobBatch(4);
+        SeedExtractionHistoryBatch(artefacts, extractionsPerArtefact: 1);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        _extractionRepoMock.Verify(
+            r => r.GetByArtefactsForUserAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.Is<Guid>(u => u != _userId),
+                It.IsAny<CancellationToken>()),
+            Times.Never,
+            "the buffered export must never batch-load another user's extraction history");
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_WithArtefactHavingNoExtractions_ExportsEmptyHistory()
+    {
+        // #1387: an artefact absent from the batch map (no extraction history) must export an empty
+        // extraction array, not throw — parity with the former path where GetAllExtractionHistory
+        // returned an empty list for such an artefact.
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var (artefacts, _) = SeedArtefactsWithBlobBatch(2);
+        // Only seed history for the first artefact; the second is absent from the batch map.
+        _extractionRepoMock
+            .Setup(r => r.GetByArtefactsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>>)
+                new Dictionary<Guid, IReadOnlyList<ArtefactExtraction>>
+                {
+                    [artefacts[0].Id] = new[] { NewExtraction(artefacts[0].Id, "only") },
+                });
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        var exported = result.Value.Data.Artefacts!;
+        exported.Single(a => a.Id == artefacts[0].Id).Extractions.Should().HaveCount(1);
+        exported.Single(a => a.Id == artefacts[1].Id).Extractions.Should().NotBeNull().And.BeEmpty();
+    }
+
+    private static ArtefactExtraction NewExtraction(Guid artefactId, string text)
+        => new(artefactId, "test-extractor", "1.0", [], text);
+
+    /// <summary>
+    /// Sets up the extraction-history batch responder to return <paramref name="extractionsPerArtefact"/>
+    /// ordered extractions for each seeded artefact, keyed by artefact id, and returns that map so a
+    /// test can assert per-artefact order + content parity.
+    /// </summary>
+    private IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>> SeedExtractionHistoryBatch(
+        IReadOnlyList<SourceArtefact> artefacts,
+        int extractionsPerArtefact)
+    {
+        var byArtefact = artefacts.ToDictionary(
+            a => a.Id,
+            a => (IReadOnlyList<ArtefactExtraction>)Enumerable.Range(0, extractionsPerArtefact)
+                .Select(index => NewExtraction(a.Id, $"{a.FileName}-extraction-{index}"))
+                .ToList());
+
+        _extractionRepoMock
+            .Setup(r => r.GetByArtefactsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<Guid> ids, Guid _, CancellationToken _) =>
+                (IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>>)ids
+                    .Where(byArtefact.ContainsKey)
+                    .ToDictionary(id => id, id => byArtefact[id]));
+
+        return byArtefact;
     }
 
     /// <summary>

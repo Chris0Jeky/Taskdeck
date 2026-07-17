@@ -402,6 +402,18 @@ public class AutomationProposalService : IAutomationProposalService
                 return Result.Failure<string>(ErrorCodes.ValidationError, errorMessage);
             }
 
+            // Apply materializes this same revised payload and runs it through
+            // AutomationPolicyEngine.ValidatePolicy (structure gate, then expiry) before
+            // executing. Mirror both gates here in the same order so a revised proposal that
+            // Apply would reject cannot preview a clean diff first (#1376 preview == apply).
+            var revisedStructureValidation = ProposalOperationStructureValidator.Validate(revisedOperations);
+            if (!revisedStructureValidation.IsSuccess)
+                return Result.Failure<string>(revisedStructureValidation.ErrorCode, revisedStructureValidation.ErrorMessage);
+
+            var revisedExpiryValidation = ValidateProposalNotExpired(proposal);
+            if (!revisedExpiryValidation.IsSuccess)
+                return Result.Failure<string>(revisedExpiryValidation.ErrorCode, revisedExpiryValidation.ErrorMessage);
+
             var revisedValidation = await ProposalOperationContractValidator.ValidateAsync(
                 _unitOfWork,
                 proposal.BoardId,
@@ -419,13 +431,6 @@ public class AutomationProposalService : IAutomationProposalService
             return Result.Success(revisedDiff);
         }
 
-        if (proposal.Operations.Count == 0)
-        {
-            return !string.IsNullOrWhiteSpace(proposal.DiffPreview)
-                ? Result.Success(proposal.DiffPreview)
-                : Result.Failure<string>(ErrorCodes.NotFound, "Diff preview not available for this proposal");
-        }
-
         var originalOperations = proposal.Operations
             .OrderBy(o => o.Sequence)
             .Select(MapOperationToDto)
@@ -435,9 +440,21 @@ public class AutomationProposalService : IAutomationProposalService
         // sequences, parameter size) before building the diff, so a proposal that would be
         // rejected at Apply cannot preview cleanly first (#1370 preview == apply). Apply runs
         // this via AutomationPolicyEngine.ValidatePolicy; mirror it here on the original path.
+        // A zero-operation proposal fails here with the same "Proposal must contain at least
+        // one operation" ValidationError Apply returns — previously this path returned the
+        // cached DiffPreview (200) or a 404, previewing a proposal Apply always rejects
+        // (#1376 preview == apply). Structure runs before expiry to match ValidatePolicy's
+        // order, so a proposal that is both empty and expired reports the empty error on both.
         var structureValidation = ProposalOperationStructureValidator.Validate(originalOperations);
         if (!structureValidation.IsSuccess)
             return Result.Failure<string>(structureValidation.ErrorCode, structureValidation.ErrorMessage);
+
+        // Apply re-checks expiry in ValidatePolicy after the structure gate; mirror it here —
+        // including ahead of the cached-DiffPreview fast path below — so an expired proposal
+        // cannot preview a clean diff and then fail Apply after approval (#1376).
+        var expiryValidation = ValidateProposalNotExpired(proposal);
+        if (!expiryValidation.IsSuccess)
+            return Result.Failure<string>(expiryValidation.ErrorCode, expiryValidation.ErrorMessage);
 
         var originalValidation = await ProposalOperationContractValidator.ValidateAsync(
             _unitOfWork,
@@ -457,6 +474,18 @@ public class AutomationProposalService : IAutomationProposalService
         var generatedDiff = await BuildReadableDiffAsync(proposal.BoardId, orderedViews, cancellationToken);
         return Result.Success(generatedDiff);
     }
+
+    /// <summary>
+    /// Enforces the same expiry gate Apply runs via
+    /// <see cref="AutomationPolicyEngine.ValidatePolicy"/>: an expired proposal is rejected
+    /// with the identical <see cref="ErrorCodes.ValidationError"/> / "Proposal has expired"
+    /// shape. Diff callers run this after the structure gate (matching ValidatePolicy's order)
+    /// so preview rejects exactly what Apply would reject (#1376 preview == apply).
+    /// </summary>
+    private static Result ValidateProposalNotExpired(AutomationProposal proposal)
+        => proposal.IsExpired
+            ? Result.Failure(ErrorCodes.ValidationError, "Proposal has expired")
+            : Result.Success();
 
     /// <summary>
     /// Builds the human-readable multi-line diff for an ordered operation set,
