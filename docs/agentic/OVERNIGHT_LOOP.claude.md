@@ -31,7 +31,8 @@ not. Sharpening the tools *is* progress. (See §8.)
 **Orchestrator ledger (per-run, resumable):** reuse an existing coordinator ledger if present
 (this repo uses an uncommitted `ORCHESTRATOR.overnight-YYYY-MM-DD.md` at the root), otherwise
 create one (git-exclude it via `.git/info/exclude`, e.g. an `ORCHESTRATOR.*.md` pattern).
-Keep it uncommitted. A fresh session must resume from this file alone. **On wrap, also write
+Keep it uncommitted. A mid-run restart resumes from this file; a NEW session resumes from the
+latest handoff (below) and re-opens this ledger only for same-run recovery. **On wrap, write
 `ORCHESTRATOR.handoff-YYYY-MM-DD.md`** — the cross-session contract (what merged, holds, gate
 precedents, box rules, backlog, honest residuals); the next session resumes from the latest
 handoff and verifies its claims against reality before acting on them (reality wins).

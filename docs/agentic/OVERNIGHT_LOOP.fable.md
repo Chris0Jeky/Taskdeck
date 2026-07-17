@@ -47,7 +47,9 @@ an orchestrator that thinks, decides, and gates — not the typist.
 4. Pin the standing human-gated holds in the ledger: **the hold PRs named in the latest
    handoff** (never merge them), plus the durable classes — workflow-file PRs are
    maintainer-merge-only (stage green, put in the Q batch); never push release tags, touch
-   branch protection, trademark/legal, or self-ratify a strategic ADR. Defer all as Q-N items.
+   branch protection, trademark/legal, or self-ratify a strategic ADR. Even absent a handoff,
+   treat any open deny-floor/harness-gate, licensing, or trademark PR as a standing hold
+   discovered during inventory. Defer all as Q-N items.
 
 ## COMPUTE ROUTING — WHO DOES WHAT
 
@@ -113,8 +115,10 @@ an orchestrator that thinks, decides, and gates — not the typist.
 ## PER-PR GATE SEQUENCE (proven across 20+ merges; run it every time)
 
 worker round → 2 read-only reviewers (distinct lenses) → coordinator adjudication → ONE
-batched fix push to the same worker → coordinator full backend suite on the EXACT head
-(foreground, serialized — one suite at a time across the box) → CI green on that head →
+batched fix push to the same worker → full backend suite on the EXACT head (coordinator owns
+the verdict; delegate the run to a subagent that executes it in its OWN foreground turn, or
+run it inline — never as background Bash; serialize so only ONE full suite runs box-wide at a
+time) → CI green on that head →
 30–60 min bot window from the FINAL push → **thread check by CONTENT** → merge → pull `main` →
 prune worktree+branch (cd out of a worktree before removing it).
 
@@ -143,8 +147,10 @@ prune worktree+branch (cd out of a worktree before removing it).
   state materially changes (a wave ships, a decision lands).
 - Workers verify with targeted runs (`dotnet test --filter`, repeated-run counts, one
   project-level run; `vitest` targeted specs or `--maxWorkers=2` — full local vitest OOMs on
-  this box). The coordinator owns the full backend suite, serialized, at gate time
-  (`-m:1`, ~6 min, 600000ms tool timeout) — never two full suites concurrently.
+  this box). The coordinator OWNS the full-suite verdict at gate time (`-m:1`, ~6 min,
+  600000ms tool timeout) but should delegate the sitting — a subagent runs the suite in its
+  own foreground turn and returns counts + failure excerpts (consistent with the Fable-lane
+  rule above). Never two full suites concurrently, box-wide.
 - **Box rules (hard-won; also see the latest handoff §7)**: background Bash tasks can be
   killed by the harness — run suites and waits FOREGROUND with explicit timeouts (600000ms is
   the clamp; chain until-loops across calls for longer waits); killed shells can orphan
