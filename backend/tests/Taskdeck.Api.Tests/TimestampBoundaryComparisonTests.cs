@@ -182,6 +182,14 @@ public class TimestampBoundaryComparisonTests : IClassFixture<HostedWorkerDisabl
         // under the pre-fix string bug (stored-below-bound and true-equality both yield "not
         // consumable"); parameterizing keeps `ExpiresAt > now` chronological for consistency and pins
         // the strict-greater contract against regression.
+        //
+        // DOCUMENTED LIMITATION: this test does NOT (and cannot) exercise the trimmed-vs-fixed-width
+        // boundary tick for TryConsumeAtomicAsync — the seeded expiries are far from `now`, and the
+        // exact-tick case would require injecting `now`, which is internal UtcNow. Consequently this
+        // test PASSES on the pre-fix code as well: the TryConsume comparison change is a
+        // defensive/consistency-only change (the `>` operator is immune at the exact tick), not a
+        // behavior fix. The revert-would-fail regression proof holds only for the `>=`/`<` sites
+        // (CountByDateAsync, DeleteOldEntriesAsync, DeleteExpiredAsync).
         var consumedExpired = await repo.TryConsumeAtomicAsync(expiredCodeValue);
         consumedExpired.Should().BeFalse(
             "a code whose zero-fraction ExpiresAt is at or before now must NOT consume (> is strict)");
@@ -229,6 +237,41 @@ public class TimestampBoundaryComparisonTests : IClassFixture<HostedWorkerDisabl
             .ToListAsync();
         survivors.Should().NotContain(olderRow.Id,
             "a row older than the cutoff INSTANT must be deleted regardless of the cutoff's offset");
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithNonUtcFromBound_ComparesByInstant_NotOffsetPreservedString()
+    {
+        // Guards BuildSqliteQueryAsync's offset normalization — the ONE timestamp seam fed raw user
+        // input (LogQueryService forwards user-supplied query.From/query.To straight in). The from
+        // bound 2017-08-20T00:00:00-05:00 is the INSTANT 05:00Z, so a stored row at 02:00Z lies
+        // BEFORE the range and must be EXCLUDED. Un-normalized, the bound serializes as
+        // "...00:00:00-05:00" whose hour digits ("00" < "02") sort it below the stored
+        // "...02:00:00+00:00" row, so the raw string compare `stored >= bound` is wrongly TRUE and
+        // the out-of-range row leaks into the result.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAuditLogRepository>();
+
+        var beforeRange = new AuditLog("Board", Guid.NewGuid(), AuditAction.Created);
+        var inRange = new AuditLog("Board", Guid.NewGuid(), AuditAction.Created);
+        db.AuditLogs.AddRange(beforeRange, inRange);
+        await db.SaveChangesAsync();
+
+        // Year 2017 keeps this test's rows distinct from every other method in the class.
+        await SetTimestampAsync(db, beforeRange.Id, "2017-08-20 02:00:00+00:00");
+        await SetTimestampAsync(db, inRange.Id, "2017-08-20 06:00:00+00:00");
+
+        // from == 2017-08-20 05:00:00Z expressed at -05:00; to == 12:00:00Z.
+        var from = new DateTimeOffset(2017, 8, 20, 0, 0, 0, TimeSpan.FromHours(-5));
+        var to = new DateTimeOffset(2017, 8, 20, 12, 0, 0, TimeSpan.Zero);
+
+        var results = (await repo.QueryAsync(from, to)).Select(a => a.Id).ToList();
+
+        results.Should().NotContain(beforeRange.Id,
+            "a row before the from INSTANT must be excluded regardless of the bound's offset");
+        results.Should().Contain(inRange.Id,
+            "a row inside the instant range must be returned");
     }
 
     private static Task SetTimestampAsync(TaskdeckDbContext db, Guid id, string invariantTimestamp)

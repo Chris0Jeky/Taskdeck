@@ -173,8 +173,17 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
         int limit,
         CancellationToken cancellationToken)
     {
+        // Normalize the bounds to UTC before parameterizing: EF's SQLite DateTimeOffset mapping
+        // PRESERVES the source offset (it does not convert to UTC), and this is the one timestamp
+        // seam fed raw user input — LogQueryService forwards user-supplied query.From/query.To (any
+        // offset) straight here. Un-normalized, a bound like 2026-07-17T00:00:00-05:00 (== 05:00Z)
+        // serializes as "...00:00:00-05:00" and its shifted wall-clock digits compare against the
+        // stored "+00:00" rows as a raw string, wrongly INCLUDING a stored row at 02:00Z (the string
+        // compare is decided at the hour digit, not by instant). ToUniversalTime() yields the same
+        // instant at "+00:00" so both sides share the suffix and TEXT order equals chronological
+        // order (same normalization as CountByDateAsync / DeleteOldEntriesAsync, issue #1403).
         var conditions = new List<string> { "al.Timestamp >= {0} AND al.Timestamp <= {1}" };
-        var parameters = new List<object> { from, to };
+        var parameters = new List<object> { from.ToUniversalTime(), to.ToUniversalTime() };
         var nextParam = 2;
 
         if (userId.HasValue)
