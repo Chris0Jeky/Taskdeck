@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { computed } from 'vue'
+import { computed, nextTick } from 'vue'
 import { useBoardKeyboardNav } from '../../composables/useBoardKeyboardNav'
 import type { Column, Card } from '../../types/board'
 
@@ -374,6 +374,141 @@ describe('useBoardKeyboardNav', () => {
 
       // Should not throw
       await expect(nav.moveCardToNextColumn()).resolves.not.toThrow()
+    })
+  })
+
+  describe('focus follows selection movement (roving focus)', () => {
+    /**
+     * Real DOM fixture mirroring the Paper board markup contract: one
+     * `[data-card-id]` article per card with a nested
+     * `[data-action="open-card"]` opener button. Each opener also mirrors
+     * PaperBoardCard's `.stop` Enter handler so we can prove which card a
+     * subsequent Enter would open.
+     */
+    function buildCardFixture(cardIds: string[]) {
+      const root = document.createElement('div')
+      const openers = new Map<string, HTMLButtonElement>()
+      const openedCards: string[] = []
+      for (const id of cardIds) {
+        const article = document.createElement('article')
+        article.setAttribute('data-card-id', id)
+        const opener = document.createElement('button')
+        opener.setAttribute('data-action', 'open-card')
+        opener.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            // Mirrors PaperBoardCard: @keydown.enter.stop.prevent="onClick"
+            event.stopPropagation()
+            event.preventDefault()
+            openedCards.push(id)
+          }
+        })
+        article.appendChild(opener)
+        root.appendChild(article)
+        openers.set(id, opener)
+      }
+      document.body.appendChild(root)
+      return {
+        openers,
+        openedCards,
+        cleanup: () => {
+          root.remove()
+        },
+      }
+    }
+
+    it('moves focus to the newly selected card opener when an opener had focus', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-2'])
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-1'
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextCard()
+        expect(nav.selectedCardId.value).toBe('card-2')
+
+        await nextTick()
+        expect(document.activeElement).toBe(fixture.openers.get('card-2'))
+      } finally {
+        fixture.cleanup()
+      }
+    })
+
+    it('makes a subsequent Enter open the newly selected card, not the old one', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-2'])
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-1'
+        fixture.openers.get('card-1')!.focus()
+
+        // Simulate J: BoardView's global shortcut calls selectNextCard().
+        nav.selectNextCard()
+        await nextTick()
+
+        // Enter lands on whatever now has DOM focus (opener `.stop` contract).
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+        )
+
+        expect(fixture.openedCards).toStrictEqual(['card-2'])
+      } finally {
+        fixture.cleanup()
+      }
+    })
+
+    it('also pulls focus on column selection movement', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-3'])
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-1'
+        nav.selectedColumnIndex.value = 0
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextColumn()
+        expect(nav.selectedCardId.value).toBe('card-3')
+
+        await nextTick()
+        expect(document.activeElement).toBe(fixture.openers.get('card-3'))
+      } finally {
+        fixture.cleanup()
+      }
+    })
+
+    it('leaves focus untouched when focus is outside any card', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-2'])
+      const outsideButton = document.createElement('button')
+      document.body.appendChild(outsideButton)
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-1'
+        outsideButton.focus()
+
+        nav.selectNextCard()
+        expect(nav.selectedCardId.value).toBe('card-2')
+
+        await nextTick()
+        expect(document.activeElement).toBe(outsideButton)
+      } finally {
+        outsideButton.remove()
+        fixture.cleanup()
+      }
+    })
+
+    it('leaves focus untouched when the selection did not change', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-2'])
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-2'
+        fixture.openers.get('card-1')!.focus()
+
+        // card-2 is the last card in c1 — selection stays put.
+        nav.selectNextCard()
+        expect(nav.selectedCardId.value).toBe('card-2')
+
+        await nextTick()
+        expect(document.activeElement).toBe(fixture.openers.get('card-1'))
+      } finally {
+        fixture.cleanup()
+      }
     })
   })
 
