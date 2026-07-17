@@ -116,6 +116,36 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
             .SingleOrDefaultAsync(cancellationToken);
     }
 
+    private static readonly IReadOnlyDictionary<Guid, byte[]> EmptyContentMap =
+        new Dictionary<Guid, byte[]>();
+
+    public async Task<IReadOnlyDictionary<Guid, byte[]>> GetContentsForUserAsync(
+        IReadOnlyCollection<Guid> ids,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (ids.Count == 0)
+            return EmptyContentMap;
+
+        // De-duplicate to keep the IN-clause parameter count minimal; the caller bounds the
+        // set size (<= 500) so it stays under SQLITE_MAX_VARIABLE_NUMBER. Same user-scoped blob
+        // join as GetContentForUserAsync, so a foreign artefact id can never surface content.
+        var idList = ids.Distinct().ToList();
+
+        var rows = await (
+            from artefact in _context.SourceArtefacts.AsNoTracking()
+            join blob in _context.ArtefactBlobs.AsNoTracking()
+                on artefact.Id equals blob.SourceArtefactId
+            where artefact.UserId == userId && idList.Contains(artefact.Id)
+            select new { artefact.Id, blob.Content })
+            .ToListAsync(cancellationToken);
+
+        var map = new Dictionary<Guid, byte[]>(rows.Count);
+        foreach (var row in rows)
+            map[row.Id] = row.Content;
+        return map;
+    }
+
     public async Task<bool> CopyContentForUserAsync(
         Guid id,
         Guid userId,
