@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-07-14
+Last Updated: 2026-07-17
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -9,6 +9,23 @@ Companion Active Docs:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Delivery update (2026-07-17)
+
+Overnight substrate + correctness wave — **11 PRs merged** (per-PR gate: independent adversarial review, all-severity findings fixed, required CI green; full backend suite reported 7223 passed / 0 failed / 1 skipped after `#1373`):
+
+- **Test-substrate parity (`#1373`, `#1282`):** a shared `UseTaskdeckSqlite` registration helper in Infrastructure now backs both production DI and the API integration test factory, so SQLite WAL/busy-timeout settings can no longer drift between them. Retires the `test/sqlite-concurrency` failure-ledger flake and underwrites the `#1366` presence-parity result below.
+- **REVIVAL-02 Phase-1 ship gate (`#1375`, `#1298`):** the fabricated Paper review undo timeline is removed and reversibility copy becomes factual apply-risk guidance ("Apply considerations") while the confidence label renders "Operation safety"; the side-effect wire shapes are preserved for GP-03 (full contract detail in `docs/STATUS.md`).
+- **Proposal preview==apply parity (`#1374`, `#1370`; seeded `#1376`):** clamped reorder positions now surface in the diff, create-card id collisions fail at validation with a stable `409`, and a shared `ProposalOperationStructureValidator` runs before original-proposal diffs; a parity contract test locks it in.
+- **MCP host-security fail-closed (`#1372`, `#1367`):** the standalone MCP host guard mirrors `HostFilteringMiddleware` exactly — fails closed on separator-only/blank `AllowedHosts`, preserves port-suffixed and whitespace-bearing literals — proven by a new in-process integration test with a mutation.
+- **Migrator flake retired (`#1377`, `#1357`):** the concurrent-migrator test now asserts final schema state (any-`SqliteException` collision signature, at most one fault, exact `__EFMigrationsHistory` equivalence), plus a deterministic fail-open collision test and an `AcquireLock` exclusivity contract test.
+- **Bounded artefact extraction (`#1378`, `#1369`; `#1379` expanded to a hard wiring gate):** a wall-clock budget (`Artefacts:ExtractionTimeoutSeconds`, default 30s) with warning-bearing `extraction-timeout` history rows and abandoned-task handling, exercised by real PdfPig / plain-text extractors through the budgeted path.
+- **Paper P-I E2E ship gate (`#1362`, `#1274`; seeded `#1363` earlier, `#1380`, `#1382`):** core E2E re-pointed at Paper-default sessions with explicit frozen-Legacy opt-outs; full axe WCAG 2.1 A/AA on Home/Today/Inbox/Review/seeded Board/Login; a real capture → review → apply lane with a hard-asserted confirmation dialog; a `PaperBoardCard` nested-interactive fix + focus-follows-selection; `--faint` token contrast floors; a Boards shortcut ledger. Builds on the 2026-07-14 `#1274` delivery update below.
+- **Presence broadcast delivery proof (`#1366`, `#1365`, `#1371`):** the presence stress test now proves join/leave broadcast delivery (not just tracker membership) with fail-closed controls, green 15/15 after the `#1373` parity fix.
+- **Batched export blob loads (`#1385`, `#1355`):** the buffered GDPR account export now loads artefact blobs through a new `SourceArtefactRepository` batch read in bounded chunks, with a batch-id-count guard against the SQLite parameter limit (pass-side boundary pinned at 900 ids) and export-JSON round-trip + missing-blob contract tests. Closes the LOW efficiency finding from the `#1341` security review.
+- **MCP pre-auth failure budget + admission control (`#1381`, `#1368`):** the per-IP pre-auth limiter spends budget only on authentication failures (successful auth never consumes; exhausted addresses reject before the API-key lookup via non-consuming inspection); a per-IP concurrency gate (`RateLimiting:McpAuthenticationPerIpConcurrency`, default 16) caps in-flight pre-auth work; consumption is abort-proof (marker + `finally`, so aborted 401s still spend); trusted forwarded headers now also apply to the standalone MCP host (default OFF — XFF never trusted from an unknown peer).
+- **Same-night hotfix of the `#1377` collision test (`#1390`):** the fail-open collision test's barrier design flaked an unrelated PR (run 29552875836 — fast runners finished the chain before the loser applied anything, failing the required-collision assertion); the interception is now staged structurally (migrator A provably mid-chain via `__EFMigrationsHistory` polling before B is released) and a pathological staging miss passes gracefully with a loud `WARNING: STAGING MISSED` diagnostic.
+- **Seeded this wave:** `#1376`, `#1379`, `#1380`, `#1382`, `#1383` (AuditRetention flake), `#1384`, `#1387`, `#1388`. **Still open / not shipped:** `#1386` (final review round in flight); standing human-gated holds `#1295`, `#1337`, `#1359`.
 
 ## Delivery update (2026-07-14)
 
