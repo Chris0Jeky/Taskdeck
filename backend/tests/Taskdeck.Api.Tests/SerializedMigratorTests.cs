@@ -244,6 +244,13 @@ public sealed class SerializedMigratorTests : IDisposable
                     Path.GetFullPath(dbPath) + ".migrate.lock",
                     FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 
+                // Pre-set WAL on the cold DB file before any migrator or poll reader opens it.
+                // journal_mode is persistent in the file, so the migrators' pragma interceptor
+                // becomes a no-op read instead of a delete->WAL TRANSITION (which requires
+                // exclusivity and could spuriously fail with BUSY if a poll read overlapped it),
+                // and WAL readers never block the writer — the poll cannot perturb migrator A.
+                PreSetWalJournalMode(dbPath);
+
                 using var contextA = NewFileContext(dbPath);
                 using var contextB = NewFileContext(dbPath);
                 var loggerA = new InMemoryLogger<SerializedMigratorTests>();
@@ -252,8 +259,15 @@ public sealed class SerializedMigratorTests : IDisposable
                 var totalMigrations = contextA.Database.GetMigrations().Count();
                 var releaseWindowMax = Math.Max(1, totalMigrations / 3);
 
+                // TimeSpan.Zero lock timeout: AcquireLock makes a single acquisition attempt and
+                // fails open immediately (still logging the documented warning). This matters for
+                // B far more than A — any positive wait would happen AFTER A is already mid-chain
+                // and eat directly into A's remaining runtime, so on a fast runner B could fail
+                // open only after A had finished and no-op every attempt. With zero wait, B's
+                // startup latency is a few milliseconds against dozens of remaining DDL
+                // transactions on any hardware.
                 var migratorA = Task.Run(() =>
-                    SerializedMigrator.Migrate(contextA, TimeSpan.FromMilliseconds(250), loggerA));
+                    SerializedMigrator.Migrate(contextA, TimeSpan.Zero, loggerA));
 
                 var midChainCount = WaitForMidChainHistory(
                     dbPath, migratorA, releaseWindowMax, TimeSpan.FromSeconds(30));
@@ -273,9 +287,9 @@ public sealed class SerializedMigratorTests : IDisposable
 
                 interceptedMidChain = true;
 
-                // A is provably mid-chain: release B now.
+                // A is provably mid-chain: release B now (zero lock wait — see above).
                 var migratorB = Task.Run(() =>
-                    SerializedMigrator.Migrate(contextB, TimeSpan.FromMilliseconds(250), loggerB));
+                    SerializedMigrator.Migrate(contextB, TimeSpan.Zero, loggerB));
 
                 var faults = new List<Exception>();
                 foreach (var migrator in new[] { migratorA, migratorB })
@@ -361,11 +375,34 @@ public sealed class SerializedMigratorTests : IDisposable
     /// time observes the window many times over; <c>null</c> is only plausible under pathological
     /// scheduling.
     /// </summary>
+    /// <summary>
+    /// Persists <c>journal_mode=WAL</c> into the (cold) database file via a short-lived setup
+    /// connection, so subsequent connections inherit WAL instead of performing the
+    /// delete-to-WAL transition (which requires exclusivity and can fail with BUSY when it
+    /// overlaps another connection's read).
+    /// </summary>
+    private static void PreSetWalJournalMode(string dbPath)
+    {
+        using var setup = new SqliteConnection($"Data Source={dbPath}");
+        setup.Open();
+        using var cmd = setup.CreateCommand();
+        cmd.CommandText = "PRAGMA journal_mode=WAL";
+        cmd.ExecuteScalar();
+    }
+
     private static int? WaitForMidChainHistory(
         string dbPath, Task migrator, int releaseWindowMax, TimeSpan timeout)
     {
         using var pollConnection = new SqliteConnection($"Data Source={dbPath}");
         pollConnection.Open();
+
+        // Robust reads under write contention: without this, a transient BUSY would surface as
+        // a SqliteException and be miscounted as "nothing applied yet" for that poll.
+        using (var pragma = pollConnection.CreateCommand())
+        {
+            pragma.CommandText = $"PRAGMA busy_timeout={BusyTimeoutMs}";
+            pragma.ExecuteNonQuery();
+        }
 
         var elapsed = Stopwatch.StartNew();
         while (elapsed.Elapsed < timeout)
