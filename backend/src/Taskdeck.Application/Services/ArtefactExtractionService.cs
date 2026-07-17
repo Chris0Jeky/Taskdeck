@@ -17,17 +17,20 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
     private readonly ISourceArtefactRepository _artefacts;
     private readonly IArtefactExtractionRepository _extractions;
     private readonly IReadOnlyList<IArtefactTextExtractor> _extractors;
+    private readonly ArtefactStorageSettings _settings;
     private readonly ILogger<ArtefactExtractionService>? _logger;
 
     public ArtefactExtractionService(
         ISourceArtefactRepository artefacts,
         IArtefactExtractionRepository extractions,
         IEnumerable<IArtefactTextExtractor> extractors,
+        ArtefactStorageSettings? settings = null,
         ILogger<ArtefactExtractionService>? logger = null)
     {
         _artefacts = artefacts;
         _extractions = extractions;
         _extractors = extractors.ToArray();
+        _settings = settings ?? new ArtefactStorageSettings();
         _logger = logger;
     }
 
@@ -111,12 +114,52 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 }
 
                 stream.Position = 0;
+
+                // Bound the parser's wall-clock, not just its input size. PdfPig's
+                // PdfDocument.Open(...) runs synchronously and does not honour a
+                // CancellationToken, so a parser-bomb PDF that stays under the
+                // byte/page/character caps can still spin the parse thread for an
+                // unbounded time. Enforce a budget with a CancelAfter linked to the
+                // caller's token and run the parse on a worker so a runaway parse can
+                // be abandoned while the request returns. The budget token is also
+                // passed into the extractor, which observes it cooperatively between
+                // pages/words — the clean path for bombs that reach the page loop.
+                using var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var budget = _settings.ExtractionTimeout;
+                if (budget > TimeSpan.Zero)
+                    budgetCts.CancelAfter(budget);
+
+                var extractTask = Task.Run(
+                    () => extractor.ExtractAsync(stream, budgetCts.Token),
+                    CancellationToken.None);
                 try
                 {
-                    extractorResult = await extractor.ExtractAsync(stream, cancellationToken);
+                    extractorResult = await extractTask.WaitAsync(budgetCts.Token);
+                }
+                catch (OperationCanceledException)
+                    when (budgetCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    // Budget exhausted (not caller cancellation). Abandon the parse:
+                    // it may run to completion on a background thread, but it holds no
+                    // file or DB handle — the blob was copied into the in-memory stream
+                    // and the connection closed before extraction began — so the only
+                    // resource in flight is managed memory the GC reclaims once the
+                    // worker unwinds. Record a single content-free timeout outcome.
+                    ObserveAbandonedExtraction(extractTask);
+                    _logger?.LogWarning(
+                        "Local extraction exceeded the {BudgetSeconds}s wall-clock budget for artefact {ArtefactId} with extractor {ExtractorName}; recording a timeout outcome",
+                        budget.TotalSeconds,
+                        sourceArtefactId,
+                        extractor.ExtractorName);
+                    extractorResult = WarningResult(
+                        extractor,
+                        ArtefactExtractionWarningCodes.ExtractionTimeout);
                 }
                 catch (OperationCanceledException)
                 {
+                    // Caller-driven cancellation (request aborted): abandon the worker
+                    // and propagate without recording an extraction outcome.
+                    ObserveAbandonedExtraction(extractTask);
                     throw;
                 }
                 catch (Exception ex)
@@ -250,6 +293,19 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
             warnings,
             extractor.ExtractorName,
             extractor.ExtractorVersion);
+    }
+
+    private static void ObserveAbandonedExtraction(Task extractTask)
+    {
+        // The request returns before this worker necessarily finishes, and the
+        // request-scoped input stream is disposed on return, so an abandoned parse
+        // typically faults (e.g. ObjectDisposedException) on its next read. Observe
+        // that fault so it is not surfaced as an UnobservedTaskException.
+        _ = extractTask.ContinueWith(
+            static task => _ = task.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private static bool HasValidIdentity(string value, int maxLength)
