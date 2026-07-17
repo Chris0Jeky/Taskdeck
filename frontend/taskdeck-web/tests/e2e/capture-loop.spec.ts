@@ -69,17 +69,12 @@ test.describe('Paper capture-review-apply loop', () => {
     const executeResponsePromise = page.waitForResponse((response) =>
       response.request().method() === 'POST'
       && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
-    // The final apply confirmation is a hard gate: waitForEvent FAILS this test
+    // The final apply confirmation is a hard gate: expectDialog FAILS this test
     // if the confirm() dialog is removed, instead of silently executing anyway.
-    // The click promise stays pending until the dialog is handled, so the
-    // dialog must be awaited/accepted before awaiting the click.
-    const executeDialogPromise = page.waitForEvent('dialog')
-    const executeClick = page.getByTestId('decision-apply').click()
-    const executeDialog = await executeDialogPromise
-    expect(executeDialog.type()).toBe('confirm')
-    expect(executeDialog.message()).toBe('Apply this approved proposal to the board now?')
-    await executeDialog.accept()
-    await executeClick
+    await expectDialog(page, () => page.getByTestId('decision-apply').click(), {
+      type: 'confirm',
+      message: 'Apply this approved proposal to the board now?',
+    })
     await assertOk(await executeResponsePromise, `execute Paper proposal ${proposalId}`)
     const createdCard = await waitForCardWithTitle(request, paperAuth, boardId, cardTitle)
 
