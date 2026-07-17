@@ -32,14 +32,12 @@ const props = withDefaults(
     recentlyApplied: RecentlyAppliedRow[]
     cadence?: number[]
     applyRate?: number
-    undoRate?: number
   }>(),
   {
     dismissableCount: 0,
     busy: false,
     cadence: () => [4, 3, 5, 2, 4, 1, 3],
     applyRate: 0.71,
-    undoRate: 0.04,
   },
 )
 
@@ -125,7 +123,7 @@ function setFilter(next: QueueFilter) {
       <div class="tk-eyebrow paper-review-rail__cadence-heading">This week</div>
       <ReviewMiniCadence :days="cadence" />
       <div class="tk-meta paper-review-rail__cadence-meta">
-        Apply rate <b>{{ asPct(applyRate) }}</b> · undo rate <b>{{ asPct(undoRate) }}</b>
+        Apply rate <b>{{ asPct(applyRate) }}</b>
       </div>
     </div>
   </aside>

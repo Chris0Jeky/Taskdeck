@@ -5,7 +5,7 @@ import ReviewDecisionRail from '../../../../views/paper/review/ReviewDecisionRai
 function mountRail(props: Partial<{ summary: string; busy: boolean; dismissable: boolean }> = {}) {
   return mount(ReviewDecisionRail, {
     props: {
-      summary: '1 operation · undo 6h · atomic',
+      summary: '1 operation · explicit review · atomic apply',
       ...props,
     },
   })
