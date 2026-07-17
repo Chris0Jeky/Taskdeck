@@ -1104,11 +1104,13 @@ public class AutomationProposalServiceTests
     [Fact]
     public async Task GetProposalDiffAsync_ShouldSurfaceDestinationPosition_ForColumnReorderOperations()
     {
-        // Arrange: a 3-column board so the requested destination (position 2) is in range.
-        // An in-range reorder previews the exact position Apply lands on. (Previously this
-        // test used a single-column board with position 2 — an out-of-range target that
-        // Apply clamps to the end — and asserted the raw requested value, locking in the
-        // preview != apply divergence this issue fixes. See the clamp-specific test below.)
+        // Arrange: a 3-column board with a STRICTLY INTERIOR destination (position 1;
+        // the clamp ceiling is 2). Interior beats the ceiling here: a degenerate bug that
+        // always rendered the ceiling would still pass at position 2, but fails at 1.
+        // (Previously this test used a single-column board with position 2 — an
+        // out-of-range target that Apply clamps to the end — and asserted the raw
+        // requested value, locking in the preview != apply divergence this issue fixes.
+        // See the clamp-specific test below.)
         var proposalId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
         var todo = new Column(boardId, "To Do", 0);
@@ -1123,7 +1125,7 @@ public class AutomationProposalServiceTests
             Guid.NewGuid().ToString(),
             boardId);
 
-        var parameters = System.Text.Json.JsonSerializer.Serialize(new { columnId, position = 2 });
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { columnId, position = 1 });
         proposal.AddOperation(new AutomationProposalOperation(
             proposal.Id, 0, "reorder", "column", parameters, Guid.NewGuid().ToString(),
             targetId: columnId.ToString()));
@@ -1147,11 +1149,13 @@ public class AutomationProposalServiceTests
         // Act
         var result = await _service.GetProposalDiffAsync(proposalId);
 
-        // Assert: the approval preview names the column and its destination position.
+        // Assert: the approval preview names the column and its requested interior
+        // destination — not the clamp ceiling (2).
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         result.Value.Should().Contain("Reorder");
         result.Value.Should().Contain("In Progress");
-        result.Value.Should().Contain("to position 2");
+        result.Value.Should().Contain("to position 1");
+        result.Value.Should().NotContain("to position 2");
         result.Value.Should().NotContain(columnId.ToString());
     }
 
@@ -1242,6 +1246,213 @@ public class AutomationProposalServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("sequences must be unique");
+    }
+
+    [Fact]
+    public async Task ProposalReorderPreview_ShouldMatchApplyOutcome_ForOvershootingPosition()
+    {
+        // True parity contract for #1370: the destination rendered in the preview is
+        // parsed back out of the diff text and compared against the position
+        // ColumnService actually applies on the same board state. There is no shared
+        // hardcoded expected value — if the preview clamp and the apply clamp ever
+        // drift apart, this test fails regardless of which side moved.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var todo = new Column(boardId, "To Do", 0);
+        var column = new Column(boardId, "In Progress", 1);
+        var done = new Column(boardId, "Done", 2);
+        var columnId = column.Id;
+        const int requestedPosition = 99;
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Reorder column",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { columnId, position = requestedPosition });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "reorder", "column", parameters, Guid.NewGuid().ToString(),
+            targetId: columnId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(columnId, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { todo, column, done });
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var labelRepoMock = new Mock<ILabelRepository>();
+        labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Label>());
+        _unitOfWorkMock.Setup(u => u.Labels).Returns(labelRepoMock.Object);
+
+        // Act 1: preview — extract the rendered destination position from the diff text.
+        var diffResult = await _service.GetProposalDiffAsync(proposalId);
+        diffResult.IsSuccess.Should().BeTrue(diffResult.ErrorMessage);
+        var match = System.Text.RegularExpressions.Regex.Match(diffResult.Value, @"to position (\d+)");
+        match.Success.Should().BeTrue($"the preview should surface a destination position, but was: {diffResult.Value}");
+        var previewedPosition = int.Parse(match.Groups[1].Value);
+
+        // Act 2: apply — execute the same reorder via ColumnService on the same board.
+        var columnService = new ColumnService(_unitOfWorkMock.Object);
+        var applyResult = await columnService.ReorderColumnAsync(columnId, requestedPosition);
+
+        // Assert: what the reviewer approved is exactly what Apply executed.
+        applyResult.IsSuccess.Should().BeTrue(applyResult.ErrorMessage);
+        column.Position.Should().Be(previewedPosition,
+            "the destination position shown in the approval preview must equal the position Apply lands on");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldPreviewPositionZero_ForReorderOnSingleColumnBoard()
+    {
+        // Single-column board: the only valid slot is 0, so any requested destination
+        // previews as the clamped "to position 0" — exactly where Apply leaves the column.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Only", 0);
+        var columnId = column.Id;
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Reorder column",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { columnId, position = 5 });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "reorder", "column", parameters, Guid.NewGuid().ToString(),
+            targetId: columnId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(columnId, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { column });
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var labelRepoMock = new Mock<ILabelRepository>();
+        labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Label>());
+        _unitOfWorkMock.Setup(u => u.Labels).Returns(labelRepoMock.Object);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Contain("to position 0");
+        result.Value.Should().NotContain("position 5");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldFallBackToRawPosition_WhenBoardColumnLookupFails()
+    {
+        // Pins the documented degraded path: when the best-effort board-column lookup
+        // fails (BuildReadableDiffAsync swallows the exception and renders with empty
+        // lookups), the preview cannot compute the clamp and renders the RAW requested
+        // position — strictly no worse than the pre-#1370 behavior, which always
+        // rendered raw. Contract validation still passes because it resolves the column
+        // via GetByIdAsync, which succeeds here; only GetByBoardIdAsync (the diff's
+        // name/clamp lookup) fails.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "In Progress", 1);
+        var columnId = column.Id;
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Reorder column",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { columnId, position = 99 });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "reorder", "column", parameters, Guid.NewGuid().ToString(),
+            targetId: columnId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(columnId, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("column lookup unavailable"));
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: degraded preview still renders, with the raw requested position.
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Contain("to position 99");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldPreviewProposalAtMaxOperationCount()
+    {
+        // Boundary-PASS through the new structure gate: exactly 50 operations (the
+        // MaxOperationCount ceiling) must preview cleanly — the gate rejects only >50.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Bulk board renames",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        for (var i = 0; i < 50; i++)
+        {
+            var parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, name = $"Rename {i}" });
+            proposal.AddOperation(new AutomationProposalOperation(
+                proposal.Id, i, "update", "board", parameters, Guid.NewGuid().ToString(),
+                targetId: boardId.ToString()));
+        }
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Column>());
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var labelRepoMock = new Mock<ILabelRepository>();
+        labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Label>());
+        _unitOfWorkMock.Setup(u => u.Labels).Returns(labelRepoMock.Object);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: previews cleanly with one line per operation.
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Split(Environment.NewLine).Should().HaveCount(50);
     }
 
     [Fact]
