@@ -3,6 +3,7 @@ using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Tests.TestUtilities;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
@@ -18,6 +19,9 @@ public class AutomationProposalServiceTests
     private readonly Mock<INotificationService> _notificationServiceMock;
     private readonly Mock<IProposalProvenanceRepository> _provenanceRepoMock;
     private readonly Mock<IProposalRevisionRepository> _revisionRepoMock;
+    private readonly Mock<IUserRepository> _userRepoMock;
+    private readonly Mock<IBoardRepository> _boardRepoMock;
+    private readonly Mock<IBoardAccessRepository> _boardAccessRepoMock;
     private readonly AutomationProposalService _service;
 
     public AutomationProposalServiceTests()
@@ -27,9 +31,15 @@ public class AutomationProposalServiceTests
         _notificationServiceMock = new Mock<INotificationService>();
         _provenanceRepoMock = new Mock<IProposalProvenanceRepository>();
         _revisionRepoMock = new Mock<IProposalRevisionRepository>();
+        _userRepoMock = new Mock<IUserRepository>();
+        _boardRepoMock = new Mock<IBoardRepository>();
+        _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.ProposalRevisions).Returns(_revisionRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
         // Default: no saved revision, so GetProposalDiffAsync uses the original path.
         // The revision-aware test overrides this per-proposal.
         _revisionRepoMock
@@ -38,6 +48,20 @@ public class AutomationProposalServiceTests
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
+        // Diff now runs the same read-safe permission gates Apply runs
+        // (AutomationPolicyEngine.ValidatePermissionsAsync): requester exists, board exists,
+        // requester has board access. Default them to PASS so healthy-path diff tests reach
+        // their intended gate; the #1398 parity tests below override these to revoke access
+        // or delete the board/requester.
+        _userRepoMock
+            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User("difftester", "diff@example.com", "hashedPassword"));
+        _boardRepoMock
+            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TestDataBuilder.CreateBoard());
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         _service = new AutomationProposalService(
             _unitOfWorkMock.Object,
@@ -383,12 +407,25 @@ public class AutomationProposalServiceTests
         // Arrange
         var proposalId = Guid.NewGuid();
         var deciderId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
         var proposal = new AutomationProposal(
             ProposalSourceType.Chat,
             Guid.NewGuid(),
             "Test proposal",
             RiskLevel.Low,
-            Guid.NewGuid().ToString());
+            Guid.NewGuid().ToString(),
+            boardId);
+        // A fully valid proposal (#1416): approve now runs Apply's structure AND
+        // permission/contract gates, so the happy path must carry an operation that clears both
+        // (an in-scope board update), with the fixture's requester/board/access defaults passing.
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "update",
+            "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Renamed board" }),
+            Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync(proposal);
@@ -409,6 +446,369 @@ public class AutomationProposalServiceTests
                     n.Type == NotificationType.ProposalOutcome),
                 default),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldRejectZeroOperationProposal_MatchingApplyStructureGate()
+    {
+        // #1416 approve == apply: a zero-operation PendingReview proposal previously approved
+        // cleanly (status → Approved) and only failed later at Apply with 400 "Proposal must
+        // contain at least one operation". Approve now runs the SAME structure gate Apply runs via
+        // AutomationPolicyEngine.ValidateOperationStructure (and that GetProposalDiffAsync mirrors),
+        // rejecting it with the identical ValidationError before the transition commits.
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Zero-op proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.ApproveProposalAsync(proposalId, Guid.NewGuid());
+
+        // Assert: same failure Apply's structure validation produces, and the transition is refused.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Proposal must contain at least one operation");
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldRejectExpiredProposal_WithConflict()
+    {
+        // #1416 expiry contract: an expired PendingReview proposal must not be approvable. Approve
+        // enforces this through the domain transition itself (AutomationProposal.Approve throws
+        // InvalidOperation → 409), the established approve-time expiry semantics this slice
+        // preserves — deliberately NOT the diff/preview path's 400 "Proposal has expired" read
+        // shape, because approving is a state transition and 409 conflict is the correct code for
+        // refusing to advance an expired proposal. The proposal carries an operation so it clears
+        // the structure gate and the expiry guard is what rejects it.
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Expiring proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", "{\"title\":\"Test\"}", Guid.NewGuid().ToString()));
+        // Force the proposal past its expiry without changing status (mirrors a proposal that
+        // expired while pending). ExpiresAt is private-set on the entity.
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.ApproveProposalAsync(proposalId, Guid.NewGuid());
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Contain("expired");
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldValidateEffectiveRevision_NotOriginalOperations()
+    {
+        // #1416 approve == apply, revision-aware: Apply executes the latest saved revision
+        // (AutomationExecutorService.MaterializeEffectiveProposalAsync), so approve's structure
+        // gate must validate that SAME effective set. A proposal whose ORIGINAL operations are
+        // empty but whose latest revision is valid is approvable — matching Apply — rather than
+        // being falsely rejected by the zero-op check on the stale original operations.
+        var proposalId = Guid.NewGuid();
+        var deciderId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Originally empty, revised valid",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "board",
+                    targetId = boardId.ToString(),
+                    parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Revised name" }),
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposal.Id, 1, deciderId, revisedPayload, "Add an operation");
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+        _revisionRepoMock
+            .Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
+            .ReturnsAsync(revision);
+
+        // Act
+        var result = await _service.ApproveProposalAsync(proposalId, deciderId);
+
+        // Assert: the valid effective revision clears the structure gate and the proposal approves.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(ProposalStatus.Approved);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldRejectRevokedBoardAccess_MatchingApplyPermissionGate()
+    {
+        // #1416 trust-class completion: Apply runs ValidatePermissionsAsync after the policy gate,
+        // so a proposal whose requester lost board access mid-review is rejected 403 at Apply (and,
+        // since #1413, at diff). Approve previously ran no permission gate, so the reviewer's
+        // approval succeeded 200 and only Apply failed 403. Approve now runs the same gate:
+        // approve == apply (403, same message).
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // Requester exists and the board exists (constructor defaults), but access is revoked.
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act (approve)
+        var approveResult = await _service.ApproveProposalAsync(proposalId, Guid.NewGuid());
+
+        // Act (apply-side permission gate) on the equivalent operation DTOs.
+        var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+
+        // Assert: approve rejects, and rejects identically to Apply (403, same message).
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+
+        approveResult.IsSuccess.Should().BeFalse();
+        approveResult.ErrorCode.Should().Be(applyResult.ErrorCode);
+        approveResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldRejectDeletedBoard_MatchingApplyPermissionGate()
+    {
+        // #1416: a proposal whose board was deleted mid-review is rejected 404 at Apply
+        // (ValidatePermissionsAsync board-existence gate) and at diff (#1413). Approve now runs
+        // the same gate instead of approving 200 and failing 404 at Apply.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // Board no longer exists (overrides the constructor default for this board id).
+        _boardRepoMock
+            .Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Board?)null);
+
+        var approveResult = await _service.ApproveProposalAsync(proposalId, Guid.NewGuid());
+        var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(ErrorCodes.NotFound);
+
+        approveResult.IsSuccess.Should().BeFalse();
+        approveResult.ErrorCode.Should().Be(applyResult.ErrorCode);
+        approveResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldRejectContractViolation_OnRevisedOperations()
+    {
+        // #1416: ValidatePermissionsAsync ends with ProposalOperationContractValidator, so a
+        // saved revision whose operations violate the operation contract (here: a board update
+        // with no updatable fields) is rejected 400 at Apply. Approve validates the same
+        // effective revised set through the same engine call, so the reviewer cannot approve it.
+        var proposalId = Guid.NewGuid();
+        var deciderId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Valid original, contract-violating revision",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "update",
+            "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Valid original" }),
+            Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "board",
+                    targetId = boardId.ToString(),
+                    // No 'name', 'description', or 'isArchived': fails the operation contract.
+                    parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId }),
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposal.Id, 1, deciderId, revisedPayload, "Strip fields");
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _revisionRepoMock
+            .Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
+            .ReturnsAsync(revision);
+
+        var result = await _service.ApproveProposalAsync(proposalId, deciderId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be(
+            "Update board operation requires at least one of 'name', 'description', or 'isArchived'");
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldReportExpiry_NotForbidden_WhenExpiredAndAccessRevoked()
+    {
+        // Gate-ordering pin (mirrors the #1413 LOW-4 pin on the diff path, adapted to approve's
+        // 409 expiry semantics): a proposal that is BOTH expired AND has revoked requester access
+        // must fail with the expiry 409 InvalidOperation — never Forbidden — because approve runs
+        // structure → expiry → permissions in the same order as diff/apply. If someone reorders
+        // the permission gate ahead of the expiry short-circuit, this test fails on Forbidden.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.ApproveProposalAsync(proposalId, Guid.NewGuid());
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorCode.Should().NotBe(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("expired");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldReturnValidationError_WhenSavedRevisionPayloadIsInvalid()
+    {
+        // #1416 defensive branch pin: a saved revision is validated at save time, so a malformed
+        // RevisedPayload should be unreachable — but if the effective payload cannot be
+        // materialized, Apply fails 400 (MaterializeEffectiveProposalAsync), so approve must
+        // surface the identical ValidationError instead of approving a proposal Apply will refuse.
+        var proposalId = Guid.NewGuid();
+        var deciderId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Valid original, corrupt revision",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "update",
+            "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Valid original" }),
+            Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+
+        var revision = new ProposalRevision(proposal.Id, 1, deciderId, "{not valid json", "Corrupt");
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _revisionRepoMock
+            .Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
+            .ReturnsAsync(revision);
+
+        var result = await _service.ApproveProposalAsync(proposalId, deciderId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("RevisedPayload must be valid JSON");
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldRejectProposalRevisedToEmpty_MatchingApplyGate()
+    {
+        // #1416 inverse revision-aware direction: an originally-VALID proposal whose latest
+        // revision materializes to zero operations must be rejected at approve, exactly as Apply
+        // rejects it when materializing the effective revision — validating only the original
+        // operations would approve a proposal the executor refuses. Locks both directions of the
+        // revision-aware gate together with ShouldValidateEffectiveRevision_NotOriginalOperations.
+        var proposalId = Guid.NewGuid();
+        var deciderId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Valid original, revised to empty",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "update",
+            "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Valid original" }),
+            Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+
+        var revision = new ProposalRevision(
+            proposal.Id, 1, deciderId, "{\"operations\":[]}", "Strip all operations");
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _revisionRepoMock
+            .Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
+            .ReturnsAsync(revision);
+
+        var result = await _service.ApproveProposalAsync(proposalId, deciderId);
+
+        // Same failure Apply produces when the effective revision has no operations.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("RevisedPayload operations must contain at least one operation");
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     [Fact]
@@ -1943,6 +2343,648 @@ public class AutomationProposalServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Be("Proposal has expired");
+    }
+
+    // A non-expired, single-operation proposal used by the #1398 permission-parity tests
+    // below. It passes the structure and expiry gates so execution reaches the permission
+    // gate (requester exists → board exists → board access) that Apply runs via
+    // AutomationPolicyEngine.ValidatePermissionsAsync.
+    private static AutomationProposal BuildPermissionGateProposal(Guid requesterId, Guid boardId)
+    {
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            requesterId,
+            "Create card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { title = "Task", boardId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", parameters, Guid.NewGuid().ToString()));
+
+        return proposal;
+    }
+
+    // Mirrors BuildPermissionGateProposal's operation as the DTO list Apply feeds to
+    // AutomationPolicyEngine.ValidatePermissionsAsync, so the same permission result can be
+    // computed against the shared mocks and asserted identical to the diff-preview result.
+    private static List<ProposalOperationDto> BuildPermissionGateApplyOperations(Guid proposalId, Guid boardId)
+        => new()
+        {
+            new ProposalOperationDto(
+                Guid.NewGuid(),
+                proposalId,
+                0,
+                "create",
+                "card",
+                null,
+                System.Text.Json.JsonSerializer.Serialize(new { title = "Task", boardId }),
+                Guid.NewGuid().ToString(),
+                null)
+        };
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectRevokedBoardAccess_MatchingApplyPermissionGate()
+    {
+        // #1398 third preview/apply asymmetry: Apply runs ValidatePermissionsAsync after the
+        // policy gate, so a proposal whose requester lost board access mid-review is rejected
+        // 403 at Apply. The diff path never ran that gate, previewing a clean 200 and then
+        // failing after approval. Preview now runs the same gate: preview == apply (403).
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // Requester exists and the board exists (constructor defaults), but access is revoked.
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act (preview)
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+
+        // Act (apply-side permission gate) on the equivalent operation DTOs.
+        var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+
+        // Assert: preview rejects, and rejects identically to Apply (403, same message).
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(applyResult.ErrorCode);
+        previewResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectDeletedBoard_MatchingApplyPermissionGate()
+    {
+        // #1398: a proposal whose board was deleted mid-review is rejected 404 at Apply
+        // (ValidatePermissionsAsync board-existence gate). Preview now runs the same gate.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // Board no longer exists (overrides the constructor default for this board id).
+        _boardRepoMock
+            .Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Board?)null);
+
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+        var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(ErrorCodes.NotFound);
+
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(applyResult.ErrorCode);
+        previewResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectDeletedRequester_MatchingApplyPermissionGate()
+    {
+        // #1398: a proposal whose requester (user) was deleted mid-review is rejected 404 at
+        // Apply (ValidatePermissionsAsync user-existence gate). Preview now runs the same gate.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // Requester no longer exists (overrides the constructor default for this user id).
+        _userRepoMock
+            .Setup(r => r.GetByIdAsync(requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+        var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(ErrorCodes.NotFound);
+
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(applyResult.ErrorCode);
+        previewResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldEnforcePermissionGate_EvenWithStoredPreview()
+    {
+        // #1398, cached-preview fast path (the #1376 lesson): a proposal carrying a stored
+        // DiffPreview whose requester lost board access previously previewed 200 with that
+        // stale preview, then failed Apply 403. The permission gate now runs BEFORE the cached
+        // preview return, so preview == apply (403) and the stored preview is NOT surfaced.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+        proposal.SetDiffPreview("0. Create card \"Task\"");
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: the cached preview is NOT returned; the permission rejection is.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldEnforcePermissionGate_OnRevisedPath()
+    {
+        // #1398 on the revision-aware path: Apply materializes the latest revision and still
+        // runs ValidatePermissionsAsync (requester board access). A revised proposal whose
+        // requester lost access is rejected 403 at Apply; the revised diff path now runs the
+        // same gate rather than rendering the revised diff cleanly.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            requesterId,
+            "Create card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var revisedParams = System.Text.Json.JsonSerializer.Serialize(new { title = "Revised card", boardId });
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "create",
+                    targetType = "card",
+                    parameters = revisedParams,
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposalId, default)).ReturnsAsync(revision);
+
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    // The REAL Apply trust boundary over the same shared mocks: a concrete
+    // AutomationExecutorService wired with the real proposal service under test and a real
+    // AutomationPolicyEngine (no mocked gates). Parity tests drive this instead of calling
+    // the engine method directly, so they fail if the executor's gate sequence ever diverges
+    // from what the diff path mirrors — not just if the shared engine changes (#1413 LOW-3).
+    private AutomationExecutorService BuildRealApplyExecutor()
+        => new(
+            _unitOfWorkMock.Object,
+            _service,
+            new AutomationPolicyEngine(_unitOfWorkMock.Object),
+            new CardService(_unitOfWorkMock.Object),
+            new BoardService(_unitOfWorkMock.Object),
+            new ColumnService(_unitOfWorkMock.Object));
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldMatchRealApplyExecutor_WhenBoardAccessRevoked()
+    {
+        // #1413 LOW-3: the ...MatchingApplyPermissionGate tests above compare preview against
+        // the same engine method the service delegates to, so they cannot detect the REAL
+        // Apply path diverging. This test drives AutomationExecutorService.ExecuteProposalAsync
+        // end-to-end on an APPROVED, non-terminal, non-expired proposal over the same fixture
+        // state (requester board access revoked) and asserts the diff rejection is
+        // code-and-message identical to the executor's rejection.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+        proposal.Approve(Guid.NewGuid());
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act: preview, then the real Apply boundary.
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+        var applyResult = await BuildRealApplyExecutor()
+            .ExecuteProposalAsync(proposalId, Guid.NewGuid().ToString());
+
+        // Assert: the real executor rejects 403 at its permission gate, and preview rejects
+        // identically — code AND message.
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(applyResult.ErrorCode);
+        previewResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectRevokedAccess_ForTerminalAppliedProposal()
+    {
+        // #1413 LOW-1 behavior-change pin: for a TERMINAL Applied proposal whose requester
+        // later lost board access, diff previously returned the stored preview (200); it now
+        // returns 403. This is INTENDED: Apply short-circuits terminal status to idempotent
+        // success BEFORE its permission gate, so preview is deliberately stricter than Apply's
+        // terminal no-op — a revoked reviewer can no longer read board contents through a
+        // terminal proposal's diff. Coherent with the #1397 maintainer decision (frontend
+        // stops firing live diffs for terminal items). Both sides are pinned here so any
+        // future drift in either direction fails this test.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+        proposal.SetDiffPreview("0. Create card \"Task\"");
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+        var applyResult = await BuildRealApplyExecutor()
+            .ExecuteProposalAsync(proposalId, Guid.NewGuid().ToString());
+
+        // Assert: preview rejects 403 (stored preview NOT surfaced) while the real Apply
+        // boundary short-circuits the already-applied proposal to idempotent success.
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        previewResult.Value.Should().BeNull();
+
+        applyResult.IsSuccess.Should().BeTrue(applyResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldReportExpiry_NotForbidden_WhenExpiredAndAccessRevoked()
+    {
+        // #1413 LOW-4 gate-ordering pin: a proposal that is BOTH expired AND has revoked
+        // requester access must fail with the expiry ValidationError — not Forbidden — from
+        // BOTH trust boundaries, because both run structure → expiry (ValidatePolicy order)
+        // BEFORE the permission gate. If either side ever reorders permissions ahead of
+        // structure/expiry, its error flips to Forbidden and this test fails on that side.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+        // Approve while still valid (the domain forbids approving an expired proposal),
+        // then force expiry — mirrors a proposal that expired after approval.
+        proposal.Approve(Guid.NewGuid());
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act
+        var previewResult = await _service.GetProposalDiffAsync(proposalId);
+        var applyResult = await BuildRealApplyExecutor()
+            .ExecuteProposalAsync(proposalId, Guid.NewGuid().ToString());
+
+        // Assert: BOTH sides report the expiry ValidationError, never Forbidden.
+        previewResult.IsSuccess.Should().BeFalse();
+        previewResult.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        previewResult.ErrorMessage.Should().Be("Proposal has expired");
+
+        applyResult.IsSuccess.Should().BeFalse();
+        applyResult.ErrorCode.Should().Be(previewResult.ErrorCode);
+        applyResult.ErrorMessage.Should().Be(previewResult.ErrorMessage);
+    }
+
+    #endregion
+
+    #region GetTerminalProposalStoredPreviewAsync Tests (#1415)
+
+    private static AutomationProposal BuildTerminalPreviewProposal(Guid requesterId, Guid boardId, string preview)
+    {
+        // A board-scoped Applied proposal carrying one benign update-board operation. The terminal
+        // stored-preview read gates ONLY on requester/board access (ValidateBoardAccessAsync) —
+        // operations are never re-validated against live board state — so the op shape here is
+        // representative rather than load-bearing.
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            requesterId,
+            "Rename board",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { name = "Renamed board", boardId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+
+        // SetDiffPreview requires PendingReview, so stamp the stored preview before deciding.
+        proposal.SetDiffPreview(preview);
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+        return proposal;
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnStoredPreview_WhenRequesterRetainsAccess()
+    {
+        // #1415: a decided proposal whose requester still has board access serves the STORED
+        // historical preview verbatim (no live rebuild), mirroring the #1397 frontend decision.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "0. Create card \"Task\"");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be("0. Create card \"Task\"");
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnForbidden_WhenRequesterLostBoardAccess()
+    {
+        // #1415: the core trust-class fix. A requester who lost board access must be denied the
+        // stored preview with the SAME Forbidden the diff/apply permission gate returns — the
+        // stored preview is NOT surfaced.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "leaked-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNotFound_WhenBoardDeleted()
+    {
+        // #1415 board-exists gate: a decided proposal whose board was deleted returns 404, never
+        // the stored preview.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "orphan-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardRepoMock
+            .Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Board?)null);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNotFound_WhenRequesterDeleted()
+    {
+        // #1415 requester-exists gate: a decided proposal whose requester was deleted returns 404.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "ghost-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _userRepoMock
+            .Setup(r => r.GetByIdAsync(requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNotFound_WhenProposalMissing()
+    {
+        var proposalId = Guid.NewGuid();
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync((AutomationProposal?)null);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldSkipExpiryGate_ServingStoredPreview_WhenExpiredButAccessRetained()
+    {
+        // #1415 deliberate divergence from the live diff path: the pre-decision structure/expiry
+        // gates no longer apply once a proposal is decided. An Applied proposal whose ExpiresAt has
+        // since passed still serves its stored historical preview (subject to board access), where
+        // GetProposalDiffAsync would report expiry. Only the requester/board-access gate is enforced.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "expired-but-historical");
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be("expired-but-historical");
+    }
+
+    private static AutomationProposal BuildZeroOperationTerminalProposal(Guid requesterId, Guid boardId, string preview)
+    {
+        // CreateProposalAsync enforces no minimum operation count, so a board-scoped proposal can
+        // carry zero operations and still be decided (here: Rejected). ValidatePermissionsAsync's
+        // empty-operations short-circuit skips its board half for this shape — the terminal read
+        // calls ValidateBoardAccessAsync directly so the board gate holds uniformly.
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            requesterId,
+            "Zero-op proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        proposal.SetDiffPreview(preview);
+        proposal.Reject(Guid.NewGuid(), "not needed");
+        return proposal;
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnForbidden_WhenZeroOpBoardScopedProposalLostAccess()
+    {
+        // #1415 regression guard: a board-scoped decided proposal with NO operations must still be
+        // denied to a requester who lost board access — ValidatePermissionsAsync short-circuits on
+        // the empty op list before its board half, so the terminal read's direct
+        // ValidateBoardAccessAsync call must fail it closed.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildZeroOperationTerminalProposal(requesterId, boardId, "leaked-empty-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNotFound_WhenZeroOpBoardScopedProposalBoardDeleted()
+    {
+        // #1415 regression guard: the board-exists half of the gate must also run for a zero-op
+        // board-scoped decided proposal.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildZeroOperationTerminalProposal(requesterId, boardId, "orphan-empty-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardRepoMock
+            .Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Board?)null);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnStoredPreview_WhenZeroOpBoardScopedProposalRetainsAccess()
+    {
+        // The guard denies only revoked/deleted access — a zero-op board-scoped proposal whose
+        // requester still has access serves its stored preview normally.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildZeroOperationTerminalProposal(requesterId, boardId, "empty-but-visible");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be("empty-but-visible");
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldServeStoredPreview_WhenAppliedMoveCardReferencesDeletedCard()
+    {
+        // #1425 MEDIUM regression pin (over-gating): an Applied move-card proposal whose referenced
+        // card was deleted AFTER apply must still serve its stored historical preview to a requester
+        // with intact access. The terminal read must NOT run the operation-contract validator — that
+        // validator checks references against LIVE board state (ValidateCardBoardAsync) and would
+        // wrongly deny the historical preview with a misleading scope/NotFound error.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, requesterId, "Move card", RiskLevel.Medium,
+            Guid.NewGuid().ToString(), boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, cardId, columnId = Guid.NewGuid() });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "move", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: cardId.ToString()));
+        proposal.SetDiffPreview("historical: moved card to Done");
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // The referenced card no longer exists (deleted post-apply).
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>())).ReturnsAsync((Card?)null);
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Be("historical: moved card to Done");
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldServeStoredPreview_WhenAppliedCreateCardTargetIdNowResolves()
+    {
+        // #1425 MEDIUM regression pin (the always-fires case): an Applied create-card proposal's
+        // TargetId resolves to the card Apply created — the operation-contract validator's
+        // new-card-id collision check (ValidateNewCardIdAsync) would ALWAYS reject it with
+        // Conflict. The terminal read must serve the stored preview immediately instead.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var createdCardId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, requesterId, "Create card", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, title = "Task", columnId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: createdCardId.ToString()));
+        proposal.SetDiffPreview("historical: created card \"Task\"");
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // The created card EXISTS now — exactly what the live new-card-id check would reject.
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock
+            .Setup(r => r.GetByIdAsync(createdCardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TestDataBuilder.CreateCard(boardId, columnId, "Task"));
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Be("historical: created card \"Task\"");
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNullPreview_WhenNoPreviewWasStored()
+    {
+        // #1425 LOW-2 pin: a decided proposal that never had a preview stored returns null (not ""),
+        // so MCP clients can distinguish never-stored from stored-but-empty — matching how the raw
+        // field serialized before the gating.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, requesterId, "Never previewed", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId);
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().BeNull();
     }
 
     #endregion

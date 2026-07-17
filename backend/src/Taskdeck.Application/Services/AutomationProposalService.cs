@@ -38,15 +38,21 @@ public class AutomationProposalService : IAutomationProposalService
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationService _notificationService;
     private readonly IProposalProvenanceRepository? _provenanceRepository;
+    private readonly IAutomationPolicyEngine _policyEngine;
 
     public AutomationProposalService(
         IUnitOfWork unitOfWork,
         INotificationService? notificationService = null,
-        IProposalProvenanceRepository? provenanceRepository = null)
+        IProposalProvenanceRepository? provenanceRepository = null,
+        IAutomationPolicyEngine? policyEngine = null)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
         _provenanceRepository = provenanceRepository;
+        // Fall back to a plain engine over the same unit of work when DI does not supply one
+        // (direct construction in tests). The engine is stateless apart from _unitOfWork, so
+        // the fallback runs the identical read-safe permission gates the injected one does.
+        _policyEngine = policyEngine ?? new AutomationPolicyEngine(unitOfWork);
     }
 
     public async Task<Result<ProposalDto>> CreateProposalAsync(CreateProposalDto dto, CancellationToken cancellationToken = default)
@@ -228,6 +234,54 @@ public class AutomationProposalService : IAutomationProposalService
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+            // Approve-time gates (#1416 approve == apply): a reviewer must not be able to commit
+            // to a proposal the executor will refuse. Apply validates the EFFECTIVE operation set
+            // (latest saved revision, else the original operations) through
+            // AutomationPolicyEngine.ValidatePolicy (structure, then expiry) followed by
+            // ValidatePermissionsAsync (requester exists → 404, board exists → 404, board access
+            // → 403, then operation-contract validation → 400/403/404), and GetProposalDiffAsync
+            // mirrors the same revision-aware materialization and gate order. Approve now enforces:
+            //   1. Structure → 400 ValidationError (same validator, same shape as diff/apply).
+            //   2. Expiry → 409 InvalidOperation, via the domain transition's own guard
+            //      (AutomationProposal.Approve throws "Cannot approve expired proposal").
+            //      Deliberately NOT the diff path's 400 read-parity shape: approving is a state
+            //      transition, so a 409 conflict is the correct refusal for an expired proposal.
+            //   3. Permissions + operation contract → the same 400/403/404 results Apply produces,
+            //      via the same _policyEngine.ValidatePermissionsAsync call the diff path runs.
+            // Ordering mirrors the diff/apply sequence exactly (structure → expiry → permissions):
+            // the permission gate is skipped for an expired proposal so the domain guard's 409 owns
+            // expiry — an expired proposal with revoked access reports expiry, never Forbidden,
+            // matching the #1413 LOW-4 ordering pin on the diff path. A zero-op AND expired
+            // proposal likewise reports the 400 structure error first, as it does on diff and apply.
+            // This closes the last "user commits to something the executor will refuse" step in
+            // this trust class (siblings #1370 → #1374, #1376 → #1395, #1398 → #1413).
+            //
+            // Gate only genuinely approvable (PendingReview) proposals: for any other status the
+            // domain transition's terminal-status short-circuit owns the response (409 "Cannot
+            // approve proposal in status X"), which this slice leaves untouched — running these
+            // gates on a terminal proposal would wrongly report a 400/403/404 in place of that 409.
+            if (proposal.Status == ProposalStatus.PendingReview)
+            {
+                var effectiveOperations = await ResolveEffectiveOperationsAsync(proposal, cancellationToken);
+                if (!effectiveOperations.IsSuccess)
+                    return Result.Failure<ProposalDto>(effectiveOperations.ErrorCode, effectiveOperations.ErrorMessage);
+
+                var structureValidation = ProposalOperationStructureValidator.Validate(effectiveOperations.Value);
+                if (!structureValidation.IsSuccess)
+                    return Result.Failure<ProposalDto>(structureValidation.ErrorCode, structureValidation.ErrorMessage);
+
+                if (!proposal.IsExpired)
+                {
+                    var permissionValidation = await _policyEngine.ValidatePermissionsAsync(
+                        proposal.RequestedByUserId,
+                        proposal.BoardId,
+                        effectiveOperations.Value,
+                        cancellationToken);
+                    if (!permissionValidation.IsSuccess)
+                        return Result.Failure<ProposalDto>(permissionValidation.ErrorCode, permissionValidation.ErrorMessage);
+                }
+            }
+
             proposal.Approve(decidedByUserId);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -241,6 +295,42 @@ public class AutomationProposalService : IAutomationProposalService
         {
             return Result.Failure<ProposalDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Resolves the effective operation set Apply will execute, for the approve-time structure
+    /// and permission/contract gates — the latest saved <see cref="ProposalRevision"/> when one exists (mirroring
+    /// <c>AutomationExecutorService.MaterializeEffectiveProposalAsync</c> and the revision-aware
+    /// <see cref="GetProposalDiffAsync"/> path), otherwise the proposal's original operations —
+    /// so approve validates exactly what Apply will run (#1416 approve == apply). A revision is
+    /// structure-validated at save time, so the parse-failure branch is defensive: if the
+    /// effective payload cannot be materialized, Apply would fail the same way, so surface the
+    /// identical <see cref="ErrorCodes.ValidationError"/>.
+    /// </summary>
+    private async Task<Result<IReadOnlyCollection<ProposalOperationDto>>> ResolveEffectiveOperationsAsync(
+        AutomationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
+        if (latestRevision is not null)
+        {
+            if (!ProposalRevisionPayload.TryParseOperations(
+                    proposal.Id,
+                    latestRevision.RevisedPayload,
+                    out var revisedOperations,
+                    out var errorMessage))
+            {
+                return Result.Failure<IReadOnlyCollection<ProposalOperationDto>>(ErrorCodes.ValidationError, errorMessage);
+            }
+
+            return Result.Success<IReadOnlyCollection<ProposalOperationDto>>(revisedOperations);
+        }
+
+        var originalOperations = proposal.Operations
+            .OrderBy(o => o.Sequence)
+            .Select(MapOperationToDto)
+            .ToList();
+        return Result.Success<IReadOnlyCollection<ProposalOperationDto>>(originalOperations);
     }
 
     public async Task<Result<ProposalDto>> RejectProposalAsync(Guid id, Guid decidedByUserId, UpdateProposalStatusDto dto, CancellationToken cancellationToken = default)
@@ -414,8 +504,15 @@ public class AutomationProposalService : IAutomationProposalService
             if (!revisedExpiryValidation.IsSuccess)
                 return Result.Failure<string>(revisedExpiryValidation.ErrorCode, revisedExpiryValidation.ErrorMessage);
 
-            var revisedValidation = await ProposalOperationContractValidator.ValidateAsync(
-                _unitOfWork,
+            // Apply runs AutomationPolicyEngine.ValidatePermissionsAsync AFTER the policy gate
+            // (requester exists → 404, board exists → 404, requester board access → 403), and it
+            // ends by running the same operation-contract validation. Call that same engine method
+            // here so a proposal whose requester lost board access, or whose board/requester was
+            // deleted mid-review, cannot preview a clean diff and then fail Apply after approval
+            // (#1398 preview == apply). Ordering (structure → expiry → permissions+contract) matches
+            // Apply's ValidatePolicy-then-ValidatePermissionsAsync sequence exactly.
+            var revisedValidation = await _policyEngine.ValidatePermissionsAsync(
+                proposal.RequestedByUserId,
                 proposal.BoardId,
                 revisedOperations,
                 cancellationToken);
@@ -456,8 +553,15 @@ public class AutomationProposalService : IAutomationProposalService
         if (!expiryValidation.IsSuccess)
             return Result.Failure<string>(expiryValidation.ErrorCode, expiryValidation.ErrorMessage);
 
-        var originalValidation = await ProposalOperationContractValidator.ValidateAsync(
-            _unitOfWork,
+        // Apply runs AutomationPolicyEngine.ValidatePermissionsAsync AFTER the policy gate
+        // (requester exists → 404, board exists → 404, requester board access → 403), then the
+        // same operation-contract validation. Call that same engine method here — ahead of the
+        // cached-DiffPreview fast path below — so a revoked-access or deleted-board/requester
+        // proposal cannot preview a clean diff (even a stored one) and then fail Apply after
+        // approval (#1398 preview == apply). Structure → expiry → permissions+contract mirrors
+        // Apply's ValidatePolicy-then-ValidatePermissionsAsync order exactly.
+        var originalValidation = await _policyEngine.ValidatePermissionsAsync(
+            proposal.RequestedByUserId,
             proposal.BoardId,
             originalOperations,
             cancellationToken);
@@ -473,6 +577,41 @@ public class AutomationProposalService : IAutomationProposalService
 
         var generatedDiff = await BuildReadableDiffAsync(proposal.BoardId, orderedViews, cancellationToken);
         return Result.Success(generatedDiff);
+    }
+
+    public async Task<Result<string>> GetTerminalProposalStoredPreviewAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(id, cancellationToken);
+        if (proposal == null)
+            return Result.Failure<string>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
+
+        // A decided proposal's diff is historical: rebuilding it against the current board would
+        // describe changes that already happened (or were rejected), so the STORED preview is
+        // served rather than a live diff (#1397). But the requester/board-access half of the gate
+        // must still hold — the shared AutomationPolicyEngine.ValidateBoardAccessAsync, the exact
+        // checks (and codes/messages) ValidatePermissionsAsync composes on the live diff path
+        // (#1398/#1413): requester exists → 404, board exists → 404, requester has board access
+        // → 403. This closes the MCP preview==apply asymmetry (#1415) where a reviewer who lost
+        // board access, or whose board was deleted, could still read the stored preview. The
+        // operation-contract validator and the pre-decision structure/expiry gates are
+        // intentionally NOT run: they no longer apply to a completed proposal, and re-validating
+        // a historical preview against LIVE board state would wrongly deny it whenever a
+        // referenced card/column/label was later deleted — or always, for an Applied create-card
+        // whose TargetId now resolves. Calling ValidateBoardAccessAsync directly also covers
+        // operation-less proposals uniformly, which the full gate's empty-operations
+        // short-circuit would skip.
+        var accessValidation = await _policyEngine.ValidateBoardAccessAsync(
+            proposal.RequestedByUserId,
+            proposal.BoardId,
+            cancellationToken);
+        if (!accessValidation.IsSuccess)
+            return Result.Failure<string>(accessValidation.ErrorCode, accessValidation.ErrorMessage);
+
+        // A never-stored preview passes through as null (never coerced to ""), so callers can
+        // distinguish never-stored from stored-but-empty. Under the MCP resource serializer's
+        // WhenWritingNull policy this omits the field — exactly how the raw DiffPreview field
+        // serialized before the gating.
+        return Result.Success(proposal.DiffPreview!);
     }
 
     /// <summary>

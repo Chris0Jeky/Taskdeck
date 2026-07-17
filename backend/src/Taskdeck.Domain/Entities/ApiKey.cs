@@ -85,11 +85,4 @@ public class ApiKey : Entity
         RevokedAt = DateTimeOffset.UtcNow;
         Touch();
     }
-
-    /// <summary>Record that this key was used for a successful authentication.</summary>
-    public void RecordUsage()
-    {
-        LastUsedAt = DateTimeOffset.UtcNow;
-        Touch();
-    }
 }

@@ -4,8 +4,10 @@ using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Tests.TestUtilities;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -20,6 +22,10 @@ public class AutomationProposalServiceEdgeCaseTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IAutomationProposalRepository> _proposalRepoMock;
+    private readonly Mock<IProposalRevisionRepository> _revisionRepoMock;
+    private readonly Mock<IUserRepository> _userRepoMock;
+    private readonly Mock<IBoardRepository> _boardRepoMock;
+    private readonly Mock<IBoardAccessRepository> _boardAccessRepoMock;
     private readonly Mock<INotificationService> _notificationServiceMock;
     private readonly AutomationProposalService _service;
 
@@ -27,9 +33,34 @@ public class AutomationProposalServiceEdgeCaseTests
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _proposalRepoMock = new Mock<IAutomationProposalRepository>();
+        _revisionRepoMock = new Mock<IProposalRevisionRepository>();
+        _userRepoMock = new Mock<IUserRepository>();
+        _boardRepoMock = new Mock<IBoardRepository>();
+        _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
         _notificationServiceMock = new Mock<INotificationService>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ProposalRevisions).Returns(_revisionRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
+        // Default: no saved revision, so the approve-time gates (#1416) validate the proposal's
+        // original operations rather than an effective revision.
+        _revisionRepoMock
+            .Setup(r => r.GetLatestByProposalIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposalRevision?)null);
+        // Approve now also runs Apply's permission/contract gate (#1416): requester exists,
+        // board exists, requester has board access. Default them to PASS so these edge-case
+        // tests reach their intended seam (expiry guard, SaveChanges concurrency collision).
+        _userRepoMock
+            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User("edgetester", "edge@example.com", "hashedPassword"));
+        _boardRepoMock
+            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TestDataBuilder.CreateBoard());
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
@@ -42,8 +73,11 @@ public class AutomationProposalServiceEdgeCaseTests
     [Fact]
     public async Task ApproveProposalAsync_ShouldReturnFailure_WhenProposalIsExpired()
     {
-        // Arrange: proposal whose ExpiresAt is in the past
+        // Arrange: proposal whose ExpiresAt is in the past. It carries an operation so it clears
+        // the approve-time structure gate (#1416) and the domain expiry guard is what rejects it.
         var proposal = CreatePendingProposal();
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", "{\"title\":\"Test\"}", Guid.NewGuid().ToString()));
         SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
 
         _proposalRepoMock
@@ -78,6 +112,17 @@ public class AutomationProposalServiceEdgeCaseTests
     public async Task ApproveProposalAsync_ShouldReturnConflict_WhenSaveChangesDetectsConcurrency()
     {
         var proposal = CreatePendingProposal();
+        // Carries an in-scope board-update operation so approve clears the structure AND
+        // permission/contract gates (#1416) and reaches SaveChanges, where the simulated
+        // concurrency collision surfaces.
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "update",
+            "board",
+            $"{{\"boardId\":\"{proposal.BoardId}\",\"name\":\"Renamed\"}}",
+            Guid.NewGuid().ToString(),
+            targetId: proposal.BoardId!.Value.ToString()));
         var deciderId = Guid.NewGuid();
 
         _proposalRepoMock

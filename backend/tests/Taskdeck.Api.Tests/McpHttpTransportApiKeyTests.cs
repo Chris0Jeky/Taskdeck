@@ -451,6 +451,62 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task McpEndpoint_StaleOwnerKey_IsRateLimitedBeforeDatabaseLookup()
+    {
+        // #1404: a stale-owner key (active key row, deactivated owner) must 401 AND charge the pre-auth
+        // IP failure budget, so a second attempt from the same address is 429 via the IP policy — proving
+        // sustained stale-owner traffic trips the pre-auth pre-check before the SHA-256 + DB lookup,
+        // rather than looping forever behind a per-key 429 that never spends the IP budget. Mirrors the
+        // nonexistent-key convention in McpEndpoint_RejectedCredentials_AreRateLimitedBeforeDatabaseLookup.
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("RateLimiting:Enabled", "true");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIp:PermitLimit", "1");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIp:WindowSeconds", "60");
+            builder.UseSetting("RateLimiting:McpPerApiKey:PermitLimit", "10");
+            builder.UseSetting("RateLimiting:McpPerApiKey:WindowSeconds", "60");
+        });
+        using var jwtClient = factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-stale-owner");
+        using var createResponse = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys", new CreateApiKeyRequest("Stale Owner Key"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        created.Should().NotBeNull();
+
+        // Deactivate the owner, leaving the key row itself active — the stale-owner condition.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var ownerId = await dbContext.ApiKeys
+                .Where(key => key.Id == created!.Id)
+                .Select(key => key.UserId)
+                .FirstAsync();
+            await dbContext.Users
+                .Where(user => user.Id == ownerId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(user => user.IsActive, false));
+        }
+
+        using var mcpClient = factory.CreateClient();
+        mcpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", created!.Key);
+
+        using var first = await PostMcpAsync(mcpClient, "/mcp", CreateInitializeRequest(1));
+        using var second = await PostMcpAsync(mcpClient, "/mcp", CreateInitializeRequest(2));
+
+        first.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "the stale-owner key is rejected before authenticating");
+        second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+            "the first rejection charged the pre-auth IP failure budget, so the second attempt trips the IP pre-check");
+        second.Headers.TryGetValues("Retry-After", out _).Should().BeTrue();
+        second.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
+            .Which.Should().Be(RateLimitingPolicyNames.McpAuthenticationPerIp);
+        second.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var error = await second.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.TooManyRequests);
+    }
+
+    [Fact]
     public async Task McpEndpoint_ProductionDefaultIpBudget_DoesNotStarveMultipleKeysBehindOneAddress()
     {
         // Exercises the #1368 blind spot. Precisely: only the pre-auth IP budget — the setting under

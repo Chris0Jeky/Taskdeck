@@ -292,7 +292,7 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     [Theory]
     [InlineData("2026-07-14T09:30:00")]
     [InlineData("07/14/2026")]
-    public async Task RevisedDueDate_InvalidFormat_ShouldFailPreviewAndApply(string dueDate)
+    public async Task RevisedDueDate_InvalidFormat_ShouldFailPreviewAndApprove(string dueDate)
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-invalid-due");
@@ -314,12 +314,18 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
 
-        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: approve runs the same gates preview/apply run, so the invalid
+        // revision is rejected at approve with the identical error contract instead of being
+        // approved and only failing at apply.
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // Never approved -> the executor's status guard refuses execution outright (409),
+        // pinning that a statically invalid revision can no longer reach the apply stage at all.
         var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
         executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         var executeResponse = await client.SendAsync(executeRequest);
-        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
     }
 
     [Fact]
@@ -369,7 +375,7 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task RevisedUpdate_WithOnlyFalseClearDueDate_ShouldFailPreviewAndApply()
+    public async Task RevisedUpdate_WithOnlyFalseClearDueDate_ShouldFailPreviewAndApprove()
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-noop-update");
@@ -391,17 +397,19 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
 
-        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: the contract-violating revision is rejected at approve with the
+        // identical error; the never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
         var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
-        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
 
         var cards = await ReadCardsAsync(client, board.Id);
         cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Title == "Unchanged card");
     }
 
     [Fact]
-    public async Task RevisedLabelOperation_WithoutCardId_ShouldFailPreviewAndApply()
+    public async Task RevisedLabelOperation_WithoutCardId_ShouldFailPreviewAndApprove()
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-label-missing-card");
@@ -423,14 +431,16 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
 
-        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: rejected at approve with the identical error; the
+        // never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
         var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
-        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
     }
 
     [Fact]
-    public async Task RevisedUpdate_WithEmptyLabelId_ShouldFailPreviewAndApply()
+    public async Task RevisedUpdate_WithEmptyLabelId_ShouldFailPreviewAndApprove()
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-empty-label-id");
@@ -452,10 +462,12 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
 
-        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: rejected at approve with the identical error; the
+        // never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
         var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
-        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
 
         var cards = await ReadCardsAsync(client, board.Id);
         cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
@@ -466,7 +478,7 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     [InlineData("add_-label")]
     [InlineData("remove__label")]
     [InlineData("add..label")]
-    public async Task RevisedLabelOperation_WithUnregisteredAlias_ShouldFailPreviewAndApply(string actionType)
+    public async Task RevisedLabelOperation_WithUnregisteredAlias_ShouldFailPreviewAndApprove(string actionType)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var client = _factory.CreateClient();
@@ -490,17 +502,19 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
 
-        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: rejected at approve with the identical error; the
+        // never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
         var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
-        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
 
         var cards = await ReadCardsAsync(client, board.Id);
         cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
     }
 
     [Fact]
-    public async Task RevisedCreate_WithoutRequiredTitle_ShouldFailPreviewAndApply()
+    public async Task RevisedCreate_WithoutRequiredTitle_ShouldFailPreviewAndApprove()
     {
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rev-create-missing-title");
@@ -520,10 +534,12 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
 
-        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: rejected at approve with the identical error; the
+        // never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
         var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
-        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
 
         (await ReadCardsAsync(client, board.Id)).Should().BeEmpty();
     }
@@ -533,10 +549,63 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     [InlineData("add-label")]
     public async Task RevisedLabelName_WithAmbiguousBoardMatches_ShouldFailPreviewAndApply(string actionType)
     {
+        // #1416 restructure: approve now runs the same gates apply runs, so a revision that is
+        // ALREADY ambiguous at approve time is rejected at approve (parity pinned below). The
+        // apply-side ambiguity rejection therefore only remains reachable through the genuinely
+        // time-dependent path — approve while the name is unique, then the ambiguity appears
+        // AFTER approval — which is exactly what this test now pins: preview and apply both
+        // reject the approved-but-no-longer-appliable proposal with the same error.
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, $"rev-label-ambiguous-{suffix}");
         var (board, column) = await CreateBoardWithColumnAsync(client, $"rev-label-ambiguous-board-{suffix}");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged ambiguous label card");
+        var labelName = $"urgent-{suffix}";
+        _ = await CreateLabelAsync(client, board.Id, labelName);
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = actionType == "update"
+            ? JsonSerializer.Serialize(new { cardId = card.Id, labels = new[] { labelName } })
+            : JsonSerializer.Serialize(new { cardId = card.Id, labelName });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload(
+                    actionType, "card", parameters, card.Id.ToString()),
+                reason = "name-based label operation, unique at approval time"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // Unique name: valid at approve time, so approve accepts — exactly what apply would do.
+        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // The ambiguity appears AFTER approval (a case-insensitive duplicate label).
+        _ = await CreateLabelAsync(client, board.Id, labelName.ToUpperInvariant());
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
+    }
+
+    [Theory]
+    [InlineData("update")]
+    [InlineData("add-label")]
+    public async Task RevisedLabelName_AlreadyAmbiguousAtApproveTime_ShouldFailApprove(string actionType)
+    {
+        // #1416 approve == apply, static-ambiguity direction: when the ambiguity already exists
+        // at approve time, approve rejects with the same ValidationError preview/apply produce,
+        // so the reviewer can never commit to a name-based operation the executor would refuse.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, $"rev-label-preambig-{suffix}");
+        var (board, column) = await CreateBoardWithColumnAsync(client, $"rev-label-preambig-board-{suffix}");
         var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged ambiguous label card");
         var labelName = $"urgent-{suffix}";
         _ = await CreateLabelAsync(client, board.Id, labelName);
@@ -559,10 +628,11 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
 
-        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+
         var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
-        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
 
         var cards = await ReadCardsAsync(client, board.Id);
         cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
@@ -611,12 +681,14 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
 
-        (await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: the identity-redirecting revision is rejected at approve with
+        // the identical error; the never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
         var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
         executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         var executeResponse = await ownerClient.SendAsync(executeRequest);
-        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
 
         var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
         victimCards.Should().ContainSingle(card => card.Id == victimCard.Id && card.Title == "Victim card");
@@ -647,10 +719,12 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertForbiddenAsync(diffResponse);
 
-        (await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: the cross-user revision is rejected at approve with the same
+        // Forbidden apply produces; the never-approved proposal cannot reach the apply stage (409).
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertForbiddenAsync(approveResponse);
         var executeResponse = await ExecuteProposalAsync(ownerClient, proposal.Id);
-        await ApiTestHarness.AssertForbiddenAsync(executeResponse);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
 
         var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
         victimCards.Should().ContainSingle(card => card.Id == victimCard.Id && card.Title == "Victim card");
@@ -679,12 +753,14 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertForbiddenAsync(diffResponse);
 
-        (await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: the cross-board revision is rejected at approve with the same
+        // Forbidden apply produces; the never-approved proposal cannot reach the apply stage (409).
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertForbiddenAsync(approveResponse);
         var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
         executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         var executeResponse = await ownerClient.SendAsync(executeRequest);
-        await ApiTestHarness.AssertForbiddenAsync(executeResponse);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
 
         var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
         victimCards.Should().NotContain(card => card.Title == "Cross-board card");
@@ -713,10 +789,12 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
         await ApiTestHarness.AssertForbiddenAsync(diffResponse);
 
-        (await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        // #1416 approve == apply: the cross-board column revision is rejected at approve with the
+        // same Forbidden apply produces; the never-approved proposal cannot reach apply (409).
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertForbiddenAsync(approveResponse);
         var executeResponse = await ExecuteProposalAsync(ownerClient, proposal.Id);
-        await ApiTestHarness.AssertForbiddenAsync(executeResponse);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
 
         var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
         victimCards.Should().NotContain(card => card.Title == "Cross-board column card");
