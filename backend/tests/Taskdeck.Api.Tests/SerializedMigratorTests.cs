@@ -225,6 +225,121 @@ public sealed class SerializedMigratorTests : IDisposable
             "failing to acquire the migration lock within the timeout must be logged as a warning");
     }
 
+    [Fact]
+    public async Task Fail_open_collision_is_tolerated_and_schema_still_applies_exactly_once()
+    {
+        // Deterministically exercises the tolerance branch the concurrent test only reaches under
+        // pathological CI load. The sidecar lock file is held EXTERNALLY for the whole race (same
+        // technique as Migrate_proceeds_with_a_warning_when_lock_cannot_be_acquired_within_timeout)
+        // with a short lock timeout, so BOTH migrators are forced onto the documented fail-open
+        // path. Barrier-synced against a cold DB, both compute the full pending chain and race;
+        // the loser collides on early DDL. Whether that collision propagates (winner mid-chain)
+        // or is swallowed as a no-op (winner finished) is scheduling-dependent, so the loop
+        // retries a few fresh databases until collision evidence is observed — every attempt
+        // still asserts the exactly-once end state.
+        const int maxAttempts = 3;
+        var collisionObserved = false;
+
+        for (var attempt = 1; attempt <= maxAttempts && !collisionObserved; attempt++)
+        {
+            var dbPath = Path.Combine(
+                Path.GetTempPath(), $"taskdeck-serialized-migrate-failopen-{Guid.NewGuid():N}.db");
+            try
+            {
+                // Hold the exclusive lock for the entire attempt: neither migrator can acquire it.
+                using var heldLock = new FileStream(
+                    Path.GetFullPath(dbPath) + ".migrate.lock",
+                    FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+                using var contextA = NewFileContext(dbPath);
+                using var contextB = NewFileContext(dbPath);
+                var loggerA = new InMemoryLogger<SerializedMigratorTests>();
+                var loggerB = new InMemoryLogger<SerializedMigratorTests>();
+                using var startBarrier = new Barrier(2);
+
+                Task RunMigratorAsync(TaskdeckDbContext context, InMemoryLogger<SerializedMigratorTests> logger)
+                    => Task.Run(() =>
+                    {
+                        if (!startBarrier.SignalAndWait(TimeSpan.FromSeconds(10)))
+                        {
+                            throw new TimeoutException(
+                                "Sibling migrator never reached the start barrier.");
+                        }
+
+                        SerializedMigrator.Migrate(context, TimeSpan.FromMilliseconds(250), logger);
+                    });
+
+                var migratorA = RunMigratorAsync(contextA, loggerA);
+                var migratorB = RunMigratorAsync(contextB, loggerB);
+
+                var faults = new List<Exception>();
+                foreach (var migrator in new[] { migratorA, migratorB })
+                {
+                    try
+                    {
+                        await migrator;
+                    }
+                    catch (Exception ex)
+                    {
+                        faults.Add(ex);
+                    }
+                }
+
+                // Deterministic precondition: the externally held lock must have forced BOTH
+                // migrators onto the fail-open path — otherwise this test proves nothing.
+                foreach (var logger in new[] { loggerA, loggerB })
+                {
+                    logger.Entries.Should().Contain(
+                        e => e.Level == LogLevel.Warning &&
+                             e.Message.Contains("could not acquire migration lock"),
+                        "an externally held sidecar lock must force every migrator onto the " +
+                        "documented fail-open path");
+                }
+
+                faults.Count.Should().BeLessThan(2,
+                    "even with both migrators on the lock-free path, the winner never throws the " +
+                    "collision it caused — both faulting means no run applied the chain");
+                foreach (var fault in faults)
+                {
+                    IsSqliteCollisionFault(fault).Should().BeTrue(
+                        "a fail-open loser may only fault with the SQLite collision signature; " +
+                        $"any non-SQL throw is a real defect, but got: {fault}");
+                }
+
+                // The invariant that matters, identical to the concurrent test: final schema
+                // migrated exactly once and usable, regardless of how the race interleaved.
+                using var verify = NewFileContext(dbPath);
+                GetUserTableNames(verify).Should().Contain(
+                    "Boards", "the migration chain must have created the Boards table");
+                verify.Set<Board>().Count().Should().Be(0,
+                    "the migrated Boards table must be usable — a real query against it must succeed");
+                var historyIds = GetMigrationHistoryIds(verify);
+                historyIds.Should().OnlyHaveUniqueItems(
+                    "racing fail-open migrators must not double-insert __EFMigrationsHistory rows");
+                historyIds.Should().BeEquivalentTo(
+                    verify.Database.GetMigrations(),
+                    "every defined migration must be applied exactly once despite the fail-open race");
+
+                // Collision evidence: either the loser's fault propagated (winner was mid-chain)
+                // or SerializedMigrator swallowed it and logged the documented race warning
+                // (winner had finished). Absent both, the loser happened to no-op — retry.
+                collisionObserved = faults.Count == 1 ||
+                    loggerA.Entries.Concat(loggerB.Entries).Any(e =>
+                        e.Level == LogLevel.Warning &&
+                        e.Message.Contains("raced a concurrent migrator"));
+            }
+            finally
+            {
+                CleanupDbFiles(dbPath);
+            }
+        }
+
+        collisionObserved.Should().BeTrue(
+            "with both migrators forced onto the lock-free path against a cold database, the " +
+            $"loser must collide mid-chain in at least one of {maxAttempts} attempts — never " +
+            "colliding means the tolerance branch was not exercised at all");
+    }
+
     /// <summary>
     /// Returns <c>true</c> when <paramref name="exception"/> is (or wraps, anywhere in its
     /// inner-exception chain) a <see cref="SqliteException"/> — the signature of a losing
