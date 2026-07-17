@@ -13,10 +13,14 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
     private const int EstimatedJsonOverheadCharacters = 512;
 
     /// <summary>
-    /// Upper bound on artefact ids accepted by <see cref="GetByArtefactsForUserAsync"/> in one call.
-    /// Each id becomes one SQLite bind parameter, so this keeps the worst case well under
-    /// SQLITE_MAX_VARIABLE_NUMBER (999). Mirrors <c>SourceArtefactRepository.MaxBatchIdCount</c>;
-    /// the buffered export pages ids in chunks of 500, comfortably below this bound.
+    /// Upper bound on artefact ids accepted by <see cref="GetByArtefactsForUserAsync"/> in one
+    /// call, applied to the RAW input count (before de-duplication). Each id becomes one SQLite
+    /// bind parameter, so the worst case is 900 ids + the userId = 901 bind parameters — under the
+    /// legacy SQLITE_MAX_VARIABLE_NUMBER default of 999 (a deliberate ~10% margin; modern bundled
+    /// SQLite defaults to 32766, so this cap is conservative defense-in-depth). Mirrors
+    /// <c>SourceArtefactRepository.MaxBatchIdCount</c>. Coupled constraint:
+    /// <c>DataExportService.StreamPageSize</c> (currently 500) must stay &lt;= this cap — raising
+    /// that chunk size past 900 makes the buffered export throw at runtime.
     /// </summary>
     private const int MaxBatchIdCount = 900;
 
@@ -166,9 +170,10 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
             // Mirror GetByArtefactForUserAsync's SQLite raw-SQL ordering (CreatedAt ASC, Id ASC over
             // the stored TEXT) so each artefact's batch group is byte-for-byte identical to the
             // former per-artefact page reads — including the Guid tiebreak, which orders by TEXT
-            // here (not .NET Guid comparison). The IN-clause is fully parameterised (one param per
-            // id, capped by MaxBatchIdCount well under SQLITE_MAX_VARIABLE_NUMBER). Same user-scoped
-            // join as the per-artefact read, so a foreign artefact id can never surface history.
+            // here (not .NET Guid comparison). The IN-clause is fully parameterised: one param per
+            // id plus the userId, at most 901 bind parameters under the MaxBatchIdCount cap (see
+            // its doc for the margin against SQLite's parameter limits). Same user-scoped join as
+            // the per-artefact read, so a foreign artefact id can never surface history.
             var placeholders = new string[idList.Count];
             var parameters = new List<object>(idList.Count + 1);
             for (var i = 0; i < idList.Count; i++)
@@ -195,6 +200,10 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
         }
         else
         {
+            // Non-SQLite providers: the Id tiebreak uses the provider's native Guid ordering, which
+            // can differ from SQLite's TEXT ordering above and is deliberately unpinned by tests
+            // (same pre-existing pattern as GetByArtefactForUserAsync's LINQ branch). Byte-for-byte
+            // export parity with the former per-artefact reads is guaranteed only on SQLite.
             rows = await (
                     from extraction in _context.ArtefactExtractions.AsNoTracking()
                     join artefact in _context.SourceArtefacts.AsNoTracking()

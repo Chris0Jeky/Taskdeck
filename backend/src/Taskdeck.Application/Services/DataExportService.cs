@@ -497,6 +497,11 @@ public class DataExportService : IDataExportService
     private static readonly byte[] ArtefactObjectSuffix = "]}"u8.ToArray();
     private static readonly byte[] ExportSuffix = "]}}"u8.ToArray();
 
+    // Coupled constraint (#1387): this is also the buffered export's batch-chunk size for
+    // ISourceArtefactRepository.GetContentsForUserAsync and
+    // IArtefactExtractionRepository.GetByArtefactsForUserAsync, whose implementations cap a batch
+    // at MaxBatchIdCount (900) raw ids. StreamPageSize must stay <= 900 or the buffered export
+    // throws ArgumentException at runtime.
     private const int StreamPageSize = 500;
 
     private async Task WriteArtefactsTailAsync(

@@ -40,9 +40,12 @@ public interface IArtefactExtractionRepository
     /// a byte-for-byte identical export. Artefacts with no extractions, or not owned by the user,
     /// are simply absent from the result (never surfaced across users). Mirrors the batching
     /// convention of <see cref="ISourceArtefactRepository.GetContentsForUserAsync"/>: callers must
-    /// bound <paramref name="sourceArtefactIds"/> so the IN-clause stays within SQLite's parameter
-    /// limit (SQLITE_MAX_VARIABLE_NUMBER = 999); the buffered export pages ids in chunks of 500.
-    /// Passing more than the implementation's batch cap throws <see cref="ArgumentException"/>.
+    /// bound <paramref name="sourceArtefactIds"/> so the IN-clause stays within SQLite's bind
+    /// parameter budget (the implementation caps a batch at 900 ids + userId = 901 parameters,
+    /// under the legacy SQLITE_MAX_VARIABLE_NUMBER default of 999; modern bundled SQLite allows
+    /// far more). The buffered export pages ids in chunks of 500. The cap applies to the RAW input
+    /// count, before de-duplication: passing more ids than the cap throws
+    /// <see cref="ArgumentException"/> even when duplicates would dedup below it.
     /// </summary>
     Task<IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>>> GetByArtefactsForUserAsync(
         IReadOnlyCollection<Guid> sourceArtefactIds,
