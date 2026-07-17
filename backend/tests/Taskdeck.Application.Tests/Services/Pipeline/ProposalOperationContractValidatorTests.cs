@@ -282,6 +282,34 @@ public class ProposalOperationContractValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_ShouldRejectNegativePositionForColumnReorder()
+    {
+        // Mirrors the apply-side guard (ColumnService.ReorderColumnAsync and the
+        // operation handler both reject negative positions) so an impossible
+        // destination fails at preview, not after approval.
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Backlog", 0);
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var columns = new Mock<IColumnRepository>();
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operation = CreateOperation(
+            0,
+            "reorder",
+            column.Id,
+            new { columnId = column.Id, position = -1 },
+            targetType: "column");
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Invalid position: must be non-negative");
+    }
+
+    [Fact]
     public async Task ValidateAsync_ShouldRequireAnUpdateFieldForBoardUpdate()
     {
         var boardId = Guid.NewGuid();
