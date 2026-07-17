@@ -13,6 +13,9 @@ namespace Taskdeck.Infrastructure.Repositories;
 /// </summary>
 public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISourceArtefactRepository
 {
+    private static readonly IReadOnlyDictionary<Guid, byte[]> EmptyContentMap =
+        new Dictionary<Guid, byte[]>();
+
     public SourceArtefactRepository(TaskdeckDbContext context) : base(context)
     {
     }
@@ -115,9 +118,6 @@ public sealed class SourceArtefactRepository : Repository<SourceArtefact>, ISour
             select blob.Content)
             .SingleOrDefaultAsync(cancellationToken);
     }
-
-    private static readonly IReadOnlyDictionary<Guid, byte[]> EmptyContentMap =
-        new Dictionary<Guid, byte[]>();
 
     public async Task<IReadOnlyDictionary<Guid, byte[]>> GetContentsForUserAsync(
         IReadOnlyCollection<Guid> ids,
