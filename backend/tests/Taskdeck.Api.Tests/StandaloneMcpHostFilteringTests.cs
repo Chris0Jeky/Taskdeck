@@ -162,6 +162,157 @@ public class StandaloneMcpHostFilteringTests
         }
     }
 
+    // End-to-end proof for #1368 in the STANDALONE MCP host: with trusted forwarded headers
+    // configured (KnownProxies = the loopback client) the pre-auth FAILURE budget keys on the
+    // forwarded client, not the shared proxy socket address. Deleting the Program.cs
+    // UseForwardedHeaders wiring makes every client collapse onto 127.0.0.1's single bucket, so the
+    // independent-client request (9.9.9.9) would 429 instead of 401 and this test fails.
+    //
+    // Deterministic despite the failure-budget being cross-request state: a single HttpClient reuses
+    // one HTTP/1.1 connection, and Kestrel does not read the next request on a connection until the
+    // prior request's full pipeline (including the middleware's post-auth RecordFailedAttempt) has
+    // completed — so the first request's consume is always visible to the second.
+    [Fact]
+    public async Task StandaloneMcpHttpHost_ForwardedHeaders_KeyFailureBudgetOnForwardedClient()
+    {
+        var port = ReserveFreeLoopbackPort();
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-mcp-fwd-{Guid.NewGuid():N}.db");
+        var envKeys = new[]
+        {
+            "ConnectionStrings__DefaultConnection",
+            "Connectors__EncryptionKey",
+            "AllowedHosts",
+            "RateLimiting__Enabled",
+            "RateLimiting__McpAuthenticationPerIp__PermitLimit",
+            "RateLimiting__McpAuthenticationPerIp__WindowSeconds",
+            "ForwardedHeaders__KnownProxies__0"
+        };
+        var originalEnvironment = envKeys.ToDictionary(
+            key => key,
+            Environment.GetEnvironmentVariable);
+
+        var appBuilt = new TaskCompletionSource<WebApplication>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Program.OnStandaloneMcpHttpAppBuilt = app =>
+        {
+            app.Lifetime.ApplicationStarted.Register(() => started.TrySetResult());
+            appBuilt.TrySetResult(app);
+        };
+
+        WebApplication? runningApp = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", $"Data Source={dbPath}");
+            Environment.SetEnvironmentVariable(
+                "Connectors__EncryptionKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
+            // Leave AllowedHosts unset so the standalone guard applies its loopback allowlist; the
+            // client's Host (127.0.0.1:{port}) passes host filtering.
+            Environment.SetEnvironmentVariable("AllowedHosts", null);
+            Environment.SetEnvironmentVariable("RateLimiting__Enabled", "true");
+            // Failure budget of 1 so a single unauthenticated attempt exhausts a forwarded client's
+            // bucket; a long window so it does not replenish mid-test.
+            Environment.SetEnvironmentVariable("RateLimiting__McpAuthenticationPerIp__PermitLimit", "1");
+            Environment.SetEnvironmentVariable("RateLimiting__McpAuthenticationPerIp__WindowSeconds", "300");
+            // Trust X-Forwarded-For only from the loopback proxy the test connects through.
+            Environment.SetEnvironmentVariable("ForwardedHeaders__KnownProxies__0", "127.0.0.1");
+
+            var entryPoint = typeof(Program).Assembly.EntryPoint
+                ?? throw new InvalidOperationException("Taskdeck.Api assembly has no entry point.");
+            var args = new[] { "--mcp", "--transport", "http", "--port", port.ToString() };
+            var hostTask = Task.Run(async () =>
+            {
+                var result = entryPoint.Invoke(null, new object[] { args });
+                return result switch
+                {
+                    int exit => exit,
+                    Task<int> asyncExit => await asyncExit,
+                    Task plainTask => await ContinueWithZero(plainTask),
+                    _ => throw new InvalidOperationException(
+                        $"Unexpected entry point return: {result?.GetType().ToString() ?? "null"}.")
+                };
+            });
+
+            var completed = await Task.WhenAny(appBuilt.Task, hostTask).WaitAsync(StartupTimeout);
+            if (completed == hostTask)
+            {
+                var earlyExit = await hostTask;
+                throw new InvalidOperationException(
+                    $"Standalone MCP host exited during startup with code {earlyExit}.");
+            }
+
+            var app = await appBuilt.Task;
+            runningApp = app;
+            await started.Task.WaitAsync(StartupTimeout);
+
+            // Single client => single reused HTTP/1.1 connection => server-side request serialization.
+            using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+
+            // Forwarded client A: first unauthenticated attempt fails auth (401) and spends A's budget.
+            using (var firstA = await SendForwardedMcpAsync(client, "1.1.1.1"))
+            {
+                firstA.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "the first attempt reaches API-key auth, which rejects the missing key");
+            }
+
+            // Forwarded client A again: its own bucket is now spent, so it is rejected pre-auth (429),
+            // proving the budget keys on the forwarded client and is active in the standalone host.
+            using (var secondA = await SendForwardedMcpAsync(client, "1.1.1.1"))
+            {
+                secondA.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+                    "the same forwarded client is limited on its own bucket");
+                secondA.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
+                    .Which.Should().Be("McpAuthenticationPerIp");
+            }
+
+            // Forwarded client B behind the SAME proxy: independent bucket, not starved by A. This is
+            // the discriminating assertion — without UseForwardedHeaders both would share 127.0.0.1.
+            using (var firstB = await SendForwardedMcpAsync(client, "9.9.9.9"))
+            {
+                firstB.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "a different forwarded client must have an independent failure budget");
+            }
+
+            await app.StopAsync();
+            runningApp = null;
+            var exitCode = await hostTask.WaitAsync(ShutdownTimeout);
+            exitCode.Should().Be(0, "the standalone MCP host must shut down cleanly");
+        }
+        finally
+        {
+            Program.OnStandaloneMcpHttpAppBuilt = null;
+            if (runningApp is not null)
+            {
+                try
+                {
+                    await runningApp.StopAsync();
+                }
+                catch
+                {
+                }
+            }
+
+            foreach (var (name, value) in originalEnvironment)
+            {
+                Environment.SetEnvironmentVariable(name, value);
+            }
+
+            TryDeleteDatabase(dbPath);
+        }
+    }
+
+    private static async Task<int> ContinueWithZero(Task task)
+    {
+        await task;
+        return 0;
+    }
+
+    private static async Task<HttpResponseMessage> SendForwardedMcpAsync(HttpClient client, string forwardedFor)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
+        request.Headers.TryAddWithoutValidation("X-Forwarded-For", forwardedFor);
+        return await client.SendAsync(request);
+    }
+
     private static int ReserveFreeLoopbackPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
