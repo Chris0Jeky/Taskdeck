@@ -1254,6 +1254,7 @@ Run local k6 board-heavy profile (backend API must be reachable at `K6_BASE_URL`
 
 ```bash
 docker run --rm --network host \
+  --user "$(id -u):$(id -g)" \
   -e K6_BASE_URL=http://127.0.0.1:5000/api \
   -e K6_VUS=20 \
   -e K6_DURATION=90s \
@@ -1267,6 +1268,11 @@ docker run --rm --network host \
 
 Notes:
 - tune `K6_VUS`, `K6_DURATION`, and `K6_USER_POOL` per machine capacity.
+- the default 20-VU SQLite profile warns when tagged board writes reach the measured 2000 ms p95 capacity and fails at 2200 ms (the measured capacity plus a 10% CI jitter allowance).
+- aggregate p95/p99, board-read p95, error-rate, and check-rate thresholds remain hard gates.
+- both reusable k6 workflows fail closed when the required summary is missing, empty, malformed, lacks any hard-gate metric, contains an out-of-domain direct/nested value, mixes conflicting flattened/nested metric evidence, or has threshold evidence that contradicts the corresponding strict numeric comparator (including equality boundaries); pinned k6 0.49's flattened breach flags are normalized before analysis, aggregate p95 must not exceed p99, and the `always()` artifact uploads still preserve available diagnostics.
+- run `node --test scripts/ci/require-k6-summary.test.mjs` from the repository root for summary validation and workflow-wiring checks.
+- run `node --test scripts/ci/check-k6-thresholds.test.mjs` from the repository root for the focused tagged-capacity analyzer checks.
 - script thresholds fail on sustained latency/error budget breaches and emit actionable status/body diagnostics.
 
 ## Container Baseline Validation
@@ -1428,7 +1434,7 @@ Extended workflow: `.github/workflows/ci-extended.yml`
   - advisory mode by default; enforceable via workflow input
   - `scripts/ci/summarize-sast-findings.mjs` produces human-readable summary
 - `performance-regression-gate`
-  - k6 thresholds (p95 <2s, error rate <1%) + bundle size checks via `reusable-performance-regression-gate.yml` (CI-03, `#872`/`#918`)
+  - k6 thresholds (aggregate p95 <2s, tagged SQLite board-write p95 <2.2s with a warning at 2s, error rate <1%) + bundle size checks via `reusable-performance-regression-gate.yml` (CI-03, `#872`/`#918`, recalibrated by `#1358`)
   - opt-in on PRs labeled `performance` or manual `workflow_dispatch`
   - `scripts/ci/check-bundle-size.mjs` and `scripts/ci/check-k6-thresholds.mjs` for deterministic threshold enforcement
 
