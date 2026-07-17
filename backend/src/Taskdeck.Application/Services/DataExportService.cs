@@ -189,10 +189,12 @@ public class DataExportService : IDataExportService
             var exportArtefacts = new List<UserDataExportArtefactDto>(artefactMetadata.Count);
             // #1355: batch the blob loads in bounded chunks instead of one round-trip per artefact.
             // The chunk size mirrors StreamPageSize so each IN-clause stays well within SQLite's
-            // parameter budget and peak memory holds at most one chunk of raw blob bytes at a time
-            // (the buffered total is already capped by MaxBufferedArtefactBytes). Metadata keeps its
-            // original (Id) order, so the exported artefact array is byte-for-byte identical to the
-            // former per-item path.
+            // parameter budget. Memory: the raw byte[] dictionary holds at most one chunk at a time
+            // (released between chunks), while the mapped DTOs' base64 strings DO accumulate across
+            // chunks — both halves stay bounded because the pre-load MaxBufferedArtefactBytes guard
+            // caps the total artefact bytes this path may buffer. Metadata keeps its original (Id)
+            // order, so the exported artefact array is byte-for-byte identical to the former
+            // per-item path.
             foreach (var chunk in artefactMetadata.Chunk(StreamPageSize))
             {
                 cancellationToken.ThrowIfCancellationRequested();
