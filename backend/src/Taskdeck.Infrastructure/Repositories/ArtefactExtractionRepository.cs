@@ -11,6 +11,18 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
 {
     private const int MaxPageSize = 50;
     private const int EstimatedJsonOverheadCharacters = 512;
+
+    /// <summary>
+    /// Upper bound on artefact ids accepted by <see cref="GetByArtefactsForUserAsync"/> in one call.
+    /// Each id becomes one SQLite bind parameter, so this keeps the worst case well under
+    /// SQLITE_MAX_VARIABLE_NUMBER (999). Mirrors <c>SourceArtefactRepository.MaxBatchIdCount</c>;
+    /// the buffered export pages ids in chunks of 500, comfortably below this bound.
+    /// </summary>
+    private const int MaxBatchIdCount = 900;
+
+    private static readonly IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>> EmptyHistoryMap =
+        new Dictionary<Guid, IReadOnlyList<ArtefactExtraction>>();
+
     private readonly TaskdeckDbContext _context;
 
     public ArtefactExtractionRepository(TaskdeckDbContext context)
@@ -129,6 +141,88 @@ public sealed class ArtefactExtractionRepository : IArtefactExtractionRepository
             .Skip(boundedOffset)
             .Take(boundedLimit)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>>> GetByArtefactsForUserAsync(
+        IReadOnlyCollection<Guid> sourceArtefactIds,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (sourceArtefactIds.Count == 0)
+            return EmptyHistoryMap;
+
+        if (sourceArtefactIds.Count > MaxBatchIdCount)
+            throw new ArgumentException(
+                $"Cannot batch more than {MaxBatchIdCount} artefact ids in one query; page the ids.",
+                nameof(sourceArtefactIds));
+
+        // De-duplicate to keep the IN-clause parameter footprint minimal; the caller bounds the
+        // set size (<= 500) and the guard above caps it.
+        var idList = sourceArtefactIds.Distinct().ToList();
+
+        List<ArtefactExtraction> rows;
+        if (_context.Database.IsSqlite())
+        {
+            // Mirror GetByArtefactForUserAsync's SQLite raw-SQL ordering (CreatedAt ASC, Id ASC over
+            // the stored TEXT) so each artefact's batch group is byte-for-byte identical to the
+            // former per-artefact page reads — including the Guid tiebreak, which orders by TEXT
+            // here (not .NET Guid comparison). The IN-clause is fully parameterised (one param per
+            // id, capped by MaxBatchIdCount well under SQLITE_MAX_VARIABLE_NUMBER). Same user-scoped
+            // join as the per-artefact read, so a foreign artefact id can never surface history.
+            var placeholders = new string[idList.Count];
+            var parameters = new List<object>(idList.Count + 1);
+            for (var i = 0; i < idList.Count; i++)
+            {
+                placeholders[i] = $"@id{i}";
+                parameters.Add(new SqliteParameter($"@id{i}", idList[i]));
+            }
+            parameters.Add(new SqliteParameter("@userId", userId));
+
+            var sql = $"""
+                SELECT extraction.*
+                FROM ArtefactExtractions AS extraction
+                INNER JOIN SourceArtefacts AS artefact
+                    ON artefact.Id = extraction.SourceArtefactId
+                WHERE extraction.SourceArtefactId IN ({string.Join(", ", placeholders)})
+                    AND artefact.UserId = @userId
+                ORDER BY extraction.SourceArtefactId ASC, extraction.CreatedAt ASC, extraction.Id ASC
+                """;
+
+            rows = await _context.ArtefactExtractions
+                .FromSqlRaw(sql, parameters.ToArray())
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            rows = await (
+                    from extraction in _context.ArtefactExtractions.AsNoTracking()
+                    join artefact in _context.SourceArtefacts.AsNoTracking()
+                        on extraction.SourceArtefactId equals artefact.Id
+                    where artefact.UserId == userId && idList.Contains(extraction.SourceArtefactId)
+                    orderby extraction.SourceArtefactId, extraction.CreatedAt, extraction.Id
+                    select extraction)
+                .ToListAsync(cancellationToken);
+        }
+
+        // Rows arrive ordered by (SourceArtefactId, CreatedAt, Id); appending in encounter order
+        // preserves each artefact's CreatedAt/Id ordering within its group.
+        var grouped = new Dictionary<Guid, List<ArtefactExtraction>>();
+        foreach (var extraction in rows)
+        {
+            if (!grouped.TryGetValue(extraction.SourceArtefactId, out var list))
+            {
+                list = new List<ArtefactExtraction>();
+                grouped[extraction.SourceArtefactId] = list;
+            }
+
+            list.Add(extraction);
+        }
+
+        var map = new Dictionary<Guid, IReadOnlyList<ArtefactExtraction>>(grouped.Count);
+        foreach (var entry in grouped)
+            map[entry.Key] = entry.Value;
+        return map;
     }
 
     public async Task<long> GetTotalTextLengthByUserAsync(
