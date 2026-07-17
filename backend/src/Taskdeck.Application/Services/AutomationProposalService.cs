@@ -234,21 +234,32 @@ public class AutomationProposalService : IAutomationProposalService
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
-            // Structure gate at approve time (#1416 approve == apply): a reviewer must not be able
-            // to commit to a proposal the executor will refuse. Apply validates the EFFECTIVE
-            // operation set (latest saved revision, else the original operations) via
-            // AutomationPolicyEngine.ValidateOperationStructure, and GetProposalDiffAsync mirrors the
-            // same revision-aware materialization; mirror both here so a zero-operation (or otherwise
-            // structurally invalid) proposal is rejected with the identical 400 ValidationError Apply
-            // returns, instead of being approved and only failing at Apply — the last "user commits
-            // to something the executor will refuse" step in this trust class (siblings
-            // #1370 → #1374, #1376 → #1395, #1398 → #1413).
+            // Approve-time gates (#1416 approve == apply): a reviewer must not be able to commit
+            // to a proposal the executor will refuse. Apply validates the EFFECTIVE operation set
+            // (latest saved revision, else the original operations) through
+            // AutomationPolicyEngine.ValidatePolicy (structure, then expiry) followed by
+            // ValidatePermissionsAsync (requester exists → 404, board exists → 404, board access
+            // → 403, then operation-contract validation → 400/403/404), and GetProposalDiffAsync
+            // mirrors the same revision-aware materialization and gate order. Approve now enforces:
+            //   1. Structure → 400 ValidationError (same validator, same shape as diff/apply).
+            //   2. Expiry → 409 InvalidOperation, via the domain transition's own guard
+            //      (AutomationProposal.Approve throws "Cannot approve expired proposal").
+            //      Deliberately NOT the diff path's 400 read-parity shape: approving is a state
+            //      transition, so a 409 conflict is the correct refusal for an expired proposal.
+            //   3. Permissions + operation contract → the same 400/403/404 results Apply produces,
+            //      via the same _policyEngine.ValidatePermissionsAsync call the diff path runs.
+            // Ordering mirrors the diff/apply sequence exactly (structure → expiry → permissions):
+            // the permission gate is skipped for an expired proposal so the domain guard's 409 owns
+            // expiry — an expired proposal with revoked access reports expiry, never Forbidden,
+            // matching the #1413 LOW-4 ordering pin on the diff path. A zero-op AND expired
+            // proposal likewise reports the 400 structure error first, as it does on diff and apply.
+            // This closes the last "user commits to something the executor will refuse" step in
+            // this trust class (siblings #1370 → #1374, #1376 → #1395, #1398 → #1413).
             //
             // Gate only genuinely approvable (PendingReview) proposals: for any other status the
             // domain transition's terminal-status short-circuit owns the response (409 "Cannot
-            // approve proposal in status X"), which this slice leaves untouched — running the
-            // structure gate on a terminal proposal would wrongly report a 400 structure error in
-            // place of that 409.
+            // approve proposal in status X"), which this slice leaves untouched — running these
+            // gates on a terminal proposal would wrongly report a 400/403/404 in place of that 409.
             if (proposal.Status == ProposalStatus.PendingReview)
             {
                 var effectiveOperations = await ResolveEffectiveOperationsAsync(proposal, cancellationToken);
@@ -258,16 +269,19 @@ public class AutomationProposalService : IAutomationProposalService
                 var structureValidation = ProposalOperationStructureValidator.Validate(effectiveOperations.Value);
                 if (!structureValidation.IsSuccess)
                     return Result.Failure<ProposalDto>(structureValidation.ErrorCode, structureValidation.ErrorMessage);
+
+                if (!proposal.IsExpired)
+                {
+                    var permissionValidation = await _policyEngine.ValidatePermissionsAsync(
+                        proposal.RequestedByUserId,
+                        proposal.BoardId,
+                        effectiveOperations.Value,
+                        cancellationToken);
+                    if (!permissionValidation.IsSuccess)
+                        return Result.Failure<ProposalDto>(permissionValidation.ErrorCode, permissionValidation.ErrorMessage);
+                }
             }
 
-            // Expiry is enforced by the domain transition itself: AutomationProposal.Approve throws
-            // InvalidOperation ("Cannot approve expired proposal") → 409. That established 409 is the
-            // approve-time expiry contract this slice preserves; it deliberately does NOT adopt the
-            // diff/preview path's 400 "Proposal has expired" read-parity shape, because approving is
-            // a state transition and a 409 conflict is the correct semantics for refusing to advance
-            // an expired proposal. Structure runs first (matching ValidatePolicy's structure-then-
-            // expiry order), so a zero-op AND expired proposal reports the 400 structure error on
-            // approve just as it does on diff and apply.
             proposal.Approve(decidedByUserId);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -285,7 +299,7 @@ public class AutomationProposalService : IAutomationProposalService
 
     /// <summary>
     /// Resolves the effective operation set Apply will execute, for the approve-time structure
-    /// gate — the latest saved <see cref="ProposalRevision"/> when one exists (mirroring
+    /// and permission/contract gates — the latest saved <see cref="ProposalRevision"/> when one exists (mirroring
     /// <c>AutomationExecutorService.MaterializeEffectiveProposalAsync</c> and the revision-aware
     /// <see cref="GetProposalDiffAsync"/> path), otherwise the proposal's original operations —
     /// so approve validates exactly what Apply will run (#1416 approve == apply). A revision is
