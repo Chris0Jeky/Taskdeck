@@ -1,3 +1,4 @@
+using System.Globalization;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,15 +36,26 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         db.AuditLogs.AddRange(oldEntry, recentEntry);
         await db.SaveChangesAsync();
 
-        // Manually set the timestamp of the old entry via raw SQL.
-        // Format as string matching EF Core's SQLite DateTimeOffset storage format
-        // so that string-based < comparisons in DeleteOldEntriesAsync work correctly.
-        var oldTimestampStr = DateTimeOffset.UtcNow.AddDays(-100).ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
-        await db.Database.ExecuteSqlRawAsync(
-            "UPDATE AuditLogs SET Timestamp = {0} WHERE Id = {1}",
-            oldTimestampStr, oldEntry.Id);
+        // Manually backdate the old entry via raw SQL. BackdateEntryAsync asserts the
+        // UPDATE affected exactly one row, so an Id-binding mismatch that silently
+        // updates 0 rows (which would leave the entry at "now" and make the delete
+        // return 0 for no obvious reason) is caught here at the write step.
+        var writtenOld = await BackdateEntryAsync(db, oldEntry.Id, TimeSpan.FromDays(100));
 
         var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
+
+        // Read the backdated timestamp back through the repository's own context/
+        // connection BEFORE deleting. GetByIdAsync/FindAsync would return the tracked
+        // instance whose in-memory timestamp is stale (the raw UPDATE bypassed the
+        // change tracker), so reload the entity from the database first. This turns a
+        // cross-connection visibility or timestamp-format failure into a precise
+        // diagnostic at the read step instead of a mysterious deleted == 0 later.
+        await db.Entry(oldEntry).ReloadAsync();
+        oldEntry.Timestamp.Should().BeCloseTo(writtenOld, TimeSpan.FromSeconds(1),
+            "the backdated timestamp must round-trip through the repository's own connection");
+        oldEntry.Timestamp.Should().BeBefore(cutoff,
+            "the backdated entry must read back as older than the cutoff so DeleteOldEntriesAsync will match it");
+
         var deleted = await repo.DeleteOldEntriesAsync(cutoff, batchSize: 1000);
 
         deleted.Should().BeGreaterThanOrEqualTo(1);
@@ -91,14 +103,11 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         db.AuditLogs.AddRange(entries);
         await db.SaveChangesAsync();
 
-        // Set all entries to be old.
-        // Format as string matching EF Core's SQLite DateTimeOffset storage format.
-        var oldTimestampStr = DateTimeOffset.UtcNow.AddDays(-200).ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
+        // Backdate all entries. BackdateEntryAsync asserts each UPDATE affected exactly
+        // one row, so a silent 0-row update cannot leave an entry at "now" undetected.
         foreach (var entry in entries)
         {
-            await db.Database.ExecuteSqlRawAsync(
-                "UPDATE AuditLogs SET Timestamp = {0} WHERE Id = {1}",
-                oldTimestampStr, entry.Id);
+            await BackdateEntryAsync(db, entry.Id, TimeSpan.FromDays(200));
         }
 
         var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
@@ -158,11 +167,8 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         db.AuditLogs.AddRange(oldEntry, recentEntry);
         await db.SaveChangesAsync();
 
-        // Backdate the old entry to well before the cutoff
-        var oldTimestampStr = DateTimeOffset.UtcNow.AddDays(-100).ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
-        await db.Database.ExecuteSqlRawAsync(
-            "UPDATE AuditLogs SET Timestamp = {0} WHERE Id = {1}",
-            oldTimestampStr, oldEntry.Id);
+        // Backdate the old entry to well before the cutoff (asserts exactly one row updated).
+        await BackdateEntryAsync(db, oldEntry.Id, TimeSpan.FromDays(100));
 
         // Build a non-UTC cutoff that represents the same instant as "30 days ago UTC"
         // expressed in Eastern Standard Time (-05:00). The repository must convert to
@@ -177,5 +183,30 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         // The recent entry (created just now) must survive
         var preserved = await repo.GetByIdAsync(recentEntry.Id);
         preserved.Should().NotBeNull("the recent entry must not be deleted when a non-UTC cutoff is used");
+    }
+
+    /// <summary>
+    /// Backdates a single audit entry's timestamp via raw SQL and asserts the UPDATE
+    /// affected exactly one row. The timestamp string is built with
+    /// <see cref="CultureInfo.InvariantCulture"/> so it matches EF Core's invariant
+    /// SQLite DateTimeOffset serialization ("yyyy-MM-dd HH:mm:ss.fffffff+00:00")
+    /// regardless of the host's current culture: a locale whose time separator is not
+    /// ':' would otherwise write a mismatched string and corrupt the string-based
+    /// comparison in DeleteOldEntriesAsync. Returns the instant that was written so
+    /// callers can assert visibility/ordering through the repository's own connection.
+    /// </summary>
+    private static async Task<DateTimeOffset> BackdateEntryAsync(
+        TaskdeckDbContext db, Guid entryId, TimeSpan age)
+    {
+        var timestamp = DateTimeOffset.UtcNow - age;
+        var timestampStr = timestamp.UtcDateTime
+            .ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
+        var affected = await db.Database.ExecuteSqlRawAsync(
+            "UPDATE AuditLogs SET Timestamp = {0} WHERE Id = {1}",
+            timestampStr, entryId);
+        affected.Should().Be(1,
+            "the raw backdating UPDATE must affect exactly the one targeted row; a silent " +
+            "0-row UPDATE would leave the entry at 'now' and make DeleteOldEntriesAsync return 0");
+        return timestamp;
     }
 }
