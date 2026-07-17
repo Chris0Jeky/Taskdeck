@@ -3,8 +3,18 @@
 **Launch (maintainer):** start Claude Code in this repo with the session model set to **Fable 5**
 (effort high or ultracode), pick the permission mode you trust for unattended work, and paste:
 
-> Read `docs/agentic/OVERNIGHT_LOOP.fable.md` and run it. Work overnight; wrap up cleanly when
-> you hit a true stop condition.
+> Read the most recent `ORCHESTRATOR.handoff-*.md` at the repo root (if one exists) and resume
+> from it, then `docs/agentic/OVERNIGHT_LOOP.claude.md` (your operating manual — adopt all of
+> it) with the compute-routing overlay in `docs/agentic/OVERNIGHT_LOOP.fable.md`. Work
+> overnight; wrap up cleanly at a true stop condition with a morning report in the same
+> changed / verified / NOT-verified / residual-risk / Q-batch format, and write
+> `ORCHESTRATOR.handoff-<today>.md` (git-excluded) for the session after you.
+
+Optional launch addenda: a queue seed ("substrate first, then correctness, then feature
+lanes"), run-specific holds, or reversals of a prior run's assumptions ("if X merged since,
+classification Y is dead"). Anything that survives two runs belongs in these manuals, not the
+launch prompt — if you paste the same amendment twice, PR it into the manual and stop pasting
+it (enforcement-ladder rule).
 
 ---
 
@@ -23,15 +33,21 @@ an orchestrator that thinks, decides, and gates — not the typist.
 
 ## FIRST ACTIONS
 
-1. Read the base manual (`OVERNIGHT_LOOP.claude.md`) and orient per its §1 (or the
+1. **Resume from the latest `ORCHESTRATOR.handoff-*.md`** at the repo root if one exists — it
+   carries the previous run's holds, gate precedents, backlog, and box rules. Verify its claims
+   against reality before acting on them (re-inventory PRs/issues, confirm main CI on HEAD,
+   check whether maintainer-gated PRs it references have since merged — **reality wins**; when
+   a hold has merged, the assumptions built on it expire and you say so in the ledger).
+2. Read the base manual (`OVERNIGHT_LOOP.claude.md`) and orient per its §1 (or the
    `taskdeck-repo-onramp` skill): `docs/STATUS.md`, `OUTSTANDING_TASKS.md`,
    `docs/REVIVAL_PLAN.md`, open PRs/issues, red CI, the failure ledger.
-2. Create/resume the orchestrator ledger (base §0) and build the run backlog in it. Seed from
-   `OUTSTANDING_TASKS.md` open items and the ratified REVIVAL/GEN wave lists — off-list work is
-   not taken.
-3. Pin the standing human-gated holds in the ledger: **never merge #1295 (deny-floor) or #1337
-   (licensing)**; never push release tags (#1303), touch branch protection (#1173), trademark/
-   legal (#1299), or self-ratify a strategic ADR. Defer these as Q-N items.
+3. Create/resume the orchestrator ledger (base §0) and build the run backlog in it. Seed from
+   the handoff's backlog reconciled with `OUTSTANDING_TASKS.md` open items and the ratified
+   REVIVAL/GEN wave lists — off-list work is not taken.
+4. Pin the standing human-gated holds in the ledger: **the hold PRs named in the latest
+   handoff** (never merge them), plus the durable classes — workflow-file PRs are
+   maintainer-merge-only (stage green, put in the Q batch); never push release tags, touch
+   branch protection, trademark/legal, or self-ratify a strategic ADR. Defer all as Q-N items.
 
 ## COMPUTE ROUTING — WHO DOES WHAT
 
@@ -94,12 +110,51 @@ an orchestrator that thinks, decides, and gates — not the typist.
   unsure). While workers run in the background, use your foreground turn for the next wave's
   planning or adjudication — don't idle, and don't poll what will notify you.
 
+## PER-PR GATE SEQUENCE (proven across 20+ merges; run it every time)
+
+worker round → 2 read-only reviewers (distinct lenses) → coordinator adjudication → ONE
+batched fix push to the same worker → coordinator full backend suite on the EXACT head
+(foreground, serialized — one suite at a time across the box) → CI green on that head →
+30–60 min bot window from the FINAL push → **thread check by CONTENT** → merge → pull `main` →
+prune worktree+branch (cd out of a worktree before removing it).
+
+- **Thread check by content, never by reviewer names**: query `reviewThreads`, count
+  `isResolved == false`, and READ the bodies of anything unresolved — bots file threads
+  minutes after a push, and a "review" entry with no findings looks identical to one with
+  two P2s until you read it. This applies to docs-only PRs too (a docs sweep has been merged
+  over two valid unresolved P2s before; the fix cost a follow-up PR).
+- **Review-loop discipline**: batch fixes into ONE push per round; every worker replies AND
+  resolves threads via GraphQL `resolveReviewThread` and reports `unresolved == 0`; new bot
+  findings on a final head are reported to the coordinator, never cycled unilaterally. When
+  bot rounds keep finding new interleavings in one seam, issue ONE structural redesign
+  directive with a hard timebox ("further findings → report and hand off").
+- **Merge order**: when a wide (many-file / frontend-touching) PR and narrow PRs approach the
+  gate together, land the wide one first.
+- **Generated files**: `docs/agentic/FAILURE_LEDGER.md` is rendered from `failure_ledger.jsonl`
+  by `scripts/agent_hooks/render_failure_ledger.py` (first ~160 chars of `future_fix` become
+  the cell). Never hand-edit the rendered md — front-load the essential text in the jsonl and
+  rerun the renderer. Assume any generated artifact works this way; check before editing.
+- **Reversals are fine, in the open**: reversing an earlier adjudication on new evidence is
+  correct — state it explicitly in the thread.
+
 ## BUDGET & CADENCE
 
 - Checkpoint the ledger after every merge and cycle; update persistent memory when project
   state materially changes (a wave ships, a decision lands).
-- Targeted verification always (`dotnet test --filter`, `vitest --maxWorkers=2` or targeted
-  specs — full local vitest OOMs on this box); full suites belong to CI on the PR head.
+- Workers verify with targeted runs (`dotnet test --filter`, repeated-run counts, one
+  project-level run; `vitest` targeted specs or `--maxWorkers=2` — full local vitest OOMs on
+  this box). The coordinator owns the full backend suite, serialized, at gate time
+  (`-m:1`, ~6 min, 600000ms tool timeout) — never two full suites concurrently.
+- **Box rules (hard-won; also see the latest handoff §7)**: background Bash tasks can be
+  killed by the harness — run suites and waits FOREGROUND with explicit timeouts (600000ms is
+  the clamp; chain until-loops across calls for longer waits); killed shells can orphan
+  `dotnet` test hosts (`tasklist | grep dotnet`, `taskkill //PID <pid> //F`). Shell cwd
+  PERSISTS between Bash calls — `cd` explicitly before state-changing commands, and never
+  remove a worktree from inside it. A hook appends noise rows
+  (`"class": "unclassified", "surface": "Bash"`) to `failure_ledger.jsonl` on non-zero exits —
+  prune them (python filter), never commit them. `git checkout -- <path>` is hook-blocked; use
+  `git restore`. Deny floor: no `git rev-list`/`check-ignore`, no heredoc-into-gh, bodies with
+  pipes/backticks go via the Write tool + `--body-file`, push with explicit refspec only.
 - Two strikes on the same obstacle = it becomes the task (base §8). Sharpening the substrate is
   progress; grinding isn't.
 
