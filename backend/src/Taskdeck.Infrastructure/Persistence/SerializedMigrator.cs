@@ -219,8 +219,15 @@ public static class SerializedMigrator
     /// backoff while another process holds it. Returns the held stream, or <c>null</c> if the
     /// lock could not be acquired within <paramref name="timeout"/> or the file could not be
     /// created at all (in which case the caller proceeds without the lock).
+    /// <para>
+    /// <c>internal</c> (not <c>private</c>) so the lock-exclusivity contract — while one
+    /// acquisition holds, a second must fail open; after release, it must succeed — stays
+    /// directly regression-tested (#1164): a <see cref="FileShare.None"/> weakening or early
+    /// stream disposal would otherwise pass every state-based migration test unnoticed.
+    /// Exposed via the existing <c>InternalsVisibleTo("Taskdeck.Api.Tests")</c>.
+    /// </para>
     /// </summary>
-    private static FileStream? AcquireLock(string lockPath, TimeSpan timeout, ILogger? logger)
+    internal static FileStream? AcquireLock(string lockPath, TimeSpan timeout, ILogger? logger)
     {
         // Monotonic clock (Stopwatch), not DateTime.UtcNow: a wall-clock step (NTP correction,
         // DST, manual change) must not skew how long we are willing to wait for the lock.

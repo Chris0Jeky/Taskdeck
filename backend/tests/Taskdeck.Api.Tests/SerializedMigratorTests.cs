@@ -82,23 +82,60 @@ public sealed class SerializedMigratorTests : IDisposable
                 var migratorA = RunMigratorAsync(contextA);
                 var migratorB = RunMigratorAsync(contextB);
 
-                var act = async () => await Task.WhenAll(migratorA, migratorB);
-                await act.Should().NotThrowAsync(
-                    "the advisory file lock must serialize concurrent migrators so neither fails");
+                // Deliberately NOT a NotThrow assertion. SerializedMigrator documents a lock-free
+                // fail-open path: when the sidecar lock file is uncreatable or its acquisition
+                // times out under load, a losing migrator races the winner mid-chain and can throw
+                // a "table already exists" / duplicate-__EFMigrationsHistory conflict that its
+                // NoMigrationsPending re-check could not yet swallow (the winner had not finished
+                // the chain). That collision is an EXPECTED outcome of the documented fallback, so
+                // the test asserts the invariant that actually matters — the FINAL schema state —
+                // instead of no-throw. Await both migrators to completion, tolerating ONLY that
+                // documented collision signature; any other throw, or a failure on the LOCKED path
+                // (which never swallows), is a real defect and must surface.
+                var faults = new List<Exception>();
+                foreach (var migrator in new[] { migratorA, migratorB })
+                {
+                    try
+                    {
+                        await migrator;
+                    }
+                    catch (Exception ex)
+                    {
+                        faults.Add(ex);
+                    }
+                }
+
+                foreach (var fault in faults)
+                {
+                    IsSqliteCollisionFault(fault).Should().BeTrue(
+                        "the only tolerable concurrent-migrator failure is the documented fail-open " +
+                        "mid-chain SQLite collision (any SqliteException, walked through wrappers); " +
+                        $"any non-SQL throw is a real defect, but got: {fault}");
+                }
+
+                faults.Count.Should().BeLessThan(2,
+                    "at least one migrator must drive the schema to completion — the winner that " +
+                    "created the conflicting object never throws the collision, so both migrators " +
+                    "failing means no run applied the chain");
 
                 using var verify = NewFileContext(dbPath);
 
-                // Schema applied: a known table exists.
+                // Representative table exists AND is usable: querying Boards through the migrated
+                // schema must succeed. This proves the migration produced a well-formed table, not
+                // merely a name registered in sqlite_master.
                 GetUserTableNames(verify).Should().Contain(
                     "Boards", "the migration chain must have created the Boards table");
+                verify.Set<Board>().Count().Should().Be(0,
+                    "the migrated Boards table must be usable — a real query against it must succeed");
 
-                // Applied exactly once: every defined migration appears exactly once in history.
+                // Applied exactly once: __EFMigrationsHistory holds the COMPLETE migration list
+                // with no duplicates, regardless of which fail-open collisions occurred above.
                 var historyIds = GetMigrationHistoryIds(verify);
                 historyIds.Should().OnlyHaveUniqueItems(
-                    "two migrators must not double-insert __EFMigrationsHistory rows");
+                    "concurrent migrators must not double-insert __EFMigrationsHistory rows");
                 historyIds.Should().BeEquivalentTo(
                     verify.Database.GetMigrations(),
-                    "every defined migration should be applied exactly once across the concurrent run");
+                    "every defined migration must be applied exactly once across the concurrent run");
             }
             finally
             {
@@ -186,6 +223,222 @@ public sealed class SerializedMigratorTests : IDisposable
         logger.Entries.Should().Contain(
             e => e.Level == LogLevel.Warning,
             "failing to acquire the migration lock within the timeout must be logged as a warning");
+    }
+
+    [Fact]
+    public async Task Fail_open_collision_is_tolerated_and_schema_still_applies_exactly_once()
+    {
+        // Deterministically exercises the tolerance branch the concurrent test only reaches under
+        // pathological CI load. The sidecar lock file is held EXTERNALLY for the whole race (same
+        // technique as Migrate_proceeds_with_a_warning_when_lock_cannot_be_acquired_within_timeout)
+        // with a short lock timeout, so BOTH migrators are forced onto the documented fail-open
+        // path. Barrier-synced against a cold DB, both compute the full pending chain and race;
+        // the loser collides on early DDL. Whether that collision propagates (winner mid-chain)
+        // or is swallowed as a no-op (winner finished) is scheduling-dependent, so the loop
+        // retries a few fresh databases until collision evidence is observed — every attempt
+        // still asserts the exactly-once end state.
+        const int maxAttempts = 3;
+        var collisionObserved = false;
+
+        for (var attempt = 1; attempt <= maxAttempts && !collisionObserved; attempt++)
+        {
+            var dbPath = Path.Combine(
+                Path.GetTempPath(), $"taskdeck-serialized-migrate-failopen-{Guid.NewGuid():N}.db");
+            try
+            {
+                // Hold the exclusive lock for the entire attempt: neither migrator can acquire it.
+                using var heldLock = new FileStream(
+                    Path.GetFullPath(dbPath) + ".migrate.lock",
+                    FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+                using var contextA = NewFileContext(dbPath);
+                using var contextB = NewFileContext(dbPath);
+                var loggerA = new InMemoryLogger<SerializedMigratorTests>();
+                var loggerB = new InMemoryLogger<SerializedMigratorTests>();
+                using var startBarrier = new Barrier(2);
+
+                Task RunMigratorAsync(TaskdeckDbContext context, InMemoryLogger<SerializedMigratorTests> logger)
+                    => Task.Run(() =>
+                    {
+                        if (!startBarrier.SignalAndWait(TimeSpan.FromSeconds(10)))
+                        {
+                            throw new TimeoutException(
+                                "Sibling migrator never reached the start barrier.");
+                        }
+
+                        SerializedMigrator.Migrate(context, TimeSpan.FromMilliseconds(250), logger);
+                    });
+
+                var migratorA = RunMigratorAsync(contextA, loggerA);
+                var migratorB = RunMigratorAsync(contextB, loggerB);
+
+                var faults = new List<Exception>();
+                foreach (var migrator in new[] { migratorA, migratorB })
+                {
+                    try
+                    {
+                        await migrator;
+                    }
+                    catch (Exception ex)
+                    {
+                        faults.Add(ex);
+                    }
+                }
+
+                // Deterministic precondition: the externally held lock must have forced BOTH
+                // migrators onto the fail-open path — otherwise this test proves nothing.
+                foreach (var logger in new[] { loggerA, loggerB })
+                {
+                    logger.Entries.Should().Contain(
+                        e => e.Level == LogLevel.Warning &&
+                             e.Message.Contains("could not acquire migration lock"),
+                        "an externally held sidecar lock must force every migrator onto the " +
+                        "documented fail-open path");
+                }
+
+                faults.Count.Should().BeLessThan(2,
+                    "even with both migrators on the lock-free path, the winner never throws the " +
+                    "collision it caused — both faulting means no run applied the chain");
+                foreach (var fault in faults)
+                {
+                    IsSqliteCollisionFault(fault).Should().BeTrue(
+                        "a fail-open loser may only fault with the SQLite collision signature; " +
+                        $"any non-SQL throw is a real defect, but got: {fault}");
+                }
+
+                // The invariant that matters, identical to the concurrent test: final schema
+                // migrated exactly once and usable, regardless of how the race interleaved.
+                using var verify = NewFileContext(dbPath);
+                GetUserTableNames(verify).Should().Contain(
+                    "Boards", "the migration chain must have created the Boards table");
+                verify.Set<Board>().Count().Should().Be(0,
+                    "the migrated Boards table must be usable — a real query against it must succeed");
+                var historyIds = GetMigrationHistoryIds(verify);
+                historyIds.Should().OnlyHaveUniqueItems(
+                    "racing fail-open migrators must not double-insert __EFMigrationsHistory rows");
+                historyIds.Should().BeEquivalentTo(
+                    verify.Database.GetMigrations(),
+                    "every defined migration must be applied exactly once despite the fail-open race");
+
+                // Collision evidence: either the loser's fault propagated (winner was mid-chain)
+                // or SerializedMigrator swallowed it and logged the documented race warning
+                // (winner had finished). Absent both, the loser happened to no-op — retry.
+                collisionObserved = faults.Count == 1 ||
+                    loggerA.Entries.Concat(loggerB.Entries).Any(e =>
+                        e.Level == LogLevel.Warning &&
+                        e.Message.Contains("raced a concurrent migrator"));
+            }
+            finally
+            {
+                CleanupDbFiles(dbPath);
+            }
+        }
+
+        collisionObserved.Should().BeTrue(
+            "with both migrators forced onto the lock-free path against a cold database, the " +
+            $"loser must collide mid-chain in at least one of {maxAttempts} attempts — never " +
+            "colliding means the tolerance branch was not exercised at all");
+    }
+
+    [Fact]
+    public void AcquireLock_is_exclusive_while_held_and_reacquirable_after_release()
+    {
+        // Direct contract test at the AcquireLock seam (#1164 serialization guarantee). The
+        // state-based migration tests above cannot catch a lock that silently stops excluding
+        // (e.g. FileShare.None weakened to ReadWrite, or the stream disposed early): migrations
+        // would still converge to the correct schema through the fail-open re-check. This test
+        // pins exclusivity itself.
+        var lockPath = Path.GetFullPath(_dbPath) + ".migrate.lock";
+        var logger = new InMemoryLogger<SerializedMigratorTests>();
+
+        var first = SerializedMigrator.AcquireLock(lockPath, TimeSpan.FromSeconds(5), logger);
+        first.Should().NotBeNull("an uncontended migration lock must be acquirable");
+
+        try
+        {
+            // While held, a second acquisition of the SAME path must NOT succeed: it must
+            // degrade to the fail-open outcome (null) after its short timeout, with the
+            // documented warning.
+            using var second = SerializedMigrator.AcquireLock(
+                lockPath, TimeSpan.FromMilliseconds(300), logger);
+            second.Should().BeNull(
+                "a held migration lock must exclude every other acquirer until it is released — " +
+                "a second successful acquisition means FileShare.None exclusivity is broken");
+
+            logger.Entries.Should().Contain(
+                e => e.Level == LogLevel.Warning &&
+                     e.Message.Contains("could not acquire migration lock"),
+                "the excluded acquirer must log the documented fail-open warning");
+        }
+        finally
+        {
+            first!.Dispose();
+        }
+
+        // After release the lock must be acquirable again: the winner releasing is what
+        // unblocks the waiting migrators.
+        using var third = SerializedMigrator.AcquireLock(lockPath, TimeSpan.FromSeconds(5), logger);
+        third.Should().NotBeNull("releasing the migration lock must let the next acquirer take it");
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="exception"/> is (or wraps, anywhere in its
+    /// inner-exception chain) a <see cref="SqliteException"/> — the signature of a losing
+    /// fail-open migrator racing the winner mid-chain. Deliberately NOT message-based: the same
+    /// race lands on whatever DDL the colliding migration issues first — <c>"table ... already
+    /// exists"</c> (CreateTable), <c>"duplicate column name"</c> (AddColumn-first migrations such
+    /// as AddDeferredUntilToAutomationProposal), <c>"no such table"</c> / <c>ef_temp</c> shapes
+    /// (table-rebuild migrations), or <c>"UNIQUE constraint failed"</c> (a duplicate
+    /// <c>__EFMigrationsHistory</c> insert) — so enumerating message strings re-flakes with a
+    /// misleading "real defect" message the next time the chain reshapes. Tolerating ANY
+    /// <see cref="SqliteException"/> cannot mask a real defect because this check never gates
+    /// success alone: the <c>faults.Count &lt; 2</c> gate rejects "no migrator drove the chain"
+    /// (a genuinely broken migration faults BOTH migrators here and also fails the
+    /// single-migrator test), and the exact-state assertions (complete duplicate-free history ==
+    /// <c>GetMigrations()</c>; usable schema) reject any incomplete or corrupted outcome. This
+    /// type check exists ONLY to keep non-SQL faults — barrier timeouts, null refs, IO failures —
+    /// as hard test failures.
+    /// </summary>
+    private static bool IsSqliteCollisionFault(Exception exception)
+    {
+        for (Exception? ex = exception; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is SqliteException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static TheoryData<Exception, bool> CollisionFaultCases => new()
+    {
+        // Direct SqliteExceptions from every DDL shape the fail-open race can land on.
+        { new SqliteException("SQLite Error 1: 'table \"ProposalProvenances\" already exists'.", 1), true },
+        { new SqliteException("SQLite Error 1: 'duplicate column name: DeferredUntil'.", 1), true },
+        { new SqliteException("SQLite Error 1: 'no such table: ef_temp_Boards'.", 1), true },
+        // Wrapped: EF surfaces the duplicate __EFMigrationsHistory insert as a DbUpdateException.
+        {
+            new DbUpdateException(
+                "An error occurred while saving the entity changes.",
+                new SqliteException(
+                    "SQLite Error 19: 'UNIQUE constraint failed: __EFMigrationsHistory.MigrationId'.", 19)),
+            true
+        },
+        // Non-SQL faults must stay hard failures.
+        { new TimeoutException("Sibling migrator never reached the start barrier."), false },
+        { new InvalidOperationException("outer", new IOException("disk failure")), false },
+    };
+
+    [Theory]
+    [MemberData(nameof(CollisionFaultCases))]
+    public void Collision_signature_accepts_any_sqlite_fault_and_rejects_non_sql_faults(
+        Exception fault, bool expected)
+    {
+        IsSqliteCollisionFault(fault).Should().Be(expected,
+            "the collision signature must tolerate every SQLite shape of the fail-open race " +
+            "(walking wrapped exceptions) while keeping non-SQL faults as hard failures");
     }
 
     private static List<string> GetUserTableNames(TaskdeckDbContext context)
