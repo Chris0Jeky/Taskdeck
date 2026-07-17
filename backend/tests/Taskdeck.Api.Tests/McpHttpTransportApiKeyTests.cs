@@ -450,6 +450,10 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     [InlineData(";")]
     [InlineData(";;")]
     [InlineData(" ; ")]
+    [InlineData("0.0.0.0:5001")]
+    [InlineData("*:5000")]
+    [InlineData("[::]:80")]
+    [InlineData("good.example;0.0.0.0:5001")]
     public void StandaloneMcpHostSecurity_ReplacesPermissiveAllowedHosts(string? configuredHosts)
     {
         var configuration = new ConfigurationBuilder()
@@ -464,6 +468,10 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         configuration["AllowedHosts"].Should().Be(Program.StandaloneMcpLoopbackAllowedHosts);
     }
 
+    // Contract: a valid operator-supplied allowlist is preserved byte-for-byte -- the guard
+    // never normalizes or rewrites a value that names at least one real host (e.g. "good; ;"
+    // keeps its separator noise; the middleware parses out the real host itself). Making the
+    // guard normalize valid configs would be a deliberate contract change, not a cleanup.
     [Theory]
     [InlineData("mcp.example.test")]
     [InlineData("mcp.example.com")]
