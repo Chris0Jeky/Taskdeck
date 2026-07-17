@@ -13,11 +13,16 @@ using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
-public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
+// Uses the worker-disabled factory (issue #1418, convention #1335): this class seeds a
+// Processing capture that LlmQueueToProposalWorker would otherwise claim and flip to a terminal
+// state mid-test (and Today_* seeds are likewise protected from ProposalHousekeepingWorker).
+// Safe because no test here depends on a live worker — all set statuses directly and assert
+// aggregation.
+public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
 
-    public WorkspaceApiTests(TestWebApplicationFactory factory)
+    public WorkspaceApiTests(HostedWorkerDisabledTestWebApplicationFactory factory)
     {
         _factory = factory;
     }
