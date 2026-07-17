@@ -38,15 +38,21 @@ public class AutomationProposalService : IAutomationProposalService
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationService _notificationService;
     private readonly IProposalProvenanceRepository? _provenanceRepository;
+    private readonly IAutomationPolicyEngine _policyEngine;
 
     public AutomationProposalService(
         IUnitOfWork unitOfWork,
         INotificationService? notificationService = null,
-        IProposalProvenanceRepository? provenanceRepository = null)
+        IProposalProvenanceRepository? provenanceRepository = null,
+        IAutomationPolicyEngine? policyEngine = null)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
         _provenanceRepository = provenanceRepository;
+        // Fall back to a plain engine over the same unit of work when DI does not supply one
+        // (direct construction in tests). The engine is stateless apart from _unitOfWork, so
+        // the fallback runs the identical read-safe permission gates the injected one does.
+        _policyEngine = policyEngine ?? new AutomationPolicyEngine(unitOfWork);
     }
 
     public async Task<Result<ProposalDto>> CreateProposalAsync(CreateProposalDto dto, CancellationToken cancellationToken = default)
@@ -414,8 +420,15 @@ public class AutomationProposalService : IAutomationProposalService
             if (!revisedExpiryValidation.IsSuccess)
                 return Result.Failure<string>(revisedExpiryValidation.ErrorCode, revisedExpiryValidation.ErrorMessage);
 
-            var revisedValidation = await ProposalOperationContractValidator.ValidateAsync(
-                _unitOfWork,
+            // Apply runs AutomationPolicyEngine.ValidatePermissionsAsync AFTER the policy gate
+            // (requester exists → 404, board exists → 404, requester board access → 403), and it
+            // ends by running the same operation-contract validation. Call that same engine method
+            // here so a proposal whose requester lost board access, or whose board/requester was
+            // deleted mid-review, cannot preview a clean diff and then fail Apply after approval
+            // (#1398 preview == apply). Ordering (structure → expiry → permissions+contract) matches
+            // Apply's ValidatePolicy-then-ValidatePermissionsAsync sequence exactly.
+            var revisedValidation = await _policyEngine.ValidatePermissionsAsync(
+                proposal.RequestedByUserId,
                 proposal.BoardId,
                 revisedOperations,
                 cancellationToken);
@@ -456,8 +469,15 @@ public class AutomationProposalService : IAutomationProposalService
         if (!expiryValidation.IsSuccess)
             return Result.Failure<string>(expiryValidation.ErrorCode, expiryValidation.ErrorMessage);
 
-        var originalValidation = await ProposalOperationContractValidator.ValidateAsync(
-            _unitOfWork,
+        // Apply runs AutomationPolicyEngine.ValidatePermissionsAsync AFTER the policy gate
+        // (requester exists → 404, board exists → 404, requester board access → 403), then the
+        // same operation-contract validation. Call that same engine method here — ahead of the
+        // cached-DiffPreview fast path below — so a revoked-access or deleted-board/requester
+        // proposal cannot preview a clean diff (even a stored one) and then fail Apply after
+        // approval (#1398 preview == apply). Structure → expiry → permissions+contract mirrors
+        // Apply's ValidatePolicy-then-ValidatePermissionsAsync order exactly.
+        var originalValidation = await _policyEngine.ValidatePermissionsAsync(
+            proposal.RequestedByUserId,
             proposal.BoardId,
             originalOperations,
             cancellationToken);
