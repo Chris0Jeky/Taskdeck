@@ -439,29 +439,26 @@ public partial class Program
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
+        // Single rule: rewrite exactly when HostFilteringMiddleware itself would DISABLE
+        // filtering; every other value is preserved because the middleware fails closed on
+        // it. To decide that, mirror the middleware's parse EXACTLY:
+        //   1. Split(';', RemoveEmptyEntries) with NO trimming -- so null/""/";"/";;" parse
+        //      to zero entries (the middleware then falls back to allow-all: the true #1367
+        //      fail-open), while whitespace-bearing values like " ; " or " * " parse to
+        //      literal whitespace entries, an ACTIVE filter that rejects every real host.
+        //   2. Normalize each entry via new HostString(entry).ToUriComponent() -- which
+        //      RETAINS any :port suffix -- before the ordinal top-level-wildcard test for
+        //      "*" / "0.0.0.0" / "[::]". Port-suffixed pseudo-wildcards ("0.0.0.0:5001")
+        //      are therefore literals no real Host header matches, i.e. deny-all.
+        // Rewriting any of those fail-closed literals to the loopback allowlist would be
+        // strictly WEAKER (spoofed loopback Host headers would pass on a non-loopback
+        // bind), so they are preserved. Do not reintroduce TrimEntries or HostString.Host
+        // (port-stripping) here without re-reading the middleware source.
         var configuredHosts = configuration["AllowedHosts"]?
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries)
             ?? Array.Empty<string>();
-
-        // Mirror HostFilteringMiddleware exactly: it normalizes each configured entry via
-        // new HostString(entry).ToUriComponent() -- which RETAINS any :port suffix (and
-        // punycodes unicode hosts) -- before its ordinal IsTopLevelWildcard test for
-        // "*" / "0.0.0.0" / "[::]". A port-suffixed entry like "0.0.0.0:5001" is therefore
-        // NOT a wildcard to the middleware: it becomes a literal pattern that no real Host
-        // header can match (request hosts are compared portless), i.e. it already fails
-        // closed on its own and must be PRESERVED here. Rewriting it to the loopback
-        // allowlist would be strictly weaker -- on a non-loopback bind it would admit
-        // spoofed loopback Host headers that the literal pattern rejects. Do not switch
-        // this to HostString.Host (port-stripping) without re-reading the middleware source.
         var containsAnyHost = configuredHosts
             .Any(host => new HostString(host).ToUriComponent() is "*" or "0.0.0.0" or "[::]");
-
-        // Fail closed to the loopback allowlist on any misconfigured value. The middleware
-        // splits with RemoveEmptyEntries only (no TrimEntries): ";" / ";;" parse to zero
-        // entries, which disables filtering entirely (every host allowed), while " ; "
-        // parses to whitespace-only entries, an active filter that rejects every host.
-        // Both are misconfigurations, so any value whose trimmed parse yields no hosts is
-        // replaced -- as is any value naming an any-host wildcard.
         if (configuredHosts.Length == 0 || containsAnyHost)
         {
             configuration["AllowedHosts"] = StandaloneMcpLoopbackAllowedHosts;
