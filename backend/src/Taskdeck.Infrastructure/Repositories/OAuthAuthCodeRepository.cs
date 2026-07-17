@@ -53,13 +53,18 @@ public class OAuthAuthCodeRepository : Repository<OAuthAuthCode>, IOAuthAuthCode
         // Pass the DateTimeOffset cutoff as a parameter (not a hand-built ".fffffff" string): EF's
         // SQLite provider serializes both the parameter and the stored ExpiresAt column with the same
         // "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz" mapping (trailing fraction zeros trimmed, dot dropped at a
-        // zero fraction) and normalizes any non-UTC offset consistently on both sides. A code expiring
-        // at exactly the cutoff with a zero-fraction tick then compares EQUAL, so the strictly-older
-        // `ExpiresAt < cutoff` contract KEEPS it instead of deleting it — a fixed-width bound sorts above
-        // the stored "...ss+00:00" because '+' (0x2B) < '.' (0x2E) (issue #1403). Mirrors
-        // AuditLogRepository.DeleteOldEntriesAsync.
+        // zero fraction). A code expiring at exactly the cutoff with a zero-fraction tick then compares
+        // EQUAL, so the strictly-older `ExpiresAt < cutoff` contract KEEPS it instead of deleting it —
+        // a fixed-width bound sorts above the stored "...ss+00:00" because '+' (0x2B) < '.' (0x2E)
+        // (issue #1403). Mirrors AuditLogRepository.DeleteOldEntriesAsync.
+        //
+        // Normalize to UTC first: EF's SQLite mapping PRESERVES the offset (it does not convert to UTC),
+        // so a non-UTC cutoff (e.g. -05:00) would serialize with a "-05:00" suffix and its shifted
+        // wall-clock digits would compare against the stored "+00:00" rows as a raw string rather than by
+        // instant. ToUniversalTime() yields the same instant at "+00:00" so TEXT order equals chrono order.
+        var cutoffUtc = cutoff.ToUniversalTime();
         var affected = await _context.Database.ExecuteSqlInterpolatedAsync(
-            $"DELETE FROM OAuthAuthCodes WHERE ExpiresAt < {cutoff} OR IsConsumed = 1",
+            $"DELETE FROM OAuthAuthCodes WHERE ExpiresAt < {cutoffUtc} OR IsConsumed = 1",
             cancellationToken);
 
         return affected;

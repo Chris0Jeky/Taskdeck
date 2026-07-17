@@ -195,6 +195,42 @@ public class TimestampBoundaryComparisonTests : IClassFixture<HostedWorkerDisabl
         reloaded.IsConsumed.Should().BeTrue("the live code must be marked consumed by the atomic update");
     }
 
+    [Fact]
+    public async Task DeleteOldEntriesAsync_WithNonUtcCutoff_ComparesByInstant_NotOffsetPreservedString()
+    {
+        // Guards the offset-normalization the parameterized form must preserve. The bound and the
+        // stored "+00:00" rows must be compared by INSTANT, not by a naive string comparison of an
+        // offset-preserving serialization. Here the cutoff's wall-clock hour (03) is LOWER than the
+        // stored row's hour (05) even though the cutoff INSTANT (08:00 UTC) is LATER than the row
+        // (05:00 UTC) — so an un-normalized "...03:00:00-05:00" bound would sort ABOVE the stored
+        // "...05:00:00+00:00" row and wrongly KEEP a row that is chronologically older than the cutoff.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAuditLogRepository>();
+
+        var olderRow = new AuditLog("Board", Guid.NewGuid(), AuditAction.Created);
+        db.AuditLogs.Add(olderRow);
+        await db.SaveChangesAsync();
+
+        // Stored at 05:00:00 UTC, zero fractional ticks (EF-trimmed shape). Year 2016 keeps the global
+        // delete's blast radius clear of every other test's rows (which use 2019+).
+        await SetTimestampAsync(db, olderRow.Id, "2016-09-10 05:00:00+00:00");
+
+        // Cutoff = 2016-09-10 03:00:00 -05:00 == 2016-09-10 08:00:00 UTC. The row (05:00 UTC) is
+        // chronologically older than the cutoff instant (08:00 UTC), so it MUST be deleted.
+        var cutoff = new DateTimeOffset(2016, 9, 10, 3, 0, 0, TimeSpan.FromHours(-5));
+
+        var deleted = await repo.DeleteOldEntriesAsync(cutoff, batchSize: 1000);
+        deleted.Should().BeGreaterThanOrEqualTo(1, "the row older than the cutoff instant must be deleted");
+
+        var survivors = await db.AuditLogs.AsNoTracking()
+            .Where(a => a.Id == olderRow.Id)
+            .Select(a => a.Id)
+            .ToListAsync();
+        survivors.Should().NotContain(olderRow.Id,
+            "a row older than the cutoff INSTANT must be deleted regardless of the cutoff's offset");
+    }
+
     private static Task SetTimestampAsync(TaskdeckDbContext db, Guid id, string invariantTimestamp)
         => db.Database.ExecuteSqlRawAsync(
             "UPDATE AuditLogs SET Timestamp = {0} WHERE Id = {1}", invariantTimestamp, id);
