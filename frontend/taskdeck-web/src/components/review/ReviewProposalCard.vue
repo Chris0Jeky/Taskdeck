@@ -212,16 +212,28 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
           the original submission.
         </span>
         <!-- diffPreview is creation-time content revisions never update, so a
-             revised proposal's stored preview is NOT what a revision-aware Apply
-             would have executed — disclose it (#1397 MEDIUM-2). -->
+             revised proposal's stored preview — or the recorded-operations
+             fallback when no preview was captured — is NOT what a revision-aware
+             Apply would have executed. Disclose it, worded for whichever is on
+             screen (the fallback is not a "stored preview") (#1397 MEDIUM-2 /
+             #1414 review). -->
         <span
-          v-if="selectedDiffRevised"
+          v-if="selectedDiffRevised && selectedDiff"
           class="td-review-card__diff-note td-review-card__diff-note--warn"
           role="status"
           data-testid="review-diff-revised-note"
         >
           This proposal was revised after submission — the stored preview shows the original
           operations, not the revised ones.
+        </span>
+        <span
+          v-else-if="selectedDiffRevised && storedOperationsFallback"
+          class="td-review-card__diff-note td-review-card__diff-note--warn"
+          role="status"
+          data-testid="review-diff-revised-note"
+        >
+          This proposal was revised after submission — the recorded operations show the
+          original submission, not the revised one.
         </span>
         <pre
           v-if="selectedDiff"

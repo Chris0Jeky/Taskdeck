@@ -183,6 +183,42 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(wrapper.find('[data-testid="review-diff-banner"]').text()).toContain('original submission')
   })
 
+  it('discloses a revision on the recorded-operations fallback, not as a "stored preview" (#1397 MEDIUM-2 / #1414)', () => {
+    // A revised read-only proposal with no captured preview renders the
+    // recorded-operations fallback — so the disclosure must be worded for that,
+    // never claim a "stored preview" that does not exist.
+    const wrapper = mountCard({
+      proposal: makeProposal({
+        status: 'Expired',
+        operations: [
+          {
+            id: 'op-1',
+            proposalId: 'p-1',
+            sequence: 0,
+            actionType: 'CreateCard',
+            targetType: 'Card',
+            targetId: null,
+            parameters: '{}',
+            idempotencyKey: 'k-1',
+            expectedVersion: null,
+          },
+        ],
+      }),
+      isExpired: true,
+      selectedDiffMode: 'stored',
+      selectedDiff: null,
+      selectedDiffRevised: true,
+    })
+
+    const note = wrapper.find('[data-testid="review-diff-revised-note"]')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('revised')
+    expect(note.text()).toContain('recorded operations')
+    expect(note.text()).not.toContain('stored preview')
+    // The recorded-operations fallback is what's on screen (not a stored pre).
+    expect(wrapper.find('[data-testid="review-diff-stored-operations"]').exists()).toBe(true)
+  })
+
   it('omits the revised note when the revision state is unknown or absent', () => {
     for (const revised of [false, null]) {
       const wrapper = mountCard({
