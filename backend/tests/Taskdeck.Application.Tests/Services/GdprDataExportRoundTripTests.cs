@@ -84,6 +84,8 @@ public class GdprDataExportRoundTripTests
             .ReturnsAsync(0L);
         _extractionRepoMock.Setup(r => r.GetByArtefactForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ArtefactExtraction>());
+        _extractionRepoMock.Setup(r => r.GetByArtefactsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>>)new Dictionary<Guid, IReadOnlyList<ArtefactExtraction>>());
 
         _historyServiceMock
             .Setup(h => h.LogActionAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(), It.IsAny<Guid?>(), It.IsAny<string?>()))

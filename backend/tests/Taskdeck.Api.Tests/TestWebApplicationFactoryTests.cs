@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure.Persistence;
@@ -11,6 +12,45 @@ namespace Taskdeck.Api.Tests;
 
 public class TestWebApplicationFactoryTests
 {
+    [Fact]
+    public void HostedWorkerDisabledFactory_RemovesApplicationWorkers_ButKeepsTheWebHostService()
+    {
+        // Guards the issue #1335 isolation mechanism against silent regression: if a future
+        // change re-registers a background worker (or the removal stops working), the
+        // repository-focused test classes would again be pre-emptible and this test fails
+        // closed. The base factory must still run workers so worker-dependent test classes keep
+        // their coverage, and the framework web-host service must survive on the workerless
+        // host or the TestServer would never start.
+        //
+        // Detection deliberately reuses the factory's own removal contract
+        // (IsApplicationWorkerType) so the two predicates cannot drift — and, because this test
+        // classifies LIVE resolved instances rather than service descriptors, it also catches an
+        // app worker registered via an ImplementationFactory delegate, which the factory's
+        // descriptor filter cannot classify (see the comment in
+        // HostedWorkerDisabledTestWebApplicationFactory.ConfigureWebHost).
+        static bool IsApplicationWorker(IHostedService service) =>
+            HostedWorkerDisabledTestWebApplicationFactory.IsApplicationWorkerType(service.GetType());
+
+        using var baseFactory = new TestWebApplicationFactory();
+        baseFactory.Services.GetServices<IHostedService>().Where(IsApplicationWorker)
+            .Should().NotBeEmpty(
+                "the base test host must keep the application background workers so " +
+                "worker-dependent test classes retain their coverage");
+
+        using var workerlessFactory = new HostedWorkerDisabledTestWebApplicationFactory();
+        var workerlessHostedServices = workerlessFactory.Services.GetServices<IHostedService>().ToList();
+        workerlessHostedServices.Where(IsApplicationWorker)
+            .Should().BeEmpty(
+                "the workerless host must run no hosted service from the API assembly " +
+                "(the IsApplicationWorkerType contract) — one present means a background worker " +
+                "can again pre-empt repository-focused tests (issue #1335)");
+        workerlessHostedServices
+            .Should().NotBeEmpty(
+                "framework hosted services (GenericWebHostService) must survive the removal " +
+                "so the TestServer still starts and CreateClient() keeps working");
+    }
+
+
     [Fact]
     public void GetDatabaseCleanupTargets_ShouldIncludeSqliteSidecars()
     {

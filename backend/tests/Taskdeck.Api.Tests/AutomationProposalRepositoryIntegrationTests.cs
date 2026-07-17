@@ -11,12 +11,18 @@ namespace Taskdeck.Api.Tests;
 /// <summary>
 /// Integration tests for AutomationProposalRepository against real SQLite.
 /// Covers ordering correctness, expiry boundary, status filtering, and operation-target lookups.
+///
+/// Uses <see cref="HostedWorkerDisabledTestWebApplicationFactory"/> (issue #1335): the expiry
+/// tests backdate ExpiresAt on PendingReview proposals — exactly the rows the live
+/// <c>ProposalHousekeepingWorker</c> (runs immediately at host start, then every 60s) transitions
+/// PendingReview→Expired. Without worker isolation the sweep can consume a seeded proposal
+/// between seed and the GetExpiredAsync read.
 /// </summary>
-public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWebApplicationFactory>
+public class AutomationProposalRepositoryIntegrationTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
 
-    public AutomationProposalRepositoryIntegrationTests(TestWebApplicationFactory factory)
+    public AutomationProposalRepositoryIntegrationTests(HostedWorkerDisabledTestWebApplicationFactory factory)
     {
         _factory = factory;
     }
