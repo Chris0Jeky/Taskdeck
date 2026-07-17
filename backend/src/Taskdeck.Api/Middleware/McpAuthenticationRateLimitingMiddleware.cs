@@ -33,6 +33,13 @@ public sealed class McpAuthenticationRateLimitingMiddleware
         // Fast pre-check: reject before any API-key parse or database lookup when this client
         // address has already spent its failure budget for the window. This inspection does not
         // consume a permit, so valid callers behind the same address are never charged here.
+        //
+        // Residual tradeoff (intentional): the pre-check runs before the auth outcome is known, so a
+        // valid key sharing a hostile NAT/proxy that already drained the budget still pays this 429
+        // until the window resets. That is the accepted cost of shielding the key lookup from a
+        // brute-force flood — narrowing the reject to only-invalid keys would require the lookup we
+        // are protecting. Set ForwardedHeaders (behind a trusted proxy) to give each real client its
+        // own bucket instead of one shared egress bucket.
         if (limiter.IsFailureBudgetExhausted(context))
         {
             await limiter.WriteFailureBudgetRejectedAsync(context, context.RequestAborted);
