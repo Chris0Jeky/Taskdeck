@@ -109,6 +109,9 @@ test(PAPER_ENUM_TEST_TITLE, async ({
   const historyResponsePromise = page.waitForResponse(
     (response) => response.url().endsWith(`/automation/proposals/${proposalId}/history`),
   )
+  const sideEffectsResponsePromise = page.waitForResponse(
+    (response) => response.url().endsWith(`/automation/proposals/${proposalId}/side-effects`),
+  )
 
   await page.getByRole('link', { name: /Review$/ }).click()
   await expect(page).toHaveURL(/\/workspace\/review$/)
@@ -118,12 +121,14 @@ test(PAPER_ENUM_TEST_TITLE, async ({
   await expect(page.getByRole('heading', { name: 'Conflicts & warnings' })).toBeVisible()
   await expect(page.getByRole('heading', { name: /History/ })).toBeVisible()
 
-  const [conflictsResponse, historyResponse] = await Promise.all([
+  const [conflictsResponse, historyResponse, sideEffectsResponse] = await Promise.all([
     conflictsResponsePromise,
     historyResponsePromise,
+    sideEffectsResponsePromise,
   ])
   expect(conflictsResponse.status()).toBe(200)
   expect(historyResponse.status()).toBe(200)
+  expect(sideEffectsResponse.status()).toBe(200)
 
   const conflicts = await conflictsResponse.json() as Array<{ tone: unknown }>
   const history = await historyResponse.json() as Array<{ status: unknown }>
@@ -134,6 +139,14 @@ test(PAPER_ENUM_TEST_TITLE, async ({
   expect(conflicts.some((row) => row.tone === 2)).toBe(true)
   expect(history.some((row) => row.status === 0)).toBe(true)
 
+  const sideEffects = await sideEffectsResponse.json() as {
+    reversibility: { summary: string; description: string; windowMs: number }
+  }
+  expect(typeof sideEffects.reversibility.windowMs).toBe('number')
+  expect(
+    `${sideEffects.reversibility.summary} ${sideEffects.reversibility.description}`.toLowerCase(),
+  ).not.toMatch(/undo|reversib|single keystroke/)
+
   // These are mapped UI values from the real numeric responses. Waiting for
   // them proves all selector requests have settled and the enum mapper ran.
   await expect(
@@ -142,6 +155,10 @@ test(PAPER_ENUM_TEST_TITLE, async ({
   await expect(page.locator('.paper-review-history__row[data-status="pending"]').first()).toContainText(
     'PENDING',
   )
+  const applyRisk = page.getByTestId('apply-risk-posture')
+  await expect(applyRisk).toBeVisible()
+  await expect(applyRisk).toContainText('Apply considerations')
+  expect((await applyRisk.innerText()).toLowerCase()).not.toMatch(/undo|reversib/)
 
   await expect(page.getByText('Something went wrong', { exact: true })).toHaveCount(0)
   expect(failedDeepReviewResponses).toEqual([])
