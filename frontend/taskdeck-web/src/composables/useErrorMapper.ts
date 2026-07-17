@@ -27,17 +27,20 @@ export function parseApiError(err: unknown): ApiError | null {
 }
 
 /**
- * True when the error is a backend 400 ValidationError. The automation `/diff`
- * endpoint returns this (PR #1395 / #1376) when it runs Apply's gates at diff
- * time — "Proposal has expired" or "Proposal must contain at least one
- * operation". Review surfaces render that as an explicit invalid/expired
- * presentation instead of tearing down the pane + toasting (#1397).
+ * True when the error is a backend 400 ValidationError — BOTH the status and
+ * the errorCode must match, so an unrelated 400 (or a ValidationError code on
+ * another status) is never classified as the review-gate verdict. The
+ * automation `/diff` endpoint returns this (PR #1395 / #1376) when it runs
+ * Apply's gates at diff time — "Proposal has expired" or "Proposal must
+ * contain at least one operation". Review surfaces render the backend's ACTUAL
+ * message as an explicit invalid presentation instead of tearing down the pane
+ * + toasting (#1397).
  */
 export function isValidationError(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false
   const candidate = err as { response?: { status?: number; data?: { errorCode?: string } } }
   return (
-    candidate.response?.status === 400 ||
+    candidate.response?.status === 400 &&
     candidate.response?.data?.errorCode === 'ValidationError'
   )
 }

@@ -44,10 +44,23 @@ export function isProposalRejectActionable(proposal: ApiProposal, isExpired: boo
   return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isExpired
 }
 
-// Approve shares Reject's precondition today (a live, non-expired PendingReview proposal),
-// but is named distinctly so the two can diverge without one silently aliasing the other.
-export function isProposalApproveActionable(proposal: ApiProposal, isExpired: boolean): boolean {
-  return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isExpired
+// Approve requires a live, non-expired PendingReview proposal AND a structurally
+// applyable one: a zero-operation proposal is rejected by Apply (and by `/diff`,
+// #1376/#1395), so approving it only defers a guaranteed 400 — the rail must not
+// offer it (#1397 LOW-3; backend approve-time validation tracked in #1416).
+// `hasSavedRevision` is the #1235 escape hatch: a saved revision carries
+// operations the backend renders/applies revision-aware even when the ORIGINAL
+// operations are empty. Callers without revision knowledge (the Legacy card)
+// omit it — a revised-in-Paper zero-op proposal viewed in Legacy is then
+// conservatively un-approvable there until refreshed in Paper.
+export function isProposalApproveActionable(
+  proposal: ApiProposal,
+  isExpired: boolean,
+  options?: { hasSavedRevision?: boolean },
+): boolean {
+  if (normalizeProposalStatus(proposal.status) !== 'PendingReview' || isExpired) return false
+  if ((proposal.operations?.length ?? 0) === 0 && !options?.hasSavedRevision) return false
+  return true
 }
 
 // A proposal is "read-only" once it is expired (client-side clock or domain
