@@ -161,6 +161,39 @@ public class ProposalOperationContractValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_ShouldRejectCreateCardWhoseIdCollidesWithExistingCard_EvenWhenCardIdParameterMatchesTargetId()
+    {
+        // A create-card op that also carries a cardId parameter equal to its targetId must
+        // NOT be routed through the existing-card branch. Before #1370 that branch treated
+        // the colliding id as a valid reference (the card exists on the board), the op
+        // previewed OK and was registered as planned, then Apply blew up creating a card
+        // with a duplicate id. Preview must reject the collision up front.
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Backlog", 0);
+        var existingCard = new Card(boardId, column.Id, "Existing");
+        var (unitOfWork, cards, columns, _) = CreateMocks();
+        cards.Setup(repository => repository.GetByIdAsync(existingCard.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingCard);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operations = new[]
+        {
+            CreateOperation(
+                0,
+                "create",
+                existingCard.Id,
+                new { boardId, columnId = column.Id, title = "New card", cardId = existingCard.Id })
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("already exists");
+    }
+
+    [Fact]
     public async Task ValidateAsync_ShouldRejectCardReferenceBeforeItsCreateSequence()
     {
         var boardId = Guid.NewGuid();

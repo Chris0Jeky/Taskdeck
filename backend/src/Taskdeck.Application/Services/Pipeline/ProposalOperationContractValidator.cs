@@ -122,17 +122,29 @@ public static class ProposalOperationContractValidator
             return Result.Failure(ErrorCodes.ValidationError, "Operation targetId must match parameter 'cardId'");
         }
 
-        if (cardId.HasValue)
+        var isCardCreate = operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
+                           operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase);
+
+        if (isCardCreate)
+        {
+            // The card being created is identified by its TargetId (a cardId parameter,
+            // if present, must equal it — enforced by the equality check above). Validate
+            // it as a NEW card id so a collision with an existing card fails at preview
+            // instead of during Apply. A create op that also carries a cardId parameter
+            // must never be routed through the existing-card branch, which would treat the
+            // colliding id as a valid reference and let Apply blow up on the duplicate
+            // (#1370 preview == apply).
+            var newCardId = targetId ?? cardId;
+            if (newCardId.HasValue)
+            {
+                var cardResult = await validationContext.ValidateNewCardIdAsync(newCardId.Value, cancellationToken);
+                if (!cardResult.IsSuccess)
+                    return cardResult;
+            }
+        }
+        else if (cardId.HasValue)
         {
             var cardResult = await validationContext.ValidateCardBoardAsync(cardId.Value, cancellationToken);
-            if (!cardResult.IsSuccess)
-                return cardResult;
-        }
-        else if (targetId.HasValue &&
-                 operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
-                 operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
-        {
-            var cardResult = await validationContext.ValidateNewCardIdAsync(targetId.Value, cancellationToken);
             if (!cardResult.IsSuccess)
                 return cardResult;
         }
