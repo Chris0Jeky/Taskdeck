@@ -23,34 +23,38 @@ namespace Taskdeck.Api.Tests;
 ///
 /// Repository integration tests exercise the persistence layer directly through
 /// <see cref="WebApplicationFactory{TEntryPoint}.Services"/> scopes and never depend on any
-/// background worker, so dropping every hosted service here is safe as well as sufficient.
+/// background worker, so dropping every application worker here is safe as well as sufficient.
 /// </summary>
 public sealed class HostedWorkerDisabledTestWebApplicationFactory : TestWebApplicationFactory
 {
-    /// <summary>
-    /// The namespace of every Taskdeck background worker (see
-    /// <c>Taskdeck.Api.Extensions.WorkerRegistration</c>). Only hosted services in this
-    /// namespace are removed; the framework's own <c>GenericWebHostService</c> — also an
-    /// <see cref="IHostedService"/> — MUST stay, or the TestServer would never start.
-    /// </summary>
-    private const string WorkerNamespace = "Taskdeck.Api.Workers";
-
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
 
         // ConfigureTestServices runs after the app's own ConfigureServices (including
-        // AddTaskdeckWorkers), so this removal is the last word: no Taskdeck worker is left to
-        // start when the host boots, and none can pre-empt the seeded rows. A blanket
-        // RemoveAll<IHostedService>() is deliberately avoided because it would also target the
-        // framework web-host service.
+        // AddTaskdeckWorkers), so this removal is the last word: no application worker is left
+        // to start when the host boots, and none can pre-empt the seeded rows.
+        //
+        // Scope the removal to hosted services implemented in the API assembly (all Taskdeck
+        // background workers live there). A blanket RemoveAll<IHostedService>() is deliberately
+        // avoided: it would also strip the framework-level GenericWebHostService that starts the
+        // TestServer, so any future integration test on this factory that called CreateClient()
+        // would hang. Filtering by assembly keeps every framework hosted service intact.
+        var apiAssembly = typeof(Program).Assembly;
         builder.ConfigureTestServices(services =>
         {
             var workerDescriptors = services
                 .Where(descriptor =>
-                    descriptor.ServiceType == typeof(IHostedService)
-                    && (descriptor.ImplementationType?.Namespace?.StartsWith(
-                        WorkerNamespace, StringComparison.Ordinal) ?? false))
+                {
+                    if (descriptor.ServiceType != typeof(IHostedService))
+                    {
+                        return false;
+                    }
+
+                    var implementationType = descriptor.ImplementationType
+                        ?? descriptor.ImplementationInstance?.GetType();
+                    return implementationType?.Assembly == apiAssembly;
+                })
                 .ToList();
 
             foreach (var descriptor in workerDescriptors)
