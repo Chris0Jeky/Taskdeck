@@ -175,9 +175,16 @@ test('rejecting a proposal should remove it from the review queue', async ({ pag
     .first()
   await expect(rejectButton).toBeVisible()
 
+  // handleRejectProposal (useReviewActions.ts) has TWO prompt templates:
+  // 'Optional rejection reason:' for Low/Medium risk and 'Reason is required
+  // for this risk level:' for High/Critical — match both, and submit a
+  // non-empty reason so the rejection succeeds regardless of how this
+  // fixture's proposal is risk-classified (High/Critical rejects an empty
+  // reason and would leave the proposal in the queue).
   await expectDialog(page, () => rejectButton.click(), {
     type: 'prompt',
-    message: /rejection reason/i,
+    message: /reason/i,
+    promptText: 'e2e: rejected by test',
   })
 
   // Proposal card must disappear from the review queue
