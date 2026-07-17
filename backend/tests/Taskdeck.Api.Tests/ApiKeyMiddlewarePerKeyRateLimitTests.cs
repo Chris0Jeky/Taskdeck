@@ -65,15 +65,20 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
         context.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
         nextCalled.Should().BeFalse("an over-quota request must not reach the MCP endpoint");
 
-        // The key lookup (ApiKeys SELECT) is unavoidable — it is how the key ID is known — but the
-        // Users lookup and the last-used UPDATE must NOT have run: that is the auth-stage database work
-        // #1384 shields from a valid-but-over-quota key.
+        // Authentication issues exactly ONE SELECT — the folded key+owner lookup (ApiKeys SELECT with a
+        // correlated Users subquery, #1404). There must be NO separate standalone Users SELECT and NO
+        // last-used UPDATE: that is the auth-stage database work #1384 shields from a valid-but-over-quota
+        // key, now a single query since the owner check is folded into the initial lookup.
+        _interceptor.Captured.Should().ContainSingle(sql => IsSelect(sql),
+            "authentication issues exactly one SELECT — the folded key+owner lookup");
         _interceptor.Captured.Should().Contain(
-            sql => IsSelect(sql) && sql.Contains("ApiKeys", StringComparison.OrdinalIgnoreCase),
-            "the key row is resolved before the budget check");
+            sql => IsSelect(sql)
+                && sql.Contains("ApiKeys", StringComparison.OrdinalIgnoreCase)
+                && sql.Contains("Users", StringComparison.OrdinalIgnoreCase),
+            "the owner's active state is resolved in the same ApiKeys query (#1404 fold)");
         _interceptor.Captured.Should().NotContain(
-            sql => IsSelect(sql) && sql.Contains("Users", StringComparison.OrdinalIgnoreCase),
-            "the over-quota request must be rejected before the user-account lookup");
+            sql => IsStandaloneUsersSelect(sql),
+            "the over-quota request performs no separate user-account SELECT (folded into the lookup)");
         _interceptor.Captured.Should().NotContain(
             sql => IsApiKeysUpdate(sql),
             "the over-quota request must be rejected before the UpdateLastUsedAsync write");
@@ -94,7 +99,7 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
     }
 
     [Fact]
-    public async Task UnderQuotaValidKey_PassesThrough_ReachingUserLookup()
+    public async Task UnderQuotaValidKey_PassesThrough_WithFoldedOwnerLookup()
     {
         await using var db = await CreateSeededContextAsync();
         const string plaintext = "tdsk_perkey_underquota_00000000000000000";
@@ -112,11 +117,85 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
 
         nextCalled.Should().BeTrue("an under-quota valid key must pass through to the MCP endpoint");
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK, "the terminal delegate left the default status");
-        // The mirror of the over-quota assertion: an admitted request DOES reach the user-account
-        // lookup that the over-quota path skips, confirming the per-key gate is what shields it.
+        // The owner's active state is resolved in the SAME ApiKeys query (#1404 fold): the admitted
+        // request issues exactly one SELECT touching both tables and NO separate standalone Users SELECT,
+        // then the last-used UPDATE runs on the happy path.
+        _interceptor.Captured.Should().ContainSingle(sql => IsSelect(sql),
+            "authentication issues exactly one SELECT — the folded key+owner lookup");
         _interceptor.Captured.Should().Contain(
-            sql => IsSelect(sql) && sql.Contains("Users", StringComparison.OrdinalIgnoreCase),
-            "an admitted request performs the user-account lookup the over-quota path skips");
+            sql => IsSelect(sql)
+                && sql.Contains("ApiKeys", StringComparison.OrdinalIgnoreCase)
+                && sql.Contains("Users", StringComparison.OrdinalIgnoreCase),
+            "the owner's active state is resolved in the same ApiKeys query (#1404 fold)");
+        _interceptor.Captured.Should().NotContain(
+            sql => IsStandaloneUsersSelect(sql),
+            "the standalone user-account SELECT is gone — the owner check is folded into the lookup (#1404)");
+        _interceptor.Captured.Should().Contain(
+            sql => IsApiKeysUpdate(sql),
+            "an admitted request records its last-used timestamp");
+    }
+
+    [Fact]
+    public async Task StaleOwnerKey_Returns401_ChargesIpFailureBudget_BeforePerKeyCharge()
+    {
+        // #1404: an ACTIVE key row whose owner was deactivated must 401 AND charge the pre-auth IP
+        // failure budget (AuthenticationFailedItemKey), and must do so BEFORE the per-key budget is
+        // partitioned/charged. Charging the per-key budget first would hide the key behind a 429 that
+        // never spends the IP budget, so the SHA-256 + ApiKeys lookup would run indefinitely; charging
+        // the IP failure budget instead lets sustained stale-owner traffic trip the pre-auth pre-check
+        // before any DB work. The owner check is folded into the single ApiKeys lookup, so no separate
+        // Users SELECT and no last-used UPDATE run.
+        await using var db = await CreateSeededContextAsync();
+        const string plaintext = "tdsk_perkey_staleowner_0000000000000000";
+        var (userId, _) = await SeedUserAndKeyAsync(db, plaintext);
+
+        // Deactivate the owner while leaving the key row active — the stale-owner condition.
+        await db.Users
+            .Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(u => u.IsActive, false));
+
+        // A generous per-key budget so ONLY the owner gate (never the quota) can reject this request.
+        using var limiter = new McpPerApiKeyRateLimiter(new RateLimitPolicySettings(5, 60));
+        var nextCalled = false;
+        var middleware = new ApiKeyMiddleware(_ => { nextCalled = true; return Task.CompletedTask; },
+            NullLogger<ApiKeyMiddleware>.Instance);
+
+        var context = CreateMcpContext(plaintext, limiter);
+        _interceptor.Clear();
+
+        await middleware.InvokeAsync(context, db);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        nextCalled.Should().BeFalse("a stale-owner key must not reach the MCP endpoint");
+
+        // The crux: the pre-auth IP failure budget IS charged (unlike a per-key 429), so sustained
+        // stale-owner traffic exhausts the IP bucket and trips the pre-auth pre-check before any DB work.
+        context.Items.ContainsKey(ApiKeyMiddleware.AuthenticationFailedItemKey).Should().BeTrue(
+            "a stale-owner rejection is an authentication failure and must charge the IP failure budget");
+
+        // Rejected before the per-key budget is even partitioned: the key-id item is set only after the
+        // owner gate passes, so the per-key limiter was never charged.
+        context.Items.ContainsKey(ApiKeyMiddleware.ApiKeyIdItemKey).Should().BeFalse(
+            "the per-key budget must not be charged before the owner gate rejects");
+
+        // Exactly one SELECT — the folded key+owner lookup — and no standalone Users SELECT or last-used UPDATE.
+        _interceptor.Captured.Should().ContainSingle(sql => IsSelect(sql),
+            "authentication issues exactly one SELECT — the folded key+owner lookup");
+        _interceptor.Captured.Should().Contain(
+            sql => IsSelect(sql)
+                && sql.Contains("ApiKeys", StringComparison.OrdinalIgnoreCase)
+                && sql.Contains("Users", StringComparison.OrdinalIgnoreCase),
+            "the owner's active state is resolved in the same ApiKeys query (#1404 fold)");
+        _interceptor.Captured.Should().NotContain(sql => IsStandaloneUsersSelect(sql),
+            "the folded lookup removes the separate user-account SELECT entirely");
+        _interceptor.Captured.Should().NotContain(sql => IsApiKeysUpdate(sql),
+            "a stale-owner request must be rejected before the UpdateLastUsedAsync write");
+
+        // 401 contract.
+        context.Response.ContentType.Should().StartWith("application/json");
+        var error = await ReadErrorAsync(context);
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.Unauthorized);
     }
 
     [Fact]
@@ -185,6 +264,14 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
     // ── Helpers ──
 
     private static bool IsSelect(string sql) => sql.Contains("SELECT", StringComparison.OrdinalIgnoreCase);
+
+    // A standalone user-account SELECT (the pre-#1404 separate Users lookup): a SELECT that touches
+    // Users but NOT ApiKeys. The #1404 fold projects the owner flag inside the ApiKeys query, so that
+    // query references BOTH tables and is deliberately NOT matched here.
+    private static bool IsStandaloneUsersSelect(string sql) =>
+        IsSelect(sql)
+        && sql.Contains("Users", StringComparison.OrdinalIgnoreCase)
+        && !sql.Contains("ApiKeys", StringComparison.OrdinalIgnoreCase);
 
     // Match a genuine UPDATE statement against ApiKeys (the UpdateLastUsedAsync write), not a SELECT
     // that merely lists the "UpdatedAt" column — hence StartsWith on the trimmed command text.
