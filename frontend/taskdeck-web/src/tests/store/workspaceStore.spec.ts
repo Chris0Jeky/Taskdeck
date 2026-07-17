@@ -108,9 +108,13 @@ describe('workspaceStore', () => {
     await store.updateMode('agent')
 
     expect(store.mode).toBe('agent')
-    expect(store.onboarding?.visibility).toBe('dismissed')
     expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
+    expect(store.preferencesHydrated).toBe(true)
     expect(workspaceApi.updatePreferences).toHaveBeenCalledWith({ workspaceMode: 'agent' })
+    // Writes confirm, never re-apply (issue #1343): the save's response is an
+    // echo and must not write field values back — its onboarding payload does
+    // NOT apply. Onboarding state arrives via reads (summary/hydrate) instead.
+    expect(store.onboarding).toBeNull()
   })
 
   it('keeps the latest mode when an older hydration request resolves after an update', async () => {
