@@ -385,4 +385,122 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
       expect(store.todaySummary?.onboarding.currentStepId).toBe('step-2')
     })
   })
+
+  // ── late summary vs. newer local mode choice (issue #1343) ────────────────
+  // A Home/Today summary request that started before a newer local mode choice
+  // (updateMode) must not overwrite that choice when it resolves afterward.
+  // Genuinely newer summaries — those that start after the local action has
+  // settled — must still apply server truth. Ordering is made deterministic by
+  // controlling exactly when each request resolves, so these are not timing
+  // races: they exercise the store's version guard directly.
+
+  describe('late summary cannot overwrite a newer local mode choice', () => {
+    it('keeps a failed-save mode choice when a late Home summary resolves afterward', async () => {
+      // Home request begins first (carries the stale server mode 'guided').
+      let resolveHome!: (value: { data: HomeSummary }) => void
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => { resolveHome = resolve }),
+      )
+      // The user's preference save then fails, so the local selection is kept.
+      vi.mocked(http.put).mockRejectedValue(new Error('Failed to save workspace preferences'))
+
+      const store = useWorkspaceStore()
+      const homeRequest = store.fetchHomeSummary()
+
+      // User picks 'workbench' while the Home request is still in flight.
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+      // Failed save keeps the local selection and records the error (drives the warning).
+      expect(store.preferenceError).toBe('Failed to save workspace preferences')
+      expect(store.preferencesHydrated).toBe(false)
+
+      // The older Home response finally resolves carrying the stale 'guided' mode.
+      resolveHome({ data: makeHomeSummary({ workspaceMode: 'guided' }) })
+      await homeRequest
+
+      // The newer local choice survives; the late summary does not overwrite it.
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+      // Summary data still applied (only mode is ordering-guarded), but the failed
+      // save's hydration state is not clobbered back to true by the late summary.
+      expect(store.homeSummary).not.toBeNull()
+      expect(store.preferencesHydrated).toBe(false)
+    })
+
+    it('keeps a newer mode choice when a late Today summary resolves afterward', async () => {
+      let resolveToday!: (value: { data: TodaySummary }) => void
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: TodaySummary }>((resolve) => { resolveToday = resolve }),
+      )
+      vi.mocked(http.put).mockResolvedValue({ data: makePreferencePayload('workbench') })
+
+      const store = useWorkspaceStore()
+      const todayRequest = store.fetchTodaySummary()
+
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+
+      resolveToday({ data: makeTodaySummary({ workspaceMode: 'guided' }) })
+      await todayRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+      // Today summary data is still populated even though its stale mode was dropped.
+      expect(store.todaySummary).not.toBeNull()
+    })
+
+    it('applies a Home summary mode that starts after the local choice has settled', async () => {
+      // Opposite interleaving: the local choice is fully settled first, then a
+      // Home summary begins — it is genuinely newer, so server truth applies.
+      vi.mocked(http.put).mockResolvedValue({ data: makePreferencePayload('workbench') })
+
+      const store = useWorkspaceStore()
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+
+      vi.mocked(http.get).mockResolvedValue({ data: makeHomeSummary({ workspaceMode: 'agent' }) })
+      await store.fetchHomeSummary()
+
+      expect(store.mode).toBe('agent')
+      expect(store.preferencesHydrated).toBe(true)
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
+    })
+
+    it('applies a Today summary mode that starts after the local choice has settled', async () => {
+      vi.mocked(http.put).mockResolvedValue({ data: makePreferencePayload('workbench') })
+
+      const store = useWorkspaceStore()
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+
+      vi.mocked(http.get).mockResolvedValue({ data: makeTodaySummary({ workspaceMode: 'agent' }) })
+      await store.fetchTodaySummary()
+
+      expect(store.mode).toBe('agent')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
+    })
+
+    it('drops a late Home mode even when the newer preference save succeeds', async () => {
+      // Ordering guard must fire regardless of whether the concurrent save
+      // succeeds or fails — it is the ordering, not the save outcome, that wins.
+      let resolveHome!: (value: { data: HomeSummary }) => void
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => { resolveHome = resolve }),
+      )
+      vi.mocked(http.put).mockResolvedValue({ data: makePreferencePayload('workbench') })
+
+      const store = useWorkspaceStore()
+      const homeRequest = store.fetchHomeSummary()
+
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+
+      resolveHome({ data: makeHomeSummary({ workspaceMode: 'guided' }) })
+      await homeRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+    })
+  })
 })
