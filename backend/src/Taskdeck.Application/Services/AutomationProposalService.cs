@@ -234,6 +234,40 @@ public class AutomationProposalService : IAutomationProposalService
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+            // Structure gate at approve time (#1416 approve == apply): a reviewer must not be able
+            // to commit to a proposal the executor will refuse. Apply validates the EFFECTIVE
+            // operation set (latest saved revision, else the original operations) via
+            // AutomationPolicyEngine.ValidateOperationStructure, and GetProposalDiffAsync mirrors the
+            // same revision-aware materialization; mirror both here so a zero-operation (or otherwise
+            // structurally invalid) proposal is rejected with the identical 400 ValidationError Apply
+            // returns, instead of being approved and only failing at Apply — the last "user commits
+            // to something the executor will refuse" step in this trust class (siblings
+            // #1370 → #1374, #1376 → #1395, #1398 → #1413).
+            //
+            // Gate only genuinely approvable (PendingReview) proposals: for any other status the
+            // domain transition's terminal-status short-circuit owns the response (409 "Cannot
+            // approve proposal in status X"), which this slice leaves untouched — running the
+            // structure gate on a terminal proposal would wrongly report a 400 structure error in
+            // place of that 409.
+            if (proposal.Status == ProposalStatus.PendingReview)
+            {
+                var effectiveOperations = await ResolveEffectiveOperationsAsync(proposal, cancellationToken);
+                if (!effectiveOperations.IsSuccess)
+                    return Result.Failure<ProposalDto>(effectiveOperations.ErrorCode, effectiveOperations.ErrorMessage);
+
+                var structureValidation = ProposalOperationStructureValidator.Validate(effectiveOperations.Value);
+                if (!structureValidation.IsSuccess)
+                    return Result.Failure<ProposalDto>(structureValidation.ErrorCode, structureValidation.ErrorMessage);
+            }
+
+            // Expiry is enforced by the domain transition itself: AutomationProposal.Approve throws
+            // InvalidOperation ("Cannot approve expired proposal") → 409. That established 409 is the
+            // approve-time expiry contract this slice preserves; it deliberately does NOT adopt the
+            // diff/preview path's 400 "Proposal has expired" read-parity shape, because approving is
+            // a state transition and a 409 conflict is the correct semantics for refusing to advance
+            // an expired proposal. Structure runs first (matching ValidatePolicy's structure-then-
+            // expiry order), so a zero-op AND expired proposal reports the 400 structure error on
+            // approve just as it does on diff and apply.
             proposal.Approve(decidedByUserId);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -247,6 +281,42 @@ public class AutomationProposalService : IAutomationProposalService
         {
             return Result.Failure<ProposalDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Resolves the effective operation set Apply will execute, for the approve-time structure
+    /// gate — the latest saved <see cref="ProposalRevision"/> when one exists (mirroring
+    /// <c>AutomationExecutorService.MaterializeEffectiveProposalAsync</c> and the revision-aware
+    /// <see cref="GetProposalDiffAsync"/> path), otherwise the proposal's original operations —
+    /// so approve validates exactly what Apply will run (#1416 approve == apply). A revision is
+    /// structure-validated at save time, so the parse-failure branch is defensive: if the
+    /// effective payload cannot be materialized, Apply would fail the same way, so surface the
+    /// identical <see cref="ErrorCodes.ValidationError"/>.
+    /// </summary>
+    private async Task<Result<IReadOnlyCollection<ProposalOperationDto>>> ResolveEffectiveOperationsAsync(
+        AutomationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
+        if (latestRevision is not null)
+        {
+            if (!ProposalRevisionPayload.TryParseOperations(
+                    proposal.Id,
+                    latestRevision.RevisedPayload,
+                    out var revisedOperations,
+                    out var errorMessage))
+            {
+                return Result.Failure<IReadOnlyCollection<ProposalOperationDto>>(ErrorCodes.ValidationError, errorMessage);
+            }
+
+            return Result.Success<IReadOnlyCollection<ProposalOperationDto>>(revisedOperations);
+        }
+
+        var originalOperations = proposal.Operations
+            .OrderBy(o => o.Sequence)
+            .Select(MapOperationToDto)
+            .ToList();
+        return Result.Success<IReadOnlyCollection<ProposalOperationDto>>(originalOperations);
     }
 
     public async Task<Result<ProposalDto>> RejectProposalAsync(Guid id, Guid decidedByUserId, UpdateProposalStatusDto dto, CancellationToken cancellationToken = default)
