@@ -15,7 +15,8 @@ namespace Taskdeck.Api.Tests;
 
 // Uses the worker-disabled factory (issue #1418, convention #1335): this class seeds a
 // Processing capture that LlmQueueToProposalWorker would otherwise claim and flip to a terminal
-// state mid-test (and Today_* seeds are likewise protected from ProposalHousekeepingWorker).
+// state mid-test (and Home's PendingReview proposal seeds are likewise shielded from
+// ProposalHousekeepingWorker expiry).
 // Safe because no test here depends on a live worker — all set statuses directly and assert
 // aggregation.
 public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
