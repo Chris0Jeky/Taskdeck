@@ -885,6 +885,80 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             $"the {phase} barrier should contain exactly the users whose hub operations succeeded");
     }
 
+    private static bool SnapshotCarriesOwnerMarker(
+        BoardPresenceSnapshot snapshot,
+        Guid ownerUserId,
+        Guid editingMarker)
+        => snapshot.Members.Any(member =>
+            member.UserId == ownerUserId && member.EditingCardId == editingMarker);
+
+    /// <summary>
+    /// Presence snapshots observed for a phase that are NOT the causal marker
+    /// snapshot — i.e. the JoinBoard/LeaveBoard-originated deltas. The marker is
+    /// delivered by a separate <c>SetEditingCard</c> broadcast carrying full
+    /// tracker state, so these deltas are the only proof that the join/leave
+    /// events themselves reached the observer rather than merely mutating the
+    /// tracker (issue #1371).
+    /// </summary>
+    private static IReadOnlyList<BoardPresenceSnapshot> SelectPhaseBroadcasts(
+        IEnumerable<BoardPresenceSnapshot> observed,
+        Guid ownerUserId,
+        Guid editingMarker)
+        => observed
+            .Where(snapshot => !SnapshotCarriesOwnerMarker(snapshot, ownerUserId, editingMarker))
+            .ToList();
+
+    /// <summary>
+    /// Asserts every successful join was delivered to the observer as a presence
+    /// broadcast, not merely reflected in the marker snapshot. Fails closed when
+    /// every JoinBoard broadcast is dropped/suppressed (no non-marker delta
+    /// reaches the observer) or when a joined identity never appears in any delta.
+    /// </summary>
+    private static void AssertJoinBroadcastsObserved(
+        IReadOnlyList<BoardPresenceSnapshot> phaseBroadcasts,
+        IEnumerable<Guid> joinedUserIds)
+    {
+        phaseBroadcasts.Should().NotBeEmpty(
+            "the join burst must reach the observer as at least one presence broadcast " +
+            "distinct from the SetEditingCard marker snapshot; otherwise the test proves " +
+            "tracker membership but not join delivery (issue #1371)");
+
+        var deliveredUserIds = phaseBroadcasts
+            .SelectMany(snapshot => snapshot.Members.Select(member => member.UserId))
+            .ToHashSet();
+
+        foreach (var joinedUserId in joinedUserIds.Distinct())
+        {
+            deliveredUserIds.Should().Contain(joinedUserId,
+                "every successful join must be visible in an observed join-originated presence " +
+                "broadcast, not only in the marker snapshot");
+        }
+    }
+
+    /// <summary>
+    /// Asserts every successful leave was delivered to the observer as a shrink
+    /// broadcast (the leaving member absent), not merely reflected in the marker
+    /// snapshot. Fails closed when every LeaveBoard broadcast is dropped, or when
+    /// a supposedly-left identity is still present in every observed delta.
+    /// </summary>
+    private static void AssertLeaveBroadcastsObserved(
+        IReadOnlyList<BoardPresenceSnapshot> phaseBroadcasts,
+        IEnumerable<Guid> leftUserIds)
+    {
+        phaseBroadcasts.Should().NotBeEmpty(
+            "each leave must reach the observer as at least one presence broadcast distinct " +
+            "from the SetEditingCard marker snapshot; otherwise the test proves tracker " +
+            "membership but not leave delivery (issue #1371)");
+
+        foreach (var leftUserId in leftUserIds.Distinct())
+        {
+            phaseBroadcasts.Should().Contain(
+                snapshot => snapshot.Members.All(member => member.UserId != leftUserId),
+                "every successful leave must be visible as a shrink in an observed leave-originated " +
+                "presence broadcast, not only in the marker snapshot");
+        }
+    }
+
     private static async Task InvokePresenceMutationAndRecordSuccessAsync(
         Func<Task> invoke,
         Action recordSuccess)
@@ -998,33 +1072,212 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
     [Theory]
     [InlineData("JoinBoard")]
     [InlineData("LeaveBoard")]
-    public async Task PresenceMutation_PostMutationFailure_PropagatesWithoutRecordingSuccess(
+    public async Task PresenceMutation_PostMutationFailure_DivergesFromCommittedTrackerAndFailsClosed(
         string operation)
     {
-        var trackerMutationApplied = false;
-        var successRecorded = false;
-        Exception expectedException = operation == "JoinBoard"
-            ? new HubException("broadcast failed after tracker mutation")
-            : new HttpRequestException("transport lost the result after tracker mutation");
+        // Production ordering (BoardsHub.cs): JoinBoard mutates the tracker at :37
+        // and then awaits the broadcast at :38; LeaveBoard mutates at :53 then
+        // broadcasts at :54. A broadcast/transport failure therefore lands *after*
+        // the tracker has already committed the membership change, leaving the
+        // invocation outcome ambiguous. This control drives the real production
+        // InMemoryBoardPresenceTracker to that committed post-mutation state, then
+        // proves the fail-closed helper propagates the ambiguity instead of
+        // recording a success that would diverge from committed tracker state.
+        // (The broadcast failure is simulated because the hub exposes no
+        // broadcast-fault seam; the tracker state under assertion is genuine.)
+        var tracker = new InMemoryBoardPresenceTracker();
+        var boardId = Guid.NewGuid();
+        var subjectUserId = Guid.NewGuid();
+        const string subjectConnection = "conn-subject";
 
-        async Task InvokeWithPostMutationFailure()
+        // An owner keeps the board alive so leave snapshots stay non-empty.
+        tracker.Join(boardId, "conn-owner", Guid.NewGuid(), "Owner");
+
+        BoardPresenceSnapshot committedSnapshot;
+        bool subjectCommittedPresent;
+        Exception broadcastFailure;
+        if (operation == "JoinBoard")
         {
-            trackerMutationApplied = true;
+            committedSnapshot = tracker.Join(boardId, subjectConnection, subjectUserId, "Subject");
+            subjectCommittedPresent = true;
+            broadcastFailure = new HubException("broadcast failed after tracker mutation");
+        }
+        else
+        {
+            tracker.Join(boardId, subjectConnection, subjectUserId, "Subject");
+            committedSnapshot = tracker.Leave(boardId, subjectConnection);
+            subjectCommittedPresent = false;
+            broadcastFailure = new HttpRequestException("transport lost the result after tracker mutation");
+        }
+
+        committedSnapshot.Members.Any(member => member.UserId == subjectUserId)
+            .Should().Be(subjectCommittedPresent,
+                "the production tracker commits the membership change before the broadcast await");
+
+        var recordedSuccessUserIds = new HashSet<Guid>();
+        async Task InvokeWithPostMutationBroadcastFailure()
+        {
             await Task.Yield();
-            throw expectedException;
+            throw broadcastFailure;
         }
 
         var act = () => InvokePresenceMutationAndRecordSuccessAsync(
-            InvokeWithPostMutationFailure,
-            () => successRecorded = true);
+            InvokeWithPostMutationBroadcastFailure,
+            () => recordedSuccessUserIds.Add(subjectUserId));
 
-        var assertion = await act.Should().ThrowAsync<Exception>();
-        assertion.Which.Should().BeSameAs(expectedException,
-            $"the ambiguous {operation} failure must propagate unchanged");
-        trackerMutationApplied.Should().BeTrue("the control simulates a post-mutation failure");
-        successRecorded.Should().BeFalse(
-            "an ambiguous outcome must abort before expected membership is inferred");
+        (await act.Should().ThrowAsync<Exception>())
+            .Which.Should().BeSameAs(broadcastFailure,
+                $"the ambiguous {operation} failure must propagate unchanged so the scenario aborts");
+
+        // The exact divergence fail-closed guards against: the committed tracker
+        // reflects the mutation, but the expectation set does not — tolerating the
+        // failure would let the exact-membership assertion drift from server state.
+        recordedSuccessUserIds.Should().NotContain(subjectUserId,
+            "a post-mutation broadcast failure is ambiguous and must never be recorded as a success");
     }
+
+    [Fact]
+    public void JoinBroadcastAssertion_Passes_WhenEveryJoinDeltaObserved()
+    {
+        var ownerUserId = Guid.NewGuid();
+        var firstJoiner = Guid.NewGuid();
+        var secondJoiner = Guid.NewGuid();
+        var marker = Guid.NewGuid();
+        var observed = new[]
+        {
+            SnapshotWith([(ownerUserId, null), (firstJoiner, null)]),
+            SnapshotWith([(ownerUserId, null), (firstJoiner, null), (secondJoiner, null)]),
+            SnapshotWith([(ownerUserId, marker), (firstJoiner, null), (secondJoiner, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, marker);
+
+        phaseBroadcasts.Should().HaveCount(2, "only the marker snapshot is excluded");
+        var act = () => AssertJoinBroadcastsObserved(phaseBroadcasts, [firstJoiner, secondJoiner]);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void JoinBroadcastAssertion_FailsClosed_WhenAllJoinBroadcastsSuppressed()
+    {
+        // Regression the delivery assertion exists to catch (issue #1371): the
+        // tracker mutated and the SetEditingCard marker snapshot carries full
+        // membership, but every JoinBoard broadcast was dropped, so no
+        // observer-visible join delta ever arrived.
+        var ownerUserId = Guid.NewGuid();
+        var joinedUserId = Guid.NewGuid();
+        var marker = Guid.NewGuid();
+        var markerOnly = new[]
+        {
+            SnapshotWith([(ownerUserId, marker), (joinedUserId, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(markerOnly, ownerUserId, marker);
+
+        phaseBroadcasts.Should().BeEmpty();
+        var act = () => AssertJoinBroadcastsObserved(phaseBroadcasts, [joinedUserId]);
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*at least one presence broadcast*");
+    }
+
+    [Fact]
+    public void JoinBroadcastAssertion_FailsClosed_WhenAJoinedIdentityNeverBroadcast()
+    {
+        // A join delta reached the observer, but one joined identity's broadcast
+        // was dropped; it only appears in the marker snapshot.
+        var ownerUserId = Guid.NewGuid();
+        var deliveredJoiner = Guid.NewGuid();
+        var droppedJoiner = Guid.NewGuid();
+        var marker = Guid.NewGuid();
+        var observed = new[]
+        {
+            SnapshotWith([(ownerUserId, null), (deliveredJoiner, null)]),
+            SnapshotWith([(ownerUserId, marker), (deliveredJoiner, null), (droppedJoiner, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, marker);
+
+        var act = () => AssertJoinBroadcastsObserved(phaseBroadcasts, [deliveredJoiner, droppedJoiner]);
+        act.Should().Throw<Xunit.Sdk.XunitException>();
+    }
+
+    [Fact]
+    public void LeaveBroadcastAssertion_Passes_WhenEveryLeaveShrinkObserved()
+    {
+        var ownerUserId = Guid.NewGuid();
+        var priorMarker = Guid.NewGuid();
+        var leaveMarker = Guid.NewGuid();
+        var stayer = Guid.NewGuid();
+        var firstLeaver = Guid.NewGuid();
+        var secondLeaver = Guid.NewGuid();
+        var observed = new[]
+        {
+            // Leave deltas still carry the previous phase's owner marker, never the
+            // current leave marker, so they classify as phase broadcasts.
+            SnapshotWith([(ownerUserId, priorMarker), (stayer, null), (secondLeaver, null)]),
+            SnapshotWith([(ownerUserId, priorMarker), (stayer, null)]),
+            SnapshotWith([(ownerUserId, leaveMarker), (stayer, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, leaveMarker);
+
+        phaseBroadcasts.Should().HaveCount(2);
+        var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [firstLeaver, secondLeaver]);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void LeaveBroadcastAssertion_FailsClosed_WhenAllLeaveBroadcastsSuppressed()
+    {
+        var ownerUserId = Guid.NewGuid();
+        var leaveMarker = Guid.NewGuid();
+        var stayer = Guid.NewGuid();
+        var markerOnly = new[]
+        {
+            SnapshotWith([(ownerUserId, leaveMarker), (stayer, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(markerOnly, ownerUserId, leaveMarker);
+
+        phaseBroadcasts.Should().BeEmpty();
+        var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [Guid.NewGuid()]);
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*at least one presence broadcast*");
+    }
+
+    [Fact]
+    public void LeaveBroadcastAssertion_FailsClosed_WhenALeftIdentityStillPresent()
+    {
+        // A shrink delta arrived, but the supposedly-left identity is still a
+        // member of every observed delta — its LeaveBoard broadcast never landed.
+        var ownerUserId = Guid.NewGuid();
+        var priorMarker = Guid.NewGuid();
+        var leaveMarker = Guid.NewGuid();
+        var stayer = Guid.NewGuid();
+        var stillPresentLeaver = Guid.NewGuid();
+        var observed = new[]
+        {
+            SnapshotWith([(ownerUserId, priorMarker), (stayer, null), (stillPresentLeaver, null)]),
+            SnapshotWith([(ownerUserId, leaveMarker), (stayer, null), (stillPresentLeaver, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, leaveMarker);
+
+        var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [stillPresentLeaver]);
+        act.Should().Throw<Xunit.Sdk.XunitException>();
+    }
+
+    private static BoardPresenceSnapshot SnapshotWith(
+        IEnumerable<(Guid UserId, Guid? EditingCardId)> members)
+        => new(
+            Guid.NewGuid(),
+            members
+                .Select(member => new BoardPresenceMember(
+                    member.UserId,
+                    member.UserId.ToString("N")[..8],
+                    member.EditingCardId))
+                .ToList(),
+            DateTimeOffset.UtcNow);
 
     /// <summary>
     /// Scenario 14: Rapid join/leave stress.
@@ -1070,6 +1323,10 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // used in the exact barrier expectation. A transport or hub failure can
         // happen after the server mutates the tracker, so swallowing it would
         // leave the expected state ambiguous and recreate a false-red assertion.
+        // Fail-closed is safe here because the test host now mirrors production
+        // SQLite settings (busy_timeout 5000ms / WAL) via UseTaskdeckSqlite (#1373),
+        // so the auth-check reads these invocations make no longer flake under
+        // contention. Repeated-run evidence backs this before merge (issue #1371).
         var connections = new List<HubConnection>();
         var joinedConnections = new ConcurrentBag<(HubConnection Connection, Guid UserId)>();
         try
@@ -1109,6 +1366,16 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 .ToHashSet();
             AssertPresenceMembers(afterJoin, expectedAfterJoin, "post-join");
 
+            // Delivery coverage (issue #1371): the marker snapshot alone would pass
+            // even if every JoinBoard broadcast were dropped, because SetEditingCard
+            // republishes full tracker state. Require the join burst to have reached
+            // the observer as its own presence deltas, carrying each joined identity.
+            var observedJoinBroadcasts = SelectPhaseBroadcasts(
+                observerEvents.ToList(), owner.UserId, joinEditingMarker);
+            AssertJoinBroadcastsObserved(
+                observedJoinBroadcasts,
+                joinedConnections.Select(joined => joined.UserId));
+
             // First half of successfully-joined connections leave rapidly.
             observerEvents.Clear();
             var leavingConns = joinedConnections.Take(Math.Max(1, joinedConnections.Count / 2)).ToList();
@@ -1144,6 +1411,13 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 .Except(leftUserIds)
                 .ToHashSet();
             AssertPresenceMembers(afterLeave, expectedAfterLeave, "post-leave");
+
+            // Delivery coverage (issue #1371): prove each leave reached the observer
+            // as its own shrink broadcast, not only via the SetEditingCard marker
+            // snapshot which republishes the already-mutated tracker state.
+            var observedLeaveBroadcasts = SelectPhaseBroadcasts(
+                observerEvents.ToList(), owner.UserId, leaveEditingMarker);
+            AssertLeaveBroadcastsObserved(observedLeaveBroadcasts, leftUserIds);
         }
         finally
         {
