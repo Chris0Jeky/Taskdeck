@@ -612,6 +612,137 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
     })
   })
 
+  // ── summaries that STARTED during a pending save (issue #1343, Codex P2#1) ──
+  // A summary GET that begins after a save bumped the version but before the
+  // PUT commits can read the OLD server mode. If the save then settles before
+  // the summary resolves, version/pending/dirty are all clean at apply time —
+  // only the pending-at-start capture can identify the summary as suspect.
+
+  describe('summaries that started during a pending save', () => {
+    it('rejects a Home summary that started during a save even when the save settles first', async () => {
+      let resolveSave!: (value: unknown) => void
+      let resolveHome!: (value: { data: HomeSummary }) => void
+      vi.mocked(http.put).mockReturnValueOnce(
+        new Promise<unknown>((resolve) => { resolveSave = resolve }),
+      )
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => { resolveHome = resolve }),
+      )
+
+      const store = useWorkspaceStore()
+      const saveRequest = store.updateMode('workbench')
+      // Summary begins while the save is in flight: its server-side read may
+      // predate the save's commit, so its payload carries 'guided'.
+      const homeRequest = store.fetchHomeSummary()
+
+      // The save settles FIRST: version stable, nothing pending, flag clean.
+      resolveSave({ data: makePreferencePayload('workbench') })
+      await saveRequest
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+
+      // The overlapped summary resolves LAST with the stale mode.
+      resolveHome({ data: makeHomeSummary({ workspaceMode: 'guided' }) })
+      await homeRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+      expect(store.homeSummary).not.toBeNull()
+    })
+
+    it('rejects a Today summary that started during a save even when the save settles first', async () => {
+      let resolveSave!: (value: unknown) => void
+      let resolveToday!: (value: { data: TodaySummary }) => void
+      vi.mocked(http.put).mockReturnValueOnce(
+        new Promise<unknown>((resolve) => { resolveSave = resolve }),
+      )
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: TodaySummary }>((resolve) => { resolveToday = resolve }),
+      )
+
+      const store = useWorkspaceStore()
+      const saveRequest = store.updateMode('workbench')
+      const todayRequest = store.fetchTodaySummary()
+
+      resolveSave({ data: makePreferencePayload('workbench') })
+      await saveRequest
+      expect(store.mode).toBe('workbench')
+
+      resolveToday({ data: makeTodaySummary({ workspaceMode: 'guided' }) })
+      await todayRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+      expect(store.todaySummary).not.toBeNull()
+    })
+  })
+
+  // ── onboarding actions must not supersede mode saves (Codex P2#2) ──────────
+  // The mode and onboarding guards are versioned per field: an onboarding
+  // dismiss/replay that starts while a mode save is in flight must neither
+  // suppress the save's success/failure handling nor be reverted by the save's
+  // incidental onboarding echo.
+
+  describe('onboarding actions do not supersede mode saves', () => {
+    it('an onboarding action during a pending save does not suppress the failed-save handling', async () => {
+      let rejectSave!: (reason: unknown) => void
+      vi.mocked(http.put)
+        .mockReturnValueOnce(
+          new Promise<unknown>((_resolve, reject) => { rejectSave = reject }),
+        )
+        .mockResolvedValueOnce({ data: makeOnboarding({ visibility: 'dismissed' }) })
+
+      const store = useWorkspaceStore()
+      const saveRequest = store.updateMode('workbench')
+
+      // User dismisses the setup guide while the save is still in flight
+      // (reachable: the topbar fires updateMode un-awaited and Home setup
+      // actions stay clickable during the retry window).
+      await store.updateOnboarding('dismiss')
+      expect(store.onboarding?.visibility).toBe('dismissed')
+
+      // The save now fails. Its handling must still run: error + unsaved flag.
+      rejectSave(new Error('save failed'))
+      await saveRequest
+      expect(store.preferenceError).toBe('save failed')
+      expect(store.preferencesHydrated).toBe(false)
+
+      // Because the flag was set, a subsequent stale-mode summary cannot revert.
+      vi.mocked(http.get).mockResolvedValue({
+        data: makeHomeSummary({
+          workspaceMode: 'guided',
+          onboarding: makeOnboarding({ visibility: 'dismissed' }),
+        }),
+      })
+      await store.fetchHomeSummary()
+      expect(store.mode).toBe('workbench')
+      expect(store.onboarding?.visibility).toBe('dismissed')
+    })
+
+    it('a mode save settling after an onboarding dismissal keeps both results', async () => {
+      let resolveSave!: (value: unknown) => void
+      vi.mocked(http.put)
+        .mockReturnValueOnce(
+          new Promise<unknown>((resolve) => { resolveSave = resolve }),
+        )
+        .mockResolvedValueOnce({ data: makeOnboarding({ visibility: 'dismissed' }) })
+
+      const store = useWorkspaceStore()
+      const saveRequest = store.updateMode('workbench')
+      await store.updateOnboarding('dismiss')
+
+      // The save's response echoes onboarding as of ITS commit — before the
+      // dismissal. The echo must not revert the newer explicit dismissal, but
+      // the save's own mode confirmation must still land.
+      resolveSave({ data: makePreferencePayload('workbench') })
+      await saveRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+      expect(store.onboarding?.visibility).toBe('dismissed')
+    })
+  })
+
   // ── stale summaries cannot revert onboarding either (issue #1343, FIX B) ───
   // Guarding only the mode would let a stale summary revert a newer onboarding
   // change (a dismissed setup guide reappearing) and make mode/onboarding
@@ -643,27 +774,62 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
       expect(store.homeSummary?.onboarding.visibility).toBe('dismissed')
     })
 
-    it('a failed save blocks both mode and onboarding from a later summary (no divergence)', async () => {
-      // Seed a dismissed guide via a successful explicit action first.
-      vi.mocked(http.put).mockResolvedValueOnce({ data: makeOnboarding({ visibility: 'dismissed' }) })
-      const store = useWorkspaceStore()
-      await store.updateOnboarding('dismiss')
+    it('a stale summary blocks both mode and onboarding after a dismissal and a failed save (no divergence)', async () => {
+      // The summary starts FIRST, so its payload legitimately predates both the
+      // dismissal and the (failed) mode save: it carries 'active' + 'guided'.
+      let resolveHome!: (value: { data: HomeSummary }) => void
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => { resolveHome = resolve }),
+      )
+      vi.mocked(http.put)
+        .mockResolvedValueOnce({ data: makeOnboarding({ visibility: 'dismissed' }) })
+        .mockRejectedValueOnce(new Error('save failed'))
 
-      vi.mocked(http.put).mockRejectedValue(new Error('save failed'))
+      const store = useWorkspaceStore()
+      const homeRequest = store.fetchHomeSummary()
+
+      await store.updateOnboarding('dismiss')
       await store.updateMode('workbench')
 
-      vi.mocked(http.get).mockResolvedValue({
+      resolveHome({
         data: makeHomeSummary({
           workspaceMode: 'guided',
           onboarding: makeOnboarding({ visibility: 'active' }),
         }),
       })
-      await store.fetchHomeSummary()
+      await homeRequest
 
       // Neither half of the preference state reverts: no mode/onboarding divergence.
       expect(store.mode).toBe('workbench')
       expect(store.onboarding?.visibility).toBe('dismissed')
       expect(store.homeSummary?.onboarding.visibility).toBe('dismissed')
+    })
+
+    it('a fresh summary after a failed save applies current onboarding while the unsaved mode survives', async () => {
+      // Per-field independence: the failed MODE save must not freeze onboarding
+      // sync. A summary fetched after the failure carries the server's CURRENT
+      // onboarding (the dismissal committed) — it applies — while its stale
+      // mode is still blocked by the unsaved-choice flag.
+      vi.mocked(http.put)
+        .mockResolvedValueOnce({ data: makeOnboarding({ visibility: 'dismissed' }) })
+        .mockRejectedValueOnce(new Error('save failed'))
+
+      const store = useWorkspaceStore()
+      await store.updateOnboarding('dismiss')
+      await store.updateMode('workbench')
+
+      vi.mocked(http.get).mockResolvedValue({
+        data: makeHomeSummary({
+          workspaceMode: 'guided',
+          onboarding: makeOnboarding({ visibility: 'dismissed', currentStepId: 'step-3' }),
+        }),
+      })
+      await store.fetchHomeSummary()
+
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(false)
+      // The genuinely-newer onboarding copy applied.
+      expect(store.onboarding?.currentStepId).toBe('step-3')
     })
   })
 
