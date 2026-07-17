@@ -46,7 +46,16 @@ public class StandaloneMcpHostFilteringTests
         };
 
         var appBuilt = new TaskCompletionSource<WebApplication>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Program.OnStandaloneMcpHttpAppBuilt = app => appBuilt.TrySetResult(app);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Program.OnStandaloneMcpHttpAppBuilt = app =>
+        {
+            // Subscribe to ApplicationStarted HERE, inside the seam: it runs synchronously on
+            // the entry-point thread between Build() and RunAsync(), so a fast startup cannot
+            // fire the token before the test is listening. (Register also invokes the callback
+            // immediately if the token were somehow already signaled.)
+            app.Lifetime.ApplicationStarted.Register(() => started.TrySetResult());
+            appBuilt.TrySetResult(app);
+        };
 
         WebApplication? runningApp = null;
         try
@@ -61,7 +70,27 @@ public class StandaloneMcpHostFilteringTests
             var entryPoint = typeof(Program).Assembly.EntryPoint
                 ?? throw new InvalidOperationException("Taskdeck.Api assembly has no entry point.");
             var args = new[] { "--mcp", "--transport", "http", "--port", port.ToString() };
-            var hostTask = Task.Run(() => (int)entryPoint.Invoke(null, new object[] { args })!);
+            // For C# async top-level statements the assembly entry point is the compiler's
+            // synchronous bridge returning int (verified by execution: this test passes with a
+            // plain int result), but handle every shape (int / Task<int> / Task) so the test
+            // never depends on that compiler implementation detail.
+            var hostTask = Task.Run(async () =>
+            {
+                var result = entryPoint.Invoke(null, new object[] { args });
+                switch (result)
+                {
+                    case int exit:
+                        return exit;
+                    case Task<int> asyncExit:
+                        return await asyncExit;
+                    case Task plainTask:
+                        await plainTask;
+                        return 0;
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unexpected entry point return: {result?.GetType().ToString() ?? "null"}.");
+                }
+            });
 
             // Surface a startup crash directly instead of masking it behind a timeout.
             var completed = await Task.WhenAny(appBuilt.Task, hostTask).WaitAsync(StartupTimeout);
@@ -78,8 +107,8 @@ public class StandaloneMcpHostFilteringTests
             // The guard must have rewritten the hostile value before the host was built.
             app.Configuration["AllowedHosts"].Should().Be(Program.StandaloneMcpLoopbackAllowedHosts);
 
-            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            app.Lifetime.ApplicationStarted.Register(() => started.TrySetResult());
+            // The started signal was subscribed inside the seam (before RunAsync), so it
+            // cannot be missed even on a fast startup.
             await started.Task.WaitAsync(StartupTimeout);
 
             using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
