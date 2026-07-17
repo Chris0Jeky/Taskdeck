@@ -68,6 +68,13 @@ public class OptionsValidationTests
     [InlineData(0.6)]
     [InlineData(0.9)]
     [InlineData(3601.0)]
+    // Non-finite doubles bind successfully from configuration strings ("NaN",
+    // "Infinity") and would reach TimeSpan.FromSeconds — which throws for NaN.
+    // The double-operand range rejects all three today; pin that so removing or
+    // weakening the attribute cannot silently open the FromSeconds(NaN) throw path.
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
     public void ArtefactStorageSettings_ExtractionTimeoutSeconds_RejectsOutOfRange(double value)
     {
         var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = value };
