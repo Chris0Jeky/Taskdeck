@@ -78,7 +78,7 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(stored.text()).toContain('Archived')
   })
 
-  it('shows the banner and a no-stored-preview note when there is no stored content', () => {
+  it('shows the banner and a no-stored-preview note when there is no stored content and no operations', () => {
     const wrapper = mountCard({
       proposal: makeProposal({ status: 'Expired' }),
       isExpired: true,
@@ -92,6 +92,52 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(storedEmpty.text()).toContain('No stored preview')
     // Never falls through to a live "Operation details" pane for a settled proposal.
     expect(wrapper.find('[data-testid="review-diff-pre"]').exists()).toBe(false)
+  })
+
+  it('falls back to the recorded operations when no stored preview was captured (#1397 / Codex)', () => {
+    // Normal creation flows never populate diffPreview: a read-only proposal
+    // that still has operations must render a local operation listing, not a
+    // dead "no stored preview" end (and never a live /diff call — prop-driven
+    // here, so no network is possible by construction).
+    const wrapper = mountCard({
+      proposal: makeProposal({
+        status: 'Expired',
+        operations: [
+          {
+            id: 'op-2',
+            proposalId: 'p-1',
+            sequence: 1,
+            actionType: 'MoveCard',
+            targetType: 'Card',
+            targetId: 'card-9',
+            parameters: '{}',
+            idempotencyKey: 'k-2',
+            expectedVersion: null,
+          },
+          {
+            id: 'op-1',
+            proposalId: 'p-1',
+            sequence: 0,
+            actionType: 'CreateCard',
+            targetType: 'Card',
+            targetId: null,
+            parameters: '{}',
+            idempotencyKey: 'k-1',
+            expectedVersion: null,
+          },
+        ],
+      }),
+      isExpired: true,
+      selectedDiffMode: 'stored',
+      selectedDiff: null,
+    })
+
+    expect(wrapper.find('[data-testid="review-diff-stored-ops-note"]').exists()).toBe(true)
+    const ops = wrapper.find('[data-testid="review-diff-stored-operations"]')
+    expect(ops.exists()).toBe(true)
+    // Sequence-ordered: CreateCard (seq 0) before MoveCard (seq 1).
+    expect(ops.text()).toMatch(/1\. CreateCard Card[\s\S]*2\. MoveCard Card \(card-9\)/)
+    expect(wrapper.find('[data-testid="review-diff-stored-empty"]').exists()).toBe(false)
   })
 
   it('renders the invalid verdict with the zero-op fallback when no backend reason is supplied', () => {

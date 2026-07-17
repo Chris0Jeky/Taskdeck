@@ -214,6 +214,25 @@ const previewReadOnlyLabel = computed(() => {
   if (isProposalExpired(p)) return 'Expired'
   return normalizeProposalStatus(p.status)
 })
+
+// Read-only fallback when the proposal never captured a `diffPreview` (normal
+// creation flows leave it null — Codex review on #1414): derive a minimal
+// operation listing from the proposal's own recorded operations so a
+// terminal/expired proposal that still HAS operations is inspectable instead of
+// a dead "no stored preview" end. Local rendering only — the live `/diff` 400s
+// for these proposals (#1397).
+const storedOperationsFallback = computed(() => {
+  if (previewDiffMode.value !== 'stored' || previewDiff.value) return null
+  const ops = activeProposal.value?.operations ?? []
+  if (ops.length === 0) return null
+  return [...ops]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map(
+      (op, index) =>
+        `${index + 1}. ${formatActionLabel(op.actionType)} · ${op.targetType}${op.targetId ? ` (${op.targetId})` : ''}`,
+    )
+    .join('\n')
+})
 // Guards against a double-click firing two feedback POSTs (the backend is idempotent as a backstop).
 const reportingProposalId = ref<string | null>(null)
 
@@ -999,7 +1018,16 @@ function onQueueFilterChange(filter: QueueFilter) {
             {{ previewDiffInvalidReason || 'This proposal contains no operations to apply' }}
             — Apply will reject this proposal.
           </p>
-          <!-- Read-only proposal with no stored preview to fall back on (#1397) -->
+          <!-- Read-only proposal without a stored preview: fall back to the
+               proposal's own recorded operations before giving up (#1397 /
+               Codex review on #1414). -->
+          <pre
+            v-else-if="storedOperationsFallback"
+            class="paper-review-deep__diff-pre"
+            role="region"
+            aria-label="Recorded proposal operations"
+            data-testid="paper-review-diff-stored-operations"
+          >{{ storedOperationsFallback }}</pre>
           <p
             v-else-if="previewDiffMode === 'stored' && !previewDiff"
             class="paper-review-deep__diff-empty tk-meta"

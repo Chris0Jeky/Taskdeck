@@ -37,6 +37,25 @@ const diffPaneVisible = computed(
       !!props.selectedDiff),
 )
 
+// Read-only fallback when the proposal never captured a `diffPreview` (normal
+// creation flows leave it null — Codex review on #1414): derive a minimal
+// operation listing from the proposal's own recorded operations so a
+// terminal/expired proposal that still HAS operations is inspectable instead of
+// a dead "no stored preview" end. Local rendering only — the live `/diff` 400s
+// for these proposals (#1397).
+const storedOperationsFallback = computed(() => {
+  if (props.selectedDiffMode !== 'stored' || props.selectedDiff) return null
+  const ops = props.proposal.operations ?? []
+  if (ops.length === 0) return null
+  return [...ops]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map(
+      (op, index) =>
+        `${index + 1}. ${op.actionType} ${op.targetType}${op.targetId ? ` (${op.targetId})` : ''}`,
+    )
+    .join('\n')
+})
+
 defineEmits<{
   (e: 'approve', proposalId: string): void
   (e: 'reject', proposalId: string, riskLevel: Proposal['riskLevel']): void
@@ -211,6 +230,17 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
           aria-label="Stored proposal preview"
           data-testid="review-diff-stored"
         >{{ selectedDiff }}</pre>
+        <template v-else-if="storedOperationsFallback">
+          <span class="td-review-card__diff-note" data-testid="review-diff-stored-ops-note">
+            No stored preview was captured — showing the proposal's recorded operations.
+          </span>
+          <pre
+            class="td-review-card__diff"
+            role="region"
+            aria-label="Recorded proposal operations"
+            data-testid="review-diff-stored-operations"
+          >{{ storedOperationsFallback }}</pre>
+        </template>
         <span
           v-else
           class="td-review-card__diff-note"

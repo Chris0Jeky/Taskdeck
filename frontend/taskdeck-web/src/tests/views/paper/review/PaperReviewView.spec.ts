@@ -1012,13 +1012,41 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('shows the banner and a no-stored-preview note for an expired proposal with no stored content (#1397)', async () => {
+  it('falls back to the recorded operations for an expired proposal with no stored preview (#1397 / Codex)', async () => {
+    // Normal creation flows never populate diffPreview, so an expired proposal
+    // with operations must still be inspectable via a locally rendered
+    // operation listing — no /diff call, no dead "no stored preview" end.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-expired-ops',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    const opsFallback = wrapper.find('[data-testid="paper-review-diff-stored-operations"]')
+    expect(opsFallback.exists()).toBe(true)
+    expect(opsFallback.text()).toContain('Create Card')
+    expect(wrapper.find('[data-testid="paper-review-diff-stored-empty"]').exists()).toBe(false)
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('shows the banner and a no-stored-preview note for an expired zero-op proposal with no stored content (#1397)', async () => {
     const wrapper = await mountView([
       makeProposal({
         id: 'diff-expired-empty',
         status: 'Expired',
         expiresAt: new Date(Date.now() - 60_000).toISOString(),
         diffPreview: null,
+        operations: [],
       }),
     ])
 
