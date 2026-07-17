@@ -3,12 +3,15 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.Filters;
 
 namespace Taskdeck.Infrastructure.Services;
 
 /// <summary>
 /// Local PDF text-layer extraction only. Input bytes, parser recursion, pages,
 /// and output characters are all bounded; image OCR is deliberately absent.
+/// A <see cref="BoundedFilterProvider"/> additionally caps the total decoded
+/// output so a decompression-bomb stream cannot exhaust memory during the parse.
 /// </summary>
 public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
 {
@@ -20,6 +23,23 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
     public const int MaxPages = 100;
     public const int MaxExtractedCharacters = CaptureRequestContract.MaxTranscriptTextLength;
     public const int MaxParserStackDepth = 64;
+
+    private readonly long _maxDecodedBytes;
+    private readonly bool _boundDecodedOutput;
+
+    public PdfPigArtefactTextExtractor(ArtefactStorageSettings? settings = null)
+        : this(settings, boundDecodedOutput: true)
+    {
+    }
+
+    // Test seam: lets a parity test run the identical extraction walk against the
+    // stock DefaultFilterProvider to prove the bounded provider does not alter the
+    // decoded text of a legitimate document.
+    internal PdfPigArtefactTextExtractor(ArtefactStorageSettings? settings, bool boundDecodedOutput)
+    {
+        _maxDecodedBytes = (settings ?? new ArtefactStorageSettings()).ExtractionMaxDecodedBytes;
+        _boundDecodedOutput = boundDecodedOutput;
+    }
 
     public string ExtractorName => "PdfPig";
     public string ExtractorVersion => PdfPigVersion;
@@ -65,13 +85,20 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
             pdfStream = bufferedStream;
         }
 
+        // One bounded provider per parse: its cumulative decoded-byte counter is shared
+        // across every stream PdfPig decodes for this document.
+        var boundedProvider = _boundDecodedOutput
+            ? new BoundedFilterProvider(DefaultFilterProvider.Instance, _maxDecodedBytes)
+            : null;
         try
         {
             var parsingOptions = new ParsingOptions
             {
                 UseLenientParsing = false,
                 UseActualText = true,
-                MaxStackDepth = MaxParserStackDepth
+                MaxStackDepth = MaxParserStackDepth,
+                // Null falls back to PdfPig's DefaultFilterProvider (the parity path).
+                FilterProvider = boundedProvider
             };
             using var document = PdfDocument.Open(pdfStream, parsingOptions);
             var warnings = new List<string>();
@@ -128,6 +155,13 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
                 }
             }
 
+            // Backstop for the case where PdfPig swallowed the bounded provider's abort
+            // (rather than propagating it) and completed the parse with partial/empty
+            // content: the flag is authoritative, so classify as a decoded-size-limit
+            // rather than misreport an empty text layer.
+            if (boundedProvider is { LimitExceeded: true })
+                return Warning(ArtefactExtractionWarningCodes.DecodedSizeLimit);
+
             if (characterLimitReached)
                 warnings.Add(ArtefactExtractionWarningCodes.CharacterLimit);
 
@@ -164,11 +198,30 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
                 ExtractorName,
                 ExtractorVersion);
         }
+        catch (Exception ex) when (boundedProvider is not null &&
+                                   (boundedProvider.LimitExceeded || HasDecodedSizeLimitCause(ex)))
+        {
+            // Decompression ceiling breach — surfaced either as the flag or as our
+            // exception somewhere in the chain (PdfPig may wrap filter faults). Record
+            // the same content-free warning outcome, never an extractor error.
+            return Warning(ArtefactExtractionWarningCodes.DecodedSizeLimit);
+        }
         finally
         {
             if (bufferedStream is not null)
                 await bufferedStream.DisposeAsync();
         }
+    }
+
+    private static bool HasDecodedSizeLimitCause(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is ExtractionDecodedSizeLimitException)
+                return true;
+        }
+
+        return false;
     }
 
     private ArtefactExtractionResult Warning(string warning)
