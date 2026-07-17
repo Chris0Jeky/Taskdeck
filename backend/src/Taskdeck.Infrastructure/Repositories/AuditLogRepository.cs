@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -262,8 +263,8 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             // SQLite stores DateTimeOffset as a string; use SUBSTR to extract the date portion
             // and push the GROUP BY into SQL. The IX_AuditLogs_UserId_Timestamp index covers
             // the WHERE clause so this avoids a full table scan.
-            var fromStr = from.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff") + "+00:00";
-            var toStr = to.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff") + "+00:00";
+            var fromStr = from.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
+            var toStr = to.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
 
             var rows = await _context.Database
                 .SqlQueryRaw<DateCountRow>(
@@ -313,7 +314,7 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
                 // its UTC-equivalent time before the "+00:00" suffix is appended; without this the time
                 // component would be wrong and entries in the wrong window could be kept or deleted.
                 var utcCutoff = olderThan.UtcDateTime;
-                var olderThanStr = utcCutoff.ToString("yyyy-MM-dd HH:mm:ss.fffffff") + "+00:00";
+                var olderThanStr = utcCutoff.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
                 deleted = await _context.Database.ExecuteSqlRawAsync(
                     "DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM AuditLogs WHERE Timestamp < {0} ORDER BY Timestamp ASC LIMIT {1})",
                     new object[] { olderThanStr, batchSize },
