@@ -498,6 +498,28 @@ public class DataExportServiceTests
     }
 
     [Fact]
+    public async Task ExportUserDataAsync_WithExactlyChunkSizeArtefacts_IssuesSingleBatch()
+    {
+        // #1355 boundary: exactly StreamPageSize (500) artefacts must resolve in ONE batch query,
+        // with no spurious trailing empty-chunk query (off-by-one guard at exactly chunk-size).
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var (artefacts, _) = SeedArtefactsWithBlobBatch(500);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Data.Artefacts!.Select(a => a.Id).Should().Equal(artefacts.Select(a => a.Id));
+        _artefactRepoMock.Verify(
+            r => r.GetContentsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "exactly chunk-size artefacts must be one batch, not one plus an empty trailing query");
+        _artefactRepoMock.Verify(
+            r => r.GetContentsForUserAsync(It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 500), _userId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ExportUserDataAsync_BatchBlobLoad_ScopedToRequestingUserOnly()
     {
         // #1355 user-scoping: every batch load must pass the requesting user's id and never another.
