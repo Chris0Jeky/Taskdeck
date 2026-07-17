@@ -161,6 +161,39 @@ public class ProposalOperationContractValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_ShouldRejectCreateCardWhoseIdCollidesWithExistingCard_EvenWhenCardIdParameterMatchesTargetId()
+    {
+        // A create-card op that also carries a cardId parameter equal to its targetId must
+        // NOT be routed through the existing-card branch. Before #1370 that branch treated
+        // the colliding id as a valid reference (the card exists on the board), the op
+        // previewed OK and was registered as planned, then Apply blew up creating a card
+        // with a duplicate id. Preview must reject the collision up front.
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Backlog", 0);
+        var existingCard = new Card(boardId, column.Id, "Existing");
+        var (unitOfWork, cards, columns, _) = CreateMocks();
+        cards.Setup(repository => repository.GetByIdAsync(existingCard.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingCard);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operations = new[]
+        {
+            CreateOperation(
+                0,
+                "create",
+                existingCard.Id,
+                new { boardId, columnId = column.Id, title = "New card", cardId = existingCard.Id })
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("already exists");
+    }
+
+    [Fact]
     public async Task ValidateAsync_ShouldRejectCardReferenceBeforeItsCreateSequence()
     {
         var boardId = Guid.NewGuid();
@@ -246,6 +279,34 @@ public class ProposalOperationContractValidatorTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Be("Missing required parameter 'position'");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectNegativePositionForColumnReorder()
+    {
+        // Mirrors the apply-side guard (ColumnService.ReorderColumnAsync and the
+        // operation handler both reject negative positions) so an impossible
+        // destination fails at preview, not after approval.
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Backlog", 0);
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var columns = new Mock<IColumnRepository>();
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        var operation = CreateOperation(
+            0,
+            "reorder",
+            column.Id,
+            new { columnId = column.Id, position = -1 },
+            targetType: "column");
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Invalid position: must be non-negative");
     }
 
     [Fact]
