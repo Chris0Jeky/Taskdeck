@@ -50,6 +50,27 @@ export function isProposalApproveActionable(proposal: ApiProposal, isExpired: bo
   return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isExpired
 }
 
+// A proposal is "read-only" once it is expired (client-side clock or domain
+// Expired) or in any terminal status (Applied/Rejected/Failed/Expired/Dismissed).
+// PR #1395 made the backend `/diff` reject these with 400 ("Proposal has
+// expired"), so review surfaces must NOT fire the live diff for them — they
+// present the stored `diffPreview` under an explicit read-only banner instead
+// (#1397 maintainer decision: expired proposals stay inspectable via stored
+// content without burdening the UI with a live request that 400s). Callers pass
+// the same `isProposalExpired(proposal)` the rest of the surface uses so Paper
+// and Legacy can never drift (#1124 / ADR-0038).
+export function isProposalReadOnly(proposal: ApiProposal, isExpired: boolean): boolean {
+  if (isExpired) return true
+  const status = normalizeProposalStatus(proposal.status)
+  return (
+    status === 'Applied' ||
+    status === 'Rejected' ||
+    status === 'Failed' ||
+    status === 'Expired' ||
+    status === 'Dismissed'
+  )
+}
+
 export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
   if (!proposal || normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
   // Guard against missing/invalid createdAt: a falsy value (new Date(null) is
