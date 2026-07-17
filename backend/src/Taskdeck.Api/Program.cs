@@ -443,12 +443,18 @@ public partial class Program
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             ?? Array.Empty<string>();
 
-        // Normalize each token the same way HostFilteringMiddleware does: it parses every
-        // configured entry through HostString (stripping any :port suffix) BEFORE its own
-        // top-level-wildcard test, so a port-suffixed wildcard like "0.0.0.0:5001" or
-        // "*:5000" would disable host filtering despite not being an exact wildcard token.
+        // Mirror HostFilteringMiddleware exactly: it normalizes each configured entry via
+        // new HostString(entry).ToUriComponent() -- which RETAINS any :port suffix (and
+        // punycodes unicode hosts) -- before its ordinal IsTopLevelWildcard test for
+        // "*" / "0.0.0.0" / "[::]". A port-suffixed entry like "0.0.0.0:5001" is therefore
+        // NOT a wildcard to the middleware: it becomes a literal pattern that no real Host
+        // header can match (request hosts are compared portless), i.e. it already fails
+        // closed on its own and must be PRESERVED here. Rewriting it to the loopback
+        // allowlist would be strictly weaker -- on a non-loopback bind it would admit
+        // spoofed loopback Host headers that the literal pattern rejects. Do not switch
+        // this to HostString.Host (port-stripping) without re-reading the middleware source.
         var containsAnyHost = configuredHosts
-            .Any(host => new HostString(host).Host is "*" or "0.0.0.0" or "[::]");
+            .Any(host => new HostString(host).ToUriComponent() is "*" or "0.0.0.0" or "[::]");
 
         // Fail closed to the loopback allowlist on any misconfigured value. The middleware
         // splits with RemoveEmptyEntries only (no TrimEntries): ";" / ";;" parse to zero
