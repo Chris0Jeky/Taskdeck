@@ -13,12 +13,20 @@ namespace Taskdeck.Api.Tests;
 /// <summary>
 /// Integration tests for AuditLogRepository.DeleteOldEntriesAsync against real SQLite.
 /// Verifies batch deletion, boundary conditions, and data integrity.
+///
+/// Runs on <see cref="HostedWorkerDisabledTestWebApplicationFactory"/> (#1383): the
+/// production <c>AuditRetentionWorker</c> is registered unconditionally (see
+/// <c>WorkerRegistration</c>) and runs a cleanup pass immediately at host start with the
+/// default 90-day retention, so on the worker-enabled base factory it can delete the
+/// 100/200-day-backdated rows these tests seed between seed and assertion — the confirmed
+/// source of the intermittent "deleted == 0 despite a 70-day margin" flake. With the
+/// worker removed from this host, every seed/read/delete in this class is deterministic.
 /// </summary>
-public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApplicationFactory>
+public class AuditRetentionRepositoryIntegrationTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
 
-    public AuditRetentionRepositoryIntegrationTests(TestWebApplicationFactory factory)
+    public AuditRetentionRepositoryIntegrationTests(HostedWorkerDisabledTestWebApplicationFactory factory)
     {
         _factory = factory;
     }
@@ -83,8 +91,11 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
         var cutoff = DateTimeOffset.UtcNow.AddDays(-365);
         var deleted = await repo.DeleteOldEntriesAsync(cutoff, batchSize: 1000);
 
-        // May delete entries from other tests, but the important thing is
-        // our recent entry should still exist
+        // deleted is deliberately left unasserted. This class never seeds anything older
+        // than 200 days, so the -365d cutoff cannot match class-seeded rows — but
+        // DeleteOldEntriesAsync is global/unscoped, and a full app boot could in principle
+        // seed audit rows of its own, so an exact-zero assertion would not be
+        // isolation-safe. The meaningful invariant is that the recent entry survives.
         var remaining = await repo.GetByIdAsync(recentEntry.Id);
         remaining.Should().NotBeNull();
     }
@@ -189,14 +200,26 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
 
     /// <summary>
     /// Backdates a single audit entry's timestamp via raw SQL and asserts the UPDATE
-    /// affected exactly one row. The timestamp string is built with
-    /// <see cref="CultureInfo.InvariantCulture"/> so it matches EF Core's invariant
-    /// SQLite DateTimeOffset serialization ("yyyy-MM-dd HH:mm:ss.fffffff+00:00")
-    /// regardless of the host's current culture: a locale whose time separator is not
-    /// ':' would otherwise write a mismatched string and corrupt the string-based
-    /// comparison in DeleteOldEntriesAsync. Returns the instant that was written so
-    /// callers can assert the value round-trips through EF Core and orders correctly
-    /// against the cutoff.
+    /// affected exactly one row.
+    ///
+    /// Format note (verified empirically, #1391 round 2): EF Core / Microsoft.Data.Sqlite
+    /// serializes DateTimeOffset as "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz" — capital F, so
+    /// trailing fractional zeros are trimmed and a zero fraction drops the '.' entirely.
+    /// Observed raw column TEXT: .1234567 → "2026-07-17 03:04:05.1234567+00:00";
+    /// .1200000 → "2026-07-17 03:04:05.12+00:00"; .0000000 → "2026-07-17 03:04:05+00:00".
+    /// This helper writes a fixed 7-digit fraction, which is therefore NOT byte-identical
+    /// to EF's trimmed form for the same instant — but string ordering stays correct:
+    /// '+' and '.' both sort below every digit, so a trimmed string orders exactly as its
+    /// zero-extended value against both EF-written rows and the repository's fixed-format
+    /// cutoff. The only divergence is the representation of an exactly-equal instant (a
+    /// strict-&lt; boundary tie), which this class never relies on (70-day margins).
+    ///
+    /// The string is built with <see cref="CultureInfo.InvariantCulture"/> because the
+    /// ':' in a custom format is the culture-sensitive time separator: a locale using a
+    /// different separator would otherwise write a string that diverges from EF's
+    /// invariant serialization and corrupt the string-based comparison in
+    /// DeleteOldEntriesAsync. Returns the instant that was written so callers can assert
+    /// the value round-trips through EF Core and orders correctly against the cutoff.
     /// </summary>
     private static async Task<DateTimeOffset> BackdateEntryAsync(
         TaskdeckDbContext db, Guid entryId, TimeSpan age)
