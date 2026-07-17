@@ -2436,6 +2436,82 @@ public class AutomationProposalServiceTests
         result.Value.Should().Be("expired-but-historical");
     }
 
+    private static AutomationProposal BuildZeroOperationTerminalProposal(Guid requesterId, Guid boardId, string preview)
+    {
+        // CreateProposalAsync enforces no minimum operation count, so a board-scoped proposal can
+        // carry zero operations and still be decided (here: Rejected). This is the shape that would
+        // slip past ValidatePermissionsAsync's empty-operations short-circuit without the guard.
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            requesterId,
+            "Zero-op proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        proposal.SetDiffPreview(preview);
+        proposal.Reject(Guid.NewGuid(), "not needed");
+        return proposal;
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnForbidden_WhenZeroOpBoardScopedProposalLostAccess()
+    {
+        // #1415 regression guard: a board-scoped decided proposal with NO operations must still be
+        // denied to a requester who lost board access — ValidatePermissionsAsync short-circuits on
+        // the empty op list before its board gate, so the explicit fallback must fail it closed.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildZeroOperationTerminalProposal(requesterId, boardId, "leaked-empty-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNotFound_WhenZeroOpBoardScopedProposalBoardDeleted()
+    {
+        // #1415 regression guard: the board-exists half of the gate must also run for a zero-op
+        // board-scoped decided proposal.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildZeroOperationTerminalProposal(requesterId, boardId, "orphan-empty-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardRepoMock
+            .Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Board?)null);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnStoredPreview_WhenZeroOpBoardScopedProposalRetainsAccess()
+    {
+        // The guard denies only revoked/deleted access — a zero-op board-scoped proposal whose
+        // requester still has access serves its stored preview normally.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildZeroOperationTerminalProposal(requesterId, boardId, "empty-but-visible");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be("empty-but-visible");
+    }
+
     #endregion
 
     #region GetProposalsAsync Tests
