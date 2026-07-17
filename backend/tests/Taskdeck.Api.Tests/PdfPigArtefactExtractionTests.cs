@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure.Services;
 using UglyToad.PdfPig.Content;
@@ -155,6 +156,55 @@ public sealed class PdfPigArtefactExtractionTests
 
         result.ExtractedText.Should().BeEmpty();
         result.Warnings.Should().Equal(ArtefactExtractionWarningCodes.InputTooLarge);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldReturnDecodedSizeLimitWarningForFlateBomb()
+    {
+        // ~8 MiB of decompressed whitespace from a few KiB of FlateDecode input,
+        // against a 64 KiB decoded ceiling: the bounded provider must abort during
+        // the streaming pre-pass, long before 8 MiB is materialized.
+        var bomb = FlateBombPdf.Build(inflatedBytes: 8 * 1024 * 1024);
+        bomb.Length.Should().BeLessThan(256 * 1024, "the compressed bomb input is only a few KiB");
+        var extractor = new PdfPigArtefactTextExtractor(
+            new ArtefactStorageSettings { ExtractionMaxDecodedBytes = 64 * 1024 });
+        await using var stream = new MemoryStream(bomb);
+
+        var start = System.Diagnostics.Stopwatch.StartNew();
+        var result = await extractor.ExtractAsync(stream);
+        start.Stop();
+
+        result.ExtractedText.Should().BeEmpty();
+        result.Warnings.Should().Equal(ArtefactExtractionWarningCodes.DecodedSizeLimit);
+        result.Warnings.Should().NotContain(ArtefactExtractionWarningCodes.ExtractorError);
+        result.Warnings.Should().NotContain(ArtefactExtractionWarningCodes.NoTextLayer);
+        start.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5),
+            "the pre-pass aborts at the ceiling rather than inflating the whole bomb");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldExtractLegitPdfIdenticallyThroughBoundedAndDefaultProviders()
+    {
+        // Parity control: bounding must not alter the decoded text of a legitimate
+        // document. Same PDF, same extraction walk, bounded vs stock provider.
+        var pdf = BuildPdf(new string?[]
+        {
+            "Parity alpha beta gamma line one.",
+            "Second page delta epsilon zeta."
+        });
+
+        var bounded = new PdfPigArtefactTextExtractor(new ArtefactStorageSettings());
+        var unbounded = new PdfPigArtefactTextExtractor(new ArtefactStorageSettings(), boundDecodedOutput: false);
+
+        await using var boundedStream = new MemoryStream(pdf);
+        await using var unboundedStream = new MemoryStream(pdf);
+        var boundedResult = await bounded.ExtractAsync(boundedStream);
+        var unboundedResult = await unbounded.ExtractAsync(unboundedStream);
+
+        boundedResult.ExtractedText.Should().NotBeNullOrEmpty();
+        boundedResult.ExtractedText.Should().Be(unboundedResult.ExtractedText);
+        boundedResult.Warnings.Should().Equal(unboundedResult.Warnings);
+        boundedResult.ExtractedText.Should().Contain("Parity alpha beta gamma line one.");
     }
 
     private static byte[] BuildPdf(IReadOnlyList<string?> pageTexts)

@@ -1,6 +1,7 @@
 using System.Text;
 using FluentAssertions;
 using Moq;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
@@ -86,6 +87,49 @@ public sealed class ArtefactExtractionServiceRealExtractorTests
         result.Value.Warnings.Should().BeEmpty();
         result.Value.ExtractorName.Should().Be("PlainText");
         stored!.ExtractedText.Should().Be(content);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldRecordDecodedSizeLimitWarningRowForFlateBomb()
+    {
+        // A decompression bomb driven through the FULL service path: the real PdfPig
+        // extractor bounded to a 64 KiB ceiling must record one warning-bearing
+        // history row (decoded-size-limit, empty text), never a crash or extractor
+        // error, and the request must return promptly.
+        var bomb = FlateBombPdf.Build(inflatedBytes: 8 * 1024 * 1024);
+        ArrangeStoredArtefact("application/pdf", bomb);
+        ArtefactExtraction? stored = null;
+        var storeCalls = 0;
+        _extractions
+            .Setup(repository => repository.TryAddForUserAsync(
+                It.IsAny<ArtefactExtraction>(),
+                _userId,
+                It.IsAny<CancellationToken>()))
+            .Callback<ArtefactExtraction, Guid, CancellationToken>((value, _, _) =>
+            {
+                stored = value;
+                storeCalls++;
+            })
+            .ReturnsAsync(ArtefactExtractionStoreResult.Stored);
+        var service = new ArtefactExtractionService(
+            _artefacts.Object,
+            _extractions.Object,
+            [new PdfPigArtefactTextExtractor(new ArtefactStorageSettings { ExtractionMaxDecodedBytes = 64 * 1024 })],
+            new ArtefactStorageSettings());
+
+        var start = System.Diagnostics.Stopwatch.StartNew();
+        var result = await service.ExtractAsync(_userId, _artefactId);
+        start.Stop();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ExtractedText.Should().BeEmpty();
+        result.Value.Warnings.Should().Equal(ArtefactExtractionWarningCodes.DecodedSizeLimit);
+        stored.Should().NotBeNull();
+        stored!.Warnings.Should().Equal(ArtefactExtractionWarningCodes.DecodedSizeLimit);
+        stored.ExtractedText.Should().BeEmpty();
+        storeCalls.Should().Be(1);
+        start.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10),
+            "the bomb is aborted at the decoded ceiling, not fully inflated");
     }
 
     private void ArrangeStoredArtefact(string mimeType, byte[] content)
