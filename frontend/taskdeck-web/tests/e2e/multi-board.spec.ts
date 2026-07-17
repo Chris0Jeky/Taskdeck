@@ -13,6 +13,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
+import { expectDialog } from './support/dialogs'
 import { createBoardWithColumn } from './support/boardHelpers'
 
 let auth: AuthResult
@@ -158,8 +159,10 @@ test('deleting the currently viewed board should redirect to boards list or anot
   // Open board settings and archive/delete
   await page.locator('button[title="Board Settings"]').click()
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Move to Archive' }).click()
+  await expectDialog(page, () => page.getByRole('button', { name: 'Move to Archive' }).click(), {
+    type: 'confirm',
+    message: /^Archive "/,
+  })
 
   // Should be redirected away from the deleted board
   await expect(page).not.toHaveURL(/\/workspace\/boards\/[a-f0-9-]+$/)
@@ -176,8 +179,10 @@ test('restoring a board from archive should make it appear in sidebar without re
 
   // Archive it
   await page.locator('button[title="Board Settings"]').click()
-  page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Move to Archive' }).click()
+  await expectDialog(page, () => page.getByRole('button', { name: 'Move to Archive' }).click(), {
+    type: 'confirm',
+    message: /^Archive "/,
+  })
   await expect(page).toHaveURL(/\/workspace\/boards$/)
   await expect(page.getByText(boardName)).toHaveCount(0)
 
@@ -186,8 +191,10 @@ test('restoring a board from archive should make it appear in sidebar without re
   const archivedBoardRow = page.locator('.td-archive-row').filter({ hasText: boardName }).first()
   await expect(archivedBoardRow).toBeVisible()
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await archivedBoardRow.getByRole('button', { name: 'Restore Board' }).click()
+  await expectDialog(page, () => archivedBoardRow.getByRole('button', { name: 'Restore Board' }).click(), {
+    type: 'confirm',
+    message: /^Restore board "/,
+  })
 
   // After restore, navigate back to boards workspace
   await page.goto('/workspace/boards')

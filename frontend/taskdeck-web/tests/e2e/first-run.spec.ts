@@ -1,6 +1,7 @@
 import type { APIResponse, Response } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
+import { expectDialog } from './support/dialogs'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, triageCaptureItem, waitForCardWithTitle, waitForProposalCreated } from './support/captureFlow'
 import { assertOk } from './support/httpAsserts'
@@ -93,13 +94,10 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
   // Hard-assert the final apply confirmation (see capture-loop.spec.ts): the
   // test must FAIL if the confirm() gate disappears, not execute silently.
-  const executeDialogPromise = page.waitForEvent('dialog')
-  const executeClick = page.getByTestId('decision-apply').click()
-  const executeDialog = await executeDialogPromise
-  expect(executeDialog.type()).toBe('confirm')
-  expect(executeDialog.message()).toBe('Apply this approved proposal to the board now?')
-  await executeDialog.accept()
-  await executeClick
+  await expectDialog(page, () => page.getByTestId('decision-apply').click(), {
+    type: 'confirm',
+    message: 'Apply this approved proposal to the board now?',
+  })
   await assertOk(await executeResponse, `execute Paper first-run proposal ${proposalId}`)
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
 
@@ -211,8 +209,10 @@ test(LEGACY_FIRST_RUN_TITLE, async ({ page, request }) => {
   await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
+  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
+    type: 'confirm',
+    message: 'Apply this approved proposal to the board now?',
+  })
   await expect(proposalCard).not.toBeVisible()
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)

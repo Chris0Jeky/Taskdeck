@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_ORIGIN, registerAndAttachSession } from './support/authSession'
+import { expectDialog } from './support/dialogs'
 import { assertOk } from './support/httpAsserts'
 
 async function gotoBoardsWorkspace(page: Page) {
@@ -453,8 +454,10 @@ test('board settings lifecycle should support rename archive unarchive and archi
   await expect(page.getByRole('heading', { name: renamedBoardName })).toBeVisible()
 
   await page.locator('button[title="Board Settings"]').click()
-  page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Move to Archive' }).click()
+  await expectDialog(page, () => page.getByRole('button', { name: 'Move to Archive' }).click(), {
+    type: 'confirm',
+    message: /^Archive "/,
+  })
 
   await expect(page).toHaveURL(/\/workspace\/boards$/)
   await expect(page.getByText(renamedBoardName)).toHaveCount(0)
@@ -464,8 +467,10 @@ test('board settings lifecycle should support rename archive unarchive and archi
   const archivedBoardRow = page.locator('.td-archive-row').filter({ hasText: renamedBoardName }).first()
   await expect(archivedBoardRow).toBeVisible()
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await archivedBoardRow.getByRole('button', { name: 'Restore Board' }).click()
+  await expectDialog(page, () => archivedBoardRow.getByRole('button', { name: 'Restore Board' }).click(), {
+    type: 'confirm',
+    message: /^Restore board "/,
+  })
   await expect(page.locator('.td-archive-row').filter({ hasText: renamedBoardName })).toHaveCount(0)
 
   await page.goto('/workspace/boards')

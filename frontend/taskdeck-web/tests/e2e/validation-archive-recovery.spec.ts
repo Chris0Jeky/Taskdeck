@@ -13,6 +13,7 @@ import {
   registerUserSession,
   type AuthResult,
 } from './support/authSession'
+import { expectDialog } from './support/dialogs'
 import { createBoardWithColumn } from './support/boardHelpers'
 
 interface BoardDto {
@@ -174,8 +175,10 @@ test.describe('TST11-SC-012: Restore archived board', () => {
     await expect(boardRow).toBeVisible()
 
     // Accept the confirmation dialog
-    page.once('dialog', (dialog) => dialog.accept())
-    await boardRow.getByRole('button', { name: 'Restore Board' }).click()
+    await expectDialog(page, () => boardRow.getByRole('button', { name: 'Restore Board' }).click(), {
+      type: 'confirm',
+      message: /^Restore board "/,
+    })
 
     // Verify success toast
     await expect(page.getByText('Restored board')).toBeVisible()
