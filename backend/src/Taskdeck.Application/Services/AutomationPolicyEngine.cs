@@ -54,19 +54,15 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
         return RiskLevel.Low;
     }
 
-    public async Task<Result> ValidatePermissionsAsync(Guid userId, Guid? boardId, IEnumerable<ProposalOperationDto> operations, CancellationToken cancellationToken = default)
+    public async Task<Result> ValidateBoardAccessAsync(Guid requesterUserId, Guid? boardId, CancellationToken cancellationToken = default)
     {
-        if (userId == Guid.Empty)
+        if (requesterUserId == Guid.Empty)
             return Result.Failure(ErrorCodes.ValidationError, "UserId cannot be empty");
 
         // Verify user exists
-        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        var user = await _unitOfWork.Users.GetByIdAsync(requesterUserId, cancellationToken);
         if (user == null)
-            return Result.Failure(ErrorCodes.NotFound, $"User with ID {userId} not found");
-
-        var opList = operations.ToList();
-        if (!opList.Any())
-            return Result.Success();
+            return Result.Failure(ErrorCodes.NotFound, $"User with ID {requesterUserId} not found");
 
         // If board-scoped, verify board exists and user has access
         if (boardId.HasValue)
@@ -75,10 +71,32 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
             if (board == null)
                 return Result.Failure(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
-            var hasAccess = await _unitOfWork.BoardAccesses.HasAccessAsync(boardId.Value, userId, null, cancellationToken);
+            var hasAccess = await _unitOfWork.BoardAccesses.HasAccessAsync(boardId.Value, requesterUserId, null, cancellationToken);
             if (!hasAccess)
                 return Result.Failure(ErrorCodes.Forbidden, $"User does not have access to board {boardId}");
         }
+
+        return Result.Success();
+    }
+
+    public async Task<Result> ValidatePermissionsAsync(Guid userId, Guid? boardId, IEnumerable<ProposalOperationDto> operations, CancellationToken cancellationToken = default)
+    {
+        var opList = operations.ToList();
+
+        // The requester half of the shared access gate always runs; the board half applies only
+        // when the proposal carries operations, preserving the long-standing empty-operations
+        // short-circuit (empty → requester checks, then Success, board untouched). Callers that
+        // must gate board access for an operation-less proposal (the terminal stored-preview
+        // read, #1415) call ValidateBoardAccessAsync directly with the boardId.
+        var accessValidation = await ValidateBoardAccessAsync(
+            userId,
+            opList.Count > 0 ? boardId : null,
+            cancellationToken);
+        if (!accessValidation.IsSuccess)
+            return accessValidation;
+
+        if (opList.Count == 0)
+            return Result.Success();
 
         return await ProposalOperationContractValidator.ValidateAsync(
             _unitOfWork,
