@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
+import { expectDialog } from './support/dialogs'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -138,8 +139,10 @@ test('capture triage should create proposal and apply card with provenance links
   const cardsAfterApprove = await listBoardCards(request, auth, boardId)
   expect(cardsAfterApprove.length).toBe(0)
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
+  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
+    type: 'confirm',
+    message: 'Apply this approved proposal to the board now?',
+  })
   await expect(proposalCard).not.toBeVisible()
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, checklistTaskTitle)

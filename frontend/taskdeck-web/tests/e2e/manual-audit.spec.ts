@@ -21,6 +21,7 @@
 import { expect, test } from '@playwright/test'
 import { parseTrueishEnv } from '../../scripts/demo-shared.mjs'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
+import { expectDialog } from './support/dialogs'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -107,8 +108,10 @@ test.describe('Core loop: Home -> Inbox/Capture -> Review -> Board', () => {
     await page.screenshot({ path: testInfo.outputPath('05-review-approved.png'), fullPage: true })
 
     // Step 9: Apply proposal to board
-    page.once('dialog', (dialog) => dialog.accept())
-    await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
+    await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
+      type: 'confirm',
+      message: 'Apply this approved proposal to the board now?',
+    })
     await expect(proposalCard).not.toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('06-review-applied.png'), fullPage: true })
 
