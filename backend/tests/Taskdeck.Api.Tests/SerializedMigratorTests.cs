@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +7,7 @@ using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Tests.Support;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Taskdeck.Api.Tests;
 
@@ -23,9 +25,11 @@ public sealed class SerializedMigratorTests : IDisposable
 {
     private const int BusyTimeoutMs = 5000;
     private readonly string _dbPath;
+    private readonly ITestOutputHelper _output;
 
-    public SerializedMigratorTests()
+    public SerializedMigratorTests(ITestOutputHelper output)
     {
+        _output = output;
         _dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-serialized-migrate-{Guid.NewGuid():N}.db");
     }
 
@@ -118,24 +122,9 @@ public sealed class SerializedMigratorTests : IDisposable
                     "created the conflicting object never throws the collision, so both migrators " +
                     "failing means no run applied the chain");
 
-                using var verify = NewFileContext(dbPath);
-
-                // Representative table exists AND is usable: querying Boards through the migrated
-                // schema must succeed. This proves the migration produced a well-formed table, not
-                // merely a name registered in sqlite_master.
-                GetUserTableNames(verify).Should().Contain(
-                    "Boards", "the migration chain must have created the Boards table");
-                verify.Set<Board>().Count().Should().Be(0,
-                    "the migrated Boards table must be usable — a real query against it must succeed");
-
-                // Applied exactly once: __EFMigrationsHistory holds the COMPLETE migration list
-                // with no duplicates, regardless of which fail-open collisions occurred above.
-                var historyIds = GetMigrationHistoryIds(verify);
-                historyIds.Should().OnlyHaveUniqueItems(
-                    "concurrent migrators must not double-insert __EFMigrationsHistory rows");
-                historyIds.Should().BeEquivalentTo(
-                    verify.Database.GetMigrations(),
-                    "every defined migration must be applied exactly once across the concurrent run");
+                // Applied exactly once and usable, regardless of which fail-open collisions
+                // occurred above.
+                AssertSchemaMigratedExactlyOnce(dbPath);
             }
             finally
             {
@@ -228,17 +217,21 @@ public sealed class SerializedMigratorTests : IDisposable
     [Fact]
     public async Task Fail_open_collision_is_tolerated_and_schema_still_applies_exactly_once()
     {
-        // Deterministically exercises the tolerance branch the concurrent test only reaches under
-        // pathological CI load. The sidecar lock file is held EXTERNALLY for the whole race (same
-        // technique as Migrate_proceeds_with_a_warning_when_lock_cannot_be_acquired_within_timeout)
-        // with a short lock timeout, so BOTH migrators are forced onto the documented fail-open
-        // path. Barrier-synced against a cold DB, both compute the full pending chain and race;
-        // the loser collides on early DDL. Whether that collision propagates (winner mid-chain)
-        // or is swallowed as a no-op (winner finished) is scheduling-dependent, so the loop
-        // retries a few fresh databases until collision evidence is observed — every attempt
-        // still asserts the exactly-once end state.
+        // Deterministically exercises the fail-open tolerance branch by STAGGERING the migrators
+        // instead of racing them from a barrier. The sidecar lock is held EXTERNALLY for the whole
+        // attempt (same technique as the lock-timeout test), so both migrators take the documented
+        // fail-open path. Migrator A launches alone against the cold DB; the test polls
+        // __EFMigrationsHistory until A is provably MID-chain (>= 1 applied, <= a third of the
+        // chain, so at least two thirds of A's work is still ahead) and only then releases
+        // migrator B. B computes its pending list within milliseconds while A still has hundreds
+        // of milliseconds of DDL left, so their apply sets overlap and exactly one of them must
+        // hit DDL the other already applied — a structurally guaranteed collision. The previous
+        // barrier design was itself flaky in the opposite direction (run 29552875836): on fast
+        // runners the winner finished the entire chain before the loser applied anything, so no
+        // collision occurred within the retry budget and the required-collision assertion failed.
         const int maxAttempts = 3;
         var collisionObserved = false;
+        var interceptedMidChain = false;
 
         for (var attempt = 1; attempt <= maxAttempts && !collisionObserved; attempt++)
         {
@@ -251,26 +244,52 @@ public sealed class SerializedMigratorTests : IDisposable
                     Path.GetFullPath(dbPath) + ".migrate.lock",
                     FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 
+                // Pre-set WAL on the cold DB file before any migrator or poll reader opens it.
+                // journal_mode is persistent in the file, so the migrators' pragma interceptor
+                // becomes a no-op read instead of a delete->WAL TRANSITION (which requires
+                // exclusivity and could spuriously fail with BUSY if a poll read overlapped it),
+                // and WAL readers never block the writer — the poll cannot perturb migrator A.
+                PreSetWalJournalMode(dbPath);
+
                 using var contextA = NewFileContext(dbPath);
                 using var contextB = NewFileContext(dbPath);
                 var loggerA = new InMemoryLogger<SerializedMigratorTests>();
                 var loggerB = new InMemoryLogger<SerializedMigratorTests>();
-                using var startBarrier = new Barrier(2);
 
-                Task RunMigratorAsync(TaskdeckDbContext context, InMemoryLogger<SerializedMigratorTests> logger)
-                    => Task.Run(() =>
-                    {
-                        if (!startBarrier.SignalAndWait(TimeSpan.FromSeconds(10)))
-                        {
-                            throw new TimeoutException(
-                                "Sibling migrator never reached the start barrier.");
-                        }
+                var totalMigrations = contextA.Database.GetMigrations().Count();
+                var releaseWindowMax = Math.Max(1, totalMigrations / 3);
 
-                        SerializedMigrator.Migrate(context, TimeSpan.FromMilliseconds(250), logger);
-                    });
+                // TimeSpan.Zero lock timeout: AcquireLock makes a single acquisition attempt and
+                // fails open immediately (still logging the documented warning). This matters for
+                // B far more than A — any positive wait would happen AFTER A is already mid-chain
+                // and eat directly into A's remaining runtime, so on a fast runner B could fail
+                // open only after A had finished and no-op every attempt. With zero wait, B's
+                // startup latency is a few milliseconds against dozens of remaining DDL
+                // transactions on any hardware.
+                var migratorA = Task.Run(() =>
+                    SerializedMigrator.Migrate(contextA, TimeSpan.Zero, loggerA));
 
-                var migratorA = RunMigratorAsync(contextA, loggerA);
-                var migratorB = RunMigratorAsync(contextB, loggerB);
+                var midChainCount = WaitForMidChainHistory(
+                    dbPath, migratorA, releaseWindowMax, TimeSpan.FromSeconds(30));
+                if (midChainCount is null)
+                {
+                    // A finished (or overshot the release window) before the 1ms poll could catch
+                    // it mid-chain — only plausible under pathological scheduling, since the window
+                    // spans many migrations of wall time. The race cannot be staged this attempt;
+                    // A ran alone, so it must complete cleanly and leave a fully migrated schema.
+                    _output.WriteLine(
+                        $"attempt {attempt}: migrator A left the mid-chain release window " +
+                        "[1, " + releaseWindowMax + "] unobserved; race not staged this attempt.");
+                    await migratorA;
+                    AssertSchemaMigratedExactlyOnce(dbPath);
+                    continue;
+                }
+
+                interceptedMidChain = true;
+
+                // A is provably mid-chain: release B now (zero lock wait — see above).
+                var migratorB = Task.Run(() =>
+                    SerializedMigrator.Migrate(contextB, TimeSpan.Zero, loggerB));
 
                 var faults = new List<Exception>();
                 foreach (var migrator in new[] { migratorA, migratorB })
@@ -308,25 +327,20 @@ public sealed class SerializedMigratorTests : IDisposable
 
                 // The invariant that matters, identical to the concurrent test: final schema
                 // migrated exactly once and usable, regardless of how the race interleaved.
-                using var verify = NewFileContext(dbPath);
-                GetUserTableNames(verify).Should().Contain(
-                    "Boards", "the migration chain must have created the Boards table");
-                verify.Set<Board>().Count().Should().Be(0,
-                    "the migrated Boards table must be usable — a real query against it must succeed");
-                var historyIds = GetMigrationHistoryIds(verify);
-                historyIds.Should().OnlyHaveUniqueItems(
-                    "racing fail-open migrators must not double-insert __EFMigrationsHistory rows");
-                historyIds.Should().BeEquivalentTo(
-                    verify.Database.GetMigrations(),
-                    "every defined migration must be applied exactly once despite the fail-open race");
+                AssertSchemaMigratedExactlyOnce(dbPath);
 
-                // Collision evidence: either the loser's fault propagated (winner was mid-chain)
-                // or SerializedMigrator swallowed it and logged the documented race warning
-                // (winner had finished). Absent both, the loser happened to no-op — retry.
+                // Collision evidence: either the collider's fault propagated (survivor unfinished
+                // at re-check time) or SerializedMigrator swallowed it and logged the documented
+                // race warning (survivor had finished). Absent both, B was stalled long enough
+                // for A to finish before B computed its pending list — retry on a fresh DB.
                 collisionObserved = faults.Count == 1 ||
                     loggerA.Entries.Concat(loggerB.Entries).Any(e =>
                         e.Level == LogLevel.Warning &&
                         e.Message.Contains("raced a concurrent migrator"));
+
+                _output.WriteLine(
+                    $"attempt {attempt}: released B at history count {midChainCount}/" +
+                    $"{totalMigrations}; faults={faults.Count}; collisionObserved={collisionObserved}.");
             }
             finally
             {
@@ -334,10 +348,124 @@ public sealed class SerializedMigratorTests : IDisposable
             }
         }
 
+        if (!interceptedMidChain)
+        {
+            // Documented graceful outcome — deliberately NOT a failure (ruled on in PR #1390
+            // review). A required-collision assertion is exactly what made the previous barrier
+            // design flake unrelated PRs (run 29552875836). Staging the race requires observing
+            // A mid-chain; if that was impossible on this run (pathological scheduling on every
+            // attempt), the exactly-once end state was still verified above on every attempt,
+            // and the tolerance signature keeps direct unit coverage via the CollisionFaultCases
+            // theory. The miss is loudly logged so a recurring pattern in CI output is
+            // unmistakable rather than silent.
+            _output.WriteLine(
+                "WARNING: STAGING MISSED on all attempts — migrator A was never observed " +
+                "mid-chain, so the fail-open collision path was NOT exercised end-to-end this " +
+                "run; collision tolerance was exercised only via the CollisionFaultCases unit " +
+                "theory. Solo-migration exactly-once state WAS verified on every attempt. If " +
+                "this message recurs across CI runs, the staging poll needs attention (PR #1390).");
+            return;
+        }
+
         collisionObserved.Should().BeTrue(
-            "with both migrators forced onto the lock-free path against a cold database, the " +
-            $"loser must collide mid-chain in at least one of {maxAttempts} attempts — never " +
-            "colliding means the tolerance branch was not exercised at all");
+            "migrator B was released while migrator A was provably mid-chain, so their apply " +
+            "sets overlap and exactly one of them must observe the other's DDL — either as a " +
+            "propagated fault or as the swallowed-race warning");
+    }
+
+    /// <summary>
+    /// Polls <c>__EFMigrationsHistory</c> on <paramref name="dbPath"/> until the applied count
+    /// falls inside the mid-chain release window <c>[1, releaseWindowMax]</c>, returning that
+    /// count — proof the migrator is mid-chain — or <c>null</c> when the window can no longer be
+    /// observed (the migrator completed or overshot the window between polls, or the bounded
+    /// timeout elapsed). A 1ms poll against a chain whose window spans many migrations of wall
+    /// time observes the window many times over; <c>null</c> is only plausible under pathological
+    /// scheduling.
+    /// </summary>
+    /// <summary>
+    /// Persists <c>journal_mode=WAL</c> into the (cold) database file via a short-lived setup
+    /// connection, so subsequent connections inherit WAL instead of performing the
+    /// delete-to-WAL transition (which requires exclusivity and can fail with BUSY when it
+    /// overlaps another connection's read).
+    /// </summary>
+    private static void PreSetWalJournalMode(string dbPath)
+    {
+        using var setup = new SqliteConnection($"Data Source={dbPath}");
+        setup.Open();
+        using var cmd = setup.CreateCommand();
+        cmd.CommandText = "PRAGMA journal_mode=WAL";
+        cmd.ExecuteScalar();
+    }
+
+    private static int? WaitForMidChainHistory(
+        string dbPath, Task migrator, int releaseWindowMax, TimeSpan timeout)
+    {
+        using var pollConnection = new SqliteConnection($"Data Source={dbPath}");
+        pollConnection.Open();
+
+        // Robust reads under write contention: without this, a transient BUSY would surface as
+        // a SqliteException and be miscounted as "nothing applied yet" for that poll.
+        using (var pragma = pollConnection.CreateCommand())
+        {
+            pragma.CommandText = $"PRAGMA busy_timeout={BusyTimeoutMs}";
+            pragma.ExecuteNonQuery();
+        }
+
+        var elapsed = Stopwatch.StartNew();
+        while (elapsed.Elapsed < timeout)
+        {
+            var applied = TryCountHistoryRows(pollConnection);
+            if (applied >= 1 && applied <= releaseWindowMax)
+            {
+                return applied;
+            }
+
+            if (applied > releaseWindowMax || migrator.IsCompleted)
+            {
+                return null;
+            }
+
+            Thread.Sleep(1);
+        }
+
+        return null;
+    }
+
+    private static int TryCountHistoryRows(SqliteConnection pollConnection)
+    {
+        try
+        {
+            using var cmd = pollConnection.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM __EFMigrationsHistory";
+            return Convert.ToInt32(
+                cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+        }
+        catch (SqliteException)
+        {
+            // History table not created yet, or a transient lock during DDL: nothing observably
+            // applied — keep polling.
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// The end-state contract shared by every concurrency test here: the final schema is migrated
+    /// exactly once (complete, duplicate-free <c>__EFMigrationsHistory</c>) and usable (a real
+    /// query against a representative table succeeds, not just a <c>sqlite_master</c> name check).
+    /// </summary>
+    private static void AssertSchemaMigratedExactlyOnce(string dbPath)
+    {
+        using var verify = NewFileContext(dbPath);
+        GetUserTableNames(verify).Should().Contain(
+            "Boards", "the migration chain must have created the Boards table");
+        verify.Set<Board>().Count().Should().Be(0,
+            "the migrated Boards table must be usable — a real query against it must succeed");
+        var historyIds = GetMigrationHistoryIds(verify);
+        historyIds.Should().OnlyHaveUniqueItems(
+            "concurrent migrators must not double-insert __EFMigrationsHistory rows");
+        historyIds.Should().BeEquivalentTo(
+            verify.Database.GetMigrations(),
+            "every defined migration must be applied exactly once across the concurrent run");
     }
 
     [Fact]
