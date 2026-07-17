@@ -87,14 +87,41 @@ public sealed class ApiKeyMiddleware
             return;
         }
 
-        // Hash the provided key and look up in the database
+        // Hash the provided key and look up in the database. The owner's active state is resolved in
+        // THIS single ApiKeys query (a correlated projection on the UserId FK), NOT in a separate Users
+        // SELECT afterwards. That fold is the #1404 fix: a stale-owner key — an active key row whose
+        // owning user was deactivated (account "deletion" is soft: AccountDeletionService only sets
+        // User.IsActive=false) — must be rejected with 401 (charging the pre-auth IP failure budget)
+        // BEFORE the per-key quota charge below, so sustained traffic eventually trips the pre-auth IP
+        // pre-check before any DB work. It also removes the standalone Users lookup from the happy path
+        // entirely (one query, not two). Only scalar columns are projected; key/owner active state is
+        // still computed in memory (below) so expiry is evaluated against the same wall clock as
+        // before, not pushed into SQL.
         var keyHash = HashKey(token);
 
-        var apiKey = await dbContext.ApiKeys
+        var authRecord = await dbContext.ApiKeys
             .AsNoTracking()
-            .FirstOrDefaultAsync(k => k.KeyHash == keyHash, context.RequestAborted);
+            .Where(k => k.KeyHash == keyHash)
+            .Select(k => new ApiKeyAuthProjection
+            {
+                Id = k.Id,
+                UserId = k.UserId,
+                ExpiresAt = k.ExpiresAt,
+                RevokedAt = k.RevokedAt,
+                // The owner's flag when the row exists; null when it is absent. The null branch is
+                // DEFENSIVE-ONLY and unreachable at runtime: the ApiKeys→Users FK cascades on delete
+                // (ApiKeyConfiguration, DeleteBehavior.Cascade; SQLite runs with PRAGMA
+                // foreign_keys=ON), so a hard-deleted user takes its key rows with it and the lookup
+                // misses entirely (nonexistent-key 401 path). App-level account deletion is soft
+                // (IsActive=false), which surfaces here as `false`.
+                OwnerIsActive = dbContext.Users
+                    .Where(u => u.Id == k.UserId)
+                    .Select(u => (bool?)u.IsActive)
+                    .FirstOrDefault(),
+            })
+            .FirstOrDefaultAsync(context.RequestAborted);
 
-        if (apiKey is null)
+        if (authRecord is null)
         {
             _logger.LogWarning("MCP API key authentication failed: key not found (prefix: {Prefix})",
                 token.Length >= 8 ? token[..8] : "short");
@@ -103,25 +130,50 @@ public sealed class ApiKeyMiddleware
             return;
         }
 
-        if (!apiKey.IsActive)
+        // Key state (revoked/expired) computed in memory from the projected timestamps — identical to
+        // the entity's IsActive property.
+        var keyIsActive = authRecord.RevokedAt is null
+            && (authRecord.ExpiresAt is null || authRecord.ExpiresAt > DateTimeOffset.UtcNow);
+        if (!keyIsActive)
         {
-            var reason = apiKey.RevokedAt is not null ? "revoked" : "expired";
+            var reason = authRecord.RevokedAt is not null ? "revoked" : "expired";
             _logger.LogWarning("MCP API key authentication failed: key is {Reason} (id: {KeyId})",
-                reason, apiKey.Id);
+                reason, authRecord.Id);
             // Return generic message to avoid leaking key state (revoked vs expired)
             await WriteErrorResponse(context, StatusCodes.Status401Unauthorized,
                 "Invalid API key.");
             return;
         }
 
+        // Stale-owner key: an active key row whose owning user is deactivated (IsActive=false — the
+        // only live scenario, since account deletion is soft and a genuine hard delete cascades the
+        // key rows away so the lookup misses above; the `!= true` form also covers the defensive-only
+        // null branch of OwnerIsActive). Rejected here, BEFORE the per-key budget charge, precisely so
+        // WriteErrorResponse charges the pre-auth IP failure budget on every attempt. Charging the
+        // per-key budget first (the #1401 order that VALID keys still get, below) would hide this
+        // behind a 429 that never spends the IP budget, so the SHA-256 + ApiKeys lookup would keep
+        // running indefinitely (#1404). This is the SAME budget a genuinely invalid key charges, so
+        // sustained stale-owner traffic exhausts the IP bucket and trips the pre-auth pre-check before
+        // any DB work — restoring pre-#1401 behaviour for stale-owner keys.
+        if (authRecord.OwnerIsActive != true)
+        {
+            _logger.LogWarning("MCP API key authentication failed: user inactive (userId: {UserId})", authRecord.UserId);
+            await WriteErrorResponse(context, StatusCodes.Status401Unauthorized,
+                "User account is inactive or has been deleted.");
+            return;
+        }
+
         // Enforce the per-key request budget (McpPerApiKey) at the EARLIEST point the key identity is
-        // known — right after the key row is resolved and confirmed active, and BEFORE the user-account
-        // lookup and the last-used write below (#1384). The opaque key ID is the budget partition, so
-        // store it first. This is the SINGLE charge point for the per-key budget: the /mcp endpoint no
-        // longer carries an endpoint-stage McpPerApiKey policy, so a request passing this check is never
-        // charged again downstream. A valid-but-over-quota key is rejected with 429 here without setting
-        // AuthenticationFailedItemKey and without a 401, so the pre-auth IP FAILURE budget is not spent
-        // — valid keys never touch that budget (#1368/#1381), only failed authentications do.
+        // confirmed usable — right after the key row is resolved and BOTH the key and its owner are
+        // confirmed active, and BEFORE the last-used write below (#1384). The owner check is folded into
+        // the initial lookup above, so there is no separate user-account query to shield; the per-key
+        // budget remains the FIRST gate a genuinely valid key meets (the #1401 ordering, unchanged). The
+        // opaque key ID is the budget partition, so store it first. This is the SINGLE charge point for
+        // the per-key budget: the /mcp endpoint no longer carries an endpoint-stage McpPerApiKey policy,
+        // so a request passing this check is never charged again downstream. A valid-but-over-quota key
+        // is rejected with 429 here without setting AuthenticationFailedItemKey and without a 401, so the
+        // pre-auth IP FAILURE budget is not spent — valid keys never touch that budget (#1368/#1381),
+        // only failed authentications do.
         //
         // Resolved optionally: the limiter is registered only when rate limiting is enabled, so when it
         // is absent the check is skipped (no MCP throttling when disabled), matching prior behaviour.
@@ -129,7 +181,7 @@ public sealed class ApiKeyMiddleware
         // provider before application middleware runs, and a ?. here would add a second SILENT skip
         // path for a security charge (fail-open). The only intended skip is GetService returning null
         // when rate limiting is disabled; a genuinely missing provider should throw loudly.
-        context.Items[ApiKeyIdItemKey] = apiKey.Id;
+        context.Items[ApiKeyIdItemKey] = authRecord.Id;
 
         var perKeyLimiter = context.RequestServices.GetService<McpPerApiKeyRateLimiter>();
         if (perKeyLimiter is not null)
@@ -137,28 +189,15 @@ public sealed class ApiKeyMiddleware
             using var perKeyLease = perKeyLimiter.AttemptAcquire(context);
             if (!perKeyLease.IsAcquired)
             {
-                _logger.LogDebug("MCP per-key rate limit exceeded for key {KeyId}", apiKey.Id);
+                _logger.LogDebug("MCP per-key rate limit exceeded for key {KeyId}", authRecord.Id);
                 await McpPerApiKeyRateLimiter.WriteRejectedAsync(context, perKeyLease, context.RequestAborted);
                 return;
             }
         }
 
-        // Verify the user account is active
-        var user = await dbContext.Users
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == apiKey.UserId, context.RequestAborted);
-
-        if (user is null || !user.IsActive)
-        {
-            _logger.LogWarning("MCP API key authentication failed: user inactive (userId: {UserId})", apiKey.UserId);
-            await WriteErrorResponse(context, StatusCodes.Status401Unauthorized,
-                "User account is inactive or has been deleted.");
-            return;
-        }
-
         // Set the authenticated user ID for HttpUserContextProvider. The API key ID item was set
         // above, before the per-key budget check.
-        context.Items[HttpUserContextProvider.UserIdItemKey] = apiKey.UserId;
+        context.Items[HttpUserContextProvider.UserIdItemKey] = authRecord.UserId;
 
         // Establish an authenticated principal so the global authorization FallbackPolicy
         // (RequireAuthenticatedUser, #1132 AC4) is satisfied for valid-key MCP requests — a valid
@@ -168,13 +207,13 @@ public sealed class ApiKeyMiddleware
         // reads the "Bearer tdsk_..." header and fails to validate it as a JWT, returning a null
         // Principal that AuthenticationMiddleware does not assign over context.User, so this survives.
         context.User = new ClaimsPrincipal(new ClaimsIdentity(
-            new[] { new Claim(ClaimTypes.NameIdentifier, apiKey.UserId.ToString()) },
+            new[] { new Claim(ClaimTypes.NameIdentifier, authRecord.UserId.ToString()) },
             authenticationType: AuthenticationType));
 
         // Update last-used timestamp before continuing the pipeline. This is a non-critical usage
         // stamp: a failure here must NOT fail an otherwise-valid authentication, so it is caught and
         // logged inside UpdateLastUsedAsync (never rethrown) — the request proceeds regardless.
-        await UpdateLastUsedAsync(dbContext, apiKey.Id);
+        await UpdateLastUsedAsync(dbContext, authRecord.Id);
 
         await _next(context);
     }
@@ -216,6 +255,26 @@ public sealed class ApiKeyMiddleware
             // months — is visible in operational logs instead of hidden.
             _logger.LogWarning(ex, "Failed to update API key last-used timestamp for key {KeyId}", keyId);
         }
+    }
+
+    /// <summary>
+    /// Projection of the single ApiKeys authentication lookup: the scalar key columns needed to compute
+    /// key active-state and identify the key, plus the owner's active flag resolved via a correlated
+    /// subquery on the UserId FK (there is no ApiKey→User navigation). <see cref="OwnerIsActive"/> is
+    /// null only in the defensive-only absent-owner-row branch, which is unreachable at runtime: the
+    /// ApiKeys→Users FK cascades on delete, so a hard-deleted user cascades its key rows away and the
+    /// lookup misses; app-level account deletion is soft (IsActive=false), surfacing here as
+    /// <c>false</c>. Folding the owner check into this query is
+    /// the #1404 fix: it removes the separate Users SELECT and lets a stale-owner key be rejected (and
+    /// charged to the pre-auth IP failure budget) before the per-key quota charge.
+    /// </summary>
+    private sealed class ApiKeyAuthProjection
+    {
+        public Guid Id { get; init; }
+        public Guid UserId { get; init; }
+        public DateTimeOffset? ExpiresAt { get; init; }
+        public DateTimeOffset? RevokedAt { get; init; }
+        public bool? OwnerIsActive { get; init; }
     }
 
     private static async Task WriteErrorResponse(HttpContext context, int statusCode, string message)
