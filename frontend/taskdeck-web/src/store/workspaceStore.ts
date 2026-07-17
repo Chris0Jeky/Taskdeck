@@ -55,6 +55,20 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     persistLocalMode(nextMode)
   }
 
+  // Ordering guard for summary-derived mode (issue #1343). A Home/Today summary
+  // request can resolve *after* the user makes a newer local mode choice
+  // (updateMode) or a newer preference hydrate. Both of those bump
+  // preferenceRequestVersion at their start, so a summary that captured an
+  // older version must not overwrite the newer explicit choice. When the
+  // version is unchanged the summary is genuinely newer and applies as normal.
+  function applySummaryMode(nextMode: WorkspaceMode, preferenceVersionAtStart: number): boolean {
+    if (preferenceRequestVersion !== preferenceVersionAtStart) {
+      return false
+    }
+    applyMode(nextMode)
+    return true
+  }
+
   function syncOnboarding(nextOnboarding: WorkspaceOnboarding | null) {
     onboarding.value = nextOnboarding
 
@@ -178,14 +192,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return summary
     }
 
+    const preferenceVersionAtStart = preferenceRequestVersion
+
     try {
       homeLoading.value = true
       homeError.value = null
       const summary = await workspaceApi.getHomeSummary()
       homeSummary.value = summary
-      applyMode(summary.workspaceMode)
       syncOnboarding(summary.onboarding)
-      preferencesHydrated.value = true
+      if (applySummaryMode(summary.workspaceMode, preferenceVersionAtStart)) {
+        preferencesHydrated.value = true
+      }
       return summary
     } catch (e: unknown) {
       homeError.value = getErrorMessage(e, "We couldn't load your workspace overview")
@@ -197,6 +214,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function fetchTodaySummary(): Promise<TodaySummary> {
     const requestVersion = ++todayRequestVersion
+    const preferenceVersionAtStart = preferenceRequestVersion
 
     if (isDemoMode) {
       todayLoading.value = true
@@ -217,8 +235,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const summary = await workspaceApi.getTodaySummary()
       if (requestVersion === todayRequestVersion) {
         todaySummary.value = summary
-        applyMode(summary.workspaceMode)
         syncOnboarding(summary.onboarding)
+        applySummaryMode(summary.workspaceMode, preferenceVersionAtStart)
       }
       return summary
     } catch (e: unknown) {
