@@ -129,6 +129,19 @@ if (args.Contains("--mcp"))
             Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, migrationLogger);
         }
 
+        // Honour trusted forwarded headers (default OFF) so the pre-auth failure-budget limiter and
+        // per-key partitioning key on the real client address behind a reverse proxy instead of
+        // collapsing every client into the proxy's single socket address. Mirrors the co-hosted API
+        // pipeline: only active when the operator configures ForwardedHeaders:KnownProxies /
+        // KnownNetworks, and X-Forwarded-For is never trusted from an unknown peer. Runs before the
+        // limiter and telemetry so all downstream see the corrected Connection.RemoteIpAddress.
+        var mcpForwardedHeadersOptions = Taskdeck.Api.Extensions.PipelineConfiguration
+            .BuildForwardedHeadersOptions(mcpHttpApp.Configuration);
+        if (mcpForwardedHeadersOptions is not null)
+        {
+            mcpHttpApp.UseForwardedHeaders(mcpForwardedHeadersOptions);
+        }
+
         // Correlation ID propagation: honours client X-Request-Id header.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.CorrelationIdMiddleware>();
 
@@ -137,8 +150,9 @@ if (args.Contains("--mcp"))
         // rejected with 401 (missing/invalid/revoked API keys).
         mcpHttpApp.UseMiddleware<McpTelemetryMiddleware>();
 
-        // Bound all authentication attempts by client address before parsing a key or
-        // querying the database. Valid requests also reach the later per-key policy.
+        // Bound the cost of authentication FAILURES by client address: reject before a key parse or
+        // database lookup once the address's failure budget is spent, but let valid requests through
+        // without consuming so they reach the per-key policy with independent budgets.
         if (mcpRateLimitingSettings.Enabled)
         {
             mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.McpAuthenticationRateLimitingMiddleware>();
