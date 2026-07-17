@@ -276,7 +276,7 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
                 .ToListAsync(cancellationToken);
 
             return rows
-                .Select(r => new DailyAuditCount(DateOnly.Parse(r.DateStr), r.Count))
+                .Select(r => new DailyAuditCount(DateOnly.Parse(r.DateStr, CultureInfo.InvariantCulture), r.Count))
                 .ToList();
         }
 
