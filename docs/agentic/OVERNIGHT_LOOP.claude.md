@@ -29,8 +29,13 @@ not. Sharpening the tools *is* progress. (See §8.)
 ## 0) STATE — orchestrator ledger + persistent memory
 
 **Orchestrator ledger (per-run, resumable):** reuse an existing coordinator ledger if present
-(this repo has used an uncommitted `ORCHESTRATOR.overnight-YYYY-MM-DD.md` at the root),
-otherwise create one. Keep it uncommitted. A fresh session must resume from this file alone.
+(this repo uses an uncommitted `ORCHESTRATOR.overnight-YYYY-MM-DD.md` at the root), otherwise
+create one (git-exclude it via `.git/info/exclude`, e.g. an `ORCHESTRATOR.*.md` pattern).
+Keep it uncommitted. A mid-run restart resumes from this file; a NEW session resumes from the
+latest handoff (below) and re-opens this ledger only for same-run recovery. **On wrap, write
+`ORCHESTRATOR.handoff-YYYY-MM-DD.md`** — the cross-session contract (what merged, holds, gate
+precedents, box rules, backlog, honest residuals); the next session resumes from the latest
+handoff and verifies its claims against reality before acting on them (reality wins).
 Terse, factual. It holds: run header (start commit/branch, goal, cycle #, last-updated); the
 **verification commands** you discovered; a **task board** (id, title, status, priority, deps,
 PR/branch, review state, outcome) with lifecycle `BACKLOG → SELECTED → IN-PROGRESS → IN-REVIEW
@@ -168,8 +173,14 @@ Use **`pre-merge-gate`** + **`verification-closeout`**. Gate:
    behavior via `/verify` when there's a runtime surface, not just green tests).
 2. **CI green on the exact head.** Investigate *every* red; never dismiss as flaky without proof
    (rerun; passes on identical code ⇒ flaky ⇒ **track as an issue and move on**, don't ignore).
-3. Both adversarial reviews resolved; all human + bot threads addressed.
-4. PR **aged** enough for automation to weigh in — don't merge seconds after opening.
+3. Both adversarial reviews resolved; all human + bot feedback addressed — **verified by
+   CONTENT**: query `reviewThreads` (require `isResolved == false` count of 0 and READ any
+   late arrivals) AND sweep top-level PR comments and review-summary bodies posted since the
+   final push — findings land in all three places, not just inline threads. Never gate on
+   reviewer names or review-event presence; a "review" with no findings looks identical to one
+   carrying P2s until read. Applies to docs-only PRs too.
+4. PR **aged** enough for automation to weigh in (30–60 min from the FINAL push; every push
+   restarts the clock) — don't merge seconds after opening.
 5. No unresolved blockers; back-compat preserved; canonical docs synced if reality changed
    (**`docs-sweep`** / **`taskdeck-verification-doc-sync`**).
 
