@@ -19,12 +19,18 @@ namespace Taskdeck.Api.Tests;
 /// <summary>
 /// Integration tests for LlmQueueRepository against real SQLite.
 /// Covers concurrent claims, json_extract correctness, GUID format, and query ordering.
+///
+/// Uses <see cref="HostedWorkerDisabledTestWebApplicationFactory"/> so the background queue
+/// workers cannot claim the seeded rows out from under a claim/read assertion (issue #1335).
+/// The <c>_factory</c>-based tests seed the exact rows a live worker drains (Pending
+/// non-capture, Processing capture); without worker isolation a poll landing mid-test stamps
+/// a fresh UpdatedAt and the optimistic-concurrency claim(s) observe zero successes.
 /// </summary>
-public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicationFactory>
+public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
 
-    public LlmQueueRepositoryIntegrationTests(TestWebApplicationFactory factory)
+    public LlmQueueRepositoryIntegrationTests(HostedWorkerDisabledTestWebApplicationFactory factory)
     {
         _factory = factory;
     }
