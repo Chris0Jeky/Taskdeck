@@ -115,6 +115,11 @@ if (args.Contains("--mcp"))
 
         var mcpHttpApp = mcpHttpBuilder.Build();
 
+        // Test seam: lets the standalone MCP host-filtering integration test observe the
+        // built app when it drives this real entry point in-process, so it can await
+        // startup and stop the host cleanly. Never set in production.
+        Program.OnStandaloneMcpHttpAppBuilt?.Invoke(mcpHttpApp);
+
         // Apply EF Core migrations before starting, serialized across processes via a
         // cross-process file lock so the MCP HTTP host does not race the API/CLI (#1164).
         using (var scope = mcpHttpApp.Services.CreateScope())
@@ -423,6 +428,13 @@ public partial class Program
     internal const string StandaloneMcpDefaultBindHost = "127.0.0.1";
     internal const string StandaloneMcpLoopbackAllowedHosts = "localhost;127.0.0.1;[::1]";
 
+    /// <summary>
+    /// Test seam for the standalone MCP HTTP integration test (see
+    /// <c>StandaloneMcpHostFilteringTests</c>): invoked with the built app just before it
+    /// runs, so the test can await startup and stop the host. Never set in production.
+    /// </summary>
+    internal static Action<WebApplication>? OnStandaloneMcpHttpAppBuilt;
+
     internal static void ApplyStandaloneMcpHostSecurity(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -430,12 +442,20 @@ public partial class Program
         var configuredHosts = configuration["AllowedHosts"]?
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             ?? Array.Empty<string>();
-        var containsAnyHost = configuredHosts.Any(host => host is "*" or "0.0.0.0" or "[::]");
 
-        // Fail closed to the loopback allowlist whenever the configured value parses to zero
-        // non-empty hosts (blank, or separator-only such as ";" / ";;" / " ; ") -- which
-        // HostFilteringMiddleware would otherwise treat as "no filter" and allow every host --
-        // or when it names an any-host wildcard.
+        // Normalize each token the same way HostFilteringMiddleware does: it parses every
+        // configured entry through HostString (stripping any :port suffix) BEFORE its own
+        // top-level-wildcard test, so a port-suffixed wildcard like "0.0.0.0:5001" or
+        // "*:5000" would disable host filtering despite not being an exact wildcard token.
+        var containsAnyHost = configuredHosts
+            .Any(host => new HostString(host).Host is "*" or "0.0.0.0" or "[::]");
+
+        // Fail closed to the loopback allowlist on any misconfigured value. The middleware
+        // splits with RemoveEmptyEntries only (no TrimEntries): ";" / ";;" parse to zero
+        // entries, which disables filtering entirely (every host allowed), while " ; "
+        // parses to whitespace-only entries, an active filter that rejects every host.
+        // Both are misconfigurations, so any value whose trimmed parse yields no hosts is
+        // replaced -- as is any value naming an any-host wildcard.
         if (configuredHosts.Length == 0 || containsAnyHost)
         {
             configuration["AllowedHosts"] = StandaloneMcpLoopbackAllowedHosts;
