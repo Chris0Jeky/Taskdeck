@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -28,7 +29,7 @@ public class OAuthAuthCodeRepository : Repository<OAuthAuthCode>, IOAuthAuthCode
         // EF Core SQLite stores DateTimeOffset as "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm" format.
         // We must use the same format for string comparison to work correctly.
         var now = DateTimeOffset.UtcNow;
-        var nowStr = now.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
+        var nowStr = now.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00", CultureInfo.InvariantCulture);
         var affected = await _context.Database.ExecuteSqlRawAsync(
             "UPDATE OAuthAuthCodes SET IsConsumed = 1, ConsumedAt = {0}, UpdatedAt = {1} WHERE Code = {2} AND IsConsumed = 0 AND ExpiresAt > {3}",
             [nowStr, nowStr, code, nowStr],
@@ -42,7 +43,7 @@ public class OAuthAuthCodeRepository : Repository<OAuthAuthCode>, IOAuthAuthCode
         // Use raw SQL to avoid loading all rows into memory (DoS risk with large tables).
         // Deletes both expired codes AND consumed codes to prevent unbounded table growth.
         // EF Core SQLite stores DateTimeOffset as "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm".
-        var cutoffStr = cutoff.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
+        var cutoffStr = cutoff.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00", CultureInfo.InvariantCulture);
         var affected = await _context.Database.ExecuteSqlRawAsync(
             "DELETE FROM OAuthAuthCodes WHERE ExpiresAt < {0} OR IsConsumed = 1",
             [cutoffStr],
