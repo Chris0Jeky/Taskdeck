@@ -25,6 +25,11 @@ import { expect } from '@playwright/test'
  * rather than flaking. The triggering action is awaited AFTER the dialog is
  * handled, so its post-dialog effects have settled before the caller asserts.
  *
+ * Failure attribution: if the trigger itself rejects before any dialog fires
+ * (strict-mode violation, renamed button, navigation error), THAT error is
+ * rethrown immediately — the "confirmation gate removed" diagnostic is reserved
+ * for the case where the trigger ran but no dialog appeared within `timeout`.
+ *
  * Usage:
  *
  *   await expectDialog(
@@ -36,8 +41,8 @@ import { expect } from '@playwright/test'
 export interface ExpectDialogOptions {
   /** Accept the dialog (default) or dismiss it once observed. */
   accept?: boolean
-  /** Expected dialog type — asserted when provided (e.g. 'confirm', 'prompt'). */
-  type?: Dialog['type'] extends () => infer R ? R : string
+  /** Expected dialog type — asserted when provided. */
+  type?: 'alert' | 'beforeunload' | 'confirm' | 'prompt'
   /**
    * Assert the dialog message. A string asserts equality (use for fully stable
    * copy); a RegExp asserts a match (use when the copy embeds dynamic names).
@@ -52,7 +57,8 @@ export interface ExpectDialogOptions {
 /**
  * Run `trigger`, require the dialog it raises to appear, assert it, and handle
  * it. Returns the observed {@link Dialog}. Throws with a diagnostic message if
- * no dialog fires within `timeout`.
+ * no dialog fires within `timeout`, or rethrows the trigger's own error if the
+ * trigger fails before any dialog appears.
  */
 export async function expectDialog(
   page: Page,
@@ -62,18 +68,54 @@ export async function expectDialog(
   const { accept = true, type, message, promptText, timeout = 15_000 } = options
 
   const dialogPromise = page.waitForEvent('dialog', { timeout })
+
   // Start the triggering action but do NOT await it here: the click promise
   // stays pending until the dialog is handled, so awaiting now would deadlock.
-  const triggerPromise = Promise.resolve(trigger())
+  // A trigger that throws SYNCHRONOUSLY must not orphan the armed waitForEvent
+  // (its timeout rejection would otherwise surface ~15s later as an unhandled
+  // rejection attributed to an unrelated later test), so settle the listener
+  // before propagating.
+  let triggerPromise: Promise<unknown>
+  try {
+    triggerPromise = Promise.resolve(trigger())
+  } catch (syncError) {
+    dialogPromise.catch(() => {})
+    throw syncError
+  }
   // Swallow the trigger promise's rejection until we await it below, so a click
   // that fails before any dialog fires doesn't surface as an unhandled rejection
-  // while we're still waiting on `dialogPromise`.
+  // while we're still waiting on `dialogPromise`. (Attaching .catch creates a
+  // separate handled branch; the later `await triggerPromise` still rethrows.)
   triggerPromise.catch(() => {})
+
+  // Reject-only view of the trigger: if the trigger fails before any dialog
+  // fires, surface THAT error immediately instead of burning the dialog timeout
+  // and misdiagnosing it as a removed confirmation gate. A trigger that
+  // RESOLVES is deliberately not a race winner — on the happy path the click
+  // promise stays pending while the dialog is open, and a resolved trigger
+  // without a dialog still means "keep waiting for the dialog (or its timeout)".
+  let triggerError: unknown
+  let triggerRejected = false
+  const triggerRejection: Promise<never> = triggerPromise.then(
+    () => new Promise<never>(() => {}),
+    (error: unknown) => {
+      triggerRejected = true
+      triggerError = error
+      throw error
+    },
+  )
 
   let dialog: Dialog
   try {
-    dialog = await dialogPromise
+    dialog = await Promise.race([dialogPromise, triggerRejection])
   } catch {
+    if (triggerRejected) {
+      // The trigger's own failure is the root cause (strict-mode violation,
+      // renamed button, …). Settle the armed listener's eventual timeout
+      // rejection, then rethrow the trigger error verbatim.
+      dialogPromise.catch(() => {})
+      throw triggerError
+    }
     const wanted = [
       type ? `a '${type}'` : 'a',
       'dialog',
