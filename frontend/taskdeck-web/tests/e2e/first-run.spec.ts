@@ -94,13 +94,10 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
   // Hard-assert the final apply confirmation (see capture-loop.spec.ts): the
   // test must FAIL if the confirm() gate disappears, not execute silently.
-  const executeDialogPromise = page.waitForEvent('dialog')
-  const executeClick = page.getByTestId('decision-apply').click()
-  const executeDialog = await executeDialogPromise
-  expect(executeDialog.type()).toBe('confirm')
-  expect(executeDialog.message()).toBe('Apply this approved proposal to the board now?')
-  await executeDialog.accept()
-  await executeClick
+  await expectDialog(page, () => page.getByTestId('decision-apply').click(), {
+    type: 'confirm',
+    message: 'Apply this approved proposal to the board now?',
+  })
   await assertOk(await executeResponse, `execute Paper first-run proposal ${proposalId}`)
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
 
