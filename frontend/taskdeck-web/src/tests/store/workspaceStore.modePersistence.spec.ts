@@ -381,8 +381,19 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
 
       await store.updateOnboarding('replay')
 
+      // Writes confirm, never re-apply (issue #1343): the action's visibility
+      // intent applies optimistically from the known local base; the response's
+      // server-computed detail (currentStepId) does NOT re-apply. Server truth
+      // arrives via the next clean read.
+      expect(store.onboarding?.visibility).toBe('active')
+      expect(store.onboarding?.currentStepId).toBe('create-first-board')
+      expect(store.todaySummary?.onboarding.visibility).toBe('active')
+
+      vi.mocked(http.get).mockResolvedValue({
+        data: makeTodaySummary({ onboarding: replayed }),
+      })
+      await store.fetchTodaySummary()
       expect(store.onboarding?.currentStepId).toBe('step-2')
-      expect(store.todaySummary?.onboarding.currentStepId).toBe('step-2')
     })
   })
 
@@ -743,6 +754,110 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
     })
   })
 
+  // ── writes confirm, never re-apply (issue #1343, round 4) ──────────────────
+  // Write responses never write field values back into the store, so no echo
+  // can cross fields or revert newer intent; each field's read guard is fully
+  // independent of the other field's in-flight writes.
+
+  describe('write responses confirm without re-applying', () => {
+    it('a mode save echo cannot revert an onboarding action that was already in flight', async () => {
+      // The onboarding action starts BEFORE the mode save, so the save's echo
+      // reflects pre-dismissal server state. Once the dismissal settles, the
+      // later-resolving save must not resurrect the old onboarding.
+      let resolveDismiss!: (value: unknown) => void
+      let resolveSave!: (value: unknown) => void
+      vi.mocked(http.put)
+        .mockReturnValueOnce(
+          new Promise<unknown>((resolve) => { resolveDismiss = resolve }),
+        )
+        .mockReturnValueOnce(
+          new Promise<unknown>((resolve) => { resolveSave = resolve }),
+        )
+
+      const store = useWorkspaceStore()
+      store.homeSummary = makeHomeSummary() // local onboarding base ('active')
+
+      const dismissRequest = store.updateOnboarding('dismiss')
+      const saveRequest = store.updateMode('workbench')
+
+      resolveDismiss({ data: makeOnboarding({ visibility: 'dismissed' }) })
+      await dismissRequest
+      expect(store.onboarding?.visibility).toBe('dismissed')
+
+      // The save resolves LAST; its payload carries pre-dismissal onboarding.
+      resolveSave({ data: makePreferencePayload('workbench') })
+      await saveRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+      expect(store.onboarding?.visibility).toBe('dismissed')
+      expect(store.homeSummary?.onboarding.visibility).toBe('dismissed')
+    })
+
+    it('a later failed onboarding action is not clobbered by an earlier overlapping success', async () => {
+      let resolveFirst!: (value: unknown) => void
+      let rejectSecond!: (reason: unknown) => void
+      vi.mocked(http.put)
+        .mockReturnValueOnce(
+          new Promise<unknown>((resolve) => { resolveFirst = resolve }),
+        )
+        .mockReturnValueOnce(
+          new Promise<unknown>((_resolve, reject) => { rejectSecond = reject }),
+        )
+
+      const store = useWorkspaceStore()
+      store.homeSummary = makeHomeSummary() // local onboarding base ('active')
+
+      const dismiss = store.updateOnboarding('dismiss') // intent: dismissed
+      const replay = store.updateOnboarding('replay')   // latest intent: active
+
+      resolveFirst({ data: makeOnboarding({ visibility: 'dismissed' }) })
+      await dismiss
+      // The earlier success must not re-apply its result over the later intent.
+      expect(store.onboarding?.visibility).toBe('active')
+
+      rejectSecond(new Error('replay failed'))
+      await expect(replay).rejects.toThrow('replay failed')
+      expect(store.preferenceError).toBe('replay failed')
+      // The latest local intent stands (kept + flagged unsaved).
+      expect(store.onboarding?.visibility).toBe('active')
+
+      // And the unsaved intent survives a subsequent summary carrying the
+      // server's actual state (dismissed — the first action committed).
+      vi.mocked(http.get).mockResolvedValue({
+        data: makeHomeSummary({ onboarding: makeOnboarding({ visibility: 'dismissed' }) }),
+      })
+      await store.fetchHomeSummary()
+      expect(store.onboarding?.visibility).toBe('active')
+    })
+
+    it('a pending onboarding action does not block a summary from hydrating mode', async () => {
+      let resolveDismiss!: (value: unknown) => void
+      vi.mocked(http.put).mockReturnValueOnce(
+        new Promise<unknown>((resolve) => { resolveDismiss = resolve }),
+      )
+      vi.mocked(http.get).mockResolvedValue({ data: makeHomeSummary({ workspaceMode: 'agent' }) })
+
+      const store = useWorkspaceStore()
+      store.todaySummary = makeTodaySummary() // local onboarding base
+      const dismiss = store.updateOnboarding('dismiss') // onboarding write pending
+
+      // The summary starts and resolves entirely during the onboarding write.
+      await store.fetchHomeSummary()
+
+      // Per-field guard: the pending ONBOARDING write must not block MODE.
+      expect(store.mode).toBe('agent')
+      expect(store.preferencesHydrated).toBe(true)
+      // The summary's onboarding overlapped the write and is blocked; the
+      // local dismissal intent stays visible.
+      expect(store.onboarding?.visibility).toBe('dismissed')
+
+      resolveDismiss({ data: makeOnboarding({ visibility: 'dismissed' }) })
+      await dismiss
+      expect(store.onboarding?.visibility).toBe('dismissed')
+    })
+  })
+
   // ── stale summaries cannot revert onboarding either (issue #1343, FIX B) ───
   // Guarding only the mode would let a stale summary revert a newer onboarding
   // change (a dismissed setup guide reappearing) and make mode/onboarding
@@ -884,8 +999,9 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
 
       expect(store.mode).toBe('workbench')
       expect(store.todaySummary).toBeNull()
-      // Onboarding stays what the successful save confirmed, not the stale summary's.
-      expect(store.onboarding?.visibility).toBe('active')
+      // Nothing has synced onboarding: the stale summary is discarded wholesale
+      // and (round 4) the save's response echo never applies field values.
+      expect(store.onboarding).toBeNull()
     })
   })
 })
