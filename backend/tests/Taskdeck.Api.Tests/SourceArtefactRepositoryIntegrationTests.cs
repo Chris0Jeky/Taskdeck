@@ -147,6 +147,29 @@ public sealed class SourceArtefactRepositoryIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task GetContentsForUserAsync_WithTooManyIds_ThrowsBeforeTouchingDatabase()
+    {
+        // Defense-in-depth: an oversized id set must fail fast with ArgumentException (before any
+        // query) rather than risk a SQLite parameter-limit error under a future translation change.
+        var (options, interceptor, dbPath) = CreateSqliteOptions();
+        try
+        {
+            await using var db = new TaskdeckDbContext(options);
+            var repo = new SourceArtefactRepository(db);
+            var tooMany = Enumerable.Range(0, 901).Select(_ => Guid.NewGuid()).ToList();
+
+            var act = async () => await repo.GetContentsForUserAsync(tooMany, Guid.NewGuid());
+
+            await act.Should().ThrowAsync<ArgumentException>();
+            interceptor.CapturedCommands.Should().BeEmpty("the guard must trip before any SQL runs");
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
     private static (DbContextOptions<TaskdeckDbContext> Options, CapturingCommandInterceptor Interceptor, string DbPath) CreateSqliteOptions()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-artefact-batch-{Guid.NewGuid():N}.db");
