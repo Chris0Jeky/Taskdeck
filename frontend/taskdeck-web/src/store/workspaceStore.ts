@@ -39,21 +39,27 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const todayError = ref<string | null>(null)
   let pendingPreferenceRequests = 0
   let todayRequestVersion = 0
-  // Per-field preference version counters (issue #1343). Each explicit writer
-  // bumps only the field(s) it writes — updateMode bumps mode, updateOnboarding
-  // bumps onboarding, hydratePreferences bumps both — so concurrent actions on
-  // DIFFERENT fields cannot suppress each other's response handling. (A shared
-  // counter let an onboarding dismissal that started mid-save skip the failed
-  // save's warning + unsaved flag entirely.)
+  // ── Preference ordering model (issue #1343) ────────────────────────────────
+  // WRITES CONFIRM, NEVER RE-APPLY: updateMode/updateOnboarding apply the
+  // user's intent locally at start; their HTTP responses never write field
+  // values back into the store, so no response echo can cross fields or revert
+  // newer intent. A write response only settles bookkeeping for its OWN field,
+  // and only if it is still the latest write of that field: success clears the
+  // field's dirty flag, failure sets it (keeping the local intent + warning).
+  // READS (summaries, hydratePreferences) apply server state per field, and
+  // only when that field is clean: no write of that field overlapped the read
+  // and the field has no unsaved local intent. Reads never bump write versions.
   let modeRequestVersion = 0
   let onboardingRequestVersion = 0
-  // Session-scoped unsaved-local-choice flag (issue #1343). Set when an explicit
-  // updateMode save FAILS: the store keeps the local selection (and says so via
-  // the warning toast), so summary responses must not re-apply the server's
-  // stale mode until a later save succeeds or hydratePreferences confirms the
-  // server matches the local choice. Deliberately not persisted: a full reload
-  // starts a new session, which re-syncs from server truth.
+  let pendingModeWrites = 0
+  let pendingOnboardingWrites = 0
+  // Session-scoped unsaved-local-intent flags. Set when the field's write
+  // FAILS while local intent is applied; cleared when a later write of the
+  // field succeeds or hydratePreferences confirms the server matches the local
+  // intent. Deliberately not persisted: a full reload starts a new session,
+  // which re-syncs from server truth.
   let modeDirty = false
+  let onboardingDirty = false
 
   const hasHomeSummary = computed(() => homeSummary.value !== null)
   const hasTodaySummary = computed(() => todaySummary.value !== null)
@@ -69,45 +75,55 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     persistLocalMode(nextMode)
   }
 
-  // Ordering guard for summary-derived preference state — mode and onboarding,
-  // each guarded independently (issue #1343). A Home/Today summary must not
-  // overwrite newer explicit preference actions. Per field, it applies only when:
-  //   1. No preference request was already in flight when the summary request
-  //      BEGAN (preferencePending) — the summary's server-side read may predate
-  //      that request's commit even if the request settles first, so its
-  //      preference fields are indistinguishable from stale.
-  //   2. No writer for that field started after the summary began — writers bump
-  //      their field's version at start, so an older captured version is stale.
-  //   3. No preference request is in flight at APPLY time — defense-in-depth;
-  //      provably redundant with 1+2 today (any writer starting after the
-  //      snapshot bumps a version; writers pending at snapshot set
-  //      preferencePending), but it protects against future writers that track
-  //      pending without versioning.
-  //   4. Mode only: no unsaved local choice (modeDirty) — after a FAILED save
-  //      the versions are stable but the server still holds the old mode.
-  type SummaryGuardSnapshot = {
+  // Read-guard snapshot, captured synchronously when a read (summary or
+  // preferences hydrate) begins. A field from a read applies only when NO write
+  // of that field overlapped the read:
+  //   1. none was pending when the read began — the read's server-side result
+  //      may predate that write's commit even if the write settles first;
+  //   2. none started after the read began (field version unchanged);
+  //   3. none is pending at apply time — defense-in-depth; provably redundant
+  //      with 1+2 today, but protects future writers that track pending
+  //      without versioning.
+  // Summaries additionally require the field to have no unsaved local intent
+  // (dirty flag); hydratePreferences instead RECONCILES dirty state (see there).
+  type PreferenceReadSnapshot = {
     modeVersion: number
     onboardingVersion: number
-    preferencePending: boolean
+    modeWritePending: boolean
+    onboardingWritePending: boolean
   }
 
-  function captureSummaryGuardSnapshot(): SummaryGuardSnapshot {
+  function capturePreferenceReadSnapshot(): PreferenceReadSnapshot {
     return {
       modeVersion: modeRequestVersion,
       onboardingVersion: onboardingRequestVersion,
-      preferencePending: pendingPreferenceRequests > 0,
+      modeWritePending: pendingModeWrites > 0,
+      onboardingWritePending: pendingOnboardingWrites > 0,
     }
+  }
+
+  function isModeReadClear(snapshot: PreferenceReadSnapshot): boolean {
+    return (
+      !snapshot.modeWritePending &&
+      modeRequestVersion === snapshot.modeVersion &&
+      pendingModeWrites === 0
+    )
+  }
+
+  function isOnboardingReadClear(snapshot: PreferenceReadSnapshot): boolean {
+    return (
+      !snapshot.onboardingWritePending &&
+      onboardingRequestVersion === snapshot.onboardingVersion &&
+      pendingOnboardingWrites === 0
+    )
   }
 
   function applySummaryPreferences(
     summary: HomeSummary | TodaySummary,
-    snapshot: SummaryGuardSnapshot,
+    snapshot: PreferenceReadSnapshot,
   ): { modeApplied: boolean; onboardingApplied: boolean } {
-    const guardClear = !snapshot.preferencePending && pendingPreferenceRequests === 0
-    const modeApplied =
-      guardClear && modeRequestVersion === snapshot.modeVersion && !modeDirty
-    const onboardingApplied =
-      guardClear && onboardingRequestVersion === snapshot.onboardingVersion
+    const modeApplied = isModeReadClear(snapshot) && !modeDirty
+    const onboardingApplied = isOnboardingReadClear(snapshot) && !onboardingDirty
 
     if (modeApplied) {
       applyMode(summary.workspaceMode)
@@ -147,16 +163,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     preferenceLoading.value = pendingPreferenceRequests > 0
   }
 
-  function startModePreferenceRequest(): number {
-    beginPreferenceLoading()
-    return ++modeRequestVersion
-  }
-
-  function startOnboardingPreferenceRequest(): number {
-    beginPreferenceLoading()
-    return ++onboardingRequestVersion
-  }
-
   async function hydratePreferences(): Promise<WorkspacePreference | null> {
     if (!session.isAuthenticated) {
       preferencesHydrated.value = false
@@ -170,22 +176,30 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return null
     }
 
-    // Hydration writes both preference fields, so it versions both.
+    // Hydration is a READ: it snapshots the guards and applies per field only
+    // when that field is clean; unlike summaries it can RECONCILE dirty state.
     beginPreferenceLoading()
-    const modeVersion = ++modeRequestVersion
-    const onboardingVersion = ++onboardingRequestVersion
+    const snapshot = capturePreferenceReadSnapshot()
 
     try {
       preferenceError.value = null
       const preference = await workspaceApi.getPreferences()
 
-      if (onboardingRequestVersion === onboardingVersion) {
-        // Onboarding has no unsaved local state, so the fresh server copy
-        // applies unless a newer onboarding writer superseded this hydrate.
-        syncOnboarding(preference.onboarding)
+      if (isOnboardingReadClear(snapshot)) {
+        if (
+          onboardingDirty &&
+          onboarding.value &&
+          preference.onboarding?.visibility !== onboarding.value.visibility
+        ) {
+          // The server still holds the pre-failed-action onboarding. Keep the
+          // unsaved local intent.
+        } else {
+          onboardingDirty = false
+          syncOnboarding(preference.onboarding)
+        }
       }
 
-      if (modeRequestVersion === modeVersion) {
+      if (isModeReadClear(snapshot)) {
         if (modeDirty && preference.workspaceMode !== mode.value) {
           // The server still holds the pre-failed-save mode. Keep the unsaved
           // local choice; preferencesHydrated stays false so the unsynced state
@@ -200,7 +214,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
       return preference
     } catch (e: unknown) {
-      if (modeRequestVersion === modeVersion) {
+      if (isModeReadClear(snapshot)) {
         preferenceError.value = getErrorMessage(e, "We couldn't load your workspace preferences")
       }
 
@@ -218,42 +232,42 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return
     }
 
-    const requestVersion = startModePreferenceRequest()
-    const onboardingVersionAtStart = onboardingRequestVersion
+    const requestVersion = ++modeRequestVersion
+    pendingModeWrites += 1
+    beginPreferenceLoading()
 
     if (!session.isAuthenticated) {
       preferencesHydrated.value = false
+      pendingModeWrites -= 1
       finishPreferenceLoading()
       return
     }
 
     try {
       preferenceError.value = null
-      const preference = await workspaceApi.updatePreferences({ workspaceMode: nextMode })
+      await workspaceApi.updatePreferences({ workspaceMode: nextMode })
 
       if (modeRequestVersion === requestVersion) {
+        // Confirm-only: the locally-applied mode is authoritative for this
+        // locally-initiated write. The response's field values are never
+        // applied — in particular its onboarding echo is dead by construction
+        // and cannot revert a concurrent explicit onboarding action.
         modeDirty = false
-        applyMode(preference.workspaceMode)
         preferencesHydrated.value = true
-      }
-      // The response's onboarding is an incidental echo (a mode save does not
-      // change onboarding server-side); it must not clobber a newer explicit
-      // onboarding action that started while this save was in flight.
-      if (onboardingRequestVersion === onboardingVersionAtStart) {
-        syncOnboarding(preference.onboarding)
       }
     } catch (e: unknown) {
       if (modeRequestVersion === requestVersion) {
         // Keep the local selection AND remember it is unsaved so subsequent
-        // summary fetches cannot silently revert it (issue #1343). Guarded by
-        // the MODE version only: a concurrent onboarding action must not
-        // suppress this failed-save handling.
+        // reads cannot silently revert it (issue #1343). Guarded by the MODE
+        // version only: a concurrent onboarding action must not suppress this
+        // failed-save handling.
         modeDirty = true
         preferenceError.value = getErrorMessage(e, "We couldn't save this workspace mode")
         preferencesHydrated.value = false
         toast.warning(`${preferenceError.value}. Keeping the local selection for now.`)
       }
     } finally {
+      pendingModeWrites -= 1
       finishPreferenceLoading()
     }
   }
@@ -271,7 +285,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return summary
     }
 
-    const guardSnapshot = captureSummaryGuardSnapshot()
+    const guardSnapshot = capturePreferenceReadSnapshot()
 
     try {
       homeLoading.value = true
@@ -299,7 +313,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function fetchTodaySummary(): Promise<TodaySummary> {
     const requestVersion = ++todayRequestVersion
-    const guardSnapshot = captureSummaryGuardSnapshot()
+    const guardSnapshot = capturePreferenceReadSnapshot()
 
     if (isDemoMode) {
       todayLoading.value = true
@@ -350,23 +364,52 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return next
     }
 
+    // Optimistic local intent (mirrors updateMode): the visibility change the
+    // action requests is applied immediately from the best-known onboarding
+    // state; the write response then confirms rather than re-applies. The full
+    // server-computed object (steps, timestamps) arrives via the next clean
+    // read (summary/hydrate) once the write has settled.
+    const optimisticBase =
+      onboarding.value ?? homeSummary.value?.onboarding ?? todaySummary.value?.onboarding ?? null
+    const appliedOptimistic = optimisticBase !== null
+    if (optimisticBase) {
+      syncOnboarding({
+        ...optimisticBase,
+        visibility: action === 'dismiss' ? 'dismissed' : 'active',
+      })
+    }
+
+    const requestVersion = ++onboardingRequestVersion
+    pendingOnboardingWrites += 1
+    beginPreferenceLoading()
+
     try {
-      // Versioned per-field (issue #1343): an explicit onboarding action makes
-      // in-flight summaries' ONBOARDING stale without touching the mode guard —
-      // a dismissal that starts mid-save must not suppress the save's own
-      // success/failure handling. Latest onboarding writer wins.
-      const requestVersion = startOnboardingPreferenceRequest()
       preferenceError.value = null
       const nextOnboarding = await workspaceApi.updateOnboarding({ action })
       if (onboardingRequestVersion === requestVersion) {
-        syncOnboarding(nextOnboarding)
+        onboardingDirty = false
+        if (!appliedOptimistic) {
+          // Bootstrap: no local onboarding existed to patch, so adopt this
+          // action's authoritative result as initial state. Not an echo
+          // overwrite — this is still the latest onboarding write, so no newer
+          // local intent can exist.
+          syncOnboarding(nextOnboarding)
+        }
       }
       return nextOnboarding
     } catch (e: unknown) {
-      preferenceError.value = getErrorMessage(e, "We couldn't update the setup guide")
-      toast.warning(preferenceError.value)
+      if (onboardingRequestVersion === requestVersion) {
+        if (appliedOptimistic) {
+          // Local intent stays applied; flag it unsaved so reads cannot
+          // silently revert it (mirrors the failed-mode-save semantics).
+          onboardingDirty = true
+        }
+        preferenceError.value = getErrorMessage(e, "We couldn't update the setup guide")
+        toast.warning(preferenceError.value)
+      }
       throw e
     } finally {
+      pendingOnboardingWrites -= 1
       finishPreferenceLoading()
     }
   }
@@ -385,6 +428,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function resetForLogout() {
     modeDirty = false
+    onboardingDirty = false
     preferencesHydrated.value = false
     preferenceError.value = null
     onboarding.value = null
