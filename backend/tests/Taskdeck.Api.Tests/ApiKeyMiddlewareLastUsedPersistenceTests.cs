@@ -34,11 +34,22 @@ public sealed class ApiKeyMiddlewareLastUsedPersistenceTests : IDisposable
     public async Task AuthenticatedRequest_PersistsLastUsedAt_AsSaneUtcNow()
     {
         var before = DateTimeOffset.UtcNow.AddSeconds(-5);
+        // Backdate the seeded key's UpdatedAt to well outside the assertion window. The entity
+        // constructor stamps UpdatedAt at seed time — moments before the middleware runs — so a
+        // construction-time value would ALSO satisfy a "recent UTC-now" bound and the UpdatedAt
+        // assertion could not fail even if the middleware's .SetProperty(k => k.UpdatedAt, ...)
+        // line were deleted. Backdating forces the assertion to prove the value ADVANCED, i.e.
+        // that the UPDATE statement itself wrote it.
+        var backdatedUpdatedAt = DateTimeOffset.UtcNow.AddDays(-1);
 
         await using (var db = await CreateSeededContextAsync())
         {
             const string plaintext = "tdsk_lastused_persist_000000000000000000";
-            await SeedUserAndKeyAsync(db, plaintext);
+            var (_, apiKeyId) = await SeedUserAndKeyAsync(db, plaintext);
+            // Raw SQL: UpdatedAt has a protected setter and Touch() always stamps "now", so the
+            // backdate must go straight to the row.
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE ApiKeys SET UpdatedAt = {backdatedUpdatedAt} WHERE Id = {apiKeyId}");
 
             var logger = new CapturingLogger();
             using var limiter = new McpPerApiKeyRateLimiter(new RateLimitPolicySettings(5, 60));
@@ -67,6 +78,10 @@ public sealed class ApiKeyMiddlewareLastUsedPersistenceTests : IDisposable
         persisted.LastUsedAt.Should().NotBeNull("an authenticated request must persist LastUsedAt (#1402)");
         persisted.LastUsedAt!.Value.Should().BeOnOrAfter(before).And.BeOnOrBefore(after,
             "the persisted timestamp must be a sane UTC-now instant");
+        // Advancement past the backdated pre-call value (not merely "recent") is what proves the
+        // UPDATE wrote UpdatedAt — see the backdating comment above.
+        persisted.UpdatedAt.Should().BeAfter(backdatedUpdatedAt,
+            "UpdatedAt must ADVANCE past the backdated pre-call value, proving the UPDATE wrote it");
         persisted.UpdatedAt.Should().BeOnOrAfter(before).And.BeOnOrBefore(after,
             "UpdatedAt is written in the same statement and must not be discarded");
     }
