@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getErrorDisplay,
+  getValidationReason,
   isValidationError,
   mapErrorToMessage,
   parseApiError,
@@ -130,6 +131,35 @@ describe('useErrorMapper', () => {
         message: 'Fallback message',
         code: null,
       })
+    })
+  })
+
+  describe('getValidationReason', () => {
+    // #1397 / #1414 review: the invalid-diff presentation renders its own
+    // specific "no operations" fallback when the backend gave no reason. This
+    // helper must therefore treat a blank message as absent (return null) and
+    // must NOT substitute the generic ValidationError copy that would mask it.
+    it('returns the trimmed backend message when one is present', () => {
+      expect(getValidationReason({
+        response: { status: 400, data: { errorCode: 'ValidationError', message: '  Proposal has expired  ' } },
+      })).toBe('Proposal has expired')
+    })
+
+    it('returns null for an empty backend message', () => {
+      expect(getValidationReason({
+        response: { status: 400, data: { errorCode: 'ValidationError', message: '' } },
+      })).toBeNull()
+    })
+
+    it('returns null for a whitespace-only backend message', () => {
+      expect(getValidationReason({
+        response: { status: 400, data: { errorCode: 'ValidationError', message: '   ' } },
+      })).toBeNull()
+    })
+
+    it('returns null when the input is not an API error shape', () => {
+      expect(getValidationReason(new Error('Local runtime failure'))).toBeNull()
+      expect(getValidationReason(null)).toBeNull()
     })
   })
 })

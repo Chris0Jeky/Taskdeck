@@ -45,6 +45,21 @@ export function isValidationError(err: unknown): boolean {
   )
 }
 
+/**
+ * The backend-provided reason for an invalid-preview 400 ValidationError,
+ * trimmed — or `null` when the backend sent no message (or a whitespace-only
+ * one). Unlike `getErrorDisplay`, this deliberately does NOT substitute the
+ * generic "Please check your input" ValidationError copy: the invalid-diff
+ * presentation renders its own specific fallback ("This proposal contains no
+ * operations…") when the reason is absent, and a masking generic string would
+ * suppress it (#1397 / #1414 review).
+ */
+export function getValidationReason(err: unknown): string | null {
+  const apiError = parseApiError(err)
+  const message = apiError?.message?.trim()
+  return message && message.length > 0 ? message : null
+}
+
 export function getErrorDisplay(err: unknown, fallback: string): { message: string; code: string | null } {
   const apiError = parseApiError(err)
   if (apiError) {
