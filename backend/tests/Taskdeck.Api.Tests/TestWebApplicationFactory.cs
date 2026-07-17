@@ -63,12 +63,11 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<TaskdeckDbContext>();
             services.RemoveAll<LlmProviderSettings>();
             services.RemoveAll<ArtefactStorageSettings>();
+            // Same shared helper as production DependencyInjection.AddInfrastructure —
+            // only the connection string differs (isolated per-factory temp file), so
+            // the test registration is structurally unable to drift from production (#1282).
             services.AddDbContext<TaskdeckDbContext>(options =>
-                options
-                    .UseSqlite($"Data Source={dbPath}", sqliteOptions =>
-                        sqliteOptions.CommandTimeout(databaseSettings.CommandTimeoutSeconds))
-                    .AddInterceptors(new SqlitePragmaConnectionInterceptor(
-                        databaseSettings.BusyTimeoutMilliseconds)));
+                options.UseTaskdeckSqlite($"Data Source={dbPath}", databaseSettings));
             services.AddSingleton(new LlmProviderSettings
             {
                 EnableLiveProviders = false,
@@ -96,6 +95,12 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             return;
         }
+
+        // Drop pooled connections so WAL/SHM sidecar file handles release before the
+        // delete loop (mirrors SqlitePragmaInterceptorTests.Dispose). Without this, a
+        // pooled connection can hold -wal/-shm open, the delete throws IOException,
+        // and the catch below silently leaks the temp files.
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 
         foreach (var dbPath in _dbPaths)
         {
