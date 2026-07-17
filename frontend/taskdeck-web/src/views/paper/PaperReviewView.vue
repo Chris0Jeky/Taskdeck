@@ -271,7 +271,12 @@ watch(
   },
   (readOnly) => {
     if (!readOnly) return
-    if (previewDiffMode.value === 'stored' || previewDiffMode.value === null) return
+    // SEAM INVARIANT (#1397 round 3, aligned with the Legacy watcher): a
+    // read-only conversion invalidates EVERY non-stored pane state. Paper sets
+    // previewDiffMode 'live' synchronously before its fetch, so unlike Legacy a
+    // null mode cannot coexist with an open pane id today — but the guard must
+    // not depend on that: only an already-stored presentation is skippable.
+    if (previewDiffMode.value === 'stored') return
     const p = activeProposal.value
     if (!p || previewDiffProposalId.value !== p.id) return
     // Cancel any in-flight live fetch so a late response can't overwrite the
@@ -636,9 +641,16 @@ function onFileAwayBulk() {
   void handleDismissApplied()
 }
 
+// #1397 P2-A (round 3): re-entry lock for the zero-op approve guard. While its
+// revision load is awaited, further Apply clicks are ignored — a re-entrant
+// loadRevisionState would bump the load generation and CANCEL the earlier load,
+// resuming the first click's await with revisionsLoaded still false.
+const applyGuardBusy = ref(false)
+
 async function onApply() {
   const p = activeProposal.value
   if (!p) return
+  if (applyGuardBusy.value) return
   if (revisionBusy.value) {
     toast.info('Save or cancel the revision before applying this proposal.')
     return
@@ -652,29 +664,37 @@ async function onApply() {
     void handleExecuteProposal(p.id)
     return
   }
-  // #1397 P2-A: approving a zero-operation proposal only defers a guaranteed
-  // Apply 400 ("Proposal must contain at least one operation") — UNLESS a saved
-  // revision carries operations the backend applies revision-aware (#1235). The
-  // revision list is the authority for that, so settle it FIRST when it hasn't
-  // loaded yet — exactly as the read-only diff path does (onPreviewDiff) —
-  // instead of letting a still-pending GET skip the guard and fall through to
-  // approve.
-  if ((p.operations?.length ?? 0) === 0 && !revisionsLoaded.value) {
-    await loadRevisionState(p.id)
-    // The active proposal can change during the await; only keep deciding on it.
-    if (activeProposal.value?.id !== p.id) return
+  // #1397 P2-A: SEAM INVARIANT — a zero-operation proposal may only be approved
+  // when its revision state is KNOWN (revisionsLoaded true). A saved revision
+  // carries operations the backend applies revision-aware (#1235); without the
+  // list we cannot distinguish "truly empty" from "revised". So when the state
+  // is unknown, settle it here (mirroring the diff path) — and if it is STILL
+  // unknown after the attempt (failed, or cancelled by a concurrent load from
+  // another surface), do NOT approve. No fall-through: unknown blocks approve.
+  // #1416 (approve-time backend validation) remains the root-cause backend fix.
+  if ((p.operations?.length ?? 0) === 0) {
+    if (!revisionsLoaded.value) {
+      applyGuardBusy.value = true
+      try {
+        await loadRevisionState(p.id)
+      } finally {
+        applyGuardBusy.value = false
+      }
+      // The active proposal can change during the await; only keep deciding on it.
+      if (activeProposal.value?.id !== p.id) return
+    }
+    if (!revisionsLoaded.value) {
+      // Load failed or was cancelled — the revision-history-unavailable error
+      // toast (from loadRevisionState) covers the failure case; this names why
+      // Apply did not proceed.
+      toast.info('Revision history is unavailable, so this proposal cannot be verified for Apply. Try again.')
+      return
+    }
+    if (revisionCount.value === 0) {
+      toast.info('This proposal contains no operations to apply — Apply will reject it. Reject or file it away instead.')
+      return
+    }
   }
-  if (
-    (p.operations?.length ?? 0) === 0 &&
-    revisionsLoaded.value &&
-    revisionCount.value === 0
-  ) {
-    toast.info('This proposal contains no operations to apply — Apply will reject it. Reject or file it away instead.')
-    return
-  }
-  // A revision load that FAILED leaves revisionsLoaded false: we cannot prove the
-  // proposal is zero-op, so defer to the backend (approve-time validation is
-  // tracked in #1416). This fall-through now only happens AFTER a load attempt.
   void handleApproveProposal(p.id)
 }
 
@@ -753,21 +773,27 @@ async function onPreviewDiff() {
   // Present the stored `diffPreview` under an explicit read-only banner; when no
   // stored preview exists, the banner + a "no stored preview" state, never an
   // error toast (#1397 maintainer decision: stay inspectable, don't burden the
-  // UI). Settle the revision list first (a metadata GET, not the /diff that
-  // 400s): `diffPreview` is creation-time content revisions never update, so
-  // the banner must disclose when this stored (original) preview is NOT what a
-  // revision-aware Apply would have executed (#1397 MEDIUM-2).
+  // UI).
+  //
+  // SEAM INVARIANT (#1397 round 3): the stored preview is LOCAL content and
+  // renders SYNCHRONOUSLY — no network gate may delay or veto it. The revision
+  // metadata GET (which only gates the revised-note caveat, #1397 MEDIUM-2:
+  // `diffPreview` is creation-time content revisions never update) runs async
+  // AFTERWARDS, augment-only and silent: a slow GET must not make the toggle
+  // look dead, and a failed GET must not error-toast over a presentable
+  // preview. Staleness of the caveat itself is handled inside loadRevisionState
+  // (generation counter + active-proposal-id re-check).
   if (isProposalReadOnly(p, isProposalExpired(p))) {
-    if (!revisionsLoaded.value) {
-      await loadRevisionState(p.id)
-      if (activeProposal.value?.id !== p.id) return
-    }
     latestDiffRequestId += 1
     previewDiffProposalId.value = p.id
     previewDiff.value = p.diffPreview
     previewDiffMode.value = 'stored'
+    previewDiffInvalidReason.value = null
     previewDiffLoading.value = false
     scrollDiffIntoView()
+    if (!revisionsLoaded.value) {
+      void loadRevisionState(p.id, { silent: true })
+    }
     return
   }
 

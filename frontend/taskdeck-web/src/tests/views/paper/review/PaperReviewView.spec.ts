@@ -1171,12 +1171,12 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('awaits an in-flight revision load before blocking Approve on a zero-op proposal (#1397 P2-A)', async () => {
-    // The revision list is the authority for whether a zero-op proposal is truly
-    // empty (a saved revision carries operations Apply runs revision-aware). If
-    // the revision GET is still in flight when Apply is clicked, the guard must
-    // settle it FIRST — not skip the guard and fall through to approve (which the
-    // old guard did whenever revisionsLoaded was false).
+  it('parks re-entrant Apply clicks while the revision load is in flight, then blocks a zero-op proposal (#1397 round 3)', async () => {
+    // SEAM INVARIANT: a zero-op proposal may only be approved when revision
+    // state is KNOWN. While the guard's revision load is awaited, further Apply
+    // clicks are IGNORED — a re-entrant loadRevisionState would cancel the
+    // earlier load via its generation counter and resume the first click with
+    // revisionsLoaded still false (the round-3 Codex race).
     let resolveRevisions: ((value: unknown[]) => void) | undefined
     mocks.getRevisions.mockImplementation(
       () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
@@ -1184,15 +1184,24 @@ describe('PaperReviewView', () => {
     const wrapper = await mountView([
       makeProposal({ id: 'noop-inflight', diffPreview: null, operations: [] }),
     ])
+    // Mount fires the watcher's background load (call 1); the Apply click's own
+    // load is call 2.
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(1)
 
-    // Revision load is still pending → the guard is not yet authoritative.
+    // First click parks on the revision load — approve has NOT fired.
     await wrapper.find('[data-testid="decision-apply"]').trigger('click')
     await Promise.resolve()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
 
-    // The click is parked on the revision load — approve has NOT fired.
+    // Rapid second click: guard busy — ignored entirely (no third load that
+    // would cancel the first, and no approve).
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
     expect(mocks.approveProposal).not.toHaveBeenCalled()
 
-    // Settle the revision GET with an empty list → the proposal is truly zero-op.
+    // Settle the guard's own GET with an empty list → truly zero-op → blocked.
     resolveRevisions?.([])
     await flushPromises()
 
@@ -1202,15 +1211,12 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('falls through to the backend Apply when the revision load fails for a zero-op proposal (#1397 P2-A)', async () => {
-    // A FAILED revision load leaves revisionsLoaded false: emptiness cannot be
-    // proven, so the guard defers to the backend rather than blocking (approve-
-    // time backend validation is tracked in #1416). This fall-through now only
-    // happens AFTER a load attempt.
+  it('blocks Apply when the revision load fails for a zero-op proposal — unknown state never approves (#1397 round 3)', async () => {
+    // REVERSES the round-2 fall-through semantic: a failed load leaves revision
+    // state UNKNOWN, and unknown now blocks approve instead of deferring to the
+    // backend (whose approve path would accept, then guarantee the Apply-time
+    // 400). #1416 remains the backend root-cause fix.
     mocks.getRevisions.mockRejectedValue(new Error('revisions boom'))
-    mocks.approveProposal.mockResolvedValueOnce(
-      makeProposal({ id: 'noop-failload', status: 'Approved' }),
-    )
     const wrapper = await mountView([
       makeProposal({ id: 'noop-failload', diffPreview: null, operations: [] }),
     ])
@@ -1218,8 +1224,10 @@ describe('PaperReviewView', () => {
     await wrapper.find('[data-testid="decision-apply"]').trigger('click')
     await flushPromises()
 
-    expect(mocks.approveProposal).toHaveBeenCalledWith('noop-failload')
-    expect(mocks.infoToast).not.toHaveBeenCalledWith(expect.stringContaining('no operations'))
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      expect.stringContaining('Revision history is unavailable'),
+    )
 
     wrapper.unmount()
   })
@@ -1262,6 +1270,83 @@ describe('PaperReviewView', () => {
     expect(revisedNote.text()).toContain('revised')
     expect(revisedNote.text()).toContain('recorded operations')
     expect(revisedNote.text()).not.toContain('stored preview')
+
+    wrapper.unmount()
+  })
+
+  it('renders the stored preview synchronously while the revision GET is pending; the caveat augments after it resolves (#1397 round 3)', async () => {
+    // SEAM INVARIANT: the stored preview is local content and must render the
+    // moment Space is pressed — the revision metadata GET only gates the
+    // revised-note caveat and runs asynchronously afterwards. A slow GET must
+    // never make the toggle look dead.
+    const now = new Date().toISOString()
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'sync-stored',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Stored now"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await wrapper.vm.$nextTick()
+
+    // GET still pending — the preview is ALREADY up.
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Stored now')
+    expect(wrapper.find('[data-testid="paper-review-diff-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-diff-revised-note"]').exists()).toBe(false)
+
+    // The metadata resolves with a revision → the caveat augments in place.
+    resolveRevisions?.([
+      {
+        id: 'rev-1',
+        proposalId: 'sync-stored',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-revised-note"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Stored now')
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('keeps the stored preview up with no error toast when the revision GET fails (#1397 round 3)', async () => {
+    // The augment-only revision load is silent: a failed metadata GET must not
+    // error-toast over a locally presentable preview, and the preview stays up.
+    mocks.getRevisions.mockRejectedValue(new Error('revisions boom'))
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'silent-stored',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Still here"',
+      }),
+    ])
+    // The mount-time background load (non-silent) already failed during
+    // mountView; clear its toast so the assertion isolates the preview path.
+    mocks.errorToast.mockClear()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Still here')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-revised-note"]').exists()).toBe(false)
 
     wrapper.unmount()
   })
