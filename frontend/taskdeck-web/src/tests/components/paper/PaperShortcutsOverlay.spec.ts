@@ -42,6 +42,29 @@ describe('PaperShortcutsOverlay', () => {
     expect(root.textContent).toContain('Quick capture')
   })
 
+  it('documents the implemented Paper Board navigation and movement commands', () => {
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const boards = teleportContent().querySelector('[data-group="Boards"]') as HTMLElement
+    const rows = Array.from(boards.querySelectorAll('.paper-shortcuts-overlay__row'))
+      .map((row) => ({
+        key: row.querySelector('.paper-shortcuts-overlay__row-kbd')?.textContent?.trim(),
+        label: row.querySelector('.paper-shortcuts-overlay__row-label')?.textContent?.trim(),
+      }))
+
+    expect(rows).toEqual(expect.arrayContaining([
+      { key: 'J / Down', label: 'Next card' },
+      { key: 'K / Up', label: 'Previous card' },
+      { key: 'H / Left', label: 'Previous column' },
+      { key: 'L / Right', label: 'Next column' },
+      { key: 'Enter', label: 'Open card' },
+      { key: 'Alt+Left', label: 'Move card to previous column' },
+      { key: 'Alt+Right', label: 'Move card to next column' },
+      { key: 'Alt+Up', label: 'Move card up in column' },
+      { key: 'Alt+Down', label: 'Move card down in column' },
+    ]))
+    expect(rows).not.toContainEqual({ key: 'O', label: 'Open card' })
+  })
+
   it('does not advertise an undo shortcut that the product does not implement', () => {
     wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
     const root = teleportContent().querySelector('[data-paper-shortcuts]') as HTMLElement

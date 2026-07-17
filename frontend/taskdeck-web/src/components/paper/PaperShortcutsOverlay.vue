@@ -55,13 +55,15 @@ const groups: ShortcutGroup[] = [
   {
     title: 'Boards',
     rows: [
-      { kbd: 'C', label: 'Capture here' },
-      { kbd: 'A', label: 'Ask assistant' },
-      { kbd: 'F', label: 'Filter' },
-      { kbd: 'L', label: 'Labels' },
-      { kbd: '1–9', label: 'Jump to column' },
-      { kbd: 'J / K', label: 'Move between cards' },
-      { kbd: 'O', label: 'Open card' },
+      { kbd: 'J / Down', label: 'Next card' },
+      { kbd: 'K / Up', label: 'Previous card' },
+      { kbd: 'H / Left', label: 'Previous column' },
+      { kbd: 'L / Right', label: 'Next column' },
+      { kbd: 'Enter', label: 'Open card' },
+      { kbd: 'Alt+Left', label: 'Move card to previous column' },
+      { kbd: 'Alt+Right', label: 'Move card to next column' },
+      { kbd: 'Alt+Up', label: 'Move card up in column' },
+      { kbd: 'Alt+Down', label: 'Move card down in column' },
     ],
   },
 ]

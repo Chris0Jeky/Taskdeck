@@ -41,12 +41,13 @@ async function addCardViaApi(
   boardId: string,
   columnId: string,
   title: string,
+  position = 0,
 ) {
   const response = await request.post(
     `${API_BASE_URL}/boards/${boardId}/cards`,
     {
       headers: { Authorization: `Bearer ${auth.token}` },
-      data: { title, description: '', columnId, position: 0 },
+      data: { title, description: '', columnId, position },
     },
   )
   await assertOk(response, `Create card '${title}'`)
@@ -142,11 +143,12 @@ test.describe('Paper board card drag', () => {
       .locator('[data-card-id]')
       .filter({ hasText: `Focus Card ${seed}` })
       .first()
+    const cardOpener = card.getByRole('button', { name: `Card Focus Card ${seed}` })
     for (let i = 0; i < 40; i += 1) {
-      if (await card.evaluate((el) => document.activeElement === el)) break
+      if (await cardOpener.evaluate((el) => document.activeElement === el)) break
       await page.keyboard.press('Tab')
     }
-    await expect(card).toBeFocused()
+    await expect(cardOpener).toBeFocused()
 
     const focusStyle = await card.evaluate((el) => {
       const style = window.getComputedStyle(el)
@@ -170,5 +172,95 @@ test.describe('Paper board card drag', () => {
     expect(focusStyle.outlineStyle).toBe('solid')
     expect(focusStyle.outlineOffset).toBe('1px')
     expect(focusStyle.outlineColor).toBe(focusStyle.expectedEmber)
+  })
+
+  test('board shortcuts open and move the selected Paper card while restoring opener focus', async ({ page, request }) => {
+    await enablePaperMode(page)
+    const auth = await registerAndAttachSession(page, request, 'paper-keyboard-card')
+    const seed = `${Date.now()}`
+    const boardId = await createBoardWith2Columns(request, auth, seed)
+
+    const columns = await getColumns(request, auth, boardId)
+    const backlogCol = columns.find((c) => c.name === 'Backlog')!
+    const cardTitle = `Keyboard Paper First ${seed}`
+    const secondCardTitle = `Keyboard Paper Second ${seed}`
+    await addCardViaApi(request, auth, boardId, backlogCol.id, cardTitle, 0)
+    await addCardViaApi(request, auth, boardId, backlogCol.id, secondCardTitle, 1)
+
+    await page.goto(`/workspace/boards/${boardId}`)
+    await expect(page.locator('[data-testid="paper-board-lanes"]')).toBeVisible()
+
+    const card = page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
+    const cardOpener = card.getByRole('button', { name: `Card ${cardTitle}` })
+    const secondCard = page.locator('[data-card-id]').filter({ hasText: secondCardTitle }).first()
+    const secondCardOpener = secondCard.getByRole('button', { name: `Card ${secondCardTitle}` })
+
+    await secondCardOpener.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#card-title')).toHaveValue(secondCardTitle)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Edit Card' })).toHaveCount(0)
+
+    await page.locator('.paper-board-view__title').click()
+
+    await page.keyboard.press('j')
+    await expect(card).toHaveClass(/paper-board-card--selected/)
+
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog', { name: 'Edit Card' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Edit Card' })).toHaveCount(0)
+
+    await page.keyboard.press('Alt+ArrowRight')
+    const doneLane = page
+      .locator('[data-column-dnd-id]')
+      .filter({ has: page.getByRole('heading', { name: 'Done', exact: true }) })
+      .first()
+    await expect(doneLane.locator('[data-card-id]').filter({ hasText: cardTitle })).toHaveCount(1)
+    await expect(cardOpener).toBeFocused()
+  })
+
+  test('selection movement pulls focus so Enter opens the newly selected card', async ({ page, request }) => {
+    await enablePaperMode(page)
+    const auth = await registerAndAttachSession(page, request, 'paper-focus-follow')
+    const seed = `${Date.now()}`
+    const boardId = await createBoardWith2Columns(request, auth, seed)
+
+    const columns = await getColumns(request, auth, boardId)
+    const backlogCol = columns.find((c) => c.name === 'Backlog')!
+    const firstTitle = `Focus Follow First ${seed}`
+    const secondTitle = `Focus Follow Second ${seed}`
+    await addCardViaApi(request, auth, boardId, backlogCol.id, firstTitle, 0)
+    await addCardViaApi(request, auth, boardId, backlogCol.id, secondTitle, 1)
+
+    await page.goto(`/workspace/boards/${boardId}`)
+    await expect(page.locator('[data-testid="paper-board-lanes"]')).toBeVisible()
+
+    const firstCard = page.locator('[data-card-id]').filter({ hasText: firstTitle }).first()
+    const firstOpener = firstCard.getByRole('button', { name: `Card ${firstTitle}` })
+    const secondCard = page.locator('[data-card-id]').filter({ hasText: secondTitle }).first()
+    const secondOpener = secondCard.getByRole('button', { name: `Card ${secondTitle}` })
+
+    // Tab to card A's opener — the real keyboard entry path.
+    for (let i = 0; i < 40; i += 1) {
+      if (await firstOpener.evaluate((el) => document.activeElement === el)) break
+      await page.keyboard.press('Tab')
+    }
+    await expect(firstOpener).toBeFocused()
+
+    // First J selects card A (nothing was selected yet); focus stays with it.
+    await page.keyboard.press('j')
+    await expect(firstCard).toHaveClass(/paper-board-card--selected/)
+    await expect(firstOpener).toBeFocused()
+
+    // Second J moves the selection to card B — focus must follow, so the
+    // visible highlight and the focused opener can never disagree.
+    await page.keyboard.press('j')
+    await expect(secondCard).toHaveClass(/paper-board-card--selected/)
+    await expect(secondOpener).toBeFocused()
+
+    // Enter now unambiguously opens the visibly selected card B.
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#card-title')).toHaveValue(secondTitle)
   })
 })

@@ -35,7 +35,7 @@ interface ArchiveItemDto {
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'archive-val')
+  auth = await registerAndAttachSession(page, request, 'archive-val', { theme: 'legacy' })
 })
 
 async function createBoard(

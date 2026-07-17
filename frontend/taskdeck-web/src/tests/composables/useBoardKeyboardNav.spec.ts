@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { computed } from 'vue'
+import { computed, nextTick } from 'vue'
 import { useBoardKeyboardNav } from '../../composables/useBoardKeyboardNav'
 import type { Column, Card } from '../../types/board'
 
@@ -150,10 +150,13 @@ describe('useBoardKeyboardNav', () => {
   })
 
   describe('openSelectedCard', () => {
-    it('selects the first card and clicks its DOM element when no card is selected', () => {
+    it('selects the first card and clicks its nested Paper opener', () => {
+      const mockActivator = {
+        click: vi.fn(),
+      } as unknown as HTMLElement
       const mockElement = {
         scrollIntoView: vi.fn(),
-        click: vi.fn(),
+        querySelector: vi.fn().mockReturnValue(mockActivator),
       } as unknown as HTMLElement
 
       const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(mockElement)
@@ -166,15 +169,17 @@ describe('useBoardKeyboardNav', () => {
       expect(nav.selectedCardId.value).toBe('card-1')
       expect(querySpy).toHaveBeenCalledWith('[data-card-id="card-1"]')
       expect(mockElement.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
-      expect(mockElement.click).toHaveBeenCalled()
+      expect(mockElement.querySelector).toHaveBeenCalledWith('[data-action="open-card"]')
+      expect(mockActivator.click).toHaveBeenCalled()
 
       querySpy.mockRestore()
     })
 
-    it('clicks the DOM element for an already-selected card', () => {
+    it('falls back to the focusable legacy card root', () => {
       const mockElement = {
         scrollIntoView: vi.fn(),
         click: vi.fn(),
+        querySelector: vi.fn().mockReturnValue(null),
       } as unknown as HTMLElement
 
       const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(mockElement)
@@ -372,16 +377,154 @@ describe('useBoardKeyboardNav', () => {
     })
   })
 
+  describe('focus follows selection movement (roving focus)', () => {
+    /**
+     * Real DOM fixture mirroring the Paper board markup contract: one
+     * `[data-card-id]` article per card with a nested
+     * `[data-action="open-card"]` opener button. Each opener also mirrors
+     * PaperBoardCard's `.stop` Enter handler so we can prove which card a
+     * subsequent Enter would open.
+     */
+    function buildCardFixture(cardIds: string[]) {
+      const root = document.createElement('div')
+      const openers = new Map<string, HTMLButtonElement>()
+      const openedCards: string[] = []
+      for (const id of cardIds) {
+        const article = document.createElement('article')
+        article.setAttribute('data-card-id', id)
+        const opener = document.createElement('button')
+        opener.setAttribute('data-action', 'open-card')
+        opener.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            // Mirrors PaperBoardCard: @keydown.enter.stop.prevent="onClick"
+            event.stopPropagation()
+            event.preventDefault()
+            openedCards.push(id)
+          }
+        })
+        article.appendChild(opener)
+        root.appendChild(article)
+        openers.set(id, opener)
+      }
+      document.body.appendChild(root)
+      return {
+        openers,
+        openedCards,
+        cleanup: () => {
+          root.remove()
+        },
+      }
+    }
+
+    it('moves focus to the newly selected card opener when an opener had focus', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-2'])
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-1'
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextCard()
+        expect(nav.selectedCardId.value).toBe('card-2')
+
+        await nextTick()
+        expect(document.activeElement).toBe(fixture.openers.get('card-2'))
+      } finally {
+        fixture.cleanup()
+      }
+    })
+
+    it('makes a subsequent Enter open the newly selected card, not the old one', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-2'])
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-1'
+        fixture.openers.get('card-1')!.focus()
+
+        // Simulate J: BoardView's global shortcut calls selectNextCard().
+        nav.selectNextCard()
+        await nextTick()
+
+        // Enter lands on whatever now has DOM focus (opener `.stop` contract).
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+        )
+
+        expect(fixture.openedCards).toStrictEqual(['card-2'])
+      } finally {
+        fixture.cleanup()
+      }
+    })
+
+    it('also pulls focus on column selection movement', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-3'])
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-1'
+        nav.selectedColumnIndex.value = 0
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextColumn()
+        expect(nav.selectedCardId.value).toBe('card-3')
+
+        await nextTick()
+        expect(document.activeElement).toBe(fixture.openers.get('card-3'))
+      } finally {
+        fixture.cleanup()
+      }
+    })
+
+    it('leaves focus untouched when focus is outside any card', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-2'])
+      const outsideButton = document.createElement('button')
+      document.body.appendChild(outsideButton)
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-1'
+        outsideButton.focus()
+
+        nav.selectNextCard()
+        expect(nav.selectedCardId.value).toBe('card-2')
+
+        await nextTick()
+        expect(document.activeElement).toBe(outsideButton)
+      } finally {
+        outsideButton.remove()
+        fixture.cleanup()
+      }
+    })
+
+    it('leaves focus untouched when the selection did not change', async () => {
+      const fixture = buildCardFixture(['card-1', 'card-2'])
+      try {
+        const nav = useBoardKeyboardNav(sortedColumns)
+        nav.selectedCardId.value = 'card-2'
+        fixture.openers.get('card-1')!.focus()
+
+        // card-2 is the last card in c1 — selection stays put.
+        nav.selectNextCard()
+        expect(nav.selectedCardId.value).toBe('card-2')
+
+        await nextTick()
+        expect(document.activeElement).toBe(fixture.openers.get('card-1'))
+      } finally {
+        fixture.cleanup()
+      }
+    })
+  })
+
   describe('focusSelectedCard (via move operations)', () => {
     beforeEach(() => {
       moveCard.mockReset()
       moveCard.mockResolvedValue(undefined)
     })
 
-    it('scrolls and focuses the card element after a successful move', async () => {
+    it('scrolls the card and focuses its nested Paper opener after a successful move', async () => {
+      const mockActivator = {
+        focus: vi.fn(),
+      } as unknown as HTMLElement
       const mockElement = {
         scrollIntoView: vi.fn(),
-        focus: vi.fn(),
+        querySelector: vi.fn().mockReturnValue(mockActivator),
       } as unknown as HTMLElement
 
       const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(mockElement)
@@ -393,7 +536,8 @@ describe('useBoardKeyboardNav', () => {
       await nav.moveCardToNextColumn()
 
       expect(mockElement.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
-      expect(mockElement.focus).toHaveBeenCalled()
+      expect(mockElement.querySelector).toHaveBeenCalledWith('[data-action="open-card"]')
+      expect(mockActivator.focus).toHaveBeenCalled()
 
       querySpy.mockRestore()
     })

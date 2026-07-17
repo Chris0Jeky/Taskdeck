@@ -102,7 +102,7 @@ async function fetchProposal(
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'slicec-proposals')
+  auth = await registerAndAttachSession(page, request, 'slicec-proposals', { theme: 'legacy' })
 })
 
 test.describe('TST09 Proposal Lifecycle', () => {
