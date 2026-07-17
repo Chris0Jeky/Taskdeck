@@ -23,7 +23,13 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
   let loadGeneration = 0
   let saveGeneration = 0
 
-  async function loadRevisionState(proposalId: string) {
+  // `silent: true` suppresses the failure toast — for augment-only callers
+  // (e.g. the read-only stored preview, which is already rendered locally and
+  // only uses revision metadata to gate a disclosure caveat, #1397 round 3):
+  // a failed metadata GET must not error-toast over a perfectly presentable
+  // preview. Authoritative callers (the approve guard, the live diff path)
+  // stay loud.
+  async function loadRevisionState(proposalId: string, options?: { silent?: boolean }) {
     const gen = ++loadGeneration
     try {
       const revisions = await proposalRevisionsApi.getRevisions(proposalId)
@@ -40,7 +46,9 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
       latestRevision.value = null
       // Leave revisionsLoaded false: the count is not authoritative, so callers
       // must fetch (let the backend decide) rather than short-circuit to a no-op.
-      toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
+      if (!options?.silent) {
+        toast.error(getErrorDisplay(e, 'Failed to load revision history').message)
+      }
     }
   }
 

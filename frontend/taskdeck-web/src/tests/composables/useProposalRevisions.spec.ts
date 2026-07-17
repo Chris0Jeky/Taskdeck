@@ -13,12 +13,14 @@ vi.mock('../../api/proposalRevisionsApi', () => ({
   },
 }))
 
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}))
+
 vi.mock('../../store/toastStore', () => ({
-  useToastStore: () => ({
-    success: vi.fn(),
-    error: vi.fn(),
-    info: vi.fn(),
-  }),
+  useToastStore: () => toastMocks,
 }))
 
 function makeProposal(overrides: Partial<ApiProposal> = {}): ApiProposal {
@@ -229,6 +231,28 @@ describe('useProposalRevisions', () => {
 
     expect(revisionCount.value).toBe(0)
     expect(latestRevision.value).toBeNull()
+  })
+
+  it('suppresses the failure toast for a silent load while keeping the state non-authoritative (#1397 round 3)', async () => {
+    // The augment-only callers (read-only stored preview) load revision metadata
+    // silently: no error toast on failure, but revisionsLoaded must STILL stay
+    // false so authoritative consumers never trust the unknown state.
+    vi.mocked(proposalRevisionsApi.getRevisions).mockRejectedValue(new Error('boom'))
+
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const { revisionsLoaded, revisionCount, loadRevisionState } = useProposalRevisions(proposal)
+
+    // The mount-time background load is NOT silent — it toasts.
+    await vi.waitFor(() => {
+      expect(toastMocks.error).toHaveBeenCalled()
+    })
+    toastMocks.error.mockClear()
+
+    await loadRevisionState('p-1', { silent: true })
+
+    expect(toastMocks.error).not.toHaveBeenCalled()
+    expect(revisionsLoaded.value).toBe(false)
+    expect(revisionCount.value).toBe(0)
   })
 
   it('discards stale load responses when proposal switches quickly', async () => {
