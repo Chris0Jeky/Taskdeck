@@ -26,16 +26,21 @@ public class OAuthAuthCodeRepository : Repository<OAuthAuthCode>, IOAuthAuthCode
         //   - ExpiresAt > now: prevents TOCTOU race where expiry passes between
         //     the application-level check and the SQL execution
         //
-        // EF Core SQLite stores DateTimeOffset as "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm" format.
-        // We must use the same format for string comparison to work correctly.
-        // Normalize via .UtcDateTime before appending the "+00:00" suffix, mirroring
-        // AuditLogRepository.DeleteOldEntriesAsync. Self-defending: `now` is UtcNow (zero offset)
-        // so normalization is a no-op today, but the site stays correct if its source ever changes.
+        // Bug boundary (issue #1403) is the COMPARISON side only: pass `now` as a DateTimeOffset
+        // parameter so EF's SQLite provider serializes it with the same "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz"
+        // mapping (trailing fraction zeros trimmed, dot dropped at a zero fraction) that stored ExpiresAt
+        // rows use, keeping `ExpiresAt > now` a chronological comparison at a zero-fraction tick instead
+        // of a fixed-width string mismatch.
+        //
+        // The WRITE side (ConsumedAt/UpdatedAt) deliberately keeps the fixed-width invariant string:
+        // issue #1403 notes the write side is unaffected (fixed-width strings parse fine), and the
+        // #1393 MED-B1 regression test pins the persisted TEXT to the invariant "...ss.fffffff+00:00"
+        // shape. `now` is UtcNow (zero offset) so .UtcDateTime normalization is a no-op today but keeps
+        // the written string correct if the source ever changes.
         var now = DateTimeOffset.UtcNow;
         var nowStr = now.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
-        var affected = await _context.Database.ExecuteSqlRawAsync(
-            "UPDATE OAuthAuthCodes SET IsConsumed = 1, ConsumedAt = {0}, UpdatedAt = {1} WHERE Code = {2} AND IsConsumed = 0 AND ExpiresAt > {3}",
-            [nowStr, nowStr, code, nowStr],
+        var affected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE OAuthAuthCodes SET IsConsumed = 1, ConsumedAt = {nowStr}, UpdatedAt = {nowStr} WHERE Code = {code} AND IsConsumed = 0 AND ExpiresAt > {now}",
             cancellationToken);
 
         return affected > 0;
@@ -45,15 +50,16 @@ public class OAuthAuthCodeRepository : Repository<OAuthAuthCode>, IOAuthAuthCode
     {
         // Use raw SQL to avoid loading all rows into memory (DoS risk with large tables).
         // Deletes both expired codes AND consumed codes to prevent unbounded table growth.
-        // EF Core SQLite stores DateTimeOffset as "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm".
-        // Normalize to UTC first so that a non-UTC DateTimeOffset (e.g. -05:00) is converted to
-        // its UTC-equivalent time before the "+00:00" suffix is appended; without this the time
-        // component would be wrong and codes in the wrong window could be kept or deleted
-        // (mirrors AuditLogRepository.DeleteOldEntriesAsync).
-        var cutoffStr = cutoff.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
-        var affected = await _context.Database.ExecuteSqlRawAsync(
-            "DELETE FROM OAuthAuthCodes WHERE ExpiresAt < {0} OR IsConsumed = 1",
-            [cutoffStr],
+        // Pass the DateTimeOffset cutoff as a parameter (not a hand-built ".fffffff" string): EF's
+        // SQLite provider serializes both the parameter and the stored ExpiresAt column with the same
+        // "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz" mapping (trailing fraction zeros trimmed, dot dropped at a
+        // zero fraction) and normalizes any non-UTC offset consistently on both sides. A code expiring
+        // at exactly the cutoff with a zero-fraction tick then compares EQUAL, so the strictly-older
+        // `ExpiresAt < cutoff` contract KEEPS it instead of deleting it — a fixed-width bound sorts above
+        // the stored "...ss+00:00" because '+' (0x2B) < '.' (0x2E) (issue #1403). Mirrors
+        // AuditLogRepository.DeleteOldEntriesAsync.
+        var affected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM OAuthAuthCodes WHERE ExpiresAt < {cutoff} OR IsConsumed = 1",
             cancellationToken);
 
         return affected;
