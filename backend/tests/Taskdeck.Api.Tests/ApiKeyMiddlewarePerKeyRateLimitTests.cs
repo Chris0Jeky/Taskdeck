@@ -148,6 +148,40 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
             .Should().Be(RateLimitingPolicyNames.McpPerApiKey);
     }
 
+    [Fact]
+    public async Task RateLimitingDisabled_LimiterAbsent_SkipsPerKeyCheck_AndPassesThrough()
+    {
+        // When rate limiting is disabled the singleton is never registered, so the optional resolution
+        // returns null and the middleware must not throttle — preserving "no MCP throttling when
+        // disabled". Modelled with a RequestServices that has no McpPerApiKeyRateLimiter.
+        await using var db = await CreateSeededContextAsync();
+        const string plaintext = "tdsk_perkey_disabled_000000000000000000";
+        await SeedUserAndKeyAsync(db, plaintext);
+
+        var nextCalled = false;
+        var middleware = new ApiKeyMiddleware(_ => { nextCalled = true; return Task.CompletedTask; },
+            NullLogger<ApiKeyMiddleware>.Instance);
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().BuildServiceProvider() // no limiter registered
+        };
+        context.Request.Method = HttpMethods.Post;
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = $"Bearer {plaintext}";
+        context.Response.Body = new MemoryStream();
+
+        // Many requests, none throttled — the check is skipped entirely.
+        for (var i = 0; i < 5; i++)
+        {
+            nextCalled = false;
+            await middleware.InvokeAsync(context, db);
+            context.Response.StatusCode.Should().NotBe(StatusCodes.Status429TooManyRequests,
+                "per-key throttling must be inert when the limiter is not registered");
+            nextCalled.Should().BeTrue("the request passes through to the endpoint");
+        }
+    }
+
     // ── Helpers ──
 
     private static bool IsSelect(string sql) => sql.Contains("SELECT", StringComparison.OrdinalIgnoreCase);

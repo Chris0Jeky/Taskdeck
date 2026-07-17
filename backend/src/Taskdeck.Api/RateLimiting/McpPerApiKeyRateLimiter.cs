@@ -111,7 +111,7 @@ public sealed class McpPerApiKeyRateLimiter : IDisposable
             return $"mcp-apikey:{apiKeyGuid}";
         }
 
-        return $"mcp-apikey:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
+        return $"mcp-apikey:{context.Connection?.RemoteIpAddress?.ToString() ?? "unknown"}";
     }
 
     public void Dispose() => _limiter.Dispose();

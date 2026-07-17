@@ -127,7 +127,7 @@ public sealed class ApiKeyMiddleware
         // is absent the check is skipped (no MCP throttling when disabled), matching prior behaviour.
         context.Items[ApiKeyIdItemKey] = apiKey.Id;
 
-        var perKeyLimiter = context.RequestServices.GetService<McpPerApiKeyRateLimiter>();
+        var perKeyLimiter = context.RequestServices?.GetService<McpPerApiKeyRateLimiter>();
         if (perKeyLimiter is not null)
         {
             using var perKeyLease = perKeyLimiter.AttemptAcquire(context);
