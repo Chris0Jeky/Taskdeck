@@ -909,25 +909,31 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             .ToList();
 
     /// <summary>
-    /// Asserts every successful join was delivered to the observer as a presence
-    /// broadcast, not merely reflected in the marker snapshot. Fails closed when
-    /// every JoinBoard broadcast is dropped/suppressed (no non-marker delta
-    /// reaches the observer) or when a joined identity never appears in any delta.
+    /// Asserts every successful join was delivered to the observer as its own
+    /// presence broadcast, not merely reflected in the marker snapshot. Each
+    /// JoinBoard publishes exactly one snapshot, and the owner marker fence keeps
+    /// stragglers out of the phase window, so a per-phase count floor catches the
+    /// case where some (not all) join broadcasts are dropped — full-state
+    /// snapshots would otherwise let a later cumulative delta mask an earlier
+    /// suppressed one. Fails closed when any join broadcast is suppressed or a
+    /// joined identity never appears in a delta (issue #1371).
     /// </summary>
     private static void AssertJoinBroadcastsObserved(
         IReadOnlyList<BoardPresenceSnapshot> phaseBroadcasts,
         IEnumerable<Guid> joinedUserIds)
     {
-        phaseBroadcasts.Should().NotBeEmpty(
-            "the join burst must reach the observer as at least one presence broadcast " +
+        var expectedIds = joinedUserIds.Distinct().ToList();
+
+        phaseBroadcasts.Count.Should().BeGreaterThanOrEqualTo(expectedIds.Count,
+            "every successful join must reach the observer as its own presence broadcast " +
             "distinct from the SetEditingCard marker snapshot; otherwise the test proves " +
-            "tracker membership but not join delivery (issue #1371)");
+            "tracker membership but not per-join delivery (issue #1371)");
 
         var deliveredUserIds = phaseBroadcasts
             .SelectMany(snapshot => snapshot.Members.Select(member => member.UserId))
             .ToHashSet();
 
-        foreach (var joinedUserId in joinedUserIds.Distinct())
+        foreach (var joinedUserId in expectedIds)
         {
             deliveredUserIds.Should().Contain(joinedUserId,
                 "every successful join must be visible in an observed join-originated presence " +
@@ -936,21 +942,29 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
     }
 
     /// <summary>
-    /// Asserts every successful leave was delivered to the observer as a shrink
-    /// broadcast (the leaving member absent), not merely reflected in the marker
-    /// snapshot. Fails closed when every LeaveBoard broadcast is dropped, or when
-    /// a supposedly-left identity is still present in every observed delta.
+    /// Asserts every successful leave was delivered to the observer as its own
+    /// shrink broadcast, not merely reflected in the marker snapshot. Because hub
+    /// broadcasts are full-state snapshots, a leaver is absent from every later
+    /// snapshot once removed — so a bare "absent from some delta" check would pass
+    /// even if that leaver's own LeaveBoard broadcast was dropped and only a
+    /// co-leaver's arrived. Each LeaveBoard publishes exactly one snapshot and the
+    /// marker fence keeps stragglers out of the phase window, so the per-phase
+    /// count floor requires one delivered broadcast per successful leave. Fails
+    /// closed when any leave broadcast is suppressed, or when a supposedly-left
+    /// identity is still present in every observed delta (issue #1371).
     /// </summary>
     private static void AssertLeaveBroadcastsObserved(
         IReadOnlyList<BoardPresenceSnapshot> phaseBroadcasts,
         IEnumerable<Guid> leftUserIds)
     {
-        phaseBroadcasts.Should().NotBeEmpty(
-            "each leave must reach the observer as at least one presence broadcast distinct " +
-            "from the SetEditingCard marker snapshot; otherwise the test proves tracker " +
-            "membership but not leave delivery (issue #1371)");
+        var expectedIds = leftUserIds.Distinct().ToList();
 
-        foreach (var leftUserId in leftUserIds.Distinct())
+        phaseBroadcasts.Count.Should().BeGreaterThanOrEqualTo(expectedIds.Count,
+            "every successful leave must reach the observer as its own presence broadcast " +
+            "distinct from the SetEditingCard marker snapshot; otherwise a co-leaver's " +
+            "full-state snapshot could mask a suppressed leave broadcast (issue #1371)");
+
+        foreach (var leftUserId in expectedIds)
         {
             phaseBroadcasts.Should().Contain(
                 snapshot => snapshot.Members.All(member => member.UserId != leftUserId),
@@ -1072,7 +1086,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
     [Theory]
     [InlineData("JoinBoard")]
     [InlineData("LeaveBoard")]
-    public async Task PresenceMutation_PostMutationFailure_DivergesFromCommittedTrackerAndFailsClosed(
+    public async Task PresenceMutation_PostMutationFailure_CommitsTrackerStateThenFailsClosed(
         string operation)
     {
         // Production ordering (BoardsHub.cs): JoinBoard mutates the tracker at :37
@@ -1129,9 +1143,12 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             .Which.Should().BeSameAs(broadcastFailure,
                 $"the ambiguous {operation} failure must propagate unchanged so the scenario aborts");
 
-        // The exact divergence fail-closed guards against: the committed tracker
-        // reflects the mutation, but the expectation set does not — tolerating the
-        // failure would let the exact-membership assertion drift from server state.
+        // The committed tracker already reflects the mutation (asserted above), but
+        // the expectation set is never updated because the broadcast failed. For a
+        // JoinBoard this is an outright divergence (tracker has the member, the
+        // expectation set does not); for a LeaveBoard the risk is the mirror image
+        // under different timing. Either way the fail-closed helper must abort
+        // rather than silently record an ambiguous outcome.
         recordedSuccessUserIds.Should().NotContain(subjectUserId,
             "a post-mutation broadcast failure is ambiguous and must never be recorded as a success");
     }
@@ -1177,7 +1194,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         phaseBroadcasts.Should().BeEmpty();
         var act = () => AssertJoinBroadcastsObserved(phaseBroadcasts, [joinedUserId]);
         act.Should().Throw<Xunit.Sdk.XunitException>()
-            .WithMessage("*at least one presence broadcast*");
+            .WithMessage("*its own presence broadcast*");
     }
 
     [Fact]
@@ -1242,7 +1259,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         phaseBroadcasts.Should().BeEmpty();
         var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [Guid.NewGuid()]);
         act.Should().Throw<Xunit.Sdk.XunitException>()
-            .WithMessage("*at least one presence broadcast*");
+            .WithMessage("*its own presence broadcast*");
     }
 
     [Fact]
@@ -1265,6 +1282,60 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
 
         var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [stillPresentLeaver]);
         act.Should().Throw<Xunit.Sdk.XunitException>();
+    }
+
+    [Fact]
+    public void JoinBroadcastAssertion_FailsClosed_WhenSomeJoinBroadcastsDropped()
+    {
+        // Two joins, but only one cumulative delta reached the observer (the other
+        // JoinBoard broadcast was dropped). Because snapshots are full-state, the
+        // surviving delta carries both identities, so the union check alone would
+        // false-green; the per-join count floor catches the missing broadcast.
+        var ownerUserId = Guid.NewGuid();
+        var firstJoiner = Guid.NewGuid();
+        var secondJoiner = Guid.NewGuid();
+        var marker = Guid.NewGuid();
+        var observed = new[]
+        {
+            SnapshotWith([(ownerUserId, null), (firstJoiner, null), (secondJoiner, null)]),
+            SnapshotWith([(ownerUserId, marker), (firstJoiner, null), (secondJoiner, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, marker);
+
+        phaseBroadcasts.Should().HaveCount(1, "only one join delta survived");
+        var act = () => AssertJoinBroadcastsObserved(phaseBroadcasts, [firstJoiner, secondJoiner]);
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*per-join delivery*");
+    }
+
+    [Fact]
+    public void LeaveBroadcastAssertion_FailsClosed_WhenSomeLeaveBroadcastsDropped()
+    {
+        // Two leaves, but only the co-leaver's shrink delta reached the observer
+        // (the other LeaveBoard broadcast was dropped). Both leavers are absent
+        // from the surviving full-state delta, so the bare absence check alone
+        // would false-green; the per-leave count floor catches the missing
+        // broadcast. This is the exact partial-suppression gap flagged in review.
+        var ownerUserId = Guid.NewGuid();
+        var priorMarker = Guid.NewGuid();
+        var leaveMarker = Guid.NewGuid();
+        var stayer = Guid.NewGuid();
+        var firstLeaver = Guid.NewGuid();
+        var secondLeaver = Guid.NewGuid();
+        var observed = new[]
+        {
+            // Only the second leave's snapshot survives; both leavers already absent.
+            SnapshotWith([(ownerUserId, priorMarker), (stayer, null)]),
+            SnapshotWith([(ownerUserId, leaveMarker), (stayer, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, leaveMarker);
+
+        phaseBroadcasts.Should().HaveCount(1, "only one leave delta survived");
+        var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [firstLeaver, secondLeaver]);
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*its own presence broadcast*");
     }
 
     private static BoardPresenceSnapshot SnapshotWith(
