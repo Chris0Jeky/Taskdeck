@@ -363,11 +363,15 @@ enabled.
 ASP.NET Core built-in. The full API defaults to `*` in `appsettings.json`;
 restrict it to deployed host names for defense-in-depth against host-header
 attacks. Standalone MCP HTTP mode fails closed: values that parse to zero
-hosts (blank or separator-only, e.g. `";"`) and ASP.NET any-host values
-(`*`, `0.0.0.0`, `[::]` — with or without a `:port` suffix, matching the
-host-filtering middleware's own normalization, including mixed lists) are
-replaced with `localhost;127.0.0.1;[::1]`. An explicit exact allowlist is
-preserved verbatim.
+hosts (blank or separator-only, e.g. `";"`) and bare ASP.NET any-host values
+(`*`, `0.0.0.0`, `[::]`, including mixed lists) are replaced with
+`localhost;127.0.0.1;[::1]`, matching the host-filtering middleware's own
+entry normalization (`HostString.ToUriComponent()`, which retains any
+`:port` suffix). Port-suffixed entries such as `0.0.0.0:5001` are NOT
+wildcards to the middleware: they are literal patterns that real `Host`
+headers never match (effectively deny-all — a misconfiguration that fails
+safe), so they are preserved rather than rewritten. An explicit exact
+allowlist is preserved verbatim.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
