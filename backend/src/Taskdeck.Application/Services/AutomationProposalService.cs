@@ -780,8 +780,12 @@ public class AutomationProposalService : IAutomationProposalService
             return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
         }
 
-        // Column reorder: surface the requested destination position so the approval
+        // Column reorder: surface the CLAMPED effective destination so the approval
         // preview shows what Apply will do (the position is the whole point of the op).
+        // ColumnService.ReorderColumnAsync inserts at Math.Min(position, columnCount - 1),
+        // so an overshooting target silently lands at the end. Mirror that clamp against
+        // the current board columns so preview == apply (#1370); when the board columns
+        // are unknown (best-effort lookup failed) fall back to the requested value.
         if (string.Equals(operation.TargetType, "column", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(operation.ActionType, "reorder", StringComparison.OrdinalIgnoreCase))
         {
@@ -791,9 +795,13 @@ public class AutomationProposalService : IAutomationProposalService
                 ? $"\"{reorderColumnName}\""
                 : reorderColumnId?.ToString() ?? "(unspecified)";
             var reorderPosition = ExtractInt32Parameter(operation.Parameters, "position");
-            return reorderPosition.HasValue
-                ? $"{operation.Sequence}. {verb} column {reorderColumnDisplay} to position {reorderPosition.Value}"
-                : $"{operation.Sequence}. {verb} column {reorderColumnDisplay}";
+            if (!reorderPosition.HasValue)
+                return $"{operation.Sequence}. {verb} column {reorderColumnDisplay}";
+
+            var effectivePosition = columnNames.Count > 0
+                ? Math.Min(reorderPosition.Value, columnNames.Count - 1)
+                : reorderPosition.Value;
+            return $"{operation.Sequence}. {verb} column {reorderColumnDisplay} to position {effectivePosition}";
         }
 
         // Build description, falling back to raw TargetId when no name is available

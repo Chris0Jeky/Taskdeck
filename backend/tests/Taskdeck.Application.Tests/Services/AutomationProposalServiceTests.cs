@@ -1104,10 +1104,16 @@ public class AutomationProposalServiceTests
     [Fact]
     public async Task GetProposalDiffAsync_ShouldSurfaceDestinationPosition_ForColumnReorderOperations()
     {
-        // Arrange
+        // Arrange: a 3-column board so the requested destination (position 2) is in range.
+        // An in-range reorder previews the exact position Apply lands on. (Previously this
+        // test used a single-column board with position 2 — an out-of-range target that
+        // Apply clamps to the end — and asserted the raw requested value, locking in the
+        // preview != apply divergence this issue fixes. See the clamp-specific test below.)
         var proposalId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
+        var todo = new Column(boardId, "To Do", 0);
         var column = new Column(boardId, "In Progress", 1);
+        var done = new Column(boardId, "Done", 2);
         var columnId = column.Id;
         var proposal = new AutomationProposal(
             ProposalSourceType.Chat,
@@ -1127,7 +1133,7 @@ public class AutomationProposalServiceTests
 
         var columnRepoMock = new Mock<IColumnRepository>();
         columnRepoMock.Setup(r => r.GetByIdAsync(columnId, default)).ReturnsAsync(column);
-        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { todo, column, done });
         _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
 
         var cardRepoMock = new Mock<ICardRepository>();
@@ -1147,6 +1153,58 @@ public class AutomationProposalServiceTests
         result.Value.Should().Contain("In Progress");
         result.Value.Should().Contain("to position 2");
         result.Value.Should().NotContain(columnId.ToString());
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldSurfaceClampedEffectivePosition_WhenColumnReorderOvershoots()
+    {
+        // Arrange: a 3-column board with a reorder targeting position 99. ColumnService
+        // clamps an overshooting target to the end (Math.Min(position, columnCount - 1) = 2),
+        // so the preview must show the clamped effective destination — not the raw 99 — to
+        // stay equal to what Apply does (#1370 preview == apply).
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var todo = new Column(boardId, "To Do", 0);
+        var column = new Column(boardId, "In Progress", 1);
+        var done = new Column(boardId, "Done", 2);
+        var columnId = column.Id;
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Reorder column",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { columnId, position = 99 });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "reorder", "column", parameters, Guid.NewGuid().ToString(),
+            targetId: columnId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByIdAsync(columnId, default)).ReturnsAsync(column);
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { todo, column, done });
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var labelRepoMock = new Mock<ILabelRepository>();
+        labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
+        _unitOfWorkMock.Setup(u => u.Labels).Returns(labelRepoMock.Object);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: preview shows the clamped effective destination (2), never the raw 99.
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Contain("In Progress");
+        result.Value.Should().Contain("to position 2");
+        result.Value.Should().NotContain("position 99");
     }
 
     [Fact]
