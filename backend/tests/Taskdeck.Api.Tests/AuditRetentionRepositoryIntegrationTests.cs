@@ -44,11 +44,13 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
 
         var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
 
-        // Read the backdated timestamp back through the repository's own context/
-        // connection BEFORE deleting. GetByIdAsync/FindAsync would return the tracked
-        // instance whose in-memory timestamp is stale (the raw UPDATE bypassed the
-        // change tracker), so reload the entity from the database first. This turns a
-        // cross-connection visibility or timestamp-format failure into a precise
+        // Read the backdated timestamp back from the database BEFORE deleting, on the
+        // same context/connection the delete will use (db and repo share one scoped
+        // TaskdeckDbContext). GetByIdAsync/FindAsync would return the tracked instance
+        // whose in-memory timestamp is stale (the raw UPDATE bypassed the change
+        // tracker), so reload the entity from the database first. This confirms the
+        // manually written timestamp string round-trips through EF Core and reads back
+        // older than the cutoff, turning a format-mismatch failure into a precise
         // diagnostic at the read step instead of a mysterious deleted == 0 later.
         await db.Entry(oldEntry).ReloadAsync();
         oldEntry.Timestamp.Should().BeCloseTo(writtenOld, TimeSpan.FromSeconds(1),
@@ -193,7 +195,8 @@ public class AuditRetentionRepositoryIntegrationTests : IClassFixture<TestWebApp
     /// regardless of the host's current culture: a locale whose time separator is not
     /// ':' would otherwise write a mismatched string and corrupt the string-based
     /// comparison in DeleteOldEntriesAsync. Returns the instant that was written so
-    /// callers can assert visibility/ordering through the repository's own connection.
+    /// callers can assert the value round-trips through EF Core and orders correctly
+    /// against the cutoff.
     /// </summary>
     private static async Task<DateTimeOffset> BackdateEntryAsync(
         TaskdeckDbContext db, Guid entryId, TimeSpan age)
