@@ -1,5 +1,6 @@
 using System.Text;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -399,6 +400,77 @@ public sealed class ArtefactExtractionServiceTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldTreatZeroBudgetAsNoBudget()
+    {
+        // ExtractionTimeoutSeconds = 0 deliberately bypasses the [Range(1.0, 3600.0)]
+        // floor (hand-constructed settings): the service must treat zero/negative as
+        // "no budget" — a slow extraction completes normally — never as an instant
+        // timeout that would abort every extraction.
+        ArrangeStoredArtefact("text/plain", Encoding.UTF8.GetBytes("ignored"));
+        _extractions
+            .Setup(repository => repository.TryAddForUserAsync(
+                It.IsAny<ArtefactExtraction>(),
+                _userId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ArtefactExtractionStoreResult.Stored);
+        var extractor = new StubExtractor(
+            "text/plain",
+            new ArtefactExtractionResult("slow but done", [], "First", "1.0"),
+            "First",
+            delay: TimeSpan.FromMilliseconds(250));
+        var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = 0 };
+        var service = CreateService(settings, extractor);
+
+        var result = await service.ExtractAsync(_userId, _artefactId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ExtractedText.Should().Be("slow but done");
+        result.Value.Warnings.Should().NotContain(ArtefactExtractionWarningCodes.ExtractionTimeout);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldObserveAbandonedWorkerFaultWithoutSecondRecord()
+    {
+        // After the budget fires and the request returns, the abandoned worker
+        // eventually FAULTS (models the disposed-stream ObjectDisposedException an
+        // abandoned PdfPig parse hits). The fault must be observed — the completion
+        // continuation logs it — and must not write a second history row.
+        ArrangeStoredArtefact("application/pdf", [1, 2, 3]);
+        _extractions
+            .Setup(repository => repository.TryAddForUserAsync(
+                It.IsAny<ArtefactExtraction>(),
+                _userId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ArtefactExtractionStoreResult.Stored);
+        using var release = new ManualResetEventSlim(false);
+        var logger = new CapturingLogger();
+        var extractor = new StubExtractor(
+            "application/pdf",
+            blockUntil: release,
+            throwOnRelease: new InvalidDataException("late parser fault"));
+        var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = 0.05 };
+        var service = new ArtefactExtractionService(
+            _artefacts.Object,
+            _extractions.Object,
+            [extractor],
+            settings,
+            logger);
+
+        var result = await service.ExtractAsync(_userId, _artefactId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Warnings.Should().Equal(ArtefactExtractionWarningCodes.ExtractionTimeout);
+
+        release.Set(); // the abandoned worker now unwinds and throws
+        var observed = await logger.WaitForDebugEntryAsync(TimeSpan.FromSeconds(10));
+        observed.Should().Contain(nameof(InvalidDataException));
+        _extractions.Verify(repository => repository.TryAddForUserAsync(
+            It.IsAny<ArtefactExtraction>(),
+            _userId,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task GetLatestAsync_ShouldReturnRepositoryWinner()
     {
         var extraction = new ArtefactExtraction(
@@ -476,6 +548,8 @@ public sealed class ArtefactExtractionServiceTests
         private readonly Exception? _exception;
         private readonly ManualResetEventSlim? _blockUntil;
         private readonly ManualResetEventSlim? _signalStarted;
+        private readonly Exception? _throwOnRelease;
+        private readonly TimeSpan? _delay;
 
         public StubExtractor(
             string mimePrefix,
@@ -484,7 +558,9 @@ public sealed class ArtefactExtractionServiceTests
             Exception? exception = null,
             long inputByteLimit = 1024 * 1024,
             ManualResetEventSlim? blockUntil = null,
-            ManualResetEventSlim? signalStarted = null)
+            ManualResetEventSlim? signalStarted = null,
+            Exception? throwOnRelease = null,
+            TimeSpan? delay = null)
         {
             _mimePrefix = mimePrefix;
             ExtractorName = name;
@@ -494,6 +570,8 @@ public sealed class ArtefactExtractionServiceTests
             InputByteLimit = inputByteLimit;
             _blockUntil = blockUntil;
             _signalStarted = signalStarted;
+            _throwOnRelease = throwOnRelease;
+            _delay = delay;
         }
 
         public string ExtractorName { get; }
@@ -517,6 +595,10 @@ public sealed class ArtefactExtractionServiceTests
             // still return by abandoning this worker when the budget fires.
             _signalStarted?.Set();
             _blockUntil?.Wait(TimeSpan.FromSeconds(30));
+            if (_throwOnRelease is not null)
+                throw _throwOnRelease;
+            if (_delay is not null)
+                Thread.Sleep(_delay.Value);
 
             return Task.FromResult(_result);
         }
@@ -579,6 +661,40 @@ public sealed class ArtefactExtractionServiceTests
             {
                 _finished.TrySetResult();
             }
+        }
+    }
+
+    /// <summary>
+    /// Captures the first Debug-level entry (the abandoned-worker fault observation)
+    /// and lets a test await it deterministically instead of polling.
+    /// </summary>
+    private sealed class CapturingLogger : ILogger<ArtefactExtractionService>
+    {
+        private readonly TaskCompletionSource<string> _debugEntry =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Debug)
+                _debugEntry.TrySetResult(formatter(state, exception));
+        }
+
+        public async Task<string> WaitForDebugEntryAsync(TimeSpan timeout)
+        {
+            var winner = await Task.WhenAny(_debugEntry.Task, Task.Delay(timeout));
+            winner.Should().Be(
+                _debugEntry.Task,
+                "the abandoned worker's fault must be observed and logged by the completion continuation");
+            return await _debugEntry.Task;
         }
     }
 }
