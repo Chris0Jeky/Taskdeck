@@ -438,18 +438,20 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         activity.GetTagItem("http.status_code").Should().Be((int)HttpStatusCode.Unauthorized);
     }
 
+    // Rewritten exactly when HostFilteringMiddleware itself would disable filtering: its
+    // parse (Split(';', RemoveEmptyEntries), no trimming) yields zero entries -- null,
+    // blank, ";" and ";;" -- or contains a top-level wildcard as the middleware would see
+    // it after HostString.ToUriComponent() normalization.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("*")]
-    [InlineData(" * ")]
     [InlineData("localhost;*")]
     [InlineData("0.0.0.0")]
     [InlineData("[::]")]
     [InlineData("mcp.example.test;[::]")]
     [InlineData(";")]
     [InlineData(";;")]
-    [InlineData(" ; ")]
     public void StandaloneMcpHostSecurity_ReplacesPermissiveAllowedHosts(string? configuredHosts)
     {
         var configuration = new ConfigurationBuilder()
@@ -476,10 +478,18 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     // an operator misconfiguration that already fails closed (deny-all). Rewriting them to
     // the loopback allowlist would WEAKEN that (spoofed loopback Host headers would pass on
     // a non-loopback bind).
+    //
+    // Whitespace-bearing values (" ; ", " * ") are preserved for the same reason: the
+    // middleware splits with RemoveEmptyEntries but does NOT trim, so they parse to
+    // whitespace/padded literal entries -- an ACTIVE deny-all filter, not allow-all. Only
+    // values the middleware parses to zero entries (";", ";;", blank) disable filtering
+    // and are rewritten.
     [Theory]
     [InlineData("mcp.example.test")]
     [InlineData("mcp.example.com")]
     [InlineData("good; ;")]
+    [InlineData(" ; ")]
+    [InlineData(" * ")]
     [InlineData("0.0.0.0:5001")]
     [InlineData("*:5000")]
     [InlineData("[::]:80")]
