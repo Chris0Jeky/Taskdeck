@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -114,18 +115,23 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
         var provider = LlmUsageRecord.ReservationProvider;
         var model = string.Empty;
 
-        // Sweep stale reservations (age-based expiry) so the table cannot grow without bound. Correctness
-        // does not depend on it — the live predicate below already ignores expired rows.
-        await _context.Database.ExecuteSqlInterpolatedAsync(
-            $"DELETE FROM LlmUsageRecords WHERE Status = {StatusReserved} AND ExpiresAt IS NOT NULL AND ExpiresAt <= {now}",
-            cancellationToken);
-
         // Atomic conditional insert: the reservation row is written only if every enabled limit still has
         // headroom against live (committed + non-expired reserved) usage, all evaluated inside the one
-        // statement SQLite executes under the write lock. affected == 1 => reserved; 0 => denied.
+        // statement SQLite executes under the write lock. affected == 1 => reserved; 0 => denied. The
+        // stale-reservation sweep (idempotent) runs first inside the same retried unit so a contended
+        // write waits/retries rather than surfacing SQLITE_BUSY as a 500 (#1282 parity). A retried
+        // attempt re-uses the same reservationId — a prior failed attempt inserted nothing, so no dup.
         var reservationId = Guid.NewGuid();
-        var affected = await _context.Database.ExecuteSqlInterpolatedAsync(
-            $@"INSERT INTO LlmUsageRecords
+        var affected = await WithSqliteWriteRetryAsync(async () =>
+        {
+            // Sweep stale reservations (age-based expiry) so the table cannot grow without bound.
+            // Correctness does not depend on it — the live predicate below already ignores expired rows.
+            await _context.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM LlmUsageRecords WHERE Status = {StatusReserved} AND ExpiresAt IS NOT NULL AND ExpiresAt <= {now}",
+                cancellationToken);
+
+            return await _context.Database.ExecuteSqlInterpolatedAsync(
+                $@"INSERT INTO LlmUsageRecords
 (Id, UserId, Surface, Provider, Model, InputTokens, OutputTokens, Status, ExpiresAt, CreatedAt, UpdatedAt)
 SELECT {reservationId}, {userId}, {surfaceValue}, {provider}, {model}, {estimatedTokens}, 0, {StatusReserved}, {expiresAt}, {now}, {now}
 WHERE ({requestsPerHour} <= 0 OR (
@@ -143,7 +149,8 @@ WHERE ({requestsPerHour} <= 0 OR (
         WHERE Surface = {surfaceValue}
           AND CreatedAt >= {dayStart} AND CreatedAt < {dayEnd}
           AND (Status = {StatusCommitted} OR ExpiresAt > {now})) < {globalBudgetCeilingTokens})",
-            cancellationToken);
+                cancellationToken);
+        }, cancellationToken);
 
         // Read the live counts once for the outcome. On success they include the just-inserted
         // reservation (post-consumption headroom); on denial they identify which limit was hit for the
@@ -185,11 +192,20 @@ WHERE ({requestsPerHour} <= 0 OR (
                 QuotaReservationDecision.Allowed, reservationId, requestCount, userTokens, globalTokens);
         }
 
+        // Attribute the denial to whichever limit the re-read shows exceeded. If a concurrent release
+        // raced the re-read so none reads as exceeded, fall back to the first *enabled* limit (never a
+        // disabled one) so the caller never sees a message for a limit that is off.
         var decision = requestsPerHour > 0 && requestCount >= requestsPerHour
             ? QuotaReservationDecision.RequestsExceeded
             : tokensPerDay > 0 && userTokens >= tokensPerDay
                 ? QuotaReservationDecision.TokensExceeded
-                : QuotaReservationDecision.GlobalExceeded;
+                : globalBudgetCeilingTokens > 0 && globalTokens >= globalBudgetCeilingTokens
+                    ? QuotaReservationDecision.GlobalExceeded
+                    : requestsPerHour > 0
+                        ? QuotaReservationDecision.RequestsExceeded
+                        : tokensPerDay > 0
+                            ? QuotaReservationDecision.TokensExceeded
+                            : QuotaReservationDecision.GlobalExceeded;
 
         return new QuotaReservationOutcome(decision, null, requestCount, userTokens, globalTokens);
     }
@@ -197,6 +213,47 @@ WHERE ({requestsPerHour} <= 0 OR (
     private async Task<long> LiveScalarAsync(FormattableString sql, CancellationToken cancellationToken)
     {
         return await _context.Database.SqlQuery<long>(sql).SingleAsync(cancellationToken);
+    }
+
+    private const int MaxSqliteWriteLockRetries = 5;
+
+    // Mirrors UnitOfWork.SaveChangesAsync's transient-lock handling for the raw-SQL reservation writes:
+    // a contended write waits and retries with backoff instead of surfacing SQLITE_BUSY as a 500 (#1282).
+    private static async Task<T> WithSqliteWriteRetryAsync<T>(
+        Func<Task<T>> operation, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (Exception ex) when (attempt < MaxSqliteWriteLockRetries && IsTransientSqliteWriteLock(ex))
+            {
+                var multiplier = attempt + 1;
+                await Task.Delay(TimeSpan.FromMilliseconds(25 * multiplier * multiplier), cancellationToken);
+            }
+        }
+    }
+
+    private static bool IsTransientSqliteWriteLock(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqliteException sqliteException
+                && (sqliteException.SqliteErrorCode == 5 || sqliteException.SqliteErrorCode == 6))
+            {
+                return true;
+            }
+
+            if (current.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)
+                || current.Message.Contains("database table is locked", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public async Task<bool> CommitReservationAsync(
@@ -215,9 +272,12 @@ WHERE ({requestsPerHour} <= 0 OR (
 
         // Single atomic UPDATE gated on Status = Reserved: idempotent against a double-commit and a
         // no-op if the row was already released or swept. Raw SQL keeps the caller's shared change
-        // tracker (e.g. the chat message being composed) from flushing early.
-        var affected = await _context.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE LlmUsageRecords SET Status = {StatusCommitted}, ExpiresAt = NULL, Provider = {safeProvider}, Model = {safeModel}, InputTokens = {safeInput}, OutputTokens = {safeOutput}, UpdatedAt = {now} WHERE Id = {reservationId} AND Status = {StatusReserved}",
+        // tracker (e.g. the chat message being composed) from flushing early. Retried on a transient
+        // write lock for #1282 parity with the SaveChanges path this replaced.
+        var affected = await WithSqliteWriteRetryAsync(
+            () => _context.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE LlmUsageRecords SET Status = {StatusCommitted}, ExpiresAt = NULL, Provider = {safeProvider}, Model = {safeModel}, InputTokens = {safeInput}, OutputTokens = {safeOutput}, UpdatedAt = {now} WHERE Id = {reservationId} AND Status = {StatusReserved}",
+                cancellationToken),
             cancellationToken);
 
         return affected > 0;
@@ -227,8 +287,10 @@ WHERE ({requestsPerHour} <= 0 OR (
         Guid reservationId,
         CancellationToken cancellationToken = default)
     {
-        var affected = await _context.Database.ExecuteSqlInterpolatedAsync(
-            $"DELETE FROM LlmUsageRecords WHERE Id = {reservationId} AND Status = {StatusReserved}",
+        var affected = await WithSqliteWriteRetryAsync(
+            () => _context.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM LlmUsageRecords WHERE Id = {reservationId} AND Status = {StatusReserved}",
+                cancellationToken),
             cancellationToken);
 
         return affected > 0;
