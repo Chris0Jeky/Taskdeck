@@ -53,35 +53,6 @@ public class ApiKeyService
         return (plaintextKey, apiKey);
     }
 
-    /// <summary>
-    /// Validate an API key and return the associated entity if valid.
-    /// Returns null if the key is invalid, expired, or revoked.
-    /// </summary>
-    /// <remarks>
-    /// DEAD PATH / dual-writer trap: this method currently has no production callers. MCP
-    /// authentication is performed by ApiKeyMiddleware, which records usage directly via
-    /// ExecuteUpdateAsync — wiring this method into that pipeline would double-write
-    /// LastUsedAt/UpdatedAt on every authenticated request. Either remove this path or make it
-    /// the single usage writer (dropping the middleware's direct update), not both; see #1409.
-    /// </remarks>
-    public async Task<ApiKey?> ValidateKeyAsync(string plaintextKey, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(plaintextKey) || !plaintextKey.StartsWith(ApiKey.KeyPrefix))
-            return null;
-
-        var keyHash = HashKey(plaintextKey);
-        var apiKey = await _unitOfWork.ApiKeys.GetByKeyHashAsync(keyHash, cancellationToken);
-
-        if (apiKey is null || !apiKey.IsActive)
-            return null;
-
-        // Record usage (fire-and-forget style, non-critical)
-        apiKey.RecordUsage();
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return apiKey;
-    }
-
     /// <summary>List all API keys for a user.</summary>
     public async Task<IEnumerable<ApiKey>> ListKeysAsync(Guid userId, CancellationToken cancellationToken = default)
     {

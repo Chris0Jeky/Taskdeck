@@ -173,8 +173,17 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
         int limit,
         CancellationToken cancellationToken)
     {
+        // Normalize the bounds to UTC before parameterizing: EF's SQLite DateTimeOffset mapping
+        // PRESERVES the source offset (it does not convert to UTC), and this is the one timestamp
+        // seam fed raw user input — LogQueryService forwards user-supplied query.From/query.To (any
+        // offset) straight here. Un-normalized, a bound like 2026-07-17T00:00:00-05:00 (== 05:00Z)
+        // serializes as "...00:00:00-05:00" and its shifted wall-clock digits compare against the
+        // stored "+00:00" rows as a raw string, wrongly INCLUDING a stored row at 02:00Z (the string
+        // compare is decided at the hour digit, not by instant). ToUniversalTime() yields the same
+        // instant at "+00:00" so both sides share the suffix and TEXT order equals chronological
+        // order (same normalization as CountByDateAsync / DeleteOldEntriesAsync, issue #1403).
         var conditions = new List<string> { "al.Timestamp >= {0} AND al.Timestamp <= {1}" };
-        var parameters = new List<object> { from, to };
+        var parameters = new List<object> { from.ToUniversalTime(), to.ToUniversalTime() };
         var nextParam = 2;
 
         if (userId.HasValue)
@@ -263,16 +272,31 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             // SQLite stores DateTimeOffset as a string; use SUBSTR to extract the date portion
             // and push the GROUP BY into SQL. The IX_AuditLogs_UserId_Timestamp index covers
             // the WHERE clause so this avoids a full table scan.
-            var fromStr = from.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
-            var toStr = to.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
-
+            //
+            // Pass the DateTimeOffset bounds as parameters (not hand-built ".fffffff" strings): EF's
+            // SQLite provider serializes BOTH the parameter and the stored Timestamp column with the
+            // same "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz" mapping (trailing fraction zeros trimmed, and the
+            // dot dropped entirely at a zero fraction). A row stored at exactly `from` with a
+            // zero-fraction tick then compares EQUAL, so the `Timestamp >= from` contract counts it
+            // instead of excluding it — a fixed-width ".fffffff" bound sorts above the stored
+            // "...ss+00:00" because '+' (0x2B) < '.' (0x2E) (issue #1403). Mirrors the proven
+            // parameterized raw-SQL pattern in LlmQueueRepository.GetStuckProcessingNonCaptureAsync.
+            //
+            // Normalize the bounds to UTC first: EF's SQLite mapping PRESERVES the offset (it does not
+            // convert to UTC), so a caller-supplied non-UTC bound (e.g. -05:00) would serialize with a
+            // "-05:00" suffix and its shifted wall-clock digits would compare against the stored
+            // "+00:00" rows as a raw string — NOT by instant. ToUniversalTime() gives a "+00:00"-offset
+            // value of the same instant so both sides share the suffix and TEXT order equals chrono order.
+            var fromUtc = from.ToUniversalTime();
+            var toUtc = to.ToUniversalTime();
             var rows = await _context.Database
-                .SqlQueryRaw<DateCountRow>(
-                    "SELECT SUBSTR(Timestamp, 1, 10) AS DateStr, COUNT(*) AS Count " +
-                    "FROM AuditLogs " +
-                    "WHERE UserId = {0} AND Timestamp >= {1} AND Timestamp <= {2} " +
-                    "GROUP BY SUBSTR(Timestamp, 1, 10)",
-                    userId, fromStr, toStr)
+                .SqlQuery<DateCountRow>(
+                    $"""
+                    SELECT SUBSTR(Timestamp, 1, 10) AS DateStr, COUNT(*) AS Count
+                    FROM AuditLogs
+                    WHERE UserId = {userId} AND Timestamp >= {fromUtc} AND Timestamp <= {toUtc}
+                    GROUP BY SUBSTR(Timestamp, 1, 10)
+                    """)
                 .ToListAsync(cancellationToken);
 
             return rows
@@ -307,17 +331,22 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             int deleted;
             if (_context.Database.IsSqlite())
             {
-                // SQLite stores DateTimeOffset as a string in "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm" format.
-                // We must format the cutoff identically so the < comparison (string ordering) works correctly.
-                // See OAuthAuthCodeRepository.DeleteExpiredAsync for the same pattern.
-                // Normalize to UTC first so that a non-UTC DateTimeOffset (e.g. -05:00) is converted to
-                // its UTC-equivalent time before the "+00:00" suffix is appended; without this the time
-                // component would be wrong and entries in the wrong window could be kept or deleted.
-                var utcCutoff = olderThan.UtcDateTime;
-                var olderThanStr = utcCutoff.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "+00:00";
-                deleted = await _context.Database.ExecuteSqlRawAsync(
-                    "DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM AuditLogs WHERE Timestamp < {0} ORDER BY Timestamp ASC LIMIT {1})",
-                    new object[] { olderThanStr, batchSize },
+                // Pass the DateTimeOffset cutoff as a parameter (not a hand-built ".fffffff" string):
+                // EF's SQLite provider serializes both the parameter and the stored Timestamp column with
+                // the same "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz" mapping (trailing fraction zeros trimmed, dot
+                // dropped at a zero fraction). A row stored at exactly the cutoff with a zero-fraction tick
+                // then compares EQUAL, so the strictly-older `Timestamp < cutoff` contract KEEPS it instead
+                // of deleting it — a fixed-width bound sorts above the stored "...ss+00:00" because
+                // '+' (0x2B) < '.' (0x2E) (issue #1403). See OAuthAuthCodeRepository.DeleteExpiredAsync.
+                //
+                // Normalize to UTC first: EF's SQLite mapping PRESERVES the offset (it does not convert to
+                // UTC), so a non-UTC cutoff (e.g. -05:00) would serialize with a "-05:00" suffix and its
+                // shifted wall-clock digits would compare against the stored "+00:00" rows as a raw string
+                // rather than by instant. ToUniversalTime() yields the same instant at "+00:00" so both
+                // sides share the suffix and TEXT order equals chronological order.
+                var cutoffUtc = olderThan.ToUniversalTime();
+                deleted = await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $"DELETE FROM AuditLogs WHERE Id IN (SELECT Id FROM AuditLogs WHERE Timestamp < {cutoffUtc} ORDER BY Timestamp ASC LIMIT {batchSize})",
                     cancellationToken);
             }
             else

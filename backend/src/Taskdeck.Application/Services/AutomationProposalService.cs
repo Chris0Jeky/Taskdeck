@@ -579,6 +579,41 @@ public class AutomationProposalService : IAutomationProposalService
         return Result.Success(generatedDiff);
     }
 
+    public async Task<Result<string>> GetTerminalProposalStoredPreviewAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(id, cancellationToken);
+        if (proposal == null)
+            return Result.Failure<string>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
+
+        // A decided proposal's diff is historical: rebuilding it against the current board would
+        // describe changes that already happened (or were rejected), so the STORED preview is
+        // served rather than a live diff (#1397). But the requester/board-access half of the gate
+        // must still hold — the shared AutomationPolicyEngine.ValidateBoardAccessAsync, the exact
+        // checks (and codes/messages) ValidatePermissionsAsync composes on the live diff path
+        // (#1398/#1413): requester exists → 404, board exists → 404, requester has board access
+        // → 403. This closes the MCP preview==apply asymmetry (#1415) where a reviewer who lost
+        // board access, or whose board was deleted, could still read the stored preview. The
+        // operation-contract validator and the pre-decision structure/expiry gates are
+        // intentionally NOT run: they no longer apply to a completed proposal, and re-validating
+        // a historical preview against LIVE board state would wrongly deny it whenever a
+        // referenced card/column/label was later deleted — or always, for an Applied create-card
+        // whose TargetId now resolves. Calling ValidateBoardAccessAsync directly also covers
+        // operation-less proposals uniformly, which the full gate's empty-operations
+        // short-circuit would skip.
+        var accessValidation = await _policyEngine.ValidateBoardAccessAsync(
+            proposal.RequestedByUserId,
+            proposal.BoardId,
+            cancellationToken);
+        if (!accessValidation.IsSuccess)
+            return Result.Failure<string>(accessValidation.ErrorCode, accessValidation.ErrorMessage);
+
+        // A never-stored preview passes through as null (never coerced to ""), so callers can
+        // distinguish never-stored from stored-but-empty. Under the MCP resource serializer's
+        // WhenWritingNull policy this omits the field — exactly how the raw DiffPreview field
+        // serialized before the gating.
+        return Result.Success(proposal.DiffPreview!);
+    }
+
     /// <summary>
     /// Enforces the same expiry gate Apply runs via
     /// <see cref="AutomationPolicyEngine.ValidatePolicy"/>: an expired proposal is rejected
