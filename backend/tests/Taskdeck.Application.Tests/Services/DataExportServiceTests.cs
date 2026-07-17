@@ -523,6 +523,9 @@ public class DataExportServiceTests
     public async Task ExportUserDataAsync_BatchBlobLoad_ScopedToRequestingUserOnly()
     {
         // #1355 user-scoping: every batch load must pass the requesting user's id and never another.
+        // NOTE: this is a wiring check only (the service forwards its own parameter); the REAL
+        // scoping enforcement proof lives in SourceArtefactRepositoryIntegrationTests
+        // .GetContentsForUserAsync_NeverReturnsAnotherUsersBlob against real SQLite.
         SetupUserFound();
         SetupEmptyRepositories();
         SeedArtefactsWithBlobBatch(4);
@@ -547,6 +550,9 @@ public class DataExportServiceTests
     {
         // #1355: preserve the missing-blob contract — if the batch does not return content for an
         // artefact that has metadata, the export must fail rather than emit a partial artefact.
+        // Pins BOTH halves: the public UnexpectedError result AND the internal
+        // InvalidOperationException with the same "...is missing its blob." message shape as the
+        // per-item path (observed via the logged exception at the service seam).
         SetupUserFound();
         SetupEmptyRepositories();
         var (artefacts, contentById) = SeedArtefactsWithBlobBatch(2);
@@ -560,10 +566,29 @@ public class DataExportServiceTests
                     .Where(id => id != missingId)
                     .ToDictionary(id => id, id => contentById[id]));
 
-        var result = await _service.ExportUserDataAsync(_userId);
+        var loggerMock = new Mock<ILogger<DataExportService>>();
+        var serviceWithLogger = new DataExportService(
+            _unitOfWorkMock.Object,
+            _historyServiceMock.Object,
+            _artefactRepoMock.Object,
+            _extractionRepoMock.Object,
+            loggerMock.Object);
+
+        var result = await serviceWithLogger.ExportUserDataAsync(_userId);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to export user data")),
+                It.Is<Exception>(ex =>
+                    ex is InvalidOperationException &&
+                    ex.Message == $"Artefact {missingId} is missing its blob."),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once,
+            "the batched path must surface the same InvalidOperationException missing-blob contract as the per-item path");
     }
 
     /// <summary>
