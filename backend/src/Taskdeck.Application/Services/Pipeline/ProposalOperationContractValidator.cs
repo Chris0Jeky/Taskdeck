@@ -127,17 +127,17 @@ public static class ProposalOperationContractValidator
 
         if (isCardCreate)
         {
-            // The card being created is identified by its TargetId (a cardId parameter,
-            // if present, must equal it — enforced by the equality check above). Validate
-            // it as a NEW card id so a collision with an existing card fails at preview
-            // instead of during Apply. A create op that also carries a cardId parameter
-            // must never be routed through the existing-card branch, which would treat the
-            // colliding id as a valid reference and let Apply blow up on the duplicate
-            // (#1370 preview == apply).
-            var newCardId = targetId ?? cardId;
-            if (newCardId.HasValue)
+            // Apply sources the created card's id exclusively from operation.TargetId
+            // (OperationHandlerRegistry.CreateCardAsync ignores a cardId parameter; a
+            // cardId parameter that disagrees with targetId is already rejected above).
+            // Validate exactly that id as a NEW card id, so a collision with an existing
+            // card fails at preview instead of during Apply, and never route a create op
+            // through the existing-card branch, which would treat the colliding id as a
+            // valid reference (#1370 preview == apply). When TargetId is absent Apply
+            // generates a fresh id, so there is nothing to collision-check.
+            if (targetId.HasValue)
             {
-                var cardResult = await validationContext.ValidateNewCardIdAsync(newCardId.Value, cancellationToken);
+                var cardResult = await validationContext.ValidateNewCardIdAsync(targetId.Value, cancellationToken);
                 if (!cardResult.IsSuccess)
                     return cardResult;
             }
@@ -467,10 +467,10 @@ public static class ProposalOperationContractValidator
             // aggregate rejects it at Apply. Reject it before preview so the approval
             // gate never registers an unusable planned card (#1319 preview == apply).
             if (cardId == Guid.Empty)
-                return Result.Failure(ErrorCodes.ValidationError, "Create card targetId must be a non-empty identifier");
+                return Result.Failure(ErrorCodes.ValidationError, "Create card id must be a non-empty identifier");
 
             if (_plannedCardIds.Contains(cardId))
-                return Result.Failure(ErrorCodes.Conflict, "Create card targetId is duplicated within the proposal");
+                return Result.Failure(ErrorCodes.Conflict, "Create card id is duplicated within the proposal");
 
             if (!_cardBoardIds.TryGetValue(cardId, out var existingCardBoardId))
             {
@@ -479,7 +479,7 @@ public static class ProposalOperationContractValidator
             }
 
             return existingCardBoardId.HasValue
-                ? Result.Failure(ErrorCodes.Conflict, "Create card targetId already exists")
+                ? Result.Failure(ErrorCodes.Conflict, "Create card id already exists")
                 : Result.Success();
         }
 
