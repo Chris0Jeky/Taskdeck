@@ -2302,9 +2302,10 @@ public class AutomationProposalServiceTests
 
     private static AutomationProposal BuildTerminalPreviewProposal(Guid requesterId, Guid boardId, string preview)
     {
-        // An update-board operation clears the shared operation-contract validator against the
-        // default board mock (mirrors GetProposalDiffAsync_ShouldReturnStoredPreview_ForWellFormed…),
-        // so these tests exercise the requester/board-access gate rather than op-shape rejection.
+        // A board-scoped Applied proposal carrying one benign update-board operation. The terminal
+        // stored-preview read gates ONLY on requester/board access (ValidateBoardAccessAsync) —
+        // operations are never re-validated against live board state — so the op shape here is
+        // representative rather than load-bearing.
         var proposal = new AutomationProposal(
             ProposalSourceType.Chat,
             requesterId,
@@ -2439,8 +2440,9 @@ public class AutomationProposalServiceTests
     private static AutomationProposal BuildZeroOperationTerminalProposal(Guid requesterId, Guid boardId, string preview)
     {
         // CreateProposalAsync enforces no minimum operation count, so a board-scoped proposal can
-        // carry zero operations and still be decided (here: Rejected). This is the shape that would
-        // slip past ValidatePermissionsAsync's empty-operations short-circuit without the guard.
+        // carry zero operations and still be decided (here: Rejected). ValidatePermissionsAsync's
+        // empty-operations short-circuit skips its board half for this shape — the terminal read
+        // calls ValidateBoardAccessAsync directly so the board gate holds uniformly.
         var proposal = new AutomationProposal(
             ProposalSourceType.Chat,
             requesterId,
@@ -2458,7 +2460,8 @@ public class AutomationProposalServiceTests
     {
         // #1415 regression guard: a board-scoped decided proposal with NO operations must still be
         // denied to a requester who lost board access — ValidatePermissionsAsync short-circuits on
-        // the empty op list before its board gate, so the explicit fallback must fail it closed.
+        // the empty op list before its board half, so the terminal read's direct
+        // ValidateBoardAccessAsync call must fail it closed.
         var proposalId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
         var requesterId = Guid.NewGuid();
@@ -2510,6 +2513,102 @@ public class AutomationProposalServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be("empty-but-visible");
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldServeStoredPreview_WhenAppliedMoveCardReferencesDeletedCard()
+    {
+        // #1425 MEDIUM regression pin (over-gating): an Applied move-card proposal whose referenced
+        // card was deleted AFTER apply must still serve its stored historical preview to a requester
+        // with intact access. The terminal read must NOT run the operation-contract validator — that
+        // validator checks references against LIVE board state (ValidateCardBoardAsync) and would
+        // wrongly deny the historical preview with a misleading scope/NotFound error.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, requesterId, "Move card", RiskLevel.Medium,
+            Guid.NewGuid().ToString(), boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, cardId, columnId = Guid.NewGuid() });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "move", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: cardId.ToString()));
+        proposal.SetDiffPreview("historical: moved card to Done");
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // The referenced card no longer exists (deleted post-apply).
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByIdAsync(cardId, It.IsAny<CancellationToken>())).ReturnsAsync((Card?)null);
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Be("historical: moved card to Done");
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldServeStoredPreview_WhenAppliedCreateCardTargetIdNowResolves()
+    {
+        // #1425 MEDIUM regression pin (the always-fires case): an Applied create-card proposal's
+        // TargetId resolves to the card Apply created — the operation-contract validator's
+        // new-card-id collision check (ValidateNewCardIdAsync) would ALWAYS reject it with
+        // Conflict. The terminal read must serve the stored preview immediately instead.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var createdCardId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, requesterId, "Create card", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, title = "Task", columnId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: createdCardId.ToString()));
+        proposal.SetDiffPreview("historical: created card \"Task\"");
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // The created card EXISTS now — exactly what the live new-card-id check would reject.
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock
+            .Setup(r => r.GetByIdAsync(createdCardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TestDataBuilder.CreateCard(boardId, columnId, "Task"));
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Be("historical: created card \"Task\"");
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNullPreview_WhenNoPreviewWasStored()
+    {
+        // #1425 LOW-2 pin: a decided proposal that never had a preview stored returns null (not ""),
+        // so MCP clients can distinguish never-stored from stored-but-empty — matching how the raw
+        // field serialized before the gating.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, requesterId, "Never previewed", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId);
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().BeNull();
     }
 
     #endregion
