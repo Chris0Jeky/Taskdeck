@@ -245,6 +245,8 @@ Bound to `LlmQuotaSettings`.
 | `LlmQuota:RequestsPerHour` | `int` | `60` | Max LLM requests per user per hour. `0` means unlimited. | No |
 | `LlmQuota:TokensPerDay` | `long` | `100000` | Max combined input+output tokens per user per day. `0` means unlimited. | No |
 | `LlmQuota:GlobalBudgetCeilingTokens` | `long` | `0` | Global per-day token ceiling across all users. `0` means unlimited. | No |
+| `LlmQuota:ReservationEstimatedTokens` | `int` | `2000` | Tokens held per in-flight quota reservation before the actual usage is known (issue #1313). Concurrent callers see this estimate against the token budget, bounding overshoot at the boundary; it is replaced by the real count when the reservation commits. | No |
+| `LlmQuota:ReservationTtlSeconds` | `int` | `120` | How long a quota reservation stays live before it is treated as stale (a crashed process between reserve and commit) and swept. Long enough to outlast a slow LLM call. | No |
 
 ### `LlmKillSwitch`
 
