@@ -39,10 +39,23 @@ public class LlmUsageRecordConfiguration : IEntityTypeConfiguration<LlmUsageReco
         builder.Property(r => r.UpdatedAt)
             .IsRequired();
 
+        // Reservation lifecycle (issue #1313). Status is always written explicitly by the app (the
+        // constructor and RecordUsageAsync produce Committed; the reservation flow produces Reserved),
+        // so it is NOT configured as a store-generated default here — that would make EF omit a
+        // CLR-default Reserved (0) value on insert and silently store the DB default instead. Existing
+        // rows are backfilled to Committed by the migration's one-time AddColumn defaultValue.
+        builder.Property(r => r.Status)
+            .IsRequired()
+            .HasConversion<int>();
+
+        builder.Property(r => r.ExpiresAt);
+
         // Indexes for quota queries
         builder.HasIndex(r => r.UserId);
         builder.HasIndex(r => r.CreatedAt);
         builder.HasIndex(r => new { r.UserId, r.CreatedAt });
         builder.HasIndex(r => new { r.Surface, r.CreatedAt });
+        // Sweep of expired reservations and the "live reserved" filter both probe (Status, ExpiresAt).
+        builder.HasIndex(r => new { r.Status, r.ExpiresAt });
     }
 }
