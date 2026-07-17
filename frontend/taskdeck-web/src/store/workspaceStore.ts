@@ -40,6 +40,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   let preferenceRequestVersion = 0
   let pendingPreferenceRequests = 0
   let todayRequestVersion = 0
+  // Session-scoped unsaved-local-choice flag (issue #1343). Set when an explicit
+  // updateMode save FAILS: the store keeps the local selection (and says so via
+  // the warning toast), so summary responses must not re-apply the server's
+  // stale preference state until a later save succeeds or hydratePreferences
+  // confirms the server matches the local choice. Deliberately not persisted:
+  // a full reload starts a new session, which re-syncs from server truth.
+  let modeDirty = false
 
   const hasHomeSummary = computed(() => homeSummary.value !== null)
   const hasTodaySummary = computed(() => todaySummary.value !== null)
@@ -55,17 +62,36 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     persistLocalMode(nextMode)
   }
 
-  // Ordering guard for summary-derived mode (issue #1343). A Home/Today summary
-  // request can resolve *after* the user makes a newer local mode choice
-  // (updateMode) or a newer preference hydrate. Both of those bump
-  // preferenceRequestVersion at their start, so a summary that captured an
-  // older version must not overwrite the newer explicit choice. When the
-  // version is unchanged the summary is genuinely newer and applies as normal.
-  function applySummaryMode(nextMode: WorkspaceMode, preferenceVersionAtStart: number): boolean {
-    if (preferenceRequestVersion !== preferenceVersionAtStart) {
+  // Ordering guard for summary-derived preference state — mode AND onboarding —
+  // (issue #1343). A Home/Today summary must not overwrite newer explicit
+  // preference actions. Its mode/onboarding are applied only when ALL hold:
+  //   1. No preference action (updateMode / hydratePreferences / updateOnboarding)
+  //      started after the summary request began — those bump
+  //      preferenceRequestVersion at their start, so a summary that captured an
+  //      older version is stale.
+  //   2. No preference request is still in flight at apply time — its outcome is
+  //      unknown, and the summary payload may predate its server-side commit;
+  //      the preference request's own resolution applies the authoritative state.
+  //   3. No unsaved local choice is pending (modeDirty) — after a FAILED save the
+  //      version is stable but the server still holds the old state.
+  // When all three hold the summary is genuinely newer and applies as normal.
+  function canApplySummaryPreferences(preferenceVersionAtStart: number): boolean {
+    return (
+      preferenceRequestVersion === preferenceVersionAtStart &&
+      pendingPreferenceRequests === 0 &&
+      !modeDirty
+    )
+  }
+
+  function applySummaryPreferences(
+    summary: HomeSummary | TodaySummary,
+    preferenceVersionAtStart: number,
+  ): boolean {
+    if (!canApplySummaryPreferences(preferenceVersionAtStart)) {
       return false
     }
-    applyMode(nextMode)
+    applyMode(summary.workspaceMode)
+    syncOnboarding(summary.onboarding)
     return true
   }
 
@@ -126,9 +152,19 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const preference = await workspaceApi.getPreferences()
 
       if (isCurrentPreferenceRequest(requestVersion)) {
-        applyMode(preference.workspaceMode)
-        syncOnboarding(preference.onboarding)
-        preferencesHydrated.value = true
+        if (modeDirty && preference.workspaceMode !== mode.value) {
+          // The server still holds the pre-failed-save mode. Keep the unsaved
+          // local choice; preferencesHydrated stays false so the unsynced state
+          // remains visible. Onboarding has no unsaved local state, so the
+          // fresh server copy applies.
+          syncOnboarding(preference.onboarding)
+        } else {
+          // Server matches the local choice (or nothing is unsaved): confirmed.
+          modeDirty = false
+          applyMode(preference.workspaceMode)
+          syncOnboarding(preference.onboarding)
+          preferencesHydrated.value = true
+        }
       }
 
       return preference
@@ -164,12 +200,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const preference = await workspaceApi.updatePreferences({ workspaceMode: nextMode })
 
       if (isCurrentPreferenceRequest(requestVersion)) {
+        modeDirty = false
         applyMode(preference.workspaceMode)
         syncOnboarding(preference.onboarding)
         preferencesHydrated.value = true
       }
     } catch (e: unknown) {
       if (isCurrentPreferenceRequest(requestVersion)) {
+        // Keep the local selection AND remember it is unsaved so subsequent
+        // summary fetches cannot silently revert it (issue #1343).
+        modeDirty = true
         preferenceError.value = getErrorMessage(e, "We couldn't save this workspace mode")
         preferencesHydrated.value = false
         toast.warning(`${preferenceError.value}. Keeping the local selection for now.`)
@@ -199,9 +239,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       homeError.value = null
       const summary = await workspaceApi.getHomeSummary()
       homeSummary.value = summary
-      syncOnboarding(summary.onboarding)
-      if (applySummaryMode(summary.workspaceMode, preferenceVersionAtStart)) {
+      if (applySummaryPreferences(summary, preferenceVersionAtStart)) {
         preferencesHydrated.value = true
+      } else if (onboarding.value) {
+        // Stale summary: keep the newer known onboarding visible in the stored
+        // summary so views reading summary.onboarding do not diverge from the
+        // guarded onboarding ref.
+        homeSummary.value = { ...summary, onboarding: onboarding.value }
       }
       return summary
     } catch (e: unknown) {
@@ -235,8 +279,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const summary = await workspaceApi.getTodaySummary()
       if (requestVersion === todayRequestVersion) {
         todaySummary.value = summary
-        syncOnboarding(summary.onboarding)
-        applySummaryMode(summary.workspaceMode, preferenceVersionAtStart)
+        if (!applySummaryPreferences(summary, preferenceVersionAtStart) && onboarding.value) {
+          // Stale summary: keep the newer known onboarding visible (see Home).
+          todaySummary.value = { ...summary, onboarding: onboarding.value }
+        }
       }
       return summary
     } catch (e: unknown) {
@@ -262,7 +308,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
 
     try {
-      beginPreferenceLoading()
+      // Versioned like updateMode/hydratePreferences: an explicit onboarding
+      // action makes in-flight summaries stale so a late summary cannot revert
+      // it (issue #1343). The response itself applies unconditionally — it is
+      // the authoritative result of this explicit action.
+      startVersionedPreferenceRequest()
       preferenceError.value = null
       const nextOnboarding = await workspaceApi.updateOnboarding({ action })
       syncOnboarding(nextOnboarding)
@@ -289,6 +339,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function resetForLogout() {
+    modeDirty = false
     preferencesHydrated.value = false
     preferenceError.value = null
     onboarding.value = null
