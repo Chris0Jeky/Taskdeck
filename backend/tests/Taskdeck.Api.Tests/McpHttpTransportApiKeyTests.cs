@@ -409,11 +409,13 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task McpEndpoint_ProductionDefaultIpBudget_DoesNotStarveMultipleKeysBehindOneAddress()
     {
-        // Exercises the #1368 blind spot: the PRODUCTION default pre-auth IP budget (120/60s) against
-        // two keys behind ONE client address (TestServer reports no remote IP, so both share the same
-        // "unknown" pre-auth bucket). Only McpPerApiKey is raised — so the test can push more valid
-        // traffic than the 120-permit IP bucket. Under the old acquire-on-every-request behavior the
-        // 121st valid request would spuriously 429; the failure budget must never charge valid traffic.
+        // Exercises the #1368 blind spot. Precisely: only the pre-auth IP budget — the setting under
+        // test — is at its production default (120/60s); McpPerApiKey is deliberately raised to 500
+        // (NOT a production value) so 130 valid requests can exceed the 120-permit IP bucket without
+        // tripping the per-key 60/min limit. This is NOT a full production-defaults configuration.
+        // Two keys sit behind ONE client address (TestServer reports no remote IP, so both share the
+        // same "unknown" pre-auth bucket). Under the old acquire-on-every-request behavior the 121st
+        // valid request would spuriously 429; the failure budget must never charge valid traffic.
         using var factory = _factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("RateLimiting:Enabled", "true");
