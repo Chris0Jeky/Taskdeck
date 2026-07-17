@@ -198,8 +198,21 @@ public class DataExportService : IDataExportService
             foreach (var chunk in artefactMetadata.Chunk(StreamPageSize))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var chunkIds = chunk.Select(a => a.Id).ToList();
                 var blobs = await _artefacts.GetContentsForUserAsync(
-                    chunk.Select(a => a.Id).ToList(),
+                    chunkIds,
+                    userId,
+                    cancellationToken);
+
+                // #1387: batch the per-artefact extraction-history loads in the same 500-id chunks
+                // as the blob batch above, replacing the former one-paged-query-per-artefact N+1
+                // (GetAllExtractionHistoryAsync). The batch groups results per artefact in
+                // CreatedAt ASC, Id ASC order — identical to the former sequential paging — so the
+                // exported extractions stay byte-for-byte identical. Peak memory stays bounded: the
+                // pre-load MaxBufferedArtefactBytes guard already caps total extraction bytes across
+                // the whole export, so a single chunk's grouped history can never exceed that cap.
+                var extractionsByArtefact = await _extractions.GetByArtefactsForUserAsync(
+                    chunkIds,
                     userId,
                     cancellationToken);
 
@@ -208,10 +221,9 @@ public class DataExportService : IDataExportService
                     if (!blobs.TryGetValue(artefact.Id, out var bytes) || bytes is null)
                         throw new InvalidOperationException($"Artefact {artefact.Id} is missing its blob.");
 
-                    var extractionHistory = await GetAllExtractionHistoryAsync(
-                        artefact.Id,
-                        userId,
-                        cancellationToken);
+                    var extractionHistory = extractionsByArtefact.TryGetValue(artefact.Id, out var extractions)
+                        ? extractions.Select(MapExtractionForExport).ToList()
+                        : (IReadOnlyList<UserDataExportArtefactExtractionDto>)Array.Empty<UserDataExportArtefactExtractionDto>();
                     exportArtefacts.Add(MapArtefactForExport(artefact, bytes, extractionHistory));
                 }
             }
@@ -485,6 +497,11 @@ public class DataExportService : IDataExportService
     private static readonly byte[] ArtefactObjectSuffix = "]}"u8.ToArray();
     private static readonly byte[] ExportSuffix = "]}}"u8.ToArray();
 
+    // Coupled constraint (#1387): this is also the buffered export's batch-chunk size for
+    // ISourceArtefactRepository.GetContentsForUserAsync and
+    // IArtefactExtractionRepository.GetByArtefactsForUserAsync, whose implementations cap a batch
+    // at MaxBatchIdCount (900) raw ids. StreamPageSize must stay <= 900 or the buffered export
+    // throws ArgumentException at runtime.
     private const int StreamPageSize = 500;
 
     private async Task WriteArtefactsTailAsync(
@@ -620,26 +637,6 @@ public class DataExportService : IDataExportService
             artefact.CreatedAt,
             Convert.ToBase64String(content),
             extractions);
-
-    private async Task<IReadOnlyList<UserDataExportArtefactExtractionDto>> GetAllExtractionHistoryAsync(
-        Guid artefactId,
-        Guid userId,
-        CancellationToken cancellationToken)
-    {
-        var all = new List<UserDataExportArtefactExtractionDto>();
-        while (true)
-        {
-            var page = await _extractions.GetByArtefactForUserAsync(
-                artefactId,
-                userId,
-                limit: 50,
-                offset: all.Count,
-                cancellationToken: cancellationToken);
-            all.AddRange(page.Select(MapExtractionForExport));
-            if (page.Count < 50)
-                return all;
-        }
-    }
 
     private async Task WriteExtractionHistoryAsync(
         Guid artefactId,
