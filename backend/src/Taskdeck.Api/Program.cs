@@ -174,17 +174,17 @@ if (args.Contains("--mcp"))
             mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.McpAuthenticationRateLimitingMiddleware>();
         }
 
-        // API key authentication for MCP requests.
+        // API key authentication for MCP requests. ApiKeyMiddleware also enforces the per-key request
+        // budget (McpPerApiKey) via McpPerApiKeyRateLimiter (#1384) before the user lookup and
+        // last-used write. The standalone host serves only the /mcp endpoint, which no longer carries
+        // an endpoint-stage rate-limiting policy, so the UseRateLimiter() middleware (which only
+        // applies endpoint/global policies) is not needed here — the pre-auth failure budget and the
+        // per-key budget are both enforced by dedicated middleware/components above.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.ApiKeyMiddleware>();
 
-        // Apply rate limiting before endpoint routing.
-        if (mcpRateLimitingSettings.Enabled)
-        {
-            mcpHttpApp.UseRateLimiter();
-        }
-
-        // Use the same authenticated route mapping as the co-hosted API.
-        mcpHttpApp.MapTaskdeckMcpEndpoint(mcpRateLimitingSettings.Enabled);
+        // Use the same authenticated route mapping as the co-hosted API. Per-key rate limiting is
+        // enforced in ApiKeyMiddleware (#1384), shared identically by both pipelines.
+        mcpHttpApp.MapTaskdeckMcpEndpoint();
 
         var mcpHttpLogger = mcpHttpApp.Services.GetRequiredService<ILogger<Program>>();
         mcpHttpLogger.LogInformation("Taskdeck MCP HTTP server starting on http://{Host}:{Port}", mcpBindHost, mcpPort);

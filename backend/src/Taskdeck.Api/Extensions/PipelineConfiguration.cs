@@ -152,9 +152,9 @@ public static class PipelineConfiguration
         }).AllowAnonymous();
 
         // MCP Streamable HTTP endpoint for external AI agent integration.
-        // Authenticated via ApiKeyMiddleware (Bearer tdsk_... tokens).
-        // Rate limiting applied per validated opaque API key ID.
-        app.MapTaskdeckMcpEndpoint(rateLimitingSettings.Enabled);
+        // Authenticated via ApiKeyMiddleware (Bearer tdsk_... tokens), which also enforces the
+        // per-key request budget (McpPerApiKey) before the user lookup and last-used write (#1384).
+        app.MapTaskdeckMcpEndpoint();
         // MCP is authenticated by ApiKeyMiddleware (above): it 401s missing/invalid/revoked keys
         // before routing and sets an authenticated principal for valid keys, which satisfies the
         // global FallbackPolicy (#1132 AC4). The MCP SDK endpoint does not honor an
