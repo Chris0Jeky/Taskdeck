@@ -125,9 +125,13 @@ public sealed class ApiKeyMiddleware
         //
         // Resolved optionally: the limiter is registered only when rate limiting is enabled, so when it
         // is absent the check is skipped (no MCP throttling when disabled), matching prior behaviour.
+        // Deliberately NO null-conditional on RequestServices: ASP.NET Core populates the scoped
+        // provider before application middleware runs, and a ?. here would add a second SILENT skip
+        // path for a security charge (fail-open). The only intended skip is GetService returning null
+        // when rate limiting is disabled; a genuinely missing provider should throw loudly.
         context.Items[ApiKeyIdItemKey] = apiKey.Id;
 
-        var perKeyLimiter = context.RequestServices?.GetService<McpPerApiKeyRateLimiter>();
+        var perKeyLimiter = context.RequestServices.GetService<McpPerApiKeyRateLimiter>();
         if (perKeyLimiter is not null)
         {
             using var perKeyLease = perKeyLimiter.AttemptAcquire(context);

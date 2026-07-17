@@ -17,7 +17,15 @@ public static class RateLimitingRegistration
         RateLimitingSettings settings)
     {
         services.AddRateLimiter(options => ConfigureRateLimiting(options, settings));
-        services.AddSingleton(new McpAuthenticationAttemptLimiter(
+
+        // Factory registrations (not pre-built instances): the container disposes only singletons it
+        // constructed itself, so `AddSingleton(new ...)` would leak each limiter's background
+        // replenishment timer past host shutdown (one leaked timer per WebApplicationFactory host in
+        // tests). Both limiters are IDisposable; factory registration ties their disposal to the host.
+        // Construction is therefore lazy (first resolution, not registration) — callers that must
+        // fail fast on invalid settings validate BEFORE calling this method (see the standalone host
+        // in Program.cs), so the ordering guarantee is unchanged.
+        services.AddSingleton(_ => new McpAuthenticationAttemptLimiter(
             settings.McpAuthenticationPerIp,
             settings.McpAuthenticationPerIpConcurrency));
 
@@ -28,7 +36,7 @@ public static class RateLimitingRegistration
         // and the standalone MCP host call this method, so both pipelines get the same enforcement.
         if (settings.Enabled)
         {
-            services.AddSingleton(new McpPerApiKeyRateLimiter(settings.McpPerApiKey));
+            services.AddSingleton(_ => new McpPerApiKeyRateLimiter(settings.McpPerApiKey));
         }
 
         return services;
