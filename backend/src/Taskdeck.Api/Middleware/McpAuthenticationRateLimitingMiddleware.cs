@@ -62,16 +62,31 @@ public sealed class McpAuthenticationRateLimitingMiddleware
         }
 
         // Let the request proceed through authentication WITHOUT consuming failure budget.
-        await _next(context);
-
-        // Spend exactly one permit only when authentication failed. ApiKeyMiddleware is the sole
-        // source of 401 on /mcp (a valid key sets an authenticated principal and the pipeline then
-        // returns non-401), so a 401 unambiguously marks a failed attempt. Successful requests
-        // leave the failure budget untouched — the per-key limiter is the only thing that throttles
-        // them — which is what restores per-key isolation for any number of keys behind one address.
-        if (context.Response.StatusCode == StatusCodes.Status401Unauthorized)
+        try
         {
-            limiter.RecordFailedAttempt(context);
+            await _next(context);
+        }
+        finally
+        {
+            // Spend exactly one permit only when authentication failed. ApiKeyMiddleware is the
+            // sole source of 401 on /mcp (a valid key sets an authenticated principal and the
+            // pipeline then returns non-401), so a 401 unambiguously marks a failed attempt.
+            // Successful requests leave the failure budget untouched — the per-key limiter is the
+            // only thing that throttles them — which is what restores per-key isolation for any
+            // number of keys behind one address.
+            //
+            // Consumed in a finally block so the charge is ABORT-PROOF: a client that disconnects
+            // while the 401 body is being written makes the response write throw and unwind past
+            // this middleware — without the finally, an abort-storm would repeat invalid-key
+            // lookups for free (the concurrency gate caps in-flight work, not the per-window
+            // lookup count). ApiKeyMiddleware sets AuthenticationFailedItemKey BEFORE writing the
+            // response, so the failed attempt is visible here regardless of how far the aborted
+            // write got; the 401 status check is kept as a defensive secondary signal.
+            if (context.Items.ContainsKey(ApiKeyMiddleware.AuthenticationFailedItemKey)
+                || context.Response.StatusCode == StatusCodes.Status401Unauthorized)
+            {
+                limiter.RecordFailedAttempt(context);
+            }
         }
     }
 }

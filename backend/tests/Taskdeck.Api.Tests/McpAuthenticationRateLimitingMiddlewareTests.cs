@@ -268,6 +268,42 @@ public sealed class McpAuthenticationRateLimitingMiddlewareTests
         Volatile.Read(ref authLayerEntered).Should().Be(3);
     }
 
+    // ── (8) Abort-proof failure consumption ──
+
+    [Fact]
+    public async Task AbortedFailureResponseWrite_StillConsumesFailureBudget()
+    {
+        // Simulates the abort-storm evasion: an invalid key reaches the auth layer, which marks
+        // the failure and sets 401 (as ApiKeyMiddleware does BEFORE writing the body), then the
+        // client disconnect makes the response write throw. The exception unwinds past the
+        // middleware, but its finally block must still charge the failure budget — otherwise
+        // aborted requests would get unlimited sequential free key lookups (the concurrency gate
+        // caps in-flight work, not the per-window lookup count).
+        using var limiter = CreateLimiter(1, 60);
+        var authLayerInvocations = 0;
+        var middleware = new McpAuthenticationRateLimitingMiddleware(context =>
+        {
+            authLayerInvocations++;
+            context.Items[ApiKeyMiddleware.AuthenticationFailedItemKey] = true;
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            throw new OperationCanceledException("client aborted during the 401 response write");
+        });
+
+        var aborted = CreateMcpContext("203.0.113.99");
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => middleware.InvokeAsync(aborted, limiter));
+        authLayerInvocations.Should().Be(1);
+
+        // The aborted failure consumed the (single-permit) budget: the next attempt is rejected
+        // by the pre-check without reaching the auth layer at all.
+        var second = CreateMcpContext("203.0.113.99");
+        await middleware.InvokeAsync(second, limiter);
+        second.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests,
+            "an aborted 401 must still count against the failure budget");
+        authLayerInvocations.Should().Be(1,
+            "the follow-up request must be rejected pre-auth, proving the aborted failure was charged");
+    }
+
     // ── Helpers ──
 
     private static async Task<int> Run(
