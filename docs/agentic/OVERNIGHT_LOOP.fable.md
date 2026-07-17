@@ -6,8 +6,9 @@
 > Read the most recent `ORCHESTRATOR.handoff-*.md` at the repo root (if one exists) and resume
 > from it, then `docs/agentic/OVERNIGHT_LOOP.claude.md` (your operating manual — adopt all of
 > it) with the compute-routing overlay in `docs/agentic/OVERNIGHT_LOOP.fable.md`. Work
-> overnight; wrap up cleanly at a true stop condition with a morning report in the same
-> changed / verified / NOT-verified / residual-risk / Q-batch format, and write
+> overnight; wrap up cleanly at a true stop condition with a morning report in the base
+> manual's wrap format (changed / verified / NOT verified / residual risk / open blockers /
+> deferred-questions batch / exact resume point), and write
 > `ORCHESTRATOR.handoff-<today>.md` (git-excluded) for the session after you.
 
 Optional launch addenda: a queue seed ("substrate first, then correctness, then feature
@@ -43,7 +44,9 @@ an orchestrator that thinks, decides, and gates — not the typist.
    `docs/REVIVAL_PLAN.md`, open PRs/issues, red CI, the failure ledger.
 3. Create/resume the orchestrator ledger (base §0) and build the run backlog in it. Seed from
    the handoff's backlog reconciled with `OUTSTANDING_TASKS.md` open items and the ratified
-   REVIVAL/GEN wave lists — off-list work is not taken.
+   REVIVAL/GEN wave lists; with NO handoff, seed directly from `OUTSTANDING_TASKS.md`, the
+   ratified wave lists, open issues by priority label, and base §2's queue-generation rule —
+   off-list work is not taken either way.
 4. Pin the standing human-gated holds in the ledger: **the hold PRs named in the latest
    handoff** (never merge them), plus the durable classes — workflow-file PRs are
    maintainer-merge-only (stage green, put in the Q batch); never push release tags, touch
@@ -119,13 +122,14 @@ batched fix push to the same worker → full backend suite on the EXACT head (co
 the verdict; delegate the run to a subagent that executes it in its OWN foreground turn, or
 run it inline — never as background Bash; serialize so only ONE full suite runs box-wide at a
 time) → CI green on that head →
-30–60 min bot window from the FINAL push → **thread check by CONTENT** → merge → pull `main` →
-prune worktree+branch (cd out of a worktree before removing it).
+30–60 min bot window from the FINAL push → **feedback check by CONTENT** (unresolved review
+threads AND top-level PR comments AND review-summary bodies posted since the final push) →
+merge → pull `main` → prune worktree+branch (cd out of a worktree before removing it).
 
-- **Thread check by content, never by reviewer names**: query `reviewThreads`, count
-  `isResolved == false`, and READ the bodies of anything unresolved — bots file threads
-  minutes after a push, and a "review" entry with no findings looks identical to one with
-  two P2s until you read it. This applies to docs-only PRs too (a docs sweep has been merged
+- **Feedback check by content, never by reviewer names**: query `reviewThreads` (count
+  `isResolved == false` and READ the bodies), AND sweep top-level PR comments and
+  review-summary bodies since the final push — bots put findings in all three places, and a
+  "review" entry with no findings looks identical to one with two P2s until you read it. This applies to docs-only PRs too (a docs sweep has been merged
   over two valid unresolved P2s before; the fix cost a follow-up PR).
 - **Review-loop discipline**: batch fixes into ONE push per round; every worker replies AND
   resolves threads via GraphQL `resolveReviewThread` and reports `unresolved == 0`; new bot
@@ -154,7 +158,8 @@ prune worktree+branch (cd out of a worktree before removing it).
 - **Box rules (hard-won; also see the latest handoff §7)**: background Bash tasks can be
   killed by the harness — run suites and waits FOREGROUND with explicit timeouts (600000ms is
   the clamp; chain until-loops across calls for longer waits); killed shells can orphan
-  `dotnet` test hosts (`tasklist | grep dotnet`, `taskkill //PID <pid> //F`). Shell cwd
+  `dotnet` test hosts (Bash tool: `tasklist | grep dotnet`, `taskkill //PID <pid> //F` —
+  the doubled slashes are MSYS escaping; from PowerShell use `taskkill /PID <pid> /F`). Shell cwd
   PERSISTS between Bash calls — `cd` explicitly before state-changing commands, and never
   remove a worktree from inside it. A hook appends noise rows
   (`"class": "unclassified", "surface": "Bash"`) to `failure_ledger.jsonl` on non-zero exits —

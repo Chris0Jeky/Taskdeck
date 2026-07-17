@@ -173,11 +173,12 @@ Use **`pre-merge-gate`** + **`verification-closeout`**. Gate:
    behavior via `/verify` when there's a runtime surface, not just green tests).
 2. **CI green on the exact head.** Investigate *every* red; never dismiss as flaky without proof
    (rerun; passes on identical code ⇒ flaky ⇒ **track as an issue and move on**, don't ignore).
-3. Both adversarial reviews resolved; all human + bot threads addressed — **verified by
-   CONTENT**: query `reviewThreads`, require `isResolved == false` count of 0, and READ the
-   bodies of any late arrivals. Never gate on reviewer names or review-event presence; a bot
-   "review" with no findings looks identical to one carrying P2s until read. Applies to
-   docs-only PRs too.
+3. Both adversarial reviews resolved; all human + bot feedback addressed — **verified by
+   CONTENT**: query `reviewThreads` (require `isResolved == false` count of 0 and READ any
+   late arrivals) AND sweep top-level PR comments and review-summary bodies posted since the
+   final push — findings land in all three places, not just inline threads. Never gate on
+   reviewer names or review-event presence; a "review" with no findings looks identical to one
+   carrying P2s until read. Applies to docs-only PRs too.
 4. PR **aged** enough for automation to weigh in (30–60 min from the FINAL push; every push
    restarts the clock) — don't merge seconds after opening.
 5. No unresolved blockers; back-compat preserved; canonical docs synced if reality changed
