@@ -123,6 +123,11 @@ public class ChatService : IChatService
 
     public async Task<Result<ChatMessageDto>> SendMessageAsync(Guid sessionId, Guid userId, SendChatMessageDto dto, CancellationToken ct = default)
     {
+        // Atomic quota reservation (issue #1313): reserve a slot before the LLM call, then commit it
+        // with the actual token counts or release it (no usage / failure). The finally guarantees no
+        // reservation leaks on any exit path, including a thrown provider error.
+        Guid? quotaReservationId = null;
+        var quotaCommitted = false;
         try
         {
             if (string.IsNullOrWhiteSpace(dto.Content))
@@ -172,9 +177,10 @@ public class ChatService : IChatService
 
             if (_quotaService != null)
             {
-                var quotaCheck = await _quotaService.CheckQuotaAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
-                if (!quotaCheck.Allowed)
-                    return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, quotaCheck.DeniedReason ?? "LLM quota exceeded");
+                var reservation = await _quotaService.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
+                if (!reservation.Allowed)
+                    return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, reservation.DeniedReason ?? "LLM quota exceeded");
+                quotaReservationId = reservation.ReservationId;
             }
 
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
@@ -255,14 +261,15 @@ public class ChatService : IChatService
                             proposalId = toolResult.ProposalId.Value;
                         }
 
-                        // Record usage for quota tracking
-                        if (_quotaService != null && toolResult.TokensUsed > 0)
+                        // Finalize the quota reservation with the actual token count
+                        if (_quotaService != null && quotaReservationId is Guid toolResId && toolResult.TokensUsed > 0)
                         {
-                            await _quotaService.RecordUsageAsync(
-                                userId, Domain.Enums.LlmSurface.Chat,
+                            await _quotaService.CommitReservationAsync(
+                                toolResId,
                                 toolResult.Provider, toolResult.Model,
                                 toolResult.TokensUsed, 0,
                                 ct);
+                            quotaCommitted = true;
                         }
                     }
                     else if (!toolResult.IsDegraded && !string.IsNullOrWhiteSpace(toolResult.Content))
@@ -297,14 +304,15 @@ public class ChatService : IChatService
                             IsDegraded: false,
                             Instructions: classifiedInstructions);
 
-                        // Record usage for the already-made call
-                        if (_quotaService != null && toolResult.TokensUsed > 0)
+                        // Finalize the quota reservation for the already-made call
+                        if (_quotaService != null && quotaReservationId is Guid reuseResId && toolResult.TokensUsed > 0)
                         {
-                            await _quotaService.RecordUsageAsync(
-                                userId, Domain.Enums.LlmSurface.Chat,
+                            await _quotaService.CommitReservationAsync(
+                                reuseResId,
                                 toolResult.Provider, toolResult.Model,
                                 toolResult.TokensUsed, 0,
                                 ct);
+                            quotaCommitted = true;
                         }
                     }
                     // else: degraded with null content — fall through to single-turn
@@ -348,17 +356,18 @@ public class ChatService : IChatService
                             SystemPrompt: clarificationPrompt);
                         llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
 
-                        // Record usage for quota tracking. The provider reports a combined
-                        // TokensUsed total without an input/output split. Record the full
-                        // total as input tokens and 0 for output until providers surface
+                        // Finalize the quota reservation with the actual token count. The provider
+                        // reports a combined TokensUsed total without an input/output split. Record
+                        // the full total as input tokens and 0 for output until providers surface
                         // separate counts.
-                        if (_quotaService != null && llmResult.TokensUsed > 0)
+                        if (_quotaService != null && quotaReservationId is Guid singleResId && llmResult.TokensUsed > 0)
                         {
-                            await _quotaService.RecordUsageAsync(
-                                userId, Domain.Enums.LlmSurface.Chat,
+                            await _quotaService.CommitReservationAsync(
+                                singleResId,
                                 llmResult.Provider, llmResult.Model,
                                 llmResult.TokensUsed, 0,
                                 ct);
+                            quotaCommitted = true;
                         }
                     }
 
@@ -492,6 +501,14 @@ public class ChatService : IChatService
         {
             return Result.Failure<ChatMessageDto>(ex.ErrorCode, ex.Message);
         }
+        finally
+        {
+            // Release any reservation that was never committed (no-LLM paths, a zero-token call, or an
+            // exception) so it consumes no quota. Uses CancellationToken.None so cleanup still runs when
+            // the request token is cancelled.
+            if (_quotaService != null && quotaReservationId is Guid rid && !quotaCommitted)
+                await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+        }
     }
 
     public async IAsyncEnumerable<LlmTokenEvent> StreamResponseAsync(Guid sessionId, Guid userId, [EnumeratorCancellation] CancellationToken ct = default)
@@ -507,14 +524,18 @@ public class ChatService : IChatService
             yield break;
         }
 
+        // Atomic quota reservation (issue #1313), mirroring the non-streaming path.
+        Guid? quotaReservationId = null;
+        var quotaCommitted = false;
         if (_quotaService != null)
         {
-            var quotaCheck = await _quotaService.CheckQuotaAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
-            if (!quotaCheck.Allowed)
+            var reservation = await _quotaService.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
+            if (!reservation.Allowed)
             {
-                yield return new LlmTokenEvent(string.Empty, true, Error: quotaCheck.DeniedReason ?? "LLM quota exceeded");
+                yield return new LlmTokenEvent(string.Empty, true, Error: reservation.DeniedReason ?? "LLM quota exceeded");
                 yield break;
             }
+            quotaReservationId = reservation.ReservationId;
         }
 
         var chatMessages = session.Messages
@@ -537,42 +558,53 @@ public class ChatService : IChatService
         string? provider = null;
         string? model = null;
 
-        await foreach (var token in _llmProvider.StreamAsync(request, ct))
+        // try/finally (no catch — legal around `yield` in an iterator) guarantees the reservation is
+        // released if the stream throws or yields no usable tokens.
+        try
         {
-            contentBuilder.Append(token.Token);
-            if (token.IsComplete)
+            await foreach (var token in _llmProvider.StreamAsync(request, ct))
             {
-                tokensUsed = token.TokensUsed;
-                provider = token.Provider;
-                model = token.Model;
+                contentBuilder.Append(token.Token);
+                if (token.IsComplete)
+                {
+                    tokensUsed = token.TokensUsed;
+                    provider = token.Provider;
+                    model = token.Model;
+                }
+
+                yield return token;
             }
 
-            yield return token;
-        }
+            // Persist the streamed assistant message with token usage so the streaming
+            // path is consistent with the non-streaming SendMessageAsync path.
+            var streamedContent = contentBuilder.ToString();
+            if (!string.IsNullOrEmpty(streamedContent))
+            {
+                var assistantMessage = new ChatMessage(
+                    sessionId,
+                    ChatMessageRole.Assistant,
+                    streamedContent,
+                    tokenUsage: tokensUsed);
+                session.AddMessage(assistantMessage);
+                await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
 
-        // Persist the streamed assistant message with token usage so the streaming
-        // path is consistent with the non-streaming SendMessageAsync path.
-        var streamedContent = contentBuilder.ToString();
-        if (!string.IsNullOrEmpty(streamedContent))
-        {
-            var assistantMessage = new ChatMessage(
-                sessionId,
-                ChatMessageRole.Assistant,
-                streamedContent,
-                tokenUsage: tokensUsed);
-            session.AddMessage(assistantMessage);
-            await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
+            // Finalize the reservation with actual usage, matching the non-streaming path behavior.
+            if (_quotaService != null && quotaReservationId is Guid rid && tokensUsed is > 0 && provider != null && model != null)
+            {
+                await _quotaService.CommitReservationAsync(
+                    rid,
+                    provider, model,
+                    tokensUsed.Value, 0,
+                    ct);
+                quotaCommitted = true;
+            }
         }
-
-        // Record usage for quota tracking, matching the non-streaming path behavior
-        if (_quotaService != null && tokensUsed is > 0 && provider != null && model != null)
+        finally
         {
-            await _quotaService.RecordUsageAsync(
-                userId, Domain.Enums.LlmSurface.Chat,
-                provider, model,
-                tokensUsed.Value, 0,
-                ct);
+            if (_quotaService != null && quotaReservationId is Guid rid && !quotaCommitted)
+                await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
         }
     }
 

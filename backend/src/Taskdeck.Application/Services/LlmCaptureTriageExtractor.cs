@@ -70,15 +70,19 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Detail: health.ErrorMessage);
         }
 
+        // Atomic quota reservation (issue #1313): reserve before the completion, then commit with the
+        // actual tokens or release. This serializes concurrent triage/chat calls at the boundary.
+        Guid? quotaReservationId = null;
         if (_quotaService is not null)
         {
-            var quota = await _quotaService.CheckQuotaAsync(userId, LlmSurface.CaptureTriage, cancellationToken);
-            if (!quota.Allowed)
+            var reservation = await _quotaService.ReserveAsync(userId, LlmSurface.CaptureTriage, cancellationToken);
+            if (!reservation.Allowed)
             {
                 return new LlmCaptureTriageExtraction(
                     LlmCaptureTriageOutcome.QuotaExceeded,
-                    Detail: quota.DeniedReason);
+                    Detail: reservation.DeniedReason);
             }
+            quotaReservationId = reservation.ReservationId;
         }
 
         var request = new ChatCompletionRequest(
@@ -94,20 +98,38 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             // the prompt itself demands raw JSON and TryParseTasks tolerates fenced output.
             SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt);
 
-        var result = await _llmProvider.CompleteAsync(request, cancellationToken);
-
-        // Tokens are consumed whether or not the content is usable (truncation is the clearest
-        // case: degraded AND billed), so usage is recorded before any quality checks.
-        if (_quotaService is not null && result.TokensUsed > 0)
+        LlmCompletionResult result;
+        try
         {
-            await _quotaService.RecordUsageAsync(
-                userId,
-                LlmSurface.CaptureTriage,
-                result.Provider,
-                result.Model,
-                result.TokensUsed,
-                0,
-                cancellationToken);
+            result = await _llmProvider.CompleteAsync(request, cancellationToken);
+        }
+        catch
+        {
+            // The provider threw before producing usage — release the reservation so no quota leaks.
+            if (quotaReservationId is Guid failedResId)
+                await _quotaService!.ReleaseReservationAsync(failedResId, CancellationToken.None);
+            throw;
+        }
+
+        // Settle the reservation. Tokens are consumed whether or not the content is usable (truncation
+        // is the clearest case: degraded AND billed), so a call that used tokens commits before any
+        // quality checks; a zero-token call releases (mirrors the prior "record only if > 0" behavior).
+        if (quotaReservationId is Guid reservationId)
+        {
+            if (result.TokensUsed > 0)
+            {
+                await _quotaService!.CommitReservationAsync(
+                    reservationId,
+                    result.Provider,
+                    result.Model,
+                    result.TokensUsed,
+                    0,
+                    cancellationToken);
+            }
+            else
+            {
+                await _quotaService!.ReleaseReservationAsync(reservationId, cancellationToken);
+            }
         }
 
         if (result.IsDegraded)
