@@ -59,6 +59,97 @@ public class OptionsValidationTests
         Assert.Contains(results, result => result.MemberNames.Contains(nameof(settings.MaxBytesPerArtefact)));
     }
 
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-1.0)]
+    [InlineData(0.5)]
+    // 0.6 and 0.9 round UP to 1 under an int-operand range but are below the real
+    // 1.0 floor — they must be rejected by the double-operand range.
+    [InlineData(0.6)]
+    [InlineData(0.9)]
+    [InlineData(3601.0)]
+    // Non-finite doubles bind successfully from configuration strings ("NaN",
+    // "Infinity") and would reach TimeSpan.FromSeconds — which throws for NaN.
+    // The double-operand range rejects all three today; pin that so removing or
+    // weakening the attribute cannot silently open the FromSeconds(NaN) throw path.
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void ArtefactStorageSettings_ExtractionTimeoutSeconds_RejectsOutOfRange(double value)
+    {
+        var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(ArtefactStorageSettings.ExtractionTimeoutSeconds)));
+    }
+
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(30.0)]
+    [InlineData(3600.0)]
+    public void ArtefactStorageSettings_ExtractionTimeoutSeconds_AcceptsValidValues(double value)
+    {
+        var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_BindsExtractionTimeoutFromConfiguration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Artefacts:ExtractionTimeoutSeconds"] = "12.5"
+            })
+            .Build();
+
+        var settings = configuration.GetSection("Artefacts").Get<ArtefactStorageSettings>();
+
+        Assert.NotNull(settings);
+        Assert.Equal(12.5, settings!.ExtractionTimeoutSeconds);
+        Assert.Equal(TimeSpan.FromSeconds(12.5), settings.ExtractionTimeout);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_DefaultExtractionTimeout_IsThirtySeconds()
+    {
+        var settings = new ArtefactStorageSettings();
+
+        Assert.Equal(ArtefactStorageSettings.DefaultExtractionTimeoutSeconds, settings.ExtractionTimeoutSeconds);
+        Assert.Equal(TimeSpan.FromSeconds(30), settings.ExtractionTimeout);
+    }
+
+    [Fact]
+    public void AddOptionsValidation_RejectsExtractionTimeoutOutOfRangeAtStartup()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Artefacts:ExtractionTimeoutSeconds"] = "0"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddOptionsValidation(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<ArtefactStorageSettings>>().Value);
+        Assert.Contains(nameof(ArtefactStorageSettings.ExtractionTimeoutSeconds), exception.Message);
+    }
+
     // ── JwtSettingsValidator ─────────────────────────────────────────────
 
     [Fact]

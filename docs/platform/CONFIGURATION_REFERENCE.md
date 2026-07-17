@@ -587,13 +587,16 @@ Bound to `ArtefactStorageSettings`
 (`Taskdeck.Application.Services.ArtefactStorageSettings`) and validated at
 startup. Source artefact metadata and blobs stay in the same SQLite database;
 the blob table is queried only for explicit content retrieval and GDPR export.
-Both limits are enforced from server configuration, never from multipart form
-fields. Concurrent uploads serialize the quota check with the SQLite write.
+The storage limits are enforced from server configuration, never from multipart
+form fields. Concurrent uploads serialize the quota check with the SQLite write.
+`ExtractionTimeoutSeconds` additionally bounds the local text-extraction path so
+a crafted parser-bomb artefact cannot spin the parse thread indefinitely.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `Artefacts:MaxBytesPerArtefact` | `long` | `10485760` (10 MiB) | Maximum bytes accepted for one PNG, JPEG, WebP, PDF, TXT, or Markdown artefact. The upload stream stops and returns HTTP 413 once this bound is crossed. The API raises Kestrel's request-body ceiling to this value plus 128 KiB of bounded multipart overhead. This setting is capped at `int.MaxValue` because upload validation materializes one accepted artefact as a `byte[]` before the atomic SQLite write. Environment variable: `Artefacts__MaxBytesPerArtefact`. | No |
 | `Artefacts:MaxBytesPerUser` | `long` | `209715200` (200 MiB) | Aggregate source-artefact quota for one user, including blob bytes. Uploads that would cross it return HTTP 413. Environment variable: `Artefacts__MaxBytesPerUser`. | No |
+| `Artefacts:ExtractionTimeoutSeconds` | `double` | `30` | Wall-clock budget for a single local text extraction (PdfPig / plain-text / Markdown). The byte, page, and character caps bound the input and persisted output but not the parser's in-memory work; a crafted PDF (deeply nested object streams, decompression bombs) that stays under those caps can still spin PdfPig's synchronous `PdfDocument.Open(...)` arbitrarily long. When the budget is exceeded the extraction is abandoned and recorded as an immutable extraction-history row carrying the `extraction-timeout` warning (no HTTP 500; the artefact stays stored). Bounded to `[1, 3600]`; raise it toward the ceiling to effectively disable the budget. Environment variable: `Artefacts__ExtractionTimeoutSeconds`. | No |
 
 ### `FirstRun`
 
