@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Api.Contracts;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Mcp;
@@ -24,14 +25,26 @@ public sealed class ApiKeyMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<ApiKeyMiddleware> _logger;
 
-    /// <summary>The path prefix that triggers API key authentication.</summary>
-    private const string McpPathPrefix = "/mcp";
-
     /// <summary>
     /// Authentication type stamped on the ClaimsIdentity for a valid API key so downstream
     /// middleware (e.g. TokenValidationMiddleware) can distinguish API-key principals from JWT ones.
     /// </summary>
     public const string AuthenticationType = "ApiKey";
+
+    /// <summary>
+    /// Context item containing the validated API key ID for per-key rate-limit partitioning.
+    /// The opaque database ID is used instead of the raw key or user-visible prefix.
+    /// </summary>
+    public const string ApiKeyIdItemKey = "McpApiKeyId";
+
+    /// <summary>
+    /// Context item set when API-key authentication rejects the request, BEFORE the 401 body is
+    /// written. <see cref="McpAuthenticationRateLimitingMiddleware"/> consumes the pre-auth IP
+    /// failure budget on this marker in a finally block, so a client that aborts the connection
+    /// mid-response (making the write throw) cannot evade the failure charge — the key
+    /// parse/lookup work has already been spent by that point.
+    /// </summary>
+    public const string AuthenticationFailedItemKey = "McpAuthenticationFailed";
 
     public ApiKeyMiddleware(RequestDelegate next, ILogger<ApiKeyMiddleware> logger)
     {
@@ -42,7 +55,7 @@ public sealed class ApiKeyMiddleware
     public async Task InvokeAsync(HttpContext context, TaskdeckDbContext dbContext)
     {
         // Only authenticate MCP endpoint requests
-        if (!context.Request.Path.StartsWithSegments(McpPathPrefix, StringComparison.OrdinalIgnoreCase))
+        if (!context.Request.Path.StartsWithSegments(McpEndpointMapping.HttpRoute, StringComparison.OrdinalIgnoreCase))
         {
             await _next(context);
             return;
@@ -114,6 +127,7 @@ public sealed class ApiKeyMiddleware
 
         // Set the authenticated user ID for HttpUserContextProvider
         context.Items[HttpUserContextProvider.UserIdItemKey] = apiKey.UserId;
+        context.Items[ApiKeyIdItemKey] = apiKey.Id;
 
         // Establish an authenticated principal so the global authorization FallbackPolicy
         // (RequireAuthenticatedUser, #1132 AC4) is satisfied for valid-key MCP requests — a valid
@@ -160,6 +174,11 @@ public sealed class ApiKeyMiddleware
 
     private static async Task WriteErrorResponse(HttpContext context, int statusCode, string message)
     {
+        // Mark the authentication failure BEFORE any response write: if the client aborts while
+        // the 401 body is being written, WriteAsJsonAsync throws and unwinds past the pre-auth
+        // failure-budget middleware — the marker guarantees its finally block still counts the
+        // failed attempt (the lookup cost was already paid).
+        context.Items[AuthenticationFailedItemKey] = true;
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json";
         await context.Response.WriteAsJsonAsync(new ApiErrorResponse(

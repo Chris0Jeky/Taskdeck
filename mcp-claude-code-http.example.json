@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "taskdeck-http": {
+      "type": "http",
+      "url": "${TASKDECK_MCP_URL:-http://127.0.0.1:5001}/mcp",
+      "headers": {
+        "Authorization": "Bearer ${TASKDECK_MCP_API_KEY}"
+      }
+    }
+  }
+}

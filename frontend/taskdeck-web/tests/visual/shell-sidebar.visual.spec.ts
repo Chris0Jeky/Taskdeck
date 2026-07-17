@@ -11,7 +11,7 @@ import { registerAndAttachSession } from '../e2e/support/authSession'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-sidebar')
+  await registerAndAttachSession(page, request, 'visual-sidebar', { theme: 'legacy' })
 })
 
 test('shell sidebar default', async ({ page }) => {

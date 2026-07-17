@@ -55,7 +55,7 @@ async function addCard(page: Page, columnName: string, cardTitle: string) {
 }
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-board')
+  await registerAndAttachSession(page, request, 'visual-board', { theme: 'legacy' })
 })
 
 test('empty board view', async ({ page }) => {

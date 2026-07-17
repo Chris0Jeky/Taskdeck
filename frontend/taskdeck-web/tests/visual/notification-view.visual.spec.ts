@@ -11,7 +11,7 @@ import { registerAndAttachSession } from '../e2e/support/authSession'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-notifications')
+  await registerAndAttachSession(page, request, 'visual-notifications', { theme: 'legacy' })
 })
 
 test('notification inbox empty state', async ({ page }) => {

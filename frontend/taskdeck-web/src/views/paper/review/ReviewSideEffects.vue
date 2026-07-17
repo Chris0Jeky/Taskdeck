@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import PaperUndoTimeline from '../../../components/paper/PaperUndoTimeline.vue'
 import type { SideEffects } from '../../../composables/usePaperReviewSelectors'
 
 /**
  * ReviewSideEffects — § III: 7-row table of what lands/doesn't land plus a
- * Reversibility card with `PaperUndoTimeline` showing the dashed undo
- * window. Both the rows and the reversibility data are driven from
- * `usePaperReviewSelectors`.
+ * factual apply-risk card. Both the rows and the risk data are driven from
+ * `usePaperReviewSelectors`; no recovery action is implied.
  */
 defineProps<{ data: SideEffects }>()
 </script>
@@ -34,22 +32,10 @@ defineProps<{ data: SideEffects }>()
         </div>
       </div>
 
-      <aside class="card paper-review-se__rev">
-        <div class="tk-eyebrow paper-review-se__rev-eyebrow">Reversibility</div>
-        <div class="paper-review-se__rev-summary">{{ data.reversibility.summary }}</div>
-        <p class="paper-review-se__rev-desc">{{ data.reversibility.description }}</p>
-        <div v-if="data.reversibility.appliedAt !== null" class="paper-review-se__rev-timeline">
-          <div class="tk-eyebrow paper-review-se__rev-timeline-heading">Undo window</div>
-          <PaperUndoTimeline
-            :applied-at="data.reversibility.appliedAt"
-            :window-ms="data.reversibility.windowMs"
-            left-label="0h · apply"
-            right-label="window closes"
-          />
-        </div>
-        <p v-else class="paper-review-se__rev-pending tk-meta">
-          Undo window starts after apply.
-        </p>
+      <aside class="card paper-review-se__risk" data-testid="apply-risk-posture">
+        <div class="tk-eyebrow paper-review-se__risk-eyebrow">Apply considerations</div>
+        <div class="paper-review-se__risk-summary">{{ data.applyRisk.summary }}</div>
+        <p class="paper-review-se__risk-desc">{{ data.applyRisk.description }}</p>
       </aside>
     </div>
   </section>
@@ -113,15 +99,15 @@ defineProps<{ data: SideEffects }>()
 .paper-review-se__empty {
   padding: 16px;
 }
-.paper-review-se__rev {
+.paper-review-se__risk {
   padding: 16px;
   background: var(--applied-tint);
   border-color: var(--applied);
 }
-.paper-review-se__rev-eyebrow {
+.paper-review-se__risk-eyebrow {
   color: var(--applied);
 }
-.paper-review-se__rev-summary {
+.paper-review-se__risk-summary {
   font-family: var(--serif);
   font-size: 24px;
   font-style: italic;
@@ -129,17 +115,9 @@ defineProps<{ data: SideEffects }>()
   color: var(--ink-deep);
   margin: 6px 0 4px;
 }
-.paper-review-se__rev-desc {
+.paper-review-se__risk-desc {
   margin: 0;
   font-size: 12.5px;
   color: var(--ink-2, var(--ink));
-}
-.paper-review-se__rev-timeline {
-  margin-top: 12px;
-  padding: 10px 0 0;
-  border-top: 1px solid var(--applied);
-}
-.paper-review-se__rev-timeline-heading {
-  margin-bottom: 4px;
 }
 </style>

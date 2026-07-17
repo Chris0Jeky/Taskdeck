@@ -7,18 +7,18 @@ namespace Taskdeck.Domain.Tests.Entities;
 public class ReversibilityTests
 {
     [Fact]
-    public void DefaultWindowMs_ShouldBe6Hours()
+    public void DefaultWindowMs_ShouldRemain6Hours_ForContractCompatibility()
     {
         Reversibility.DefaultWindowMs.Should().Be(21_600_000L);
     }
 
     [Fact]
-    public void Constructor_ShouldCreateReversibility_WithValidData()
+    public void Constructor_ShouldCreateCompatibilityPosture_WithValidData()
     {
-        var rev = new Reversibility("6 hours · single keystroke", "Fully reversible.", Reversibility.DefaultWindowMs);
+        var rev = new Reversibility("Low risk · confirm before apply", "Confirm affected items.", Reversibility.DefaultWindowMs);
 
-        rev.Summary.Should().Be("6 hours · single keystroke");
-        rev.Description.Should().Be("Fully reversible.");
+        rev.Summary.Should().Be("Low risk · confirm before apply");
+        rev.Description.Should().Be("Confirm affected items.");
         rev.WindowMs.Should().Be(21_600_000L);
     }
 
@@ -31,7 +31,7 @@ public class ReversibilityTests
         var act = () => new Reversibility(summary, "Description", Reversibility.DefaultWindowMs);
 
         act.Should().Throw<ArgumentException>()
-            .WithMessage("Reversibility summary cannot be empty.*");
+            .WithMessage("Apply-risk summary cannot be empty.*");
     }
 
     [Theory]
@@ -43,7 +43,7 @@ public class ReversibilityTests
         var act = () => new Reversibility("Summary", description, Reversibility.DefaultWindowMs);
 
         act.Should().Throw<ArgumentException>()
-            .WithMessage("Reversibility description cannot be empty.*");
+            .WithMessage("Apply-risk description cannot be empty.*");
     }
 
     [Theory]
@@ -55,13 +55,13 @@ public class ReversibilityTests
         var act = () => new Reversibility("Summary", "Description", windowMs);
 
         act.Should().Throw<ArgumentOutOfRangeException>()
-            .WithMessage("*Reversibility window must be positive.*");
+            .WithMessage("*Review-attention metadata must be positive.*");
     }
 
     [Fact]
     public void Constructor_ShouldAcceptCustomWindowMs()
     {
-        var rev = new Reversibility("3 hours", "Tight window.", 10_800_000L);
+        var rev = new Reversibility("Critical risk", "Review immediately.", 10_800_000L);
 
         rev.WindowMs.Should().Be(10_800_000L);
     }

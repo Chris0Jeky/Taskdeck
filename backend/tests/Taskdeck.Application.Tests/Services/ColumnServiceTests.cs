@@ -528,5 +528,31 @@ public class ColumnServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
+    [Fact]
+    public async Task ReorderColumnAsync_ShouldClampOvershootingTargetToEnd()
+    {
+        // Arrange: three columns; request an out-of-range destination (99).
+        var boardId = Guid.NewGuid();
+        var columnA = new Column(boardId, "A", 0);
+        var columnB = new Column(boardId, "B", 1);
+        var columnC = new Column(boardId, "C", 2);
+        var all = new List<Column> { columnA, columnB, columnC };
+        _columnRepoMock.Setup(r => r.GetByIdAsync(columnA.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(columnA);
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(all);
+
+        // Act: overshoot the last index by a wide margin.
+        var result = await _service.ReorderColumnAsync(columnA.Id, 99);
+
+        // Assert: Apply clamps to the end (columnCount - 1 == 2). This is the exact
+        // effective position the proposal diff/preview now surfaces, so preview == apply
+        // for an overshooting reorder (#1370).
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        columnA.Position.Should().Be(2);
+        columnB.Position.Should().Be(0);
+        columnC.Position.Should().Be(1);
+    }
+
     #endregion
 }

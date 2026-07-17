@@ -1,29 +1,48 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_ORIGIN, registerAndAttachSession } from './support/authSession'
+import { assertOk } from './support/httpAsserts'
 
 async function gotoBoardsWorkspace(page: Page) {
   await page.goto('/workspace/boards')
   await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
 }
 
-test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'smoke')
+const LEGACY_SMOKE_TITLES = new Set([
+  'board to card workflow smoke test',
+  'realtime board updates should propagate across active sessions without refresh',
+  'filter panel shortcut should toggle panel',
+  'activity view selectors should support board and entity discovery without raw IDs',
+  'column WIP limit should reject additional cards',
+  'card drag and drop should move card between columns and persist after refresh',
+  'card drag should use explicit enlarged handle while add-card controls stay safe',
+  'board settings lifecycle should support rename archive unarchive and archive action',
+  'column drag and drop should reorder columns and persist after refresh',
+  'keyboard flow should open card and escape should close modal and inline forms',
+  'filter state should persist while panel is toggled in-session',
+])
+
+test.beforeEach(async ({ page, request }, testInfo) => {
+  await registerAndAttachSession(
+    page,
+    request,
+    'smoke',
+    LEGACY_SMOKE_TITLES.has(testInfo.title) ? { theme: 'legacy' } : {},
+  )
 })
 
 test('home landing and workspace mode preference should persist across navigation and reload', async ({ page }) => {
   await page.goto('/')
   await expect(page).toHaveURL(/\/workspace\/home$/)
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
+  await expect(page.getByTestId('paper-home')).toBeVisible()
 
   const workspaceModeSelect = page.getByLabel('Workspace mode')
   const savePreferenceResponse = page.waitForResponse((response) =>
     response.url().includes('/api/workspace/preferences') &&
-    response.request().method() === 'PUT' &&
-    response.ok())
+    response.request().method() === 'PUT')
 
   await workspaceModeSelect.selectOption('workbench')
-  await savePreferenceResponse
+  await assertOk(await savePreferenceResponse, 'save workspace preference')
   await expect(workspaceModeSelect).toHaveValue('workbench')
 
   await page.goto('/workspace/boards')
@@ -82,10 +101,9 @@ async function addColumn(page: Page, columnName: string) {
   await columnNameInput.fill(columnName)
   const createColumnResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
-    && /\/api\/boards\/[a-f0-9-]+\/columns$/i.test(response.url())
-    && response.ok())
+    && /\/api\/boards\/[a-f0-9-]+\/columns$/i.test(response.url()))
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await createColumnResponse
+  await assertOk(await createColumnResponse, `create column '${columnName}'`)
   // Wait for the create dialog to close so the DOM settles to exactly one heading
   await expect(columnNameInput).toBeHidden()
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
@@ -118,7 +136,7 @@ async function addCard(
   const created = await createCardResponse
 
   if (expectVisible) {
-    expect(created.ok(), 'card create should succeed').toBeTruthy()
+    await assertOk(created, `create card '${cardTitle}'`)
     await expect(cardByTitle(page, cardTitle)).toBeVisible()
   } else {
     // A card added beyond the WIP limit must be rejected (WipLimitExceeded -> 400).
@@ -211,7 +229,7 @@ test('command palette search and enter should activate selected command', async 
   const palette = page.getByRole('dialog', { name: 'Command palette' })
   await expect(palette).toBeVisible()
 
-  const paletteInput = palette.getByPlaceholder('Type a command or search boards and cards...')
+  const paletteInput = palette.getByRole('combobox', { name: 'Command palette search' })
   await expect(paletteInput).toBeFocused()
 
   await paletteInput.fill('inbox')
@@ -234,7 +252,7 @@ test('capture hotkey should save item and route to inbox', async ({ page }) => {
   await captureModal.getByPlaceholder('Capture a thought, task, or follow-up...').press('Control+Enter')
 
   await expect(page).toHaveURL(/\/workspace\/inbox$/)
-  await expect(page.locator('.td-inbox-row__excerpt').first()).toContainText(captureText)
+  await expect(page.locator('.paper-triage__row').filter({ hasText: captureText }).first()).toBeVisible()
 })
 
 test('command palette capture action should save item and route to inbox', async ({ page }) => {
@@ -246,7 +264,7 @@ test('command palette capture action should save item and route to inbox', async
   const palette = page.getByRole('dialog', { name: 'Command palette' })
   await expect(palette).toBeVisible()
 
-  const paletteInput = palette.getByPlaceholder('Type a command or search boards and cards...')
+  const paletteInput = palette.getByRole('combobox', { name: 'Command palette search' })
   await expect(paletteInput).toBeFocused()
   await paletteInput.fill('new capture')
   await paletteInput.press('Enter')
@@ -259,7 +277,7 @@ test('command palette capture action should save item and route to inbox', async
   await captureModal.getByPlaceholder('Capture a thought, task, or follow-up...').press('Control+Enter')
 
   await expect(page).toHaveURL(/\/workspace\/inbox$/)
-  await expect(page.locator('.td-inbox-row__excerpt').first()).toContainText(captureText)
+  await expect(page.locator('.paper-triage__row').filter({ hasText: captureText }).first()).toBeVisible()
 })
 
 test('activity view selectors should support board and entity discovery without raw IDs', async ({ page }) => {
@@ -328,7 +346,12 @@ test('column WIP limit should reject additional cards', async ({ page }) => {
     .toBeGreaterThan(0)
   await expect(wipCheckbox).toBeChecked()
   await wipLimit.fill('1')
+  const saveColumnResponse = page.waitForResponse((response) =>
+    response.request().method() === 'PATCH'
+    && /\/api\/boards\/[a-f0-9-]+\/columns\/[a-f0-9-]+$/i.test(response.url()))
   await page.getByRole('button', { name: 'Save Changes' }).click()
+  await assertOk(await saveColumnResponse, `save WIP limit for column '${columnName}'`)
+  await expect(page.getByRole('heading', { name: 'Edit Column' })).toHaveCount(0)
 
   await addCard(page, columnName, firstCard)
   await expect(page.locator('[data-card-id]').filter({ hasText: firstCard }).first()).toBeVisible()

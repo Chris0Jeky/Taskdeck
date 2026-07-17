@@ -327,7 +327,7 @@ test.describe('Stakeholder demo recorder', () => {
 
     expect(loginResponse.ok()).toBeTruthy()
     const auth = (await loginResponse.json()) as AuthResult
-    await attachSessionToPage(page, auth)
+    await attachSessionToPage(page, auth, { theme: 'legacy' })
     await ensureWalkthroughFeatureFlagsEnabled(page)
 
     await page.goto('/workspace/boards')

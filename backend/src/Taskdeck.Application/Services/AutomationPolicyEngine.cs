@@ -10,8 +10,6 @@ namespace Taskdeck.Application.Services;
 public class AutomationPolicyEngine : IAutomationPolicyEngine
 {
     private readonly IUnitOfWork _unitOfWork;
-    private const int MaxOperationCount = 50;
-    private const int MaxParametersLength = 10000;
 
     public AutomationPolicyEngine(IUnitOfWork unitOfWork)
     {
@@ -89,31 +87,10 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
             cancellationToken);
     }
 
+    // Delegates to the shared structure validator so Apply, revision-save, and the
+    // original-proposal diff all enforce the same operation-shape invariants (#1370).
     public Result ValidateOperationStructure(IReadOnlyCollection<ProposalOperationDto> operations)
-    {
-        if (operations == null || operations.Count == 0)
-            return Result.Failure(ErrorCodes.ValidationError, "Proposal must contain at least one operation");
-
-        if (operations.Count > MaxOperationCount)
-            return Result.Failure(ErrorCodes.ValidationError, $"Proposal exceeds maximum operation count of {MaxOperationCount}");
-
-        // Validate operation sequences are unique and non-negative
-        var sequences = operations.Select(o => o.Sequence).ToList();
-        if (sequences.Distinct().Count() != sequences.Count)
-            return Result.Failure(ErrorCodes.ValidationError, "Operation sequences must be unique");
-
-        if (sequences.Any(s => s < 0))
-            return Result.Failure(ErrorCodes.ValidationError, "Operation sequences must be non-negative");
-
-        // Validate parameters size
-        foreach (var operation in operations)
-        {
-            if (operation.Parameters.Length > MaxParametersLength)
-                return Result.Failure(ErrorCodes.ValidationError, $"Operation parameters exceed maximum length of {MaxParametersLength}");
-        }
-
-        return Result.Success();
-    }
+        => ProposalOperationStructureValidator.Validate(operations);
 
     public Result ValidatePolicy(ProposalDto proposal)
     {

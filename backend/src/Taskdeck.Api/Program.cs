@@ -37,7 +37,7 @@ if (args.Contains("--mcp"))
         // Minimal web server exposing only the MCP endpoint with API key auth.
         // No controllers, no SignalR, no Swagger, no frontend — just MCP.
         var mcpPort = 5001;
-        var mcpBindHost = "0.0.0.0";
+        var mcpBindHost = Program.StandaloneMcpDefaultBindHost;
         for (int i = 0; i < args.Length - 1; i++)
         {
             if (string.Equals(args[i], "--port", StringComparison.OrdinalIgnoreCase))
@@ -70,6 +70,10 @@ if (args.Contains("--mcp"))
         // BEFORE the env-var sources so operator-supplied environment config keeps priority.
         mcpHttpBuilder.AddLocalConfigFile();
 
+        // The standalone server is local-only by default. Replace the repository-wide wildcard
+        // host setting with loopback hosts unless an operator supplied an exact allowlist.
+        Program.ApplyStandaloneMcpHostSecurity(mcpHttpBuilder.Configuration);
+
         mcpHttpBuilder.WebHost.UseUrls($"http://{mcpBindHost}:{mcpPort}");
 
         // Infrastructure (DbContext, Repositories, UoW)
@@ -87,6 +91,22 @@ if (args.Contains("--mcp"))
             .GetSection("RateLimiting")
             .Get<Taskdeck.Application.Services.RateLimitingSettings>()
             ?? new Taskdeck.Application.Services.RateLimitingSettings();
+
+        // Fail fast on invalid RateLimiting configuration BEFORE the pre-auth limiter is
+        // constructed (AddTaskdeckRateLimiting instantiates it eagerly at registration, and its
+        // constructor only lower-clamps, so an over-maximum value would otherwise be silently
+        // accepted). The standalone host does not run the co-hosted AddOptionsValidation /
+        // ValidateOnStart pipeline, so apply the same validator here with the same semantics:
+        // skipped when RateLimiting:Enabled=false, fail-fast with the validation message otherwise.
+        var mcpRateLimitingValidation = new Taskdeck.Api.Validation.RateLimitingSettingsValidator()
+            .Validate(null, mcpRateLimitingSettings);
+        if (mcpRateLimitingValidation.Failed)
+        {
+            Console.Error.WriteLine(
+                $"Error: invalid RateLimiting configuration. {mcpRateLimitingValidation.FailureMessage}");
+            return 1;
+        }
+
         mcpHttpBuilder.Services.AddSingleton(mcpRateLimitingSettings);
         if (mcpRateLimitingSettings.Enabled)
         {
@@ -111,6 +131,11 @@ if (args.Contains("--mcp"))
 
         var mcpHttpApp = mcpHttpBuilder.Build();
 
+        // Test seam: lets the standalone MCP host-filtering integration test observe the
+        // built app when it drives this real entry point in-process, so it can await
+        // startup and stop the host cleanly. Never set in production.
+        Program.OnStandaloneMcpHttpAppBuilt?.Invoke(mcpHttpApp);
+
         // Apply EF Core migrations before starting, serialized across processes via a
         // cross-process file lock so the MCP HTTP host does not race the API/CLI (#1164).
         using (var scope = mcpHttpApp.Services.CreateScope())
@@ -118,6 +143,19 @@ if (args.Contains("--mcp"))
             var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
             var migrationLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
             Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, migrationLogger);
+        }
+
+        // Honour trusted forwarded headers (default OFF) so the pre-auth failure-budget limiter and
+        // per-key partitioning key on the real client address behind a reverse proxy instead of
+        // collapsing every client into the proxy's single socket address. Mirrors the co-hosted API
+        // pipeline: only active when the operator configures ForwardedHeaders:KnownProxies /
+        // KnownNetworks, and X-Forwarded-For is never trusted from an unknown peer. Runs before the
+        // limiter and telemetry so all downstream see the corrected Connection.RemoteIpAddress.
+        var mcpForwardedHeadersOptions = Taskdeck.Api.Extensions.PipelineConfiguration
+            .BuildForwardedHeadersOptions(mcpHttpApp.Configuration);
+        if (mcpForwardedHeadersOptions is not null)
+        {
+            mcpHttpApp.UseForwardedHeaders(mcpForwardedHeadersOptions);
         }
 
         // Correlation ID propagation: honours client X-Request-Id header.
@@ -128,6 +166,14 @@ if (args.Contains("--mcp"))
         // rejected with 401 (missing/invalid/revoked API keys).
         mcpHttpApp.UseMiddleware<McpTelemetryMiddleware>();
 
+        // Bound the cost of authentication FAILURES by client address: reject before a key parse or
+        // database lookup once the address's failure budget is spent, but let valid requests through
+        // without consuming so they reach the per-key policy with independent budgets.
+        if (mcpRateLimitingSettings.Enabled)
+        {
+            mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.McpAuthenticationRateLimitingMiddleware>();
+        }
+
         // API key authentication for MCP requests.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.ApiKeyMiddleware>();
 
@@ -137,12 +183,8 @@ if (args.Contains("--mcp"))
             mcpHttpApp.UseRateLimiter();
         }
 
-        // Map the MCP endpoint with per-API-key rate limiting.
-        var mcpEndpoint = mcpHttpApp.MapMcp();
-        if (mcpRateLimitingSettings.Enabled)
-        {
-            mcpEndpoint.RequireRateLimiting(Taskdeck.Api.RateLimiting.RateLimitingPolicyNames.McpPerApiKey);
-        }
+        // Use the same authenticated route mapping as the co-hosted API.
+        mcpHttpApp.MapTaskdeckMcpEndpoint(mcpRateLimitingSettings.Enabled);
 
         var mcpHttpLogger = mcpHttpApp.Services.GetRequiredService<ILogger<Program>>();
         mcpHttpLogger.LogInformation("Taskdeck MCP HTTP server starting on http://{Host}:{Port}", mcpBindHost, mcpPort);
@@ -411,4 +453,45 @@ appLifetime.ApplicationStarted.Register(() =>
 app.Run();
 return 0;
 
-public partial class Program { }
+public partial class Program
+{
+    internal const string StandaloneMcpDefaultBindHost = "127.0.0.1";
+    internal const string StandaloneMcpLoopbackAllowedHosts = "localhost;127.0.0.1;[::1]";
+
+    /// <summary>
+    /// Test seam for the standalone MCP HTTP integration test (see
+    /// <c>StandaloneMcpHostFilteringTests</c>): invoked with the built app just before it
+    /// runs, so the test can await startup and stop the host. Never set in production.
+    /// </summary>
+    internal static Action<WebApplication>? OnStandaloneMcpHttpAppBuilt;
+
+    internal static void ApplyStandaloneMcpHostSecurity(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        // Single rule: rewrite exactly when HostFilteringMiddleware itself would DISABLE
+        // filtering; every other value is preserved because the middleware fails closed on
+        // it. To decide that, mirror the middleware's parse EXACTLY:
+        //   1. Split(';', RemoveEmptyEntries) with NO trimming -- so null/""/";"/";;" parse
+        //      to zero entries (the middleware then falls back to allow-all: the true #1367
+        //      fail-open), while whitespace-bearing values like " ; " or " * " parse to
+        //      literal whitespace entries, an ACTIVE filter that rejects every real host.
+        //   2. Normalize each entry via new HostString(entry).ToUriComponent() -- which
+        //      RETAINS any :port suffix -- before the ordinal top-level-wildcard test for
+        //      "*" / "0.0.0.0" / "[::]". Port-suffixed pseudo-wildcards ("0.0.0.0:5001")
+        //      are therefore literals no real Host header matches, i.e. deny-all.
+        // Rewriting any of those fail-closed literals to the loopback allowlist would be
+        // strictly WEAKER (spoofed loopback Host headers would pass on a non-loopback
+        // bind), so they are preserved. Do not reintroduce TrimEntries or HostString.Host
+        // (port-stripping) here without re-reading the middleware source.
+        var configuredHosts = configuration["AllowedHosts"]?
+            .Split(';', StringSplitOptions.RemoveEmptyEntries)
+            ?? Array.Empty<string>();
+        var containsAnyHost = configuredHosts
+            .Any(host => new HostString(host).ToUriComponent() is "*" or "0.0.0.0" or "[::]");
+        if (configuredHosts.Length == 0 || containsAnyHost)
+        {
+            configuration["AllowedHosts"] = StandaloneMcpLoopbackAllowedHosts;
+        }
+    }
+}

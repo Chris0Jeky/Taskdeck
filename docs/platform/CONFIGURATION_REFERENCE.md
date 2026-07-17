@@ -347,10 +347,19 @@ hit CORS and are unaffected.
 
 ### `ForwardedHeaders`
 
-Consumed directly by `PipelineConfiguration.BuildForwardedHeadersOptions`.
-If both `KnownProxies` and `KnownNetworks` are empty, forwarded-header
-handling is left disabled and a warning is logged when rate limiting is
-enabled.
+Consumed directly by `PipelineConfiguration.BuildForwardedHeadersOptions`,
+in both the co-hosted API pipeline and the standalone MCP HTTP host
+(`--mcp --transport http`). If both `KnownProxies` and `KnownNetworks` are
+empty, forwarded-header handling is left disabled (**default OFF**) and a
+warning is logged when rate limiting is enabled in the co-hosted API.
+
+**Security caveat:** `X-Forwarded-For` is never trusted by default. Enable it
+only by naming the trusted reverse proxy under `KnownProxies` (or its network
+under `KnownNetworks`) — a spoofed `X-Forwarded-For` from an untrusted peer is
+ignored, so it cannot let a caller rotate to a fresh rate-limit bucket. When
+enabled, `UseForwardedHeaders` runs before the MCP pre-auth failure-budget
+limiter and per-key policy, so both key on the real client behind the proxy
+instead of collapsing every client into the proxy's single address.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
@@ -360,12 +369,24 @@ enabled.
 
 ### `AllowedHosts`
 
-ASP.NET Core built-in. Defaults to `*` in `appsettings.json`. Restrict to
-your deployed host name(s) for defense-in-depth against host-header attacks.
+ASP.NET Core built-in. The full API defaults to `*` in `appsettings.json`;
+restrict it to deployed host names for defense-in-depth against host-header
+attacks. Standalone MCP HTTP mode applies one rule, mirroring the
+host-filtering middleware's own parse exactly (split on `;` dropping only
+EMPTY entries — no trimming — then `HostString.ToUriComponent()` per entry,
+which retains any `:port` suffix): the value is replaced with
+`localhost;127.0.0.1;[::1]` exactly when the middleware itself would
+disable filtering — zero parsed entries (blank, `";"`, `";;"`) or a
+top-level wildcard entry (`*`, `0.0.0.0`, `[::]`, including mixed lists).
+Every other value is preserved verbatim because the middleware fails closed
+on it: port-suffixed entries such as `0.0.0.0:5001` and whitespace-bearing
+entries such as `" ; "` are literal patterns that real `Host` headers never
+match (effectively deny-all — misconfigurations that fail safe), not
+wildcards.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `AllowedHosts` | `string` | `*` | Semicolon-separated list of allowed `Host` header values. `*` accepts all. | No |
+| `AllowedHosts` | `string` | Full API: `*`; standalone MCP: loopback allowlist | Semicolon-separated allowed `Host` values. Remote MCP deployments must set exact public host names and terminate TLS; `--host` changes the bind address but does not relax this filter. | Required for non-loopback MCP HTTP |
 
 ## Rate limiting
 
@@ -391,6 +412,9 @@ defaults** come from `RateLimitingSettings` constructors; the
 | `RateLimiting:NoteImportPerUser:WindowSeconds` | `int` | `60` | same | Window length in seconds. | No |
 | `RateLimiting:McpPerApiKey:PermitLimit` | `int` | `60` (class default) | same | Per-API-key permits for the MCP HTTP transport. | No |
 | `RateLimiting:McpPerApiKey:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
+| `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `int` | `120` (class default) | same | Per-client-address MCP authentication **failure** budget. A permit is spent only when authentication fails (401); once spent, further attempts from that address are rejected with 429 before the API-key parse/database lookup. Successful requests never spend this budget, so multiple valid keys behind one egress address (NAT/proxy/CI) keep their independent per-key budgets. Keys on the trusted client address (see `ForwardedHeaders`). | No |
+| `RateLimiting:McpAuthenticationPerIp:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds for the MCP authentication-failure budget. A pre-check 429 always reports the FULL window as `Retry-After` — a deliberate safe over-estimate: the non-consuming availability check does not expose the exact replenishment instant, so clients may be told to wait longer than strictly necessary. | No |
+| `RateLimiting:McpAuthenticationPerIpConcurrency` | `int` | `16` (class default) | same | Maximum concurrent in-flight `/mcp` requests per client address admitted past the pre-authentication gate; the excess is rejected immediately with 429 (`Retry-After: 1`). Admission control for pre-auth work: the failure budget bounds cumulative failures per window, this cap bounds instantaneous concurrency — failed-auth key lookups per address per window never exceed `McpAuthenticationPerIp:PermitLimit` plus this cap. Long-lived (e.g. streaming) requests hold a slot for their full duration; raise this for clients that legitimately multiplex many concurrent requests through one address. | No |
 | `RateLimiting:TokenRefreshPerUser:PermitLimit` | `int` | `5` (class default) | same | Per-user permits for the token refresh endpoint. Tight limit to prevent token farming. | No |
 | `RateLimiting:TokenRefreshPerUser:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
 
@@ -573,13 +597,16 @@ Bound to `ArtefactStorageSettings`
 (`Taskdeck.Application.Services.ArtefactStorageSettings`) and validated at
 startup. Source artefact metadata and blobs stay in the same SQLite database;
 the blob table is queried only for explicit content retrieval and GDPR export.
-Both limits are enforced from server configuration, never from multipart form
-fields. Concurrent uploads serialize the quota check with the SQLite write.
+The storage limits are enforced from server configuration, never from multipart
+form fields. Concurrent uploads serialize the quota check with the SQLite write.
+`ExtractionTimeoutSeconds` additionally bounds the local text-extraction path so
+a crafted parser-bomb artefact cannot spin the parse thread indefinitely.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `Artefacts:MaxBytesPerArtefact` | `long` | `10485760` (10 MiB) | Maximum bytes accepted for one PNG, JPEG, WebP, PDF, TXT, or Markdown artefact. The upload stream stops and returns HTTP 413 once this bound is crossed. The API raises Kestrel's request-body ceiling to this value plus 128 KiB of bounded multipart overhead. This setting is capped at `int.MaxValue` because upload validation materializes one accepted artefact as a `byte[]` before the atomic SQLite write. Environment variable: `Artefacts__MaxBytesPerArtefact`. | No |
 | `Artefacts:MaxBytesPerUser` | `long` | `209715200` (200 MiB) | Aggregate source-artefact quota for one user, including blob bytes. Uploads that would cross it return HTTP 413. Environment variable: `Artefacts__MaxBytesPerUser`. | No |
+| `Artefacts:ExtractionTimeoutSeconds` | `double` | `30` | Wall-clock budget for a single local text extraction (PdfPig / plain-text / Markdown). The byte, page, and character caps bound the input and persisted output but not the parser's in-memory work; a crafted PDF (deeply nested object streams, decompression bombs) that stays under those caps can still spin PdfPig's synchronous `PdfDocument.Open(...)` arbitrarily long. When the budget is exceeded the extraction is abandoned and recorded as an immutable extraction-history row carrying the `extraction-timeout` warning (no HTTP 500; the artefact stays stored). Bounded to `[1, 3600]`; raise it toward the ceiling to effectively disable the budget. Environment variable: `Artefacts__ExtractionTimeoutSeconds`. | No |
 
 ### `FirstRun`
 
@@ -613,6 +640,17 @@ integration credentials (e.g., GitHub tokens) at rest in the SQLite database.
 Docker Compose variable: `TASKDECK_CONNECTORS_ENCRYPTION_KEY`
 
 ## MCP server
+
+Standalone HTTP listens at `http://127.0.0.1:5001/mcp` by default. `--port`
+changes the port and `--host` changes the bind host. Non-loopback binds require
+an exact `AllowedHosts` value and TLS termination before untrusted network
+traffic. Browser cross-origin access is disabled explicitly on the MCP endpoint,
+even when the co-hosted frontend CORS policy allows that origin. The co-hosted
+API exposes the same authenticated `/mcp` route on its configured base URL.
+Every HTTP request must send `Authorization: Bearer tdsk_...`; a 120 requests /
+60 seconds client-address limit bounds work before key validation, then the
+60 requests / 60 seconds policy partitions valid traffic by the opaque API-key
+ID. Resource/tool authorization uses the key owner's user ID.
 
 Read directly from configuration by
 `Taskdeck.Infrastructure.Mcp.StdioUserContextProvider`. Only consulted when
@@ -672,6 +710,8 @@ Examples:
 | `Llm:OpenAi:ApiKey` | `Llm__OpenAi__ApiKey` |
 | `Workers:RetryBackoffSeconds:0` | `Workers__RetryBackoffSeconds__0` |
 | `RateLimiting:AuthPerIp:PermitLimit` | `RateLimiting__AuthPerIp__PermitLimit` |
+| `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `RateLimiting__McpAuthenticationPerIp__PermitLimit` |
+| `RateLimiting:McpPerApiKey:PermitLimit` | `RateLimiting__McpPerApiKey__PermitLimit` |
 | `SignalR:Redis:ConnectionString` | `SignalR__Redis__ConnectionString` |
 | `Cors:AllowedOrigins` (as comma-separated string) | `Cors__AllowedOrigins` |
 

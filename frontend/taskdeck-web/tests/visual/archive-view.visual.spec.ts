@@ -11,7 +11,7 @@ import { registerAndAttachSession } from '../e2e/support/authSession'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-archive')
+  await registerAndAttachSession(page, request, 'visual-archive', { theme: 'legacy' })
 })
 
 test('archive view empty state', async ({ page }) => {

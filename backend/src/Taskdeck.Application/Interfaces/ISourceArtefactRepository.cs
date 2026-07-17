@@ -44,6 +44,19 @@ public interface ISourceArtefactRepository : IRepository<SourceArtefact>
         Guid userId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Batch-loads blob content for the requested artefacts owned by <paramref name="userId"/>,
+    /// keyed by artefact id, in a single query. Artefacts that do not exist, are not owned by the
+    /// user, or have no blob are simply absent from the result (never surfaced across users).
+    /// Callers must bound <paramref name="ids"/> so the IN-clause stays within SQLite's parameter
+    /// limit (SQLITE_MAX_VARIABLE_NUMBER = 999); the buffered export path pages ids in chunks of 500.
+    /// Passing more than the implementation's batch cap throws <see cref="ArgumentException"/>.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, byte[]>> GetContentsForUserAsync(
+        IReadOnlyCollection<Guid> ids,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     Task<bool> CopyContentForUserAsync(
         Guid id,
         Guid userId,

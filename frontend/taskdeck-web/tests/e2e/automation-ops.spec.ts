@@ -47,7 +47,7 @@ async function waitForProposalInSession(
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'ops')
+  auth = await registerAndAttachSession(page, request, 'ops', { theme: 'legacy' })
 })
 
 test('chat session should create and return assistant response', async ({ page }) => {

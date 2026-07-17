@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { registerAndAttachSession } from './support/authSession'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'today-onboarding')
+  await registerAndAttachSession(page, request, 'today-onboarding', { theme: 'legacy' })
 })
 
 test('today agenda should create a useful board from setup flow', async ({ page }) => {

@@ -14,7 +14,7 @@ import { addCard, addColumn, columnByName, createBoard } from './support/boardUi
  */
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'xbrowser')
+  await registerAndAttachSession(page, request, 'xbrowser', { theme: 'legacy' })
 })
 
 // ---------------------------------------------------------------------------

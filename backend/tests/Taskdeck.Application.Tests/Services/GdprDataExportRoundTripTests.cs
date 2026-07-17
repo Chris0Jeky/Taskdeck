@@ -262,6 +262,65 @@ public class GdprDataExportRoundTripTests
     }
 
     [Fact]
+    public async Task ExportUserData_WithBatchedArtefacts_RoundTripsOrderedBase64Content()
+    {
+        // #1355 (review LOW): this suite previously stubbed zero artefacts, so no full
+        // serialize -> parse -> deserialize round-trip ever carried batched blob content through
+        // the buffered path. Seeds two artefacts with distinguishable content and asserts the
+        // parsed JSON carries the correct base64 content in metadata order.
+        var userId = Guid.NewGuid();
+        var user = new User("artefactuser", "artefact@example.com", "hashedpw");
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        SetupEmptyRepositories(userId);
+
+        var first = new SourceArtefact(
+            userId, ArtefactKind.TextFile, "text/plain", "first.txt",
+            10, new string('a', SourceArtefact.Sha256HexLength), CaptureSource.Import);
+        var second = new SourceArtefact(
+            userId, ArtefactKind.TextFile, "text/plain", "second.txt",
+            11, new string('b', SourceArtefact.Sha256HexLength), CaptureSource.Import);
+        var artefacts = new[] { first, second };
+        var contentById = new Dictionary<Guid, byte[]>
+        {
+            [first.Id] = System.Text.Encoding.UTF8.GetBytes("first blob content"),
+            [second.Id] = System.Text.Encoding.UTF8.GetBytes("second blob content"),
+        };
+
+        _artefactRepoMock
+            .Setup(r => r.GetByUserAsync(userId, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, int limit, int offset, CancellationToken _) =>
+                artefacts.Skip(offset).Take(limit).ToArray());
+        _artefactRepoMock
+            .Setup(r => r.GetContentsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<Guid> ids, Guid _, CancellationToken _) =>
+                (IReadOnlyDictionary<Guid, byte[]>)ids.ToDictionary(id => id, id => contentById[id]));
+
+        var result = await _service.ExportUserDataAsync(userId);
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+
+        // Serialize -> parse: the JSON must carry the batched content, base64-encoded, in order.
+        var json = JsonSerializer.Serialize(result.Value, JsonOptions);
+        using var doc = JsonDocument.Parse(json);
+        var artefactArray = doc.RootElement.GetProperty("data").GetProperty("artefacts")
+            .EnumerateArray().ToList();
+        artefactArray.Should().HaveCount(2);
+        artefactArray[0].GetProperty("id").GetGuid().Should().Be(first.Id);
+        artefactArray[1].GetProperty("id").GetGuid().Should().Be(second.Id);
+        Convert.FromBase64String(artefactArray[0].GetProperty("contentBase64").GetString()!)
+            .Should().Equal(contentById[first.Id]);
+        Convert.FromBase64String(artefactArray[1].GetProperty("contentBase64").GetString()!)
+            .Should().Equal(contentById[second.Id]);
+
+        // Parse -> deserialize: the typed DTO round-trips the same ordered content.
+        var deserialized = JsonSerializer.Deserialize<UserDataExportDto>(json, JsonOptions);
+        deserialized!.Data.Artefacts.Should().HaveCount(2);
+        deserialized.Data.Artefacts![0].ContentBase64
+            .Should().Be(Convert.ToBase64String(contentById[first.Id]));
+        deserialized.Data.Artefacts[1].ContentBase64
+            .Should().Be(Convert.ToBase64String(contentById[second.Id]));
+    }
+
+    [Fact]
     public async Task ExportUserData_VersionIsAlwaysPresent()
     {
         var userId = Guid.NewGuid();

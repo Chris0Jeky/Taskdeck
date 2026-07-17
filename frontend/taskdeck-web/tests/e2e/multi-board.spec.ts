@@ -18,7 +18,7 @@ import { createBoardWithColumn } from './support/boardHelpers'
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'multi-board')
+  auth = await registerAndAttachSession(page, request, 'multi-board', { theme: 'legacy' })
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

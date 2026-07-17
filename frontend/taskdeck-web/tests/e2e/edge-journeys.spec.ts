@@ -35,7 +35,7 @@ import { assertOk } from './support/httpAsserts'
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'edge-journeys')
+  auth = await registerAndAttachSession(page, request, 'edge-journeys', { theme: 'legacy' })
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -331,9 +331,8 @@ const PAPER_NIGHT_CLASS = /(^|\s)paper-night(\s|$)/
 
 async function enablePaperMode(page: Page) {
   await page.addInitScript(() => {
-    // Default is Legacy in E2E (authSession pins td.paper.mode.v2='off'); seed Paper unless a
-    // paper-family value is already set — overrides the off-pin AND preserves a value the test
-    // toggled (e.g. paper-night) across reloads. Order-independent vs the auth pin.
+    // This frozen-DOM suite opts into Legacy; override it for this Paper-specific scenario
+    // while preserving a paper-family value the test toggles across reloads.
     const m = window.localStorage.getItem('td.paper.mode.v2')
     if (m !== 'paper' && m !== 'paper-night' && m !== 'auto') {
       window.localStorage.setItem('td.paper.mode.v2', 'paper')

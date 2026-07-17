@@ -52,7 +52,7 @@ const ENGINEERING_SPRINT_MANIFEST: StarterPackManifest = {
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'integrated-verification')
+  auth = await registerAndAttachSession(page, request, 'integrated-verification', { theme: 'legacy' })
 })
 
 // ─── Journey 1 (V-02): Full capture-to-board pipeline ───────────────────────

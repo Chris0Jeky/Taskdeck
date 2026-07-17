@@ -104,6 +104,16 @@ public static class PipelineConfiguration
         // rejected with 401 (missing/invalid/revoked API keys).
         app.UseMiddleware<Taskdeck.Api.Mcp.McpTelemetryMiddleware>();
 
+        // Bound the cost of MCP authentication FAILURES by trusted client address: reject before a
+        // key parse or database lookup once the address's failure budget is spent, but let valid
+        // requests through without consuming so they reach the per-key endpoint policy with
+        // independent budgets. UseForwardedHeaders (above, when configured) has already corrected
+        // Connection.RemoteIpAddress, so the budget keys on the real client behind a proxy.
+        if (rateLimitingSettings.Enabled)
+        {
+            app.UseMiddleware<McpAuthenticationRateLimitingMiddleware>();
+        }
+
         // API key authentication for MCP HTTP transport (/mcp path).
         // Must run before UseAuthentication so MCP requests are handled by API key auth,
         // not JWT auth. Non-MCP requests pass through unaffected.
@@ -143,17 +153,12 @@ public static class PipelineConfiguration
 
         // MCP Streamable HTTP endpoint for external AI agent integration.
         // Authenticated via ApiKeyMiddleware (Bearer tdsk_... tokens).
-        // Rate limiting applied per API key user identity.
-        var mcpEndpoint = app.MapMcp();
+        // Rate limiting applied per validated opaque API key ID.
+        app.MapTaskdeckMcpEndpoint(rateLimitingSettings.Enabled);
         // MCP is authenticated by ApiKeyMiddleware (above): it 401s missing/invalid/revoked keys
         // before routing and sets an authenticated principal for valid keys, which satisfies the
         // global FallbackPolicy (#1132 AC4). The MCP SDK endpoint does not honor an
         // .AllowAnonymous() convention, so the principal — not endpoint metadata — is the opt-in.
-        if (rateLimitingSettings.Enabled)
-        {
-            mcpEndpoint.RequireRateLimiting(RateLimiting.RateLimitingPolicyNames.McpPerApiKey);
-        }
-
         // SPA fallback: any route not matched by a controller or hub endpoint returns index.html,
         // enabling Vue Router's client-side navigation. API (/api/*) and hub (/hubs/*) routes
         // are matched above and never reach this fallback. AllowAnonymous so the app shell loads for

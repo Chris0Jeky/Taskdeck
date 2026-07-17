@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable vuejs-accessibility/no-static-element-interactions -- the article and aria-hidden drag glyph are pointer drag boundaries; named-button activation and board keyboard movement remain separate */
 import { computed } from 'vue'
 import type { Card, Label } from '../../types/board'
 
@@ -140,15 +141,19 @@ function onDragHandleMouseDown() {
     :data-variant="variant"
     :data-tone="tone || undefined"
     draggable="false"
-    tabindex="0"
-    role="button"
-    :aria-label="`Card ${card.title}`"
-    @click="onClick"
-    @keydown.enter.prevent="onClick"
-    @keydown.space.prevent="onClick"
     @dragstart="onDragStart"
     @dragend="onDragEnd"
   >
+    <button
+      type="button"
+      class="paper-board-card__open"
+      data-action="open-card"
+      :aria-label="`Card ${card.title}`"
+      @click="onClick"
+      @keydown.enter.stop.prevent="onClick"
+      @keydown.space.stop.prevent="onClick"
+    />
+
     <span
       v-if="variant === 'ribbon'"
       class="paper-board-card__ribbon"
@@ -169,18 +174,16 @@ function onDragHandleMouseDown() {
               tagstampTone === 'applied' ? 'var(--applied)' :
               'var(--overdue)' }"
           >{{ (tone ?? '').toUpperCase() }}</span>
-          <button
-            type="button"
+          <span
             class="paper-board-card__drag-handle"
             data-action="drag-card-handle"
             draggable="true"
-            title="Drag Card"
-            aria-label="Drag Card"
-            @click.stop
-            @mousedown="onDragHandleMouseDown"
+            :title="`Drag ${card.title}`"
+            aria-hidden="true"
+            @pointerdown="onDragHandleMouseDown"
           >
             <span aria-hidden="true">⋮⋮</span>
-          </button>
+          </span>
         </span>
       </header>
 
@@ -242,10 +245,22 @@ function onDragHandleMouseDown() {
 }
 
 .paper-board-card--selected,
-.paper-board-card:focus-visible {
+.paper-board-card:has(.paper-board-card__open:focus-visible) {
   outline: 2px solid var(--ember);
   outline-offset: 1px;
   border-color: var(--ember);
+}
+
+.paper-board-card__open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
 }
 
 .paper-board-card__ribbon {
@@ -290,6 +305,8 @@ function onDragHandleMouseDown() {
 }
 
 .paper-board-card__drag-handle {
+  position: relative;
+  z-index: 2;
   display: inline-grid;
   place-items: center;
   width: 24px;

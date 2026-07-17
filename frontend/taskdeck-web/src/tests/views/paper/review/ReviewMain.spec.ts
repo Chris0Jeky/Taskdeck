@@ -37,18 +37,19 @@ const provenance: ProvenanceRow[] = [
 
 const sideEffects: SideEffects = {
   rows: [{ key: 'Cards', value: '1 created', tone: 'active' }],
-  reversibility: {
-    summary: '6 hours',
-    description: 'Undo restores',
-    windowMs: 6 * 60 * 60 * 1000,
-    appliedAt: Date.now(),
+  applyRisk: {
+    summary: 'Low risk · confirm before apply',
+    description: 'Confirm affected items.',
   },
 }
 
 const conflicts: ConflictRow[] = []
 const history: HistoryRow[] = []
 
-function mountMain(confidence: Partial<ConfidenceBreakdown> = {}) {
+function mountMain(
+  confidence: Partial<ConfidenceBreakdown> = {},
+  deepReview: { conflicts?: ConflictRow[]; history?: HistoryRow[] } = {},
+) {
   return mount(ReviewMain, {
     props: {
       serial: '#2026-04-25-014',
@@ -59,7 +60,7 @@ function mountMain(confidence: Partial<ConfidenceBreakdown> = {}) {
         { text: ' into 3 cards' },
       ],
       lede: 'Lede text.',
-      decisionSummary: '3 ops · undo 6h · atomic',
+      decisionSummary: '3 ops · explicit review · atomic apply',
       busy: false,
       confidence: {
         overall: confidence.overall ?? 0.84,
@@ -74,8 +75,8 @@ function mountMain(confidence: Partial<ConfidenceBreakdown> = {}) {
       provenance,
       proposalId: 'proposal-001',
       sideEffects,
-      conflicts,
-      history,
+      conflicts: deepReview.conflicts ?? conflicts,
+      history: deepReview.history ?? history,
     },
   })
 }
@@ -130,5 +131,16 @@ describe('ReviewMain', () => {
   it('shows "Below your apply threshold" when confidence < threshold', () => {
     const wrapper = mountMain({ overall: 0.4, threshold: 0.7 })
     expect(wrapper.text()).toContain('Below your apply threshold')
+  })
+
+  it('renders malformed enum fallbacks as user-visible attention states', () => {
+    const wrapper = mountMain({}, {
+      conflicts: [{ tone: 'warn', key: 'Unknown conflict', value: 'Review required' }],
+      history: [{ serial: '#1', event: 'Unknown event', age: 'now', status: 'unknown' }],
+    })
+
+    expect(wrapper.text()).toContain('What the system noticed · 1 minor')
+    expect(wrapper.text()).toContain('WARNING')
+    expect(wrapper.get('[data-status="unknown"]').text()).toContain('UNKNOWN')
   })
 })

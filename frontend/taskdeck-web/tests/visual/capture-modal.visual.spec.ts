@@ -11,7 +11,7 @@ import { registerAndAttachSession } from '../e2e/support/authSession'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-capture-modal')
+  await registerAndAttachSession(page, request, 'visual-capture-modal', { theme: 'legacy' })
 })
 
 test('capture modal typed mode default', async ({ page }) => {

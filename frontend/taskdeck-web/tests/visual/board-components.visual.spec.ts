@@ -13,7 +13,7 @@ import { createBoard } from './board-setup-helpers'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-board-components')
+  await registerAndAttachSession(page, request, 'visual-board-components', { theme: 'legacy' })
 })
 
 test('board toolbar default', async ({ page }) => {

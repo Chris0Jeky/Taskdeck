@@ -11,7 +11,7 @@ import { registerAndAttachSession } from '../e2e/support/authSession'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-today')
+  await registerAndAttachSession(page, request, 'visual-today', { theme: 'legacy' })
 })
 
 test('today view default state', async ({ page }) => {

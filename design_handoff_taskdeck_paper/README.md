@@ -1,5 +1,13 @@
 # Handoff · Taskdeck — Paper & Graphite, Ember Edition
 
+> **⚠ Historical design reference — the undo capability described below was never built (2026-07-17).**
+> This handoff (README + jsx mockups) asserts an undo system as fact: "Apply is atomic and reversible",
+> a 6-hour undo window, "Undo restores everything", undo-rate stats, and a "U · Undo last apply" shortcut.
+> **No revert endpoint or service was ever implemented in the backend.** The product's undo
+> timeline/countdown/shortcut copy was removed by REVIVAL-02 (`#1298`) before the open beta; a real undo
+> is a post-beta candidate behind a deliberately versioned API. This bundle is preserved unmodified as a
+> frozen design snapshot — do not treat its undo/reversibility copy as shipped or to-build behavior.
+
 ## Overview
 
 Taskdeck is a local-first task manager built around a strict **Capture → Review → Apply** loop. No input — neither the user's own captures nor an LLM's proposals — silently mutates the board. Every change flows through an explicit, undoable review step that the user actively presses Enter (or Backspace) to resolve.
