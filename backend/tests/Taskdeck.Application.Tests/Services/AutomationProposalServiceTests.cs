@@ -1208,6 +1208,43 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectOriginalProposalViolatingStructureLimits()
+    {
+        // Arrange: an original proposal with duplicate operation sequences violates the
+        // structure invariants Apply enforces (ValidatePolicy -> ValidateOperationStructure).
+        // Preview must fail with the same ValidationError instead of rendering cleanly and
+        // failing only at Apply (#1370 preview == apply).
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Malformed structure",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { name = "Renamed", boardId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        // Assert: same failure Apply's structure validation produces.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("sequences must be unique");
+    }
+
+    [Fact]
     public async Task GetProposalDiffAsync_ShouldDescribeDueDateExactlyAsApplyNormalizesIt()
     {
         var proposalId = Guid.NewGuid();

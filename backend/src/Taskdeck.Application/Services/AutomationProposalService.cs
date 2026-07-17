@@ -430,6 +430,15 @@ public class AutomationProposalService : IAutomationProposalService
             .OrderBy(o => o.Sequence)
             .Select(MapOperationToDto)
             .ToList();
+
+        // Run the same structure invariants Apply enforces (op count, unique/non-negative
+        // sequences, parameter size) before building the diff, so a proposal that would be
+        // rejected at Apply cannot preview cleanly first (#1370 preview == apply). Apply runs
+        // this via AutomationPolicyEngine.ValidatePolicy; mirror it here on the original path.
+        var structureValidation = ProposalOperationStructureValidator.Validate(originalOperations);
+        if (!structureValidation.IsSuccess)
+            return Result.Failure<string>(structureValidation.ErrorCode, structureValidation.ErrorMessage);
+
         var originalValidation = await ProposalOperationContractValidator.ValidateAsync(
             _unitOfWork,
             proposal.BoardId,
