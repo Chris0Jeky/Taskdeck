@@ -112,7 +112,13 @@ export function useReviewActions(
     },
     (readOnly) => {
       if (!readOnly) return
-      if (selectedDiffMode.value === 'stored' || selectedDiffMode.value === null) return
+      // SEAM INVARIANT (#1397 round 3): a read-only conversion invalidates
+      // EVERY non-stored pane state — including the loading state, where
+      // selectedDiffMode is still null while the live /diff is in flight. Only
+      // an already-stored presentation is skippable; a null mode with an open
+      // pane id means a fetch is pending, and NOT converting here would let its
+      // late response render live UI on a read-only proposal.
+      if (selectedDiffMode.value === 'stored') return
       const id = selectedDiffProposalId.value
       const proposal = id ? proposals.value.find((p) => p.id === id) : undefined
       if (!proposal) return

@@ -337,6 +337,45 @@ describe('useReviewActions', () => {
     expect(actions.selectedDiff.value).toBe('stored preview')
   })
 
+  it('converts an IN-FLIGHT live diff to stored on read-only flip and discards the late response (#1397 round 3)', async () => {
+    // While a live /diff is in flight the pane state is id-set + mode null. The
+    // read-only watcher must treat that loading state as convertible too: bump
+    // the request id (invalidating the pending response) and present the stored
+    // state — otherwise the late live response renders live UI on a proposal
+    // that is no longer actionable.
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'PendingReview', diffPreview: 'stored preview' }),
+    ]
+    let resolveDiff: ((value: string) => void) | undefined
+    vi.mocked(automationApi.getProposalDiff).mockImplementation(
+      () => new Promise<string>((resolve) => { resolveDiff = resolve }),
+    )
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    const togglePromise = actions.handleToggleDiff('p-1')
+    await nextTick()
+
+    // In flight: pane anchored, no mode yet.
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiffMode.value).toBeNull()
+
+    // The proposal turns terminal while the fetch is pending.
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'Applied', diffPreview: 'stored preview' }),
+    ]
+    await nextTick()
+
+    // Converted immediately — before the live response lands.
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored preview')
+
+    // The late live response must be discarded (request id was bumped).
+    resolveDiff?.('live diff content')
+    await togglePromise
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored preview')
+  })
+
   it('tears the pane down and toasts for a non-validation diff error (e.g. 404)', async () => {
     proposals.value = [makeProposal({ id: 'p-1', status: 'PendingReview' })]
     vi.mocked(automationApi.getProposalDiff).mockRejectedValue({
