@@ -94,8 +94,8 @@ public sealed class RedisCacheServiceTests : IDisposable
         //   - Pre-#1189 code: lock held across connect -> probe times out -> lockWasFree == false.
         var probeAcquiredLock = false;
         var probeElapsed = TimeSpan.MaxValue;
-        var probeCompleted = new ManualResetEventSlim(false);
-        var seamFired = new ManualResetEventSlim(false);
+        using var probeCompleted = new ManualResetEventSlim(false);
+        using var seamFired = new ManualResetEventSlim(false);
 
         _cache.OnBeforeConnect = () =>
         {
@@ -156,8 +156,8 @@ public sealed class RedisCacheServiceTests : IDisposable
         //                    Dispose acquires it immediately.
         //   - Pre-#1189 code: the connecting thread holds _connectionLock across the multi-second
         //                    connect, so Dispose blocks behind it for the whole connect.
-        var releaseConnect = new ManualResetEventSlim(false);
-        var connectEntered = new ManualResetEventSlim(false);
+        using var releaseConnect = new ManualResetEventSlim(false);
+        using var connectEntered = new ManualResetEventSlim(false);
 
         _cache.OnBeforeConnect = () =>
         {
