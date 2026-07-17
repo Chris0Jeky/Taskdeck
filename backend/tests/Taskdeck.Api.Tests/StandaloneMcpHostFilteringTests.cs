@@ -175,6 +175,73 @@ public class StandaloneMcpHostFilteringTests
     [Fact]
     public async Task StandaloneMcpHttpHost_ForwardedHeaders_KeyFailureBudgetOnForwardedClient()
     {
+        await RunPreAuthLimiterHostAsync(knownProxy: "127.0.0.1", async client =>
+        {
+            // Forwarded client A: first unauthenticated attempt fails auth (401) and spends A's budget.
+            using (var firstA = await SendForwardedMcpAsync(client, "1.1.1.1"))
+            {
+                firstA.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "the first attempt reaches API-key auth, which rejects the missing key");
+            }
+
+            // Forwarded client A again: its own bucket is now spent, so it is rejected pre-auth (429),
+            // proving the budget keys on the forwarded client and is active in the standalone host.
+            using (var secondA = await SendForwardedMcpAsync(client, "1.1.1.1"))
+            {
+                secondA.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+                    "the same forwarded client is limited on its own bucket");
+                secondA.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
+                    .Which.Should().Be("McpAuthenticationPerIp");
+            }
+
+            // Forwarded client B behind the SAME proxy: independent bucket, not starved by A. This is
+            // the discriminating assertion — without UseForwardedHeaders both would share 127.0.0.1.
+            using (var firstB = await SendForwardedMcpAsync(client, "9.9.9.9"))
+            {
+                firstB.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "a different forwarded client must have an independent failure budget");
+            }
+        });
+    }
+
+    // Spoof resistance on the REAL standalone wiring: forwarded headers are ENABLED, but the
+    // configured trusted proxy is NOT the connecting peer (127.0.0.1). ForwardedHeadersMiddleware
+    // must therefore ignore X-Forwarded-For, and the failure budget must key on the socket
+    // address — so rotating the XFF value must NOT rotate to a fresh bucket. This exercises the
+    // same Program.cs path as the known-proxy test above (not a config-off tautology): the
+    // middleware IS in the pipeline and actively refuses the untrusted header.
+    [Fact]
+    public async Task StandaloneMcpHttpHost_ForwardedHeaders_IgnoreXffFromUnknownPeer()
+    {
+        await RunPreAuthLimiterHostAsync(knownProxy: "203.0.113.50", async client =>
+        {
+            // First attempt from the (untrusted) loopback peer spends the SOCKET bucket.
+            using (var first = await SendForwardedMcpAsync(client, "1.1.1.1"))
+            {
+                first.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "the first attempt reaches API-key auth, which rejects the missing key");
+            }
+
+            // A rotated X-Forwarded-For from the same untrusted peer must land in the SAME socket
+            // bucket (which is now spent): spoofed XFF cannot mint fresh budgets.
+            using (var spoofed = await SendForwardedMcpAsync(client, "9.9.9.9"))
+            {
+                spoofed.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+                    "X-Forwarded-For from a peer outside KnownProxies must be ignored, keying the budget on the socket address");
+                spoofed.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
+                    .Which.Should().Be("McpAuthenticationPerIp");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Boots the real standalone MCP HTTP entry point with the pre-auth failure budget set to
+    /// 1 permit / 300s and <c>ForwardedHeaders:KnownProxies</c> set to <paramref name="knownProxy"/>,
+    /// runs <paramref name="assertions"/> against a single-connection client, then shuts the host
+    /// down cleanly and restores the process environment.
+    /// </summary>
+    private static async Task RunPreAuthLimiterHostAsync(string knownProxy, Func<HttpClient, Task> assertions)
+    {
         var port = ReserveFreeLoopbackPort();
         var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-mcp-fwd-{Guid.NewGuid():N}.db");
         var envKeys = new[]
@@ -209,12 +276,11 @@ public class StandaloneMcpHostFilteringTests
             // client's Host (127.0.0.1:{port}) passes host filtering.
             Environment.SetEnvironmentVariable("AllowedHosts", null);
             Environment.SetEnvironmentVariable("RateLimiting__Enabled", "true");
-            // Failure budget of 1 so a single unauthenticated attempt exhausts a forwarded client's
-            // bucket; a long window so it does not replenish mid-test.
+            // Failure budget of 1 so a single unauthenticated attempt exhausts a bucket; a long
+            // window so it does not replenish mid-test.
             Environment.SetEnvironmentVariable("RateLimiting__McpAuthenticationPerIp__PermitLimit", "1");
             Environment.SetEnvironmentVariable("RateLimiting__McpAuthenticationPerIp__WindowSeconds", "300");
-            // Trust X-Forwarded-For only from the loopback proxy the test connects through.
-            Environment.SetEnvironmentVariable("ForwardedHeaders__KnownProxies__0", "127.0.0.1");
+            Environment.SetEnvironmentVariable("ForwardedHeaders__KnownProxies__0", knownProxy);
 
             var entryPoint = typeof(Program).Assembly.EntryPoint
                 ?? throw new InvalidOperationException("Taskdeck.Api assembly has no entry point.");
@@ -245,31 +311,9 @@ public class StandaloneMcpHostFilteringTests
             await started.Task.WaitAsync(StartupTimeout);
 
             // Single client => single reused HTTP/1.1 connection => server-side request serialization.
-            using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
-
-            // Forwarded client A: first unauthenticated attempt fails auth (401) and spends A's budget.
-            using (var firstA = await SendForwardedMcpAsync(client, "1.1.1.1"))
+            using (var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") })
             {
-                firstA.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
-                    "the first attempt reaches API-key auth, which rejects the missing key");
-            }
-
-            // Forwarded client A again: its own bucket is now spent, so it is rejected pre-auth (429),
-            // proving the budget keys on the forwarded client and is active in the standalone host.
-            using (var secondA = await SendForwardedMcpAsync(client, "1.1.1.1"))
-            {
-                secondA.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
-                    "the same forwarded client is limited on its own bucket");
-                secondA.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
-                    .Which.Should().Be("McpAuthenticationPerIp");
-            }
-
-            // Forwarded client B behind the SAME proxy: independent bucket, not starved by A. This is
-            // the discriminating assertion — without UseForwardedHeaders both would share 127.0.0.1.
-            using (var firstB = await SendForwardedMcpAsync(client, "9.9.9.9"))
-            {
-                firstB.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
-                    "a different forwarded client must have an independent failure budget");
+                await assertions(client);
             }
 
             await app.StopAsync();
