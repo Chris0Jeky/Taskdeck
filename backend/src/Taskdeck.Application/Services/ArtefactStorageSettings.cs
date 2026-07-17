@@ -24,7 +24,11 @@ public sealed class ArtefactStorageSettings
     /// to effectively disable the budget without a zero/negative value that would
     /// abort every extraction.
     /// </summary>
-    [Range(1, 3600)]
+    // Double literals set RangeAttribute.OperandType to double; the int-operand
+    // overload would coerce the value to Int32 (rounding) before comparing, so a
+    // sub-1s value like 0.6 would round up to 1 and slip past the floor while the
+    // service still ran the raw sub-second budget.
+    [Range(1.0, 3600.0)]
     public double ExtractionTimeoutSeconds { get; set; } = DefaultExtractionTimeoutSeconds;
 
     /// <summary>

@@ -63,6 +63,10 @@ public class OptionsValidationTests
     [InlineData(0.0)]
     [InlineData(-1.0)]
     [InlineData(0.5)]
+    // 0.6 and 0.9 round UP to 1 under an int-operand range but are below the real
+    // 1.0 floor — they must be rejected by the double-operand range.
+    [InlineData(0.6)]
+    [InlineData(0.9)]
     [InlineData(3601.0)]
     public void ArtefactStorageSettings_ExtractionTimeoutSeconds_RejectsOutOfRange(double value)
     {
