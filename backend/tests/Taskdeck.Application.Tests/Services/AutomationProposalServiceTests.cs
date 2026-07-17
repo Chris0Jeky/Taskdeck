@@ -2298,6 +2298,146 @@ public class AutomationProposalServiceTests
 
     #endregion
 
+    #region GetTerminalProposalStoredPreviewAsync Tests (#1415)
+
+    private static AutomationProposal BuildTerminalPreviewProposal(Guid requesterId, Guid boardId, string preview)
+    {
+        // An update-board operation clears the shared operation-contract validator against the
+        // default board mock (mirrors GetProposalDiffAsync_ShouldReturnStoredPreview_ForWellFormed…),
+        // so these tests exercise the requester/board-access gate rather than op-shape rejection.
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            requesterId,
+            "Rename board",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { name = "Renamed board", boardId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+
+        // SetDiffPreview requires PendingReview, so stamp the stored preview before deciding.
+        proposal.SetDiffPreview(preview);
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
+        return proposal;
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnStoredPreview_WhenRequesterRetainsAccess()
+    {
+        // #1415: a decided proposal whose requester still has board access serves the STORED
+        // historical preview verbatim (no live rebuild), mirroring the #1397 frontend decision.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "0. Create card \"Task\"");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be("0. Create card \"Task\"");
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnForbidden_WhenRequesterLostBoardAccess()
+    {
+        // #1415: the core trust-class fix. A requester who lost board access must be denied the
+        // stored preview with the SAME Forbidden the diff/apply permission gate returns — the
+        // stored preview is NOT surfaced.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "leaked-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNotFound_WhenBoardDeleted()
+    {
+        // #1415 board-exists gate: a decided proposal whose board was deleted returns 404, never
+        // the stored preview.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "orphan-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardRepoMock
+            .Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Board?)null);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNotFound_WhenRequesterDeleted()
+    {
+        // #1415 requester-exists gate: a decided proposal whose requester was deleted returns 404.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "ghost-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _userRepoMock
+            .Setup(r => r.GetByIdAsync(requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNotFound_WhenProposalMissing()
+    {
+        var proposalId = Guid.NewGuid();
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync((AutomationProposal?)null);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldSkipExpiryGate_ServingStoredPreview_WhenExpiredButAccessRetained()
+    {
+        // #1415 deliberate divergence from the live diff path: the pre-decision structure/expiry
+        // gates no longer apply once a proposal is decided. An Applied proposal whose ExpiresAt has
+        // since passed still serves its stored historical preview (subject to board access), where
+        // GetProposalDiffAsync would report expiry. Only the requester/board-access gate is enforced.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "expired-but-historical");
+        SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-10));
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be("expired-but-historical");
+    }
+
+    #endregion
+
     #region GetProposalsAsync Tests
 
     [Fact]
