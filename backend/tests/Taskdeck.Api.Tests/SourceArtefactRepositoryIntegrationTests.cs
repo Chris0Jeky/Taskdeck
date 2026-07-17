@@ -170,6 +170,30 @@ public sealed class SourceArtefactRepositoryIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task GetContentsForUserAsync_WithExactlyMaxBatchIds_DoesNotThrow()
+    {
+        // Pass-side of the guard boundary: exactly 900 ids (MaxBatchIdCount) must be accepted —
+        // pins the comparison as > rather than >=. No matching rows are seeded, so an empty map
+        // is the expected result; the point is that the query runs instead of throwing.
+        var (options, _, dbPath) = CreateSqliteOptions();
+        try
+        {
+            await using var db = new TaskdeckDbContext(options);
+            await db.Database.MigrateAsync();
+            var repo = new SourceArtefactRepository(db);
+            var exactlyMax = Enumerable.Range(0, 900).Select(_ => Guid.NewGuid()).ToList();
+
+            var result = await repo.GetContentsForUserAsync(exactlyMax, Guid.NewGuid());
+
+            result.Should().BeEmpty("no artefacts were seeded; the call must succeed, not throw");
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
     private static (DbContextOptions<TaskdeckDbContext> Options, CapturingCommandInterceptor Interceptor, string DbPath) CreateSqliteOptions()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-artefact-batch-{Guid.NewGuid():N}.db");
