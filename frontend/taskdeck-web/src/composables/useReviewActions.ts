@@ -4,13 +4,38 @@ import { useToastStore } from '../store/toastStore'
 import { createRequestId } from '../utils/requestId'
 import { normalizeProposalRiskLevel } from '../utils/automation'
 import type { Proposal as ApiProposal } from '../types/automation'
-import { getErrorDisplay } from './useErrorMapper'
+import { getErrorDisplay, isValidationError } from './useErrorMapper'
+import { isProposalReadOnly } from './useReviewProposals'
 import { usePerformanceMark } from './usePerformanceMark'
+
+/**
+ * How the review diff pane presents its content (#1397):
+ * - `live`    — a freshly fetched `/diff` for a still-actionable proposal.
+ * - `stored`  — a read-only/terminal proposal's stored `diffPreview` (no live
+ *               request; may be null → "no stored preview available").
+ * - `invalid` — the backend rejected the diff (400) or the proposal has no
+ *               operations; Apply would reject it too, so the reviewer must see
+ *               that verdict rather than a generic error toast.
+ */
+export type ReviewDiffMode = 'live' | 'stored' | 'invalid'
+
+// Fallback expiry classifier for callers that don't supply the surface's
+// reactive clock. Trusts the server-authoritative `isExpired` flag and the
+// domain `Expired` status; it cannot see a proposal whose expiresAt has passed
+// mid-session, so surfaces that need that (Legacy) pass their own function.
+function defaultIsProposalExpired(proposal: ApiProposal): boolean {
+  return proposal.isExpired === true || proposal.status === 'Expired'
+}
 
 export function useReviewActions(
   proposals: Ref<ApiProposal[]>,
   dismissableProposalIds: ComputedRef<string[]>,
   loadProposals: () => Promise<void>,
+  // Same client-side expiry rule the surrounding surface uses (from
+  // useReviewProposals). Defaults to the server-authoritative `isExpired` flag /
+  // domain Expired status so callers that don't drive a reactive clock (e.g.
+  // Paper, which owns its own diff flow) still classify read-only correctly.
+  isProposalExpired: (proposal: ApiProposal) => boolean = defaultIsProposalExpired,
 ) {
   const toast = useToastStore()
   const diffRenderPerf = usePerformanceMark('proposal-diff-render')
@@ -23,7 +48,14 @@ export function useReviewActions(
   const bulkDismissBusy = ref(false)
   const selectedDiffProposalId = ref<string | null>(null)
   const selectedDiff = ref<string | null>(null)
+  const selectedDiffMode = ref<ReviewDiffMode | null>(null)
   let latestDiffRequestId = 0
+
+  function resetDiffState() {
+    selectedDiffProposalId.value = null
+    selectedDiff.value = null
+    selectedDiffMode.value = null
+  }
 
   async function handleApproveProposal(proposalId: string) {
     try {
@@ -103,27 +135,59 @@ export function useReviewActions(
   async function handleToggleDiff(proposalId: string) {
     if (selectedDiffProposalId.value === proposalId) {
       latestDiffRequestId += 1
-      selectedDiffProposalId.value = null
-      selectedDiff.value = null
+      resetDiffState()
+      return
+    }
+
+    const proposal = proposals.value.find((p) => p.id === proposalId)
+    // Anchor the pane to this proposal before any await so a concurrent toggle
+    // or a stale response can be detected/ignored.
+    const requestId = ++latestDiffRequestId
+    selectedDiffProposalId.value = proposalId
+    selectedDiff.value = null
+    selectedDiffMode.value = null
+
+    if (!proposal) {
+      // The card only emits ids from the visible list, but guard so a vanished
+      // proposal leaves a clean pane rather than a hung loading state.
+      resetDiffState()
+      return
+    }
+
+    // Read-only / terminal proposals (expired, Applied, Rejected, Failed,
+    // Dismissed) never fire the live diff — PR #1395 makes `/diff` 400 for them.
+    // Present the stored `diffPreview` under an explicit read-only banner; when
+    // there is no stored preview, the banner + "no stored preview" state, never
+    // an error toast + cleared pane (#1397).
+    if (isProposalReadOnly(proposal, isProposalExpired(proposal))) {
+      selectedDiff.value = proposal.diffPreview
+      selectedDiffMode.value = 'stored'
       return
     }
 
     diffRenderPerf.start()
-    const requestId = ++latestDiffRequestId
-
     try {
-      selectedDiffProposalId.value = proposalId
-      selectedDiff.value = null
-
       const diff = await automationApi.getProposalDiff(proposalId)
       if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
 
       selectedDiff.value = diff
+      selectedDiffMode.value = 'live'
     } catch (e: unknown) {
       if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
 
-      selectedDiffProposalId.value = null
-      selectedDiff.value = null
+      // A 400 ValidationError means the backend ran Apply's gates at diff time
+      // (#1376/#1395): the proposal has no operations (or expired mid-flight).
+      // Apply would reject it too, so surface that verdict inline instead of a
+      // generic toast + torn-down pane, so the reviewer sees it before approving.
+      if (isValidationError(e)) {
+        selectedDiff.value = null
+        selectedDiffMode.value = 'invalid'
+        return
+      }
+
+      // Any other failure (e.g. a 404 because it was deleted elsewhere) stays a
+      // toast with a clean teardown.
+      resetDiffState()
       toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)
     } finally {
       diffRenderPerf.end()
@@ -182,6 +246,7 @@ export function useReviewActions(
     bulkDismissBusy,
     selectedDiffProposalId,
     selectedDiff,
+    selectedDiffMode,
     handleApproveProposal,
     handleRejectProposal,
     handleDeferProposal,

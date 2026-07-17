@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Proposal } from '../../types/automation'
 import {
   normalizeProposalRiskLevel,
   normalizeProposalSourceType,
   normalizeProposalStatus,
 } from '../../utils/automation'
+import type { ReviewDiffMode } from '../../composables/useReviewActions'
 import ReviewProposalActions from './ReviewProposalActions.vue'
 import ReviewProposalDetails from './ReviewProposalDetails.vue'
 
@@ -14,9 +16,22 @@ const props = defineProps<{
   isBusy: boolean
   selectedDiffProposalId: string | null
   selectedDiff: string | null
+  selectedDiffMode: ReviewDiffMode | null
   captureHref: string
   proposalHref: string
 }>()
+
+// Whether the diff pane has anything to show for this proposal. Read-only
+// (stored) and invalid states always render their banner/notice; a live diff
+// only renders once its content arrives, so a slow fetch shows nothing rather
+// than flashing a premature "no changes" (#1397).
+const diffPaneVisible = computed(
+  () =>
+    props.selectedDiffProposalId === props.proposal.id &&
+    (props.selectedDiffMode === 'stored' ||
+      props.selectedDiffMode === 'invalid' ||
+      !!props.selectedDiff),
+)
 
 defineEmits<{
   (e: 'approve', proposalId: string): void
@@ -162,9 +177,52 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
       @open-board="$emit('open-board', $event)"
     />
 
-    <div v-if="selectedDiffProposalId === proposal.id && selectedDiff" class="td-review-card__diff-wrapper">
-      <span class="td-review-card__diff-label">Operation details</span>
-      <pre class="td-review-card__diff" role="region" aria-label="Proposal operation diff">{{ selectedDiff }}</pre>
+    <div
+      v-if="diffPaneVisible"
+      class="td-review-card__diff-wrapper"
+      data-testid="review-diff-wrapper"
+    >
+      <!-- Read-only / terminal: stored preview under an explicit banner (#1397) -->
+      <template v-if="selectedDiffMode === 'stored'">
+        <span class="td-review-card__diff-banner" role="status" data-testid="review-diff-banner">
+          {{ reviewStatusLabel(proposal.status) }} · read-only — showing the stored preview.
+        </span>
+        <pre
+          v-if="selectedDiff"
+          class="td-review-card__diff"
+          role="region"
+          aria-label="Stored proposal preview"
+          data-testid="review-diff-stored"
+        >{{ selectedDiff }}</pre>
+        <span
+          v-else
+          class="td-review-card__diff-note"
+          data-testid="review-diff-stored-empty"
+        >
+          No stored preview is available for this proposal.
+        </span>
+      </template>
+
+      <!-- Invalid: no operations to apply — Apply would reject it too (#1397) -->
+      <span
+        v-else-if="selectedDiffMode === 'invalid'"
+        class="td-review-card__diff-note td-review-card__diff-note--warn"
+        role="status"
+        data-testid="review-diff-invalid"
+      >
+        This proposal contains no operations to apply, so Apply would reject it.
+      </span>
+
+      <!-- Live diff for a still-actionable proposal -->
+      <template v-else>
+        <span class="td-review-card__diff-label">Operation details</span>
+        <pre
+          class="td-review-card__diff"
+          role="region"
+          aria-label="Proposal operation diff"
+          data-testid="review-diff-pre"
+        >{{ selectedDiff }}</pre>
+      </template>
     </div>
   </article>
 </template>
@@ -297,6 +355,22 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
   font-size: var(--td-font-xs);
   color: var(--td-text-tertiary);
   font-weight: 500;
+}
+
+.td-review-card__diff-banner {
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  color: var(--td-color-warning);
+}
+
+.td-review-card__diff-note {
+  font-size: var(--td-font-xs);
+  color: var(--td-text-secondary);
+}
+
+.td-review-card__diff-note--warn {
+  color: var(--td-color-warning);
+  font-weight: 600;
 }
 
 .td-review-card__diff {

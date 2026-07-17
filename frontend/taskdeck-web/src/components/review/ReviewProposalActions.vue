@@ -46,8 +46,11 @@ defineEmits<{
       <span class="td-review-card__expired-notice" role="status">
         This proposal has expired and can no longer be applied.
       </span>
+      <!-- Expired proposals stay inspectable via their stored preview (#1397): this
+           renders the stored diffPreview under a read-only banner, never a live
+           `/diff` request (which now 400s for expired proposals). -->
       <button class="td-btn td-btn--secondary td-btn--sm" @click="$emit('toggle-diff', proposal.id)">
-        {{ selectedDiffProposalId === proposal.id ? 'Hide Diff' : 'View Diff' }}
+        {{ selectedDiffProposalId === proposal.id ? 'Hide stored preview' : 'View stored preview' }}
       </button>
       <button
         class="td-btn td-btn--secondary td-btn--sm"
