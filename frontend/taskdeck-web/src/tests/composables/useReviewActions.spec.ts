@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useReviewActions } from '../../composables/useReviewActions'
 import { automationApi } from '../../api/automationApi'
+import { proposalRevisionsApi } from '../../api/proposalRevisionsApi'
 import type { Proposal as ApiProposal } from '../../types/automation'
 
 vi.mock('../../api/automationApi', () => ({
@@ -11,6 +12,12 @@ vi.mock('../../api/automationApi', () => ({
     executeProposal: vi.fn(),
     dismissProposals: vi.fn(),
     getProposalDiff: vi.fn(),
+  },
+}))
+
+vi.mock('../../api/proposalRevisionsApi', () => ({
+  proposalRevisionsApi: {
+    getRevisions: vi.fn(),
   },
 }))
 
@@ -55,6 +62,7 @@ describe('useReviewActions', () => {
     proposals = ref([makeProposal()])
     dismissableIds = computed(() => [])
     loadProposals = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
   })
 
   it('should approve a proposal and update the list', async () => {
@@ -208,7 +216,7 @@ describe('useReviewActions', () => {
     expect(actions.selectedDiff.value).toBe('stored')
   })
 
-  it('renders the invalid verdict (not a cleared pane) when /diff returns a 400 ValidationError', async () => {
+  it('renders the invalid verdict with the backend reason when /diff returns a 400 ValidationError', async () => {
     proposals.value = [makeProposal({ id: 'p-1', status: 'PendingReview' })]
     vi.mocked(automationApi.getProposalDiff).mockRejectedValue({
       response: { status: 400, data: { errorCode: 'ValidationError', message: 'Proposal must contain at least one operation' } },
@@ -218,10 +226,97 @@ describe('useReviewActions', () => {
     await actions.handleToggleDiff('p-1')
 
     expect(automationApi.getProposalDiff).toHaveBeenCalledWith('p-1')
-    // The pane stays open on this proposal, presenting the invalid verdict.
+    // The pane stays open on this proposal, presenting the invalid verdict with
+    // the backend's ACTUAL reason (#1397 MEDIUM-1).
     expect(actions.selectedDiffProposalId.value).toBe('p-1')
     expect(actions.selectedDiffMode.value).toBe('invalid')
+    expect(actions.selectedDiffInvalidReason.value).toBe('Proposal must contain at least one operation')
     expect(actions.selectedDiff.value).toBeNull()
+  })
+
+  it('carries the backend expiry reason for a 400 on the expiry race, not the zero-op copy', async () => {
+    // The 60s review clock can lag a server-side expiry: the proposal still
+    // classifies live client-side, the live diff fires, and the backend answers
+    // 400 "Proposal has expired". The presentation must carry THAT reason —
+    // mislabeling it as a zero-op structure problem is factually wrong
+    // (#1397 MEDIUM-1).
+    proposals.value = [makeProposal({ id: 'p-1', status: 'PendingReview' })]
+    vi.mocked(automationApi.getProposalDiff).mockRejectedValue({
+      response: { status: 400, data: { errorCode: 'ValidationError', message: 'Proposal has expired' } },
+    })
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+
+    expect(actions.selectedDiffMode.value).toBe('invalid')
+    expect(actions.selectedDiffInvalidReason.value).toBe('Proposal has expired')
+    expect(actions.selectedDiffInvalidReason.value).not.toContain('operation')
+  })
+
+  it('marks the stored preview as revised when the proposal has saved revisions', async () => {
+    // diffPreview is creation-time content revisions never update: a revised
+    // terminal proposal's stored preview shows the ORIGINAL submission, so the
+    // banner must disclose the revision (#1397 MEDIUM-2).
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'Applied', diffPreview: 'original ops' }),
+    ]
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([
+      {
+        id: 'rev-1', proposalId: 'p-1', revisionNumber: 1, editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}', revisedAt: new Date().toISOString(),
+        reason: 'edit', createdAt: new Date().toISOString(),
+      },
+    ])
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+    // Settle the fire-and-forget revision fetch.
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiffRevised.value).toBe(true)
+  })
+
+  it('leaves the revised flag unknown (null) when the revision fetch fails', async () => {
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'Expired', diffPreview: 'stored' }),
+    ]
+    vi.mocked(proposalRevisionsApi.getRevisions).mockRejectedValue(new Error('boom'))
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // The stored preview still renders; the disclosure just stays generic.
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored')
+    expect(actions.selectedDiffRevised.value).toBeNull()
+  })
+
+  it('re-derives an open live pane to the stored presentation when the proposal turns read-only', async () => {
+    // #1397 LOW-5: a proposal can flip to terminal/expired WHILE its live pane is
+    // open (status change or clock tick). The pane must switch to the stored
+    // read-only presentation instead of keeping a live-looking diff.
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'PendingReview', diffPreview: 'stored preview' }),
+    ]
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('live diff')
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+    expect(actions.selectedDiffMode.value).toBe('live')
+    expect(actions.selectedDiff.value).toBe('live diff')
+
+    // The proposal turns terminal (e.g. a refresh maps in an Applied state).
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'Applied', diffPreview: 'stored preview' }),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored preview')
   })
 
   it('tears the pane down and toasts for a non-validation diff error (e.g. 404)', async () => {

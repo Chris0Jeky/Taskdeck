@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { getErrorDisplay, mapErrorToMessage, parseApiError } from '../../composables/useErrorMapper'
+import {
+  getErrorDisplay,
+  isValidationError,
+  mapErrorToMessage,
+  parseApiError,
+} from '../../composables/useErrorMapper'
 
 describe('useErrorMapper', () => {
   describe('mapErrorToMessage', () => {
@@ -64,6 +69,37 @@ describe('useErrorMapper', () => {
           },
         },
       })).toBeNull()
+    })
+  })
+
+  describe('isValidationError', () => {
+    // #1397 MEDIUM-1: the classifier requires status 400 AND the ValidationError
+    // code — neither alone may classify as the review-gate verdict.
+    it('is true only when status is 400 AND errorCode is ValidationError', () => {
+      expect(isValidationError({
+        response: { status: 400, data: { errorCode: 'ValidationError', message: 'Proposal has expired' } },
+      })).toBe(true)
+    })
+
+    it('is false for a 400 without the ValidationError code', () => {
+      expect(isValidationError({
+        response: { status: 400, data: { errorCode: 'Conflict', message: 'nope' } },
+      })).toBe(false)
+      expect(isValidationError({ response: { status: 400, data: {} } })).toBe(false)
+      expect(isValidationError({ response: { status: 400 } })).toBe(false)
+    })
+
+    it('is false for a ValidationError code on another status', () => {
+      expect(isValidationError({
+        response: { status: 500, data: { errorCode: 'ValidationError', message: 'boom' } },
+      })).toBe(false)
+    })
+
+    it('is false for non-object and shapeless inputs', () => {
+      expect(isValidationError(null)).toBe(false)
+      expect(isValidationError(undefined)).toBe(false)
+      expect(isValidationError('bad')).toBe(false)
+      expect(isValidationError(new Error('boom'))).toBe(false)
     })
   })
 

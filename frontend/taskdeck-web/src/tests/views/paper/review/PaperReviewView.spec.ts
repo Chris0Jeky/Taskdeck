@@ -1036,7 +1036,7 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('renders the invalid verdict (not a toast) when /diff 400s for a pending proposal (#1397)', async () => {
+  it('renders the invalid verdict with the backend reason (not a toast) when /diff 400s for a pending proposal (#1397)', async () => {
     mocks.getProposalDiff.mockRejectedValueOnce({
       response: {
         status: 400,
@@ -1049,14 +1049,137 @@ describe('PaperReviewView', () => {
     await flushPromises()
 
     expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-400')
-    // The 400 is presented inline, not toasted, and the pane is not torn down.
+    // The 400 is presented inline with the backend's actual message, not
+    // toasted, and the pane is not torn down.
     const invalid = wrapper.find('[data-testid="paper-review-diff-invalid"]')
     expect(invalid.exists()).toBe(true)
-    expect(invalid.text()).toContain('no operations')
+    expect(invalid.text()).toContain('must contain at least one operation')
     expect(mocks.errorToast).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(true)
 
     wrapper.unmount()
+  })
+
+  it('renders the backend expiry reason for a 400 on the expiry race, not the zero-op copy (#1397 MEDIUM-1)', async () => {
+    // The 60s review clock can lag a server-side expiry: the proposal still
+    // classifies live client-side → the live diff fires → the backend answers
+    // 400 "Proposal has expired". The pane must present THAT reason; telling
+    // the reviewer the proposal "contains no operations" would be false.
+    mocks.getProposalDiff.mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: { errorCode: 'ValidationError', message: 'Proposal has expired' },
+      },
+    })
+    const wrapper = await mountView([makeProposal({ id: 'diff-race' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    const invalid = wrapper.find('[data-testid="paper-review-diff-invalid"]')
+    expect(invalid.exists()).toBe(true)
+    expect(invalid.text()).toContain('Proposal has expired')
+    expect(invalid.text()).not.toContain('no operations')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('discloses a revision on the stored preview of a terminal proposal (#1397 MEDIUM-2)', async () => {
+    // diffPreview is creation-time content revisions never update: a
+    // revised-then-settled proposal's stored preview shows the ORIGINAL
+    // submission, so the banner must say the proposal was revised.
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'diff-revised-expired',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-revised-expired',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Original ops"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    const revisedNote = wrapper.find('[data-testid="paper-review-diff-revised-note"]')
+    expect(revisedNote.exists()).toBe(true)
+    expect(revisedNote.text()).toContain('revised')
+    expect(revisedNote.text()).toContain('original')
+    // The live-mode "reflects your saved edit" caveat must NOT certify the
+    // stored (pre-revision) content.
+    expect(wrapper.find('[data-testid="paper-review-diff-revision-caveat"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('blocks Approve for a zero-operation pending proposal with an explicit verdict (#1397 LOW-3)', async () => {
+    const wrapper = await mountView([
+      makeProposal({ id: 'noop-approve', diffPreview: null, operations: [] }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      expect.stringContaining('no operations'),
+    )
+
+    wrapper.unmount()
+  })
+
+  it('re-derives an open live pane to the stored presentation when the expiry clock passes (#1397 LOW-5)', async () => {
+    // Open the live diff on a pending proposal that expires in 30s, then tick
+    // the 60s review clock past its expiresAt: the pane must flip to the stored
+    // read-only presentation instead of keeping the live-looking diff on a
+    // proposal that is no longer actionable. Only setInterval and Date are
+    // faked so flushPromises (setTimeout-based) keeps working.
+    vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+    try {
+      mocks.getProposalDiff.mockResolvedValueOnce('0. Create card "Live"')
+      const wrapper = await mountView([
+        makeProposal({
+          id: 'flip-exp',
+          status: 'PendingReview',
+          expiresAt: new Date(Date.now() + 30_000).toISOString(),
+          diffPreview: '0. Create card "Stored"',
+        }),
+      ])
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+      await flushPromises()
+      expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Live')
+      expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(false)
+
+      // One 60s clock tick → nowMs passes expiresAt → the proposal is expired.
+      vi.advanceTimersByTime(60_000)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+      expect(banner.exists()).toBe(true)
+      expect(banner.text()).toContain('read-only')
+      expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Stored')
+
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('fetches the revision-aware diff for a 0-operation proposal that has a saved revision', async () => {

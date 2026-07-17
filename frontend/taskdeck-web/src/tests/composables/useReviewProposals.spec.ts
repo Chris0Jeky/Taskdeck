@@ -131,6 +131,23 @@ function makeProposal(overrides: Partial<{
     expiresAt: overrides.expiresAt ?? '2099-01-01T00:00:00Z',
     decidedAt: null,
     decidedByUserId: null,
+    // One operation by default: approve-actionability additionally requires a
+    // structurally applyable (non-zero-op) proposal (#1397); the status/expiry
+    // truth tables below assert against a realistic applyable fixture, and the
+    // zero-op arm is asserted explicitly in its own test.
+    operations: [
+      {
+        id: 'op-1',
+        proposalId: overrides.id ?? 'p-1',
+        sequence: 0,
+        actionType: 'CreateCard',
+        targetType: 'Card',
+        targetId: null,
+        parameters: '{}',
+        idempotencyKey: 'k-1',
+        expectedVersion: null,
+      },
+    ],
   }
 }
 
@@ -382,6 +399,22 @@ describe('useReviewProposals', () => {
         expect(isProposalApproveActionable(p, expired)).toBe(expectedReject)
       },
     )
+
+    // #1397 LOW-3: Approve additionally requires a structurally applyable
+    // proposal — Apply (and /diff) reject a zero-op proposal with 400, so the
+    // rail must not offer Approve for it. A saved revision is the #1235 escape:
+    // it carries operations the backend applies revision-aware.
+    it('isProposalApproveActionable rejects a zero-op pending proposal unless a saved revision exists', () => {
+      const zeroOp = { ...makeProposal({ status: 'PendingReview' }), operations: [] } as any
+      expect(isProposalApproveActionable(zeroOp, false)).toBe(false)
+      expect(isProposalApproveActionable(zeroOp, false, { hasSavedRevision: true })).toBe(true)
+      // Reject/apply gating is NOT structural — the reviewer can still clear it.
+      expect(isProposalRejectActionable(zeroOp, false)).toBe(true)
+
+      const missingOps = { ...makeProposal({ status: 'PendingReview' }) } as any
+      delete missingOps.operations
+      expect(isProposalApproveActionable(missingOps, false)).toBe(false)
+    })
 
     // Concrete verdicts (not just self-parity) so a logic flip is caught even
     // if the local mirror is wrong too.

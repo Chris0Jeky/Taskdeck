@@ -40,6 +40,8 @@ function mountCard(props: {
   isExpired?: boolean
   selectedDiff?: string | null
   selectedDiffMode?: ReviewDiffMode | null
+  selectedDiffInvalidReason?: string | null
+  selectedDiffRevised?: boolean | null
 }) {
   const proposal = props.proposal ?? makeProposal()
   return mount(ReviewProposalCard, {
@@ -50,6 +52,8 @@ function mountCard(props: {
       selectedDiffProposalId: proposal.id,
       selectedDiff: props.selectedDiff ?? null,
       selectedDiffMode: props.selectedDiffMode ?? null,
+      selectedDiffInvalidReason: props.selectedDiffInvalidReason ?? null,
+      selectedDiffRevised: props.selectedDiffRevised ?? null,
       captureHref: '/workspace/inbox',
       proposalHref: '/workspace/review#proposal-p-1',
     },
@@ -90,7 +94,7 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(wrapper.find('[data-testid="review-diff-pre"]').exists()).toBe(false)
   })
 
-  it('renders the invalid verdict for a proposal with no operations', () => {
+  it('renders the invalid verdict with the zero-op fallback when no backend reason is supplied', () => {
     const wrapper = mountCard({
       selectedDiffMode: 'invalid',
       selectedDiff: null,
@@ -100,6 +104,50 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(invalid.exists()).toBe(true)
     expect(invalid.text()).toContain('no operations')
     expect(invalid.text()).toContain('reject')
+  })
+
+  it('renders the backend reason verbatim in the invalid verdict (#1397 MEDIUM-1)', () => {
+    // The expiry-race 400 carries "Proposal has expired" — the card must render
+    // THAT, never the hardcoded zero-op copy.
+    const wrapper = mountCard({
+      selectedDiffMode: 'invalid',
+      selectedDiff: null,
+      selectedDiffInvalidReason: 'Proposal has expired',
+    })
+
+    const invalid = wrapper.find('[data-testid="review-diff-invalid"]')
+    expect(invalid.exists()).toBe(true)
+    expect(invalid.text()).toContain('Proposal has expired')
+    expect(invalid.text()).not.toContain('no operations')
+  })
+
+  it('discloses a revision on the stored preview (#1397 MEDIUM-2)', () => {
+    const wrapper = mountCard({
+      proposal: makeProposal({ status: 'Applied' }),
+      selectedDiffMode: 'stored',
+      selectedDiff: '0. Create card "Original"',
+      selectedDiffRevised: true,
+    })
+
+    const note = wrapper.find('[data-testid="review-diff-revised-note"]')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('revised')
+    expect(note.text()).toContain('original')
+    // The banner itself already attributes the content to the original submission.
+    expect(wrapper.find('[data-testid="review-diff-banner"]').text()).toContain('original submission')
+  })
+
+  it('omits the revised note when the revision state is unknown or absent', () => {
+    for (const revised of [false, null]) {
+      const wrapper = mountCard({
+        proposal: makeProposal({ status: 'Expired' }),
+        isExpired: true,
+        selectedDiffMode: 'stored',
+        selectedDiff: 'stored',
+        selectedDiffRevised: revised,
+      })
+      expect(wrapper.find('[data-testid="review-diff-revised-note"]').exists()).toBe(false)
+    }
   })
 
   it('renders the live diff pane for a still-actionable proposal', () => {
