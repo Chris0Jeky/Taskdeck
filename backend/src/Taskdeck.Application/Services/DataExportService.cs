@@ -188,27 +188,21 @@ public class DataExportService : IDataExportService
 
             var exportArtefacts = new List<UserDataExportArtefactDto>(artefactMetadata.Count);
             // #1355: batch the blob loads in bounded chunks instead of one round-trip per artefact.
-            // The chunk size mirrors StreamPageSize so the IN-clause stays within SQLite's parameter
-            // limit and peak memory holds at most one chunk of raw blob bytes at a time (the buffered
-            // total is already capped by MaxBufferedArtefactBytes). Metadata is iterated in its
+            // The chunk size mirrors StreamPageSize so each IN-clause stays well within SQLite's
+            // parameter budget and peak memory holds at most one chunk of raw blob bytes at a time
+            // (the buffered total is already capped by MaxBufferedArtefactBytes). Metadata keeps its
             // original (Id) order, so the exported artefact array is byte-for-byte identical to the
             // former per-item path.
-            for (var offset = 0; offset < artefactMetadata.Count; offset += StreamPageSize)
+            foreach (var chunk in artefactMetadata.Chunk(StreamPageSize))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var end = Math.Min(offset + StreamPageSize, artefactMetadata.Count);
-                var chunkIds = new List<Guid>(end - offset);
-                for (var i = offset; i < end; i++)
-                    chunkIds.Add(artefactMetadata[i].Id);
-
                 var blobs = await _artefacts.GetContentsForUserAsync(
-                    chunkIds,
+                    chunk.Select(a => a.Id).ToList(),
                     userId,
                     cancellationToken);
 
-                for (var i = offset; i < end; i++)
+                foreach (var artefact in chunk)
                 {
-                    var artefact = artefactMetadata[i];
                     if (!blobs.TryGetValue(artefact.Id, out var bytes) || bytes is null)
                         throw new InvalidOperationException($"Artefact {artefact.Id} is missing its blob.");
 
