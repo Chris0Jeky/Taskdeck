@@ -76,7 +76,10 @@ public sealed class McpAuthenticationAttemptLimiter : IDisposable
     /// </summary>
     public void RecordFailedAttempt(HttpContext context)
     {
-        using var lease = _limiter.AttemptAcquire(context, permitCount: 1);
+        // Acquire-and-dispose in one expression: the lease is only needed to spend the permit, and a
+        // fixed-window limiter does not refund on dispose, so disposing immediately is the intended
+        // "spend on failure" effect (AttemptAcquire never returns null).
+        _limiter.AttemptAcquire(context, permitCount: 1).Dispose();
     }
 
     /// <summary>
