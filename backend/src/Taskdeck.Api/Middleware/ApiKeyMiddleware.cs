@@ -171,8 +171,9 @@ public sealed class ApiKeyMiddleware
             new[] { new Claim(ClaimTypes.NameIdentifier, apiKey.UserId.ToString()) },
             authenticationType: AuthenticationType));
 
-        // Update last-used timestamp before continuing the pipeline.
-        // This is non-critical so failures are swallowed.
+        // Update last-used timestamp before continuing the pipeline. This is a non-critical usage
+        // stamp: a failure here must NOT fail an otherwise-valid authentication, so it is caught and
+        // logged inside UpdateLastUsedAsync (never rethrown) — the request proceeds regardless.
         await UpdateLastUsedAsync(dbContext, apiKey.Id);
 
         await _next(context);
@@ -187,19 +188,33 @@ public sealed class ApiKeyMiddleware
 
     private async Task UpdateLastUsedAsync(TaskdeckDbContext dbContext, Guid keyId)
     {
+        // Hoist the timestamps into locals BEFORE building the ExecuteUpdate. Passing
+        // DateTimeOffset.UtcNow directly into SetProperty makes EF Core treat it as a value
+        // expression it must translate to SQL; the SQLite provider cannot map UtcNow and refuses the
+        // whole statement ("The following lambda argument to 'SetProperty' does not represent a valid
+        // value: 'DateTimeOffset.UtcNow'"), so the previous form silently never wrote LastUsedAt (or
+        // UpdatedAt) at all (#1402). A captured local is evaluated client-side and passed as a
+        // parameter, which translates cleanly. The LastUsedAt local is typed as the nullable target
+        // property so no (DateTimeOffset?)-cast node is introduced either. Both stamps share one
+        // instant.
+        var now = DateTimeOffset.UtcNow;
+        DateTimeOffset? lastUsedAt = now;
         try
         {
-            // Direct update to avoid concurrency issues with the read-only query above.
+            // Direct update to avoid concurrency issues with the read-only (AsNoTracking) query above.
             await dbContext.ApiKeys
                 .Where(k => k.Id == keyId)
                 .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(k => k.LastUsedAt, DateTimeOffset.UtcNow)
-                    .SetProperty(k => k.UpdatedAt, DateTimeOffset.UtcNow));
+                    .SetProperty(k => k.LastUsedAt, lastUsedAt)
+                    .SetProperty(k => k.UpdatedAt, now));
         }
         catch (Exception ex)
         {
-            // Non-critical: if usage tracking fails, authentication still succeeds.
-            _logger.LogDebug(ex, "Failed to update API key last-used timestamp for key {KeyId}", keyId);
+            // Non-critical: last-used is a usage stamp, not an auth gate. Swallowing here keeps a
+            // failed timestamp write from failing an otherwise-valid authentication, but it is logged
+            // at Warning (not silently) so a regression like #1402 — where the write was broken for
+            // months — is visible in operational logs instead of hidden.
+            _logger.LogWarning(ex, "Failed to update API key last-used timestamp for key {KeyId}", keyId);
         }
     }
 
