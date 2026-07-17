@@ -58,6 +58,19 @@ public interface IAutomationProposalService
     Task<Result<string>> GetProposalDiffAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Serves the STORED diff preview for a decided (terminal) proposal — Applied, Rejected,
+    /// Failed, Expired, or Dismissed — after re-running the requester/board-access gate the
+    /// live diff path runs via <see cref="GetProposalDiffAsync"/> (requester exists → 404,
+    /// board exists → 404, requester has board access → 403; #1398/#1413). A reviewer who lost
+    /// board access, or whose board/requester was deleted, is therefore denied the stored
+    /// preview rather than reading stale board contents through it (#1415). The pre-decision
+    /// structure/expiry gates are deliberately skipped: they no longer apply once a proposal is
+    /// decided, and a live rebuild would describe a board that has since moved (the #1397
+    /// decision). Non-terminal proposals must use <see cref="GetProposalDiffAsync"/> instead.
+    /// </summary>
+    Task<Result<string>> GetTerminalProposalStoredPreviewAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Dismisses completed proposals (Applied, Rejected, Failed, Expired) so they no longer appear in the default review list.
     /// </summary>
     Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);

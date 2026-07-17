@@ -495,6 +495,37 @@ public class AutomationProposalService : IAutomationProposalService
         return Result.Success(generatedDiff);
     }
 
+    public async Task<Result<string>> GetTerminalProposalStoredPreviewAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(id, cancellationToken);
+        if (proposal == null)
+            return Result.Failure<string>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
+
+        // A decided proposal's diff is historical: rebuilding it against the current board would
+        // describe changes that already happened (or were rejected), so the STORED preview is
+        // served rather than a live diff (#1397). But the requester/board-access gate must still
+        // hold — the SAME AutomationPolicyEngine.ValidatePermissionsAsync call the live diff path
+        // runs (#1398/#1413): requester exists → 404, board exists → 404, requester has board
+        // access → 403. This closes the MCP preview==apply asymmetry (#1415) where a reviewer who
+        // lost board access, or whose board was deleted, could still read the stored preview. The
+        // pre-decision structure/expiry gates are intentionally NOT run here (they no longer apply
+        // to a completed proposal), which is the sole deliberate divergence from the live diff path.
+        var operations = proposal.Operations
+            .OrderBy(o => o.Sequence)
+            .Select(MapOperationToDto)
+            .ToList();
+
+        var accessValidation = await _policyEngine.ValidatePermissionsAsync(
+            proposal.RequestedByUserId,
+            proposal.BoardId,
+            operations,
+            cancellationToken);
+        if (!accessValidation.IsSuccess)
+            return Result.Failure<string>(accessValidation.ErrorCode, accessValidation.ErrorMessage);
+
+        return Result.Success(proposal.DiffPreview ?? string.Empty);
+    }
+
     /// <summary>
     /// Enforces the same expiry gate Apply runs via
     /// <see cref="AutomationPolicyEngine.ValidatePolicy"/>: an expired proposal is rejected
