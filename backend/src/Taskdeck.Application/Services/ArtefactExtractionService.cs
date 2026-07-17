@@ -124,58 +124,88 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 // be abandoned while the request returns. The budget token is also
                 // passed into the extractor, which observes it cooperatively between
                 // pages/words — the clean path for bombs that reach the page loop.
-                using var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                var budget = _settings.ExtractionTimeout;
-                if (budget > TimeSpan.Zero)
-                    budgetCts.CancelAfter(budget);
-
-                var extractTask = Task.Run(
-                    () => extractor.ExtractAsync(stream, budgetCts.Token),
-                    CancellationToken.None);
+                // Classification note: an extractor that swallowed the budget OCE and
+                // rethrew a non-OCE fault at the instant the budget fires would race
+                // the recorded code between extraction-timeout and extractor-error —
+                // both are warning-bearing rows and exactly one is written, so either
+                // outcome is safe; the shipped extractors propagate OCE, so this
+                // cannot occur today.
+                // The CTS is disposed inline only on paths where the worker has
+                // provably completed; abandonment paths defer disposal to a
+                // worker-completion continuation so the abandoned parse can never
+                // touch a disposed token source.
+                var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var workerAbandoned = false;
                 try
                 {
-                    extractorResult = await extractTask.WaitAsync(budgetCts.Token);
+                    var budget = _settings.ExtractionTimeout;
+                    if (budget > TimeSpan.Zero)
+                        budgetCts.CancelAfter(budget);
+
+                    var extractTask = Task.Run(
+                        () => extractor.ExtractAsync(stream, budgetCts.Token),
+                        CancellationToken.None);
+                    try
+                    {
+                        extractorResult = await extractTask.WaitAsync(budgetCts.Token);
+                    }
+                    catch (OperationCanceledException)
+                        when (budgetCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    {
+                        // Budget exhausted (not caller cancellation). Abandon the
+                        // parse. Honest cost: .NET cannot stop a thread that never
+                        // observes cancellation, so the abandoned worker keeps holding
+                        // one thread-pool thread at full CPU until PdfPig's synchronous
+                        // parse runs to completion — only the REQUEST is bounded, not
+                        // the parser's resource consumption, and nothing here caps how
+                        // many abandoned parses can accumulate under concurrent
+                        // parser-bomb submissions (tracked: #1379; must land before
+                        // this service is wired to a request or worker path). The
+                        // abandoned worker holds no file or DB handle — the blob was
+                        // copied into the in-memory stream and the connection closed
+                        // before extraction began. Record a single content-free
+                        // timeout outcome.
+                        workerAbandoned = true;
+                        AbandonExtraction(extractTask, budgetCts);
+                        _logger?.LogWarning(
+                            "Local extraction exceeded the {BudgetSeconds}s wall-clock budget for artefact {ArtefactId} with extractor {ExtractorName}; recording a timeout outcome",
+                            budget.TotalSeconds,
+                            sourceArtefactId,
+                            extractor.ExtractorName);
+                        extractorResult = WarningResult(
+                            extractor,
+                            ArtefactExtractionWarningCodes.ExtractionTimeout);
+                    }
+                    catch (OperationCanceledException)
+                        when (cancellationToken.IsCancellationRequested)
+                    {
+                        // Caller-driven cancellation (request aborted): abandon the
+                        // worker and propagate without recording an extraction
+                        // outcome. A stray OCE from a future extractor whose own token
+                        // is unrelated to ours falls through to the extractor-error
+                        // handler below instead of masquerading as caller cancellation.
+                        workerAbandoned = true;
+                        AbandonExtraction(extractTask, budgetCts);
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        // WaitAsync only propagates the task's own exception once the
+                        // task has completed, so the worker is finished on this path.
+                        _logger?.LogWarning(
+                            "Local extraction failed for artefact {ArtefactId} with extractor {ExtractorName}; exception type {ExceptionType}",
+                            sourceArtefactId,
+                            extractor.ExtractorName,
+                            ex.GetType().Name);
+                        extractorResult = WarningResult(
+                            extractor,
+                            ArtefactExtractionWarningCodes.ExtractorError);
+                    }
                 }
-                catch (OperationCanceledException)
-                    when (budgetCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                finally
                 {
-                    // Budget exhausted (not caller cancellation). Abandon the parse:
-                    // it may run to completion on a background thread, but it holds no
-                    // file or DB handle — the blob was copied into the in-memory stream
-                    // and the connection closed before extraction began — so the only
-                    // resource in flight is managed memory the GC reclaims once the
-                    // worker unwinds. Record a single content-free timeout outcome.
-                    ObserveAbandonedExtraction(extractTask);
-                    _logger?.LogWarning(
-                        "Local extraction exceeded the {BudgetSeconds}s wall-clock budget for artefact {ArtefactId} with extractor {ExtractorName}; recording a timeout outcome",
-                        budget.TotalSeconds,
-                        sourceArtefactId,
-                        extractor.ExtractorName);
-                    extractorResult = WarningResult(
-                        extractor,
-                        ArtefactExtractionWarningCodes.ExtractionTimeout);
-                }
-                catch (OperationCanceledException)
-                    when (cancellationToken.IsCancellationRequested)
-                {
-                    // Caller-driven cancellation (request aborted): abandon the worker
-                    // and propagate without recording an extraction outcome. A stray
-                    // OCE from a future extractor whose own token is unrelated to ours
-                    // falls through to the extractor-error handler below instead of
-                    // masquerading as caller cancellation.
-                    ObserveAbandonedExtraction(extractTask);
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(
-                        "Local extraction failed for artefact {ArtefactId} with extractor {ExtractorName}; exception type {ExceptionType}",
-                        sourceArtefactId,
-                        extractor.ExtractorName,
-                        ex.GetType().Name);
-                    extractorResult = WarningResult(
-                        extractor,
-                        ArtefactExtractionWarningCodes.ExtractorError);
+                    if (!workerAbandoned)
+                        budgetCts.Dispose();
                 }
             }
         }
@@ -299,16 +329,30 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
             extractor.ExtractorVersion);
     }
 
-    private static void ObserveAbandonedExtraction(Task extractTask)
+    private void AbandonExtraction(Task extractTask, CancellationTokenSource budgetCts)
     {
         // The request returns before this worker necessarily finishes, and the
         // request-scoped input stream is disposed on return, so an abandoned parse
         // typically faults (e.g. ObjectDisposedException) on its next read. Observe
-        // that fault so it is not surfaced as an UnobservedTaskException.
+        // that fault so it is not surfaced as an UnobservedTaskException, and only
+        // dispose the budget CTS once the worker has fully completed so the
+        // abandoned parse can never touch a disposed token source. (Cancelled
+        // workers need no observation — cancelled tasks do not raise
+        // UnobservedTaskException.)
         _ = extractTask.ContinueWith(
-            static task => _ = task.Exception,
+            task =>
+            {
+                if (task.IsFaulted)
+                {
+                    _logger?.LogDebug(
+                        "Abandoned artefact extraction worker faulted after the request completed; exception type {ExceptionType}",
+                        task.Exception!.GetBaseException().GetType().Name);
+                }
+
+                budgetCts.Dispose();
+            },
             CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
     }
 
