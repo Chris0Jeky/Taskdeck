@@ -90,12 +90,13 @@ public sealed class ApiKeyMiddleware
         // Hash the provided key and look up in the database. The owner's active state is resolved in
         // THIS single ApiKeys query (a correlated projection on the UserId FK), NOT in a separate Users
         // SELECT afterwards. That fold is the #1404 fix: a stale-owner key — an active key row whose
-        // owning user was deactivated or hard-deleted — must be rejected with 401 (charging the pre-auth
-        // IP failure budget) BEFORE the per-key quota charge below, so sustained traffic eventually
-        // trips the pre-auth IP pre-check before any DB work. It also removes the standalone Users
-        // lookup from the happy path entirely (one query, not two). Only scalar columns are projected;
-        // key/owner active state is still computed in memory (below) so expiry is evaluated against the
-        // same wall clock as before, not pushed into SQL.
+        // owning user was deactivated (account "deletion" is soft: AccountDeletionService only sets
+        // User.IsActive=false) — must be rejected with 401 (charging the pre-auth IP failure budget)
+        // BEFORE the per-key quota charge below, so sustained traffic eventually trips the pre-auth IP
+        // pre-check before any DB work. It also removes the standalone Users lookup from the happy path
+        // entirely (one query, not two). Only scalar columns are projected; key/owner active state is
+        // still computed in memory (below) so expiry is evaluated against the same wall clock as
+        // before, not pushed into SQL.
         var keyHash = HashKey(token);
 
         var authRecord = await dbContext.ApiKeys
@@ -107,8 +108,12 @@ public sealed class ApiKeyMiddleware
                 UserId = k.UserId,
                 ExpiresAt = k.ExpiresAt,
                 RevokedAt = k.RevokedAt,
-                // Null when the owner row is absent (hard-deleted user); the flag value when present. A
-                // stale-owner key therefore fails the `OwnerIsActive == true` gate in either case.
+                // The owner's flag when the row exists; null when it is absent. The null branch is
+                // DEFENSIVE-ONLY and unreachable at runtime: the ApiKeys→Users FK cascades on delete
+                // (ApiKeyConfiguration, DeleteBehavior.Cascade; SQLite runs with PRAGMA
+                // foreign_keys=ON), so a hard-deleted user takes its key rows with it and the lookup
+                // misses entirely (nonexistent-key 401 path). App-level account deletion is soft
+                // (IsActive=false), which surfaces here as `false`.
                 OwnerIsActive = dbContext.Users
                     .Where(u => u.Id == k.UserId)
                     .Select(u => (bool?)u.IsActive)
@@ -140,14 +145,16 @@ public sealed class ApiKeyMiddleware
             return;
         }
 
-        // Stale-owner key: an active key row whose owning user is deactivated (IsActive=false) or
-        // hard-deleted (owner row absent → OwnerIsActive is null). Rejected here, BEFORE the per-key
-        // budget charge, precisely so WriteErrorResponse charges the pre-auth IP failure budget on every
-        // attempt. Charging the per-key budget first (the #1401 order that VALID keys still get, below)
-        // would hide this behind a 429 that never spends the IP budget, so the SHA-256 + ApiKeys lookup
-        // would keep running indefinitely (#1404). This is the SAME budget a genuinely invalid key
-        // charges, so sustained stale-owner traffic exhausts the IP bucket and trips the pre-auth
-        // pre-check before any DB work — restoring pre-#1401 behaviour for stale-owner keys.
+        // Stale-owner key: an active key row whose owning user is deactivated (IsActive=false — the
+        // only live scenario, since account deletion is soft and a genuine hard delete cascades the
+        // key rows away so the lookup misses above; the `!= true` form also covers the defensive-only
+        // null branch of OwnerIsActive). Rejected here, BEFORE the per-key budget charge, precisely so
+        // WriteErrorResponse charges the pre-auth IP failure budget on every attempt. Charging the
+        // per-key budget first (the #1401 order that VALID keys still get, below) would hide this
+        // behind a 429 that never spends the IP budget, so the SHA-256 + ApiKeys lookup would keep
+        // running indefinitely (#1404). This is the SAME budget a genuinely invalid key charges, so
+        // sustained stale-owner traffic exhausts the IP bucket and trips the pre-auth pre-check before
+        // any DB work — restoring pre-#1401 behaviour for stale-owner keys.
         if (authRecord.OwnerIsActive != true)
         {
             _logger.LogWarning("MCP API key authentication failed: user inactive (userId: {UserId})", authRecord.UserId);
@@ -254,7 +261,10 @@ public sealed class ApiKeyMiddleware
     /// Projection of the single ApiKeys authentication lookup: the scalar key columns needed to compute
     /// key active-state and identify the key, plus the owner's active flag resolved via a correlated
     /// subquery on the UserId FK (there is no ApiKey→User navigation). <see cref="OwnerIsActive"/> is
-    /// null when the owner row is absent (hard-deleted user). Folding the owner check into this query is
+    /// null only in the defensive-only absent-owner-row branch, which is unreachable at runtime: the
+    /// ApiKeys→Users FK cascades on delete, so a hard-deleted user cascades its key rows away and the
+    /// lookup misses; app-level account deletion is soft (IsActive=false), surfacing here as
+    /// <c>false</c>. Folding the owner check into this query is
     /// the #1404 fix: it removes the separate Users SELECT and lets a stale-owner key be rejected (and
     /// charged to the pre-auth IP failure budget) before the per-key quota charge.
     /// </summary>

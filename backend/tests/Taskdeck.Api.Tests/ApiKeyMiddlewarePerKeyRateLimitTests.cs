@@ -199,6 +199,62 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
     }
 
     [Fact]
+    public async Task HardDeletedOwner_CascadesKeyAway_TakesNonexistentKey401Path()
+    {
+        // Pins the REAL hard-delete behavior (the reason the projection's null-owner branch is
+        // defensive-only): the ApiKeys→Users FK is DeleteBehavior.Cascade and Microsoft.Data.Sqlite
+        // enforces foreign keys, so hard-deleting the owner row cascades the key row away. The next
+        // authentication attempt therefore MISSES the ApiKeys lookup entirely and takes the
+        // nonexistent-key 401 path — the owner gate's null branch never fires at runtime.
+        await using var db = await CreateSeededContextAsync();
+        const string plaintext = "tdsk_perkey_harddelete_0000000000000000";
+        var (userId, apiKeyId) = await SeedUserAndKeyAsync(db, plaintext);
+
+        // Hard-delete the owner row (a real DB-level DELETE, unlike the app's soft deactivation).
+        await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync();
+
+        // The cascade must have removed the key row — the premise of the nonexistent-key path.
+        (await db.ApiKeys.AsNoTracking().AnyAsync(k => k.Id == apiKeyId))
+            .Should().BeFalse("the Users FK cascade must delete the owner's key rows");
+
+        using var limiter = new McpPerApiKeyRateLimiter(new RateLimitPolicySettings(5, 60));
+        var nextCalled = false;
+        var middleware = new ApiKeyMiddleware(_ => { nextCalled = true; return Task.CompletedTask; },
+            NullLogger<ApiKeyMiddleware>.Instance);
+
+        var context = CreateMcpContext(plaintext, limiter);
+        _interceptor.Clear();
+
+        await middleware.InvokeAsync(context, db);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized,
+            "a key cascaded away by its owner's hard delete is simply not found");
+        nextCalled.Should().BeFalse("the request must not reach the MCP endpoint");
+
+        // Same budget consequences as any nonexistent key: the IP failure budget is charged and the
+        // per-key budget is never partitioned.
+        context.Items.ContainsKey(ApiKeyMiddleware.AuthenticationFailedItemKey).Should().BeTrue(
+            "a not-found key is an authentication failure and must charge the IP failure budget");
+        context.Items.ContainsKey(ApiKeyMiddleware.ApiKeyIdItemKey).Should().BeFalse(
+            "no key row exists, so the per-key budget is never partitioned or charged");
+
+        // Still exactly one SELECT — the folded key+owner lookup — and no standalone Users SELECT or
+        // last-used UPDATE.
+        _interceptor.Captured.Should().ContainSingle(sql => IsSelect(sql),
+            "authentication issues exactly one SELECT — the folded key+owner lookup");
+        _interceptor.Captured.Should().NotContain(sql => IsStandaloneUsersSelect(sql),
+            "no separate user-account SELECT runs on the not-found path either");
+        _interceptor.Captured.Should().NotContain(sql => IsApiKeysUpdate(sql),
+            "a not-found key must not trigger the UpdateLastUsedAsync write");
+
+        // 401 contract.
+        context.Response.ContentType.Should().StartWith("application/json");
+        var error = await ReadErrorAsync(context);
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.Unauthorized);
+    }
+
+    [Fact]
     public async Task PerKeyBudget_AdmitsExactlyPermitLimitRequests_ThenRejects_NoDoubleCharge()
     {
         await using var db = await CreateSeededContextAsync();
