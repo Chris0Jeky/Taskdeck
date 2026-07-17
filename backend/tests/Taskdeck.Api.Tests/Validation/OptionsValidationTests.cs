@@ -297,6 +297,25 @@ public class OptionsValidationTests
         Assert.Contains("McpAuthenticationPerIp", result.FailureMessage);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(10001)]
+    public void RateLimitingValidator_Fails_WhenMcpAuthenticationConcurrencyIsOutOfRange(int concurrency)
+    {
+        var validator = new RateLimitingSettingsValidator();
+        var settings = new RateLimitingSettings
+        {
+            Enabled = true,
+            McpAuthenticationPerIpConcurrency = concurrency
+        };
+
+        var result = validator.Validate(null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("McpAuthenticationPerIpConcurrency", result.FailureMessage);
+    }
+
     [Fact]
     public void RateLimitingValidator_Succeeds_WithDefaultSettings()
     {

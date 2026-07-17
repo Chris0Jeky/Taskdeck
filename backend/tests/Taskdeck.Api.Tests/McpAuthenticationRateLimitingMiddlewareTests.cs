@@ -15,21 +15,28 @@ using Xunit;
 namespace Taskdeck.Api.Tests;
 
 /// <summary>
-/// Unit tests for the MCP pre-authentication FAILURE budget (#1368). The pre-auth IP limiter must
-/// only spend budget on requests that fail authentication, must reject an exhausted address before
-/// the API-key parse/database lookup, and must key on the trusted client address (socket address by
-/// default; the forwarded client only when forwarded-header middleware is wired for a known proxy).
+/// Unit tests for the MCP pre-authentication FAILURE budget and per-address concurrency gate
+/// (#1368). The pre-auth IP limiter must only spend budget on requests that fail authentication,
+/// must reject an exhausted address before the API-key parse/database lookup, must cap concurrent
+/// in-flight pre-auth work per address, and must key on the trusted client address (socket address
+/// by default; the forwarded client only when forwarded-header middleware is wired for a proxy).
 /// </summary>
 public sealed class McpAuthenticationRateLimitingMiddlewareTests
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
+    private static McpAuthenticationAttemptLimiter CreateLimiter(
+        int permitLimit,
+        int windowSeconds,
+        int concurrencyLimit = 16) =>
+        new(new RateLimitPolicySettings(permitLimit, windowSeconds), concurrencyLimit);
 
     // ── (2) Failed attempts exhaust the budget and are rejected before the auth/lookup layer ──
 
     [Fact]
     public async Task ExhaustedFailureBudget_Rejects429_BeforeReachingAuthLayer()
     {
-        using var limiter = new McpAuthenticationAttemptLimiter(new RateLimitPolicySettings(1, 60));
+        using var limiter = CreateLimiter(1, 60);
         var authLayerInvocations = 0;
         var middleware = new McpAuthenticationRateLimitingMiddleware(context =>
         {
@@ -70,7 +77,7 @@ public sealed class McpAuthenticationRateLimitingMiddlewareTests
     public async Task SuccessfulAuthentications_NeverSpendFailureBudget()
     {
         // Budget of 1: if any successful request spent a permit, the next would 429.
-        using var limiter = new McpAuthenticationAttemptLimiter(new RateLimitPolicySettings(1, 60));
+        using var limiter = CreateLimiter(1, 60);
         var middleware = new McpAuthenticationRateLimitingMiddleware(context =>
         {
             context.Response.StatusCode = StatusCodes.Status200OK;
@@ -91,7 +98,7 @@ public sealed class McpAuthenticationRateLimitingMiddlewareTests
     {
         // Budget of 2 failures. A flood of valid requests between the failures must not advance the
         // budget, so exactly the third FAILURE (not any success) is the one rejected pre-auth.
-        using var limiter = new McpAuthenticationAttemptLimiter(new RateLimitPolicySettings(2, 60));
+        using var limiter = CreateLimiter(2, 60);
         var middleware = new McpAuthenticationRateLimitingMiddleware(context =>
         {
             // The simulated auth outcome is carried on a request header for the fake.
@@ -116,7 +123,7 @@ public sealed class McpAuthenticationRateLimitingMiddlewareTests
     [Fact]
     public async Task ForwardedHeadersOff_IgnoresXForwardedFor_KeyingOnSocketAddress()
     {
-        using var limiter = new McpAuthenticationAttemptLimiter(new RateLimitPolicySettings(1, 60));
+        using var limiter = CreateLimiter(1, 60);
         var middleware = new McpAuthenticationRateLimitingMiddleware(context =>
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -140,7 +147,7 @@ public sealed class McpAuthenticationRateLimitingMiddlewareTests
     [Fact]
     public async Task ForwardedHeadersOn_WithKnownProxy_KeysOnForwardedClient()
     {
-        using var limiter = new McpAuthenticationAttemptLimiter(new RateLimitPolicySettings(1, 60));
+        using var limiter = CreateLimiter(1, 60);
         var services = new ServiceCollection();
         services.AddLogging(); // ForwardedHeadersMiddleware resolves ILoggerFactory from DI.
         services.AddSingleton(limiter);
@@ -162,6 +169,103 @@ public sealed class McpAuthenticationRateLimitingMiddlewareTests
         await pipeline(b1);
         b1.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized,
             "a different forwarded client behind the same proxy must have an independent failure budget");
+    }
+
+    // ── (6) Window replenishment through the PRE-CHECK path ──
+
+    [Fact]
+    public async Task FailureWindowReplenishment_AdmitsRequestsAgain_ThroughPreCheck()
+    {
+        // 1-second window (the configurable minimum) so the test can observe replenishment quickly.
+        // The pre-check logic is window-length-agnostic (GetStatistics on the same fixed-window
+        // limiter), so only the replenishment MECHANISM is pinned here; the production 60s window
+        // differs solely in duration and is not separately testable without a 60s wait.
+        using var limiter = CreateLimiter(1, 1);
+        var authLayerInvocations = 0;
+        var middleware = new McpAuthenticationRateLimitingMiddleware(context =>
+        {
+            authLayerInvocations++;
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        });
+
+        var first = CreateMcpContext("203.0.113.30");
+        await middleware.InvokeAsync(first, limiter);
+        first.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+
+        var second = CreateMcpContext("203.0.113.30");
+        await middleware.InvokeAsync(second, limiter);
+        second.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests,
+            "the spent failure budget must reject via the pre-check");
+        authLayerInvocations.Should().Be(1);
+
+        // Wait past the window; auto-replenishment must restore the budget so the pre-check
+        // admits the address again (rather than rejecting forever).
+        await Task.Delay(TimeSpan.FromSeconds(2.5));
+
+        var third = CreateMcpContext("203.0.113.30");
+        await middleware.InvokeAsync(third, limiter);
+        third.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized,
+            "after the window replenishes, the pre-check must admit the address to auth again");
+        authLayerInvocations.Should().Be(2);
+    }
+
+    // ── (7) Concurrency gate: bounded in-flight pre-auth work per address ──
+
+    [Fact]
+    public async Task ConcurrencyGate_CapsInFlightPreAuthWork_AndRejectsExcessImmediately()
+    {
+        // Cap of 2 concurrent slots; large failure budget so only the gate can reject. The auth
+        // fake BLOCKS on a gate so in-flight requests hold their slots, converting the former
+        // unbounded-concurrency TOCTOU into a pinned bound: at most cap requests reach the auth
+        // layer simultaneously and the excess 429 immediately (QueueLimit 0 — no parking).
+        using var limiter = CreateLimiter(permitLimit: 100, windowSeconds: 60, concurrencyLimit: 2);
+        var releaseAuth = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var authLayerEntered = 0;
+        var middleware = new McpAuthenticationRateLimitingMiddleware(async context =>
+        {
+            Interlocked.Increment(ref authLayerEntered);
+            await releaseAuth.Task;
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        });
+
+        // Occupy both slots with blocked in-flight requests.
+        var blockedA = CreateMcpContext("198.51.100.77");
+        var blockedB = CreateMcpContext("198.51.100.77");
+        var inFlightA = middleware.InvokeAsync(blockedA, limiter);
+        var inFlightB = middleware.InvokeAsync(blockedB, limiter);
+        while (Volatile.Read(ref authLayerEntered) < 2)
+        {
+            await Task.Delay(10);
+        }
+
+        // Over-cap requests are rejected immediately without reaching the auth layer.
+        for (var i = 0; i < 3; i++)
+        {
+            var excess = CreateMcpContext("198.51.100.77");
+            await middleware.InvokeAsync(excess, limiter);
+            excess.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests,
+                "requests beyond the concurrency cap must be rejected immediately");
+            excess.Response.Headers["Retry-After"].ToString().Should().NotBeNullOrWhiteSpace();
+            excess.Response.Headers["X-RateLimit-Policy"].ToString()
+                .Should().Be(RateLimitingPolicyNames.McpAuthenticationPerIp);
+        }
+
+        Volatile.Read(ref authLayerEntered).Should().Be(2,
+            "at most the concurrency cap of requests may reach the auth layer simultaneously");
+
+        // Complete the in-flight requests; their disposal releases the slots.
+        releaseAuth.SetResult();
+        await Task.WhenAll(inFlightA, inFlightB);
+        blockedA.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        blockedB.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+
+        // Freed slots admit new work: the next request reaches the auth layer again.
+        var afterRelease = CreateMcpContext("198.51.100.77");
+        await middleware.InvokeAsync(afterRelease, limiter);
+        afterRelease.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized,
+            "released slots must admit subsequent requests");
+        Volatile.Read(ref authLayerEntered).Should().Be(3);
     }
 
     // ── Helpers ──
