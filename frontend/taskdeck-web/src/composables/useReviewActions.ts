@@ -1,5 +1,6 @@
-import { ref, type ComputedRef, type Ref } from 'vue'
+import { ref, watch, type ComputedRef, type Ref } from 'vue'
 import { automationApi } from '../api/automationApi'
+import { proposalRevisionsApi } from '../api/proposalRevisionsApi'
 import { useToastStore } from '../store/toastStore'
 import { createRequestId } from '../utils/requestId'
 import { normalizeProposalRiskLevel } from '../utils/automation'
@@ -13,9 +14,10 @@ import { usePerformanceMark } from './usePerformanceMark'
  * - `live`    — a freshly fetched `/diff` for a still-actionable proposal.
  * - `stored`  — a read-only/terminal proposal's stored `diffPreview` (no live
  *               request; may be null → "no stored preview available").
- * - `invalid` — the backend rejected the diff (400) or the proposal has no
- *               operations; Apply would reject it too, so the reviewer must see
- *               that verdict rather than a generic error toast.
+ * - `invalid` — the backend rejected the diff (400 ValidationError); the
+ *               backend's actual reason is carried in `selectedDiffInvalidReason`
+ *               and Apply would reject the proposal for the same reason, so the
+ *               reviewer must see that verdict rather than a generic error toast.
  */
 export type ReviewDiffMode = 'live' | 'stored' | 'invalid'
 
@@ -49,13 +51,77 @@ export function useReviewActions(
   const selectedDiffProposalId = ref<string | null>(null)
   const selectedDiff = ref<string | null>(null)
   const selectedDiffMode = ref<ReviewDiffMode | null>(null)
+  // The backend's actual rejection reason for `invalid` mode (e.g. "Proposal has
+  // expired" vs "Proposal must contain at least one operation") — the pane must
+  // render the REAL reason, never a hardcoded one (#1397 MEDIUM-1).
+  const selectedDiffInvalidReason = ref<string | null>(null)
+  // Whether the stored preview's proposal has saved revisions: true/false once
+  // known, null while unknown (fetch pending or failed). `diffPreview` is
+  // creation-time content that revisions never update, so a revised proposal's
+  // stored preview shows the ORIGINAL submission — the banner must disclose
+  // that (#1397 MEDIUM-2).
+  const selectedDiffRevised = ref<boolean | null>(null)
   let latestDiffRequestId = 0
 
   function resetDiffState() {
     selectedDiffProposalId.value = null
     selectedDiff.value = null
     selectedDiffMode.value = null
+    selectedDiffInvalidReason.value = null
+    selectedDiffRevised.value = null
   }
+
+  // Best-effort disclosure signal for the stored preview (#1397 MEDIUM-2): fetch
+  // the revision list so the banner can state when the stored (original) preview
+  // is NOT what a later revision would have applied. On failure the flag stays
+  // null (unknown) — the banner already attributes the content to the original
+  // submission, so we fail toward the generic wording rather than blocking the
+  // stored preview or false-claiming "never revised".
+  async function loadStoredRevisedSignal(proposalId: string, requestId: number) {
+    try {
+      const revisions = await proposalRevisionsApi.getRevisions(proposalId)
+      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      selectedDiffRevised.value = revisions.length > 0
+    } catch {
+      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      selectedDiffRevised.value = null
+    }
+  }
+
+  function presentStoredPreview(proposal: ApiProposal, requestId: number) {
+    selectedDiff.value = proposal.diffPreview
+    selectedDiffMode.value = 'stored'
+    selectedDiffInvalidReason.value = null
+    selectedDiffRevised.value = null
+    void loadStoredRevisedSignal(proposal.id, requestId)
+  }
+
+  // #1397 LOW-5: the pane's presentation is chosen at toggle time, but a proposal
+  // can turn read-only WHILE its pane is open — a status change (approve→execute,
+  // a refresh mapping in a terminal state) or the surface's expiry clock ticking
+  // past expiresAt. Re-derive: an open live/invalid pane flips to the stored
+  // read-only presentation the moment the classification flips, instead of
+  // keeping a live-looking pane on a proposal that is no longer actionable.
+  watch(
+    () => {
+      const id = selectedDiffProposalId.value
+      if (!id) return false
+      const proposal = proposals.value.find((p) => p.id === id)
+      if (!proposal) return false
+      return isProposalReadOnly(proposal, isProposalExpired(proposal))
+    },
+    (readOnly) => {
+      if (!readOnly) return
+      if (selectedDiffMode.value === 'stored' || selectedDiffMode.value === null) return
+      const id = selectedDiffProposalId.value
+      const proposal = id ? proposals.value.find((p) => p.id === id) : undefined
+      if (!proposal) return
+      // Cancel any in-flight live fetch so its late response can't overwrite
+      // the read-only presentation.
+      const requestId = ++latestDiffRequestId
+      presentStoredPreview(proposal, requestId)
+    },
+  )
 
   async function handleApproveProposal(proposalId: string) {
     try {
@@ -146,6 +212,8 @@ export function useReviewActions(
     selectedDiffProposalId.value = proposalId
     selectedDiff.value = null
     selectedDiffMode.value = null
+    selectedDiffInvalidReason.value = null
+    selectedDiffRevised.value = null
 
     if (!proposal) {
       // The card only emits ids from the visible list, but guard so a vanished
@@ -160,8 +228,7 @@ export function useReviewActions(
     // there is no stored preview, the banner + "no stored preview" state, never
     // an error toast + cleared pane (#1397).
     if (isProposalReadOnly(proposal, isProposalExpired(proposal))) {
-      selectedDiff.value = proposal.diffPreview
-      selectedDiffMode.value = 'stored'
+      presentStoredPreview(proposal, requestId)
       return
     }
 
@@ -176,12 +243,18 @@ export function useReviewActions(
       if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
 
       // A 400 ValidationError means the backend ran Apply's gates at diff time
-      // (#1376/#1395): the proposal has no operations (or expired mid-flight).
-      // Apply would reject it too, so surface that verdict inline instead of a
-      // generic toast + torn-down pane, so the reviewer sees it before approving.
+      // (#1376/#1395). It carries one of two distinct reasons — "Proposal must
+      // contain at least one operation" or "Proposal has expired" (the expiry
+      // race: the surface's 60s clock can lag a server-side expiry). Apply would
+      // reject it for the SAME reason, so surface the backend's actual message
+      // inline instead of a generic toast + torn-down pane (#1397 MEDIUM-1).
       if (isValidationError(e)) {
         selectedDiff.value = null
         selectedDiffMode.value = 'invalid'
+        selectedDiffInvalidReason.value = getErrorDisplay(
+          e,
+          'The backend rejected this proposal preview',
+        ).message
         return
       }
 
@@ -247,6 +320,8 @@ export function useReviewActions(
     selectedDiffProposalId,
     selectedDiff,
     selectedDiffMode,
+    selectedDiffInvalidReason,
+    selectedDiffRevised,
     handleApproveProposal,
     handleRejectProposal,
     handleDeferProposal,

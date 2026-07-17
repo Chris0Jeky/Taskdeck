@@ -42,6 +42,8 @@ const {
   selectedDiffProposalId,
   selectedDiff,
   selectedDiffMode,
+  selectedDiffInvalidReason,
+  selectedDiffRevised,
   handleApproveProposal,
   handleRejectProposal,
   handleExecuteProposal,
@@ -222,6 +224,8 @@ onUnmounted(() => {
               :selected-diff-proposal-id="selectedDiffProposalId"
               :selected-diff="selectedDiff"
               :selected-diff-mode="selectedDiffMode"
+              :selected-diff-invalid-reason="selectedDiffInvalidReason"
+              :selected-diff-revised="selectedDiffRevised"
               :capture-href="captureHrefForProposal(visibleProposals[virtualRow.index]!)"
               :proposal-href="proposalHref(visibleProposals[virtualRow.index]!)"
               @approve="handleApproveProposal"

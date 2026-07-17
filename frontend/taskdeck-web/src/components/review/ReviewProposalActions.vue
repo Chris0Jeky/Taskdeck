@@ -5,6 +5,7 @@ import { normalizeProposalStatus } from '../../utils/automation'
 import {
   isProposalApplyActionable,
   isProposalApproveActionable,
+  isProposalReadOnly,
   isProposalRejectActionable,
 } from '../../composables/useReviewProposals'
 
@@ -20,15 +21,27 @@ const props = defineProps<{
 // Reject are only available while the proposal is still pending and unexpired;
 // Apply-to-board is the Approved-and-actionable arm of apply-actionable.
 const canReject = computed(() => isProposalRejectActionable(props.proposal, props.isExpired))
-// Approve and Reject share the same precondition (a still-live PendingReview
-// proposal), but each routes through its own named helper so they can diverge
-// later without a hidden alias coupling them (e.g. an approve-only permission gate).
+// Approve additionally requires at least one operation (#1397): a zero-op
+// proposal is rejected by Apply and by /diff, so the rail must not offer it.
+// The Legacy card has no revision knowledge, so no hasSavedRevision escape here
+// (a revised-in-Paper zero-op proposal is conservatively un-approvable in Legacy).
 const canApprove = computed(() => isProposalApproveActionable(props.proposal, props.isExpired))
 const canExecute = computed(
   () =>
     isProposalApplyActionable(props.proposal, props.isExpired) &&
     normalizeProposalStatus(props.proposal.status) === 'Approved',
 )
+
+// #1397 LOW-4: the diff toggle's label follows the READ-ONLY classification, not
+// just expiry — a terminal non-expired proposal (Applied/Rejected/Failed shown
+// via "show completed") also renders the stored preview, so its button must not
+// promise a live diff (which would 400).
+const isReadOnly = computed(() => isProposalReadOnly(props.proposal, props.isExpired))
+const diffToggleLabel = computed(() => {
+  const open = props.selectedDiffProposalId === props.proposal.id
+  if (isReadOnly.value) return open ? 'Hide stored preview' : 'View stored preview'
+  return open ? 'Hide Diff' : 'View Diff'
+})
 
 defineEmits<{
   (e: 'approve', proposalId: string): void
@@ -50,7 +63,7 @@ defineEmits<{
            renders the stored diffPreview under a read-only banner, never a live
            `/diff` request (which now 400s for expired proposals). -->
       <button class="td-btn td-btn--secondary td-btn--sm" @click="$emit('toggle-diff', proposal.id)">
-        {{ selectedDiffProposalId === proposal.id ? 'Hide stored preview' : 'View stored preview' }}
+        {{ diffToggleLabel }}
       </button>
       <button
         class="td-btn td-btn--secondary td-btn--sm"
@@ -98,7 +111,7 @@ defineEmits<{
       </div>
 
       <button class="td-btn td-btn--secondary td-btn--sm" @click="$emit('toggle-diff', proposal.id)">
-        {{ selectedDiffProposalId === proposal.id ? 'Hide Diff' : 'View Diff' }}
+        {{ diffToggleLabel }}
       </button>
       <button
         class="td-btn td-btn--primary td-btn--sm"

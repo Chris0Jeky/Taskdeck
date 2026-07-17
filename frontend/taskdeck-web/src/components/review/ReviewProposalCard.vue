@@ -17,6 +17,10 @@ const props = defineProps<{
   selectedDiffProposalId: string | null
   selectedDiff: string | null
   selectedDiffMode: ReviewDiffMode | null
+  /** The backend's actual /diff rejection reason for `invalid` mode (#1397 MEDIUM-1). */
+  selectedDiffInvalidReason: string | null
+  /** True when the stored preview's proposal has saved revisions; null = unknown (#1397 MEDIUM-2). */
+  selectedDiffRevised: boolean | null
   captureHref: string
   proposalHref: string
 }>()
@@ -185,7 +189,20 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
       <!-- Read-only / terminal: stored preview under an explicit banner (#1397) -->
       <template v-if="selectedDiffMode === 'stored'">
         <span class="td-review-card__diff-banner" role="status" data-testid="review-diff-banner">
-          {{ reviewStatusLabel(proposal.status) }} · read-only — showing the stored preview.
+          {{ reviewStatusLabel(proposal.status) }} · read-only — showing the stored preview from
+          the original submission.
+        </span>
+        <!-- diffPreview is creation-time content revisions never update, so a
+             revised proposal's stored preview is NOT what a revision-aware Apply
+             would have executed — disclose it (#1397 MEDIUM-2). -->
+        <span
+          v-if="selectedDiffRevised"
+          class="td-review-card__diff-note td-review-card__diff-note--warn"
+          role="status"
+          data-testid="review-diff-revised-note"
+        >
+          This proposal was revised after submission — the stored preview shows the original
+          operations, not the revised ones.
         </span>
         <pre
           v-if="selectedDiff"
@@ -203,14 +220,17 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
         </span>
       </template>
 
-      <!-- Invalid: no operations to apply — Apply would reject it too (#1397) -->
+      <!-- Invalid: the backend rejected the diff with its Apply-time gates; render
+           the backend's ACTUAL reason (expired vs zero-op), never a hardcoded
+           one (#1397 MEDIUM-1). The fallback covers a missing message only. -->
       <span
         v-else-if="selectedDiffMode === 'invalid'"
         class="td-review-card__diff-note td-review-card__diff-note--warn"
         role="status"
         data-testid="review-diff-invalid"
       >
-        This proposal contains no operations to apply, so Apply would reject it.
+        {{ selectedDiffInvalidReason || 'This proposal contains no operations to apply' }} — Apply
+        will reject this proposal.
       </span>
 
       <!-- Live diff for a still-actionable proposal -->
