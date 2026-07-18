@@ -81,20 +81,30 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
 
     public async Task<Result> ValidatePermissionsAsync(Guid userId, Guid? boardId, IEnumerable<ProposalOperationDto> operations, CancellationToken cancellationToken = default)
     {
-        var opList = operations.ToList();
+        if (operations is null)
+            return Result.Failure(ErrorCodes.ValidationError, "Operations cannot be null");
 
-        // The requester half of the shared access gate always runs; the board half applies only
-        // when the proposal carries operations, preserving the long-standing empty-operations
-        // short-circuit (empty → requester checks, then Success, board untouched). Callers that
-        // must gate board access for an operation-less proposal (the terminal stored-preview
-        // read, #1415) call ValidateBoardAccessAsync directly with the boardId.
+        // The full requester/board access gate ALWAYS runs — including for an empty operation
+        // list. Only the per-operation contract checks are operation-dependent; requester
+        // existence and board access are not, so an operation-less proposal must be gated on the
+        // board it targets exactly like an operation-bearing one. Emptiness itself is NOT rejected
+        // here: it is a legitimate transient shape (a proposal may be created empty and revised
+        // into validity, pinned by #1423), and the "nothing to apply" rejection belongs to the
+        // structure gate (ValidateOperationStructure / ProposalOperationStructureValidator), which
+        // runs BEFORE this method in every approve/apply/diff chain. Previously an empty list
+        // short-circuited to Success with the board half skipped (boardId forced to null), which
+        // silently treated an operation-less proposal as permitted and forced every new consumer
+        // to bolt on its own board-access fallback (the #1415/#1425 trap this hardens away, #1426).
         var accessValidation = await ValidateBoardAccessAsync(
             userId,
-            opList.Count > 0 ? boardId : null,
+            boardId,
             cancellationToken);
         if (!accessValidation.IsSuccess)
             return accessValidation;
 
+        // Materialize only after the access gate passes — the per-operation contract validator
+        // below is the sole consumer of the list, so a failed access check pays no allocation.
+        var opList = operations.ToList();
         if (opList.Count == 0)
             return Result.Success();
 
