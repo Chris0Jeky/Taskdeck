@@ -336,6 +336,25 @@ public class AutomationPolicyEngineTests
     }
 
     [Fact]
+    public async Task ValidatePermissions_ShouldReturnNotFound_ForEmptyOperations_WhenRequesterMissing()
+    {
+        // Arrange: the requester-existence half of the gate must also run for an empty op list
+        // with a set boardId (the board-scoped path), not just the null-board path.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var operations = new List<ProposalOperationDto>();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync((User?)null);
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
     public async Task ValidatePermissions_ShouldReturnForbidden_ForEmptyOperations_WhenBoardAccessDenied()
     {
         // Arrange
