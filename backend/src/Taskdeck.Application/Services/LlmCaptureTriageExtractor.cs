@@ -99,10 +99,12 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt);
 
         LlmCompletionResult result;
+        LlmCompletionResult? completed = null;
         var quotaSettled = quotaReservationId is null;
         try
         {
             result = await _llmProvider.CompleteAsync(request, cancellationToken);
+            completed = result;
 
             // Settle the reservation. Tokens are consumed whether or not the content is usable
             // (truncation is the clearest case: degraded AND billed), so a call that used tokens commits
@@ -134,11 +136,42 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         }
         finally
         {
-            // Mirrors ChatService: a provider throw or a cancellation firing before/inside the settle
-            // must not leave the row Reserved until TTL. Release uses CancellationToken.None so cleanup
-            // still runs when the request token is already cancelled.
+            // Mirrors ChatService (#1427 review): SETTLE an unfinalized reservation. If the provider
+            // completed with billed tokens (the in-try commit itself failed on a DB fault), COMMIT them —
+            // releasing would erase real usage; a provider throw or zero-token result releases so the
+            // slot consumes no quota. CancellationToken.None so cleanup runs under a cancelled request
+            // token; try/catch so a settle failure cannot mask the original exception.
             if (!quotaSettled && quotaReservationId is Guid unsettledId)
-                await _quotaService!.ReleaseReservationAsync(unsettledId, CancellationToken.None);
+            {
+                try
+                {
+                    if (completed is { TokensUsed: > 0 } billed)
+                    {
+                        await _quotaService!.CommitReservationAsync(
+                            unsettledId,
+                            userId,
+                            LlmSurface.CaptureTriage,
+                            billed.Provider,
+                            billed.Model,
+                            billed.TokensUsed,
+                            0,
+                            CancellationToken.None);
+                    }
+                    else
+                    {
+                        await _quotaService!.ReleaseReservationAsync(unsettledId, CancellationToken.None);
+                    }
+                }
+                catch (Exception settleEx)
+                {
+                    _logger?.LogError(
+                        settleEx,
+                        "Quota reservation {ReservationId} settle failed in transcript triage (billed tokens: {Tokens}); " +
+                        "the row stays Reserved until the TTL sweep.",
+                        unsettledId,
+                        completed?.TokensUsed ?? 0);
+                }
+            }
         }
 
         if (result.IsDegraded)
