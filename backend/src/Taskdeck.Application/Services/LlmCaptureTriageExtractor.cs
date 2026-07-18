@@ -112,6 +112,9 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             {
                 if (result.TokensUsed > 0)
                 {
+                    // CancellationToken.None (M1, #1427 review): tokens are already billed at this
+                    // point, so finalization must not be cancellable — a cancelled commit would trip
+                    // the finally-release below and erase real usage (quota bypass).
                     await _quotaService!.CommitReservationAsync(
                         reservationId,
                         userId,
@@ -120,7 +123,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                         result.Model,
                         result.TokensUsed,
                         0,
-                        cancellationToken);
+                        CancellationToken.None);
                 }
                 else
                 {

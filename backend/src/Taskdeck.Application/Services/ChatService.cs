@@ -264,12 +264,15 @@ public class ChatService : IChatService
                         // Finalize the quota reservation with the actual token count
                         if (_quotaService != null && quotaReservationId is Guid toolResId && toolResult.TokensUsed > 0)
                         {
+                            // CancellationToken.None (M1, #1427 review): once billable tokens exist,
+                            // finalization must not be client-cancellable — a cancelled commit would
+                            // trip the finally-release and erase genuinely billed usage (quota bypass).
                             await _quotaService.CommitReservationAsync(
                                 toolResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 toolResult.Provider, toolResult.Model,
                                 toolResult.TokensUsed, 0,
-                                ct);
+                                CancellationToken.None);
                             quotaCommitted = true;
                         }
                     }
@@ -308,12 +311,13 @@ public class ChatService : IChatService
                         // Finalize the quota reservation for the already-made call
                         if (_quotaService != null && quotaReservationId is Guid reuseResId && toolResult.TokensUsed > 0)
                         {
+                            // CancellationToken.None (M1, #1427 review): see the tool-result commit above.
                             await _quotaService.CommitReservationAsync(
                                 reuseResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 toolResult.Provider, toolResult.Model,
                                 toolResult.TokensUsed, 0,
-                                ct);
+                                CancellationToken.None);
                             quotaCommitted = true;
                         }
                     }
@@ -364,12 +368,13 @@ public class ChatService : IChatService
                         // separate counts.
                         if (_quotaService != null && quotaReservationId is Guid singleResId && llmResult.TokensUsed > 0)
                         {
+                            // CancellationToken.None (M1, #1427 review): see the tool-result commit above.
                             await _quotaService.CommitReservationAsync(
                                 singleResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 llmResult.Provider, llmResult.Model,
                                 llmResult.TokensUsed, 0,
-                                ct);
+                                CancellationToken.None);
                             quotaCommitted = true;
                         }
                     }
@@ -594,6 +599,8 @@ public class ChatService : IChatService
             }
 
             // Finalize the reservation with actual usage, matching the non-streaming path behavior.
+            // CancellationToken.None (M1, #1427 review): once billable tokens exist, finalization
+            // must not be client-cancellable.
             if (_quotaService != null && quotaReservationId is Guid rid && tokensUsed is > 0 && provider != null && model != null)
             {
                 await _quotaService.CommitReservationAsync(
@@ -601,14 +608,33 @@ public class ChatService : IChatService
                     userId, Domain.Enums.LlmSurface.Chat,
                     provider, model,
                     tokensUsed.Value, 0,
-                    ct);
+                    CancellationToken.None);
                 quotaCommitted = true;
             }
         }
         finally
         {
+            // Settle, don't just release (M1, #1427 review): a client that aborts the stream after
+            // the final token (cancelling the message-persistence awaits above, or disposing the
+            // iterator before the epilogue runs) has still been billed — commit those tokens instead
+            // of deleting the reservation, which would be a client-controllable quota bypass. Only a
+            // stream that produced no billed usage releases.
             if (_quotaService != null && quotaReservationId is Guid rid && !quotaCommitted)
-                await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+            {
+                if (tokensUsed is > 0 && provider != null && model != null)
+                {
+                    await _quotaService.CommitReservationAsync(
+                        rid,
+                        userId, Domain.Enums.LlmSurface.Chat,
+                        provider, model,
+                        tokensUsed.Value, 0,
+                        CancellationToken.None);
+                }
+                else
+                {
+                    await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                }
+            }
         }
     }
 
