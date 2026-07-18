@@ -1167,6 +1167,12 @@ describe('PaperReviewView', () => {
     expect(mocks.infoToast).toHaveBeenCalledWith(
       expect.stringContaining('no operations'),
     )
+    // Pin the PENDING-distinctive copy (not the Approved variant): an
+    // always-true `approvedZeroOp` bug would swap this for the Approved wording
+    // and drop the "Reject or file it away" guidance — assert it explicitly.
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      expect.stringContaining('Reject or file it away instead'),
+    )
 
     wrapper.unmount()
   })
@@ -1208,6 +1214,297 @@ describe('PaperReviewView', () => {
     expect(mocks.approveProposal).not.toHaveBeenCalled()
     expect(mocks.infoToast).toHaveBeenCalledWith(expect.stringContaining('no operations'))
 
+    wrapper.unmount()
+  })
+
+  it('holds the shared busy lock during the zero-op guard load so Defer cannot snooze the proposal mid-flight (#1414 round 4 P2-A)', async () => {
+    // P2-A: while the zero-op guard awaits its revision load, applyGuardBusy now
+    // joins the shared busy lock, so Defer/Reject are inert. Without it a Defer
+    // landing during the await — with the #proposal- hash carve-out keeping the
+    // same proposal selected — could snooze a proposal the resumed Apply then
+    // approves.
+    const now = new Date().toISOString()
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'noop-busy', status: 'Approved' }),
+    )
+    const wrapper = await mountView(
+      [makeProposal({ id: 'noop-busy', diffPreview: null, operations: [] })],
+      '/workspace/review#proposal-noop-busy',
+    )
+
+    // Apply parks on the revision load; the guard now holds the shared busy lock.
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    // Defer mid-await is swallowed by the shared busy lock — no snooze request.
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.deferProposal).not.toHaveBeenCalled()
+
+    // Settle with a saved revision → known, non-zero state → Apply proceeds and
+    // the never-snoozed proposal is approved.
+    resolveRevisions?.([
+      {
+        id: 'rev-busy',
+        proposalId: 'noop-busy',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    await flushPromises()
+    expect(mocks.approveProposal).toHaveBeenCalledWith('noop-busy')
+    expect(mocks.deferProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('holds the shared busy lock so Reject cannot settle the proposal during the zero-op guard load (#1414 round 4 P2-A)', async () => {
+    // The P2-A invariant names Defer AND Reject. onReject now carries the same
+    // internal busy guard as onDefer; assert a Reject landing mid-await is inert
+    // (no reject request), so the resumed Apply cannot approve a just-rejected
+    // proposal.
+    const now = new Date().toISOString()
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'noop-reject-busy', status: 'Approved' }),
+    )
+    const wrapper = await mountView(
+      [makeProposal({ id: 'noop-reject-busy', diffPreview: null, operations: [] })],
+      '/workspace/review#proposal-noop-reject-busy',
+    )
+
+    // Apply parks on the revision load; the guard holds the shared busy lock.
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    // Reject mid-await is swallowed by the shared busy lock — no reject request.
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    // Settle with a saved revision → known, non-zero → Apply proceeds; the
+    // never-rejected proposal is approved.
+    resolveRevisions?.([
+      {
+        id: 'rev-reject-busy',
+        proposalId: 'noop-reject-busy',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    await flushPromises()
+    expect(mocks.approveProposal).toHaveBeenCalledWith('noop-reject-busy')
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('does not approve a zero-op proposal that is deferred when the guard load resolves — the post-await isProposalDeferred arm blocks it (#1414 round 4 P2-A)', async () => {
+    // Exercises the `isProposalDeferred(current)` arm of the post-await re-check
+    // specifically: a snoozed proposal stays PendingReview + non-expired, so
+    // `isApplyActionable` alone stays TRUE — only the deferred arm blocks it.
+    // The proposal is deep-linked (hash carve-out keeps a snoozed item visible)
+    // and its revision load is still pending at click time, forcing the async
+    // guard path where the re-check runs.
+    const now = new Date().toISOString()
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    const wrapper = await mountView(
+      [
+        makeProposal({
+          id: 'noop-deferred',
+          diffPreview: null,
+          operations: [],
+          // Snoozed into the future but still PendingReview (isApplyActionable stays true).
+          deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+        }),
+      ],
+      '/workspace/review#proposal-noop-deferred',
+    )
+
+    // Apply parks on the revision load (revisionsLoaded still false).
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    // Settle with a saved revision → known, non-zero: absent the deferred re-check
+    // this would approve a snoozed proposal. The isProposalDeferred arm blocks it.
+    resolveRevisions?.([
+      {
+        id: 'rev-deferred',
+        proposalId: 'noop-deferred',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    await flushPromises()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('executes a plain Approved proposal with operations without entering the zero-op guard (#1414 round 4 P2-B regression)', async () => {
+    // The common Approved-execute path must be untouched by the P2-B reorder: a
+    // non-empty-operations Approved proposal skips the zero-op guard entirely and
+    // dispatches execute directly (confirm-gated).
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mocks.executeProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'approved-ops', status: 'Applied' }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'approved-ops', status: 'Approved' }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.executeProposal).toHaveBeenCalledWith('approved-ops', expect.anything())
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).not.toHaveBeenCalledWith(
+      expect.stringContaining('no operations'),
+    )
+
+    confirmSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('does not approve a zero-op proposal that leaves the actionable state under the guard load — the post-await re-check blocks it (#1414 round 4 P2-A)', async () => {
+    // P2-A defense-in-depth: identity is not enough. A non-local change (here the
+    // 60s expiry clock; equally a realtime status/defer update from another
+    // surface) can settle the proposal out of an actionable state WHILE the guard
+    // load is in flight. The post-await re-check re-evaluates actionability on the
+    // CURRENT object and no-ops when it is no longer applyable.
+    vi.useFakeTimers()
+    try {
+      const base = new Date('2026-06-13T12:00:00.000Z').getTime()
+      vi.setSystemTime(base)
+      const nowIso = new Date(base).toISOString()
+      let resolveRevisions: ((value: unknown[]) => void) | undefined
+      mocks.getRevisions.mockImplementation(
+        () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+      )
+      const wrapper = await mountView([
+        makeProposal({
+          id: 'noop-expire',
+          diffPreview: null,
+          operations: [],
+          // Live at mount, expires before the first 60s clock tick.
+          expiresAt: new Date(base + 30_000).toISOString(),
+        }),
+      ])
+
+      // Apply parks on the revision load (revisionsLoaded still false).
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      // The clock ticks past expiry while the load is still pending.
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      // Settle with a saved revision → known, non-zero: absent the re-check this
+      // would approve a now-expired proposal. The re-check blocks it.
+      resolveRevisions?.([
+        {
+          id: 'rev-expire',
+          proposalId: 'noop-expire',
+          revisionNumber: 1,
+          editorUserId: 'u-1',
+          revisedPayload: '{"operations":[]}',
+          revisedAt: nowIso,
+          reason: 'edit',
+          createdAt: nowIso,
+        },
+      ])
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('routes an Approved zero-op proposal through the guard instead of executing a doomed apply (#1414 round 4 P2-B)', async () => {
+    // P2-B: an already-Approved zero-op proposal (pre-#1423 data, or another
+    // client that approved via the still-permissive approve endpoint) must hit
+    // the same zero-op verdict, not a guaranteed Apply-time 400 round-trip. The
+    // Approved-execute dispatch now sits AFTER the guard.
+    const wrapper = await mountView([
+      makeProposal({ id: 'approved-noop', status: 'Approved', diffPreview: null, operations: [] }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      expect.stringContaining('applying it to the board will be rejected'),
+    )
+
+    wrapper.unmount()
+  })
+
+  it('still executes an Approved proposal that carries a saved revision once the guard clears it (#1414 round 4 P2-B)', async () => {
+    // The guard must not break the normal Approved-execute path: an Approved
+    // proposal whose original operations are empty but which carries a saved
+    // revision (#1235) is applied revision-aware, so it still executes.
+    const now = new Date().toISOString()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-approved',
+        proposalId: 'approved-revised',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    mocks.executeProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'approved-revised', status: 'Applied' }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'approved-revised', status: 'Approved', diffPreview: null, operations: [] }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.executeProposal).toHaveBeenCalledWith('approved-revised', expect.anything())
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    confirmSpy.mockRestore()
     wrapper.unmount()
   })
 

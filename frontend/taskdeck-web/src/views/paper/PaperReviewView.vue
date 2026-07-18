@@ -59,6 +59,7 @@ const {
   isProposalExpired,
   isApplyActionable,
   isRejectActionable,
+  isProposalDeferred,
   isProposalDismissable,
   isStaleProposal,
   clearProposalDeepLink,
@@ -593,8 +594,18 @@ const whyNowBody = computed(() => {
 // --- Action wiring -----------------------------------------------------
 
 const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
+// #1414 round 4 P2-A: the zero-op apply guard's revision-load await participates
+// in the SHARED decision lock. While it is in flight the whole rail (buttons via
+// :busy, keymap via its !busy gate) is disabled — otherwise a Defer/Reject
+// during the await, with the #proposal- hash carve-out keeping selection
+// stable, could change the proposal's state under the resumed Apply.
+const applyGuardBusy = ref(false)
 const busy = computed(
-  () => proposalActionBusyId.value !== null || revisionBusy.value || bulkDismissBusy.value,
+  () =>
+    proposalActionBusyId.value !== null ||
+    revisionBusy.value ||
+    bulkDismissBusy.value ||
+    applyGuardBusy.value,
 )
 
 // True once the active proposal is settled (Applied/Rejected/Failed/Expired/
@@ -641,12 +652,6 @@ function onFileAwayBulk() {
   void handleDismissApplied()
 }
 
-// #1397 P2-A (round 3): re-entry lock for the zero-op approve guard. While its
-// revision load is awaited, further Apply clicks are ignored — a re-entrant
-// loadRevisionState would bump the load generation and CANCEL the earlier load,
-// resuming the first click's await with revisionsLoaded still false.
-const applyGuardBusy = ref(false)
-
 async function onApply() {
   const p = activeProposal.value
   if (!p) return
@@ -659,19 +664,16 @@ async function onApply() {
     toast.info('This proposal is no longer actionable. Refresh review to see current status.')
     return
   }
-  const status = normalizeProposalStatus(p.status)
-  if (status === 'Approved') {
-    void handleExecuteProposal(p.id)
-    return
-  }
-  // #1397 P2-A: SEAM INVARIANT — a zero-operation proposal may only be approved
-  // when its revision state is KNOWN (revisionsLoaded true). A saved revision
-  // carries operations the backend applies revision-aware (#1235); without the
-  // list we cannot distinguish "truly empty" from "revised". So when the state
-  // is unknown, settle it here (mirroring the diff path) — and if it is STILL
-  // unknown after the attempt (failed, or cancelled by a concurrent load from
-  // another surface), do NOT approve. No fall-through: unknown blocks approve.
-  // #1416 (approve-time backend validation) remains the root-cause backend fix.
+  // #1397 P2-A: SEAM INVARIANT — a zero-operation proposal is only approved (or
+  // executed, #1414 round 4 P2-B: this guard sits BEFORE the Approved dispatch,
+  // so pre-#1423 Approved zero-op data gets the same verdict instead of a doomed
+  // execute round-trip) when its revision state is KNOWN (revisionsLoaded true).
+  // A saved revision carries operations the backend applies revision-aware
+  // (#1235); without the list we cannot distinguish "truly empty" from
+  // "revised". Unknown after the attempt (failed, or cancelled by a concurrent
+  // load) blocks the action. Since #1423 the backend enforces this at approve
+  // time too (zero-op approve 400s server-side, revision-aware) — this guard is
+  // UX-only: it saves the round-trip and gives the inline verdict.
   if ((p.operations?.length ?? 0) === 0) {
     if (!revisionsLoaded.value) {
       applyGuardBusy.value = true
@@ -682,6 +684,13 @@ async function onApply() {
       }
       // The active proposal can change during the await; only keep deciding on it.
       if (activeProposal.value?.id !== p.id) return
+      // #1414 round 4 P2-A: identity is not enough — the proposal's STATE can
+      // change under the await from another surface or session (deferred,
+      // dismissed, status change) even while the shared busy lock holds this
+      // rail. Re-check actionability on the CURRENT object and no-op if it is
+      // no longer applyable or has been snoozed.
+      const current = activeProposal.value
+      if (!current || !isApplyActionable(current) || isProposalDeferred(current)) return
     }
     if (!revisionsLoaded.value) {
       // Load failed or was cancelled — the revision-history-unavailable error
@@ -691,9 +700,20 @@ async function onApply() {
       return
     }
     if (revisionCount.value === 0) {
-      toast.info('This proposal contains no operations to apply — Apply will reject it. Reject or file it away instead.')
+      const approvedZeroOp =
+        normalizeProposalStatus((activeProposal.value ?? p).status) === 'Approved'
+      toast.info(
+        approvedZeroOp
+          ? 'This proposal contains no operations — applying it to the board will be rejected.'
+          : 'This proposal contains no operations to apply — Apply will reject it. Reject or file it away instead.',
+      )
       return
     }
+  }
+  const status = normalizeProposalStatus((activeProposal.value ?? p).status)
+  if (status === 'Approved') {
+    void handleExecuteProposal(p.id)
+    return
   }
   void handleApproveProposal(p.id)
 }
@@ -712,6 +732,13 @@ function onReject() {
     toast.info('Save or cancel the revision before rejecting this proposal.')
     return
   }
+  // #1414 round 4 P2-A: mirror onDefer/onFileAway — a decision must not fire
+  // while another action holds the shared lock (notably the zero-op apply
+  // guard's revision-load await). The keymap (!busy gate) and the disabled
+  // button already block Reject during that window; this internal guard keeps
+  // the invariant local so a future caller can't reopen the Defer/Reject-under-
+  // Apply race the P2-A busy join closed.
+  if (busy.value) return
   if (!isRejectActionable(p)) {
     toast.info('This proposal can no longer be rejected. Refresh review to see current status.')
     return
@@ -783,6 +810,18 @@ async function onPreviewDiff() {
   // look dead, and a failed GET must not error-toast over a presentable
   // preview. Staleness of the caveat itself is handled inside loadRevisionState
   // (generation counter + active-proposal-id re-check).
+  //
+  // PREVIEW-SOURCE SELECTION SEAM (#1397 Q1, maintainer ruling 2026-07-18):
+  // for a terminal/expired proposal we present the STORED `diffPreview`
+  // (`previewDiff.value = p.diffPreview` below) rather than a live diff. This is
+  // BY DESIGN — the stored preview is the artifact the reviewer actually saw at
+  // decision time; a live diff of a terminal proposal can drift from it (a later
+  // revision, board change, or backend re-render), which would break review-first
+  // provenance. The alternative (live diff for non-expired *terminal* proposals,
+  // Codex's Q1 suggestion) would be switched HERE: narrow this branch to only
+  // isExpired/domain-Expired and let non-expired terminal statuses fall through to
+  // the live `/diff` fetch below. See issue #1397 for the option analysis and the
+  // experiment path before making that flip.
   if (isProposalReadOnly(p, isProposalExpired(p))) {
     latestDiffRequestId += 1
     previewDiffProposalId.value = p.id
