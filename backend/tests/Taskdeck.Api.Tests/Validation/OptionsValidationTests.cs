@@ -150,6 +150,85 @@ public class OptionsValidationTests
         Assert.Contains(nameof(ArtefactStorageSettings.ExtractionTimeoutSeconds), exception.Message);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(65)]
+    [InlineData(int.MaxValue)]
+    public void ArtefactStorageSettings_ExtractionMaxConcurrency_RejectsOutOfRange(int value)
+    {
+        var settings = new ArtefactStorageSettings { ExtractionMaxConcurrency = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(ArtefactStorageSettings.ExtractionMaxConcurrency)));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(64)]
+    public void ArtefactStorageSettings_ExtractionMaxConcurrency_AcceptsValidValues(int value)
+    {
+        var settings = new ArtefactStorageSettings { ExtractionMaxConcurrency = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_ExtractionMaxConcurrency_HasExpectedDefault()
+    {
+        var settings = new ArtefactStorageSettings();
+
+        Assert.Equal(2, settings.ExtractionMaxConcurrency);
+        Assert.Equal(ArtefactStorageSettings.DefaultExtractionMaxConcurrency, settings.ExtractionMaxConcurrency);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_BindsExtractionMaxConcurrencyFromConfiguration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Artefacts:ExtractionMaxConcurrency"] = "4"
+            })
+            .Build();
+
+        var settings = configuration.GetSection("Artefacts").Get<ArtefactStorageSettings>();
+
+        Assert.NotNull(settings);
+        Assert.Equal(4, settings!.ExtractionMaxConcurrency);
+    }
+
+    [Fact]
+    public void AddOptionsValidation_RejectsExtractionMaxConcurrencyOutOfRangeAtStartup()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Artefacts:ExtractionMaxConcurrency"] = "0"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddOptionsValidation(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<ArtefactStorageSettings>>().Value);
+        Assert.Contains(nameof(ArtefactStorageSettings.ExtractionMaxConcurrency), exception.Message);
+    }
+
     // ── JwtSettingsValidator ─────────────────────────────────────────────
 
     [Fact]
