@@ -20,6 +20,15 @@ public interface IAutomationPolicyEngine
     /// </summary>
     Task<Result> ValidateBoardAccessAsync(Guid requesterUserId, Guid? boardId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Composes <see cref="ValidateBoardAccessAsync"/> (requester + board access) with the
+    /// per-operation contract validator. The access gate runs for EVERY operation list, empty
+    /// or not — only the per-operation contract checks are skipped when there are no operations,
+    /// so an operation-less proposal is still board-access-gated (no empty-list short-circuit to
+    /// Success with the board half skipped, #1426). Emptiness is not rejected here; the "at least
+    /// one operation" structure gate (<see cref="ValidateOperationStructure"/>) owns that and runs
+    /// before this method in every approve/apply/diff chain.
+    /// </summary>
     Task<Result> ValidatePermissionsAsync(Guid userId, Guid? boardId, IEnumerable<ProposalOperationDto> operations, CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -597,9 +597,10 @@ public class AutomationProposalService : IAutomationProposalService
         // intentionally NOT run: they no longer apply to a completed proposal, and re-validating
         // a historical preview against LIVE board state would wrongly deny it whenever a
         // referenced card/column/label was later deleted — or always, for an Applied create-card
-        // whose TargetId now resolves. Calling ValidateBoardAccessAsync directly also covers
-        // operation-less proposals uniformly, which the full gate's empty-operations
-        // short-circuit would skip.
+        // whose TargetId now resolves. This path calls ValidateBoardAccessAsync directly (rather
+        // than ValidatePermissionsAsync) precisely to skip that operation-contract validation;
+        // both surface the identical access codes/messages for operation-less proposals now that
+        // ValidatePermissionsAsync no longer short-circuits the board half on an empty list (#1426).
         var accessValidation = await _policyEngine.ValidateBoardAccessAsync(
             proposal.RequestedByUserId,
             proposal.BoardId,
