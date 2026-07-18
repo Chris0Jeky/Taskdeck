@@ -1614,19 +1614,134 @@ public class ChatServiceTests
         // M1 pin (#1427 review): a client that aborts the stream right after the final billed token
         // cancels the request ct, so the message-persistence await throws before the in-try commit.
         // The billed tokens must STILL be committed — releasing would erase real usage, a
-        // client-controllable quota bypass.
+        // client-controllable quota bypass. Driven by a GENUINELY cancelled token (not `default`) so
+        // the exact CancellationToken.None argument pin below discriminates: a commit made with the
+        // request token would not match.
         var userId = Guid.NewGuid();
         var session = new ChatSession(userId, "Stream cancel-after-tokens test");
+        using var cts = new CancellationTokenSource();
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatMessage msg, CancellationToken c) =>
+            {
+                // Persistence honors the request token, like the real EF-backed repository.
+                c.ThrowIfCancellationRequested();
+                return Task.FromResult(msg);
+            });
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(StreamEventsWithUsage());
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100));
+
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        await FluentActions
+            .Awaiting(async () =>
+            {
+                await foreach (var evt in serviceWithQuota.StreamResponseAsync(session.Id, userId, cts.Token))
+                {
+                    if (evt.IsComplete)
+                        cts.Cancel(); // the client aborts right after the final billed token
+                }
+            })
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        // The finally settles by COMMITTING the billed usage with CancellationToken.None (exact-match
+        // pin — a commit made with the cancelled request token would fail this verify).
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "Mock",
+            "mock-default",
+            42,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_ConsumerBreaksAfterFinalToken_ShouldCommitOnDisposal()
+    {
+        // #1427 re-review: a consumer that stops enumerating right after the billed IsComplete token
+        // disposes the iterator before the persistence epilogue runs — only the finally executes. The
+        // disposal-driven settle must COMMIT the billed usage, never release it.
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream break-after-final-token test");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(StreamEventsWithUsage());
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100));
+
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        await foreach (var evt in serviceWithQuota.StreamResponseAsync(session.Id, userId, default))
+        {
+            if (evt.IsComplete)
+                break; // dispose the iterator before the epilogue runs
+        }
+
+        // The epilogue never ran (no message persisted), but the billed tokens are committed.
+        _chatMessageRepoMock.Verify(
+            r => r.AddAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "Mock",
+            "mock-default",
+            42,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReleaseReservation_WhenCompletionUsesZeroTokens()
+    {
+        // #1427 re-review: a zero-token completion is not billed — the finally must RELEASE the
+        // reservation (consuming no quota), never commit it.
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Zero-token quota test");
 
         _chatSessionRepoMock
             .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
             .ReturnsAsync(session);
-        _chatMessageRepoMock
-            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
-            .ThrowsAsync(new OperationCanceledException());
         _llmProviderMock
-            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
-            .Returns(StreamEventsWithUsage());
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Assistant response", 0, false, null));
 
         var reservationId = Guid.NewGuid();
         var quotaMock = new Mock<ILlmQuotaService>();
@@ -1643,24 +1758,57 @@ public class ChatServiceTests
             _authorizationServiceMock.Object,
             quotaService: quotaMock.Object);
 
-        await FluentActions
-            .Awaiting(async () =>
-            {
-                await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
-            })
-            .Should().ThrowAsync<OperationCanceledException>();
+        var result = await serviceWithQuota.SendMessageAsync(
+            session.Id, userId, new SendChatMessageDto("Hello"), default);
 
-        // The finally settles by COMMITTING the billed usage with CancellationToken.None.
-        quotaMock.Verify(q => q.CommitReservationAsync(
-            reservationId,
-            userId,
-            Domain.Enums.LlmSurface.Chat,
-            "Mock",
-            "mock-default",
-            42,
-            0,
-            CancellationToken.None), Times.Once);
-        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        result.IsSuccess.Should().BeTrue();
+        quotaMock.Verify(
+            q => q.ReleaseReservationAsync(reservationId, CancellationToken.None), Times.Once);
+        quotaMock.Verify(
+            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReleaseReservation_WhenChecklistBootstrapMakesNoLlmCall()
+    {
+        // #1427 re-review: the checklist-bootstrap branch bypasses the LLM entirely, so the reserved
+        // slot was never billed — the finally must RELEASE it (no quota consumed by a no-LLM request).
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Bootstrap no-board quota test"); // no BoardId
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100));
+
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        var result = await serviceWithQuota.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("- [ ] first item\n- [ ] second item", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        _llmProviderMock.Verify(
+            p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        quotaMock.Verify(
+            q => q.ReleaseReservationAsync(reservationId, CancellationToken.None), Times.Once);
+        quotaMock.Verify(
+            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
