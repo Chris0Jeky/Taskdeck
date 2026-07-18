@@ -505,6 +505,7 @@ public class ToolCallingFeatureFlagAndCostTests
             .ReturnsAsync(new QuotaReservationDto(true, null, reservationId, long.MaxValue, long.MaxValue));
         quotaService
             .Setup(q => q.CommitReservationAsync(It.IsAny<Guid>(),
+                It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -556,6 +557,8 @@ public class ToolCallingFeatureFlagAndCostTests
         quotaService.Verify(
             q => q.CommitReservationAsync(
                 reservationId,
+                It.IsAny<Guid>(),
+                Domain.Enums.LlmSurface.Chat,
                 "TestProvider",
                 "test-v1",
                 100, // Total accumulated tokens across all rounds

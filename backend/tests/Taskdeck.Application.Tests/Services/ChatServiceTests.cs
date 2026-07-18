@@ -1556,6 +1556,8 @@ public class ChatServiceTests
         // The reservation is finalized with the actual streamed token count (issue #1313).
         quotaMock.Verify(q => q.CommitReservationAsync(
             reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
             "Mock",
             "mock-default",
             42,

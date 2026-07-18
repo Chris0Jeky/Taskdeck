@@ -214,7 +214,7 @@ public class LlmCaptureTriageExtractorTests
         result.Provider.Should().BeNull("no output was produced, so no provider may be recorded (#1273)");
         // Tokens were burned → the reservation is committed with the actuals (issue #1313).
         _quotaMock.Verify(
-            q => q.CommitReservationAsync(_reservationId, "OpenAI", "gpt-4o-mini", 4096, 0, It.IsAny<CancellationToken>()),
+            q => q.CommitReservationAsync(_reservationId, _userId, LlmSurface.CaptureTriage, "OpenAI", "gpt-4o-mini", 4096, 0, It.IsAny<CancellationToken>()),
             Times.Once);
         _quotaMock.Verify(
             q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
@@ -232,7 +232,7 @@ public class LlmCaptureTriageExtractorTests
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
         // Zero tokens → no committed usage; the reservation is released so it consumes no quota (#1313).
         _quotaMock.Verify(
-            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _quotaMock.Verify(
             q => q.ReleaseReservationAsync(_reservationId, It.IsAny<CancellationToken>()),
@@ -256,7 +256,7 @@ public class LlmCaptureTriageExtractorTests
             q => q.ReleaseReservationAsync(_reservationId, It.IsAny<CancellationToken>()),
             Times.Once);
         _quotaMock.Verify(
-            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
