@@ -18,6 +18,7 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
     private readonly IArtefactExtractionRepository _extractions;
     private readonly IReadOnlyList<IArtefactTextExtractor> _extractors;
     private readonly ArtefactStorageSettings _settings;
+    private readonly ArtefactExtractionGate? _gate;
     private readonly ILogger<ArtefactExtractionService>? _logger;
 
     public ArtefactExtractionService(
@@ -25,12 +26,14 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
         IArtefactExtractionRepository extractions,
         IEnumerable<IArtefactTextExtractor> extractors,
         ArtefactStorageSettings? settings = null,
-        ILogger<ArtefactExtractionService>? logger = null)
+        ILogger<ArtefactExtractionService>? logger = null,
+        ArtefactExtractionGate? gate = null)
     {
         _artefacts = artefacts;
         _extractions = extractions;
         _extractors = extractors.ToArray();
         _settings = settings ?? new ArtefactStorageSettings();
+        _gate = gate;
         _logger = logger;
     }
 
@@ -134,7 +137,36 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 // provably completed; abandonment paths defer disposal to a
                 // worker-completion continuation so the abandoned parse can never
                 // touch a disposed token source.
+                //
+                // Extraction permit: take a permit immediately before spawning the
+                // parse worker so the permit tracks parse-THREAD occupancy. When the
+                // gate is saturated — every permit held, including by abandoned bombs
+                // still spinning box-wide — reject pre-parse without creating a worker
+                // or an extraction-history row (capacity is a transient property of the
+                // box, not of this artefact; unlike the timeout outcome, it is not
+                // recorded). Callers retry on TooManyRequests. Release mirrors budgetCts
+                // disposal exactly: inline in the finally on completed paths, deferred to
+                // the worker-completion continuation on abandoned paths.
+                //
+                // The linked budget CTS is created BEFORE the permit is taken: if its
+                // construction ever throws (e.g. the caller's token source was already
+                // disposed), no permit has been acquired yet, so none can leak. After a
+                // successful acquire the only statement before the release-owning try is a
+                // non-throwing assignment, and the worker is still spawned only inside the
+                // try — so the permit tracks parse-THREAD occupancy exactly.
                 var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                if (_gate is not null && !_gate.TryAcquire())
+                {
+                    budgetCts.Dispose();
+                    _logger?.LogWarning(
+                        "Local extraction rejected for artefact {ArtefactId}: extraction capacity is saturated ({MaxConcurrency} concurrent)",
+                        sourceArtefactId,
+                        _gate.MaxConcurrency);
+                    return Result.Failure<ArtefactExtractionDto>(
+                        ErrorCodes.TooManyRequests,
+                        "Local extraction is at capacity; retry shortly");
+                }
+
                 var workerAbandoned = false;
                 try
                 {
@@ -205,7 +237,15 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 finally
                 {
                     if (!workerAbandoned)
+                    {
                         budgetCts.Dispose();
+                        // Completed path (normal result, extractor fault, or store
+                        // failure below): the worker is done, so release the permit
+                        // here. Abandoned paths skip this and release in the worker
+                        // continuation instead, holding the permit until the runaway
+                        // thread actually finishes.
+                        _gate?.Release();
+                    }
                 }
             }
         }
@@ -350,6 +390,11 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 }
 
                 budgetCts.Dispose();
+                // Release the permit only now that the abandoned worker has actually
+                // finished: the whole point of the gate is that a runaway parse holds
+                // capacity for its full lifetime, not just for the request that spawned
+                // it. This is the exactly-once release for every abandoned path.
+                _gate?.Release();
             },
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
