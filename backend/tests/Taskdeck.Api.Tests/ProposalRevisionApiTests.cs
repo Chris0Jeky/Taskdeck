@@ -2,10 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -798,6 +800,130 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
         victimCards.Should().NotContain(card => card.Title == "Cross-board column card");
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_WithRacedRevisionSavedAfterApprove_AppliesPinnedRevision_NotLater()
+    {
+        // #1428 core: approve validates and PINS the latest revision at approve time; Apply must
+        // materialize THAT pinned revision, never a later one. This simulates the race where a
+        // revision-save whose PendingReview guard-read predated approve's commit lands a new
+        // revision (N+1) after approval — by inserting it straight into the store, bypassing the
+        // guard the normal API path enforces. Apply must still run the pinned revision N.
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-pin-later");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-pin-later-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Card");
+
+        // Revision 1 (the one the reviewer sees and approves).
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayload("Pinned Edit", board.Id, column.Id), reason = "reviewed edit" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Revision 2 races in AFTER approval, straight into the store (past the PendingReview guard).
+        await InsertRevisionDirectlyAsync(
+            proposal.Id,
+            revisionNumber: 2,
+            editorUserId: user.UserId,
+            revisedPayload: BuildRevisionPayload("Raced Edit", board.Id, column.Id),
+            reason: "raced edit after approval");
+
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(card => card.Title == "Pinned Edit");
+        cards.Should().NotContain(card => card.Title == "Raced Edit");
+        cards.Should().NotContain(card => card.Title == "Original Card");
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ApprovedFromOriginal_IgnoresRacedRevision()
+    {
+        // #1428, null-pin direction: a proposal approved with NO revision pins nothing, so Apply
+        // materializes the ORIGINAL operations. Before pinning, Apply materialized the LATEST
+        // revision, so a revision that raced in after approval would hijack the applied content.
+        // This pins that it no longer can.
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-pin-original");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-pin-original-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Card");
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var approved = await approveResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        approved!.ApprovedRevisionId.Should().BeNull("approving from original operations pins no revision");
+
+        // A revision races in after approval, straight into the store.
+        await InsertRevisionDirectlyAsync(
+            proposal.Id,
+            revisionNumber: 1,
+            editorUserId: user.UserId,
+            revisedPayload: BuildRevisionPayload("Hijack Card", board.Id, column.Id),
+            reason: "raced revision on an original-approved proposal");
+
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(card => card.Title == "Original Card");
+        cards.Should().NotContain(card => card.Title == "Hijack Card");
+    }
+
+    [Fact]
+    public async Task ApproveAndGetResponses_ForRevisedProposal_ReflectEffectivePinnedOperations()
+    {
+        // #1424: approve/get response DTOs must surface the EFFECTIVE (pinned) operations Apply will
+        // run, not the stale original operations, and expose the pinned revision id.
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-effective-dto");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-effective-dto-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Card");
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayload("Effective Edit", board.Id, column.Id), reason = "edit before approve" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var revision = await revisionResponse.Content.ReadFromJsonAsync<ProposalRevisionDto>();
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var approved = await approveResponse.Content.ReadFromJsonAsync<ProposalDto>();
+
+        approved!.ApprovedRevisionId.Should().Be(revision!.Id);
+        approved.Operations.Should().ContainSingle();
+        approved.Operations[0].Parameters.Should().Contain("Effective Edit");
+        approved.Operations[0].Parameters.Should().NotContain("Original Card");
+
+        // GET reflects the same effective (pinned) operations.
+        var getResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var fetched = await getResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        fetched!.ApprovedRevisionId.Should().Be(revision.Id);
+        fetched.Operations.Should().ContainSingle();
+        fetched.Operations[0].Parameters.Should().Contain("Effective Edit");
+        fetched.Operations[0].Parameters.Should().NotContain("Original Card");
+    }
+
+    private async Task InsertRevisionDirectlyAsync(
+        Guid proposalId,
+        int revisionNumber,
+        Guid editorUserId,
+        string revisedPayload,
+        string reason)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        db.ProposalRevisions.Add(new ProposalRevision(proposalId, revisionNumber, editorUserId, revisedPayload, reason));
+        await db.SaveChangesAsync();
     }
 
     private static async Task<ProposalDto> CreateTestProposalAsync(

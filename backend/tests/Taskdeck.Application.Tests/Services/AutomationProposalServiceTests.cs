@@ -570,6 +570,103 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task ApproveProposalAsync_ShouldPinLatestRevision_AndEchoEffectiveOperations()
+    {
+        // #1428 + #1424: approve stamps ApprovedRevisionId with the latest revision read at approve
+        // time (so Apply materializes exactly that one), and the approve response echoes the
+        // effective (revised) operations rather than the stale original ones.
+        var proposalId = Guid.NewGuid();
+        var deciderId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Revised then approved",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "update",
+            "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Original name" }),
+            Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "board",
+                    targetId = boardId.ToString(),
+                    parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Revised name" }),
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposal.Id, 1, deciderId, revisedPayload, "Rename differently");
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default)).ReturnsAsync(revision);
+        _revisionRepoMock.Setup(r => r.GetByIdAsync(revision.Id, default)).ReturnsAsync(revision);
+
+        // Act
+        var result = await _service.ApproveProposalAsync(proposalId, deciderId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(ProposalStatus.Approved);
+        result.Value.ApprovedRevisionId.Should().Be(revision.Id);
+        proposal.ApprovedRevisionId.Should().Be(revision.Id);
+        result.Value.Operations.Should().ContainSingle();
+        result.Value.Operations[0].Parameters.Should().Contain("Revised name");
+        result.Value.Operations[0].Parameters.Should().NotContain("Original name");
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldLeaveApprovedRevisionIdNull_WhenNoRevisionExists()
+    {
+        // #1428: approving a proposal that has no saved revision pins nothing (null), so Apply
+        // materializes the original operations and later revisions cannot change what it runs.
+        var proposalId = Guid.NewGuid();
+        var deciderId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Approved from original",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "update",
+            "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Original name" }),
+            Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        // Default revision mock: GetLatestByProposalIdAsync returns null (no revision).
+
+        // Act
+        var result = await _service.ApproveProposalAsync(proposalId, deciderId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ApprovedRevisionId.Should().BeNull();
+        proposal.ApprovedRevisionId.Should().BeNull();
+        result.Value.Operations.Should().ContainSingle();
+        result.Value.Operations[0].Parameters.Should().Contain("Original name");
+    }
+
+    [Fact]
     public async Task ApproveProposalAsync_ShouldRejectRevokedBoardAccess_MatchingApplyPermissionGate()
     {
         // #1416 trust-class completion: Apply runs ValidatePermissionsAsync after the policy gate,
@@ -2231,7 +2328,7 @@ public class AutomationProposalServiceTests
             }
         });
         var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
-        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposalId, default))
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
             .ReturnsAsync(revision);
 
         var columnRepoMock = new Mock<IColumnRepository>();
@@ -2277,7 +2374,7 @@ public class AutomationProposalServiceTests
         // Non-empty payload that satisfies the entity ctor but carries no operations
         // array — TryParseOperations rejects it (mirrors the executor's behavior).
         var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), "{}", "Reviewer edit");
-        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposalId, default))
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
             .ReturnsAsync(revision);
 
         // Act
@@ -2333,7 +2430,7 @@ public class AutomationProposalServiceTests
             }
         });
         var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
-        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposalId, default))
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
             .ReturnsAsync(revision);
 
         // Act
@@ -2536,7 +2633,7 @@ public class AutomationProposalServiceTests
             }
         });
         var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
-        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposalId, default)).ReturnsAsync(revision);
+        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default)).ReturnsAsync(revision);
 
         _boardAccessRepoMock
             .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
