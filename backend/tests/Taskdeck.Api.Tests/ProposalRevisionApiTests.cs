@@ -902,6 +902,10 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         approved.Operations.Should().ContainSingle();
         approved.Operations[0].Parameters.Should().Contain("Effective Edit");
         approved.Operations[0].Parameters.Should().NotContain("Original Card");
+        // Split-brain guard: the presentation block must describe the SAME effective operations
+        // the response carries, never the stale originals.
+        approved.Presentation.OperationHeadlines.Should().ContainSingle(h => h.Contains("Effective Edit"));
+        approved.Presentation.OperationHeadlines.Should().NotContain(h => h.Contains("Original Card"));
 
         // GET reflects the same effective (pinned) operations.
         var getResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}");
@@ -911,6 +915,8 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         fetched.Operations.Should().ContainSingle();
         fetched.Operations[0].Parameters.Should().Contain("Effective Edit");
         fetched.Operations[0].Parameters.Should().NotContain("Original Card");
+        fetched.Presentation.OperationHeadlines.Should().ContainSingle(h => h.Contains("Effective Edit"));
+        fetched.Presentation.OperationHeadlines.Should().NotContain(h => h.Contains("Original Card"));
     }
 
     private async Task InsertRevisionDirectlyAsync(

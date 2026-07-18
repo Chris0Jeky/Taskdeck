@@ -370,11 +370,15 @@ public class AutomationProposalService : IAutomationProposalService
     }
 
     /// <summary>
-    /// Maps a proposal to its response DTO with <see cref="ProposalDto.Operations"/> materialized
-    /// to the EFFECTIVE operation set (the pinned/latest revision when one applies, else the
-    /// originals), so approve/reject/get responses no longer echo stale original operations for a
-    /// revised proposal (#1424). The presentation block still derives from the persisted original
-    /// operations; only the Operations collection is swapped to the effective set.
+    /// Maps a proposal to its response DTO with <see cref="ProposalDto.Operations"/> AND
+    /// <see cref="ProposalDto.Presentation"/> materialized together from the EFFECTIVE operation
+    /// set (the pinned/latest revision when one applies, else the originals), so approve/reject/get
+    /// responses no longer echo stale original operations for a revised proposal (#1424) and the
+    /// presentation block can never contradict the operations it accompanies. Deliberate scope
+    /// boundary: only the single-proposal read/decide paths use this builder — the list endpoint
+    /// (<see cref="GetProposalsAsync"/>) maps original operations without a per-proposal revision
+    /// lookup (avoiding an N+1 query); its items still expose
+    /// <see cref="ProposalDto.ApprovedRevisionId"/> so clients can detect a pinned revision.
     /// </summary>
     private async Task<Result<ProposalDto>> BuildEffectiveProposalDtoAsync(
         AutomationProposal proposal,
@@ -398,7 +402,15 @@ public class AutomationProposalService : IAutomationProposalService
             return Result.Success(dto);
         }
 
-        return Result.Success(dto with { Operations = revisedOperations });
+        return Result.Success(dto with
+        {
+            Operations = revisedOperations,
+            Presentation = BuildPresentation(
+                proposal.Summary,
+                proposal.RiskLevel,
+                proposal.SourceType,
+                revisedOperations)
+        });
     }
 
     public async Task<Result<ProposalDto>> RejectProposalAsync(Guid id, Guid decidedByUserId, UpdateProposalStatusDto dto, CancellationToken cancellationToken = default)
@@ -774,6 +786,8 @@ public class AutomationProposalService : IAutomationProposalService
 
     private static ProposalDto MapToDto(AutomationProposal proposal)
     {
+        var operationDtos = proposal.Operations.Select(MapOperationToDto).ToList();
+
         return new ProposalDto(
             proposal.Id,
             proposal.SourceType,
@@ -793,10 +807,13 @@ public class AutomationProposalService : IAutomationProposalService
             proposal.AppliedAt,
             proposal.FailureReason,
             proposal.CorrelationId,
-            proposal.Operations.Select(MapOperationToDto).ToList()
+            operationDtos
         )
         {
-            Presentation = BuildPresentation(proposal),
+            // Presentation is built from the SAME list assigned to Operations, so a ProposalDto
+            // can never describe one operation set while presenting another (#1424 split-brain
+            // guard). Effective-DTO callers rebuild both together from the revised set.
+            Presentation = BuildPresentation(proposal.Summary, proposal.RiskLevel, proposal.SourceType, operationDtos),
             IsExpired = proposal.IsExpired,
             DeferredUntil = proposal.DeferredUntil,
             ApprovedRevisionId = proposal.ApprovedRevisionId
@@ -841,9 +858,19 @@ public class AutomationProposalService : IAutomationProposalService
         return Result.Success();
     }
 
-    private static ProposalPresentationDto BuildPresentation(AutomationProposal proposal)
+    /// <summary>
+    /// Builds the human-readable presentation block from an explicit operation-DTO list rather
+    /// than the entity's persisted operations, so callers rendering a revision's EFFECTIVE set
+    /// (#1424) produce a presentation that matches the operations they return — the DTO can
+    /// never present one operation set while carrying another.
+    /// </summary>
+    private static ProposalPresentationDto BuildPresentation(
+        string summary,
+        RiskLevel riskLevel,
+        ProposalSourceType sourceType,
+        IReadOnlyList<ProposalOperationDto> operations)
     {
-        var orderedOperations = proposal.Operations
+        var orderedOperations = operations
             .OrderBy(operation => operation.Sequence)
             .ToList();
 
@@ -867,13 +894,13 @@ public class AutomationProposalService : IAutomationProposalService
             .Select(DescribeOperation)
             .ToList();
 
-        var isCaptureTaskBatch = IsCaptureTaskBatch(proposal.SourceType, orderedOperations);
+        var isCaptureTaskBatch = IsCaptureTaskBatch(sourceType, orderedOperations);
 
         return new ProposalPresentationDto(
-            BuildPlainSummary(proposal.Summary, isCaptureTaskBatch, orderedOperations, affectedEntities),
+            BuildPlainSummary(summary, isCaptureTaskBatch, orderedOperations, affectedEntities),
             BuildImpactSummary(orderedOperations.Count, affectedEntities, isCaptureTaskBatch),
-            BuildRiskCue(proposal.RiskLevel),
-            BuildSourceCue(proposal.SourceType),
+            BuildRiskCue(riskLevel),
+            BuildSourceCue(sourceType),
             operationHeadlines,
             affectedEntities);
     }
@@ -881,7 +908,7 @@ public class AutomationProposalService : IAutomationProposalService
     private static string BuildPlainSummary(
         string summary,
         bool isCaptureTaskBatch,
-        IReadOnlyList<AutomationProposalOperation> orderedOperations,
+        IReadOnlyList<ProposalOperationDto> orderedOperations,
         IReadOnlyList<ProposalAffectedEntityDto> affectedEntities)
     {
         if (orderedOperations.Count == 0)
@@ -955,7 +982,7 @@ public class AutomationProposalService : IAutomationProposalService
         };
     }
 
-    private static string DescribeOperation(AutomationProposalOperation operation)
+    private static string DescribeOperation(ProposalOperationDto operation)
     {
         var verb = HumanizeActionVerb(operation.ActionType);
         var target = HumanizeTargetType(operation.TargetType).ToLowerInvariant();
@@ -1340,7 +1367,7 @@ public class AutomationProposalService : IAutomationProposalService
         return buffer.ToString();
     }
 
-    private static bool IsCaptureTaskBatch(ProposalSourceType sourceType, IReadOnlyList<AutomationProposalOperation> orderedOperations)
+    private static bool IsCaptureTaskBatch(ProposalSourceType sourceType, IReadOnlyList<ProposalOperationDto> orderedOperations)
     {
         if (sourceType != ProposalSourceType.Queue)
         {

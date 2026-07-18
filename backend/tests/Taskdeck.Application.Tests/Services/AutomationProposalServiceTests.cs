@@ -626,6 +626,10 @@ public class AutomationProposalServiceTests
         result.Value.Operations.Should().ContainSingle();
         result.Value.Operations[0].Parameters.Should().Contain("Revised name");
         result.Value.Operations[0].Parameters.Should().NotContain("Original name");
+        // Split-brain guard: the presentation block derives from the same effective set as
+        // Operations, so it must describe the revised content, not the stale original.
+        result.Value.Presentation.OperationHeadlines.Should().ContainSingle(h => h.Contains("Revised name"));
+        result.Value.Presentation.OperationHeadlines.Should().NotContain(h => h.Contains("Original name"));
     }
 
     [Fact]

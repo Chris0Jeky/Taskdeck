@@ -288,6 +288,100 @@ public class MigrationBootstrapTests : IDisposable
         }
     }
 
+    [Fact]
+    public void AddApprovedRevisionId_backfills_latest_revision_pin_for_preexisting_approved_proposals()
+    {
+        // #1428 backfill: before the pinning migration, Apply materialized the LATEST revision for
+        // an Approved proposal; after it, a null pin means "apply the ORIGINAL operations". The
+        // migration must therefore pin already-Approved proposals with revisions to their latest
+        // revision, or the deploy would silently revert them to content a reviewer edited out.
+        // Arrange — stop just before the pinning migration and seed the pre-migration shape.
+        _context.GetService<IMigrator>()
+            .Migrate("20260713054422_AddArtefactExtractions");
+
+        var approvedWithRevisions = Guid.NewGuid();
+        var approvedWithoutRevisions = Guid.NewGuid();
+        var pendingWithRevision = Guid.NewGuid();
+        var latestRevisionId = Guid.NewGuid();
+
+        InsertPreMigrationProposal(approvedWithRevisions, status: 1);    // Approved
+        InsertPreMigrationProposal(approvedWithoutRevisions, status: 1); // Approved, no revisions
+        InsertPreMigrationProposal(pendingWithRevision, status: 0);      // PendingReview
+
+        InsertPreMigrationRevision(Guid.NewGuid(), approvedWithRevisions, revisionNumber: 1);
+        InsertPreMigrationRevision(latestRevisionId, approvedWithRevisions, revisionNumber: 2);
+        InsertPreMigrationRevision(Guid.NewGuid(), pendingWithRevision, revisionNumber: 1);
+
+        // Act — apply the pinning migration (and any remainder of the chain).
+        _context.Database.Migrate();
+
+        // Assert — the approved-with-revisions proposal is pinned to its LATEST revision; the
+        // revisionless approved proposal and the pending proposal stay unpinned (null pin =
+        // original operations for the former; approve pins the latter going forward).
+        GetApprovedRevisionId(approvedWithRevisions).Should().Be(latestRevisionId,
+            "an already-approved proposal with revisions must be pinned to its latest revision " +
+            "to preserve pre-migration Apply behavior");
+        GetApprovedRevisionId(approvedWithoutRevisions).Should().BeNull(
+            "an approved proposal without revisions applies its original operations");
+        GetApprovedRevisionId(pendingWithRevision).Should().BeNull(
+            "pending proposals are pinned at approve time, not by the backfill");
+    }
+
+    private void InsertPreMigrationProposal(Guid id, int status)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = DateTime.UtcNow.AddDays(1);
+
+        _context.Database.ExecuteSqlInterpolated($"""
+            INSERT INTO AutomationProposals
+                (Id, SourceType, SourceReferenceId, BoardId, RequestedByUserId, Status, RiskLevel, Summary,
+                 DiffPreview, ValidationIssues, ExpiresAt, DecidedAt, DecidedByUserId, AppliedAt,
+                 FailureReason, CorrelationId, CreatedAt, UpdatedAt)
+            VALUES
+                ({id}, 1, NULL, NULL, {Guid.NewGuid()}, {status}, 0, 'Pre-migration proposal',
+                 NULL, NULL, {expiresAt}, NULL, NULL, NULL,
+                 NULL, {Guid.NewGuid().ToString("N")}, {now}, {now})
+            """);
+    }
+
+    private void InsertPreMigrationRevision(Guid id, Guid proposalId, int revisionNumber)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        // The payload body is opaque to the backfill (it copies revision IDs, never parses
+        // payloads), so a plain placeholder keeps the seed simple.
+        _context.Database.ExecuteSqlInterpolated($"""
+            INSERT INTO ProposalRevisions
+                (Id, ProposalId, RevisionNumber, EditorUserId, RevisedPayload, RevisedAt, Reason,
+                 CreatedAt, UpdatedAt)
+            VALUES
+                ({id}, {proposalId}, {revisionNumber}, {Guid.NewGuid()}, 'pre-migration payload', {now},
+                 'pre-migration revision', {now}, {now})
+            """);
+    }
+
+    private Guid? GetApprovedRevisionId(Guid proposalId)
+    {
+        var connection = _context.Database.GetDbConnection();
+        _context.Database.OpenConnection();
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT ApprovedRevisionId FROM AutomationProposals WHERE Id = $id";
+            var parameter = cmd.CreateParameter();
+            parameter.ParameterName = "$id";
+            parameter.Value = proposalId;
+            cmd.Parameters.Add(parameter);
+
+            var value = cmd.ExecuteScalar();
+            return value is null or DBNull ? null : Guid.Parse((string)value);
+        }
+        finally
+        {
+            _context.Database.CloseConnection();
+        }
+    }
+
     private void InsertLegacyProposalOutcome(Guid id, OutcomeType outcomeType)
     {
         var proposalId = Guid.NewGuid();
