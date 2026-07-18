@@ -37,6 +37,13 @@ public record ProposalDto(
     /// client clock can resurface it in-session and a re-snooze toast can confirm the new window.
     /// </summary>
     public DateTime? DeferredUntil { get; init; }
+
+    /// <summary>
+    /// The revision pinned at approve time that Apply will materialize (#1428), or <c>null</c>
+    /// when the proposal was approved from its original operations (or is not yet decided). When
+    /// set, <see cref="Operations"/> reflects that pinned revision's effective operation set.
+    /// </summary>
+    public Guid? ApprovedRevisionId { get; init; }
 }
 
 public record ProposalPresentationDto(
