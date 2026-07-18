@@ -1012,6 +1012,61 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('diverts to the stored preview when a proposal expires during the revision-load await, never firing a live /diff (#1414 final round)', async () => {
+    // onPreviewDiff checks read-only BEFORE its revision-load await. If the
+    // proposal expires on the 60s clock DURING that await, the post-await
+    // re-check must re-classify it as read-only and present the stored preview —
+    // NOT fall through to a live /diff that #1395 400s (which would defeat
+    // #1397's stored-preview guarantee). Identity alone doesn't catch this: the
+    // id is unchanged, only the (clock-derived) expiry state flipped.
+    vi.useFakeTimers()
+    try {
+      const base = new Date('2026-06-13T12:00:00.000Z').getTime()
+      vi.setSystemTime(base)
+      let resolveRevisions: ((value: unknown[]) => void) | undefined
+      mocks.getRevisions.mockImplementation(
+        () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+      )
+      const wrapper = await mountView([
+        makeProposal({
+          id: 'preview-expire',
+          // Live at entry, expires before the first 60s clock tick.
+          expiresAt: new Date(base + 30_000).toISOString(),
+          diffPreview: '0. Create card "Racing preview"',
+        }),
+      ])
+
+      // Space opens preview; not read-only at entry, so onPreviewDiff parks on
+      // its revision-load await (revisionsLoaded still false).
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+      await Promise.resolve()
+      expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+
+      // The clock ticks past expiry while the revision load is still pending.
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      // Settle the revision load → the post-await re-check sees the now-expired
+      // proposal and diverts to the stored preview.
+      resolveRevisions?.([])
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // The forbidden live /diff was never fired; the stored preview is shown.
+      expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+      const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+      expect(banner.exists()).toBe(true)
+      expect(banner.text()).toContain('read-only')
+      const pre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+      expect(pre.exists()).toBe(true)
+      expect(pre.text()).toContain('Racing preview')
+      expect(mocks.errorToast).not.toHaveBeenCalled()
+
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('falls back to the recorded operations for an expired proposal with no stored preview (#1397 / Codex)', async () => {
     // Normal creation flows never populate diffPreview, so an expired proposal
     // with operations must still be inspectable via a locally rendered

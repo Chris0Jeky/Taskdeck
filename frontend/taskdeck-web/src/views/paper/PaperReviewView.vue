@@ -784,6 +784,20 @@ function onToggleProvenance() {
   toast.info('Provenance toggle is not wired yet; provenance is rendered inline below.')
 }
 
+// Present a proposal's STORED preview read-only (no live `/diff`). The stored
+// `diffPreview` is LOCAL content and renders synchronously. Bumping the diff
+// request id also cancels any live fetch that this preview supersedes, so a
+// late 400 from a superseded request cannot overwrite the stored pane.
+function presentStoredPreview(target: ApiProposal) {
+  latestDiffRequestId += 1
+  previewDiffProposalId.value = target.id
+  previewDiff.value = target.diffPreview
+  previewDiffMode.value = 'stored'
+  previewDiffInvalidReason.value = null
+  previewDiffLoading.value = false
+  scrollDiffIntoView()
+}
+
 async function onPreviewDiff() {
   const p = activeProposal.value
   if (!p) return
@@ -823,13 +837,7 @@ async function onPreviewDiff() {
   // the live `/diff` fetch below. See issue #1397 for the option analysis and the
   // experiment path before making that flip.
   if (isProposalReadOnly(p, isProposalExpired(p))) {
-    latestDiffRequestId += 1
-    previewDiffProposalId.value = p.id
-    previewDiff.value = p.diffPreview
-    previewDiffMode.value = 'stored'
-    previewDiffInvalidReason.value = null
-    previewDiffLoading.value = false
-    scrollDiffIntoView()
+    presentStoredPreview(p)
     if (!revisionsLoaded.value) {
       void loadRevisionState(p.id, { silent: true })
     }
@@ -843,6 +851,22 @@ async function onPreviewDiff() {
   if (!revisionsLoaded.value) {
     await loadRevisionState(p.id)
     if (activeProposal.value?.id !== p.id) return
+    // #1414 final round: identity is not enough. The proposal can transition to
+    // read-only DURING the revision-load await — expire on the 60s clock, be
+    // refreshed to a terminal status, or be executed from another session — all
+    // with the SAME id, so the identity check above passes. Re-run the read-only
+    // classification on the CURRENT object and divert to the stored preview
+    // rather than falling through to a live `/diff` that #1395 guarantees will
+    // 400 for a terminal/expired proposal (which would defeat #1397's stored-
+    // preview guarantee and show the invalid/error surface). Mirrors the onApply
+    // post-await re-check. The read-only watcher (which converts an ALREADY-open
+    // pane) cannot cover this window: previewDiffProposalId is not set to this id
+    // until after the await, so the watcher is inert here.
+    const current = activeProposal.value
+    if (current && isProposalReadOnly(current, isProposalExpired(current))) {
+      presentStoredPreview(current)
+      return
+    }
   }
 
   // Zero-operation proposals: the backend `/diff` rejects them with 400
