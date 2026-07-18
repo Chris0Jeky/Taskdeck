@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-07-17
+Last Updated: 2026-07-18
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -9,6 +9,26 @@ Companion Active Docs:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Delivery update (2026-07-18, wave 2)
+
+Frugal wave — **2 PRs merged** (per-PR gate: independent adversarial review, all-severity findings fixed, required CI green):
+
+- **Artefact-extraction permit/concurrency gate (`#1430`, split from `#1379`):** a new `ArtefactExtractionGate` (Application singleton) takes a non-blocking permit before the parse worker spawns and releases it on the completed and abandoned paths, so saturation yields a pre-parse `TooManyRequests` (no history row, no new thread); bound by `ExtractionMaxConcurrency` (default 2, `[Range(1, 64)]`, startup-validated). This is the verified-sound half split out of the parked `#1417` resource-ceiling work — the decompression-bomb containment half is NOT here (PdfPig 0.1.15 decodes xref streams with a hard-coded provider before any injected ceiling, bypassing a provider-injection ceiling) and continues under `#1429`. Adds **ADR-0047** (extraction resource bounding: permit gate + provider-injection ceiling as ObjStm-covering defense-in-depth with the documented xref gap) and **ADR-0048** (decompression-bomb containment boundary — a memory-capped extraction worker process, Job Object / cgroup, reversing the earlier sidecar rejection on the new evidence).
+- **Empty-op permission validation always gates board access (`#1432`, `#1426`):** `AutomationPolicyEngine.ValidatePermissionsAsync` no longer short-circuits an empty operation list to `Success` with the board access gate skipped — the full requester/board access gate now always runs, and only the per-operation contract validator is skipped when the list is empty. Emptiness stays a legitimate transient shape (revise-into-validity, `#1423`); the "at least one operation" rejection remains the structure gate's job (which runs before permissions in every chain), so approve == apply is unchanged and the change is strictly additive restriction. Closes the `#1415`/`#1425` bolt-on-your-own-board-access trap.
+- **Nightly k6 GREEN:** the first nightly run after the `#1359` repair (run `29632619187` on `326b6b5b`) passed; the `#1359` failure-ledger row was flipped to resolved (`4fdae133`).
+- **Seeded this wave:** `#1429` (memory-capped extraction worker — the ADR-0048 boundary), `#1431`, `#1433`, `#1434`, `#1435`, `#1436`. **Still open / not shipped:** `#1427` (LLM quota-reservation robustness hardening, `#1313`) in the final review gate, atomicity redesign tracked as `#1435`; standing human-gated holds `#1295`, `#1337`.
+
+## Delivery update (2026-07-18)
+
+Approve == apply trust-class closure — **6 PRs merged** (per-PR gate: independent adversarial review, all-severity findings fixed, required CI green): closes the preview/approve == apply trust-violation class ("a user approves or previews something the executor then refuses") server-side across the diff, approve, and MCP surfaces (the `#1370`→`#1374`, `#1376`→`#1395`, `#1398` chain).
+
+- **Diff permission/existence gates (`#1413`, `#1398`):** `GetProposalDiffAsync` (both paths, before the cached fast-path return) now runs the same `ValidatePermissionsAsync` Apply runs — requester-exists → `404`, board-exists → `404`, board-access → `403`, then the operation-contract validator — closing the third and last preview/apply asymmetry. Status-agnostic: terminal proposals no longer disclose stored board-derived content on preview; access errors (`403`/`404`) surface after the earlier structure/expiry gates pass (an expired, access-revoked proposal still reports expiry).
+- **Approve-time gates (`#1423`, `#1416`):** `ApproveProposalAsync` runs Apply's structure (`400`) → expiry (`409`, the existing domain-transition contract) → permission/contract (`400`/`403`/`404`) gates on the effective revision-aware operation set before committing the transition, so a zero-op or access-revoked proposal fails at approve instead of only at Apply. Seeded `#1424` (approve/get DTO returns original ops when a revision exists).
+- **MCP `proposal_detail` gating (`#1425`, `#1415`):** the resource no longer serves the raw stored `DiffPreview` — open proposals route through the fully-gated `GetProposalDiffAsync`; terminal proposals serve the stored preview but re-check requester/board access via a new `GetTerminalProposalStoredPreviewAsync` seam. Adds a `diffPreviewSource` (`live`/`stored`) provenance marker.
+- **SQLite timestamp-boundary correctness (`#1421`, `#1403`):** parameterized `DateTimeOffset` predicates (UTC-normalized) replace the fixed-width `.fffffff` bound strings in `AuditLogRepository` and `OAuthAuthCodeRepository`, fixing off-by-one-tick comparison at EF's zero-fraction (trailing-zeros-trimmed) boundary. Seeded `#1422` (repo-wide timestamp-seam sweep).
+- **Dead-path removal (`#1420`, `#1409`):** removed the unused `ApiKeyService.ValidateKeyAsync` usage-recording path + `ApiKey.RecordUsage()` (a dual-writer trap; MCP auth records usage in `ApiKeyMiddleware`). `LastUsedAt` untouched.
+- **Test isolation (`#1419`, `#1418`):** `WorkspaceApiTests` moved to `HostedWorkerDisabledTestWebApplicationFactory` so a live capture-lane worker can't pre-empt a seeded `Processing` row (the `#1335` boundary). Test-only.
 
 ## Delivery update (2026-07-17, wave 2)
 
