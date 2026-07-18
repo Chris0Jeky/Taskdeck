@@ -266,6 +266,7 @@ public class ChatService : IChatService
                         {
                             await _quotaService.CommitReservationAsync(
                                 toolResId,
+                                userId, Domain.Enums.LlmSurface.Chat,
                                 toolResult.Provider, toolResult.Model,
                                 toolResult.TokensUsed, 0,
                                 ct);
@@ -309,6 +310,7 @@ public class ChatService : IChatService
                         {
                             await _quotaService.CommitReservationAsync(
                                 reuseResId,
+                                userId, Domain.Enums.LlmSurface.Chat,
                                 toolResult.Provider, toolResult.Model,
                                 toolResult.TokensUsed, 0,
                                 ct);
@@ -364,6 +366,7 @@ public class ChatService : IChatService
                         {
                             await _quotaService.CommitReservationAsync(
                                 singleResId,
+                                userId, Domain.Enums.LlmSurface.Chat,
                                 llmResult.Provider, llmResult.Model,
                                 llmResult.TokensUsed, 0,
                                 ct);
@@ -595,6 +598,7 @@ public class ChatService : IChatService
             {
                 await _quotaService.CommitReservationAsync(
                     rid,
+                    userId, Domain.Enums.LlmSurface.Chat,
                     provider, model,
                     tokensUsed.Value, 0,
                     ct);

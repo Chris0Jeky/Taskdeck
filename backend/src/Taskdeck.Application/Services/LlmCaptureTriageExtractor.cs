@@ -99,37 +99,43 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt);
 
         LlmCompletionResult result;
+        var quotaSettled = quotaReservationId is null;
         try
         {
             result = await _llmProvider.CompleteAsync(request, cancellationToken);
-        }
-        catch
-        {
-            // The provider threw before producing usage — release the reservation so no quota leaks.
-            if (quotaReservationId is Guid failedResId)
-                await _quotaService!.ReleaseReservationAsync(failedResId, CancellationToken.None);
-            throw;
-        }
 
-        // Settle the reservation. Tokens are consumed whether or not the content is usable (truncation
-        // is the clearest case: degraded AND billed), so a call that used tokens commits before any
-        // quality checks; a zero-token call releases (mirrors the prior "record only if > 0" behavior).
-        if (quotaReservationId is Guid reservationId)
+            // Settle the reservation. Tokens are consumed whether or not the content is usable
+            // (truncation is the clearest case: degraded AND billed), so a call that used tokens commits
+            // before any quality checks; a zero-token call releases (mirrors the prior "record only if
+            // > 0" behavior).
+            if (quotaReservationId is Guid reservationId)
+            {
+                if (result.TokensUsed > 0)
+                {
+                    await _quotaService!.CommitReservationAsync(
+                        reservationId,
+                        userId,
+                        LlmSurface.CaptureTriage,
+                        result.Provider,
+                        result.Model,
+                        result.TokensUsed,
+                        0,
+                        cancellationToken);
+                }
+                else
+                {
+                    await _quotaService!.ReleaseReservationAsync(reservationId, CancellationToken.None);
+                }
+                quotaSettled = true;
+            }
+        }
+        finally
         {
-            if (result.TokensUsed > 0)
-            {
-                await _quotaService!.CommitReservationAsync(
-                    reservationId,
-                    result.Provider,
-                    result.Model,
-                    result.TokensUsed,
-                    0,
-                    cancellationToken);
-            }
-            else
-            {
-                await _quotaService!.ReleaseReservationAsync(reservationId, cancellationToken);
-            }
+            // Mirrors ChatService: a provider throw or a cancellation firing before/inside the settle
+            // must not leave the row Reserved until TTL. Release uses CancellationToken.None so cleanup
+            // still runs when the request token is already cancelled.
+            if (!quotaSettled && quotaReservationId is Guid unsettledId)
+                await _quotaService!.ReleaseReservationAsync(unsettledId, CancellationToken.None);
         }
 
         if (result.IsDegraded)

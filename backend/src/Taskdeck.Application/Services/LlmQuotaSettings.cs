@@ -27,8 +27,10 @@ public class LlmQuotaSettings
     /// callers see each other's estimate against the token budget, bounding token overshoot at the
     /// boundary; the estimate is replaced by the real count when the reservation commits. Must exceed a
     /// typical single call's usage to be effective without being so large it starves normal traffic.
+    /// Minimum 1: an estimate of 0 would make reserved rows invisible to the token/global-budget sums,
+    /// silently reopening the concurrent token TOCTOU the reservation exists to close.
     /// </summary>
-    [Range(0, int.MaxValue, ErrorMessage = "ReservationEstimatedTokens must be non-negative.")]
+    [Range(1, int.MaxValue, ErrorMessage = "ReservationEstimatedTokens must be at least 1.")]
     public int ReservationEstimatedTokens { get; set; } = 2_000;
 
     /// <summary>

@@ -256,8 +256,10 @@ WHERE ({requestsPerHour} <= 0 OR (
         return false;
     }
 
-    public async Task<bool> CommitReservationAsync(
+    public async Task<QuotaCommitResult> CommitReservationAsync(
         Guid reservationId,
+        Guid userId,
+        LlmSurface surface,
         string provider,
         string model,
         int inputTokens,
@@ -269,6 +271,7 @@ WHERE ({requestsPerHour} <= 0 OR (
         var safeModel = model ?? string.Empty;
         var safeInput = Math.Max(0, inputTokens);
         var safeOutput = Math.Max(0, outputTokens);
+        var surfaceValue = (int)surface;
 
         // Single atomic UPDATE gated on Status = Reserved: idempotent against a double-commit and a
         // no-op if the row was already released or swept. Raw SQL keeps the caller's shared change
@@ -280,7 +283,23 @@ WHERE ({requestsPerHour} <= 0 OR (
                 cancellationToken),
             cancellationToken);
 
-        return affected > 0;
+        if (affected > 0)
+            return QuotaCommitResult.Committed;
+
+        // The reservation row is gone or already settled. If gone (TTL-swept while a slow LLM call was
+        // in flight), the tokens were still genuinely billed — insert a replacement Committed row so
+        // real usage is never dropped from quota or telemetry. The NOT EXISTS guard on the same id makes
+        // this a no-op for the already-settled case, so a duplicate commit cannot double-count.
+        var recovered = await WithSqliteWriteRetryAsync(
+            () => _context.Database.ExecuteSqlInterpolatedAsync(
+                $@"INSERT INTO LlmUsageRecords
+(Id, UserId, Surface, Provider, Model, InputTokens, OutputTokens, Status, ExpiresAt, CreatedAt, UpdatedAt)
+SELECT {reservationId}, {userId}, {surfaceValue}, {safeProvider}, {safeModel}, {safeInput}, {safeOutput}, {StatusCommitted}, NULL, {now}, {now}
+WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
+                cancellationToken),
+            cancellationToken);
+
+        return recovered > 0 ? QuotaCommitResult.RecoveredExpired : QuotaCommitResult.AlreadySettled;
     }
 
     public async Task<bool> ReleaseReservationAsync(
@@ -298,7 +317,7 @@ WHERE ({requestsPerHour} <= 0 OR (
 
     // Non-SQLite fallback (e.g. an in-memory relational provider in isolated tests). Best-effort:
     // relational providers other than SQLite are not part of the shared-file deployment model, so the
-    // stricter BEGIN IMMEDIATE serialization is unnecessary; a check-then-insert is sufficient there.
+    // single-statement writer serialization above is unnecessary; a check-then-insert is sufficient there.
     private async Task<QuotaReservationOutcome> TryReserveNonSqliteAsync(
         Guid userId,
         LlmSurface surface,

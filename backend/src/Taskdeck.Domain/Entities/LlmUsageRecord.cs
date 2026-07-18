@@ -66,8 +66,9 @@ public class LlmUsageRecord : Entity
     /// <summary>
     /// Creates an in-flight quota reservation (issue #1313): a <see cref="LlmUsageRecordStatus.Reserved"/>
     /// row holding one request slot and an estimated token amount until finalized. The SQLite hot path
-    /// inserts the equivalent row via raw SQL inside a <c>BEGIN IMMEDIATE</c> transaction; this factory
-    /// backs the non-SQLite fallback and keeps the field shape in one place.
+    /// inserts the equivalent row via a single conditional <c>INSERT ... SELECT ... WHERE</c> statement
+    /// serialized by the database's writer lock (no explicit transaction); this factory backs the
+    /// non-SQLite fallback and keeps the field shape in one place.
     /// </summary>
     public static LlmUsageRecord CreateReservation(
         Guid userId,

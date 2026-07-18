@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -10,11 +11,16 @@ public class LlmQuotaService : ILlmQuotaService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly LlmQuotaSettings _settings;
+    private readonly ILogger<LlmQuotaService>? _logger;
 
-    public LlmQuotaService(IUnitOfWork unitOfWork, LlmQuotaSettings settings)
+    public LlmQuotaService(
+        IUnitOfWork unitOfWork,
+        LlmQuotaSettings settings,
+        ILogger<LlmQuotaService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _settings = settings;
+        _logger = logger;
     }
 
     public async Task RecordUsageAsync(
@@ -116,7 +122,9 @@ public class LlmQuotaService : ILlmQuotaService
         var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
         var dayEnd = dayStart.AddDays(1);
         var expiresAt = now.AddSeconds(Math.Max(1, _settings.ReservationTtlSeconds));
-        var estimatedTokens = Math.Max(0, _settings.ReservationEstimatedTokens);
+        // Floor of 1: an estimate of 0 would make reserved rows contribute nothing to the token/global
+        // SUM subqueries, silently reopening the concurrent token-budget TOCTOU this fix closes.
+        var estimatedTokens = Math.Max(1, _settings.ReservationEstimatedTokens);
 
         var outcome = await _unitOfWork.LlmUsageRecords.TryReserveAsync(
             userId,
@@ -169,16 +177,34 @@ public class LlmQuotaService : ILlmQuotaService
             new(Allowed: false, DeniedReason: reason, ReservationId: null, RemainingTokens: 0, RemainingRequests: 0);
     }
 
-    public Task CommitReservationAsync(
+    public async Task CommitReservationAsync(
         Guid reservationId,
+        Guid userId,
+        LlmSurface surface,
         string provider,
         string model,
         int inputTokens,
         int outputTokens,
         CancellationToken ct = default)
     {
-        return _unitOfWork.LlmUsageRecords.CommitReservationAsync(
-            reservationId, provider, model, inputTokens, outputTokens, ct);
+        var result = await _unitOfWork.LlmUsageRecords.CommitReservationAsync(
+            reservationId, userId, surface, provider, model, inputTokens, outputTokens, ct);
+
+        if (result == QuotaCommitResult.RecoveredExpired)
+        {
+            // The LLM call outlived ReservationTtlSeconds and the reservation was swept mid-call; the
+            // repository inserted a replacement committed row so the billed tokens still count. Surfaced
+            // as a warning because recurring sweeps mean the TTL is too short for real call latency.
+            _logger?.LogWarning(
+                "Quota reservation {ReservationId} (user {UserId}, surface {Surface}) expired mid-call " +
+                "after {TtlSeconds}s; {Tokens} billed tokens recovered into a fresh committed usage row. " +
+                "Consider raising LlmQuota:ReservationTtlSeconds if this recurs.",
+                reservationId,
+                userId,
+                surface,
+                _settings.ReservationTtlSeconds,
+                inputTokens + outputTokens);
+        }
     }
 
     public Task ReleaseReservationAsync(Guid reservationId, CancellationToken ct = default)

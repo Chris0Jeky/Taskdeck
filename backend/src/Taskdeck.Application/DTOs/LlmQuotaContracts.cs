@@ -21,6 +21,22 @@ public record QuotaReservationDto(
     long RemainingTokens,
     long RemainingRequests);
 
+/// <summary>Outcome of finalizing a quota reservation with actual token counts.</summary>
+public enum QuotaCommitResult
+{
+    /// <summary>The live reservation row was updated to committed usage (the normal path).</summary>
+    Committed,
+
+    /// <summary>
+    /// The reservation was gone at commit time (TTL-swept during a slow LLM call); a replacement
+    /// committed usage row was inserted so the billed tokens still count against quota and telemetry.
+    /// </summary>
+    RecoveredExpired,
+
+    /// <summary>A row with this id already exists in a settled state (idempotent duplicate commit).</summary>
+    AlreadySettled
+}
+
 /// <summary>Which quota limit (if any) an atomic reservation attempt hit.</summary>
 public enum QuotaReservationDecision
 {
