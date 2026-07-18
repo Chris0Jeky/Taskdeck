@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getErrorDisplay, mapErrorToMessage, parseApiError } from '../../composables/useErrorMapper'
+import {
+  getErrorDisplay,
+  getValidationReason,
+  isValidationError,
+  mapErrorToMessage,
+  parseApiError,
+} from '../../composables/useErrorMapper'
 
 describe('useErrorMapper', () => {
   describe('mapErrorToMessage', () => {
@@ -67,6 +73,37 @@ describe('useErrorMapper', () => {
     })
   })
 
+  describe('isValidationError', () => {
+    // #1397 MEDIUM-1: the classifier requires status 400 AND the ValidationError
+    // code — neither alone may classify as the review-gate verdict.
+    it('is true only when status is 400 AND errorCode is ValidationError', () => {
+      expect(isValidationError({
+        response: { status: 400, data: { errorCode: 'ValidationError', message: 'Proposal has expired' } },
+      })).toBe(true)
+    })
+
+    it('is false for a 400 without the ValidationError code', () => {
+      expect(isValidationError({
+        response: { status: 400, data: { errorCode: 'Conflict', message: 'nope' } },
+      })).toBe(false)
+      expect(isValidationError({ response: { status: 400, data: {} } })).toBe(false)
+      expect(isValidationError({ response: { status: 400 } })).toBe(false)
+    })
+
+    it('is false for a ValidationError code on another status', () => {
+      expect(isValidationError({
+        response: { status: 500, data: { errorCode: 'ValidationError', message: 'boom' } },
+      })).toBe(false)
+    })
+
+    it('is false for non-object and shapeless inputs', () => {
+      expect(isValidationError(null)).toBe(false)
+      expect(isValidationError(undefined)).toBe(false)
+      expect(isValidationError('bad')).toBe(false)
+      expect(isValidationError(new Error('boom'))).toBe(false)
+    })
+  })
+
   describe('getErrorDisplay', () => {
     it('returns the mapped API error message and code for parseable API errors', () => {
       expect(getErrorDisplay({
@@ -94,6 +131,35 @@ describe('useErrorMapper', () => {
         message: 'Fallback message',
         code: null,
       })
+    })
+  })
+
+  describe('getValidationReason', () => {
+    // #1397 / #1414 review: the invalid-diff presentation renders its own
+    // specific "no operations" fallback when the backend gave no reason. This
+    // helper must therefore treat a blank message as absent (return null) and
+    // must NOT substitute the generic ValidationError copy that would mask it.
+    it('returns the trimmed backend message when one is present', () => {
+      expect(getValidationReason({
+        response: { status: 400, data: { errorCode: 'ValidationError', message: '  Proposal has expired  ' } },
+      })).toBe('Proposal has expired')
+    })
+
+    it('returns null for an empty backend message', () => {
+      expect(getValidationReason({
+        response: { status: 400, data: { errorCode: 'ValidationError', message: '' } },
+      })).toBeNull()
+    })
+
+    it('returns null for a whitespace-only backend message', () => {
+      expect(getValidationReason({
+        response: { status: 400, data: { errorCode: 'ValidationError', message: '   ' } },
+      })).toBeNull()
+    })
+
+    it('returns null when the input is not an API error shape', () => {
+      expect(getValidationReason(new Error('Local runtime failure'))).toBeNull()
+      expect(getValidationReason(null)).toBeNull()
     })
   })
 })

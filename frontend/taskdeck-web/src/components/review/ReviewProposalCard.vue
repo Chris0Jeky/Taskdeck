@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Proposal } from '../../types/automation'
 import {
   normalizeProposalRiskLevel,
   normalizeProposalSourceType,
   normalizeProposalStatus,
 } from '../../utils/automation'
+import type { ReviewDiffMode } from '../../composables/useReviewActions'
 import ReviewProposalActions from './ReviewProposalActions.vue'
 import ReviewProposalDetails from './ReviewProposalDetails.vue'
 
@@ -14,9 +16,45 @@ const props = defineProps<{
   isBusy: boolean
   selectedDiffProposalId: string | null
   selectedDiff: string | null
+  selectedDiffMode: ReviewDiffMode | null
+  /** The backend's actual /diff rejection reason for `invalid` mode (#1397 MEDIUM-1). */
+  selectedDiffInvalidReason: string | null
+  /** True when the stored preview's proposal has saved revisions; null = unknown (#1397 MEDIUM-2). */
+  selectedDiffRevised: boolean | null
   captureHref: string
   proposalHref: string
 }>()
+
+// Whether the diff pane has anything to show for this proposal. Read-only
+// (stored) and invalid states always render their banner/notice; a live diff
+// only renders once its content arrives, so a slow fetch shows nothing rather
+// than flashing a premature "no changes" (#1397).
+const diffPaneVisible = computed(
+  () =>
+    props.selectedDiffProposalId === props.proposal.id &&
+    (props.selectedDiffMode === 'stored' ||
+      props.selectedDiffMode === 'invalid' ||
+      !!props.selectedDiff),
+)
+
+// Read-only fallback when the proposal never captured a `diffPreview` (normal
+// creation flows leave it null — Codex review on #1414): derive a minimal
+// operation listing from the proposal's own recorded operations so a
+// terminal/expired proposal that still HAS operations is inspectable instead of
+// a dead "no stored preview" end. Local rendering only — the live `/diff` 400s
+// for these proposals (#1397).
+const storedOperationsFallback = computed(() => {
+  if (props.selectedDiffMode !== 'stored' || props.selectedDiff) return null
+  const ops = props.proposal.operations ?? []
+  if (ops.length === 0) return null
+  return [...ops]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map(
+      (op, index) =>
+        `${index + 1}. ${op.actionType} ${op.targetType}${op.targetId ? ` (${op.targetId})` : ''}`,
+    )
+    .join('\n')
+})
 
 defineEmits<{
   (e: 'approve', proposalId: string): void
@@ -162,9 +200,91 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
       @open-board="$emit('open-board', $event)"
     />
 
-    <div v-if="selectedDiffProposalId === proposal.id && selectedDiff" class="td-review-card__diff-wrapper">
-      <span class="td-review-card__diff-label">Operation details</span>
-      <pre class="td-review-card__diff" role="region" aria-label="Proposal operation diff">{{ selectedDiff }}</pre>
+    <div
+      v-if="diffPaneVisible"
+      class="td-review-card__diff-wrapper"
+      data-testid="review-diff-wrapper"
+    >
+      <!-- Read-only / terminal: stored preview under an explicit banner (#1397) -->
+      <template v-if="selectedDiffMode === 'stored'">
+        <span class="td-review-card__diff-banner" role="status" data-testid="review-diff-banner">
+          {{ reviewStatusLabel(proposal.status) }} · read-only — showing the stored preview from
+          the original submission.
+        </span>
+        <!-- diffPreview is creation-time content revisions never update, so a
+             revised proposal's stored preview — or the recorded-operations
+             fallback when no preview was captured — is NOT what a revision-aware
+             Apply would have executed. Disclose it, worded for whichever is on
+             screen (the fallback is not a "stored preview") (#1397 MEDIUM-2 /
+             #1414 review). -->
+        <span
+          v-if="selectedDiffRevised && selectedDiff"
+          class="td-review-card__diff-note td-review-card__diff-note--warn"
+          role="status"
+          data-testid="review-diff-revised-note"
+        >
+          This proposal was revised after submission — the stored preview shows the original
+          operations, not the revised ones.
+        </span>
+        <span
+          v-else-if="selectedDiffRevised && storedOperationsFallback"
+          class="td-review-card__diff-note td-review-card__diff-note--warn"
+          role="status"
+          data-testid="review-diff-revised-note"
+        >
+          This proposal was revised after submission — the recorded operations show the
+          original submission, not the revised one.
+        </span>
+        <pre
+          v-if="selectedDiff"
+          class="td-review-card__diff"
+          role="region"
+          aria-label="Stored proposal preview"
+          data-testid="review-diff-stored"
+        >{{ selectedDiff }}</pre>
+        <template v-else-if="storedOperationsFallback">
+          <span class="td-review-card__diff-note" data-testid="review-diff-stored-ops-note">
+            No stored preview was captured — showing the proposal's recorded operations.
+          </span>
+          <pre
+            class="td-review-card__diff"
+            role="region"
+            aria-label="Recorded proposal operations"
+            data-testid="review-diff-stored-operations"
+          >{{ storedOperationsFallback }}</pre>
+        </template>
+        <span
+          v-else
+          class="td-review-card__diff-note"
+          data-testid="review-diff-stored-empty"
+        >
+          No stored preview is available for this proposal.
+        </span>
+      </template>
+
+      <!-- Invalid: the backend rejected the diff with its Apply-time gates; render
+           the backend's ACTUAL reason (expired vs zero-op), never a hardcoded
+           one (#1397 MEDIUM-1). The fallback covers a missing message only. -->
+      <span
+        v-else-if="selectedDiffMode === 'invalid'"
+        class="td-review-card__diff-note td-review-card__diff-note--warn"
+        role="status"
+        data-testid="review-diff-invalid"
+      >
+        {{ selectedDiffInvalidReason || 'This proposal contains no operations to apply' }} — Apply
+        will reject this proposal.
+      </span>
+
+      <!-- Live diff for a still-actionable proposal -->
+      <template v-else>
+        <span class="td-review-card__diff-label">Operation details</span>
+        <pre
+          class="td-review-card__diff"
+          role="region"
+          aria-label="Proposal operation diff"
+          data-testid="review-diff-pre"
+        >{{ selectedDiff }}</pre>
+      </template>
     </div>
   </article>
 </template>
@@ -297,6 +417,22 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
   font-size: var(--td-font-xs);
   color: var(--td-text-tertiary);
   font-weight: 500;
+}
+
+.td-review-card__diff-banner {
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  color: var(--td-color-warning);
+}
+
+.td-review-card__diff-note {
+  font-size: var(--td-font-xs);
+  color: var(--td-text-secondary);
+}
+
+.td-review-card__diff-note--warn {
+  color: var(--td-color-warning);
+  font-weight: 600;
 }
 
 .td-review-card__diff {

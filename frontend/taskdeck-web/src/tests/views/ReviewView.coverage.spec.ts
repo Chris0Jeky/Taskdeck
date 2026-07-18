@@ -84,6 +84,16 @@ vi.mock('../../utils/requestId', () => ({
 
 vi.mock('../../composables/useErrorMapper', () => ({
   getErrorDisplay: (_error: unknown, fallback: string) => ({ message: fallback }),
+  isValidationError: (error: unknown) => {
+    const typed = error as { response?: { status?: number; data?: { errorCode?: string } } } | null
+    return typed?.response?.status === 400 && typed?.response?.data?.errorCode === 'ValidationError'
+  },
+}))
+
+vi.mock('../../api/proposalRevisionsApi', () => ({
+  proposalRevisionsApi: {
+    getRevisions: vi.fn().mockResolvedValue([]),
+  },
 }))
 
 function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
@@ -108,7 +118,21 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
     appliedAt: null,
     failureReason: null,
     correlationId: 'triage-run-1',
-    operations: [],
+    // One operation by default: Approve is disabled for zero-op proposals
+    // (#1397), and these coverage flows click Approve on a realistic fixture.
+    operations: [
+      {
+        id: 'op-1',
+        proposalId: 'proposal-1',
+        sequence: 0,
+        actionType: 'CreateCard',
+        targetType: 'Card',
+        targetId: null,
+        parameters: '{}',
+        idempotencyKey: 'k-1',
+        expectedVersion: null,
+      },
+    ],
     presentation: {
       plainSummary: 'Test proposal summary.',
       impactSummary: '1 planned change.',

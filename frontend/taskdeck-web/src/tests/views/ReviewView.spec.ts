@@ -56,6 +56,7 @@ const mocks = vi.hoisted(() => ({
   executeProposal: vi.fn(),
   getProposalDiff: vi.fn(),
   dismissProposals: vi.fn(),
+  getRevisions: vi.fn(),
   getBoards: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
@@ -93,8 +94,31 @@ vi.mock('../../utils/requestId', () => ({
   createRequestId: mocks.createRequestId,
 }))
 
+vi.mock('../../api/proposalRevisionsApi', () => ({
+  proposalRevisionsApi: {
+    getRevisions: mocks.getRevisions,
+  },
+}))
+
+// Mirrors the real getErrorDisplay closely enough for shell tests: the backend
+// message wins when present, else the fallback. isValidationError follows the
+// real 400-AND-ValidationError rule (#1397). getValidationReason returns the
+// trimmed backend message or null when blank, so the caller's specific fallback
+// copy applies rather than a masking generic string (#1397 / #1414).
 vi.mock('../../composables/useErrorMapper', () => ({
-  getErrorDisplay: (_error: unknown, fallback: string) => ({ message: fallback }),
+  getErrorDisplay: (error: unknown, fallback: string) => {
+    const typed = error as { response?: { data?: { message?: string } } } | null
+    return { message: typed?.response?.data?.message || fallback, code: null }
+  },
+  isValidationError: (error: unknown) => {
+    const typed = error as { response?: { status?: number; data?: { errorCode?: string } } } | null
+    return typed?.response?.status === 400 && typed?.response?.data?.errorCode === 'ValidationError'
+  },
+  getValidationReason: (error: unknown) => {
+    const typed = error as { response?: { data?: { message?: string } } } | null
+    const message = typed?.response?.data?.message?.trim()
+    return message && message.length > 0 ? message : null
+  },
 }))
 
 function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
@@ -230,6 +254,7 @@ describe('ReviewView', () => {
     mocks.rejectProposal.mockResolvedValue(buildProposal({ status: 'Rejected' }))
     mocks.executeProposal.mockResolvedValue(buildProposal({ status: 'Applied' }))
     mocks.getProposalDiff.mockResolvedValue('diff')
+    mocks.getRevisions.mockResolvedValue([])
     mocks.dismissProposals.mockResolvedValue({ dismissed: 1 })
     mocks.createRequestId.mockReturnValue('request-1')
   })
@@ -1032,5 +1057,65 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Operation details')
     expect(wrapper.find('.td-review-card__diff').exists()).toBe(true)
     expect(wrapper.find('.td-review-card__diff-label').exists()).toBe(true)
+  })
+
+  it('shows the stored preview with a read-only banner for an expired proposal without firing /diff (#1397)', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-expired-stored',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Archived plan"',
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    const storedBtn = wrapper
+      .get('#proposal-proposal-expired-stored')
+      .findAll('button')
+      .find((node) => node.text() === 'View stored preview')!
+    await storedBtn.trigger('click')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    // Expired proposals stay inspectable via stored content; the live /diff
+    // (which now 400s for them) is never fired and no error toast appears.
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    const banner = wrapper.find('[data-testid="review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('read-only')
+    expect(wrapper.find('[data-testid="review-diff-stored"]').text()).toContain('Archived plan')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+  })
+
+  it('renders the backend expiry reason inline when /diff 400s on the expiry race (#1397 MEDIUM-1)', async () => {
+    // The 60s review clock can lag a server-side expiry: the card still shows
+    // the live "View Diff", the request fires, and the backend answers 400
+    // "Proposal has expired". The pane must present THAT reason — not a
+    // zero-op message, not a toast, not a cleared pane.
+    mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-race' })])
+    mocks.getProposalDiff.mockRejectedValue({
+      response: {
+        status: 400,
+        data: { errorCode: 'ValidationError', message: 'Proposal has expired' },
+      },
+    })
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    const viewDiffBtn = wrapper
+      .get('#proposal-proposal-race')
+      .findAll('button')
+      .find((node) => node.text() === 'View Diff')!
+    await viewDiffBtn.trigger('click')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    const invalid = wrapper.find('[data-testid="review-diff-invalid"]')
+    expect(invalid.exists()).toBe(true)
+    expect(invalid.text()).toContain('Proposal has expired')
+    expect(invalid.text()).not.toContain('no operations')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 })

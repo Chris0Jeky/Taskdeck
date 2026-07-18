@@ -961,7 +961,7 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('shows the empty-diff state without fetching for a no-operation proposal', async () => {
+  it('shows the invalid state without fetching for a no-operation proposal (#1397)', async () => {
     const wrapper = await mountView([
       makeProposal({ id: 'diff-noop', diffPreview: null, operations: [] }),
     ])
@@ -969,12 +969,858 @@ describe('PaperReviewView', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
     await flushPromises()
 
-    // No diffPreview + no operations → the backend `/diff` would 404, so the view
-    // shows the empty state directly without firing the request.
+    // No operations → the backend `/diff` would 400 ("must contain at least one
+    // operation"), the same verdict Apply gives. The reviewer must see that
+    // rejection BEFORE approving, so the view shows the explicit invalid state
+    // without firing the request — never a "No changes" surface it could approve.
     expect(mocks.getProposalDiff).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="paper-review-diff-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-diff-empty"]').exists()).toBe(false)
+    const invalid = wrapper.find('[data-testid="paper-review-diff-invalid"]')
+    expect(invalid.exists()).toBe(true)
+    expect(invalid.text()).toContain('no operations')
+    expect(invalid.text()).toContain('reject')
 
     wrapper.unmount()
+  })
+
+  it('presents the stored preview under a read-only banner for an expired proposal without firing /diff (#1397)', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-expired',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Archived plan"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    // Expired proposals stay inspectable via their stored preview, but the live
+    // `/diff` (which now 400s for them) is never fired.
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Expired')
+    expect(banner.text()).toContain('read-only')
+    expect(banner.text()).toContain('stored preview')
+    const pre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+    expect(pre.exists()).toBe(true)
+    expect(pre.text()).toContain('Archived plan')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('diverts to the stored preview when a proposal expires during the revision-load await, never firing a live /diff (#1414 final round)', async () => {
+    // onPreviewDiff checks read-only BEFORE its revision-load await. If the
+    // proposal expires on the 60s clock DURING that await, the post-await
+    // re-check must re-classify it as read-only and present the stored preview —
+    // NOT fall through to a live /diff that #1395 400s (which would defeat
+    // #1397's stored-preview guarantee). Identity alone doesn't catch this: the
+    // id is unchanged, only the (clock-derived) expiry state flipped.
+    vi.useFakeTimers()
+    try {
+      const base = new Date('2026-06-13T12:00:00.000Z').getTime()
+      vi.setSystemTime(base)
+      let resolveRevisions: ((value: unknown[]) => void) | undefined
+      mocks.getRevisions.mockImplementation(
+        () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+      )
+      const wrapper = await mountView([
+        makeProposal({
+          id: 'preview-expire',
+          // Live at entry, expires before the first 60s clock tick.
+          expiresAt: new Date(base + 30_000).toISOString(),
+          diffPreview: '0. Create card "Racing preview"',
+        }),
+      ])
+
+      // Space opens preview; not read-only at entry, so onPreviewDiff parks on
+      // its revision-load await (revisionsLoaded still false).
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+      await Promise.resolve()
+      expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+
+      // The clock ticks past expiry while the revision load is still pending.
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      // Settle the revision load → the post-await re-check sees the now-expired
+      // proposal and diverts to the stored preview.
+      resolveRevisions?.([])
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // The forbidden live /diff was never fired; the stored preview is shown.
+      expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+      const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+      expect(banner.exists()).toBe(true)
+      expect(banner.text()).toContain('read-only')
+      const pre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+      expect(pre.exists()).toBe(true)
+      expect(pre.text()).toContain('Racing preview')
+      expect(mocks.errorToast).not.toHaveBeenCalled()
+
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('presents the stored preview for a server-expired PendingReview proposal whose client clock still reads live, never firing /diff (#1414 P2 #1)', async () => {
+    // Server says isExpired:true (clock lag/skew) but the client 60s clock has
+    // not yet passed expiresAt. Honoring the server flag classifies the proposal
+    // read-only, so the stored preview is shown instead of a live /diff that 400s.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'server-expired',
+        status: 'PendingReview',
+        expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(), // client clock: still live
+        isExpired: true, // server: already expired
+        diffPreview: '0. Create card "Server expired"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('read-only')
+    const pre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+    expect(pre.exists()).toBe(true)
+    expect(pre.text()).toContain('Server expired')
+
+    wrapper.unmount()
+  })
+
+  it('retracts the stored preview and warns when access is revoked (getProposal 403) after reveal (#1414 P2 #2)', async () => {
+    // Revealing the stored preview re-authorizes via getProposal; a 403/404 means
+    // board access was revoked mid-session, so the locally-cached preview must be
+    // torn down rather than left on screen.
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'revoked',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Secret"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('revoked')
+    // Pane torn down; no stored preview left on screen.
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(false)
+    expect(mocks.errorToast).toHaveBeenCalledWith(
+      expect.stringContaining('no longer available'),
+    )
+
+    wrapper.unmount()
+  })
+
+  it('keeps the stored preview on a transient (500) error from the access re-check (#1414 P2 #2)', async () => {
+    // Only a genuine 403/404 retracts the preview — a transient error must not
+    // tear down an otherwise-inspectable local preview.
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 500 } })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'transient',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Still here"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    const pre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+    expect(pre.exists()).toBe(true)
+    expect(pre.text()).toContain('Still here')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('falls back to the recorded operations for an expired proposal with no stored preview (#1397 / Codex)', async () => {
+    // Normal creation flows never populate diffPreview, so an expired proposal
+    // with operations must still be inspectable via a locally rendered
+    // operation listing — no /diff call, no dead "no stored preview" end.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-expired-ops',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    const opsFallback = wrapper.find('[data-testid="paper-review-diff-stored-operations"]')
+    expect(opsFallback.exists()).toBe(true)
+    expect(opsFallback.text()).toContain('Create Card')
+    expect(wrapper.find('[data-testid="paper-review-diff-stored-empty"]').exists()).toBe(false)
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('shows the banner and a no-stored-preview note for an expired zero-op proposal with no stored content (#1397)', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-expired-empty',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+        operations: [],
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    const storedEmpty = wrapper.find('[data-testid="paper-review-diff-stored-empty"]')
+    expect(storedEmpty.exists()).toBe(true)
+    expect(storedEmpty.text()).toContain('No stored preview')
+    // Never an error toast + cleared pane for a settled proposal.
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('renders the invalid verdict with the backend reason (not a toast) when /diff 400s for a pending proposal (#1397)', async () => {
+    mocks.getProposalDiff.mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: { errorCode: 'ValidationError', message: 'Proposal must contain at least one operation' },
+      },
+    })
+    const wrapper = await mountView([makeProposal({ id: 'diff-400' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('diff-400')
+    // The 400 is presented inline with the backend's actual message, not
+    // toasted, and the pane is not torn down.
+    const invalid = wrapper.find('[data-testid="paper-review-diff-invalid"]')
+    expect(invalid.exists()).toBe(true)
+    expect(invalid.text()).toContain('must contain at least one operation')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('renders the backend expiry reason for a 400 on the expiry race, not the zero-op copy (#1397 MEDIUM-1)', async () => {
+    // The 60s review clock can lag a server-side expiry: the proposal still
+    // classifies live client-side → the live diff fires → the backend answers
+    // 400 "Proposal has expired". The pane must present THAT reason; telling
+    // the reviewer the proposal "contains no operations" would be false.
+    mocks.getProposalDiff.mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: { errorCode: 'ValidationError', message: 'Proposal has expired' },
+      },
+    })
+    const wrapper = await mountView([makeProposal({ id: 'diff-race' })])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    const invalid = wrapper.find('[data-testid="paper-review-diff-invalid"]')
+    expect(invalid.exists()).toBe(true)
+    expect(invalid.text()).toContain('Proposal has expired')
+    expect(invalid.text()).not.toContain('no operations')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('discloses a revision on the stored preview of a terminal proposal (#1397 MEDIUM-2)', async () => {
+    // diffPreview is creation-time content revisions never update: a
+    // revised-then-settled proposal's stored preview shows the ORIGINAL
+    // submission, so the banner must say the proposal was revised.
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'diff-revised-expired',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-revised-expired',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Original ops"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    const revisedNote = wrapper.find('[data-testid="paper-review-diff-revised-note"]')
+    expect(revisedNote.exists()).toBe(true)
+    expect(revisedNote.text()).toContain('revised')
+    expect(revisedNote.text()).toContain('original')
+    // The live-mode "reflects your saved edit" caveat must NOT certify the
+    // stored (pre-revision) content.
+    expect(wrapper.find('[data-testid="paper-review-diff-revision-caveat"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('blocks Approve for a zero-operation pending proposal with an explicit verdict (#1397 LOW-3)', async () => {
+    const wrapper = await mountView([
+      makeProposal({ id: 'noop-approve', diffPreview: null, operations: [] }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      expect.stringContaining('no operations'),
+    )
+    // Pin the PENDING-distinctive copy (not the Approved variant): an
+    // always-true `approvedZeroOp` bug would swap this for the Approved wording
+    // and drop the "Reject or file it away" guidance — assert it explicitly.
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      expect.stringContaining('Reject or file it away instead'),
+    )
+
+    wrapper.unmount()
+  })
+
+  it('parks re-entrant Apply clicks while the revision load is in flight, then blocks a zero-op proposal (#1397 round 3)', async () => {
+    // SEAM INVARIANT: a zero-op proposal may only be approved when revision
+    // state is KNOWN. While the guard's revision load is awaited, further Apply
+    // clicks are IGNORED — a re-entrant loadRevisionState would cancel the
+    // earlier load via its generation counter and resume the first click with
+    // revisionsLoaded still false (the round-3 Codex race).
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'noop-inflight', diffPreview: null, operations: [] }),
+    ])
+    // Mount fires the watcher's background load (call 1); the Apply click's own
+    // load is call 2.
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(1)
+
+    // First click parks on the revision load — approve has NOT fired.
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
+
+    // Rapid second click: guard busy — ignored entirely (no third load that
+    // would cancel the first, and no approve).
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    // Settle the guard's own GET with an empty list → truly zero-op → blocked.
+    resolveRevisions?.([])
+    await flushPromises()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(expect.stringContaining('no operations'))
+
+    wrapper.unmount()
+  })
+
+  it('holds the shared busy lock during the zero-op guard load so Defer cannot snooze the proposal mid-flight (#1414 round 4 P2-A)', async () => {
+    // P2-A: while the zero-op guard awaits its revision load, applyGuardBusy now
+    // joins the shared busy lock, so Defer/Reject are inert. Without it a Defer
+    // landing during the await — with the #proposal- hash carve-out keeping the
+    // same proposal selected — could snooze a proposal the resumed Apply then
+    // approves.
+    const now = new Date().toISOString()
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'noop-busy', status: 'Approved' }),
+    )
+    const wrapper = await mountView(
+      [makeProposal({ id: 'noop-busy', diffPreview: null, operations: [] })],
+      '/workspace/review#proposal-noop-busy',
+    )
+
+    // Apply parks on the revision load; the guard now holds the shared busy lock.
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    // Defer mid-await is swallowed by the shared busy lock — no snooze request.
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.deferProposal).not.toHaveBeenCalled()
+
+    // Settle with a saved revision → known, non-zero state → Apply proceeds and
+    // the never-snoozed proposal is approved.
+    resolveRevisions?.([
+      {
+        id: 'rev-busy',
+        proposalId: 'noop-busy',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    await flushPromises()
+    expect(mocks.approveProposal).toHaveBeenCalledWith('noop-busy')
+    expect(mocks.deferProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('holds the shared busy lock so Reject cannot settle the proposal during the zero-op guard load (#1414 round 4 P2-A)', async () => {
+    // The P2-A invariant names Defer AND Reject. onReject now carries the same
+    // internal busy guard as onDefer; assert a Reject landing mid-await is inert
+    // (no reject request), so the resumed Apply cannot approve a just-rejected
+    // proposal.
+    const now = new Date().toISOString()
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'noop-reject-busy', status: 'Approved' }),
+    )
+    const wrapper = await mountView(
+      [makeProposal({ id: 'noop-reject-busy', diffPreview: null, operations: [] })],
+      '/workspace/review#proposal-noop-reject-busy',
+    )
+
+    // Apply parks on the revision load; the guard holds the shared busy lock.
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    // Reject mid-await is swallowed by the shared busy lock — no reject request.
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    // Settle with a saved revision → known, non-zero → Apply proceeds; the
+    // never-rejected proposal is approved.
+    resolveRevisions?.([
+      {
+        id: 'rev-reject-busy',
+        proposalId: 'noop-reject-busy',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    await flushPromises()
+    expect(mocks.approveProposal).toHaveBeenCalledWith('noop-reject-busy')
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('does not approve a zero-op proposal that is deferred when the guard load resolves — the post-await isProposalDeferred arm blocks it (#1414 round 4 P2-A)', async () => {
+    // Exercises the `isProposalDeferred(current)` arm of the post-await re-check
+    // specifically: a snoozed proposal stays PendingReview + non-expired, so
+    // `isApplyActionable` alone stays TRUE — only the deferred arm blocks it.
+    // The proposal is deep-linked (hash carve-out keeps a snoozed item visible)
+    // and its revision load is still pending at click time, forcing the async
+    // guard path where the re-check runs.
+    const now = new Date().toISOString()
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    const wrapper = await mountView(
+      [
+        makeProposal({
+          id: 'noop-deferred',
+          diffPreview: null,
+          operations: [],
+          // Snoozed into the future but still PendingReview (isApplyActionable stays true).
+          deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+        }),
+      ],
+      '/workspace/review#proposal-noop-deferred',
+    )
+
+    // Apply parks on the revision load (revisionsLoaded still false).
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    // Settle with a saved revision → known, non-zero: absent the deferred re-check
+    // this would approve a snoozed proposal. The isProposalDeferred arm blocks it.
+    resolveRevisions?.([
+      {
+        id: 'rev-deferred',
+        proposalId: 'noop-deferred',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    await flushPromises()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('executes a plain Approved proposal with operations without entering the zero-op guard (#1414 round 4 P2-B regression)', async () => {
+    // The common Approved-execute path must be untouched by the P2-B reorder: a
+    // non-empty-operations Approved proposal skips the zero-op guard entirely and
+    // dispatches execute directly (confirm-gated).
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mocks.executeProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'approved-ops', status: 'Applied' }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'approved-ops', status: 'Approved' }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.executeProposal).toHaveBeenCalledWith('approved-ops', expect.anything())
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).not.toHaveBeenCalledWith(
+      expect.stringContaining('no operations'),
+    )
+
+    confirmSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('does not approve a zero-op proposal that leaves the actionable state under the guard load — the post-await re-check blocks it (#1414 round 4 P2-A)', async () => {
+    // P2-A defense-in-depth: identity is not enough. A non-local change (here the
+    // 60s expiry clock; equally a realtime status/defer update from another
+    // surface) can settle the proposal out of an actionable state WHILE the guard
+    // load is in flight. The post-await re-check re-evaluates actionability on the
+    // CURRENT object and no-ops when it is no longer applyable.
+    vi.useFakeTimers()
+    try {
+      const base = new Date('2026-06-13T12:00:00.000Z').getTime()
+      vi.setSystemTime(base)
+      const nowIso = new Date(base).toISOString()
+      let resolveRevisions: ((value: unknown[]) => void) | undefined
+      mocks.getRevisions.mockImplementation(
+        () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+      )
+      const wrapper = await mountView([
+        makeProposal({
+          id: 'noop-expire',
+          diffPreview: null,
+          operations: [],
+          // Live at mount, expires before the first 60s clock tick.
+          expiresAt: new Date(base + 30_000).toISOString(),
+        }),
+      ])
+
+      // Apply parks on the revision load (revisionsLoaded still false).
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      // The clock ticks past expiry while the load is still pending.
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      // Settle with a saved revision → known, non-zero: absent the re-check this
+      // would approve a now-expired proposal. The re-check blocks it.
+      resolveRevisions?.([
+        {
+          id: 'rev-expire',
+          proposalId: 'noop-expire',
+          revisionNumber: 1,
+          editorUserId: 'u-1',
+          revisedPayload: '{"operations":[]}',
+          revisedAt: nowIso,
+          reason: 'edit',
+          createdAt: nowIso,
+        },
+      ])
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('routes an Approved zero-op proposal through the guard instead of executing a doomed apply (#1414 round 4 P2-B)', async () => {
+    // P2-B: an already-Approved zero-op proposal (pre-#1423 data, or another
+    // client that approved via the still-permissive approve endpoint) must hit
+    // the same zero-op verdict, not a guaranteed Apply-time 400 round-trip. The
+    // Approved-execute dispatch now sits AFTER the guard.
+    const wrapper = await mountView([
+      makeProposal({ id: 'approved-noop', status: 'Approved', diffPreview: null, operations: [] }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      expect.stringContaining('applying it to the board will be rejected'),
+    )
+
+    wrapper.unmount()
+  })
+
+  it('still executes an Approved proposal that carries a saved revision once the guard clears it (#1414 round 4 P2-B)', async () => {
+    // The guard must not break the normal Approved-execute path: an Approved
+    // proposal whose original operations are empty but which carries a saved
+    // revision (#1235) is applied revision-aware, so it still executes.
+    const now = new Date().toISOString()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-approved',
+        proposalId: 'approved-revised',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    mocks.executeProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'approved-revised', status: 'Applied' }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'approved-revised', status: 'Approved', diffPreview: null, operations: [] }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.executeProposal).toHaveBeenCalledWith('approved-revised', expect.anything())
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    confirmSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('blocks Apply when the revision load fails for a zero-op proposal — unknown state never approves (#1397 round 3)', async () => {
+    // REVERSES the round-2 fall-through semantic: a failed load leaves revision
+    // state UNKNOWN, and unknown now blocks approve instead of deferring to the
+    // backend (whose approve path would accept, then guarantee the Apply-time
+    // 400). #1416 remains the backend root-cause fix.
+    mocks.getRevisions.mockRejectedValue(new Error('revisions boom'))
+    const wrapper = await mountView([
+      makeProposal({ id: 'noop-failload', diffPreview: null, operations: [] }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.infoToast).toHaveBeenCalledWith(
+      expect.stringContaining('Revision history is unavailable'),
+    )
+
+    wrapper.unmount()
+  })
+
+  it('discloses a revision on the recorded-operations fallback when no stored preview was captured (#1397 MEDIUM-2 / #1414)', async () => {
+    // A revised-then-settled proposal that never captured a diffPreview renders
+    // the recorded-operations fallback, not a stored preview — so the disclosure
+    // copy must say the RECORDED OPERATIONS show the original submission, never
+    // "the stored preview" (which does not exist here).
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'diff-revised-ops',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'diff-revised-ops',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    // The ops fallback is what's on screen (no captured stored preview).
+    expect(wrapper.find('[data-testid="paper-review-diff-stored-operations"]').exists()).toBe(true)
+    const revisedNote = wrapper.find('[data-testid="paper-review-diff-revised-note"]')
+    expect(revisedNote.exists()).toBe(true)
+    expect(revisedNote.text()).toContain('revised')
+    expect(revisedNote.text()).toContain('recorded operations')
+    expect(revisedNote.text()).not.toContain('stored preview')
+
+    wrapper.unmount()
+  })
+
+  it('renders the stored preview synchronously while the revision GET is pending; the caveat augments after it resolves (#1397 round 3)', async () => {
+    // SEAM INVARIANT: the stored preview is local content and must render the
+    // moment Space is pressed — the revision metadata GET only gates the
+    // revised-note caveat and runs asynchronously afterwards. A slow GET must
+    // never make the toggle look dead.
+    const now = new Date().toISOString()
+    let resolveRevisions: ((value: unknown[]) => void) | undefined
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveRevisions = resolve as (value: unknown[]) => void }),
+    )
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'sync-stored',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Stored now"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await wrapper.vm.$nextTick()
+
+    // GET still pending — the preview is ALREADY up.
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Stored now')
+    expect(wrapper.find('[data-testid="paper-review-diff-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-diff-revised-note"]').exists()).toBe(false)
+
+    // The metadata resolves with a revision → the caveat augments in place.
+    resolveRevisions?.([
+      {
+        id: 'rev-1',
+        proposalId: 'sync-stored',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-revised-note"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Stored now')
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('keeps the stored preview up with no error toast when the revision GET fails (#1397 round 3)', async () => {
+    // The augment-only revision load is silent: a failed metadata GET must not
+    // error-toast over a locally presentable preview, and the preview stays up.
+    mocks.getRevisions.mockRejectedValue(new Error('revisions boom'))
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'silent-stored',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Still here"',
+      }),
+    ])
+    // The mount-time background load (non-silent) already failed during
+    // mountView; clear its toast so the assertion isolates the preview path.
+    mocks.errorToast.mockClear()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Still here')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff-revised-note"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('re-derives an open live pane to the stored presentation when the expiry clock passes (#1397 LOW-5)', async () => {
+    // Open the live diff on a pending proposal that expires in 30s, then tick
+    // the 60s review clock past its expiresAt: the pane must flip to the stored
+    // read-only presentation instead of keeping the live-looking diff on a
+    // proposal that is no longer actionable. Only setInterval and Date are
+    // faked so flushPromises (setTimeout-based) keeps working.
+    vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+    try {
+      mocks.getProposalDiff.mockResolvedValueOnce('0. Create card "Live"')
+      const wrapper = await mountView([
+        makeProposal({
+          id: 'flip-exp',
+          status: 'PendingReview',
+          expiresAt: new Date(Date.now() + 30_000).toISOString(),
+          diffPreview: '0. Create card "Stored"',
+        }),
+      ])
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+      await flushPromises()
+      expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Live')
+      expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(false)
+
+      // One 60s clock tick → nowMs passes expiresAt → the proposal is expired.
+      vi.advanceTimersByTime(60_000)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+      expect(banner.exists()).toBe(true)
+      expect(banner.text()).toContain('read-only')
+      expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Stored')
+
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('fetches the revision-aware diff for a 0-operation proposal that has a saved revision', async () => {

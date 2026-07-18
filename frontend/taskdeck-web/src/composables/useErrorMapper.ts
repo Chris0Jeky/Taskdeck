@@ -26,6 +26,56 @@ export function parseApiError(err: unknown): ApiError | null {
   return null
 }
 
+/**
+ * True when the error is a backend 400 ValidationError — BOTH the status and
+ * the errorCode must match, so an unrelated 400 (or a ValidationError code on
+ * another status) is never classified as the review-gate verdict. The
+ * automation `/diff` endpoint returns this (PR #1395 / #1376) when it runs
+ * Apply's gates at diff time — "Proposal has expired" or "Proposal must
+ * contain at least one operation". Review surfaces render the backend's ACTUAL
+ * message as an explicit invalid presentation instead of tearing down the pane
+ * + toasting (#1397).
+ */
+export function isValidationError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const candidate = err as { response?: { status?: number; data?: { errorCode?: string } } }
+  return (
+    candidate.response?.status === 400 &&
+    candidate.response?.data?.errorCode === 'ValidationError'
+  )
+}
+
+/**
+ * The backend-provided reason for an invalid-preview 400 ValidationError,
+ * trimmed — or `null` when the backend sent no message (or a whitespace-only
+ * one). Unlike `getErrorDisplay`, this deliberately does NOT substitute the
+ * generic "Please check your input" ValidationError copy: the invalid-diff
+ * presentation renders its own specific fallback ("This proposal contains no
+ * operations…") when the reason is absent, and a masking generic string would
+ * suppress it (#1397 / #1414 review).
+ */
+export function getValidationReason(err: unknown): string | null {
+  const apiError = parseApiError(err)
+  const message = apiError?.message?.trim()
+  return message && message.length > 0 ? message : null
+}
+
+/**
+ * True when the error is a backend 403 or 404 for a proposal read — the signals
+ * `AuthorizeProposalAsync(requireWriteAccess:false)` returns when the caller no
+ * longer has board access (403) or the proposal/board/requester is gone (404;
+ * the backend 404s a revoked read to avoid leaking existence). Review surfaces
+ * use this to RETRACT a stored preview whose access was revoked mid-session,
+ * while ignoring transient errors (5xx/network) that must NOT tear down an
+ * otherwise-inspectable local preview (#1414 P2: re-check access on reveal).
+ */
+export function isAccessDeniedError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const candidate = err as { response?: { status?: number } }
+  const status = candidate.response?.status
+  return status === 403 || status === 404
+}
+
 export function getErrorDisplay(err: unknown, fallback: string): { message: string; code: string | null } {
   const apiError = parseApiError(err)
   if (apiError) {

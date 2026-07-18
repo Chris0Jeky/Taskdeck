@@ -113,7 +113,7 @@ function watcherForCurrentSourceValue(expected: unknown) {
 
 function makeProposal(overrides: Partial<{
   id: string; status: string; sourceType: string; sourceReferenceId: string | null;
-  boardId: string | null; createdAt: string; expiresAt: string;
+  boardId: string | null; createdAt: string; expiresAt: string; isExpired: boolean;
 }> = {}) {
   return {
     id: overrides.id ?? 'p-1',
@@ -129,8 +129,26 @@ function makeProposal(overrides: Partial<{
     createdAt: overrides.createdAt ?? '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     expiresAt: overrides.expiresAt ?? '2099-01-01T00:00:00Z',
+    isExpired: overrides.isExpired,
     decidedAt: null,
     decidedByUserId: null,
+    // One operation by default: approve-actionability additionally requires a
+    // structurally applyable (non-zero-op) proposal (#1397); the status/expiry
+    // truth tables below assert against a realistic applyable fixture, and the
+    // zero-op arm is asserted explicitly in its own test.
+    operations: [
+      {
+        id: 'op-1',
+        proposalId: overrides.id ?? 'p-1',
+        sequence: 0,
+        actionType: 'CreateCard',
+        targetType: 'Card',
+        targetId: null,
+        parameters: '{}',
+        idempotencyKey: 'k-1',
+        expectedVersion: null,
+      },
+    ],
   }
 }
 
@@ -303,6 +321,42 @@ describe('useReviewProposals', () => {
       const p = makeProposal({ status: 'Applied' })
       expect(rp.isProposalExpired(p as any)).toBe(false)
     })
+
+    it('honors the server isExpired flag for a PendingReview proposal whose client clock has not yet elapsed (#1414 P2 #1)', () => {
+      // Clock lag/skew: the server has already expired the proposal (isExpired:
+      // true) but the client's 60s clock still reads a moment before expiresAt.
+      // Without honoring the flag the read-only guards would fire a live /diff
+      // that 400s instead of presenting the stored preview.
+      const rp = useReviewProposals()
+      rp.nowMs.value = new Date('2026-06-01T00:00:00Z').getTime()
+      const p = makeProposal({
+        status: 'PendingReview',
+        expiresAt: '2026-06-01T00:00:30Z', // 30s in the "future" per the lagging client clock
+        isExpired: true,
+      })
+      expect(rp.isProposalExpired(p as any)).toBe(true)
+    })
+
+    it('honors the server isExpired flag for an Approved proposal whose client clock has not yet elapsed (#1414 P2 #1)', () => {
+      const rp = useReviewProposals()
+      rp.nowMs.value = new Date('2026-06-01T00:00:00Z').getTime()
+      const p = makeProposal({ status: 'Approved', expiresAt: '2099-01-01T00:00:00Z', isExpired: true })
+      expect(rp.isProposalExpired(p as any)).toBe(true)
+    })
+
+    it('does NOT flip a terminal Applied proposal to expired even when the server isExpired flag is true (#1414 P2 #1 boundary)', () => {
+      // The backend isExpired flag is time-based and status-agnostic (true for
+      // any past-expiry proposal). Consulting it must stay scoped to
+      // PendingReview/Approved — a terminal proposal whose expiry later passed
+      // must keep its terminal classification, or visibleProposals would
+      // force-show completed items and the status labels would mislabel it.
+      const rp = useReviewProposals()
+      rp.nowMs.value = new Date('2026-06-04T00:00:00Z').getTime()
+      const applied = makeProposal({ status: 'Applied', expiresAt: '2026-05-01T00:00:00Z', isExpired: true })
+      const rejected = makeProposal({ status: 'Rejected', expiresAt: '2026-05-01T00:00:00Z', isExpired: true })
+      expect(rp.isProposalExpired(applied as any)).toBe(false)
+      expect(rp.isProposalExpired(rejected as any)).toBe(false)
+    })
   })
 
   // These pin the shared actionability helpers to HARD-CODED expected verdicts
@@ -382,6 +436,22 @@ describe('useReviewProposals', () => {
         expect(isProposalApproveActionable(p, expired)).toBe(expectedReject)
       },
     )
+
+    // #1397 LOW-3: Approve additionally requires a structurally applyable
+    // proposal — Apply (and /diff) reject a zero-op proposal with 400, so the
+    // rail must not offer Approve for it. A saved revision is the #1235 escape:
+    // it carries operations the backend applies revision-aware.
+    it('isProposalApproveActionable rejects a zero-op pending proposal unless a saved revision exists', () => {
+      const zeroOp = { ...makeProposal({ status: 'PendingReview' }), operations: [] } as any
+      expect(isProposalApproveActionable(zeroOp, false)).toBe(false)
+      expect(isProposalApproveActionable(zeroOp, false, { hasSavedRevision: true })).toBe(true)
+      // Reject/apply gating is NOT structural — the reviewer can still clear it.
+      expect(isProposalRejectActionable(zeroOp, false)).toBe(true)
+
+      const missingOps = { ...makeProposal({ status: 'PendingReview' }) } as any
+      delete missingOps.operations
+      expect(isProposalApproveActionable(missingOps, false)).toBe(false)
+    })
 
     // Concrete verdicts (not just self-parity) so a logic flip is caught even
     // if the local mirror is wrong too.

@@ -44,10 +44,44 @@ export function isProposalRejectActionable(proposal: ApiProposal, isExpired: boo
   return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isExpired
 }
 
-// Approve shares Reject's precondition today (a live, non-expired PendingReview proposal),
-// but is named distinctly so the two can diverge without one silently aliasing the other.
-export function isProposalApproveActionable(proposal: ApiProposal, isExpired: boolean): boolean {
-  return normalizeProposalStatus(proposal.status) === 'PendingReview' && !isExpired
+// Approve requires a live, non-expired PendingReview proposal AND a structurally
+// applyable one: a zero-operation proposal is rejected by Apply (and by `/diff`,
+// #1376/#1395), so approving it only defers a guaranteed 400 — the rail must not
+// offer it (#1397 LOW-3; backend approve-time validation tracked in #1416).
+// `hasSavedRevision` is the #1235 escape hatch: a saved revision carries
+// operations the backend renders/applies revision-aware even when the ORIGINAL
+// operations are empty. Callers without revision knowledge (the Legacy card)
+// omit it — a revised-in-Paper zero-op proposal viewed in Legacy is then
+// conservatively un-approvable there until refreshed in Paper.
+export function isProposalApproveActionable(
+  proposal: ApiProposal,
+  isExpired: boolean,
+  options?: { hasSavedRevision?: boolean },
+): boolean {
+  if (normalizeProposalStatus(proposal.status) !== 'PendingReview' || isExpired) return false
+  if ((proposal.operations?.length ?? 0) === 0 && !options?.hasSavedRevision) return false
+  return true
+}
+
+// A proposal is "read-only" once it is expired (client-side clock or domain
+// Expired) or in any terminal status (Applied/Rejected/Failed/Expired/Dismissed).
+// PR #1395 made the backend `/diff` reject these with 400 ("Proposal has
+// expired"), so review surfaces must NOT fire the live diff for them — they
+// present the stored `diffPreview` under an explicit read-only banner instead
+// (#1397 maintainer decision: expired proposals stay inspectable via stored
+// content without burdening the UI with a live request that 400s). Callers pass
+// the same `isProposalExpired(proposal)` the rest of the surface uses so Paper
+// and Legacy can never drift (#1124 / ADR-0038).
+export function isProposalReadOnly(proposal: ApiProposal, isExpired: boolean): boolean {
+  if (isExpired) return true
+  const status = normalizeProposalStatus(proposal.status)
+  return (
+    status === 'Applied' ||
+    status === 'Rejected' ||
+    status === 'Failed' ||
+    status === 'Expired' ||
+    status === 'Dismissed'
+  )
 }
 
 export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
@@ -129,7 +163,17 @@ export function useReviewProposals() {
     const normalized = normalizeProposalStatus(proposal.status)
     if (normalized === 'Expired') return true
     if (normalized === 'PendingReview' || normalized === 'Approved') {
-      return new Date(proposal.expiresAt).getTime() <= nowMs.value
+      // Honor the server-authoritative `isExpired` flag in addition to the local
+      // 60s clock: the client clock can lag inside the tick window or skew behind
+      // server time, and if the server has already expired the proposal the live
+      // `/diff` 400s — the read-only guards must classify it as expired so the
+      // review surfaces present the stored preview instead (#1414 P2). The flag
+      // is time-based and status-AGNOSTIC on the backend (`IsExpired => UtcNow >
+      // ExpiresAt`), so it is consulted ONLY inside this Pending/Approved branch:
+      // a terminal proposal whose expiry later passed must keep its terminal
+      // classification (Applied/Rejected/…), never flip to "Expired" — otherwise
+      // `visibleProposals`, the status labels, and the expired notice regress.
+      return proposal.isExpired === true || new Date(proposal.expiresAt).getTime() <= nowMs.value
     }
     return false
   }
