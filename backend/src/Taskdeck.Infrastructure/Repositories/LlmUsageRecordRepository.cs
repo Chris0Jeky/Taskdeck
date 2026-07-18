@@ -266,6 +266,16 @@ WHERE ({requestsPerHour} <= 0 OR (
         int outputTokens,
         CancellationToken cancellationToken = default)
     {
+        // Mirror TryReserveAsync's provider split: the raw finalization SQL below hard-codes unquoted
+        // PascalCase identifiers, which non-SQLite providers (e.g. Npgsql folds to lowercase) cannot
+        // match against EF's quoted table/columns, so a reservation created via the non-SQLite reserve
+        // fallback must be finalized through EF instead.
+        if (!_context.Database.IsSqlite())
+        {
+            return await CommitReservationNonSqliteAsync(
+                reservationId, userId, surface, provider, model, inputTokens, outputTokens, cancellationToken);
+        }
+
         var now = DateTimeOffset.UtcNow;
         var safeProvider = string.IsNullOrWhiteSpace(provider) ? LlmUsageRecord.ReservationProvider : provider;
         var safeModel = model ?? string.Empty;
@@ -306,6 +316,13 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
         Guid reservationId,
         CancellationToken cancellationToken = default)
     {
+        // Non-SQLite providers can't match the unquoted identifiers in the raw DELETE (see
+        // CommitReservationAsync); release through EF instead.
+        if (!_context.Database.IsSqlite())
+        {
+            return await ReleaseReservationNonSqliteAsync(reservationId, cancellationToken);
+        }
+
         var affected = await WithSqliteWriteRetryAsync(
             () => _context.Database.ExecuteSqlInterpolatedAsync(
                 $"DELETE FROM LlmUsageRecords WHERE Id = {reservationId} AND Status = {StatusReserved}",
@@ -371,6 +388,67 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
 
         return new QuotaReservationOutcome(
             QuotaReservationDecision.Allowed, reservation.Id, requestCount, userTokens, globalTokens);
+    }
+
+    // Non-SQLite finalization (see TryReserveNonSqliteAsync). EF-tracked update/insert instead of the raw
+    // SQLite statements, whose unquoted PascalCase identifiers are not provider-portable. Same best-effort
+    // posture as the reserve fallback: it already flushes the shared context via SaveChangesAsync, so the
+    // raw path's "don't disturb the caller's change tracker" rationale is already ceded here.
+    private async Task<QuotaCommitResult> CommitReservationNonSqliteAsync(
+        Guid reservationId,
+        Guid userId,
+        LlmSurface surface,
+        string provider,
+        string model,
+        int inputTokens,
+        int outputTokens,
+        CancellationToken cancellationToken)
+    {
+        var safeProvider = string.IsNullOrWhiteSpace(provider) ? LlmUsageRecord.ReservationProvider : provider;
+        var safeModel = model ?? string.Empty;
+        var safeInput = Math.Max(0, inputTokens);
+        var safeOutput = Math.Max(0, outputTokens);
+
+        // Tracked (not AsNoTracking) so the Reserved → Committed mutation is flushed by SaveChangesAsync.
+        var reserved = await _dbSet
+            .FirstOrDefaultAsync(
+                r => r.Id == reservationId && r.Status == LlmUsageRecordStatus.Reserved,
+                cancellationToken);
+        if (reserved is not null)
+        {
+            reserved.Commit(safeProvider, safeModel, safeInput, safeOutput);
+            await _context.SaveChangesAsync(cancellationToken);
+            return QuotaCommitResult.Committed;
+        }
+
+        // The reservation row is gone or already settled. A surviving row with this id was already
+        // committed/settled → idempotent no-op. Otherwise it was TTL-swept mid-call; the tokens were still
+        // billed, so re-insert a committed row under the same id. The exists-check guards the insert so a
+        // duplicate commit cannot double-count.
+        if (await _dbSet.AnyAsync(r => r.Id == reservationId, cancellationToken))
+            return QuotaCommitResult.AlreadySettled;
+
+        var recovered = LlmUsageRecord.CreateRecoveredUsage(
+            reservationId, userId, surface, safeProvider, safeModel, safeInput, safeOutput);
+        await _dbSet.AddAsync(recovered, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+        return QuotaCommitResult.RecoveredExpired;
+    }
+
+    private async Task<bool> ReleaseReservationNonSqliteAsync(
+        Guid reservationId,
+        CancellationToken cancellationToken)
+    {
+        var reserved = await _dbSet
+            .FirstOrDefaultAsync(
+                r => r.Id == reservationId && r.Status == LlmUsageRecordStatus.Reserved,
+                cancellationToken);
+        if (reserved is null)
+            return false;
+
+        _dbSet.Remove(reserved);
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     // SQLite stores DateTimeOffset as ISO 8601 text. Use raw SQL with string

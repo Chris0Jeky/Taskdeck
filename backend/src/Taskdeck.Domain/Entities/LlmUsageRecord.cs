@@ -96,6 +96,34 @@ public class LlmUsageRecord : Entity
     }
 
     /// <summary>
+    /// Recreates a committed usage row under an existing reservation id (issue #1313). Used when a
+    /// reservation's <see cref="LlmUsageRecordStatus.Reserved"/> row was swept by its TTL mid-call: the
+    /// tokens were still genuinely billed, so the finalizer re-inserts a committed row rather than
+    /// dropping real usage. Reusing <paramref name="reservationId"/> keeps a late or duplicate commit
+    /// idempotent. Backs the non-SQLite finalization path; the SQLite hot path does the equivalent via a
+    /// guarded recovery <c>INSERT</c>.
+    /// </summary>
+    public static LlmUsageRecord CreateRecoveredUsage(
+        Guid reservationId,
+        Guid userId,
+        LlmSurface surface,
+        string provider,
+        string model,
+        int inputTokens,
+        int outputTokens)
+    {
+        if (reservationId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Reservation ID cannot be empty");
+
+        // The committed-usage constructor validates and stamps the fields (Status = Committed,
+        // ExpiresAt = null, CreatedAt/UpdatedAt = now); only the generated id is overridden so the
+        // recovered row carries the original reservation id.
+        var record = new LlmUsageRecord(userId, surface, provider, model, inputTokens, outputTokens);
+        record.Id = reservationId;
+        return record;
+    }
+
+    /// <summary>
     /// Finalizes a reservation with the actual token counts, clearing the expiry so the row counts as
     /// permanent committed usage. Idempotent-safe: a no-op if already committed.
     /// </summary>
