@@ -557,7 +557,7 @@ public class ToolCallingFeatureFlagAndCostTests
         quotaService.Verify(
             q => q.CommitReservationAsync(
                 reservationId,
-                It.IsAny<Guid>(),
+                userId,
                 Domain.Enums.LlmSurface.Chat,
                 "TestProvider",
                 "test-v1",
