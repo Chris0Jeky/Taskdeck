@@ -174,7 +174,9 @@ public class AutomationProposalService : IAutomationProposalService
         if (proposal == null)
             return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
-        return Result.Success(MapToDto(proposal));
+        // Surface the EFFECTIVE operation set (pinned/latest revision when one applies, else the
+        // originals) so a revised proposal no longer echoes stale original operations (#1424).
+        return await BuildEffectiveProposalDtoAsync(proposal, cancellationToken);
     }
 
     public async Task<Result<IEnumerable<ProposalDto>>> GetProposalsAsync(ProposalFilterDto? filter = null, CancellationToken cancellationToken = default)
@@ -260,9 +262,18 @@ public class AutomationProposalService : IAutomationProposalService
             // domain transition's terminal-status short-circuit owns the response (409 "Cannot
             // approve proposal in status X"), which this slice leaves untouched — running these
             // gates on a terminal proposal would wrongly report a 400/403/404 in place of that 409.
+            Guid? approvedRevisionId = null;
             if (proposal.Status == ProposalStatus.PendingReview)
             {
-                var effectiveOperations = await ResolveEffectiveOperationsAsync(proposal, cancellationToken);
+                // Read the latest revision NOW and pin its id onto the proposal (#1428): approve
+                // validates this exact revision and Apply materializes it, so a revision saved
+                // later — even one landing in the race window between this read and approve's
+                // commit — can no longer change what Apply executes. A null id approves the
+                // original operations, and Apply then ignores any post-approval revision entirely.
+                var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
+                approvedRevisionId = latestRevision?.Id;
+
+                var effectiveOperations = ResolveEffectiveGateOperations(proposal, latestRevision);
                 if (!effectiveOperations.IsSuccess)
                     return Result.Failure<ProposalDto>(effectiveOperations.ErrorCode, effectiveOperations.ErrorMessage);
 
@@ -282,14 +293,15 @@ public class AutomationProposalService : IAutomationProposalService
                 }
             }
 
-            proposal.Approve(decidedByUserId);
+            proposal.Approve(decidedByUserId, approvedRevisionId);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "approved", cancellationToken);
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
 
-            return Result.Success(MapToDto(proposal));
+            // Echo the effective (pinned) operations Apply will run, not the stale originals (#1424).
+            return await BuildEffectiveProposalDtoAsync(proposal, cancellationToken);
         }
         catch (DomainException ex)
         {
@@ -299,19 +311,20 @@ public class AutomationProposalService : IAutomationProposalService
 
     /// <summary>
     /// Resolves the effective operation set Apply will execute, for the approve-time structure
-    /// and permission/contract gates — the latest saved <see cref="ProposalRevision"/> when one exists (mirroring
-    /// <c>AutomationExecutorService.MaterializeEffectiveProposalAsync</c> and the revision-aware
-    /// <see cref="GetProposalDiffAsync"/> path), otherwise the proposal's original operations —
-    /// so approve validates exactly what Apply will run (#1416 approve == apply). A revision is
-    /// structure-validated at save time, so the parse-failure branch is defensive: if the
-    /// effective payload cannot be materialized, Apply would fail the same way, so surface the
-    /// identical <see cref="ErrorCodes.ValidationError"/>.
+    /// and permission/contract gates — the supplied latest saved <see cref="ProposalRevision"/>
+    /// when one exists (mirroring <c>AutomationExecutorService.MaterializeEffectiveProposalAsync</c>
+    /// and the revision-aware <see cref="GetProposalDiffAsync"/> path), otherwise the proposal's
+    /// original operations — so approve validates exactly what Apply will run (#1416 approve ==
+    /// apply). The revision is passed in (already read in <see cref="ApproveProposalAsync"/> so its
+    /// id can be pinned as <see cref="AutomationProposal.ApprovedRevisionId"/>) to avoid a second
+    /// query. A revision is structure-validated at save time, so the parse-failure branch is
+    /// defensive: if the effective payload cannot be materialized, Apply would fail the same way,
+    /// so surface the identical <see cref="ErrorCodes.ValidationError"/>.
     /// </summary>
-    private async Task<Result<IReadOnlyCollection<ProposalOperationDto>>> ResolveEffectiveOperationsAsync(
+    private Result<IReadOnlyCollection<ProposalOperationDto>> ResolveEffectiveGateOperations(
         AutomationProposal proposal,
-        CancellationToken cancellationToken)
+        ProposalRevision? latestRevision)
     {
-        var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
         if (latestRevision is not null)
         {
             if (!ProposalRevisionPayload.TryParseOperations(
@@ -333,6 +346,61 @@ public class AutomationProposalService : IAutomationProposalService
         return Result.Success<IReadOnlyCollection<ProposalOperationDto>>(originalOperations);
     }
 
+    /// <summary>
+    /// Resolves the revision whose operations are the EFFECTIVE set for a proposal — the one Apply
+    /// will materialize — so the diff preview and the decided-proposal response DTOs agree with
+    /// Apply (preview == apply / approve == apply). A decided proposal returns its pinned
+    /// <see cref="AutomationProposal.ApprovedRevisionId"/> revision (#1428); a proposal approved
+    /// from its original operations (null pin) returns null so the original set is used, ignoring
+    /// any revision that raced in after approval; a still-pending or rejected proposal returns the
+    /// latest saved revision (what the reviewer sees, and what approve would pin). Returns null
+    /// when no revision applies, meaning "use the proposal's original operations".
+    /// </summary>
+    private async Task<ProposalRevision?> GetEffectiveRevisionAsync(
+        AutomationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        if (proposal.ApprovedRevisionId is Guid approvedRevisionId)
+            return await _unitOfWork.ProposalRevisions.GetByIdAsync(approvedRevisionId, cancellationToken);
+
+        if (proposal.Status is ProposalStatus.PendingReview or ProposalStatus.Rejected)
+            return await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Maps a proposal to its response DTO with <see cref="ProposalDto.Operations"/> materialized
+    /// to the EFFECTIVE operation set (the pinned/latest revision when one applies, else the
+    /// originals), so approve/reject/get responses no longer echo stale original operations for a
+    /// revised proposal (#1424). The presentation block still derives from the persisted original
+    /// operations; only the Operations collection is swapped to the effective set.
+    /// </summary>
+    private async Task<Result<ProposalDto>> BuildEffectiveProposalDtoAsync(
+        AutomationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        var dto = MapToDto(proposal);
+
+        var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
+        if (effectiveRevision is null)
+            return Result.Success(dto);
+
+        if (!ProposalRevisionPayload.TryParseOperations(
+                proposal.Id,
+                effectiveRevision.RevisedPayload,
+                out var revisedOperations,
+                out _))
+        {
+            // A saved revision is structure-validated at creation, so an unparseable payload is a
+            // defensive impossibility. A read must not fail on it — the diff/approve/apply gates
+            // own surfacing that error — so fall back to the persisted original operations.
+            return Result.Success(dto);
+        }
+
+        return Result.Success(dto with { Operations = revisedOperations });
+    }
+
     public async Task<Result<ProposalDto>> RejectProposalAsync(Guid id, Guid decidedByUserId, UpdateProposalStatusDto dto, CancellationToken cancellationToken = default)
     {
         try
@@ -348,7 +416,9 @@ public class AutomationProposalService : IAutomationProposalService
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
 
-            return Result.Success(MapToDto(proposal));
+            // Echo the effective (latest-revision) operations the reviewer decided on, not the
+            // stale originals, when the rejected proposal carried a saved revision (#1424).
+            return await BuildEffectiveProposalDtoAsync(proposal, cancellationToken);
         }
         catch (DomainException ex)
         {
@@ -470,19 +540,20 @@ public class AutomationProposalService : IAutomationProposalService
         if (proposal == null)
             return Result.Failure<string>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
-        // When a reviewer has saved a revision, Apply executes THAT payload — the
-        // executor materializes the latest ProposalRevision via
-        // AutomationExecutorService.MaterializeEffectiveProposalAsync, not the
-        // original operations. Build the diff from the same effective operations so
-        // the approval-gate preview equals what Apply will run (#1235). The stored
-        // DiffPreview is deliberately bypassed on this path because it describes the
+        // When a reviewer has saved a revision, Apply executes THAT payload — the executor
+        // materializes the EFFECTIVE ProposalRevision (the pinned one once approved, the latest
+        // while pending) via AutomationExecutorService.MaterializeEffectiveProposalAsync, not the
+        // original operations. Build the diff from the same effective revision so the preview
+        // equals what Apply will run (#1235) — and, once a proposal is approved, so a revision that
+        // raced in after approval cannot make the diff diverge from the pinned apply set (#1428).
+        // The stored DiffPreview is deliberately bypassed on this path because it describes the
         // original proposal, which is exactly the stale-preview bug we are fixing.
-        var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(id, cancellationToken);
-        if (latestRevision is not null)
+        var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
+        if (effectiveRevision is not null)
         {
             if (!ProposalRevisionPayload.TryParseOperations(
                     id,
-                    latestRevision.RevisedPayload,
+                    effectiveRevision.RevisedPayload,
                     out var revisedOperations,
                     out var errorMessage))
             {
@@ -727,7 +798,8 @@ public class AutomationProposalService : IAutomationProposalService
         {
             Presentation = BuildPresentation(proposal),
             IsExpired = proposal.IsExpired,
-            DeferredUntil = proposal.DeferredUntil
+            DeferredUntil = proposal.DeferredUntil,
+            ApprovedRevisionId = proposal.ApprovedRevisionId
         };
     }
 
