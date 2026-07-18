@@ -474,10 +474,15 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
         }
         catch (DbUpdateException)
         {
-            // A concurrent finalizer inserted or settled this id first (duplicate key). Drop the insert
-            // and report settled — the raw recovery INSERT's NOT EXISTS guard yields 0 rows here too.
+            // Drop the failed insert, then discriminate: only the concurrent-settle race is swallowed.
+            // A row now existing under this id means a concurrent finalizer won — the raw recovery
+            // INSERT's NOT EXISTS guard reports that same race as 0 rows. Any other insert failure is
+            // a real write failure and must propagate; reporting it as settled would silently drop
+            // billed usage.
             _context.Entry(recovered).State = EntityState.Detached;
-            return QuotaCommitResult.AlreadySettled;
+            if (await _dbSet.AnyAsync(r => r.Id == reservationId, cancellationToken))
+                return QuotaCommitResult.AlreadySettled;
+            throw;
         }
     }
 

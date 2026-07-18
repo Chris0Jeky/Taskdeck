@@ -171,7 +171,8 @@ public class LlmQuotaService : ILlmQuotaService
             DeniedReason: null,
             ReservationId: outcome.ReservationId,
             RemainingTokens: remainingTokens,
-            RemainingRequests: remainingRequests);
+            RemainingRequests: remainingRequests,
+            EstimatedTokens: estimatedTokens);
 
         static QuotaReservationDto Denied(string reason) =>
             new(Allowed: false, DeniedReason: reason, ReservationId: null, RemainingTokens: 0, RemainingRequests: 0);

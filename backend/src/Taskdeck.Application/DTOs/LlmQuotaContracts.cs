@@ -12,14 +12,17 @@ public record QuotaCheckResultDto(
 /// Result of an atomic quota reservation (issue #1313). When <see cref="Allowed"/> is true a
 /// <see cref="ReservationId"/> is returned that must later be committed (with actual token counts) or
 /// released. When false, <see cref="DeniedReason"/> carries the same message a synchronous quota check
-/// would produce so the HTTP surface maps it identically.
+/// would produce so the HTTP surface maps it identically. <see cref="EstimatedTokens"/> echoes the
+/// token estimate the reservation was made with, so a caller that must settle without a final usage
+/// count (an abandoned stream) can commit the estimate instead of releasing billable work.
 /// </summary>
 public record QuotaReservationDto(
     bool Allowed,
     string? DeniedReason,
     Guid? ReservationId,
     long RemainingTokens,
-    long RemainingRequests);
+    long RemainingRequests,
+    int EstimatedTokens = 0);
 
 /// <summary>Outcome of finalizing a quota reservation with actual token counts.</summary>
 public enum QuotaCommitResult

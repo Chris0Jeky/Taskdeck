@@ -168,6 +168,32 @@ public class LlmUsageRecordRepositoryPostgresIntegrationTests : PostgresIntegrat
         released.Should().BeFalse("releasing an externally-deleted reservation is a no-op, not a fault");
     }
 
+    [SkippableFact]
+    public async Task CommitReservation_NonSqlite_RecoveryInsertFailsForNonDuplicateReason_Rethrows()
+    {
+        SkipIfDockerUnavailable();
+        var repo = new LlmUsageRecordRepository(Db);
+        var userId = Guid.NewGuid();
+
+        var reservationId = await ReserveSlotAsync(repo, userId);
+        await Db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"LlmUsageRecords\" WHERE \"Id\" = {0}", reservationId);
+
+        // Provider exceeds its 100-char column limit, so the recovery insert fails with a real write
+        // error — not the duplicate-key settle race. It must propagate instead of being silently
+        // reported as AlreadySettled (which would drop billed usage).
+        var oversizedProvider = new string('p', 150);
+
+        await FluentActions
+            .Awaiting(() => repo.CommitReservationAsync(
+                reservationId, userId, LlmSurface.Chat, oversizedProvider, "gpt-4", 1, 1))
+            .Should().ThrowAsync<DbUpdateException>();
+
+        Db.ChangeTracker.Clear();
+        (await Db.LlmUsageRecords.CountAsync(r => r.Id == reservationId)).Should().Be(0,
+            "a failed recovery insert must surface, leaving no row, rather than claim settlement");
+    }
+
     /// <summary>
     /// Reserves a single quota slot (unlimited token budgets, generous request budget) via the
     /// non-SQLite reserve fallback and returns the reservation id.

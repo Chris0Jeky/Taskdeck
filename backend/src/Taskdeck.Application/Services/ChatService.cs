@@ -581,6 +581,7 @@ public class ChatService : IChatService
         // Atomic quota reservation (issue #1313), mirroring the non-streaming path.
         Guid? quotaReservationId = null;
         var quotaCommitted = false;
+        var quotaEstimatedTokens = 0;
         if (_quotaService != null)
         {
             var reservation = await _quotaService.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
@@ -590,6 +591,9 @@ public class ChatService : IChatService
                 yield break;
             }
             quotaReservationId = reservation.ReservationId;
+            // Kept for the abandoned-stream settle: with no final usage event, the reserved estimate
+            // is the best available token count to commit.
+            quotaEstimatedTokens = reservation.EstimatedTokens;
         }
 
         // Accumulate streamed content and capture usage from the final token event
@@ -599,6 +603,9 @@ public class ChatService : IChatService
         int? tokensUsed = null;
         string? provider = null;
         string? model = null;
+        // True once the provider has delivered at least one non-error event: the LLM call was made and
+        // tokens flowed, so the reservation is billable even if the final usage event never arrives.
+        var providerStreamed = false;
 
         // try/finally (no catch — legal around `yield` in an iterator) guarantees the reservation is
         // settled if the stream throws or yields no usable tokens. The scope opens immediately after
@@ -621,13 +628,20 @@ public class ChatService : IChatService
 
             await foreach (var token in _llmProvider.StreamAsync(request, ct))
             {
+                // An error event carries no delivered tokens (the adapter surfaced a failure), so it
+                // does not make the stream billable on its own.
+                if (token.Error == null)
+                    providerStreamed = true;
+
                 contentBuilder.Append(token.Token);
-                if (token.IsComplete)
-                {
-                    tokensUsed = token.TokensUsed;
+                // Best-known provider/model: any event may carry them; the final usage event is
+                // authoritative and overwrites earlier values.
+                if (token.Provider != null)
                     provider = token.Provider;
+                if (token.Model != null)
                     model = token.Model;
-                }
+                if (token.IsComplete)
+                    tokensUsed = token.TokensUsed;
 
                 yield return token;
             }
@@ -663,12 +677,14 @@ public class ChatService : IChatService
         }
         finally
         {
-            // Settle, don't just release (M1, #1427 review): a client that aborts the stream after
-            // the final token (cancelling the message-persistence awaits above, or disposing the
-            // iterator before the epilogue runs) has still been billed — commit those tokens instead
-            // of deleting the reservation, which would be a client-controllable quota bypass. Only a
-            // stream that produced no billed usage releases. try/catch so a settle failure (this
-            // finally also runs during iterator disposal) cannot mask the original exception.
+            // Settle, don't just release (M1 + P1, #1427 review): a provider-started stream is
+            // billable. (a) Final usage known → commit the actuals. (b) The provider delivered at
+            // least one token but the client abandoned the stream (disconnect/dispose) before the
+            // final usage event → commit the reserved estimate; releasing here would let a client
+            // that reads one token and disconnects run unmetered LLM calls, a quota bypass.
+            // (c) The provider never delivered anything → nothing billable, release the slot.
+            // try/catch so a settle failure (this finally also runs during iterator disposal)
+            // cannot mask the original exception.
             if (_quotaService != null && quotaReservationId is Guid rid && !quotaCommitted)
             {
                 try
@@ -680,6 +696,19 @@ public class ChatService : IChatService
                             userId, Domain.Enums.LlmSurface.Chat,
                             provider, model,
                             tokensUsed.Value, 0,
+                            CancellationToken.None);
+                    }
+                    else if (providerStreamed)
+                    {
+                        // No final count exists, so the reserved estimate is committed as input tokens
+                        // (output 0) — the deliberate over-count-not-bypass posture: better to charge
+                        // the estimate than to let abandonment erase real usage. Unknown provider/model
+                        // fall back to the repository's reservation placeholder.
+                        await _quotaService.CommitReservationAsync(
+                            rid,
+                            userId, Domain.Enums.LlmSurface.Chat,
+                            provider ?? string.Empty, model ?? string.Empty,
+                            quotaEstimatedTokens, 0,
                             CancellationToken.None);
                     }
                     else

@@ -1894,6 +1894,105 @@ public class ChatServiceTests
         events[1].Model.Should().Be("mock-default");
     }
 
+    [Fact]
+    public async Task StreamResponseAsync_ClientDisconnectsMidStream_ShouldCommitEstimateNotRelease()
+    {
+        // P1 (#1427 review): the provider is invoked before/while yielding tokens, so a stream the
+        // client abandons after an early token has already incurred usage even though the final
+        // usage event never arrived. Releasing would let a read-one-token-then-disconnect loop run
+        // unmetered LLM calls — a provider-started stream is billable, so the settle must COMMIT
+        // the reserved estimate (input=estimate, output=0; provider/model unknown before the final
+        // event, so the repository substitutes its reservation placeholder).
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream abandonment quota test");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(StreamEventsWithUsage());
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        // The client reads exactly one early token, then disconnects (disposes the iterator) before
+        // the final IsComplete event that would carry the actual usage.
+        await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default))
+        {
+            break;
+        }
+
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            string.Empty,
+            string.Empty,
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_ProviderYieldsOnlyErrorEvent_ShouldReleaseNotCommit()
+    {
+        // Boundary of the billable-once-started rule: an error event carries no delivered tokens
+        // (the adapter surfaced a failure), so a stream that produced ONLY an error event is not
+        // billable — the settle must still release the slot, not charge the estimate.
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream error-only quota test");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(ErrorOnlyStream());
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
+
+        quotaMock.Verify(
+            q => q.ReleaseReservationAsync(reservationId, CancellationToken.None), Times.Once);
+        quotaMock.Verify(
+            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> ErrorOnlyStream()
+    {
+        yield return new LlmTokenEvent(string.Empty, true, Error: "provider unavailable");
+        await Task.CompletedTask;
+    }
+
     private static async IAsyncEnumerable<LlmTokenEvent> StreamEvents()
     {
         yield return new LlmTokenEvent("token", true, TokensUsed: 10, Provider: "Mock", Model: "mock-default");
