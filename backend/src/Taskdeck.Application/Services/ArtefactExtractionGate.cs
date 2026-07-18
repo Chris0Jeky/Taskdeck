@@ -17,7 +17,20 @@ public sealed class ArtefactExtractionGate : IDisposable
 
     public ArtefactExtractionGate(ArtefactStorageSettings? settings = null)
     {
-        MaxConcurrency = (settings ?? new ArtefactStorageSettings()).ExtractionMaxConcurrency;
+        var concurrency = (settings ?? new ArtefactStorageSettings()).ExtractionMaxConcurrency;
+        // Startup options validation enforces [1, 64] on the bound settings, but a
+        // hand-constructed or misconfigured settings object can still reach here. Guard
+        // loudly: a negative value would throw an opaque ArgumentOutOfRangeException from
+        // SemaphoreSlim, and zero would silently create a permanently-locked gate that
+        // rejects every extraction — both are misconfigurations, not runtime states.
+        if (concurrency < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(settings),
+                concurrency,
+                $"{nameof(ArtefactStorageSettings.ExtractionMaxConcurrency)} must be at least 1.");
+        }
+        MaxConcurrency = concurrency;
         // maxCount == MaxConcurrency turns an over-release (a double-free bug) into an
         // immediate SemaphoreFullException instead of silently inflating capacity.
         _semaphore = new SemaphoreSlim(MaxConcurrency, MaxConcurrency);
@@ -39,8 +52,22 @@ public sealed class ArtefactExtractionGate : IDisposable
     /// <summary>Return a permit previously taken by <see cref="TryAcquire"/>.</summary>
     public void Release()
     {
-        _semaphore.Release();
-        PermitReleased?.Invoke();
+        try
+        {
+            _semaphore.Release();
+            PermitReleased?.Invoke();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The gate is a DI singleton disposed at application shutdown, but an
+            // abandoned parse worker's completion continuation can still run afterwards
+            // and call Release() on the disposed semaphore. Swallow the shutdown-race
+            // dispose: releasing capacity in a dying process is a no-op, and letting it
+            // throw would either mask another exception in the service's finally or
+            // surface as an UnobservedTaskException (noisy Sentry alerts) from the
+            // fire-and-forget continuation. This catches only the disposed-gate race; a
+            // genuine over-release still throws SemaphoreFullException (see the ctor).
+        }
     }
 
     /// <summary>

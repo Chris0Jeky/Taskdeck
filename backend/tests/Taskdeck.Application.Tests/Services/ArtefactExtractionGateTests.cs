@@ -191,6 +191,33 @@ public sealed class ArtefactExtractionGateTests
         gate.AvailablePermits.Should().Be(1, "the permit is returned exactly once after the abandoned worker completes");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_RejectsNonPositiveConcurrency(int concurrency)
+    {
+        // Zero would create a permanently-locked gate; negative throws opaquely from
+        // SemaphoreSlim. The ctor guards both loudly as misconfiguration.
+        var act = () => new ArtefactExtractionGate(
+            new ArtefactStorageSettings { ExtractionMaxConcurrency = concurrency });
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Release_AfterDispose_DoesNotThrow_ForShutdownRace()
+    {
+        // Mirrors an abandoned worker's completion continuation calling Release() after
+        // the DI singleton gate has been disposed at application shutdown.
+        var gate = new ArtefactExtractionGate(new ArtefactStorageSettings { ExtractionMaxConcurrency = 1 });
+        gate.TryAcquire().Should().BeTrue();
+        gate.Dispose();
+
+        var act = gate.Release;
+
+        act.Should().NotThrow();
+    }
+
     private void ArrangeStoredArtefact(string mimeType, byte[] content)
     {
         var artefact = new SourceArtefact(
