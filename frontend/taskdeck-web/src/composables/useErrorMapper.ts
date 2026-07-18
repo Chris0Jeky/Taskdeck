@@ -60,6 +60,22 @@ export function getValidationReason(err: unknown): string | null {
   return message && message.length > 0 ? message : null
 }
 
+/**
+ * True when the error is a backend 403 or 404 for a proposal read — the signals
+ * `AuthorizeProposalAsync(requireWriteAccess:false)` returns when the caller no
+ * longer has board access (403) or the proposal/board/requester is gone (404;
+ * the backend 404s a revoked read to avoid leaking existence). Review surfaces
+ * use this to RETRACT a stored preview whose access was revoked mid-session,
+ * while ignoring transient errors (5xx/network) that must NOT tear down an
+ * otherwise-inspectable local preview (#1414 P2: re-check access on reveal).
+ */
+export function isAccessDeniedError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const candidate = err as { response?: { status?: number } }
+  const status = candidate.response?.status
+  return status === 403 || status === 404
+}
+
 export function getErrorDisplay(err: unknown, fallback: string): { message: string; code: string | null } {
   const apiError = parseApiError(err)
   if (apiError) {

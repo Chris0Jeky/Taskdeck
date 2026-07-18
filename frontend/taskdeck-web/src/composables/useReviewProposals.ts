@@ -163,7 +163,17 @@ export function useReviewProposals() {
     const normalized = normalizeProposalStatus(proposal.status)
     if (normalized === 'Expired') return true
     if (normalized === 'PendingReview' || normalized === 'Approved') {
-      return new Date(proposal.expiresAt).getTime() <= nowMs.value
+      // Honor the server-authoritative `isExpired` flag in addition to the local
+      // 60s clock: the client clock can lag inside the tick window or skew behind
+      // server time, and if the server has already expired the proposal the live
+      // `/diff` 400s — the read-only guards must classify it as expired so the
+      // review surfaces present the stored preview instead (#1414 P2). The flag
+      // is time-based and status-AGNOSTIC on the backend (`IsExpired => UtcNow >
+      // ExpiresAt`), so it is consulted ONLY inside this Pending/Approved branch:
+      // a terminal proposal whose expiry later passed must keep its terminal
+      // classification (Applied/Rejected/…), never flip to "Expired" — otherwise
+      // `visibleProposals`, the status labels, and the expired notice regress.
+      return proposal.isExpired === true || new Date(proposal.expiresAt).getTime() <= nowMs.value
     }
     return false
   }

@@ -12,6 +12,7 @@ vi.mock('../../api/automationApi', () => ({
     executeProposal: vi.fn(),
     dismissProposals: vi.fn(),
     getProposalDiff: vi.fn(),
+    getProposal: vi.fn(),
   },
 }))
 
@@ -181,6 +182,44 @@ describe('useReviewActions', () => {
 
     expect(automationApi.getProposalDiff).not.toHaveBeenCalled()
     expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored diff text')
+  })
+
+  it('retracts the stored preview when the access re-check returns 403 after reveal (#1414 P2 #2)', async () => {
+    // Revealing the stored preview re-authorizes via getProposal; a 403/404 means
+    // board access was revoked mid-session, so the locally-cached preview is torn
+    // down. Rendered synchronously first (the #1397 no-network-gate invariant),
+    // then retracted once the async probe reports revoked access.
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'Expired', diffPreview: 'stored diff text' }),
+    ]
+    vi.mocked(automationApi.getProposal).mockRejectedValue({ response: { status: 403 } })
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+    // Let the async access probe settle.
+    await new Promise((resolve) => setTimeout(resolve))
+
+    expect(automationApi.getProposal).toHaveBeenCalledWith('p-1')
+    // Preview retracted once the probe reports revoked access.
+    expect(actions.selectedDiffMode.value).toBeNull()
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+    expect(actions.selectedDiff.value).toBeNull()
+  })
+
+  it('keeps the stored preview when the access re-check returns a transient 500 (#1414 P2 #2)', async () => {
+    // Only a genuine 403/404 retracts — a transient error must not tear down an
+    // inspectable local preview.
+    proposals.value = [
+      makeProposal({ id: 'p-1', status: 'Expired', diffPreview: 'stored diff text' }),
+    ]
+    vi.mocked(automationApi.getProposal).mockRejectedValue({ response: { status: 500 } })
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('p-1')
+    await new Promise((resolve) => setTimeout(resolve))
+
     expect(actions.selectedDiffMode.value).toBe('stored')
     expect(actions.selectedDiff.value).toBe('stored diff text')
   })

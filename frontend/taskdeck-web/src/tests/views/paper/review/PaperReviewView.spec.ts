@@ -1067,6 +1067,87 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('presents the stored preview for a server-expired PendingReview proposal whose client clock still reads live, never firing /diff (#1414 P2 #1)', async () => {
+    // Server says isExpired:true (clock lag/skew) but the client 60s clock has
+    // not yet passed expiresAt. Honoring the server flag classifies the proposal
+    // read-only, so the stored preview is shown instead of a live /diff that 400s.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'server-expired',
+        status: 'PendingReview',
+        expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(), // client clock: still live
+        isExpired: true, // server: already expired
+        diffPreview: '0. Create card "Server expired"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('read-only')
+    const pre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+    expect(pre.exists()).toBe(true)
+    expect(pre.text()).toContain('Server expired')
+
+    wrapper.unmount()
+  })
+
+  it('retracts the stored preview and warns when access is revoked (getProposal 403) after reveal (#1414 P2 #2)', async () => {
+    // Revealing the stored preview re-authorizes via getProposal; a 403/404 means
+    // board access was revoked mid-session, so the locally-cached preview must be
+    // torn down rather than left on screen.
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'revoked',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Secret"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('revoked')
+    // Pane torn down; no stored preview left on screen.
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(false)
+    expect(mocks.errorToast).toHaveBeenCalledWith(
+      expect.stringContaining('no longer available'),
+    )
+
+    wrapper.unmount()
+  })
+
+  it('keeps the stored preview on a transient (500) error from the access re-check (#1414 P2 #2)', async () => {
+    // Only a genuine 403/404 retracts the preview — a transient error must not
+    // tear down an otherwise-inspectable local preview.
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 500 } })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'transient',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Still here"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(true)
+    const pre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+    expect(pre.exists()).toBe(true)
+    expect(pre.text()).toContain('Still here')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
   it('falls back to the recorded operations for an expired proposal with no stored preview (#1397 / Codex)', async () => {
     // Normal creation flows never populate diffPreview, so an expired proposal
     // with operations must still be inspectable via a locally rendered

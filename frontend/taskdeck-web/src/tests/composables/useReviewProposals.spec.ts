@@ -113,7 +113,7 @@ function watcherForCurrentSourceValue(expected: unknown) {
 
 function makeProposal(overrides: Partial<{
   id: string; status: string; sourceType: string; sourceReferenceId: string | null;
-  boardId: string | null; createdAt: string; expiresAt: string;
+  boardId: string | null; createdAt: string; expiresAt: string; isExpired: boolean;
 }> = {}) {
   return {
     id: overrides.id ?? 'p-1',
@@ -129,6 +129,7 @@ function makeProposal(overrides: Partial<{
     createdAt: overrides.createdAt ?? '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     expiresAt: overrides.expiresAt ?? '2099-01-01T00:00:00Z',
+    isExpired: overrides.isExpired,
     decidedAt: null,
     decidedByUserId: null,
     // One operation by default: approve-actionability additionally requires a
@@ -319,6 +320,42 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       const p = makeProposal({ status: 'Applied' })
       expect(rp.isProposalExpired(p as any)).toBe(false)
+    })
+
+    it('honors the server isExpired flag for a PendingReview proposal whose client clock has not yet elapsed (#1414 P2 #1)', () => {
+      // Clock lag/skew: the server has already expired the proposal (isExpired:
+      // true) but the client's 60s clock still reads a moment before expiresAt.
+      // Without honoring the flag the read-only guards would fire a live /diff
+      // that 400s instead of presenting the stored preview.
+      const rp = useReviewProposals()
+      rp.nowMs.value = new Date('2026-06-01T00:00:00Z').getTime()
+      const p = makeProposal({
+        status: 'PendingReview',
+        expiresAt: '2026-06-01T00:00:30Z', // 30s in the "future" per the lagging client clock
+        isExpired: true,
+      })
+      expect(rp.isProposalExpired(p as any)).toBe(true)
+    })
+
+    it('honors the server isExpired flag for an Approved proposal whose client clock has not yet elapsed (#1414 P2 #1)', () => {
+      const rp = useReviewProposals()
+      rp.nowMs.value = new Date('2026-06-01T00:00:00Z').getTime()
+      const p = makeProposal({ status: 'Approved', expiresAt: '2099-01-01T00:00:00Z', isExpired: true })
+      expect(rp.isProposalExpired(p as any)).toBe(true)
+    })
+
+    it('does NOT flip a terminal Applied proposal to expired even when the server isExpired flag is true (#1414 P2 #1 boundary)', () => {
+      // The backend isExpired flag is time-based and status-agnostic (true for
+      // any past-expiry proposal). Consulting it must stay scoped to
+      // PendingReview/Approved — a terminal proposal whose expiry later passed
+      // must keep its terminal classification, or visibleProposals would
+      // force-show completed items and the status labels would mislabel it.
+      const rp = useReviewProposals()
+      rp.nowMs.value = new Date('2026-06-04T00:00:00Z').getTime()
+      const applied = makeProposal({ status: 'Applied', expiresAt: '2026-05-01T00:00:00Z', isExpired: true })
+      const rejected = makeProposal({ status: 'Rejected', expiresAt: '2026-05-01T00:00:00Z', isExpired: true })
+      expect(rp.isProposalExpired(applied as any)).toBe(false)
+      expect(rp.isProposalExpired(rejected as any)).toBe(false)
     })
   })
 

@@ -3,9 +3,9 @@ import { automationApi } from '../api/automationApi'
 import { proposalRevisionsApi } from '../api/proposalRevisionsApi'
 import { useToastStore } from '../store/toastStore'
 import { createRequestId } from '../utils/requestId'
-import { normalizeProposalRiskLevel } from '../utils/automation'
+import { normalizeProposalRiskLevel, normalizeProposalStatus } from '../utils/automation'
 import type { Proposal as ApiProposal } from '../types/automation'
-import { getErrorDisplay, getValidationReason, isValidationError } from './useErrorMapper'
+import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from './useErrorMapper'
 import { isProposalReadOnly } from './useReviewProposals'
 import { usePerformanceMark } from './usePerformanceMark'
 
@@ -22,11 +22,18 @@ import { usePerformanceMark } from './usePerformanceMark'
 export type ReviewDiffMode = 'live' | 'stored' | 'invalid'
 
 // Fallback expiry classifier for callers that don't supply the surface's
-// reactive clock. Trusts the server-authoritative `isExpired` flag and the
-// domain `Expired` status; it cannot see a proposal whose expiresAt has passed
-// mid-session, so surfaces that need that (Legacy) pass their own function.
+// reactive clock. Status-scoped to match the canonical rule
+// (useReviewProposals.isProposalExpired): the server-authoritative `isExpired`
+// flag is time-based and status-AGNOSTIC on the backend, so it is trusted ONLY
+// for a live PendingReview/Approved proposal — a terminal proposal whose expiry
+// later passed keeps its terminal status, never flips to "Expired". It cannot
+// see a still-pending proposal whose expiresAt passes mid-session without the
+// server flag, so surfaces that need that (Legacy) pass their own clock fn.
 function defaultIsProposalExpired(proposal: ApiProposal): boolean {
-  return proposal.isExpired === true || proposal.status === 'Expired'
+  const normalized = normalizeProposalStatus(proposal.status)
+  if (normalized === 'Expired') return true
+  if (normalized === 'PendingReview' || normalized === 'Approved') return proposal.isExpired === true
+  return false
 }
 
 export function useReviewActions(
@@ -88,12 +95,34 @@ export function useReviewActions(
     }
   }
 
+  // #1414 P2: revealing the stored `diffPreview` locally skips the `/diff` call
+  // that used to re-run AuthorizeProposalAsync, so re-authorize on reveal. Render
+  // the stored preview SYNCHRONOUSLY (the #1397 seam invariant: local content is
+  // never network-gated), then probe access via GET proposal (which returns 200
+  // for a still-readable terminal/expired proposal — unlike `/diff`, it does not
+  // 400 on expiry). ONLY a genuine 403/404 retracts the preview; a transient
+  // error must not tear down an inspectable local preview. The refreshed DTO is
+  // deliberately NOT rendered — #1397 keeps the decision-time stored artifact
+  // (a live re-render can drift). Guarded by requestId + proposal id so a late
+  // response for a toggled-off / switched proposal cannot tear down the wrong pane.
+  async function verifyStoredPreviewAccess(proposalId: string, requestId: number) {
+    try {
+      await automationApi.getProposal(proposalId)
+    } catch (e: unknown) {
+      if (!isAccessDeniedError(e)) return
+      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      resetDiffState()
+      toast.error('This proposal is no longer available to you.')
+    }
+  }
+
   function presentStoredPreview(proposal: ApiProposal, requestId: number) {
     selectedDiff.value = proposal.diffPreview
     selectedDiffMode.value = 'stored'
     selectedDiffInvalidReason.value = null
     selectedDiffRevised.value = null
     void loadStoredRevisedSignal(proposal.id, requestId)
+    void verifyStoredPreviewAccess(proposal.id, requestId)
   }
 
   // #1397 LOW-5: the pane's presentation is chosen at toggle time, but a proposal

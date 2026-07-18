@@ -13,7 +13,7 @@ import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useProposalRevisions } from '../../composables/useProposalRevisions'
-import { getErrorDisplay, getValidationReason, isValidationError } from '../../composables/useErrorMapper'
+import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from '../../composables/useErrorMapper'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
@@ -282,11 +282,16 @@ watch(
     if (!p || previewDiffProposalId.value !== p.id) return
     // Cancel any in-flight live fetch so a late response can't overwrite the
     // read-only presentation.
-    latestDiffRequestId += 1
+    const requestId = ++latestDiffRequestId
     previewDiff.value = p.diffPreview
     previewDiffMode.value = 'stored'
     previewDiffInvalidReason.value = null
     previewDiffLoading.value = false
+    // #1414 P2: this conversion newly presents the stored preview, so re-check
+    // access (parity with the Legacy watcher, which routes through
+    // presentStoredPreview). The prior live pane was access-checked at open, but
+    // access can be revoked in the window before it expires into read-only.
+    void verifyStoredPreviewAccess(p.id, requestId)
   },
 )
 
@@ -784,18 +789,40 @@ function onToggleProvenance() {
   toast.info('Provenance toggle is not wired yet; provenance is rendered inline below.')
 }
 
+// #1414 P2: revealing the stored `diffPreview` locally skips the `/diff` call
+// that used to re-run AuthorizeProposalAsync, so re-authorize on reveal. Render
+// SYNCHRONOUSLY (the #1397 seam invariant: local content is never network-gated),
+// then probe access via GET proposal — which returns 200 for a still-readable
+// terminal/expired proposal (unlike `/diff`, it does not 400 on expiry). ONLY a
+// genuine 403/404 retracts the preview; a transient error must not tear down an
+// inspectable local preview. The refreshed DTO is deliberately NOT rendered:
+// #1397 keeps the decision-time stored artifact (a live re-render can drift).
+// Guarded by requestId + proposal id so a late response for a toggled-off or
+// switched proposal cannot tear down the wrong pane.
+async function verifyStoredPreviewAccess(proposalId: string, requestId: number) {
+  try {
+    await automationApi.getProposal(proposalId)
+  } catch (e: unknown) {
+    if (!isAccessDeniedError(e)) return
+    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== proposalId) return
+    clearPreviewDiff()
+    toast.error('This proposal is no longer available to you.')
+  }
+}
+
 // Present a proposal's STORED preview read-only (no live `/diff`). The stored
 // `diffPreview` is LOCAL content and renders synchronously. Bumping the diff
 // request id also cancels any live fetch that this preview supersedes, so a
 // late 400 from a superseded request cannot overwrite the stored pane.
 function presentStoredPreview(target: ApiProposal) {
-  latestDiffRequestId += 1
+  const requestId = ++latestDiffRequestId
   previewDiffProposalId.value = target.id
   previewDiff.value = target.diffPreview
   previewDiffMode.value = 'stored'
   previewDiffInvalidReason.value = null
   previewDiffLoading.value = false
   scrollDiffIntoView()
+  void verifyStoredPreviewAccess(target.id, requestId)
 }
 
 async function onPreviewDiff() {
