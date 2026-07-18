@@ -142,6 +142,55 @@ public sealed class ArtefactExtractionGateTests
         gate.AvailablePermits.Should().Be(cap, "every permit was returned");
     }
 
+    [Fact]
+    public async Task CallerCancellation_AbandonsWorker_RecordsNoRow_AndReleasesPermitWhenWorkerFinishes()
+    {
+        // The caller-cancellation branch is distinct from the budget-timeout branch: it
+        // rethrows (no history row) but still defers permit release to the worker-completion
+        // continuation. Pin that the permit is held until the abandoned worker finishes and
+        // released exactly once thereafter, with no extraction-history row written.
+        ArrangeStoredArtefact("application/pdf", [1, 2, 3]);
+        var storeCalls = 0;
+        _extractions
+            .Setup(repository => repository.TryAddForUserAsync(
+                It.IsAny<ArtefactExtraction>(),
+                _userId,
+                It.IsAny<CancellationToken>()))
+            .Callback(() => Interlocked.Increment(ref storeCalls))
+            .ReturnsAsync(ArtefactExtractionStoreResult.Stored);
+
+        var gate = new ArtefactExtractionGate(new ArtefactStorageSettings { ExtractionMaxConcurrency = 1 });
+        var permitReleased = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        gate.PermitReleased += () => permitReleased.TrySetResult();
+
+        using var release = new ManualResetEventSlim(false);
+        using var entered = new CountdownEvent(1);
+        // A generous budget so only caller cancellation (never the timeout branch) can end
+        // the wait; the latched extractor ignores its token, so the parse must be abandoned.
+        var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = 30, ExtractionMaxConcurrency = 1 };
+        var extractor = new LatchedCountingExtractor("application/pdf", release, entered);
+        var service = new ArtefactExtractionService(
+            _artefacts.Object, _extractions.Object, [extractor], settings, gate: gate);
+
+        using var callerCts = new CancellationTokenSource();
+        var extraction = service.ExtractAsync(_userId, _artefactId, callerCts.Token);
+
+        entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue("the worker must enter the extractor before we cancel");
+        gate.AvailablePermits.Should().Be(0, "the running worker holds the permit");
+
+        callerCts.Cancel();
+
+        var act = async () => await extraction;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        storeCalls.Should().Be(0, "a caller-cancelled extraction writes no history row");
+        gate.AvailablePermits.Should().Be(0, "the abandoned worker still holds the permit until it finishes");
+
+        release.Set();
+        (await Task.WhenAny(permitReleased.Task, Task.Delay(TimeSpan.FromSeconds(10))))
+            .Should().Be(permitReleased.Task, "the abandoned worker must release its permit once it finishes");
+        gate.AvailablePermits.Should().Be(1, "the permit is returned exactly once after the abandoned worker completes");
+    }
+
     private void ArrangeStoredArtefact(string mimeType, byte[] content)
     {
         var artefact = new SourceArtefact(

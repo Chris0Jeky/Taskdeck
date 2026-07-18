@@ -50,7 +50,7 @@ public sealed class ArtefactStorageSettings
     /// <c>TooManyRequests</c> and spawn no new thread, so box-wide CPU burn is capped
     /// at this many spinning threads. This gate caps concurrency and abandoned-thread
     /// accumulation; it does not bound a single parse's peak memory (a decompression
-    /// bomb inside one parse) — that containment is tracked separately (#1379).
+    /// bomb inside one parse) — that containment is tracked separately (ADR-0048 / #1379).
     /// </summary>
     // Integer literals set RangeAttribute.OperandType to int, matching this int
     // property; a string/double-operand range would coerce and misvalidate.

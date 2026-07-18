@@ -143,12 +143,21 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                 // gate is saturated — every permit held, including by abandoned bombs
                 // still spinning box-wide — reject pre-parse without creating a worker
                 // or an extraction-history row (capacity is a transient property of the
-                // box, not of this artefact; unlike the timeout/decoded-size outcomes,
-                // it is not recorded). Callers retry on TooManyRequests. Release mirrors
-                // budgetCts disposal exactly: inline in the finally on completed paths,
-                // deferred to the worker-completion continuation on abandoned paths.
+                // box, not of this artefact; unlike the timeout outcome, it is not
+                // recorded). Callers retry on TooManyRequests. Release mirrors budgetCts
+                // disposal exactly: inline in the finally on completed paths, deferred to
+                // the worker-completion continuation on abandoned paths.
+                //
+                // The linked budget CTS is created BEFORE the permit is taken: if its
+                // construction ever throws (e.g. the caller's token source was already
+                // disposed), no permit has been acquired yet, so none can leak. After a
+                // successful acquire the only statement before the release-owning try is a
+                // non-throwing assignment, and the worker is still spawned only inside the
+                // try — so the permit tracks parse-THREAD occupancy exactly.
+                var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 if (_gate is not null && !_gate.TryAcquire())
                 {
+                    budgetCts.Dispose();
                     _logger?.LogWarning(
                         "Local extraction rejected for artefact {ArtefactId}: extraction capacity is saturated ({MaxConcurrency} concurrent)",
                         sourceArtefactId,
@@ -158,7 +167,6 @@ public sealed class ArtefactExtractionService : IArtefactExtractionService
                         "Local extraction is at capacity; retry shortly");
                 }
 
-                var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 var workerAbandoned = false;
                 try
                 {

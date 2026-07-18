@@ -1,6 +1,6 @@
 # ADR-0048: Decompression-Bomb Containment Boundary — Memory-Capped Extraction Worker Process
 
-- Status: Accepted
+- Status: Accepted (under authority the maintainer delegated 2026-07-18; the reversal below remains open to maintainer revision)
 - Date: 2026-07-18
 - Deciders: Overnight coordinator, on the containment-boundary choice the maintainer explicitly delegated in the 2026-07-18 launch directive; the reversal below remains open to the maintainer
 - Related: ADR-0047 (artefact-extraction resource bounding — permit gate + provider-injection depth; this ADR is its deferred containment boundary), ADR-0046 (generalist artefact intake), ADR-0044 (revival pivot / finite-work discipline), `#1379` (extraction resource ceiling — stays open for this work), PR `#1417` stop-gate adjudication (comment `5007117851`)
@@ -28,6 +28,8 @@ The kill/timeout semantics reuse the existing abandonment vocabulary: a killed w
 
 ## Alternatives Considered
 
+The (a)/(c) letters track the option labels in the PR #1417 stop-gate adjudication (comment `5007117851`); **(b) — the memory-capped worker process — is the chosen option, recorded in the Decision above**, which is why it is not repeated as a rejected alternative here.
+
 - **(a) Raw-bytes bounded pre-inflate scan before `PdfDocument.Open`.** REJECTED as the primary boundary. To bound decode you must locate every stream and its filter chain, which means tokenizing PDF structure ahead of the real parser — a second, partial PDF parser. It is blocklist-shaped (enumerate known bomb vectors) and defeatable by tokenizer evasion (object-stream indirection, malformed-but-tolerated structure, filter aliasing) where the pre-scan and PdfPig disagree on what a stream is. Retained at most as an optional cheap in-process pre-filter, never as the guarantee.
 - **(c) Upstream PdfPig fix/fork** threading `ParsingOptions.FilterProvider` through `FirstPassParser`/`XrefStreamParser`. This is the cleanest long-term exit and is **pursued as the long-term fix**, but it is externally timed (upstream release cadence) and cannot gate this work. **The public disclosure/upstream-filing step is HUMAN-OWNED** — no upstream issue or PR is filed by an agent.
 - **In-process only (accept the xref gap).** Rejected: it would ship a known-unbounded memory path as if contained, exactly the overclaim ADR-0047 corrects.
@@ -39,7 +41,7 @@ The kill/timeout semantics reuse the existing abandonment vocabulary: a killed w
 - **Cost:** a process host (spawn, lifecycle/health/restart supervision, IPC contract for artefact bytes in and extraction result/warnings out) and cross-platform cap wiring across the desktop-exe and container run paths — the standing operational surface the draft wanted to avoid, now justified by the proven gap.
 - **Spawn latency:** each extraction pays worker start-up (or warm-pool checkout) cost; acceptable because extraction is already off the interactive path and rate-bounded by the permit gate.
 - **True hard memory guarantee:** the OS enforces the cap regardless of what the parser does internally, so a bomb on any path (xref included) is contained rather than merely detected.
-- **Delivery:** implementation is tracked as a `#1379` follow-up (see the seeded implementation issue). Config keys ship default-OFF; the acceptance bar includes a bomb-fixture test proving the cap kills the worker on both the Job Object and cgroup paths. The provider ceiling (ADR-0047 §2) and this boundary land together; the permit gate (ADR-0047 §1) is already independently merged.
+- **Delivery:** implementation is tracked as issue `#1429` (the seeded `#1379` follow-up). Config keys ship default-OFF; the acceptance bar includes a bomb-fixture test proving the cap kills the worker on both the Job Object and cgroup paths. The provider ceiling (ADR-0047 §2) and this boundary land together; the permit gate (ADR-0047 §1) is already independently merged.
 - **Ratification:** ships **Accepted** on the coordinator's delegated authority; the reversal and the boundary choice are surfaced for maintainer confirmation.
 
 ## References
@@ -47,5 +49,6 @@ The kill/timeout semantics reuse the existing abandonment vocabulary: a killed w
 - PR `#1417` stop-gate adjudication — comment `5007117851` (the `DefaultFilterProvider.Instance` proof; ObjStm-covered / xref-gapped)
 - ADR-0047 — permit gate (shipped) + provider-injection ceiling (depth); this ADR is its deferred containment boundary
 - Issue `#1379` — extraction resource ceiling (stays open); the memory-capped-worker implementation issue links here
+- Issue `#1429` — memory-capped extraction-worker implementation (the seeded `#1379` follow-up that delivers this decision)
 - PdfPig 0.1.15 `XrefStreamParser.TryReadStreamAtOffset`, `FirstPassParser.Parse`, `DefaultFilterProvider.Instance`
 - Windows Job Objects (`JOB_OBJECT_LIMIT_JOB_MEMORY`); Linux cgroup / container memory limits

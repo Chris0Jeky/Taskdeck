@@ -1,6 +1,6 @@
 # ADR-0047: Artefact-Extraction Resource Bounding — Permit Gate (Shipped) + Provider-Injection Decode Ceiling as Defense-in-Depth
 
-- Status: Accepted
+- Status: Accepted (under authority the maintainer delegated 2026-07-18; open to maintainer revision)
 - Date: 2026-07-18
 - Deciders: Overnight coordinator, on the boundary choice the maintainer delegated 2026-07-18; maintainer ratifies
 - Related: ADR-0048 (decompression-bomb containment boundary — the worker-process decision this defers hard memory containment to), ADR-0046 (generalist artefact intake — the wave this hardens), ADR-0044 (revival pivot / finite-work discipline), `#1379` (extraction resource ceiling), `#1369` (wall-clock extraction budget), PR `#1417` and its stop-gate adjudication (comment `5007117851`), `docs/platform/CONFIGURATION_REFERENCE.md` §Artefacts
