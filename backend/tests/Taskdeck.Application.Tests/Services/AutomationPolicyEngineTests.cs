@@ -309,6 +309,80 @@ public class AutomationPolicyEngineTests
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
     }
 
+    // #1426: the empty-operations case must run the FULL requester/board access gate — only the
+    // per-operation contract checks are operation-dependent. The three tests below pin that an
+    // operation-less proposal is gated on board existence and board access exactly like an
+    // operation-bearing one; previously the empty-list short-circuit returned Success with the
+    // board half skipped (the trap that forced every new consumer to add a manual fallback).
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldReturnNotFound_ForEmptyOperations_WhenBoardMissing()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedPassword");
+        var operations = new List<ProposalOperationDto>();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync((Board?)null);
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldReturnForbidden_ForEmptyOperations_WhenBoardAccessDenied()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var operations = new List<ProposalOperationDto>();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, It.IsAny<Taskdeck.Domain.Enums.UserRole?>(), default))
+            .ReturnsAsync(false);
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldReturnSuccess_ForEmptyOperations_WhenBoardAccessGranted()
+    {
+        // Arrange: empty op list with a board the requester can access — the access gate passes
+        // and the per-operation contract validator is (correctly) skipped, so the result is Success.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var operations = new List<ProposalOperationDto>();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, It.IsAny<Taskdeck.Domain.Enums.UserRole?>(), default))
+            .ReturnsAsync(true);
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+    }
+
     #endregion
 
     #region ValidatePolicy Tests
