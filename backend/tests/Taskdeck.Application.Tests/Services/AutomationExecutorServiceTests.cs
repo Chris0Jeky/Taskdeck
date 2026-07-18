@@ -402,6 +402,40 @@ public class AutomationExecutorServiceTests
     }
 
     [Fact]
+    public async Task ExecuteProposal_WithDanglingPin_ShouldRefuseAsInvariantViolation_NotNotFound()
+    {
+        // #1428 defensive branch: a pinned revision is cascade-owned by its proposal, so a
+        // missing pinned revision is a server invariant violation, not a lookup miss. The
+        // executor must refuse with InvalidOperation — NotFound would misread as "proposal not
+        // found" for a proposal that plainly exists — and must never fall back to the
+        // unapproved original operations.
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var danglingRevisionId = Guid.NewGuid();
+
+        var proposal = CreateApprovedProposal(proposalId, userId, board.Id, new List<ProposalOperationDto>()) with
+        {
+            ApprovedRevisionId = danglingRevisionId
+        };
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _proposalRevisionRepoMock.Setup(r => r.GetByIdAsync(danglingRevisionId, default))
+            .ReturnsAsync((ProposalRevision?)null);
+
+        // Act
+        var result = await _service.ExecuteProposalAsync(proposalId, "execution-key");
+
+        // Assert: refused as an invariant violation before any transaction begins.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Contain(danglingRevisionId.ToString());
+        result.ErrorMessage.Should().Contain("invariant");
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task ExecuteProposal_ShouldMarkLinkedCaptureAsConverted_WhenCaptureBackedProposalIsApplied()
     {
         var proposalId = Guid.NewGuid();

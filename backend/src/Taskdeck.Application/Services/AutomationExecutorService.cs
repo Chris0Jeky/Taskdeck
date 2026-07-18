@@ -256,10 +256,13 @@ public class AutomationExecutorService : IAutomationExecutorService
         {
             // The pinned revision is cascade-owned by the proposal, so it can only vanish together
             // with the proposal itself — this branch is unreachable in practice. Refuse to apply
-            // rather than silently fall back to the (unapproved) original operations.
+            // rather than silently fall back to the (unapproved) original operations. Shaped as
+            // InvalidOperation (server invariant violation), NOT NotFound: the proposal being
+            // executed exists, and a NotFound here would misread as "proposal not found".
             return Result.Failure<ProposalDto>(
-                ErrorCodes.NotFound,
-                $"Approved revision {approvedRevisionId} for proposal {proposal.Id} was not found");
+                ErrorCodes.InvalidOperation,
+                $"Server invariant violation: proposal {proposal.Id} pins approved revision " +
+                $"{approvedRevisionId}, but that revision no longer exists; refusing to apply");
         }
 
         if (!ProposalRevisionPayload.TryParseOperations(

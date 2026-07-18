@@ -302,22 +302,26 @@ public class MigrationBootstrapTests : IDisposable
         var approvedWithRevisions = Guid.NewGuid();
         var approvedWithoutRevisions = Guid.NewGuid();
         var pendingWithRevision = Guid.NewGuid();
+        var appliedWithRevision = Guid.NewGuid();
         var latestRevisionId = Guid.NewGuid();
 
         InsertPreMigrationProposal(approvedWithRevisions, status: 1);    // Approved
         InsertPreMigrationProposal(approvedWithoutRevisions, status: 1); // Approved, no revisions
         InsertPreMigrationProposal(pendingWithRevision, status: 0);      // PendingReview
+        InsertPreMigrationProposal(appliedWithRevision, status: 3);      // Applied (terminal)
 
         InsertPreMigrationRevision(Guid.NewGuid(), approvedWithRevisions, revisionNumber: 1);
         InsertPreMigrationRevision(latestRevisionId, approvedWithRevisions, revisionNumber: 2);
         InsertPreMigrationRevision(Guid.NewGuid(), pendingWithRevision, revisionNumber: 1);
+        InsertPreMigrationRevision(Guid.NewGuid(), appliedWithRevision, revisionNumber: 1);
 
         // Act — apply the pinning migration (and any remainder of the chain).
         _context.Database.Migrate();
 
         // Assert — the approved-with-revisions proposal is pinned to its LATEST revision; the
-        // revisionless approved proposal and the pending proposal stay unpinned (null pin =
-        // original operations for the former; approve pins the latter going forward).
+        // revisionless approved proposal, the pending proposal, and the terminal proposal all
+        // stay unpinned (null pin = original operations for the first; approve pins the second
+        // going forward; the third never reaches the executor's materialization again).
         GetApprovedRevisionId(approvedWithRevisions).Should().Be(latestRevisionId,
             "an already-approved proposal with revisions must be pinned to its latest revision " +
             "to preserve pre-migration Apply behavior");
@@ -325,6 +329,9 @@ public class MigrationBootstrapTests : IDisposable
             "an approved proposal without revisions applies its original operations");
         GetApprovedRevisionId(pendingWithRevision).Should().BeNull(
             "pending proposals are pinned at approve time, not by the backfill");
+        GetApprovedRevisionId(appliedWithRevision).Should().BeNull(
+            "the backfill targets Status = 1 (Approved) only; terminal proposals are already " +
+            "executed and must not be retroactively pinned");
     }
 
     private void InsertPreMigrationProposal(Guid id, int status)
