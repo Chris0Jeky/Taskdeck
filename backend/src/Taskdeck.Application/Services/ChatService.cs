@@ -592,18 +592,6 @@ public class ChatService : IChatService
             quotaReservationId = reservation.ReservationId;
         }
 
-        var chatMessages = session.Messages
-            .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
-            .ToList();
-
-        // Build board context for board-scoped sessions
-        var boardContext = await BuildBoardContextForSessionAsync(session, ct);
-
-        var request = new ChatCompletionRequest(
-            chatMessages,
-            Attribution: BuildAttribution(session, userId),
-            BoardContext: boardContext);
-
         // Accumulate streamed content and capture usage from the final token event
         // so we can persist an assistant message and record quota usage after the
         // stream completes.
@@ -613,9 +601,24 @@ public class ChatService : IChatService
         string? model = null;
 
         // try/finally (no catch — legal around `yield` in an iterator) guarantees the reservation is
-        // released if the stream throws or yields no usable tokens.
+        // settled if the stream throws or yields no usable tokens. The scope opens immediately after
+        // the reservation (Codex P2, #1427): request/board-context construction can throw or be
+        // cancelled, and outside the try that would leak the reserved slot until the TTL sweep,
+        // causing false quota denials for a call that never reached the provider.
         try
         {
+            var chatMessages = session.Messages
+                .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
+                .ToList();
+
+            // Build board context for board-scoped sessions
+            var boardContext = await BuildBoardContextForSessionAsync(session, ct);
+
+            var request = new ChatCompletionRequest(
+                chatMessages,
+                Attribution: BuildAttribution(session, userId),
+                BoardContext: boardContext);
+
             await foreach (var token in _llmProvider.StreamAsync(request, ct))
             {
                 contentBuilder.Append(token.Token);

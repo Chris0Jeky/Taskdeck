@@ -1729,6 +1729,54 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task StreamResponseAsync_ShouldReleaseReservation_WhenBoardContextBuildThrows()
+    {
+        // Codex P2 (#1427): request/board-context construction runs AFTER the reservation; if it
+        // throws before any provider call, the reserved slot must be released immediately — not leak
+        // until the TTL sweep causing false quota denials.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream board-context failure test", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        var boardContextBuilderMock = new Mock<IBoardContextBuilder>();
+        boardContextBuilderMock
+            .Setup(b => b.BuildContextAsync(boardId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("context boom"));
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100));
+
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object,
+            boardContextBuilder: boardContextBuilderMock.Object);
+
+        await FluentActions
+            .Awaiting(async () =>
+            {
+                await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
+            })
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        quotaMock.Verify(
+            q => q.ReleaseReservationAsync(reservationId, CancellationToken.None), Times.Once);
+        quotaMock.Verify(
+            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task SendMessageAsync_ShouldReleaseReservation_WhenCompletionUsesZeroTokens()
     {
         // #1427 re-review: a zero-token completion is not billed — the finally must RELEASE the
