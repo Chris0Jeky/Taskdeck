@@ -48,3 +48,5 @@
 | [0044](ADR-0044-revival-pivot-open-beta.md) | Revival Pivot — Open-Beta Distribution with a Commercial Horizon (Supersedes the Archive Pivot) | Accepted | 2026-07-10 |
 | [0045](ADR-0045-llm-transcript-triage-engine.md) | LLM Transcript Triage — Dedicated Worker Lane, Strategy-with-Fallback, Honest Provenance | Accepted | 2026-07-11 |
 | [0046](ADR-0046-generalist-expansion-single-app.md) | Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork) | Accepted | 2026-07-13 |
+| [0047](ADR-0047-artefact-extraction-resource-bounding.md) | Artefact-Extraction Resource Bounding — Permit Gate (Shipped) + Provider-Injection Decode Ceiling as Defense-in-Depth | Accepted | 2026-07-18 |
+| [0048](ADR-0048-decompression-bomb-containment-worker-process.md) | Decompression-Bomb Containment Boundary — Memory-Capped Extraction Worker Process | Accepted | 2026-07-18 |
