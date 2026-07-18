@@ -7,6 +7,7 @@ public sealed class ArtefactStorageSettings
     public const long DefaultMaxBytesPerArtefact = 10L * 1024 * 1024;
     public const long DefaultMaxBytesPerUser = 200L * 1024 * 1024;
     public const double DefaultExtractionTimeoutSeconds = 30;
+    public const int DefaultExtractionMaxConcurrency = 2;
 
     [Range(typeof(long), "1", "2147483647")]
     public long MaxBytesPerArtefact { get; set; } = DefaultMaxBytesPerArtefact;
@@ -38,4 +39,21 @@ public sealed class ArtefactStorageSettings
     /// "no budget" rather than an instant timeout.
     /// </summary>
     public TimeSpan ExtractionTimeout => TimeSpan.FromSeconds(ExtractionTimeoutSeconds);
+
+    /// <summary>
+    /// Maximum number of artefact extractions whose parse worker may run at once.
+    /// A crafted parser-bomb PDF that never observes cancellation keeps a
+    /// thread-pool thread at full CPU until PdfPig's synchronous parse completes
+    /// (only the request is bounded by <see cref="ExtractionTimeoutSeconds"/>, not
+    /// the abandoned thread). This bounds how many such parses can accumulate: once
+    /// the permits are exhausted, further extractions are rejected pre-parse with
+    /// <c>TooManyRequests</c> and spawn no new thread, so box-wide CPU burn is capped
+    /// at this many spinning threads. This gate caps concurrency and abandoned-thread
+    /// accumulation; it does not bound a single parse's peak memory (a decompression
+    /// bomb inside one parse) — that containment is tracked separately (#1379).
+    /// </summary>
+    // Integer literals set RangeAttribute.OperandType to int, matching this int
+    // property; a string/double-operand range would coerce and misvalidate.
+    [Range(1, 64)]
+    public int ExtractionMaxConcurrency { get; set; } = DefaultExtractionMaxConcurrency;
 }
