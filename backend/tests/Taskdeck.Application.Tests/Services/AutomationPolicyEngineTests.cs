@@ -336,6 +336,21 @@ public class AutomationPolicyEngineTests
     }
 
     [Fact]
+    public async Task ValidatePermissions_ShouldReturnValidationError_ForNullOperations()
+    {
+        // Arrange: a null operations argument is guarded before any work, returning the method's
+        // own ValidationError rather than throwing ArgumentNullException from ToList().
+        var userId = Guid.NewGuid();
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, null, null!);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public async Task ValidatePermissions_ShouldReturnNotFound_ForEmptyOperations_WhenRequesterMissing()
     {
         // Arrange: the requester-existence half of the gate must also run for an empty op list

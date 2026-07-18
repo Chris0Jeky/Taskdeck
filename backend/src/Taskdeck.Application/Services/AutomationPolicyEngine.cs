@@ -81,7 +81,8 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
 
     public async Task<Result> ValidatePermissionsAsync(Guid userId, Guid? boardId, IEnumerable<ProposalOperationDto> operations, CancellationToken cancellationToken = default)
     {
-        var opList = operations.ToList();
+        if (operations is null)
+            return Result.Failure(ErrorCodes.ValidationError, "Operations cannot be null");
 
         // The full requester/board access gate ALWAYS runs — including for an empty operation
         // list. Only the per-operation contract checks are operation-dependent; requester
@@ -101,6 +102,9 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
         if (!accessValidation.IsSuccess)
             return accessValidation;
 
+        // Materialize only after the access gate passes — the per-operation contract validator
+        // below is the sole consumer of the list, so a failed access check pays no allocation.
+        var opList = operations.ToList();
         if (opList.Count == 0)
             return Result.Success();
 
