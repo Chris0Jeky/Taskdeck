@@ -122,6 +122,52 @@ public class LlmUsageRecordRepositoryPostgresIntegrationTests : PostgresIntegrat
         again.Should().BeFalse("a second release of an already-freed reservation is a no-op");
     }
 
+    [SkippableFact]
+    public async Task CommitReservation_NonSqlite_RowSweptWhileEntityStillTracked_RecoversWithoutThrowing()
+    {
+        SkipIfDockerUnavailable();
+        var repo = new LlmUsageRecordRepository(Db);
+        var userId = Guid.NewGuid();
+
+        // Do NOT clear the tracker: in the service flow the reservation entity created by the reserve
+        // fallback stays tracked (Unchanged) in the shared scoped context. Delete the row out-of-band
+        // (raw SQL bypasses the tracker) so the tracked instance survives while the DB row is gone —
+        // the identity-map state the recovery insert must cope with.
+        var reservationId = await ReserveSlotAsync(repo, userId);
+        await Db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"LlmUsageRecords\" WHERE \"Id\" = {0}", reservationId);
+
+        var result = await repo.CommitReservationAsync(
+            reservationId, userId, LlmSurface.Chat, "OpenAI", "gpt-4", 321, 12);
+        result.Should().Be(QuotaCommitResult.RecoveredExpired,
+            "a swept reservation must be recovered even while the stale entity is still tracked");
+
+        Db.ChangeTracker.Clear();
+        var row = await Db.LlmUsageRecords.SingleAsync(r => r.Id == reservationId);
+        row.Status.Should().Be(LlmUsageRecordStatus.Committed);
+        row.ExpiresAt.Should().BeNull();
+        row.UserId.Should().Be(userId);
+        row.InputTokens.Should().Be(321);
+        row.OutputTokens.Should().Be(12);
+    }
+
+    [SkippableFact]
+    public async Task ReleaseReservation_NonSqlite_RowDeletedOutOfBandWhileTracked_ReturnsFalseWithoutThrowing()
+    {
+        SkipIfDockerUnavailable();
+        var repo = new LlmUsageRecordRepository(Db);
+        var userId = Guid.NewGuid();
+
+        // Same tracker-vs-database divergence as the recovery test: the reservation entity stays
+        // tracked while the row is deleted out-of-band (e.g. a concurrent sweep).
+        var reservationId = await ReserveSlotAsync(repo, userId);
+        await Db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"LlmUsageRecords\" WHERE \"Id\" = {0}", reservationId);
+
+        var released = await repo.ReleaseReservationAsync(reservationId);
+        released.Should().BeFalse("releasing an externally-deleted reservation is a no-op, not a fault");
+    }
+
     /// <summary>
     /// Reserves a single quota slot (unlimited token budgets, generous request budget) via the
     /// non-SQLite reserve fallback and returns the reservation id.

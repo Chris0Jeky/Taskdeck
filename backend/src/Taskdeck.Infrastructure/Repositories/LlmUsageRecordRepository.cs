@@ -394,6 +394,11 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
     // SQLite statements, whose unquoted PascalCase identifiers are not provider-portable. Same best-effort
     // posture as the reserve fallback: it already flushes the shared context via SaveChangesAsync, so the
     // raw path's "don't disturb the caller's change tracker" rationale is already ceded here.
+    //
+    // Invariant: finalization degrades, it never throws. The raw statements report a lost race as
+    // affected == 0 (→ AlreadySettled / false); the EF equivalents must settle to the same outcomes
+    // when the row vanishes mid-flight or a concurrent finalizer wins, because callers commit inside
+    // live request/stream handling where an exception surfaces as a fault.
     private async Task<QuotaCommitResult> CommitReservationNonSqliteAsync(
         Guid reservationId,
         Guid userId,
@@ -417,22 +422,63 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
         if (reserved is not null)
         {
             reserved.Commit(safeProvider, safeModel, safeInput, safeOutput);
-            await _context.SaveChangesAsync(cancellationToken);
-            return QuotaCommitResult.Committed;
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                return QuotaCommitResult.Committed;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // The row vanished between the find and the flush (swept or released on another
+                // connection). Detach the dead entry so a later SaveChanges on the shared context does
+                // not retry the orphaned UPDATE, then settle exactly like the raw UPDATE's affected == 0.
+                _context.Entry(reserved).State = EntityState.Detached;
+            }
         }
 
-        // The reservation row is gone or already settled. A surviving row with this id was already
-        // committed/settled → idempotent no-op. Otherwise it was TTL-swept mid-call; the tokens were still
-        // billed, so re-insert a committed row under the same id. The exists-check guards the insert so a
-        // duplicate commit cannot double-count.
+        return await SettleMissingReservationAsync(
+            reservationId, userId, surface, safeProvider, safeModel, safeInput, safeOutput, cancellationToken);
+    }
+
+    // The reservation row is gone or already settled. A surviving row with this id was already
+    // committed/settled → idempotent no-op. Otherwise it was TTL-swept mid-call; the tokens were still
+    // billed, so re-insert a committed row under the same id. The exists-check guards the insert so a
+    // duplicate commit cannot double-count.
+    private async Task<QuotaCommitResult> SettleMissingReservationAsync(
+        Guid reservationId,
+        Guid userId,
+        LlmSurface surface,
+        string safeProvider,
+        string safeModel,
+        int safeInput,
+        int safeOutput,
+        CancellationToken cancellationToken)
+    {
         if (await _dbSet.AnyAsync(r => r.Id == reservationId, cancellationToken))
             return QuotaCommitResult.AlreadySettled;
+
+        // The shared scoped context may still track the swept reservation instance (the reserve fallback
+        // left it tracked as Unchanged, and the delete happened on another connection). Detach it so
+        // inserting the replacement row under the same key cannot collide in the identity map.
+        var local = _dbSet.Local.FirstOrDefault(r => r.Id == reservationId);
+        if (local is not null)
+            _context.Entry(local).State = EntityState.Detached;
 
         var recovered = LlmUsageRecord.CreateRecoveredUsage(
             reservationId, userId, surface, safeProvider, safeModel, safeInput, safeOutput);
         await _dbSet.AddAsync(recovered, cancellationToken);
-        await _context.SaveChangesAsync(cancellationToken);
-        return QuotaCommitResult.RecoveredExpired;
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            return QuotaCommitResult.RecoveredExpired;
+        }
+        catch (DbUpdateException)
+        {
+            // A concurrent finalizer inserted or settled this id first (duplicate key). Drop the insert
+            // and report settled — the raw recovery INSERT's NOT EXISTS guard yields 0 rows here too.
+            _context.Entry(recovered).State = EntityState.Detached;
+            return QuotaCommitResult.AlreadySettled;
+        }
     }
 
     private async Task<bool> ReleaseReservationNonSqliteAsync(
@@ -447,8 +493,18 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
             return false;
 
         _dbSet.Remove(reserved);
-        await _context.SaveChangesAsync(cancellationToken);
-        return true;
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Already gone (concurrent sweep or release). Detach the dead delete entry and report the
+            // no-op, matching the raw DELETE's affected == 0.
+            _context.Entry(reserved).State = EntityState.Detached;
+            return false;
+        }
     }
 
     // SQLite stores DateTimeOffset as ISO 8601 text. Use raw SQL with string
