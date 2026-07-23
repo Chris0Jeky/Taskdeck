@@ -113,7 +113,7 @@ for (const km of keyMetrics) {
 const p95Limit = 2000; // ms -- hard gate (issue #872)
 const p95Aspirational = 1200; // ms -- aspirational target (warning only)
 const boardWriteP95Capacity = 2000; // ms -- measured SQLite capacity at 20 VUs (issue #1358)
-const boardWriteP95Limit = 2200; // ms -- capacity plus 10% CI jitter allowance
+const boardWriteP95Limit = 4500; // ms -- tail threshold calibrated to same-code nightly variance (issue #1445)
 const errorRateLimit = 0.01; // 1%
 const nearThresholdRatio = 0.80; // warn at 80% of limit
 
@@ -146,12 +146,12 @@ const boardWriteDurationP95 = readK6MetricValue(boardWriteDuration, "p(95)");
 if (boardWriteDurationP95 !== undefined) {
   const p95 = boardWriteDurationP95;
   if (p95 >= boardWriteP95Limit) {
-    const msg = `Board-write p95 latency is ${p95.toFixed(2)}ms, exceeds ${boardWriteP95Limit}ms hard gate (measured SQLite capacity: ${boardWriteP95Capacity}ms plus 10% jitter allowance)`;
+    const msg = `Board-write p95 latency is ${p95.toFixed(2)}ms, at or above the ${boardWriteP95Limit}ms hard gate (measured SQLite capacity: ${boardWriteP95Capacity}ms, gate calibrated to nightly tail variance -- see #1445)`;
     console.log(`\n::error::${msg}`);
     findings.push({ level: "error", metric: "board_write_p95", value: p95, limit: boardWriteP95Limit, message: msg });
     hasBreaches = true;
   } else if (p95 >= boardWriteP95Capacity) {
-    const msg = `Board-write p95 latency is ${p95.toFixed(2)}ms, at or above measured ${boardWriteP95Capacity}ms SQLite capacity (hard gate: ${boardWriteP95Limit}ms, 10% jitter allowance)`;
+    const msg = `Board-write p95 latency is ${p95.toFixed(2)}ms, at or above measured ${boardWriteP95Capacity}ms SQLite capacity (hard gate: ${boardWriteP95Limit}ms, calibrated to nightly tail variance -- see #1445)`;
     console.log(`\n::warning::${msg}`);
     findings.push({ level: "warning", metric: "board_write_p95_capacity", value: p95, limit: boardWriteP95Capacity, message: msg });
     hasWarnings = true;

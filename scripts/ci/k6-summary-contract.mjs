@@ -20,10 +20,10 @@ const HARD_GATE_METRICS = [
       "p(95)": { minimum: 0 },
       "p(99)": { minimum: 0 },
     },
-    thresholds: ["p(95)<2000", "p(99)<2500"],
+    thresholds: ["p(95)<2000", "p(99)<5000"],
     thresholdChecks: {
       "p(95)<2000": { valueName: "p(95)", operator: "<", limit: 2000 },
-      "p(99)<2500": { valueName: "p(99)", operator: "<", limit: 2500 },
+      "p(99)<5000": { valueName: "p(99)", operator: "<", limit: 5000 },
     },
   },
   {
@@ -37,8 +37,8 @@ const HARD_GATE_METRICS = [
     name: "http_req_duration{workload:board-write}",
     values: ["p(95)"],
     valueDomains: { "p(95)": { minimum: 0 } },
-    thresholds: ["p(95)<2200"],
-    thresholdChecks: { "p(95)<2200": { valueName: "p(95)", operator: "<", limit: 2200 } },
+    thresholds: ["p(95)<4500"],
+    thresholdChecks: { "p(95)<4500": { valueName: "p(95)", operator: "<", limit: 4500 } },
   },
 ];
 

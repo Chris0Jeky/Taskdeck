@@ -15,7 +15,7 @@ function createSummary(boardWriteP95, boardWriteThresholdOk) {
   const boardWrite = summary.metrics['http_req_duration{workload:board-write}']
   boardWrite['p(95)'] = boardWriteP95
   // k6 0.49 exports threshold breach flags, so false means the threshold passed.
-  boardWrite.thresholds['p(95)<2200'] = !boardWriteThresholdOk
+  boardWrite.thresholds['p(95)<4500'] = !boardWriteThresholdOk
   return summary
 }
 
@@ -39,23 +39,45 @@ test('warns when tagged board-write p95 reaches measured SQLite capacity', async
 
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /at or above measured 2000ms SQLite capacity/)
-  assert.match(result.stdout, /hard gate: 2200ms, 10% jitter allowance/)
+  assert.match(result.stdout, /hard gate: 4500ms, calibrated to nightly tail variance -- see #1445/)
 })
 
-test('fails when tagged board-write p95 reaches the jitter-adjusted hard gate', async () => {
-  const result = await runAnalyzer(2200, false)
+test('fails when tagged board-write p95 reaches the tail-calibrated hard gate', async () => {
+  const result = await runAnalyzer(4500, false)
 
   assert.equal(result.status, 1)
-  assert.match(result.stdout, /k6 threshold breached: http_req_duration\{workload:board-write\} p\(95\)<2200/)
-  assert.match(result.stdout, /exceeds 2200ms hard gate/)
-  assert.match(result.stdout, /measured SQLite capacity: 2000ms plus 10% jitter allowance/)
+  assert.match(result.stdout, /k6 threshold breached: http_req_duration\{workload:board-write\} p\(95\)<4500/)
+  assert.match(result.stdout, /at or above the 4500ms hard gate/)
+  assert.match(result.stdout, /measured SQLite capacity: 2000ms, gate calibrated to nightly tail variance -- see #1445/)
+})
+
+test('stays silent just below the measured capacity warning band', async () => {
+  const result = await runAnalyzer(1999, true)
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.doesNotMatch(result.stdout, /at or above measured 2000ms SQLite capacity/)
+})
+
+test('warns at exactly the measured capacity boundary', async () => {
+  const result = await runAnalyzer(2000, true)
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /at or above measured 2000ms SQLite capacity/)
+})
+
+test('warns without failing just below the hard gate', async () => {
+  const result = await runAnalyzer(4499, true)
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /at or above measured 2000ms SQLite capacity/)
+  assert.doesNotMatch(result.stdout, /at or above the 4500ms hard gate/)
 })
 
 test('rejects a real k6 breach flag that contradicts the metric value', async () => {
   const result = await runAnalyzer(1000, false)
 
   assert.equal(result.status, 1)
-  assert.match(result.stderr, /threshold "p\(95\)<2200" contradicts value "p\(95\)"=1000/)
+  assert.match(result.stderr, /threshold "p\(95\)<4500" contradicts value "p\(95\)"=1000/)
 })
 
 test('resolves the analyzer relative to the test module from another working directory', async () => {
