@@ -47,8 +47,30 @@ test('fails when tagged board-write p95 reaches the tail-calibrated hard gate', 
 
   assert.equal(result.status, 1)
   assert.match(result.stdout, /k6 threshold breached: http_req_duration\{workload:board-write\} p\(95\)<4500/)
-  assert.match(result.stdout, /exceeds 4500ms hard gate/)
+  assert.match(result.stdout, /at or above the 4500ms hard gate/)
   assert.match(result.stdout, /measured SQLite capacity: 2000ms, gate calibrated to nightly tail variance -- see #1445/)
+})
+
+test('stays silent just below the measured capacity warning band', async () => {
+  const result = await runAnalyzer(1999, true)
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.doesNotMatch(result.stdout, /at or above measured 2000ms SQLite capacity/)
+})
+
+test('warns at exactly the measured capacity boundary', async () => {
+  const result = await runAnalyzer(2000, true)
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /at or above measured 2000ms SQLite capacity/)
+})
+
+test('warns without failing just below the hard gate', async () => {
+  const result = await runAnalyzer(4499, true)
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /at or above measured 2000ms SQLite capacity/)
+  assert.doesNotMatch(result.stdout, /at or above the 4500ms hard gate/)
 })
 
 test('rejects a real k6 breach flag that contradicts the metric value', async () => {

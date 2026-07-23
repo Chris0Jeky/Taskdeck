@@ -146,7 +146,7 @@ const boardWriteDurationP95 = readK6MetricValue(boardWriteDuration, "p(95)");
 if (boardWriteDurationP95 !== undefined) {
   const p95 = boardWriteDurationP95;
   if (p95 >= boardWriteP95Limit) {
-    const msg = `Board-write p95 latency is ${p95.toFixed(2)}ms, exceeds ${boardWriteP95Limit}ms hard gate (measured SQLite capacity: ${boardWriteP95Capacity}ms, gate calibrated to nightly tail variance -- see #1445)`;
+    const msg = `Board-write p95 latency is ${p95.toFixed(2)}ms, at or above the ${boardWriteP95Limit}ms hard gate (measured SQLite capacity: ${boardWriteP95Capacity}ms, gate calibrated to nightly tail variance -- see #1445)`;
     console.log(`\n::error::${msg}`);
     findings.push({ level: "error", metric: "board_write_p95", value: p95, limit: boardWriteP95Limit, message: msg });
     hasBreaches = true;

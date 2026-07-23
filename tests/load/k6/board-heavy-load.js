@@ -29,8 +29,10 @@ export const options = {
     // tracked as #1446). Gates sit at ~1.5-1.7x the 3.0s worst observed-good
     // (board-write p95 4500 = 1.5x; global p99 5000 = 1.67x) so they catch
     // order-of-magnitude regressions instead of runner luck; evidence in #1445.
-    // Known trade: a sustained tail regression landing inside (3.0s, gate) passes
-    // silently -- tail-trend visibility is #1446's problem, not this gate's.
+    // Known trade: a sustained tail regression landing inside (3.0s, gate) produces no
+    // FAILING signal -- board-write only re-triggers the always-on >=2000ms capacity
+    // warning, and the global p99 band is signal-free. Tail-trend visibility is #1446's
+    // problem, not this gate's.
     // Median/read-path thresholds stay tight on purpose. Tighten again if the
     // gate moves to consistent hardware.
     http_req_duration: ["p(95)<2000", "p(99)<5000"],
