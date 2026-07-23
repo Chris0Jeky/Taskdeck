@@ -35,6 +35,17 @@ public class AutomationProposal : Entity
     public string? FailureReason { get; private set; }
     public string CorrelationId { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// The <see cref="ProposalRevision"/> that was validated and pinned at approve time, or
+    /// <c>null</c> when the proposal was approved from its original operations (no revision
+    /// existed). Apply materializes exactly this revision (#1428): a revision saved AFTER
+    /// approval — even a valid one landing in the race window between approve's validation read
+    /// and its commit — cannot change what Apply executes, so approved-content == applied-content.
+    /// Modelled as a plain scalar pointer (not an EF foreign key) to avoid a cyclic
+    /// Proposal ↔ ProposalRevision constraint; the revision is cascade-owned by the proposal.
+    /// </summary>
+    public Guid? ApprovedRevisionId { get; private set; }
+
     private readonly List<AutomationProposalOperation> _operations = new();
     public IReadOnlyList<AutomationProposalOperation> Operations => _operations.AsReadOnly();
 
@@ -87,7 +98,12 @@ public class AutomationProposal : Entity
         Touch();
     }
 
-    public void Approve(Guid decidedByUserId)
+    /// <summary>
+    /// Transitions a pending proposal to Approved, pinning <paramref name="approvedRevisionId"/>
+    /// as the exact revision Apply must materialize (#1428). Pass the id of the latest saved
+    /// revision validated at approve time, or <c>null</c> when approving the original operations.
+    /// </summary>
+    public void Approve(Guid decidedByUserId, Guid? approvedRevisionId = null)
     {
         if (decidedByUserId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "DecidedByUserId cannot be empty");
@@ -99,6 +115,8 @@ public class AutomationProposal : Entity
         Status = ProposalStatus.Approved;
         DecidedByUserId = decidedByUserId;
         DecidedAt = DateTime.UtcNow;
+        // Pin the exact revision the reviewer approved so Apply cannot execute a later one (#1428).
+        ApprovedRevisionId = approvedRevisionId;
         // A decided proposal must never carry a stale snooze that would hide it from list reads.
         DeferredUntil = null;
         Touch();

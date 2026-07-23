@@ -37,6 +37,18 @@ public record ProposalDto(
     /// client clock can resurface it in-session and a re-snooze toast can confirm the new window.
     /// </summary>
     public DateTime? DeferredUntil { get; init; }
+
+    /// <summary>
+    /// The revision pinned at approve time that Apply will materialize (#1428), or <c>null</c>
+    /// when the proposal was approved from its original operations (or is not yet decided).
+    /// On SINGLE-proposal responses (get by id, approve, reject), a set pin also means
+    /// <see cref="Operations"/> and <see cref="Presentation"/> carry that pinned revision's
+    /// effective operation set. LIST items expose the pin but deliberately map the ORIGINAL
+    /// operations (no per-item revision lookup, avoiding an N+1 query); clients needing the
+    /// effective set for a listed proposal should use the single-proposal read or the diff
+    /// endpoint.
+    /// </summary>
+    public Guid? ApprovedRevisionId { get; init; }
 }
 
 public record ProposalPresentationDto(

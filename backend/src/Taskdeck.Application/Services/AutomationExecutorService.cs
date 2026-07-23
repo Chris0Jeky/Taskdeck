@@ -242,15 +242,32 @@ public class AutomationExecutorService : IAutomationExecutorService
         ProposalDto proposal,
         CancellationToken cancellationToken)
     {
-        var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(
-            proposal.Id,
-            cancellationToken);
-        if (latestRevision is null)
+        // Apply materializes exactly the revision pinned at approve time (#1428), NOT the latest
+        // one. A null pin means the proposal was approved from its original operations, so a
+        // revision saved after approval — including one that landed in the race window between
+        // approve's validation read and its commit — cannot change what Apply executes.
+        if (proposal.ApprovedRevisionId is not Guid approvedRevisionId)
             return Result.Success(proposal);
+
+        var pinnedRevision = await _unitOfWork.ProposalRevisions.GetByIdAsync(
+            approvedRevisionId,
+            cancellationToken);
+        if (pinnedRevision is null)
+        {
+            // The pinned revision is cascade-owned by the proposal, so it can only vanish together
+            // with the proposal itself — this branch is unreachable in practice. Refuse to apply
+            // rather than silently fall back to the (unapproved) original operations. Shaped as
+            // InvalidOperation (server invariant violation), NOT NotFound: the proposal being
+            // executed exists, and a NotFound here would misread as "proposal not found".
+            return Result.Failure<ProposalDto>(
+                ErrorCodes.InvalidOperation,
+                $"Server invariant violation: proposal {proposal.Id} pins approved revision " +
+                $"{approvedRevisionId}, but that revision no longer exists; refusing to apply");
+        }
 
         if (!ProposalRevisionPayload.TryParseOperations(
                 proposal.Id,
-                latestRevision.RevisedPayload,
+                pinnedRevision.RevisedPayload,
                 out var revisedOperations,
                 out var errorMessage))
         {

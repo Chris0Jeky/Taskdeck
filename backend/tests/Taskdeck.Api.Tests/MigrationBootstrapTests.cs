@@ -288,6 +288,142 @@ public class MigrationBootstrapTests : IDisposable
         }
     }
 
+    [Fact]
+    public void AddApprovedRevisionId_backfills_pre_decision_revision_pin_for_preexisting_approved_proposals()
+    {
+        // #1428 backfill: before the pinning migration, Apply materialized the LATEST revision for
+        // an Approved proposal; after it, a null pin means "apply the ORIGINAL operations". The
+        // migration must therefore pin already-Approved proposals — but only to the latest revision
+        // saved AT OR BEFORE the proposal's decision time (RevisedAt <= DecidedAt). This PR's
+        // invariant is that Apply executes exactly what the approver saw; a revision saved AFTER
+        // DecidedAt is precisely the race this PR closes, so it must NOT be backfilled. When only
+        // post-decision revisions exist the pin stays NULL and Apply runs the original operations.
+        // Arrange — stop just before the pinning migration and seed the pre-migration shape.
+        _context.GetService<IMigrator>()
+            .Migrate("20260713054422_AddArtefactExtractions");
+
+        // A fixed, whole-second decision time so the seed timestamps are unambiguous. RevisedAt is
+        // stored with a UTC offset ("+00:00") and DecidedAt without one; the migration appends
+        // '+00:00' to DecidedAt so the comparison is apples-to-apples (both UTC).
+        var decision = new DateTime(2026, 7, 18, 13, 0, 0, DateTimeKind.Utc);
+        var oneHourBefore = new DateTimeOffset(decision.AddHours(-1), TimeSpan.Zero);
+        var twoHoursBefore = new DateTimeOffset(decision.AddHours(-2), TimeSpan.Zero);
+        var oneHourAfter = new DateTimeOffset(decision.AddHours(1), TimeSpan.Zero);
+
+        var approvedStraddle = Guid.NewGuid();       // (c) revisions straddling the decision time
+        var approvedOnlyBefore = Guid.NewGuid();     // (a) revisions all before the decision time
+        var approvedOnlyAfter = Guid.NewGuid();      // (b) only a post-decision revision
+        var approvedWithoutRevisions = Guid.NewGuid();
+        var pendingWithRevision = Guid.NewGuid();
+        var appliedWithPreDecisionRevision = Guid.NewGuid();
+
+        var straddlePreDecisionRevisionId = Guid.NewGuid();
+        var latestBeforeRevisionId = Guid.NewGuid();
+
+        InsertPreMigrationProposal(approvedStraddle, status: 1, decidedAt: decision);
+        InsertPreMigrationProposal(approvedOnlyBefore, status: 1, decidedAt: decision);
+        InsertPreMigrationProposal(approvedOnlyAfter, status: 1, decidedAt: decision);
+        InsertPreMigrationProposal(approvedWithoutRevisions, status: 1, decidedAt: decision);
+        InsertPreMigrationProposal(pendingWithRevision, status: 0);                            // PendingReview, undecided
+        InsertPreMigrationProposal(appliedWithPreDecisionRevision, status: 3, decidedAt: decision); // Applied (terminal)
+
+        // (c) straddle: the pre-decision revision has the LOWER revision number, the post-decision
+        // one the higher — the pin must still choose the pre-decision revision, not the latest.
+        InsertPreMigrationRevision(straddlePreDecisionRevisionId, approvedStraddle, revisionNumber: 1, revisedAt: oneHourBefore);
+        InsertPreMigrationRevision(Guid.NewGuid(), approvedStraddle, revisionNumber: 2, revisedAt: oneHourAfter);
+
+        // (a) all before: pin the latest one that is still at or before the decision time.
+        InsertPreMigrationRevision(Guid.NewGuid(), approvedOnlyBefore, revisionNumber: 1, revisedAt: twoHoursBefore);
+        InsertPreMigrationRevision(latestBeforeRevisionId, approvedOnlyBefore, revisionNumber: 2, revisedAt: oneHourBefore);
+
+        // (b) only after: no qualifying pre-decision revision → pin stays NULL.
+        InsertPreMigrationRevision(Guid.NewGuid(), approvedOnlyAfter, revisionNumber: 1, revisedAt: oneHourAfter);
+
+        InsertPreMigrationRevision(Guid.NewGuid(), pendingWithRevision, revisionNumber: 1, revisedAt: oneHourBefore);
+        // A pre-decision revision that WOULD qualify — proving the Status = 1 filter, not the
+        // timestamp filter, is what excludes this terminal proposal.
+        InsertPreMigrationRevision(Guid.NewGuid(), appliedWithPreDecisionRevision, revisionNumber: 1, revisedAt: oneHourBefore);
+
+        // Act — apply the pinning migration (and any remainder of the chain).
+        _context.Database.Migrate();
+
+        // Assert — (c) the straddling proposal pins its PRE-decision revision even though a later
+        // one with a higher revision number exists.
+        GetApprovedRevisionId(approvedStraddle).Should().Be(straddlePreDecisionRevisionId,
+            "the backfill must pin the latest revision saved at or before DecidedAt, never a " +
+            "revision that raced in after the decision — even when the later one has a higher number");
+        // (a) the all-before proposal pins its latest pre-decision revision.
+        GetApprovedRevisionId(approvedOnlyBefore).Should().Be(latestBeforeRevisionId,
+            "an approved proposal whose revisions are all pre-decision pins the latest of them");
+        // (b) the only-after proposal stays unpinned — Apply then runs its original operations.
+        GetApprovedRevisionId(approvedOnlyAfter).Should().BeNull(
+            "an approved proposal with only a post-decision revision must not backfill that " +
+            "revision; a null pin means Apply runs the original operations the approver saw");
+        GetApprovedRevisionId(approvedWithoutRevisions).Should().BeNull(
+            "an approved proposal without revisions applies its original operations");
+        GetApprovedRevisionId(pendingWithRevision).Should().BeNull(
+            "pending proposals are pinned at approve time, not by the backfill");
+        GetApprovedRevisionId(appliedWithPreDecisionRevision).Should().BeNull(
+            "the backfill targets Status = 1 (Approved) only; terminal proposals are already " +
+            "executed and must not be retroactively pinned, even with a qualifying revision");
+    }
+
+    private void InsertPreMigrationProposal(Guid id, int status, DateTime? decidedAt = null)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = DateTime.UtcNow.AddDays(1);
+
+        _context.Database.ExecuteSqlInterpolated($"""
+            INSERT INTO AutomationProposals
+                (Id, SourceType, SourceReferenceId, BoardId, RequestedByUserId, Status, RiskLevel, Summary,
+                 DiffPreview, ValidationIssues, ExpiresAt, DecidedAt, DecidedByUserId, AppliedAt,
+                 FailureReason, CorrelationId, CreatedAt, UpdatedAt)
+            VALUES
+                ({id}, 1, NULL, NULL, {Guid.NewGuid()}, {status}, 0, 'Pre-migration proposal',
+                 NULL, NULL, {expiresAt}, {decidedAt}, NULL, NULL,
+                 NULL, {Guid.NewGuid().ToString("N")}, {now}, {now})
+            """);
+    }
+
+    private void InsertPreMigrationRevision(Guid id, Guid proposalId, int revisionNumber, DateTimeOffset revisedAt)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        // The payload body is opaque to the backfill (it copies revision IDs, never parses
+        // payloads), so a plain placeholder keeps the seed simple. RevisedAt is the load-bearing
+        // field — the backfill filters on it against the proposal's DecidedAt.
+        _context.Database.ExecuteSqlInterpolated($"""
+            INSERT INTO ProposalRevisions
+                (Id, ProposalId, RevisionNumber, EditorUserId, RevisedPayload, RevisedAt, Reason,
+                 CreatedAt, UpdatedAt)
+            VALUES
+                ({id}, {proposalId}, {revisionNumber}, {Guid.NewGuid()}, 'pre-migration payload', {revisedAt},
+                 'pre-migration revision', {now}, {now})
+            """);
+    }
+
+    private Guid? GetApprovedRevisionId(Guid proposalId)
+    {
+        var connection = _context.Database.GetDbConnection();
+        _context.Database.OpenConnection();
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT ApprovedRevisionId FROM AutomationProposals WHERE Id = $id";
+            var parameter = cmd.CreateParameter();
+            parameter.ParameterName = "$id";
+            parameter.Value = proposalId;
+            cmd.Parameters.Add(parameter);
+
+            var value = cmd.ExecuteScalar();
+            return value is null or DBNull ? null : Guid.Parse((string)value);
+        }
+        finally
+        {
+            _context.Database.CloseConnection();
+        }
+    }
+
     private void InsertLegacyProposalOutcome(Guid id, OutcomeType outcomeType)
     {
         var proposalId = Guid.NewGuid();

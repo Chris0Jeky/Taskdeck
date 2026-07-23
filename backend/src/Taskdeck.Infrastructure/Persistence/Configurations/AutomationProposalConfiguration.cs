@@ -60,6 +60,13 @@ public class AutomationProposalConfiguration : IEntityTypeConfiguration<Automati
 
         builder.Property(ap => ap.AppliedAt);
 
+        // The revision pinned at approve time (#1428). A plain nullable scalar, NOT an EF foreign
+        // key: a real FK from AutomationProposals -> ProposalRevisions would form a cycle with the
+        // existing ProposalRevisions.ProposalId -> AutomationProposals FK, complicating SQLite
+        // insert ordering. The revision it points at is cascade-owned by the proposal, so no
+        // dangling-pointer risk. No index: it is only ever read for an already-loaded proposal.
+        builder.Property(ap => ap.ApprovedRevisionId);
+
         builder.Property(ap => ap.FailureReason)
             .HasMaxLength(1000);
 
