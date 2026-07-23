@@ -20,15 +20,18 @@ export const options = {
     http_req_failed: ["rate<0.01"],
     checks: ["rate>0.99"],
     // Aggregate CI gate: p95 must stay below 2000ms (issue #872).
-    // The tagged board-write gate records the measured 2000ms SQLite capacity at
-    // 20 VUs with a 10% jitter allowance; check-k6-thresholds warns at capacity.
+    // The measured 2000ms SQLite board-write capacity at 20 VUs remains the
+    // check-k6-thresholds near-capacity warning level (informational only).
     // Tail thresholds (p99 / board-write p95) calibrated 2026-07-23 against same-code
     // nightly variance on shared 2-core runners (main @ 6ff32594, 5 nights: 2 pass /
     // 3 fail with zero code change). Observed same-code range: global p99 2.0-3.0s,
     // board-write p95 2.0-3.0s (median ~12ms -- heavy-tailed SQLite write convoy,
-    // tracked as #1446). Thresholds sit ~1.5x above worst observed-good so the gate
-    // catches order-of-magnitude regressions instead of runner luck; evidence in
-    // #1445. Median/read-path thresholds stay tight on purpose. Tighten again if the
+    // tracked as #1446). Gates sit at ~1.5-1.7x the 3.0s worst observed-good
+    // (board-write p95 4500 = 1.5x; global p99 5000 = 1.67x) so they catch
+    // order-of-magnitude regressions instead of runner luck; evidence in #1445.
+    // Known trade: a sustained tail regression landing inside (3.0s, gate) passes
+    // silently -- tail-trend visibility is #1446's problem, not this gate's.
+    // Median/read-path thresholds stay tight on purpose. Tighten again if the
     // gate moves to consistent hardware.
     http_req_duration: ["p(95)<2000", "p(99)<5000"],
     "http_req_duration{workload:board-read}": ["p(95)<900"],
