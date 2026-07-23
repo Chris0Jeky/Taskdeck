@@ -126,17 +126,24 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
   summarize, no sitting through suites, no drafting mechanics a cheaper lane can execute from
   your finalized text.
 - **Opus gate-marshals per lane:** one worker owns a PR's whole fix→verify→settle cycle
-  end-to-end, continued via `SendMessage` round after round — never respawned per round, so
-  context (the PR's history, reviewers' phrasing, prior verdicts) is paid for once. Thread
-  settlement (reply + `resolveReviewThread` + report `unresolved == 0`) is owned by exactly
-  ONE lane per PR — default the gate-marshal, per the gate sequence below; the coordinator may
-  reassign a PR's settlement to the ops agent in that packet explicitly (e.g. the marshal is
-  retired), but never lets both act on the same PR's threads.
+  end-to-end — "verify" meaning the worker's TARGETED runs; full-suite verdicts stay with the
+  ops lane + coordinator per BUDGET & CADENCE — continued via `SendMessage` round after round,
+  never respawned per round, so context (the PR's history, reviewers' phrasing, prior
+  verdicts) is paid for once. Thread settlement (reply + `resolveReviewThread` + report
+  `unresolved == 0`) is owned by exactly ONE lane per PR — default the gate-marshal; the
+  coordinator may reassign a PR's settlement to the ops agent in that packet explicitly
+  (e.g. the marshal is retired), but never lets both act on the same PR's threads. (Honest
+  provenance: the two proving runs actually ran settlement in the ops lane as a standing
+  cycle; the marshal default here is a deliberate alignment with the gate sequence below,
+  which the single-owner rule preserves either way.)
 - **The Cheap-ops-lane Sonnet agent (the SAME single agent, not a second one) takes on an
   extended remit** in addition to its standing tasks: full-suite runs under a STOP-on-red
   decision rule, determinism reruns, and any settlement packet reassigned per the bullet
-  above. The lane's standing rule (executes decided work, never decides) is unchanged. The
-  STOP-on-red decision rule is authored by the coordinator inside the task packet itself:
+  above (reply texts in a settlement packet are always coordinator-authored — the lane posts
+  finalized text, consistent with its standing remit). The lane's standing rule (executes
+  decided work, never decides) is unchanged. A "packet" throughout this section = one
+  `SendMessage` task assignment plus its returned report. The STOP-on-red decision rule is
+  authored by the coordinator inside the task packet itself:
   the exact command, the expected-green shape, the known flakes carved out BY NAME with issue
   numbers, and "any other red → stop, report the failing names + excerpts, no reruns, no
   diagnosis".
@@ -170,7 +177,8 @@ merge → pull `main` → prune worktree+branch (cd out of a worktree before rem
   review-summary bodies since the final push — bots put findings in all three places, and a
   "review" entry with no findings looks identical to one with two P2s until you read it. This applies to docs-only PRs too (a docs sweep has been merged
   over two valid unresolved P2s before; the fix cost a follow-up PR).
-- **Review-loop discipline**: batch fixes into ONE push per round; every worker replies AND
+- **Review-loop discipline**: batch fixes into ONE push per round; every worker — or the PR's
+  designated settlement lane, when FRUGALITY MODE has reassigned it — replies AND
   resolves threads via GraphQL `resolveReviewThread` and reports `unresolved == 0`; new bot
   findings on a final head are reported to the coordinator, never cycled unilaterally. When
   bot rounds keep finding new interleavings in one seam, issue ONE structural redesign
