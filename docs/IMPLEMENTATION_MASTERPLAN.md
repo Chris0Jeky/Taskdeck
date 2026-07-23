@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-07-18
+Last Updated: 2026-07-23
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -9,6 +9,12 @@ Companion Active Docs:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Delivery update (2026-07-18, post-wave)
+
+Stored-preview review presentation — **1 PR maintainer-merged** (`#1414`, closes `#1397`; merged 2026-07-18 15:20Z after the frugal wave wrapped):
+
+- **Expired/terminal proposals present the stored preview instead of a live diff that `400`s (`#1414`, `#1397`):** frontend-only slice implementing the maintainer decision recorded on `#1397` — both review shells short-circuit read-only proposals (expired by server-authoritative or client clock, or terminal) to the stored `diffPreview` under an explicit read-only banner, render a backend `400` as an explicit **invalid** state (a pending zero-op proposal is flagged as containing no operations to apply — Apply will reject it — instead of showing an approvable "No changes" surface), and relabel the expired-path button to "View/Hide stored preview". Adds shared `isProposalReadOnly` / `isValidationError` helpers. The `#1395` backend `400` contract is unchanged. Residual review P2s tracked as `#1436` (merged-with-tracked per the maintainer's call).
 
 ## Delivery update (2026-07-18, wave 2)
 
