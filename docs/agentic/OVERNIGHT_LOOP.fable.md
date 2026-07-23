@@ -124,7 +124,9 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
 - **Coordinator turns go to the Fable lane's never-delegated work** (wave planning, task
   selection, adjudication, the gates) **and nothing else.** No inline reading a subagent could
   summarize, no sitting through suites, no drafting mechanics a cheaper lane can execute from
-  your finalized text.
+  your finalized text. Required orientation and gate reads are never delegated to save
+  tokens: the coordinator still reads the source-of-truth docs (base §1 — STATUS,
+  OUTSTANDING_TASKS, the handoff) and every gate input itself.
 - **Opus gate-marshals per lane:** one worker owns a PR's whole fix→verify→settle cycle
   end-to-end — "verify" meaning the worker's TARGETED runs; full-suite verdicts stay with the
   ops lane + coordinator per BUDGET & CADENCE — continued via `SendMessage` round after round,
@@ -147,13 +149,15 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
   the exact command, the expected-green shape, the known flakes carved out BY NAME with issue
   numbers, and "any other red → stop, report the failing names + excerpts, no reruns, no
   diagnosis".
-- **Spot-check one load-bearing claim per returned packet** (re-query the unresolved-thread
-  count, re-read one changed hunk, re-run one count) instead of re-verifying everything —
-  trust but sample; a packet that fails its spot-check is re-verified in full. This sampling
-  NEVER substitutes for the base §5 gate checks: at gate time the coordinator still performs
-  the full feedback-by-content sweep (unresolved threads AND top-level comments AND
-  review-summary bodies since the final push) and still owns the suite/CI verdict — sampling
-  applies to intermediate packets, not to the merge gate.
+- **Spot-check one load-bearing claim per returned OPS/MECHANICS packet** (re-query the
+  unresolved-thread count, re-read one changed hunk, re-run one count) instead of
+  re-verifying everything — trust but sample; a packet that fails its spot-check is
+  re-verified in full. Two packet classes are NEVER sampled: (1) reviewer packets — every
+  returned finding is read and adjudicated individually per base §4 and the repo Review
+  Policy, at every severity; (2) the merge gate — the coordinator still performs the full
+  base §5 feedback-by-content sweep (unresolved threads AND top-level comments AND
+  review-summary bodies since the final push) and still owns the suite/CI verdict. Sampling
+  is a mechanics-lane shortcut, not a review or gate shortcut.
 - **Flake adjudication stays evidence-priced:** full-suite red → ops STOPs per its decision
   rule → isolated reruns (4–6×, branch AND main) → root-cause read → ruled flaky ⇒ tracked
   issue/evidence comment, and the gate proceeds with the flake carved out BY NAME in the next
