@@ -119,26 +119,38 @@ an orchestrator that thinks, decides, and gates — not the typist.
 
 Engage when the usage window is tight, a reset boundary is near, or the maintainer asks for a
 frugal run. It tightens the standard division of labor; everything else in this manual still
-applies (the gate is never thinned to save tokens — degrade by stopping, not by improvising).
+applies — the gate is never thinned to save tokens (see STOP CONDITIONS for how to degrade).
 
-- **Coordinator turns = adjudication and gates only.** No inline reading a subagent could
+- **Coordinator turns go to the Fable lane's never-delegated work** (wave planning, task
+  selection, adjudication, the gates) **and nothing else.** No inline reading a subagent could
   summarize, no sitting through suites, no drafting mechanics a cheaper lane can execute from
   your finalized text.
 - **Opus gate-marshals per lane:** one worker owns a PR's whole fix→verify→settle cycle
   end-to-end, continued via `SendMessage` round after round — never respawned per round, so
-  context (the PR's history, reviewers' phrasing, prior verdicts) is paid for once.
-- **ONE long-lived Sonnet ops agent all night** (SendMessage-continued; 6+ task cycles proven):
-  full-suite runs with an explicit STOP-on-red decision rule, pushes with explicit refspec,
-  thread settlement (reply + `resolveReviewThread` + report `unresolved == 0`), determinism
-  reruns, CI polling with exact verdict + failing-job excerpts. It executes decided work; it
-  never decides — anything ambiguous bounces back with a report.
+  context (the PR's history, reviewers' phrasing, prior verdicts) is paid for once. Thread
+  settlement (reply + `resolveReviewThread` + report `unresolved == 0`) is owned by exactly
+  ONE lane per PR — default the gate-marshal, per the gate sequence below; the coordinator may
+  reassign a PR's settlement to the ops agent in that packet explicitly (e.g. the marshal is
+  retired), but never lets both act on the same PR's threads.
+- **The Cheap-ops-lane Sonnet agent (the SAME single agent, not a second one) takes on an
+  extended remit** in addition to its standing tasks: full-suite runs under a STOP-on-red
+  decision rule, determinism reruns, and any settlement packet reassigned per the bullet
+  above. The lane's standing rule (executes decided work, never decides) is unchanged. The
+  STOP-on-red decision rule is authored by the coordinator inside the task packet itself:
+  the exact command, the expected-green shape, the known flakes carved out BY NAME with issue
+  numbers, and "any other red → stop, report the failing names + excerpts, no reruns, no
+  diagnosis".
 - **Spot-check one load-bearing claim per returned packet** (re-query the unresolved-thread
   count, re-read one changed hunk, re-run one count) instead of re-verifying everything —
-  trust but sample. A packet that fails its spot-check is re-verified in full.
+  trust but sample; a packet that fails its spot-check is re-verified in full. This sampling
+  NEVER substitutes for the base §5 gate checks: at gate time the coordinator still performs
+  the full feedback-by-content sweep (unresolved threads AND top-level comments AND
+  review-summary bodies since the final push) and still owns the suite/CI verdict — sampling
+  applies to intermediate packets, not to the merge gate.
 - **Flake adjudication stays evidence-priced:** full-suite red → ops STOPs per its decision
   rule → isolated reruns (4–6×, branch AND main) → root-cause read → ruled flaky ⇒ tracked
-  issue/evidence comment, and the gate proceeds with the flake carved out BY NAME in the ops
-  decision rule.
+  issue/evidence comment, and the gate proceeds with the flake carved out BY NAME in the next
+  packet's decision rule.
 - **Near a usage-reset boundary, sequence reviewer fan-outs after it.** A reviewer killed by
   a limit produces an untrustworthy partial verdict — rerun it, never salvage it.
 
