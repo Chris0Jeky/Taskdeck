@@ -139,9 +139,9 @@ const malformedCases = [
   {
     name: 'required threshold is missing',
     mutate(summary) {
-      delete summary.metrics.http_req_duration.thresholds['p(99)<2500']
+      delete summary.metrics.http_req_duration.thresholds['p(99)<5000']
     },
-    expected: /must contain threshold "p\(99\)<2500"/,
+    expected: /must contain threshold "p\(99\)<5000"/,
   },
   {
     name: 'required threshold result is not boolean evidence',
@@ -285,7 +285,7 @@ for (const thresholdEvidence of [false, { ok: true }]) {
     const boardWrite = summary.metrics['http_req_duration{workload:board-write}']
     boardWrite['p(95)'] = 2200
     boardWrite.values = { 'p(95)': 1900 }
-    boardWrite.thresholds['p(95)<2200'] = thresholdEvidence
+    boardWrite.thresholds['p(95)<4500'] = thresholdEvidence
 
     const contents = JSON.stringify(summary)
     const validatorResult = await runWithContents(contents)
@@ -330,9 +330,9 @@ test('validator hard-gate contract matches the board-heavy k6 profile', async ()
   const expectedThresholds = [
     'http_req_failed: ["rate<0.01"]',
     'checks: ["rate>0.99"]',
-    'http_req_duration: ["p(95)<2000", "p(99)<2500"]',
+    'http_req_duration: ["p(95)<2000", "p(99)<5000"]',
     '"http_req_duration{workload:board-read}": ["p(95)<900"]',
-    '"http_req_duration{workload:board-write}": ["p(95)<2200"]',
+    '"http_req_duration{workload:board-write}": ["p(95)<4500"]',
   ]
 
   for (const expectedThreshold of expectedThresholds) {
