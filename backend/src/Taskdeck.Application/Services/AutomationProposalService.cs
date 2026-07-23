@@ -263,6 +263,11 @@ public class AutomationProposalService : IAutomationProposalService
             // approve proposal in status X"), which this slice leaves untouched — running these
             // gates on a terminal proposal would wrongly report a 400/403/404 in place of that 409.
             Guid? approvedRevisionId = null;
+            // Hoisted so the success-path DTO build can reuse the exact revision read here (the
+            // pinned one) instead of re-querying it (Gemini review, #1439). Null when the proposal
+            // is not PendingReview — but the domain guard in Approve throws for any other status
+            // before that DTO is built, so the reused value is always the pinned revision.
+            ProposalRevision? latestRevision = null;
             if (proposal.Status == ProposalStatus.PendingReview)
             {
                 // Read the latest revision NOW and pin its id onto the proposal (#1428): approve
@@ -270,7 +275,7 @@ public class AutomationProposalService : IAutomationProposalService
                 // later — even one landing in the race window between this read and approve's
                 // commit — can no longer change what Apply executes. A null id approves the
                 // original operations, and Apply then ignores any post-approval revision entirely.
-                var latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
+                latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
                 approvedRevisionId = latestRevision?.Id;
 
                 var effectiveOperations = ResolveEffectiveGateOperations(proposal, latestRevision);
@@ -301,7 +306,9 @@ public class AutomationProposalService : IAutomationProposalService
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
 
             // Echo the effective (pinned) operations Apply will run, not the stale originals (#1424).
-            return await BuildEffectiveProposalDtoAsync(proposal, cancellationToken);
+            // latestRevision IS the pinned revision (its id was stored as ApprovedRevisionId), so map
+            // the DTO from it directly rather than re-reading it via GetEffectiveRevisionAsync.
+            return BuildEffectiveProposalDto(proposal, latestRevision);
         }
         catch (DomainException ex)
         {
@@ -349,12 +356,15 @@ public class AutomationProposalService : IAutomationProposalService
     /// <summary>
     /// Resolves the revision whose operations are the EFFECTIVE set for a proposal — the one Apply
     /// will materialize — so the diff preview and the decided-proposal response DTOs agree with
-    /// Apply (preview == apply / approve == apply). A decided proposal returns its pinned
-    /// <see cref="AutomationProposal.ApprovedRevisionId"/> revision (#1428); a proposal approved
-    /// from its original operations (null pin) returns null so the original set is used, ignoring
-    /// any revision that raced in after approval; a still-pending or rejected proposal returns the
-    /// latest saved revision (what the reviewer sees, and what approve would pin). Returns null
-    /// when no revision applies, meaning "use the proposal's original operations".
+    /// Apply (preview == apply / approve == apply). A decided proposal with a pinned
+    /// <see cref="AutomationProposal.ApprovedRevisionId"/> returns that revision (#1428); an
+    /// Approved proposal with a null pin returns null so the original set is used, ignoring any
+    /// revision that raced in after approval. A still-pending proposal returns the unconditional
+    /// latest saved revision (what the reviewer sees, and what approve would pin). A Rejected
+    /// proposal is FROZEN at its decision time: it returns the latest revision saved at or before
+    /// <see cref="AutomationProposal.DecidedAt"/>, so a revision that raced in AFTER rejection can
+    /// never surface in the reject/GET/diff response (Codex review, #1439). Returns null when no
+    /// revision applies, meaning "use the proposal's original operations".
     /// </summary>
     private async Task<ProposalRevision?> GetEffectiveRevisionAsync(
         AutomationProposal proposal,
@@ -363,8 +373,26 @@ public class AutomationProposalService : IAutomationProposalService
         if (proposal.ApprovedRevisionId is Guid approvedRevisionId)
             return await _unitOfWork.ProposalRevisions.GetByIdAsync(approvedRevisionId, cancellationToken);
 
-        if (proposal.Status is ProposalStatus.PendingReview or ProposalStatus.Rejected)
+        if (proposal.Status is ProposalStatus.PendingReview)
             return await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
+
+        if (proposal.Status is ProposalStatus.Rejected)
+        {
+            // Freeze the rejected proposal at decision time. DecidedAt is always set by Reject, but
+            // treat a null defensively as "no cutoff" and fall back to the unconditional latest.
+            if (proposal.DecidedAt is not DateTime decidedAt)
+                return await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
+
+            // Filter in memory (revision lists are small) rather than relying on EF's SQLite
+            // provider to translate a DateTimeOffset-vs-DateTime comparison. RevisedAt is a
+            // DateTimeOffset in UTC; compare its UtcDateTime against the UTC DecidedAt.
+            var revisions = await _unitOfWork.ProposalRevisions.GetByProposalIdAsync(proposal.Id, cancellationToken);
+            return revisions
+                .Where(r => r.RevisedAt.UtcDateTime <= decidedAt)
+                .OrderByDescending(r => r.RevisedAt)
+                .ThenByDescending(r => r.RevisionNumber)
+                .FirstOrDefault();
+        }
 
         return null;
     }
@@ -384,9 +412,25 @@ public class AutomationProposalService : IAutomationProposalService
         AutomationProposal proposal,
         CancellationToken cancellationToken)
     {
+        var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
+        return BuildEffectiveProposalDto(proposal, effectiveRevision);
+    }
+
+    /// <summary>
+    /// Synchronous core of <see cref="BuildEffectiveProposalDtoAsync"/>: maps the proposal to its
+    /// response DTO, rebuilding <see cref="ProposalDto.Operations"/> and
+    /// <see cref="ProposalDto.Presentation"/> together from the supplied EFFECTIVE revision (or the
+    /// originals when it is null). Split out so callers that have ALREADY read the effective
+    /// revision — <see cref="ApproveProposalAsync"/> passes the latest revision it read to pin as
+    /// <see cref="AutomationProposal.ApprovedRevisionId"/> — can build the DTO without a redundant
+    /// re-query (Gemini review, #1439).
+    /// </summary>
+    private static Result<ProposalDto> BuildEffectiveProposalDto(
+        AutomationProposal proposal,
+        ProposalRevision? effectiveRevision)
+    {
         var dto = MapToDto(proposal);
 
-        var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
         if (effectiveRevision is null)
             return Result.Success(dto);
 
@@ -690,6 +734,19 @@ public class AutomationProposalService : IAutomationProposalService
             cancellationToken);
         if (!accessValidation.IsSuccess)
             return Result.Failure<string>(accessValidation.ErrorCode, accessValidation.ErrorMessage);
+
+        // Suppress the stored preview when an effective revision applies to this proposal (a pinned
+        // ApprovedRevisionId, or the decision-time-frozen revision for a rejected one). The stored
+        // DiffPreview is built from the proposal's ORIGINAL operations, so serving it next to a
+        // revision-derived operation set would let a single MCP proposal_detail payload carry two
+        // disagreeing views of the same change (Codex review, #1439). Returning null omits the
+        // field, matching the never-stored shape. Production never persists DiffPreview today (the
+        // V1 generator that wrote it was removed in #1214), so this is a consistency guard for
+        // legacy/test data; a terminal proposal WITHOUT a revision still serves its stored preview
+        // exactly as before (the #1397 decision is unchanged).
+        var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
+        if (effectiveRevision is not null)
+            return Result.Success<string>(null!);
 
         // A never-stored preview passes through as null (never coerced to ""), so callers can
         // distinguish never-stored from stored-but-empty. Under the MCP resource serializer's

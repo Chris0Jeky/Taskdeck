@@ -45,6 +45,12 @@ public class AutomationProposalServiceTests
         _revisionRepoMock
             .Setup(r => r.GetLatestByProposalIdAsync(It.IsAny<Guid>(), default))
             .ReturnsAsync((ProposalRevision?)null);
+        // The rejected-proposal freeze path (#1439) loads all revisions and filters in memory;
+        // default to an empty list so tests that don't seed revisions don't NRE on the repository
+        // contract's non-null return.
+        _revisionRepoMock
+            .Setup(r => r.GetByProposalIdAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync(Array.Empty<ProposalRevision>());
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
@@ -78,6 +84,26 @@ public class AutomationProposalServiceTests
             nameof(AutomationProposal.ExpiresAt),
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!
             .SetValue(proposal, expiresAt);
+    }
+
+    // DecidedAt is stamped to UtcNow by Reject/Approve; force it to a fixed value so the rejected
+    // freeze tests can place revisions deterministically on either side of the decision cutoff.
+    private static void SetDecidedAt(AutomationProposal proposal, DateTime decidedAt)
+    {
+        typeof(AutomationProposal).GetProperty(
+            nameof(AutomationProposal.DecidedAt),
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(proposal, decidedAt);
+    }
+
+    // RevisedAt is stamped to UtcNow in the ProposalRevision ctor; force it so a revision can be
+    // placed before or after a proposal's decision time in the rejected freeze tests.
+    private static void SetRevisedAt(ProposalRevision revision, DateTimeOffset revisedAt)
+    {
+        typeof(ProposalRevision).GetProperty(
+            nameof(ProposalRevision.RevisedAt),
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(revision, revisedAt);
     }
 
     #region CreateProposalAsync Tests
@@ -3086,6 +3112,122 @@ public class AutomationProposalServiceTests
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldReturnNullPreview_WhenPinnedRevisionApplies()
+    {
+        // #1439: an Applied proposal that pinned a revision at approve time must NOT serve its
+        // stored DiffPreview — that preview describes the ORIGINAL operations, while proposal_detail
+        // also carries the revision-derived operation set, so serving both would let one MCP payload
+        // present two disagreeing views of the same change. When an effective revision applies the
+        // preview is suppressed (null).
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var revisionId = Guid.NewGuid();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, requesterId, "Rename board", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { name = "Renamed board", boardId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+        proposal.SetDiffPreview("historical: original operations");
+        proposal.Approve(Guid.NewGuid(), revisionId); // pins ApprovedRevisionId
+        proposal.MarkAsApplied();
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        var revision = new ProposalRevision(proposal.Id, 1, Guid.NewGuid(), "{}", "Reviewer edit");
+        _revisionRepoMock.Setup(r => r.GetByIdAsync(revisionId, default)).ReturnsAsync(revision);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().BeNull(
+            "a pinned-revision terminal proposal suppresses its original-operations stored preview");
+    }
+
+    #endregion
+
+    #region GetEffectiveRevision freeze for rejected proposals (#1439)
+
+    // Builds an already-Rejected proposal carrying one original "update board" operation plus a
+    // saved revision, with DecidedAt and the revision's RevisedAt forced to fixed values so the
+    // decision-time cutoff is deterministic.
+    private (AutomationProposal Proposal, ProposalRevision Revision) BuildRejectedProposalWithRevision(
+        Guid proposalId,
+        DateTime decidedAt,
+        DateTimeOffset revisionRevisedAt)
+    {
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, Guid.NewGuid(), "Rejected proposal", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Original name" }),
+            Guid.NewGuid().ToString(), targetId: boardId.ToString()));
+        proposal.Reject(Guid.NewGuid(), "not needed");
+        SetDecidedAt(proposal, decidedAt);
+
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "board",
+                    targetId = boardId.ToString(),
+                    parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Revised name" }),
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+        var revision = new ProposalRevision(proposal.Id, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
+        SetRevisedAt(revision, revisionRevisedAt);
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _revisionRepoMock.Setup(r => r.GetByProposalIdAsync(proposal.Id, default))
+            .ReturnsAsync(new[] { revision });
+        return (proposal, revision);
+    }
+
+    [Fact]
+    public async Task GetProposalByIdAsync_ShouldShowPreDecisionRevision_ForRejectedProposal()
+    {
+        // #1439: a rejected proposal is frozen at its decision time. A revision saved AT OR BEFORE
+        // DecidedAt is what the reviewer decided on, so the GET response surfaces its revised ops.
+        var proposalId = Guid.NewGuid();
+        var decision = new DateTime(2026, 7, 18, 13, 0, 0, DateTimeKind.Utc);
+        BuildRejectedProposalWithRevision(proposalId, decision, new DateTimeOffset(decision.AddHours(-1), TimeSpan.Zero));
+
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Operations.Should().ContainSingle();
+        result.Value.Operations[0].Parameters.Should().Contain("Revised name");
+        result.Value.Operations[0].Parameters.Should().NotContain("Original name");
+    }
+
+    [Fact]
+    public async Task GetProposalByIdAsync_ShouldShowOriginalOperations_ForRejectedProposalWithOnlyPostDecisionRevision()
+    {
+        // #1439: a revision that raced in AFTER rejection must never surface — the frozen response
+        // falls back to the original operations the reviewer actually rejected.
+        var proposalId = Guid.NewGuid();
+        var decision = new DateTime(2026, 7, 18, 13, 0, 0, DateTimeKind.Utc);
+        BuildRejectedProposalWithRevision(proposalId, decision, new DateTimeOffset(decision.AddHours(1), TimeSpan.Zero));
+
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Operations.Should().ContainSingle();
+        result.Value.Operations[0].Parameters.Should().Contain("Original name");
+        result.Value.Operations[0].Parameters.Should().NotContain("Revised name");
     }
 
     #endregion
