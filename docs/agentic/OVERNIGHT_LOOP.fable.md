@@ -115,6 +115,33 @@ an orchestrator that thinks, decides, and gates — not the typist.
   unsure). While workers run in the background, use your foreground turn for the next wave's
   planning or adjudication — don't idle, and don't poll what will notify you.
 
+## FRUGALITY MODE (proven overlay — survived two full runs, a model switch, and a mid-run usage-limit pause)
+
+Engage when the usage window is tight, a reset boundary is near, or the maintainer asks for a
+frugal run. It tightens the standard division of labor; everything else in this manual still
+applies (the gate is never thinned to save tokens — degrade by stopping, not by improvising).
+
+- **Coordinator turns = adjudication and gates only.** No inline reading a subagent could
+  summarize, no sitting through suites, no drafting mechanics a cheaper lane can execute from
+  your finalized text.
+- **Opus gate-marshals per lane:** one worker owns a PR's whole fix→verify→settle cycle
+  end-to-end, continued via `SendMessage` round after round — never respawned per round, so
+  context (the PR's history, reviewers' phrasing, prior verdicts) is paid for once.
+- **ONE long-lived Sonnet ops agent all night** (SendMessage-continued; 6+ task cycles proven):
+  full-suite runs with an explicit STOP-on-red decision rule, pushes with explicit refspec,
+  thread settlement (reply + `resolveReviewThread` + report `unresolved == 0`), determinism
+  reruns, CI polling with exact verdict + failing-job excerpts. It executes decided work; it
+  never decides — anything ambiguous bounces back with a report.
+- **Spot-check one load-bearing claim per returned packet** (re-query the unresolved-thread
+  count, re-read one changed hunk, re-run one count) instead of re-verifying everything —
+  trust but sample. A packet that fails its spot-check is re-verified in full.
+- **Flake adjudication stays evidence-priced:** full-suite red → ops STOPs per its decision
+  rule → isolated reruns (4–6×, branch AND main) → root-cause read → ruled flaky ⇒ tracked
+  issue/evidence comment, and the gate proceeds with the flake carved out BY NAME in the ops
+  decision rule.
+- **Near a usage-reset boundary, sequence reviewer fan-outs after it.** A reviewer killed by
+  a limit produces an untrustworthy partial verdict — rerun it, never salvage it.
+
 ## PER-PR GATE SEQUENCE (proven across 20+ merges; run it every time)
 
 worker round → 2 read-only reviewers (distinct lenses) → coordinator adjudication → ONE
