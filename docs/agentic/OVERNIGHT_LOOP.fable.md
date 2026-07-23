@@ -149,15 +149,18 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
   the exact command, the expected-green shape, the known flakes carved out BY NAME with issue
   numbers, and "any other red → stop, report the failing names + excerpts, no reruns, no
   diagnosis".
-- **Spot-check one load-bearing claim per returned OPS/MECHANICS packet** (re-query the
-  unresolved-thread count, re-read one changed hunk, re-run one count) instead of
-  re-verifying everything — trust but sample; a packet that fails its spot-check is
-  re-verified in full. Two packet classes are NEVER sampled: (1) reviewer packets — every
-  returned finding is read and adjudicated individually per base §4 and the repo Review
-  Policy, at every severity; (2) the merge gate — the coordinator still performs the full
-  base §5 feedback-by-content sweep (unresolved threads AND top-level comments AND
-  review-summary bodies since the final push) and still owns the suite/CI verdict. Sampling
-  is a mechanics-lane shortcut, not a review or gate shortcut.
+- **Sampling is allowlisted, not default.** Spot-check one load-bearing claim per returned
+  packet (re-run one count, re-read one changed hunk) ONLY for pure mechanics packets whose
+  content feeds no review, settlement, or gate decision: suite/determinism runs, CI polls,
+  branch freshening, push confirmations. A packet that fails its spot-check is re-verified
+  in full. Everything decision-bearing is verified in full, never sampled — in particular:
+  reviewer packets (every returned finding read and adjudicated individually per base §4
+  and the repo Review Policy, at every severity); settlement packets (the coordinator
+  verifies each settled thread carries its reply and its finding→commit fix-evidence
+  mapping, not just the unresolved count — a thread resolved without evidence is unsettled);
+  and the merge gate (the full base §5 feedback-by-content sweep — unresolved threads AND
+  top-level comments AND review-summary bodies since the final push — plus the suite/CI
+  verdict, all coordinator-owned). Sampling is a mechanics-lane shortcut, nothing else.
 - **Flake adjudication stays evidence-priced:** full-suite red → ops STOPs per its decision
   rule → isolated reruns (4–6×, branch AND main) → root-cause read → ruled flaky ⇒ tracked
   issue/evidence comment, and the gate proceeds with the flake carved out BY NAME in the next
