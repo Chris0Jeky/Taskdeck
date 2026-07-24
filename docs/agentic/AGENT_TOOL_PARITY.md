@@ -37,7 +37,7 @@ Both agents must preserve:
 | GitHub issues/PRs | GitHub MCP or `scripts/github/*` | GitHub MCP from `.mcp.json` or `gh` | `gh` CLI with explicit notes |
 | Containers/OpenAPI/SQLite docs | Docker MCP gateway | Docker MCP gateway from `.mcp.json` | `docker`/repo scripts |
 | High-autonomy issue work | Codex skills, configured agents/worktrees when runtime policy allows | Claude skills, hooks, worktree sessions | local coordinator flow |
-| Guardrails | shared deny-floor dispatcher via project `.codex/hooks.json`, system policy, `AGENTS.md`, worktree guards | shared deny-floor dispatcher via global Claude settings hooks, `.claude/settings.json`, skills, worktree guards | stop and ask for safety blockers |
+| Guardrails | shared Bash-command deny-floor dispatcher via project `.codex/hooks.json`, system policy, `AGENTS.md`, worktree guards | shared Bash-command deny-floor dispatcher via global Claude settings hooks, `.claude/settings.json`, skills, worktree guards | stop and ask for safety blockers |
 
 ## Codex Strengths To Use
 
@@ -73,7 +73,7 @@ Known intentional difference:
 
 - Codex currently lists `ripgrep` MCP, but Taskdeck policy still prefers native `rg` on Windows.
 
-Deny-floor parity: Claude and Codex run the same shared global dispatcher (`~/.claude/hooks/dispatch.py`) through one runtime-specific adapter each — Claude via global Claude settings hooks, Codex via the project `.codex/hooks.json` adapter. Neither runtime vendors the dispatcher.
+Deny-floor parity: Claude and Codex run the same shared global Bash-command deny-floor dispatcher (`~/.claude/hooks/dispatch.py`) through one runtime-specific adapter each — Claude via global Claude settings hooks, Codex via the project `.codex/hooks.json` adapter. Neither runtime vendors the dispatcher. This parity covers Bash commands only: structured non-Bash write surfaces (file-edit tools, MCP writes) are outside this adapter/dispatcher contract and are tracked upstream at https://github.com/Chris0Jeky/agent-harness/issues/2; system and tool permissions remain the compensating controls for those surfaces.
 
 ## Verification
 

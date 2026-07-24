@@ -89,16 +89,20 @@ Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
 
 ### Codex Deny-Floor Adapter Checks
 
-`.codex/hooks.json` is the project adapter binding Codex to the shared global deny-floor dispatcher. When it changes, run the static checks from the reviewed agent-harness checkout (portable placeholder — substitute your local harness path):
+`.codex/hooks.json` is the project adapter binding Codex `Bash` calls to the shared global Bash-command deny-floor dispatcher. When it changes, run the static checks from the reviewed agent-harness worktree. The harness worktree must be detached at the reviewed canonical commit named by the active harness sync issue/PR — do not run these against an unreviewed harness head:
 
 ```powershell
 Get-Content -Raw .codex\hooks.json | ConvertFrom-Json | Out-Null
-python <agent-harness-root>\scripts\doctor.py
-python <agent-harness-root>\scripts\audit.py
-python "$env:USERPROFILE\.claude\hooks\smoke_test.py"   # installed-dispatcher smoke, if present
+$HarnessRoot = '<reviewed-agent-harness-worktree>'
+$TaskdeckRoot = (Resolve-Path .).Path
+py -3 "$HarnessRoot\harness.py" doctor --repo $TaskdeckRoot
+py -3 "$HarnessRoot\harness.py" audit --json $TaskdeckRoot
+py -3 "$env:USERPROFILE\.claude\hooks\smoke_test.py"
 ```
 
-These static checks prove structure and pin integrity only — they are insufficient to prove the hook is live. Actual activation additionally requires, in a fresh Codex session: re-trusting the hook definitions via `/hooks`, then observing one allowed command pass and one dangerous command denied (use a non-writing force-push dry run such as `git push --dry-run --force`). Report activation as NOT verified unless that live check was performed in the current session.
+Note on the pin: the `expected` hash named in the adapter is an audit-time declaration — harness doctor checks it against the installed dispatcher's normalized bytes. The hook performs no runtime byte verification of the dispatcher; runtime enforcement design is tracked at https://github.com/Chris0Jeky/agent-harness/issues/18. When the global dispatcher changes, refresh the adapter pin, re-run reviewed doctor/audit, and re-trust the hook via `/hooks`.
+
+These static checks prove structure and pin declaration only — they are insufficient to prove the hook is live. Actual activation additionally requires, in a fresh Codex session: re-trusting the hook definitions via `/hooks`, then observing one allowed command pass and one dangerous command denied (use a non-writing force-push dry run such as `git push --dry-run --force`). Report activation as NOT verified unless that live check was performed in the current session.
 
 ## Paper Backend Gap Testing (2026-05-05, PRs `#1031`–`#1040`)
 

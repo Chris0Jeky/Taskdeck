@@ -35,7 +35,9 @@ This `.codex/` layer is the Codex-facing control plane for Taskdeck. It routes a
 
 ## Deny Floor And Hook Trust
 
-- `.codex/hooks.json` is the single project adapter that binds Codex `Bash` calls to the shared global deny-floor dispatcher (`~/.claude/hooks/dispatch.py`); the dispatcher is not vendored here and must not be duplicated or modified from this repo.
+- `.codex/hooks.json` is the single project adapter that binds Codex `Bash` calls to the shared global Bash-command deny-floor dispatcher (`~/.claude/hooks/dispatch.py`); the dispatcher is not vendored here and must not be duplicated or modified from this repo.
+- Scope: this is a Bash-command deny floor only. Structured non-Bash write surfaces (file-edit tools, MCP writes) are outside this adapter/dispatcher contract and are tracked upstream at https://github.com/Chris0Jeky/agent-harness/issues/2; system and tool permissions remain the compensating controls for those surfaces.
+- The `expected` hash named in the adapter is an audit-time declaration checked by harness doctor against the installed dispatcher's normalized bytes; it is not runtime byte verification. Runtime enforcement design is tracked at https://github.com/Chris0Jeky/agent-harness/issues/18. Any global dispatcher change requires an adapter pin refresh, reviewed doctor/audit, and fresh `/hooks` trust.
 - Keep exactly one project adapter. Do not add additional hook groups or a second dispatcher path.
 - After any change to hook definitions, re-approve them via `/hooks` in a fresh Codex session — project trust is not hook trust, and previously granted trust does not carry over to changed definitions.
 - Static checks (JSON parse, pin assertions) do not prove live activation; only an in-session allowed-command pass plus a denied dangerous command (e.g. a non-writing force-push dry run) does.
