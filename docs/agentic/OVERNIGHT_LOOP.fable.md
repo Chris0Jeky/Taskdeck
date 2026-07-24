@@ -150,10 +150,15 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
   numbers, and "any other red → stop, report the failing names + excerpts, no reruns, no
   diagnosis".
 - **Sampling is allowlisted, not default.** Spot-check one load-bearing claim per returned
-  packet (re-run one count, re-read one changed hunk) ONLY for pure mechanics packets whose
-  content feeds no review, settlement, or gate decision: suite/determinism runs, CI polls,
-  branch freshening, push confirmations. A packet that fails its spot-check is re-verified
-  in full. Everything decision-bearing is verified in full, never sampled — in particular:
+  packet (re-run one count, re-read one changed hunk) ONLY for pure motion packets whose
+  content feeds no review, settlement, or gate decision: branch freshening, push
+  confirmations, intermediate progress polls. Suite/determinism runs and CI checks are
+  mechanics to EXECUTE in the ops lane, but their returned verdicts are gate inputs: the
+  coordinator reads the full returned report (exact counts, every failing job/test name,
+  the excerpts) for the exact head — never a sampled slice of it (branch protection is
+  lenient, so a misreported red has no other backstop). A packet that fails its spot-check
+  is re-verified in full. Everything decision-bearing is verified in full, never sampled
+  — in particular:
   reviewer packets (every returned finding read and adjudicated individually per base §4
   and the repo Review Policy, at every severity); settlement packets (the coordinator
   verifies each settled thread carries its reply and its finding→commit fix-evidence
