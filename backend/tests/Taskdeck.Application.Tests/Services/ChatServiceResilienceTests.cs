@@ -200,8 +200,8 @@ public class ChatServiceResilienceTests
 
         var quotaMock = new Mock<ILlmQuotaService>();
         quotaMock
-            .Setup(q => q.CheckQuotaAsync(userId, It.IsAny<Domain.Enums.LlmSurface>(), default))
-            .ReturnsAsync(new QuotaCheckResultDto(false, "Daily quota exceeded", 0, 0));
+            .Setup(q => q.ReserveAsync(userId, It.IsAny<Domain.Enums.LlmSurface>(), default))
+            .ReturnsAsync(new QuotaReservationDto(false, "Daily quota exceeded", null, 0, 0));
 
         var service = BuildService(quota: quotaMock.Object);
         var result = await service.SendMessageAsync(

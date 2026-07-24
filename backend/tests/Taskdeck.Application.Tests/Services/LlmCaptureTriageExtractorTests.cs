@@ -15,6 +15,7 @@ public class LlmCaptureTriageExtractorTests
     private readonly LlmCaptureTriageSettings _settings;
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _boardId = Guid.NewGuid();
+    private readonly Guid _reservationId = Guid.NewGuid();
 
     public LlmCaptureTriageExtractorTests()
     {
@@ -30,9 +31,10 @@ public class LlmCaptureTriageExtractorTests
         _killSwitchMock
             .Setup(k => k.IsKilledAsync(It.IsAny<LlmSurface?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
+        // Atomic quota reservation succeeds by default (issue #1313); individual tests override.
         _quotaMock
-            .Setup(q => q.CheckQuotaAsync(It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QuotaCheckResultDto(true, null, 100_000, 60));
+            .Setup(q => q.ReserveAsync(It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QuotaReservationDto(true, null, _reservationId, 100_000, 60));
     }
 
     private LlmCaptureTriageExtractor BuildExtractor()
@@ -187,8 +189,8 @@ public class LlmCaptureTriageExtractorTests
     public async Task ExtractAsync_ShouldReturnQuotaExceeded_WithoutCallingProvider()
     {
         _quotaMock
-            .Setup(q => q.CheckQuotaAsync(_userId, LlmSurface.CaptureTriage, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QuotaCheckResultDto(false, "Daily token budget exhausted", 0, 0));
+            .Setup(q => q.ReserveAsync(_userId, LlmSurface.CaptureTriage, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QuotaReservationDto(false, "Daily token budget exhausted", null, 0, 0));
         var extractor = BuildExtractor();
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
@@ -210,13 +212,17 @@ public class LlmCaptureTriageExtractorTests
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderDegraded);
         result.Detail.Should().Be("Response was truncated");
         result.Provider.Should().BeNull("no output was produced, so no provider may be recorded (#1273)");
+        // Tokens were burned → the reservation is committed with the actuals (issue #1313).
         _quotaMock.Verify(
-            q => q.RecordUsageAsync(_userId, LlmSurface.CaptureTriage, "OpenAI", "gpt-4o-mini", 4096, 0, It.IsAny<CancellationToken>()),
+            q => q.CommitReservationAsync(_reservationId, _userId, LlmSurface.CaptureTriage, "OpenAI", "gpt-4o-mini", 4096, 0, It.IsAny<CancellationToken>()),
             Times.Once);
+        _quotaMock.Verify(
+            q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldNotRecordUsage_WhenNoTokensWereConsumed()
+    public async Task ExtractAsync_ShouldReleaseReservation_WhenNoTokensWereConsumed()
     {
         SetupCompletion("not json at all", tokensUsed: 0);
         var extractor = BuildExtractor();
@@ -224,8 +230,33 @@ public class LlmCaptureTriageExtractorTests
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
 
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        // Zero tokens → no committed usage; the reservation is released so it consumes no quota (#1313).
         _quotaMock.Verify(
-            q => q.RecordUsageAsync(It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _quotaMock.Verify(
+            q => q.ReleaseReservationAsync(_reservationId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldReleaseReservation_WhenProviderThrows()
+    {
+        _providerMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("provider boom"));
+        var extractor = BuildExtractor();
+
+        await FluentActions
+            .Awaiting(() => extractor.ExtractAsync(_userId, _boardId, TranscriptPayload()))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        // The reservation must not leak when the provider call fails (issue #1313).
+        _quotaMock.Verify(
+            q => q.ReleaseReservationAsync(_reservationId, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _quotaMock.Verify(
+            q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

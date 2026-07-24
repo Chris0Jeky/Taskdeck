@@ -103,13 +103,11 @@ public class TranscriptTriageWorker : BackgroundService
             return;
         }
 
-        // Deliberately SEQUENTIAL (unlike the sibling worker's semaphore fan-out): the per-user LLM
-        // quota is check-then-record with no atomic reservation, so concurrent extractions in one
-        // tick would all pass CheckQuotaAsync on pre-tick usage totals and overshoot the quota — the
-        // free beta's primary cost-abuse control — by up to concurrency-1 live calls. Serializing
-        // the lane closes that intra-worker window (each item's RecordUsageAsync commits before the
-        // next item's check) and matches the lane's nature: transcript triage is rare, slow work
-        // where throughput matters far less than spend control.
+        // Deliberately SEQUENTIAL (unlike the sibling worker's semaphore fan-out). Quota safety no
+        // longer depends on this: the atomic reservation (#1313) serializes concurrent quota
+        // boundary-crossers even across processes. The lane stays sequential as a perf/spend choice —
+        // transcript triage is rare, slow work where throughput matters far less than keeping at most
+        // one expensive LLM extraction in flight (bounding concurrent spend and provider pressure).
         foreach (var item in transcriptItems)
         {
             ct.ThrowIfCancellationRequested();

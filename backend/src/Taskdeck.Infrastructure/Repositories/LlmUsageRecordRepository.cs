@@ -1,4 +1,6 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
@@ -8,6 +10,9 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRecordRepository
 {
+    private const int StatusReserved = (int)LlmUsageRecordStatus.Reserved;
+    private const int StatusCommitted = (int)LlmUsageRecordStatus.Committed;
+
     public LlmUsageRecordRepository(TaskdeckDbContext context) : base(context)
     {
     }
@@ -69,6 +74,442 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
         var totalOutput = await query.SumAsync(r => (long)r.OutputTokens, cancellationToken);
 
         return (totalInput, totalOutput, count);
+    }
+
+    // --- Atomic reservation (issue #1313) --------------------------------------------------------
+    //
+    // Quota was checked (aggregate read) and recorded (row insert) in two steps with an LLM network
+    // call in between, so two concurrent callers could both pass on stale totals and overshoot the
+    // boundary. The fix reserves a row up front and finalizes it after the call. The atomicity comes
+    // from a single conditional INSERT ... SELECT ... WHERE statement: SQLite serializes writers (one
+    // writer at a time, others wait out busy_timeout), so each statement's limit subqueries observe the
+    // committed rows of any reservation that landed first — exactly one concurrent caller crosses the
+    // boundary, the rest insert zero rows. This is provider-guaranteed and does not depend on manual
+    // BEGIN/COMMIT transaction control (which Microsoft.Data.Sqlite does not honour via raw commands).
+    // Reservations that outlive their TTL (a crashed process) are swept first and are also excluded from
+    // every subquery by the `ExpiresAt > now` live predicate, so a stale row can neither block nor leak.
+
+    public async Task<QuotaReservationOutcome> TryReserveAsync(
+        Guid userId,
+        LlmSurface surface,
+        DateTimeOffset hourStart,
+        DateTimeOffset now,
+        DateTimeOffset dayStart,
+        DateTimeOffset dayEnd,
+        long requestsPerHour,
+        long tokensPerDay,
+        long globalBudgetCeilingTokens,
+        int estimatedTokens,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_context.Database.IsSqlite())
+        {
+            return await TryReserveNonSqliteAsync(
+                userId, surface, hourStart, now, dayStart, dayEnd,
+                requestsPerHour, tokensPerDay, globalBudgetCeilingTokens,
+                estimatedTokens, expiresAt, cancellationToken);
+        }
+
+        var surfaceValue = (int)surface;
+        var provider = LlmUsageRecord.ReservationProvider;
+        var model = string.Empty;
+
+        // Atomic conditional insert: the reservation row is written only if every enabled limit still has
+        // headroom against live (committed + non-expired reserved) usage, all evaluated inside the one
+        // statement SQLite executes under the write lock. affected == 1 => reserved; 0 => denied. The
+        // stale-reservation sweep (idempotent) runs first inside the same retried unit so a contended
+        // write waits/retries rather than surfacing SQLITE_BUSY as a 500 (#1282 parity). A retried
+        // attempt re-uses the same reservationId — a prior failed attempt inserted nothing, so no dup.
+        var reservationId = Guid.NewGuid();
+        var affected = await WithSqliteWriteRetryAsync(async () =>
+        {
+            // Sweep stale reservations (age-based expiry) so the table cannot grow without bound.
+            // Correctness does not depend on it — the live predicate below already ignores expired rows.
+            await _context.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM LlmUsageRecords WHERE Status = {StatusReserved} AND ExpiresAt IS NOT NULL AND ExpiresAt <= {now}",
+                cancellationToken);
+
+            return await _context.Database.ExecuteSqlInterpolatedAsync(
+                $@"INSERT INTO LlmUsageRecords
+(Id, UserId, Surface, Provider, Model, InputTokens, OutputTokens, Status, ExpiresAt, CreatedAt, UpdatedAt)
+SELECT {reservationId}, {userId}, {surfaceValue}, {provider}, {model}, {estimatedTokens}, 0, {StatusReserved}, {expiresAt}, {now}, {now}
+WHERE ({requestsPerHour} <= 0 OR (
+        SELECT COUNT(*) FROM LlmUsageRecords
+        WHERE UserId = {userId} AND Surface = {surfaceValue}
+          AND CreatedAt >= {hourStart}
+          AND (Status = {StatusCommitted} OR ExpiresAt > {now})) < {requestsPerHour})
+  AND ({tokensPerDay} <= 0 OR (
+        SELECT COALESCE(SUM(CAST(InputTokens AS INTEGER) + CAST(OutputTokens AS INTEGER)), 0) FROM LlmUsageRecords
+        WHERE UserId = {userId} AND Surface = {surfaceValue}
+          AND CreatedAt >= {dayStart} AND CreatedAt < {dayEnd}
+          AND (Status = {StatusCommitted} OR ExpiresAt > {now})) < {tokensPerDay})
+  AND ({globalBudgetCeilingTokens} <= 0 OR (
+        SELECT COALESCE(SUM(CAST(InputTokens AS INTEGER) + CAST(OutputTokens AS INTEGER)), 0) FROM LlmUsageRecords
+        WHERE Surface = {surfaceValue}
+          AND CreatedAt >= {dayStart} AND CreatedAt < {dayEnd}
+          AND (Status = {StatusCommitted} OR ExpiresAt > {now})) < {globalBudgetCeilingTokens})",
+                cancellationToken);
+        }, cancellationToken);
+
+        // Read the live counts once for the outcome. On success they include the just-inserted
+        // reservation (post-consumption headroom); on denial they identify which limit was hit for the
+        // caller's error message. This read is only informational — the atomic decision already happened.
+        // No `CreatedAt < now` upper bound: the reservation row is stamped at `now`, and a concurrent
+        // reserver captures a near-identical `now`, so an exclusive upper bound would drop the very row
+        // that must be counted to serialize the boundary. Rows are never in the future, so `>= hourStart`
+        // is the correct last-hour window here.
+        var requestCount = requestsPerHour > 0
+            ? await LiveScalarAsync(
+                $@"SELECT COUNT(*) AS Value FROM LlmUsageRecords
+                   WHERE UserId = {userId} AND Surface = {surfaceValue}
+                     AND CreatedAt >= {hourStart}
+                     AND (Status = {StatusCommitted} OR ExpiresAt > {now})",
+                cancellationToken)
+            : 0;
+
+        var userTokens = tokensPerDay > 0
+            ? await LiveScalarAsync(
+                $@"SELECT COALESCE(SUM(CAST(InputTokens AS INTEGER) + CAST(OutputTokens AS INTEGER)), 0) AS Value FROM LlmUsageRecords
+                   WHERE UserId = {userId} AND Surface = {surfaceValue}
+                     AND CreatedAt >= {dayStart} AND CreatedAt < {dayEnd}
+                     AND (Status = {StatusCommitted} OR ExpiresAt > {now})",
+                cancellationToken)
+            : 0;
+
+        var globalTokens = globalBudgetCeilingTokens > 0
+            ? await LiveScalarAsync(
+                $@"SELECT COALESCE(SUM(CAST(InputTokens AS INTEGER) + CAST(OutputTokens AS INTEGER)), 0) AS Value FROM LlmUsageRecords
+                   WHERE Surface = {surfaceValue}
+                     AND CreatedAt >= {dayStart} AND CreatedAt < {dayEnd}
+                     AND (Status = {StatusCommitted} OR ExpiresAt > {now})",
+                cancellationToken)
+            : 0;
+
+        if (affected > 0)
+        {
+            return new QuotaReservationOutcome(
+                QuotaReservationDecision.Allowed, reservationId, requestCount, userTokens, globalTokens);
+        }
+
+        // Attribute the denial to whichever limit the re-read shows exceeded. If a concurrent release
+        // raced the re-read so none reads as exceeded, fall back to the first *enabled* limit (never a
+        // disabled one) so the caller never sees a message for a limit that is off.
+        var decision = requestsPerHour > 0 && requestCount >= requestsPerHour
+            ? QuotaReservationDecision.RequestsExceeded
+            : tokensPerDay > 0 && userTokens >= tokensPerDay
+                ? QuotaReservationDecision.TokensExceeded
+                : globalBudgetCeilingTokens > 0 && globalTokens >= globalBudgetCeilingTokens
+                    ? QuotaReservationDecision.GlobalExceeded
+                    : requestsPerHour > 0
+                        ? QuotaReservationDecision.RequestsExceeded
+                        : tokensPerDay > 0
+                            ? QuotaReservationDecision.TokensExceeded
+                            : QuotaReservationDecision.GlobalExceeded;
+
+        return new QuotaReservationOutcome(decision, null, requestCount, userTokens, globalTokens);
+    }
+
+    private async Task<long> LiveScalarAsync(FormattableString sql, CancellationToken cancellationToken)
+    {
+        return await _context.Database.SqlQuery<long>(sql).SingleAsync(cancellationToken);
+    }
+
+    private const int MaxSqliteWriteLockRetries = 5;
+
+    // Mirrors UnitOfWork.SaveChangesAsync's transient-lock handling for the raw-SQL reservation writes:
+    // a contended write waits and retries with backoff instead of surfacing SQLITE_BUSY as a 500 (#1282).
+    private static async Task<T> WithSqliteWriteRetryAsync<T>(
+        Func<Task<T>> operation, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (Exception ex) when (attempt < MaxSqliteWriteLockRetries && IsTransientSqliteWriteLock(ex))
+            {
+                var multiplier = attempt + 1;
+                await Task.Delay(TimeSpan.FromMilliseconds(25 * multiplier * multiplier), cancellationToken);
+            }
+        }
+    }
+
+    private static bool IsTransientSqliteWriteLock(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqliteException sqliteException
+                && (sqliteException.SqliteErrorCode == 5 || sqliteException.SqliteErrorCode == 6))
+            {
+                return true;
+            }
+
+            if (current.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)
+                || current.Message.Contains("database table is locked", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public async Task<QuotaCommitResult> CommitReservationAsync(
+        Guid reservationId,
+        Guid userId,
+        LlmSurface surface,
+        string provider,
+        string model,
+        int inputTokens,
+        int outputTokens,
+        CancellationToken cancellationToken = default)
+    {
+        // Mirror TryReserveAsync's provider split: the raw finalization SQL below hard-codes unquoted
+        // PascalCase identifiers, which non-SQLite providers (e.g. Npgsql folds to lowercase) cannot
+        // match against EF's quoted table/columns, so a reservation created via the non-SQLite reserve
+        // fallback must be finalized through EF instead.
+        if (!_context.Database.IsSqlite())
+        {
+            return await CommitReservationNonSqliteAsync(
+                reservationId, userId, surface, provider, model, inputTokens, outputTokens, cancellationToken);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var safeProvider = string.IsNullOrWhiteSpace(provider) ? LlmUsageRecord.ReservationProvider : provider;
+        var safeModel = model ?? string.Empty;
+        var safeInput = Math.Max(0, inputTokens);
+        var safeOutput = Math.Max(0, outputTokens);
+        var surfaceValue = (int)surface;
+
+        // Single atomic UPDATE gated on Status = Reserved: idempotent against a double-commit and a
+        // no-op if the row was already released or swept. Raw SQL keeps the caller's shared change
+        // tracker (e.g. the chat message being composed) from flushing early. Retried on a transient
+        // write lock for #1282 parity with the SaveChanges path this replaced.
+        var affected = await WithSqliteWriteRetryAsync(
+            () => _context.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE LlmUsageRecords SET Status = {StatusCommitted}, ExpiresAt = NULL, Provider = {safeProvider}, Model = {safeModel}, InputTokens = {safeInput}, OutputTokens = {safeOutput}, UpdatedAt = {now} WHERE Id = {reservationId} AND Status = {StatusReserved}",
+                cancellationToken),
+            cancellationToken);
+
+        if (affected > 0)
+            return QuotaCommitResult.Committed;
+
+        // The reservation row is gone or already settled. If gone (TTL-swept while a slow LLM call was
+        // in flight), the tokens were still genuinely billed — insert a replacement Committed row so
+        // real usage is never dropped from quota or telemetry. The NOT EXISTS guard on the same id makes
+        // this a no-op for the already-settled case, so a duplicate commit cannot double-count.
+        var recovered = await WithSqliteWriteRetryAsync(
+            () => _context.Database.ExecuteSqlInterpolatedAsync(
+                $@"INSERT INTO LlmUsageRecords
+(Id, UserId, Surface, Provider, Model, InputTokens, OutputTokens, Status, ExpiresAt, CreatedAt, UpdatedAt)
+SELECT {reservationId}, {userId}, {surfaceValue}, {safeProvider}, {safeModel}, {safeInput}, {safeOutput}, {StatusCommitted}, NULL, {now}, {now}
+WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
+                cancellationToken),
+            cancellationToken);
+
+        return recovered > 0 ? QuotaCommitResult.RecoveredExpired : QuotaCommitResult.AlreadySettled;
+    }
+
+    public async Task<bool> ReleaseReservationAsync(
+        Guid reservationId,
+        CancellationToken cancellationToken = default)
+    {
+        // Non-SQLite providers can't match the unquoted identifiers in the raw DELETE (see
+        // CommitReservationAsync); release through EF instead.
+        if (!_context.Database.IsSqlite())
+        {
+            return await ReleaseReservationNonSqliteAsync(reservationId, cancellationToken);
+        }
+
+        var affected = await WithSqliteWriteRetryAsync(
+            () => _context.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM LlmUsageRecords WHERE Id = {reservationId} AND Status = {StatusReserved}",
+                cancellationToken),
+            cancellationToken);
+
+        return affected > 0;
+    }
+
+    // Non-SQLite fallback (e.g. an in-memory relational provider in isolated tests). Best-effort:
+    // relational providers other than SQLite are not part of the shared-file deployment model, so the
+    // single-statement writer serialization above is unnecessary; a check-then-insert is sufficient there.
+    private async Task<QuotaReservationOutcome> TryReserveNonSqliteAsync(
+        Guid userId,
+        LlmSurface surface,
+        DateTimeOffset hourStart,
+        DateTimeOffset now,
+        DateTimeOffset dayStart,
+        DateTimeOffset dayEnd,
+        long requestsPerHour,
+        long tokensPerDay,
+        long globalBudgetCeilingTokens,
+        int estimatedTokens,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken)
+    {
+        var requestCount = requestsPerHour > 0
+            ? await _dbSet.AsNoTracking()
+                .Where(r => r.UserId == userId && r.Surface == surface
+                    && r.CreatedAt >= hourStart && r.CreatedAt < now
+                    && (r.Status == LlmUsageRecordStatus.Committed || r.ExpiresAt > now))
+                .LongCountAsync(cancellationToken)
+            : 0;
+
+        if (requestsPerHour > 0 && requestCount >= requestsPerHour)
+            return new QuotaReservationOutcome(QuotaReservationDecision.RequestsExceeded, null, requestCount, 0, 0);
+
+        var userTokens = tokensPerDay > 0
+            ? await _dbSet.AsNoTracking()
+                .Where(r => r.UserId == userId && r.Surface == surface
+                    && r.CreatedAt >= dayStart && r.CreatedAt < dayEnd
+                    && (r.Status == LlmUsageRecordStatus.Committed || r.ExpiresAt > now))
+                .SumAsync(r => (long)r.InputTokens + r.OutputTokens, cancellationToken)
+            : 0;
+
+        if (tokensPerDay > 0 && userTokens >= tokensPerDay)
+            return new QuotaReservationOutcome(QuotaReservationDecision.TokensExceeded, null, requestCount, userTokens, 0);
+
+        var globalTokens = globalBudgetCeilingTokens > 0
+            ? await _dbSet.AsNoTracking()
+                .Where(r => r.Surface == surface
+                    && r.CreatedAt >= dayStart && r.CreatedAt < dayEnd
+                    && (r.Status == LlmUsageRecordStatus.Committed || r.ExpiresAt > now))
+                .SumAsync(r => (long)r.InputTokens + r.OutputTokens, cancellationToken)
+            : 0;
+
+        if (globalBudgetCeilingTokens > 0 && globalTokens >= globalBudgetCeilingTokens)
+            return new QuotaReservationOutcome(QuotaReservationDecision.GlobalExceeded, null, requestCount, userTokens, globalTokens);
+
+        var reservation = LlmUsageRecord.CreateReservation(userId, surface, estimatedTokens, expiresAt);
+        await _dbSet.AddAsync(reservation, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new QuotaReservationOutcome(
+            QuotaReservationDecision.Allowed, reservation.Id, requestCount, userTokens, globalTokens);
+    }
+
+    // Non-SQLite finalization (see TryReserveNonSqliteAsync). EF-tracked update/insert instead of the raw
+    // SQLite statements, whose unquoted PascalCase identifiers are not provider-portable. Same best-effort
+    // posture as the reserve fallback: it already flushes the shared context via SaveChangesAsync, so the
+    // raw path's "don't disturb the caller's change tracker" rationale is already ceded here.
+    //
+    // Invariant: finalization degrades, it never throws. The raw statements report a lost race as
+    // affected == 0 (→ AlreadySettled / false); the EF equivalents must settle to the same outcomes
+    // when the row vanishes mid-flight or a concurrent finalizer wins, because callers commit inside
+    // live request/stream handling where an exception surfaces as a fault.
+    private async Task<QuotaCommitResult> CommitReservationNonSqliteAsync(
+        Guid reservationId,
+        Guid userId,
+        LlmSurface surface,
+        string provider,
+        string model,
+        int inputTokens,
+        int outputTokens,
+        CancellationToken cancellationToken)
+    {
+        var safeProvider = string.IsNullOrWhiteSpace(provider) ? LlmUsageRecord.ReservationProvider : provider;
+        var safeModel = model ?? string.Empty;
+        var safeInput = Math.Max(0, inputTokens);
+        var safeOutput = Math.Max(0, outputTokens);
+
+        // Tracked (not AsNoTracking) so the Reserved → Committed mutation is flushed by SaveChangesAsync.
+        var reserved = await _dbSet
+            .FirstOrDefaultAsync(
+                r => r.Id == reservationId && r.Status == LlmUsageRecordStatus.Reserved,
+                cancellationToken);
+        if (reserved is not null)
+        {
+            reserved.Commit(safeProvider, safeModel, safeInput, safeOutput);
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                return QuotaCommitResult.Committed;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // The row vanished between the find and the flush (swept or released on another
+                // connection). Detach the dead entry so a later SaveChanges on the shared context does
+                // not retry the orphaned UPDATE, then settle exactly like the raw UPDATE's affected == 0.
+                _context.Entry(reserved).State = EntityState.Detached;
+            }
+        }
+
+        return await SettleMissingReservationAsync(
+            reservationId, userId, surface, safeProvider, safeModel, safeInput, safeOutput, cancellationToken);
+    }
+
+    // The reservation row is gone or already settled. A surviving row with this id was already
+    // committed/settled → idempotent no-op. Otherwise it was TTL-swept mid-call; the tokens were still
+    // billed, so re-insert a committed row under the same id. The exists-check guards the insert so a
+    // duplicate commit cannot double-count.
+    private async Task<QuotaCommitResult> SettleMissingReservationAsync(
+        Guid reservationId,
+        Guid userId,
+        LlmSurface surface,
+        string safeProvider,
+        string safeModel,
+        int safeInput,
+        int safeOutput,
+        CancellationToken cancellationToken)
+    {
+        if (await _dbSet.AnyAsync(r => r.Id == reservationId, cancellationToken))
+            return QuotaCommitResult.AlreadySettled;
+
+        // The shared scoped context may still track the swept reservation instance (the reserve fallback
+        // left it tracked as Unchanged, and the delete happened on another connection). Detach it so
+        // inserting the replacement row under the same key cannot collide in the identity map.
+        var local = _dbSet.Local.FirstOrDefault(r => r.Id == reservationId);
+        if (local is not null)
+            _context.Entry(local).State = EntityState.Detached;
+
+        var recovered = LlmUsageRecord.CreateRecoveredUsage(
+            reservationId, userId, surface, safeProvider, safeModel, safeInput, safeOutput);
+        await _dbSet.AddAsync(recovered, cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            return QuotaCommitResult.RecoveredExpired;
+        }
+        catch (DbUpdateException)
+        {
+            // Drop the failed insert, then discriminate: only the concurrent-settle race is swallowed.
+            // A row now existing under this id means a concurrent finalizer won — the raw recovery
+            // INSERT's NOT EXISTS guard reports that same race as 0 rows. Any other insert failure is
+            // a real write failure and must propagate; reporting it as settled would silently drop
+            // billed usage.
+            _context.Entry(recovered).State = EntityState.Detached;
+            if (await _dbSet.AnyAsync(r => r.Id == reservationId, cancellationToken))
+                return QuotaCommitResult.AlreadySettled;
+            throw;
+        }
+    }
+
+    private async Task<bool> ReleaseReservationNonSqliteAsync(
+        Guid reservationId,
+        CancellationToken cancellationToken)
+    {
+        var reserved = await _dbSet
+            .FirstOrDefaultAsync(
+                r => r.Id == reservationId && r.Status == LlmUsageRecordStatus.Reserved,
+                cancellationToken);
+        if (reserved is null)
+            return false;
+
+        _dbSet.Remove(reserved);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Already gone (concurrent sweep or release). Detach the dead delete entry and report the
+            // no-op, matching the raw DELETE's affected == 0.
+            _context.Entry(reserved).State = EntityState.Detached;
+            return false;
+        }
     }
 
     // SQLite stores DateTimeOffset as ISO 8601 text. Use raw SQL with string
@@ -136,9 +577,17 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
     private static (List<string> WhereClauses, List<object> Parameters) BuildSqliteWhere(
         Guid? userId, LlmSurface? surface, DateTimeOffset from, DateTimeOffset to)
     {
-        var clauses = new List<string> { "CreatedAt >= {0}", "CreatedAt < {1}" };
-        var parameters = new List<object> { from.ToString(SqliteDateFormat), to.ToString(SqliteDateFormat) };
-        var paramIndex = 2;
+        // Reporting / status reads count only Committed rows so in-flight reservations (issue #1313)
+        // never inflate usage summaries or the quota-status endpoint. Enforcement counts reservations,
+        // but it does so inside TryReserveAsync's serialized transaction, not here.
+        var clauses = new List<string> { "CreatedAt >= {0}", "CreatedAt < {1}", $"Status = {{2}}" };
+        var parameters = new List<object>
+        {
+            from.ToString(SqliteDateFormat),
+            to.ToString(SqliteDateFormat),
+            StatusCommitted
+        };
+        var paramIndex = 3;
 
         if (userId.HasValue)
         {
@@ -162,8 +611,10 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
         DateTimeOffset from,
         DateTimeOffset to)
     {
+        // Reporting reads count only Committed rows (see BuildSqliteWhere).
         var query = _dbSet.AsNoTracking()
-            .Where(r => r.CreatedAt >= from && r.CreatedAt < to);
+            .Where(r => r.CreatedAt >= from && r.CreatedAt < to
+                && r.Status == LlmUsageRecordStatus.Committed);
 
         if (userId.HasValue)
             query = query.Where(r => r.UserId == userId.Value);

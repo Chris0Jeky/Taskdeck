@@ -70,15 +70,19 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Detail: health.ErrorMessage);
         }
 
+        // Atomic quota reservation (issue #1313): reserve before the completion, then commit with the
+        // actual tokens or release. This serializes concurrent triage/chat calls at the boundary.
+        Guid? quotaReservationId = null;
         if (_quotaService is not null)
         {
-            var quota = await _quotaService.CheckQuotaAsync(userId, LlmSurface.CaptureTriage, cancellationToken);
-            if (!quota.Allowed)
+            var reservation = await _quotaService.ReserveAsync(userId, LlmSurface.CaptureTriage, cancellationToken);
+            if (!reservation.Allowed)
             {
                 return new LlmCaptureTriageExtraction(
                     LlmCaptureTriageOutcome.QuotaExceeded,
-                    Detail: quota.DeniedReason);
+                    Detail: reservation.DeniedReason);
             }
+            quotaReservationId = reservation.ReservationId;
         }
 
         var request = new ChatCompletionRequest(
@@ -94,20 +98,80 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             // the prompt itself demands raw JSON and TryParseTasks tolerates fenced output.
             SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt);
 
-        var result = await _llmProvider.CompleteAsync(request, cancellationToken);
-
-        // Tokens are consumed whether or not the content is usable (truncation is the clearest
-        // case: degraded AND billed), so usage is recorded before any quality checks.
-        if (_quotaService is not null && result.TokensUsed > 0)
+        LlmCompletionResult result;
+        LlmCompletionResult? completed = null;
+        var quotaSettled = quotaReservationId is null;
+        try
         {
-            await _quotaService.RecordUsageAsync(
-                userId,
-                LlmSurface.CaptureTriage,
-                result.Provider,
-                result.Model,
-                result.TokensUsed,
-                0,
-                cancellationToken);
+            result = await _llmProvider.CompleteAsync(request, cancellationToken);
+            completed = result;
+
+            // Settle the reservation. Tokens are consumed whether or not the content is usable
+            // (truncation is the clearest case: degraded AND billed), so a call that used tokens commits
+            // before any quality checks; a zero-token call releases (mirrors the prior "record only if
+            // > 0" behavior).
+            if (quotaReservationId is Guid reservationId)
+            {
+                if (result.TokensUsed > 0)
+                {
+                    // CancellationToken.None (M1, #1427 review): tokens are already billed at this
+                    // point, so finalization must not be cancellable — a cancelled commit would trip
+                    // the finally-release below and erase real usage (quota bypass).
+                    await _quotaService!.CommitReservationAsync(
+                        reservationId,
+                        userId,
+                        LlmSurface.CaptureTriage,
+                        result.Provider,
+                        result.Model,
+                        result.TokensUsed,
+                        0,
+                        CancellationToken.None);
+                }
+                else
+                {
+                    await _quotaService!.ReleaseReservationAsync(reservationId, CancellationToken.None);
+                }
+                quotaSettled = true;
+            }
+        }
+        finally
+        {
+            // Mirrors ChatService (#1427 review): SETTLE an unfinalized reservation. If the provider
+            // completed with billed tokens (the in-try commit itself failed on a DB fault), COMMIT them —
+            // releasing would erase real usage; a provider throw or zero-token result releases so the
+            // slot consumes no quota. CancellationToken.None so cleanup runs under a cancelled request
+            // token; try/catch so a settle failure cannot mask the original exception.
+            if (!quotaSettled && quotaReservationId is Guid unsettledId)
+            {
+                try
+                {
+                    if (completed is { TokensUsed: > 0 } billed)
+                    {
+                        await _quotaService!.CommitReservationAsync(
+                            unsettledId,
+                            userId,
+                            LlmSurface.CaptureTriage,
+                            billed.Provider,
+                            billed.Model,
+                            billed.TokensUsed,
+                            0,
+                            CancellationToken.None);
+                    }
+                    else
+                    {
+                        await _quotaService!.ReleaseReservationAsync(unsettledId, CancellationToken.None);
+                    }
+                }
+                catch (Exception settleEx)
+                {
+                    _logger?.LogError(
+                        settleEx,
+                        "Quota reservation {ReservationId} settle failed in transcript triage (billed tokens: {Tokens}); " +
+                        "the row stays Reserved until the TTL sweep.",
+                        unsettledId,
+                        completed?.TokensUsed ?? 0);
+                }
+            }
         }
 
         if (result.IsDegraded)
