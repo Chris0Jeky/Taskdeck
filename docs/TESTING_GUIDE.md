@@ -63,6 +63,7 @@ For docs/skill/hook-only agentic changes, use targeted checks rather than the fu
 ```powershell
 Get-Content -Raw .mcp.json | ConvertFrom-Json | Out-Null
 Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
+Get-Content -Raw .codex\hooks.json | ConvertFrom-Json | Out-Null
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-question-batch
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-failure-capture
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-interface-map
@@ -85,6 +86,19 @@ When `.claude/settings.json` changes outside the agentic smoke path, also parse 
 ```powershell
 Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
 ```
+
+### Codex Deny-Floor Adapter Checks
+
+`.codex/hooks.json` is the project adapter binding Codex to the shared global deny-floor dispatcher. When it changes, run the static checks from the reviewed agent-harness checkout (portable placeholder — substitute your local harness path):
+
+```powershell
+Get-Content -Raw .codex\hooks.json | ConvertFrom-Json | Out-Null
+python <agent-harness-root>\scripts\doctor.py
+python <agent-harness-root>\scripts\audit.py
+python "$env:USERPROFILE\.claude\hooks\smoke_test.py"   # installed-dispatcher smoke, if present
+```
+
+These static checks prove structure and pin integrity only — they are insufficient to prove the hook is live. Actual activation additionally requires, in a fresh Codex session: re-trusting the hook definitions via `/hooks`, then observing one allowed command pass and one dangerous command denied (use a non-writing force-push dry run such as `git push --dry-run --force`). Report activation as NOT verified unless that live check was performed in the current session.
 
 ## Paper Backend Gap Testing (2026-05-05, PRs `#1031`–`#1040`)
 

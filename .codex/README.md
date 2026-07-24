@@ -28,10 +28,17 @@ This `.codex/` layer is the Codex-facing control plane for Taskdeck. It routes a
 ## Canonical Vs Local
 
 - Canonical project docs: `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/TESTING_GUIDE.md`, `docs/MANUAL_TEST_CHECKLIST.md`, and `docs/GOLDEN_PRINCIPLES.md`.
-- Codex-local routing: `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/config.toml`, and `.codex/skills/*`.
+- Codex-local routing: `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/config.toml`, `.codex/hooks.json`, and `.codex/skills/*`.
 - Claude-local routing: `.claude/README.md`, `.claude/settings.json`, and `.claude/skills/*`.
 - Agentic operating layer: `docs/agentic/*`, `autodoc/AGENT_INDEX.md`, and `scripts/agent_hooks/*`.
 - Historical or research material: `docs/archive/` and `docs/InReview/`; use only when active docs point there or the task explicitly asks for reconciliation.
+
+## Deny Floor And Hook Trust
+
+- `.codex/hooks.json` is the single project adapter that binds Codex `Bash` calls to the shared global deny-floor dispatcher (`~/.claude/hooks/dispatch.py`); the dispatcher is not vendored here and must not be duplicated or modified from this repo.
+- Keep exactly one project adapter. Do not add additional hook groups or a second dispatcher path.
+- After any change to hook definitions, re-approve them via `/hooks` in a fresh Codex session — project trust is not hook trust, and previously granted trust does not carry over to changed definitions.
+- Static checks (JSON parse, pin assertions) do not prove live activation; only an in-session allowed-command pass plus a denied dangerous command (e.g. a non-writing force-push dry run) does.
 
 ## Development Loop
 

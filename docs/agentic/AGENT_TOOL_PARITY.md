@@ -37,7 +37,7 @@ Both agents must preserve:
 | GitHub issues/PRs | GitHub MCP or `scripts/github/*` | GitHub MCP from `.mcp.json` or `gh` | `gh` CLI with explicit notes |
 | Containers/OpenAPI/SQLite docs | Docker MCP gateway | Docker MCP gateway from `.mcp.json` | `docker`/repo scripts |
 | High-autonomy issue work | Codex skills, configured agents/worktrees when runtime policy allows | Claude skills, hooks, worktree sessions | local coordinator flow |
-| Guardrails | system policy, `AGENTS.md`, `.codex/config.toml`, worktree guards | `.claude/settings.json`, hooks, skills, worktree guards | stop and ask for safety blockers |
+| Guardrails | shared deny-floor dispatcher via project `.codex/hooks.json`, system policy, `AGENTS.md`, worktree guards | shared deny-floor dispatcher via global Claude settings hooks, `.claude/settings.json`, skills, worktree guards | stop and ask for safety blockers |
 
 ## Codex Strengths To Use
 
@@ -72,7 +72,8 @@ Shared baseline servers:
 Known intentional difference:
 
 - Codex currently lists `ripgrep` MCP, but Taskdeck policy still prefers native `rg` on Windows.
-- Claude uses `.claude/settings.json` hooks for guardrails; Codex relies on system policy plus repo guard scripts and skills.
+
+Deny-floor parity: Claude and Codex run the same shared global dispatcher (`~/.claude/hooks/dispatch.py`) through one runtime-specific adapter each — Claude via global Claude settings hooks, Codex via the project `.codex/hooks.json` adapter. Neither runtime vendors the dispatcher.
 
 ## Verification
 
@@ -81,6 +82,7 @@ For parity-only changes, run:
 ```powershell
 Get-Content -Raw .mcp.json | ConvertFrom-Json | Out-Null
 Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
+Get-Content -Raw .codex\hooks.json | ConvertFrom-Json | Out-Null
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-question-batch
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-failure-capture
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-interface-map
@@ -92,3 +94,5 @@ node scripts\check-golden-principles.mjs
 ```
 
 Use runtime MCP list commands when available, but do not claim remote MCP connectivity unless the current session actually verified it.
+
+For deny-floor adapter changes, the JSON parse above is only a static check. Actual activation proof requires a fresh Codex session that re-trusts the hook definitions via `/hooks`, then demonstrates one allowed command passing and one dangerous command denied (use a non-writing force-push dry run). Do not claim the hook is live from static checks alone.
