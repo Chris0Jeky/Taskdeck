@@ -115,6 +115,64 @@ an orchestrator that thinks, decides, and gates — not the typist.
   unsure). While workers run in the background, use your foreground turn for the next wave's
   planning or adjudication — don't idle, and don't poll what will notify you.
 
+## FRUGALITY MODE (proven overlay — survived two full runs, a model switch, and a mid-run usage-limit pause)
+
+Engage when the usage window is tight, a reset boundary is near, or the maintainer asks for a
+frugal run. It tightens the standard division of labor; everything else in this manual still
+applies — the gate is never thinned to save tokens (see STOP CONDITIONS for how to degrade).
+
+- **Coordinator turns go to the Fable lane's never-delegated work** (wave planning, task
+  selection, adjudication, the gates) **and nothing else.** No inline reading a subagent could
+  summarize, no sitting through suites, no drafting mechanics a cheaper lane can execute from
+  your finalized text. Required orientation and gate reads are never delegated to save
+  tokens: the coordinator still reads the source-of-truth docs (base §1 — STATUS,
+  OUTSTANDING_TASKS, the handoff) and every gate input itself.
+- **Opus gate-marshals per lane:** one worker owns a PR's whole fix→verify→settle cycle
+  end-to-end — "verify" meaning the worker's TARGETED runs; full-suite verdicts stay with the
+  ops lane + coordinator per BUDGET & CADENCE — continued via `SendMessage` round after round,
+  never respawned per round, so context (the PR's history, reviewers' phrasing, prior
+  verdicts) is paid for once. Thread settlement (reply + `resolveReviewThread` + report
+  `unresolved == 0`) is owned by exactly ONE lane per PR — default the gate-marshal; the
+  coordinator may reassign a PR's settlement to the ops agent in that packet explicitly
+  (e.g. the marshal is retired), but never lets both act on the same PR's threads. (Honest
+  provenance: the two proving runs actually ran settlement in the ops lane as a standing
+  cycle; the marshal default here is a deliberate alignment with the gate sequence below,
+  which the single-owner rule preserves either way.)
+- **The Cheap-ops-lane Sonnet agent (the SAME single agent, not a second one) takes on an
+  extended remit** in addition to its standing tasks: full-suite runs under a STOP-on-red
+  decision rule, determinism reruns, and any settlement packet reassigned per the bullet
+  above (reply texts in a settlement packet are always coordinator-authored — the lane posts
+  finalized text, consistent with its standing remit). The lane's standing rule (executes
+  decided work, never decides) is unchanged. A "packet" throughout this section = one
+  `SendMessage` task assignment plus its returned report. The STOP-on-red decision rule is
+  authored by the coordinator inside the task packet itself:
+  the exact command, the expected-green shape, the known flakes carved out BY NAME with issue
+  numbers, and "any other red → stop, report the failing names + excerpts, no reruns, no
+  diagnosis".
+- **Sampling is allowlisted, not default.** Spot-check one load-bearing claim per returned
+  packet (re-run one count, re-read one changed hunk) ONLY for pure motion packets whose
+  content feeds no review, settlement, or gate decision: branch freshening, push
+  confirmations, intermediate progress polls. Suite/determinism runs and CI checks are
+  mechanics to EXECUTE in the ops lane, but their returned verdicts are gate inputs: the
+  coordinator reads the full returned report (exact counts, every failing job/test name,
+  the excerpts) for the exact head — never a sampled slice of it (branch protection is
+  lenient, so a misreported red has no other backstop). A packet that fails its spot-check
+  is re-verified in full. Everything decision-bearing is verified in full, never sampled
+  — in particular:
+  reviewer packets (every returned finding read and adjudicated individually per base §4
+  and the repo Review Policy, at every severity); settlement packets (the coordinator
+  verifies each settled thread carries its reply and its finding→commit fix-evidence
+  mapping, not just the unresolved count — a thread resolved without evidence is unsettled);
+  and the merge gate (the full base §5 feedback-by-content sweep — unresolved threads AND
+  top-level comments AND review-summary bodies since the final push — plus the suite/CI
+  verdict, all coordinator-owned). Sampling is a mechanics-lane shortcut, nothing else.
+- **Flake adjudication stays evidence-priced:** full-suite red → ops STOPs per its decision
+  rule → isolated reruns (4–6×, branch AND main) → root-cause read → ruled flaky ⇒ tracked
+  issue/evidence comment, and the gate proceeds with the flake carved out BY NAME in the next
+  packet's decision rule.
+- **Near a usage-reset boundary, sequence reviewer fan-outs after it.** A reviewer killed by
+  a limit produces an untrustworthy partial verdict — rerun it, never salvage it.
+
 ## PER-PR GATE SEQUENCE (proven across 20+ merges; run it every time)
 
 worker round → 2 read-only reviewers (distinct lenses) → coordinator adjudication → ONE
@@ -131,7 +189,8 @@ merge → pull `main` → prune worktree+branch (cd out of a worktree before rem
   review-summary bodies since the final push — bots put findings in all three places, and a
   "review" entry with no findings looks identical to one with two P2s until you read it. This applies to docs-only PRs too (a docs sweep has been merged
   over two valid unresolved P2s before; the fix cost a follow-up PR).
-- **Review-loop discipline**: batch fixes into ONE push per round; every worker replies AND
+- **Review-loop discipline**: batch fixes into ONE push per round; every worker — or the PR's
+  designated settlement lane, when FRUGALITY MODE has reassigned it — replies AND
   resolves threads via GraphQL `resolveReviewThread` and reports `unresolved == 0`; new bot
   findings on a final head are reported to the coordinator, never cycled unilaterally. When
   bot rounds keep finding new interleavings in one seam, issue ONE structural redesign
