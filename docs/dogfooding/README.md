@@ -7,10 +7,17 @@ revival direction (ADR-0044): at the checkpoint, "no organic traction **and** do
 stuck" is what sends the project back to the archive plan. Every other item in the backlog is
 scaffolding for a product this question decides the fate of.
 
-**The checkpoint has no calendar date, and that matters.** ADR-0044 Decision 6 anchors it to
-*"after Phase 2 ships and the beta launches (~8 weeks at demonstrated velocity)"* — the clock
-starts at beta launch, which has not happened. Dogfooding is Phase 0 and starts now regardless;
-do not wait for a date that is not running yet.
+**When does the checkpoint clock start? The canonical docs disagree, and it changes the answer.**
+
+- `docs/REVIVAL_PLAN.md:149` — *"Checkpoint (~8 weeks from **Phase 0**)"*, and `:49` says "from start".
+- `docs/decisions/ADR-0044` Decision 6 — *"after Phase 2 ships and the **beta launches** (~8 weeks at demonstrated velocity)"*.
+
+Dogfooding **is** Phase 0, so these are weeks apart: the ADR reading postpones the evidence review
+by the entire build-and-launch period. **This guide follows `REVIVAL_PLAN.md`**, which `CLAUDE.md`
+names the active planning spine — so the clock starts when dogfooding starts, i.e. now.
+
+The conflict itself should be resolved in the canonical docs rather than papered over here; it is
+flagged so the next reader does not silently pick the other one.
 
 It is also the one item that cannot be delegated, which is exactly why it needs structure. The
 failure mode is not "dogfooding goes badly" — a bad result is a *useful* result. The failure mode

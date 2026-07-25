@@ -93,7 +93,13 @@ def connect(path: str) -> sqlite3.Connection:
     # The path goes into a URI, so `?`, `#` and friends would otherwise change which file
     # SQLite opens (or silently drop the mode=ro).
     uri = "file:" + urllib.parse.quote(os.path.abspath(path).replace("\\", "/")) + "?mode=ro"
-    return sqlite3.connect(uri, uri=True)
+    con = sqlite3.connect(uri, uri=True)
+    # Every metric must come from ONE snapshot. Without a transaction each SELECT sees its own
+    # WAL state, so a proposal created mid-run can make the total disagree with its own status
+    # breakdown -- internally inconsistent numbers pasted in as checkpoint evidence.
+    con.isolation_level = None
+    con.execute("BEGIN DEFERRED")
+    return con
 
 
 def redact(path: str) -> str:
@@ -206,6 +212,13 @@ def main() -> None:
         ("AuditLogs", "Timestamp"),
         ("Cards", "CreatedAt"),
         ("AutomationProposals", "CreatedAt"),
+        # A day spent only REVIEWING (approve/reject/defer/dismiss) touches none of the
+        # CreatedAt columns, and DeferProposalAsync deliberately writes no audit row -- so a
+        # pure review day could vanish from the count entirely. Reviewing is the dogfooding.
+        ("AutomationProposals", "DecidedAt"),
+        ("AutomationProposals", "AppliedAt"),
+        ("AutomationProposals", "UpdatedAt"),
+        ("Cards", "UpdatedAt"),
         ("ChatMessages", "CreatedAt"),
         # Captures (including transcript captures) persist as LlmRequests rows, so a day
         # spent only capturing would otherwise not count as an active day at all.
