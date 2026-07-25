@@ -69,6 +69,12 @@ DEFAULT_DB_CANDIDATES = (
     # into the repo, so a maintainer dogfooding the packaged exe would otherwise get
     # "No database found" while their real data sat in LOCALAPPDATA.
     os.path.join(os.environ.get("LOCALAPPDATA", ""), "Taskdeck", "taskdeck.db"),
+    # scripts/dev-up.ps1 and dev-up.sh -- the documented launchers -- use a *-dev.db name.
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Taskdeck", "taskdeck-dev.db"),
+    os.path.join(
+        os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share"),
+        "taskdeck", "taskdeck-dev.db",
+    ),
 )
 
 
@@ -106,10 +112,13 @@ def redact(path: str) -> str:
     """Home-relative display path. Output is meant to be pasted into public issues, and an
     absolute path carries the OS username and often a client-specific directory name."""
     try:
-        home = os.path.expanduser("~")
+        home = os.path.abspath(os.path.expanduser("~")).rstrip("\\/")
         full = os.path.abspath(path)
-        if full.lower().startswith(home.lower()):
-            return "~" + full[len(home):].replace("\\", "/")
+        rest = full[len(home):]
+        # Boundary matters: with home /home/alice, the path /home/alice-client/acme/db would
+        # otherwise render as "~-client/acme/db" and leak the directories it was meant to hide.
+        if full.lower().startswith(home.lower()) and (rest == "" or rest[0] in "\\/"):
+            return "~" + rest.replace("\\", "/")
         return os.path.basename(full)
     except Exception:
         return os.path.basename(path)
@@ -200,6 +209,9 @@ def main() -> None:
     ap.add_argument("--markdown", action="store_true")
     ap.add_argument("--days", type=int, default=28)
     args = ap.parse_args()
+    if args.days < 1:
+        sys.exit("--days must be >= 1; a zero or negative window still counts today, which "
+                 "would report a nonsensical result against the checkpoint rubric.")
 
     path = find_db(args.db)
     con = connect(path)
