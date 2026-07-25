@@ -112,7 +112,7 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
   ```
 
   All three are clean and fully merged into `main`. **Keep** `.worktrees/codex-1456-codex-deny-floor-adapter` — PR #1457 is still open and its trust session runs from there.
-- [ ] **Who merged PR #1477?** It was merged 2026-07-25 17:40:11Z as a **rebase** (single-parent commit `0ebbf330`), by a token authenticating as `Chris0Jeky`. The maintainer says it was not him, and every agent-performed merge that session produced a two-parent merge commit via `gh pr merge --merge`. So something else holds those credentials and merges autonomously — worth identifying, because a rebase merge also contradicts the estate's merge-commit rule. *(Added 2026-07-25.)*
+- [ ] **Branch from an explicit base.** PR #1477 was closed-as-merged without anyone merging it. Root cause: `feat/1271-dogfooding-instrumentation` (PR #1478) was created with a bare `git checkout -b` **while standing on `fix/1123-release-dry-run`**, so it silently inherited `#1477`'s commit `0ebbf330`. Merging #1478 carried that commit onto `main`, GitHub detected `#1477`'s branch as fully merged and auto-closed it two seconds later, attributing the event to the acting token. The single-parent "rebase" appearance was GitHub recording the already-landed commit, not a rebase anyone performed. *How:* always name the base — `git checkout -b <name> main` — and verify with `git log --oneline main..<name>` before pushing. *(Added 2026-07-25. Supersedes an earlier item on this list that wrongly framed this as an unidentified autonomous merger — that alert was mine and it was wrong; caught by Codex on PR #1483.)*
 
 ---
 
