@@ -47,10 +47,12 @@ Reached Apply: 1/20
 Ever decided: 19/20
 ```
 
-**Read:** dogfooding has **not started**. Twelve of thirteen boards are `DEMO:` / `Test Board` /
-`Browser Test` artefacts; the single plausibly-real board (`product sprint`) was created on the last
-active day, three months ago. The core loop — capture → proposal → approve → apply — has completed
-**once, ever**.
+**Read:** dogfooding has **not started**. The core loop — capture → proposal → approve → apply —
+has completed **once, ever**. The classifier flags 10 of 13 boards as `DEMO:` / `Test Board` /
+`Browser Test` residue; of the three it passes, two (`onboarding`, `calendar`) are lowercase
+single-word boards created minutes apart alongside the seeded set and are near-certainly residue
+the case-sensitive prefix matcher misses, leaving one plausibly-real board (`product sprint`),
+created on the last active day three months ago.
 
 **What this baseline is worth:** the 90% dismissal rate is almost certainly test-noise cleanup
 rather than genuine rejection, but **nothing in the data can distinguish those two**, and that is

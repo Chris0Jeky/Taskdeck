@@ -217,13 +217,20 @@ def main() -> None:
               "-- this is the number that says whether the review-first loop pays off.")
             p(f"**Ever decided:** {decided}/{total}")
             if "DecidedAt" in columns(con, "AutomationProposals"):
+                # The LIMIT must be parity-aware. With a hardcoded `limit 2` this averages
+                # the true median with the next-larger value on every ODD count, and
+                # time-to-decision is heavily right-skewed, so a single proposal left over a
+                # weekend drags the reported figure by orders of magnitude.
                 med = q1(
                     con,
                     """select avg(j) from (
                          select (julianday(DecidedAt)-julianday(CreatedAt))*24 j
                          from AutomationProposals
                          where DecidedAt is not null
-                         order by j limit 2 offset (
+                         order by j
+                         limit (
+                           select 2-(count(*)%2) from AutomationProposals where DecidedAt is not null)
+                         offset (
                            select (count(*)-1)/2 from AutomationProposals where DecidedAt is not null))""",
                 )
                 if med is not None:

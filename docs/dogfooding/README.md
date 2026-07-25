@@ -3,9 +3,14 @@
 **Last Updated: 2026-07-25**
 
 `#1271` asks for **≥10 days of real personal use**. It is the acceptance test for the whole
-revival direction (ADR-0044): at the ~8-week checkpoint (**~2026-09-04**), "no organic traction
-**and** dogfooding has not stuck" is what sends the project back to the archive plan. Every other
-item in the backlog is scaffolding for a product this question decides the fate of.
+revival direction (ADR-0044): at the checkpoint, "no organic traction **and** dogfooding has not
+stuck" is what sends the project back to the archive plan. Every other item in the backlog is
+scaffolding for a product this question decides the fate of.
+
+**The checkpoint has no calendar date, and that matters.** ADR-0044 Decision 6 anchors it to
+*"after Phase 2 ships and the beta launches (~8 weeks at demonstrated velocity)"* — the clock
+starts at beta launch, which has not happened. Dogfooding is Phase 0 and starts now regardless;
+do not wait for a date that is not running yet.
 
 It is also the one item that cannot be delegated, which is exactly why it needs structure. The
 failure mode is not "dogfooding goes badly" — a bad result is a *useful* result. The failure mode
@@ -29,10 +34,16 @@ Proposals created: 20  ->  Dismissed 18 (90%) | Approved 1 (5%) | Applied 1 (5%)
 Reached Apply: 1/20
 ```
 
-Read honestly, that says: **dogfooding has not started.** Twelve of thirteen boards are
-`DEMO:`/`Test Board`/`Browser Test` artefacts; the one plausibly-real board (`product sprint`) was
-created on the last active day, three months ago. The core loop — capture → proposal → approve →
-apply — completed **once**, ever.
+Read honestly, that says: **dogfooding has not started.** The core loop — capture → proposal →
+approve → apply — completed **once**, ever.
+
+On the boards: the classifier flags **10 of 13** as `DEMO:`/`Test Board`/`Browser Test` residue.
+Of the three it passes, two (`onboarding`, `calendar`) are lowercase single-word boards created
+eleven minutes apart alongside the seeded set, and are near-certainly residue the matcher misses —
+`NOISE_BOARD_PREFIXES` is case-sensitive and matches only at the start of the name, so it
+**under-counts**. That leaves one plausibly-real board, `product sprint`, created on the last
+active day, three months ago. The tool's number is the conservative one and the one to quote;
+this paragraph is why it should be read as a floor, not a measurement.
 
 Two things follow, and they shaped everything below.
 
@@ -49,13 +60,24 @@ Two things follow, and they shaped everything below.
 
 Run real use against its own database so dev, demo and E2E traffic never mixes in:
 
-```bash
-# pick a path outside the repo so `clean-workspace` and E2E runs cannot touch it
-export TASKDECK_DOGFOOD_DB="$HOME/taskdeck-dogfood/taskdeck.db"
+PowerShell (the primary shell on this machine):
 
-# run the app against it
-ConnectionStrings__DefaultConnection="Data Source=$TASKDECK_DOGFOOD_DB" \
-  dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+```powershell
+# a path outside the repo, so `clean-workspace` and E2E runs cannot touch it
+$env:TASKDECK_DOGFOOD_DB = "$env:USERPROFILE\taskdeck-dogfood\taskdeck.db"
+New-Item -ItemType Directory -Force (Split-Path $env:TASKDECK_DOGFOOD_DB) | Out-Null
+
+$env:ConnectionStrings__DefaultConnection = "Data Source=$env:TASKDECK_DOGFOOD_DB"
+dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+```
+
+**Use a Windows-style path.** Under Git Bash `$HOME` expands to `/c/Users/<you>`, which .NET does
+not resolve — the app silently falls back to a relative `taskdeck.db` beside the working directory,
+which is exactly the contamination this separation exists to avoid. If you do use bash, spell the
+path out (`/c/Users/<you>/...` will not work; `C:/Users/<you>/...` will):
+
+```bash
+export TASKDECK_DOGFOOD_DB="C:/Users/<you>/taskdeck-dogfood/taskdeck.db"
 ```
 
 Everything below assumes that separation. Without it the numbers mean what they mean today: not much.
@@ -91,7 +113,7 @@ numbers is how a project talks itself into continuing.
 
 ---
 
-## Checkpoint rubric (set 2026-07-25, for ~2026-09-04)
+## Checkpoint rubric (set 2026-07-25, before any of the data existed)
 
 | signal | archive | ambiguous | revive |
 |---|---|---|---|
@@ -105,8 +127,10 @@ numbers is how a project talks itself into continuing.
 **The tie-breaker is the last row.** Every other line can be gamed by deciding to use it; that one
 cannot. If the honest answer at the checkpoint is "no", the numbers do not matter.
 
-**Any mixed outcome requires an explicit written assessment** (ADR-0044 already says this —
-silence is not a decision).
+**Any mixed outcome requires an explicit written assessment** — `docs/REVIVAL_PLAN.md` §149 says so
+in as many words ("Any mixed outcome requires an explicit maintainer assessment and plan amendment
+rather than an automatic archive decision"), mirrored in `IMPLEMENTATION_MASTERPLAN.md:103` and
+`OUTSTANDING_TASKS.md` §E. Silence is not a decision.
 
 ---
 
