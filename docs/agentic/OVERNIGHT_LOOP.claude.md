@@ -124,27 +124,54 @@ criteria), never idle. Leave `CODEX-*`-labelled trackers for Codex. The
   self-ratify a *strategic* ADR; that's a deferred question).
 - Keep the agent-facing maps current (**`taskdeck-interface-map`**) when you add/split a domain.
 
-### Compute routing — the calibrated ladder (invoke `model-effort-routing` when unsure)
+### Compute routing — the ladder lives in ONE place, and it is not this file
 
-Right-size **effort → model → agent count**, cheapest dial first. Don't reflexively fan out or
-crank the top model on trivia — that drains the run before the hard tasks land.
+**Do not restate the model/effort ladder here.** Its single source of truth is the
+**`model-effort-routing` skill** (`~/.claude/skills/model-effort-routing/SKILL.md`; the short form
+is the "Working style" bullet in `~/.claude/CLAUDE.md`). Invoke it at run start, route from it,
+and re-read it if a long run spans a change to it. **No model name, effort default, price, or
+fleet-size number belongs in this file, in `OVERNIGHT_LOOP.fable.md`, in a Taskdeck skill, or in a
+worker prompt** — a local copy is precisely how this section drifted: it went on routing mechanical
+work to a model the owner had banned outright, and naming a superseded model as the default reach,
+long after the canonical ladder had moved on. Writing the ladder down twice is what let one copy
+rot. If you find a Taskdeck doc restating it, delete the restatement and link the skill instead.
 
-- **Model ladder:** default reach is **Opus 4.8** at task-appropriate effort (prefer Opus
-  low/medium over Sonnet). **Fable 5** only for the hardest reasoning (security review, EF
-  migration-snapshot merges, race/concurrency analysis, architecture, ambiguous multi-file
-  debugging) if within its access window, else Opus 4.8 high. **Haiku 4.5** for mechanical work
-  (formatting, mass renames, dependency bumps, log/CI-log triage, doc-link fixes). **Sonnet 4.6
-  high** only for simple, fully-laid-out tasks; avoid Sonnet 5 as a default. Set the subagent's
-  `model` and `effort` explicitly per its job.
+Two constraints are repeated here only because they bound this run operationally rather than
+express a routing preference: **never Haiku** (standing owner directive, no exceptions), and
+**right-size effort → model → agent count, cheapest dial first** — don't reflexively fan out or
+crank the top model on trivia; that drains the run before the hard tasks land.
+
+What this file owns is the part the canonical skill cannot know: **which Taskdeck work is hard,
+which is genuinely mechanical, and how the lanes are shaped.**
+
+- **Judgment-heavy in this repo** — route to the ladder's top rungs, and escalate effort before
+  escalating model: EF migration-snapshot merges (proof is `dotnet ef migrations
+  has-pending-model-changes` → "No changes"), race/concurrency and permit-lifecycle analysis,
+  security and auth/permission review, Clean-Architecture boundary calls, ambiguous multi-file
+  debugging, adjudicating review findings, ADR drafting, and anything touching the deny floor or
+  the harness gates.
+- **Genuinely mechanical in this repo** — the cheap rung's only legitimate use here:
+  docs-governance `Last Updated` bumps, doc-link fixes, mass renames, dependency bumps, freshening
+  a stale branch via merge-from-main, opening a PR from a prepared branch with a body *you*
+  authored, posting review/fix-evidence text *you* finalised, reporting a CI verdict verbatim.
+  **"Mechanical" is a claim to check, not a default:** anything that decides what matters —
+  triaging a CI log, classifying a red, choosing which finding to fix — is judgment and goes up
+  the ladder.
+- **Set `model` and `effort` explicitly per subagent.** Silent inheritance of the session model is
+  how a trivial task gets the expensive agent and a hard task gets a cheap one. (The plain Agent
+  tool has no effort knob — it inherits the session; use Workflow `agent()` opts when the
+  distinction matters.)
 - **Fan out** only for genuinely disjoint regions, an independent review lens, or scope one
-  context can't hold. Right-size: **≤3–5 agents (≤8–12 for a broad sweep)**, never a reflexive
-  swarm. Start inline; escalate to subagents/the **Workflow** tool when the structure earns it
-  (parallel discovery, dimension-then-verify review pipelines, migrations across many sites).
+  context can't hold — **fleet sizing per the canonical skill.** Start inline; escalate to
+  subagents/the **Workflow** tool when the structure earns it (parallel discovery,
+  dimension-then-verify review pipelines, migrations across many sites). Taskdeck-specific caps on
+  top of the skill's: **≤3 concurrent implementation workers** (worktree collisions and this box),
+  and **never two full test suites at once, box-wide**.
 - **Reviewers are read-only** (`reviewer` / `pr-review-toolkit:*` subagents) — they can't edit,
-  so their only output is findings (structurally safe). **You, the coordinator, always own final
-  synthesis, verification, and the merge — never delegate those.** For background subagents,
-  relay only the conclusion, not file dumps; continue a running one with `SendMessage` rather
-  than respawning.
+  so their only output is findings (structurally safe). Review is judgment work: the cheap rung is
+  never eligible for it. **You, the coordinator, always own final synthesis, verification, and the
+  merge — never delegate those.** For background subagents, relay only the conclusion, not file
+  dumps; continue a running one with `SendMessage` rather than respawning.
 - **Budget:** checkpoint often; keep diffs and test runs targeted (`dotnet --filter`,
   `vitest --maxWorkers=2`) to avoid burning time/OOM. Deep in a rabbit hole → stop, record the
   finding, take a cheaper path.
