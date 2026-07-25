@@ -86,9 +86,11 @@ Read before editing — do not assume layout:
     only gate.** Never merge on GitHub's permission; merge only when *your* gate (§5) holds.
   - `ci-required.yml` is the intended PR gate; `ci-nightly.yml` is "CI Extended". Read a PR's
     actual check runs; don't assume.
-  - Merge convention observed here: merge commits for stacked bases, squash acceptable for
-    standalone. **Never `--delete-branch` a stacked base PR** (it cascade-closes children
-    unreopenably). In a stack, **merge the oldest/base first**, then retarget/absorb children.
+  - Merge convention: **merge commits, never squash** — squash-merge destroys commit history and
+    count, and it was disabled repo-side across the estate on 2026-07-18, so the option should
+    not even be offered. Rebase keeps the count and is acceptable; a merge commit is preferred.
+    **Never `--delete-branch` a stacked base PR** (it cascade-closes children unreopenably). In a
+    stack, **merge the oldest/base first**, then retarget/absorb children.
 - **Inventory** open PRs, open issues, red CI, `TODO`/`FIXME`, the failure ledger. This seeds
   the backlog.
 - **Windows/env quirks** (this box): git may resolve to a wrapper — if git misbehaves, use
