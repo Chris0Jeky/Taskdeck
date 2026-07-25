@@ -48,10 +48,12 @@ describe('automationApi', () => {
   //
   // Scope of the guard, stated precisely so it is not mistaken for more than it is:
   //  - RUNTIME pass-through only. It does NOT pin the interface declaration -- `tsconfig.app.json`
-  //    excludes `src/tests/**`, so `npm run typecheck` never type-checks this file. Verified by
-  //    removing the field from `Proposal` and re-running typecheck: it passed. The declaration is
-  //    instead held by the exported `ProposalApprovedRevisionId` alias in `types/automation.ts`, which
-  //    lives in typechecked source. (#1468 tracks the general specs-are-not-type-checked gap.)
+  //    excludes `src/tests/**`, so `npm run typecheck` never type-checks this file. The declaration is
+  //    held instead by the exported `ProposalApprovedRevisionId` alias in `types/automation.ts`, which
+  //    does live in typechecked source. Reproducible on this tree: delete the interface member and
+  //    typecheck fails at the ALIAS (TS2339), never here; delete the member AND the alias and
+  //    typecheck passes with this spec untouched and green -- which is exactly how far the protection
+  //    in this file reaches. (#1468 tracks the general specs-are-not-type-checked gap.)
   //  - Not "surviving deserialization": `http` is mocked wholesale, so the wire KEY casing is not
   //    exercised here. A serializer naming-policy flip would break every field and surface elsewhere.
   //  - The realistic regression is not a whitelist mapper -- this codebase's api normalizers are
