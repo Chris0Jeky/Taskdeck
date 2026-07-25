@@ -41,12 +41,13 @@ public record ProposalDto(
     /// <summary>
     /// The revision pinned at approve time that Apply will materialize (#1428), or <c>null</c>
     /// when the proposal was approved from its original operations (or is not yet decided).
-    /// On SINGLE-proposal responses (get by id, approve, reject), a set pin also means
-    /// <see cref="Operations"/> and <see cref="Presentation"/> carry that pinned revision's
-    /// effective operation set. LIST items expose the pin but deliberately map the ORIGINAL
-    /// operations (no per-item revision lookup, avoiding an N+1 query); clients needing the
-    /// effective set for a listed proposal should use the single-proposal read or the diff
-    /// endpoint.
+    /// A set pin also means <see cref="Operations"/> and <see cref="Presentation"/> carry that pinned
+    /// revision's effective operation set — on LIST items as well as on single-proposal responses
+    /// (get by id, approve, reject) since #1444. The former boundary, where list items exposed the pin
+    /// but deliberately mapped the ORIGINAL operations to avoid a per-item revision lookup, is GONE:
+    /// a batched two-phase read resolves the whole page, so a client no longer needs the
+    /// single-proposal read or the diff endpoint to obtain a listed proposal's effective set, and
+    /// doing so would reintroduce the N+1 that boundary existed to avoid.
     /// </summary>
     public Guid? ApprovedRevisionId { get; init; }
 }
