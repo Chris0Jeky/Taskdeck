@@ -62,19 +62,29 @@ PROPOSAL_STATUS = {
 
 QUERY_ERRORS: list[str] = []
 
+# .NET's LocalApplicationData on Unix, which is where a packaged run puts its database.
+_UNIX_LOCAL_SHARE = os.environ.get("XDG_DATA_HOME") or os.path.join(
+    os.path.expanduser("~"), ".local", "share"
+)
+
 DEFAULT_DB_CANDIDATES = (
     "taskdeck.db",
     os.path.join("backend", "src", "Taskdeck.Api", "taskdeck.db"),
-    # A published/self-contained run resolves its DB here via FirstRunBootstrapper rather than
-    # into the repo, so a maintainer dogfooding the packaged exe would otherwise get
-    # "No database found" while their real data sat in LOCALAPPDATA.
-    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Taskdeck", "taskdeck.db"),
-    # scripts/dev-up.ps1 and dev-up.sh -- the documented launchers -- use a *-dev.db name.
-    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Taskdeck", "taskdeck-dev.db"),
-    os.path.join(
-        os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share"),
-        "taskdeck", "taskdeck-dev.db",
+    # Packaged runs (FirstRunBootstrapper -> LocalApplicationData) and the documented dev-up
+    # launchers, on BOTH platforms -- otherwise a maintainer dogfooding the packaged app gets
+    # "No database found" while their real data sits elsewhere. The Windows entries are included
+    # only when LOCALAPPDATA is actually set: os.path.join("") yields a bare relative path that
+    # could match something unrelated.
+    *(
+        [
+            os.path.join(os.environ["LOCALAPPDATA"], "Taskdeck", "taskdeck.db"),
+            os.path.join(os.environ["LOCALAPPDATA"], "Taskdeck", "taskdeck-dev.db"),
+        ]
+        if os.environ.get("LOCALAPPDATA")
+        else []
     ),
+    os.path.join(_UNIX_LOCAL_SHARE, "Taskdeck", "taskdeck.db"),
+    os.path.join(_UNIX_LOCAL_SHARE, "taskdeck", "taskdeck-dev.db"),
 )
 
 
@@ -117,7 +127,10 @@ def redact(path: str) -> str:
         rest = full[len(home):]
         # Boundary matters: with home /home/alice, the path /home/alice-client/acme/db would
         # otherwise render as "~-client/acme/db" and leak the directories it was meant to hide.
-        if full.lower().startswith(home.lower()) and (rest == "" or rest[0] in "\\/"):
+        # Case-fold ONLY on Windows: on a case-sensitive filesystem /home/Alice and /home/alice
+        # are different directories, and folding would render an outside-home path as "~/...".
+        a, b = (full.lower(), home.lower()) if os.name == "nt" else (full, home)
+        if a.startswith(b) and (rest == "" or rest[0] in "\\/"):
             return "~" + rest.replace("\\", "/")
         return os.path.basename(full)
     except Exception:
@@ -340,9 +353,10 @@ def main() -> None:
           "(see the warning below). Do NOT read this as \"not started\".")
     elif not sorted_days:
         p("**Not started.** No recorded activity at all.")
-    elif stale is not None and stale > 30:
-        p(f"**Stalled.** Last activity was {stale} days ago. Whatever the totals say, this is "
-          "not sustained use, and #1271 asks for sustained use.")
+    elif stale is not None and stale > 14:
+        p(f"**Stalled.** Last activity was {stale} days ago -- past the rubric's 14-day "
+          "archive-signal cutoff. Whatever the totals say, this is not sustained use, and "
+          "#1271 asks for sustained use.")
     elif n < 10:
         p(f"**In progress:** {n} of the 10 active days #1271 asks for, in the last "
           f"{args.days} days ({len(sorted_days)} all time).")
