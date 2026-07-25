@@ -47,8 +47,10 @@ from datetime import date, datetime, timedelta
 # Boards/users matching these are treated as demo, test or E2E residue rather than
 # real use. Deliberately broad: over-excluding understates dogfooding, which is the
 # safe direction for an acceptance test.
+# NOTE: board names only. There is deliberately NO user-account filter -- see #1480. A
+# NOISE_USER_PREFIXES constant used to sit here unused, which implied a filter that does not
+# exist; a declared-but-unapplied filter is worse than an honest gap.
 NOISE_BOARD_PREFIXES = ("DEMO:", "Test Board", "Browser Test", "E2E", "Playwright", "Scenario:")
-NOISE_USER_PREFIXES = ("demo", "test", "e2e", "playwright", "collab", "seed")
 
 PROPOSAL_STATUS = {
     0: "PendingReview",
@@ -296,21 +298,26 @@ def main() -> None:
             # (CanBeDismissed includes Applied) and OVERWRITES Status with Dismissed, so
             # filing away a completed item erases the evidence that it ever applied. AppliedAt
             # survives that transition, so it is the only reliable signal.
-            applied = q1(con, "select count(*) from AutomationProposals where AppliedAt is not null") or 0
+            applied = q1(con, "select count(*) from AutomationProposals where AppliedAt is not null")
             filed = q1(
                 con, "select count(*) from AutomationProposals where AppliedAt is not null and Status=6"
-            ) or 0
-            decided = (
-                q1(con, "select count(*) from AutomationProposals where DecidedAt is not null") or 0
             )
+            decided = q1(con, "select count(*) from AutomationProposals where DecidedAt is not null")
             p("")
-            p(f"**Reached Apply:** {applied}/{total} ({100*applied/total:.1f}%) "
-              "-- this is the number that says whether the review-first loop pays off. "
-              "Counted by `AppliedAt`, not status.")
+            if applied is None:
+                # `or 0` here would print "Reached Apply: 0/20 (0.0%)" for a query that never
+                # ran -- a specific, credible, wrong number is worse than an honest gap.
+                p("**Reached Apply:** unavailable - the query failed (see the warning below). "
+                  "This is NOT zero.")
+            else:
+              p(f"**Reached Apply:** {applied}/{total} ({100*applied/total:.1f}%) "
+                "-- this is the number that says whether the review-first loop pays off. "
+                "Counted by `AppliedAt`, not status.")
             if filed:
                 p(f"  - of those, **{filed}** were later filed away and now read as `Dismissed`. "
                   "A status-based count would have reported them as never applied.")
-            p(f"**Ever decided:** {decided}/{total}")
+            p(f"**Ever decided:** {decided}/{total}" if decided is not None
+              else "**Ever decided:** unavailable - the query failed. This is NOT zero.")
             if "DecidedAt" in columns(con, "AutomationProposals"):
                 # The LIMIT must be parity-aware. With a hardcoded `limit 2` this averages
                 # the true median with the next-larger value on every ODD count, and
