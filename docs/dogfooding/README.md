@@ -85,6 +85,13 @@ $env:ConnectionStrings__DefaultConnection = "Data Source=$env:TASKDECK_DOGFOOD_D
 dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
 ```
 
+**That starts the API only.** From a source checkout the API project has no built `wwwroot`, so
+you also need the frontend in a second terminal — otherwise there is nothing to dogfood *with*:
+
+```bash
+cd frontend/taskdeck-web && npm run dev     # http://localhost:5173
+```
+
 **Use a Windows-style path.** Under Git Bash `$HOME` expands to `/c/Users/<you>`, which .NET does
 not resolve — the app silently falls back to a relative `taskdeck.db` beside the working directory,
 which is exactly the contamination this separation exists to avoid. If you do use bash, spell the
@@ -92,6 +99,10 @@ path out (`/c/Users/<you>/...` will not work; `C:/Users/<you>/...` will):
 
 ```bash
 export TASKDECK_DOGFOOD_DB="C:/Users/<you>/taskdeck-dogfood/taskdeck.db"
+mkdir -p "$(dirname "$TASKDECK_DOGFOOD_DB")"   # SQLite creates the file, not the directory
+
+# the snapshot script reads TASKDECK_DOGFOOD_DB; the API does NOT -- it needs its own key
+export ConnectionStrings__DefaultConnection="Data Source=$TASKDECK_DOGFOOD_DB"
 ```
 
 Everything below assumes that separation. Without it the numbers mean what they mean today: not much.
@@ -127,7 +138,13 @@ numbers is how a project talks itself into continuing.
 
 ---
 
-## Checkpoint rubric (set 2026-07-25, before any of the data existed)
+## Checkpoint rubric (set 2026-07-25)
+
+> Set *before any dogfooding data exists* — which is the point — but **not** in ignorance of the
+> dev baseline above. The 8 active days, 5-day streak and 85% apply rate were already measured when
+> these thresholds were written. They are calibrated against a *dev* database and a *fresh*
+> `TASKDECK_DOGFOOD_DB`, which will start empty; the honesty claim is that the bars were fixed
+> before any real usage data existed to tune them against, not that they were set blind.
 
 | signal | archive | ambiguous | revive |
 |---|---|---|---|

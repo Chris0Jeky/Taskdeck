@@ -36,6 +36,7 @@ import argparse
 import os
 import sqlite3
 import sys
+import urllib.parse
 from datetime import date, datetime, timedelta
 
 # Boards/users matching these are treated as demo, test or E2E residue rather than
@@ -53,6 +54,8 @@ PROPOSAL_STATUS = {
     5: "Expired",
     6: "Dismissed",
 }
+
+QUERY_ERRORS: list[str] = []
 
 DEFAULT_DB_CANDIDATES = (
     "taskdeck.db",
@@ -78,7 +81,23 @@ def find_db(explicit: str | None) -> str:
 def connect(path: str) -> sqlite3.Connection:
     if not os.path.exists(path):
         sys.exit(f"No such database: {path}")
-    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    # The path goes into a URI, so `?`, `#` and friends would otherwise change which file
+    # SQLite opens (or silently drop the mode=ro).
+    uri = "file:" + urllib.parse.quote(os.path.abspath(path).replace("\\", "/")) + "?mode=ro"
+    return sqlite3.connect(uri, uri=True)
+
+
+def redact(path: str) -> str:
+    """Home-relative display path. Output is meant to be pasted into public issues, and an
+    absolute path carries the OS username and often a client-specific directory name."""
+    try:
+        home = os.path.expanduser("~")
+        full = os.path.abspath(path)
+        if full.lower().startswith(home.lower()):
+            return "~" + full[len(home):].replace("\\", "/")
+        return os.path.basename(full)
+    except Exception:
+        return os.path.basename(path)
 
 
 def has_table(con: sqlite3.Connection, name: str) -> bool:
@@ -95,15 +114,26 @@ def columns(con: sqlite3.Connection, table: str) -> set[str]:
 
 
 def q1(con: sqlite3.Connection, sql: str, args: tuple = ()):  # scalar or None
+    """None means "no rows". A FAILED query is reported, never coerced to 0 -- a partially
+    migrated or corrupt DB must not read as "no activity", which is the one wrong answer
+    this tool can give."""
     try:
         row = con.execute(sql, args).fetchone()
         return row[0] if row else None
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        QUERY_ERRORS.append(str(exc))
         return None
 
 
 def day_set(con: sqlite3.Connection, table: str, col: str) -> set[str]:
-    if not has_table(con, table) or col not in columns(con, table):
+    """A MISSING table is fine (older schema). A table that exists without its expected
+    timestamp column is NOT fine -- that is a schema mismatch, and swallowing it would make a
+    partially migrated database report "no activity", the single most misleading verdict this
+    tool can produce."""
+    if not has_table(con, table):
+        return set()
+    if col not in columns(con, table):
+        QUERY_ERRORS.append(f'{table} exists but has no "{col}" column - activity not counted')
         return set()
     try:
         return {
@@ -111,7 +141,8 @@ def day_set(con: sqlite3.Connection, table: str, col: str) -> set[str]:
             for r in con.execute(f'select distinct substr("{col}",1,10) from "{table}"')
             if r[0]
         }
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        QUERY_ERRORS.append(f"{table}.{col}: {exc}")
         return set()
 
 
@@ -139,6 +170,7 @@ def noise_board_ids(con: sqlite3.Connection) -> set[str]:
     cols = columns(con, "Boards")
     namecol = "Name" if "Name" in cols else ("Title" if "Title" in cols else None)
     if not namecol:
+        QUERY_ERRORS.append("Boards has neither Name nor Title - demo detection disabled")
         return set()
     ids = set()
     for bid, name in con.execute(f'select Id,"{namecol}" from Boards'):
@@ -179,7 +211,7 @@ def main() -> None:
     cutoff = (date.today() - timedelta(days=max(args.days - 1, 0))).isoformat()
     recent_days = [d for d in sorted_days if d >= cutoff]
 
-    p(f"**Database:** `{path}`")
+    p(f"**Database:** `{redact(path)}`")
     p(f"**Active days (all time):** {len(sorted_days)}  |  target for #1271 is **>=10**")
     p(f"**Active days (last {args.days}):** {len(recent_days)}")
     p(f"**Longest consecutive streak:** {longest_streak(days)} day(s)")
@@ -268,7 +300,10 @@ def main() -> None:
     # The rubric scores "active days in the window", so the verdict must use the window too --
     # an all-time count lets long-dead activity satisfy a threshold about current use.
     n = len(recent_days)
-    if not sorted_days:
+    if QUERY_ERRORS and not sorted_days:
+        p("**Inconclusive.** No activity was readable, but queries failed against this database "
+          "(see the warning below). Do NOT read this as \"not started\".")
+    elif not sorted_days:
         p("**Not started.** No recorded activity at all.")
     elif stale is not None and stale > 30:
         p(f"**Stalled.** Last activity was {stale} days ago. Whatever the totals say, this is "
@@ -279,6 +314,13 @@ def main() -> None:
     else:
         p(f"**Threshold met on volume:** {n} active days in the last {args.days}. Judge quality "
           "from the loop numbers above and the friction log, not from the day count alone.")
+
+    if QUERY_ERRORS:
+        p("")
+        p(f"> :warning: **{len(QUERY_ERRORS)} query/queries failed or were skipped** against this "
+          "database, so the counts above are incomplete and must not be read as low activity.")
+        for e in QUERY_ERRORS[:5]:
+            p(f">   - `{e[:150]}`")
 
     text = "\n".join(out)
     if args.markdown:
