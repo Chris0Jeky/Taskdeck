@@ -919,6 +919,47 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         fetched.Presentation.OperationHeadlines.Should().NotContain(h => h.Contains("Original Card"));
     }
 
+    [Fact]
+    public async Task ProposalList_AfterSavingRevision_ShouldReturnEffectiveOperations_NotOriginals()
+    {
+        // #1444: the review-queue LIST endpoint mapped ORIGINAL operations by design, so a reviewer who
+        // saved a revision and refreshed the queue saw the original summary/operations on the card while
+        // the detail view, the diff and Apply all used the revised set. This drives the real HTTP list
+        // surface against real SQLite, which also exercises the batched revision query's EF translation
+        // (the service-level tests mock the repository and cannot prove that).
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-list-effective");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-list-effective-board");
+        var revised = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Listed Card");
+        var untouched = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Untouched Listed Card");
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{revised.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayload("Listed Edit", board.Id, column.Id), reason = "edit before review" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var listResponse = await client.GetAsync($"/api/automation/proposals?boardId={board.Id}");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listed = await listResponse.Content.ReadFromJsonAsync<List<ProposalDto>>();
+        listed.Should().NotBeNull();
+
+        var revisedCard = listed!.Should().ContainSingle(p => p.Id == revised.Id).Which;
+        revisedCard.Operations.Should().ContainSingle();
+        revisedCard.Operations[0].Parameters.Should().Contain("Listed Edit");
+        revisedCard.Operations[0].Parameters.Should().NotContain("Original Listed Card");
+        // Split-brain guard on the card itself: the presentation block must describe the same effective
+        // operations the list item carries.
+        revisedCard.Presentation.OperationHeadlines.Should().ContainSingle(h => h.Contains("Listed Edit"));
+        revisedCard.Presentation.OperationHeadlines.Should().NotContain(h => h.Contains("Original Listed Card"));
+
+        // An unrevised proposal on the SAME page keeps its own original operations: the batched
+        // resolution must group per proposal and never leak one proposal's revision onto another.
+        var untouchedCard = listed.Should().ContainSingle(p => p.Id == untouched.Id).Which;
+        untouchedCard.Operations.Should().ContainSingle();
+        untouchedCard.Operations[0].Parameters.Should().Contain("Untouched Listed Card");
+        untouchedCard.Operations[0].Parameters.Should().NotContain("Listed Edit");
+    }
+
     private async Task InsertRevisionDirectlyAsync(
         Guid proposalId,
         int revisionNumber,

@@ -24,6 +24,13 @@ public class AutomationProposalServiceTests
     private readonly Mock<IBoardAccessRepository> _boardAccessRepoMock;
     private readonly AutomationProposalService _service;
 
+    /// <summary>
+    /// Revisions seeded per proposal by <see cref="SeedRevisions"/>. Backs the batched
+    /// <c>GetByProposalIdsAsync</c> mock so multiple proposals can be seeded in one test without each
+    /// <c>Setup</c> overwriting the last.
+    /// </summary>
+    private readonly Dictionary<Guid, List<ProposalRevision>> _seededRevisions = new();
+
     public AutomationProposalServiceTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
@@ -51,6 +58,31 @@ public class AutomationProposalServiceTests
         _revisionRepoMock
             .Setup(r => r.GetByProposalIdAsync(It.IsAny<Guid>(), default))
             .ReturnsAsync(Array.Empty<ProposalRevision>());
+        // The two-phase effective-revision read (#1444): metadata refs for the page, then payloads for
+        // the winners only. Both phases are served from the same seeded store SeedRevisions writes, so
+        // the list path and the single-proposal path are always fed identical data — a test cannot
+        // accidentally seed one and not the other.
+        _revisionRepoMock
+            .Setup(r => r.GetRefsByProposalIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<Guid> proposalIds, CancellationToken _) => proposalIds
+                .Distinct()
+                .SelectMany(id => _seededRevisions.TryGetValue(id, out var seeded)
+                    ? seeded
+                    : Enumerable.Empty<ProposalRevision>())
+                .OrderBy(r => r.ProposalId)
+                .ThenBy(r => r.RevisionNumber)
+                .Select(r => new ProposalRevisionRef(r.Id, r.ProposalId, r.RevisionNumber, r.RevisedAt))
+                .ToList());
+        _revisionRepoMock
+            .Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<Guid> revisionIds, CancellationToken _) =>
+            {
+                var wanted = revisionIds.Distinct().ToHashSet();
+                return _seededRevisions.Values
+                    .SelectMany(revisions => revisions)
+                    .Where(r => wanted.Contains(r.Id))
+                    .ToList();
+            });
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
@@ -73,6 +105,38 @@ public class AutomationProposalServiceTests
             _unitOfWorkMock.Object,
             _notificationServiceMock.Object,
             _provenanceRepoMock.Object);
+    }
+
+    /// <summary>
+    /// Seeds a proposal's revisions across EVERY revision read shape the service can use — the
+    /// per-proposal list, the batched ref projection, the batched by-id payload load, the latest-only
+    /// query, and single by-id — so a test cannot pass against one query shape while the production
+    /// path reads another. (The two batched shapes are served from <see cref="_seededRevisions"/> by
+    /// the constructor; this method fills that store and the per-proposal shapes.)
+    /// <para>
+    /// #1444 unified the effective-revision dispatch across the single-proposal and list reads;
+    /// seeding a single shape is exactly the drift this helper exists to prevent, and it is why the
+    /// pre-#1444 tests broke when the single read switched from the latest-only query to the list.
+    /// </para>
+    /// </summary>
+    private void SeedRevisions(Guid proposalId, params ProposalRevision[] revisions)
+    {
+        var ordered = revisions.OrderBy(r => r.RevisionNumber).ToList();
+        _seededRevisions[proposalId] = ordered;
+
+        _revisionRepoMock
+            .Setup(r => r.GetByProposalIdAsync(proposalId, default))
+            .ReturnsAsync(ordered);
+        _revisionRepoMock
+            .Setup(r => r.GetLatestByProposalIdAsync(proposalId, default))
+            .ReturnsAsync(ordered.LastOrDefault());
+
+        foreach (var revision in ordered)
+        {
+            _revisionRepoMock
+                .Setup(r => r.GetByIdAsync(revision.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(revision);
+        }
     }
 
     // ExpiresAt is private-set on the AutomationProposal aggregate; force it into the past
@@ -2358,8 +2422,7 @@ public class AutomationProposalServiceTests
             }
         });
         var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
-        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
-            .ReturnsAsync(revision);
+        SeedRevisions(proposal.Id, revision);
 
         var columnRepoMock = new Mock<IColumnRepository>();
         columnRepoMock.Setup(r => r.GetByIdAsync(columnId, default))
@@ -2404,8 +2467,7 @@ public class AutomationProposalServiceTests
         // Non-empty payload that satisfies the entity ctor but carries no operations
         // array — TryParseOperations rejects it (mirrors the executor's behavior).
         var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), "{}", "Reviewer edit");
-        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
-            .ReturnsAsync(revision);
+        SeedRevisions(proposal.Id, revision);
 
         // Act
         var result = await _service.GetProposalDiffAsync(proposalId);
@@ -2460,8 +2522,7 @@ public class AutomationProposalServiceTests
             }
         });
         var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
-        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default))
-            .ReturnsAsync(revision);
+        SeedRevisions(proposal.Id, revision);
 
         // Act
         var result = await _service.GetProposalDiffAsync(proposalId);
@@ -2663,7 +2724,7 @@ public class AutomationProposalServiceTests
             }
         });
         var revision = new ProposalRevision(proposalId, 1, Guid.NewGuid(), revisedPayload, "Reviewer edit");
-        _revisionRepoMock.Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, default)).ReturnsAsync(revision);
+        SeedRevisions(proposal.Id, revision);
 
         _boardAccessRepoMock
             .Setup(r => r.HasAccessAsync(boardId, requesterId, It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
@@ -3125,7 +3186,6 @@ public class AutomationProposalServiceTests
         var proposalId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
         var requesterId = Guid.NewGuid();
-        var revisionId = Guid.NewGuid();
 
         var proposal = new AutomationProposal(
             ProposalSourceType.Chat, requesterId, "Rename board", RiskLevel.Low,
@@ -3135,12 +3195,16 @@ public class AutomationProposalServiceTests
             proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
             targetId: boardId.ToString()));
         proposal.SetDiffPreview("historical: original operations");
-        proposal.Approve(Guid.NewGuid(), revisionId); // pins ApprovedRevisionId
+
+        // Pin the id of a revision that actually belongs to this proposal. Approve only ever pins
+        // what GetLatestByProposalIdAsync returned for this proposal, so pinning an unrelated Guid
+        // would model a state the aggregate cannot reach.
+        var revision = new ProposalRevision(proposal.Id, 1, Guid.NewGuid(), "{}", "Reviewer edit");
+        proposal.Approve(Guid.NewGuid(), revision.Id); // pins ApprovedRevisionId
         proposal.MarkAsApplied();
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
-        var revision = new ProposalRevision(proposal.Id, 1, Guid.NewGuid(), "{}", "Reviewer edit");
-        _revisionRepoMock.Setup(r => r.GetByIdAsync(revisionId, default)).ReturnsAsync(revision);
+        SeedRevisions(proposal.Id, revision);
 
         var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
 
@@ -3191,8 +3255,7 @@ public class AutomationProposalServiceTests
         SetRevisedAt(revision, revisionRevisedAt);
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
-        _revisionRepoMock.Setup(r => r.GetByProposalIdAsync(proposal.Id, default))
-            .ReturnsAsync(new[] { revision });
+        SeedRevisions(proposal.Id, revision);
         return (proposal, revision);
     }
 
@@ -3296,6 +3359,464 @@ public class AutomationProposalServiceTests
         result.Value.Should().ContainSingle(p => p.Id == pending.Id);
         _proposalRepoMock.Verify(r => r.GetByUserIdAsync(userId, 10, It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         _proposalRepoMock.Verify(r => r.GetByStatusAsync(It.IsAny<ProposalStatus>(), It.IsAny<int>(), default), Times.Never);
+    }
+
+    #endregion
+
+    #region GetProposalsAsync effective-operations parity (#1444)
+
+    // Fixed decision time for the rejected-freeze case, so the revision can be placed
+    // deterministically before the cutoff instead of racing UtcNow.
+    private static readonly DateTime ParityRejectionDecidedAt = new(2026, 7, 18, 13, 0, 0, DateTimeKind.Utc);
+
+    // Builds a revision payload with `operationCount` board-update operations, each carrying `marker`
+    // in its parameters — so a test can tell WHICH revision was resolved, not merely how many
+    // operations it happened to carry.
+    private static string BuildRevisedPayload(Guid boardId, int operationCount, string marker)
+    {
+        var operations = Enumerable.Range(0, operationCount)
+            .Select(i => new
+            {
+                sequence = i,
+                actionType = "update",
+                targetType = "board",
+                targetId = boardId.ToString(),
+                parameters = System.Text.Json.JsonSerializer.Serialize(new { boardId, name = $"{marker} {i}" }),
+                idempotencyKey = Guid.NewGuid().ToString()
+            })
+            .ToArray();
+
+        return System.Text.Json.JsonSerializer.Serialize(new { operations });
+    }
+
+    // Builds a PendingReview proposal carrying ONE original operation plus a saved revision carrying
+    // TWO, so "original" and "effective" are distinguishable by operation count alone.
+    private static (AutomationProposal Proposal, ProposalRevision Revision) BuildProposalWithTwoOperationRevision(
+        int revisionNumber = 1)
+    {
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, Guid.NewGuid(), "Rename board", RiskLevel.Low,
+            Guid.NewGuid().ToString(), boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, name = "Original name" }),
+            Guid.NewGuid().ToString(), targetId: boardId.ToString()));
+
+        var revision = new ProposalRevision(
+            proposal.Id,
+            revisionNumber,
+            Guid.NewGuid(),
+            BuildRevisedPayload(boardId, 2, "Revised name"),
+            "Reviewer edit");
+        return (proposal, revision);
+    }
+
+    [Fact]
+    public async Task GetProposalsAsync_ShouldReturnRevisedOperationsAndPresentation_WhenPendingProposalHasSavedRevision()
+    {
+        // #1444: after a reviewer saves a revision, the review-queue CARD must not keep showing the
+        // original summary/operations while the detail view, the diff and Apply all use the revised
+        // set. The list endpoint previously mapped original operations by design.
+        var (proposal, revision) = BuildProposalWithTwoOperationRevision();
+        _proposalRepoMock.Setup(r => r.GetByStatusAsync(ProposalStatus.PendingReview, 100, default))
+            .ReturnsAsync(new[] { proposal });
+        SeedRevisions(proposal.Id, revision);
+
+        var result = await _service.GetProposalsAsync(new ProposalFilterDto(Status: ProposalStatus.PendingReview));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        var listed = result.Value.Should().ContainSingle().Which;
+        listed.Operations.Should().HaveCount(2,
+            "the list must expose the revised operation set, not the single original operation");
+        listed.Operations.Select(o => o.Parameters).Should()
+            .Contain(p => p.Contains("Revised name"))
+            .And.NotContain(p => p.Contains("Original name"));
+        listed.Presentation.Should().NotBeNull();
+        listed.Presentation!.OperationHeadlines.Should().HaveCount(2,
+            "presentation is rebuilt from the same effective set it accompanies, so it cannot describe the originals");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PinnedRead_ShouldResolveThePinnedRevision_NotMerelyTheFirstOrLatestOne(bool viaListRead)
+    {
+        // #1444 review (HIGH): every pinned fixture in the suite pinned the LOWEST revision number, and
+        // both the repository and SeedRevisions hand the selector an ascending list — so a selector
+        // that returned "any revision of this proposal" (a bare FirstOrDefault) passed everything.
+        //
+        // Pin the MIDDLE revision of three, each with a distinct operation count AND marker, so only a
+        // genuine id match can succeed: an earlier revision (1 op) would be picked by FirstOrDefault,
+        // and a later one (3 ops) by "latest wins". Run for BOTH read shapes.
+        var (proposal, pinnedRevision) = BuildProposalWithTwoOperationRevision(revisionNumber: 2);
+        var boardId = proposal.BoardId!.Value;
+
+        var earlierRevision = new ProposalRevision(
+            proposal.Id, 1, Guid.NewGuid(),
+            BuildRevisedPayload(boardId, 1, "Earlier edit"),
+            "Earlier edit");
+        var laterRevision = new ProposalRevision(
+            proposal.Id, 3, Guid.NewGuid(),
+            BuildRevisedPayload(boardId, 3, "Post-approval edit"),
+            "Post-approval edit");
+
+        proposal.Approve(Guid.NewGuid(), pinnedRevision.Id);
+        SeedRevisions(proposal.Id, earlierRevision, pinnedRevision, laterRevision);
+
+        ProposalDto resolved;
+        if (viaListRead)
+        {
+            _proposalRepoMock.Setup(r => r.GetByStatusAsync(ProposalStatus.Approved, 100, default))
+                .ReturnsAsync(new[] { proposal });
+            var list = await _service.GetProposalsAsync(new ProposalFilterDto(Status: ProposalStatus.Approved));
+            list.IsSuccess.Should().BeTrue(list.ErrorMessage);
+            resolved = list.Value.Should().ContainSingle().Which;
+        }
+        else
+        {
+            _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default)).ReturnsAsync(proposal);
+            var single = await _service.GetProposalByIdAsync(proposal.Id);
+            single.IsSuccess.Should().BeTrue(single.ErrorMessage);
+            resolved = single.Value;
+        }
+
+        resolved.ApprovedRevisionId.Should().Be(pinnedRevision.Id);
+        resolved.Operations.Should().HaveCount(2,
+            "the PINNED revision carries two operations — one op would mean the earliest revision was "
+            + "returned, three would mean the latest");
+        resolved.Operations.Select(o => o.Parameters).Should()
+            .OnlyContain(p => p.Contains("Revised name"))
+            .And.NotContain(p => p.Contains("Earlier edit"))
+            .And.NotContain(p => p.Contains("Post-approval edit"));
+    }
+
+    [Fact]
+    public async Task GetProposalsAsync_ShouldFallBackToOriginals_WhenThePinIsNotAmongTheProposalsRevisions()
+    {
+        // #1444 review: the read path resolves the pin within the proposal's OWN revisions, so a pin
+        // that resolves to nothing degrades to the original operations. Unreachable in production
+        // (nothing but Approve writes the column, and revisions are cascade-owned), but the degradation
+        // is now pinned so a future change to either side has something to trip over. Note the
+        // executor deliberately does NOT degrade here — it refuses (InvalidOperation).
+        var (proposal, foreignRevision) = BuildProposalWithTwoOperationRevision();
+        proposal.Approve(Guid.NewGuid(), foreignRevision.Id);
+
+        _proposalRepoMock.Setup(r => r.GetByStatusAsync(ProposalStatus.Approved, 100, default))
+            .ReturnsAsync(new[] { proposal });
+        // Deliberately seed NO revisions for this proposal: the pinned id belongs to a revision the
+        // proposal does not own.
+        SeedRevisions(proposal.Id);
+
+        var result = await _service.GetProposalsAsync(new ProposalFilterDto(Status: ProposalStatus.Approved));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        var listed = result.Value.Should().ContainSingle().Which;
+        listed.Operations.Should().ContainSingle("an unresolvable pin degrades to the original operations");
+        listed.Operations[0].Parameters.Should().Contain("Original name");
+    }
+
+    [Fact]
+    public async Task GetProposalsAsync_ShouldDegradeToOriginals_WhenARevisionPayloadIsUnparseable()
+    {
+        // #1444 review: BuildEffectiveProposalDto's degrade-to-originals branch was untested on ANY
+        // path, and #1444 widened its blast radius from one item to a whole page — hardening it to fail
+        // instead of degrade would now break the ENTIRE queue list because one row has a corrupt
+        // payload. Two-item page, one corrupt: the list must succeed, that item shows its originals,
+        // and the healthy item's revised set must be unaffected.
+        var (corrupt, corruptRevision) = BuildProposalWithTwoOperationRevision();
+        var corruptPayloadRevision = new ProposalRevision(
+            corrupt.Id, corruptRevision.RevisionNumber, Guid.NewGuid(), "{not valid json", "Corrupt edit");
+        var (healthy, healthyRevision) = BuildProposalWithTwoOperationRevision();
+
+        _proposalRepoMock.Setup(r => r.GetByStatusAsync(ProposalStatus.PendingReview, 100, default))
+            .ReturnsAsync(new[] { corrupt, healthy });
+        SeedRevisions(corrupt.Id, corruptPayloadRevision);
+        SeedRevisions(healthy.Id, healthyRevision);
+
+        var result = await _service.GetProposalsAsync(new ProposalFilterDto(Status: ProposalStatus.PendingReview));
+
+        result.IsSuccess.Should().BeTrue(
+            result.ErrorMessage + " — one corrupt revision must not fail the whole page");
+
+        var corruptItem = result.Value.Should().Contain(p => p.Id == corrupt.Id).Which;
+        corruptItem.Operations.Should().ContainSingle("an unmaterializable revision degrades to originals");
+        corruptItem.Operations[0].Parameters.Should().Contain("Original name");
+        corruptItem.Presentation!.OperationHeadlines.Should().ContainSingle(
+            "the presentation must degrade together with the operations it accompanies");
+
+        var healthyItem = result.Value.Should().Contain(p => p.Id == healthy.Id).Which;
+        healthyItem.Operations.Should().HaveCount(2, "one corrupt neighbour must not affect a healthy item");
+    }
+
+    public static TheoryData<ProposalStatus> StatusesThatResolveARevision()
+    {
+        var data = new TheoryData<ProposalStatus>();
+        // PendingReview = unpinned latest; Approved/Applied/Failed = pinned; Rejected = decision freeze.
+        foreach (var status in new[]
+                 {
+                     ProposalStatus.PendingReview,
+                     ProposalStatus.Approved,
+                     ProposalStatus.Applied,
+                     ProposalStatus.Failed,
+                     ProposalStatus.Rejected,
+                 })
+        {
+            data.Add(status);
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(StatusesThatResolveARevision))]
+    public async Task GetProposalsAsync_ShouldResolveAPage_WithNoPerProposalRevisionQuery(ProposalStatus status)
+    {
+        // Perf guard for the #1444 AC, run for EVERY status that resolves a revision rather than only
+        // the unpinned pending shape: a regression that keeps the batch read for pending proposals but
+        // adds a per-item pin lookup for decided ones — precisely the pre-#1444 shape of the single
+        // read — would otherwise slip through (#1444 review).
+        var page = new List<AutomationProposal>();
+        for (var i = 0; i < 3; i++)
+        {
+            var (proposal, revision) = BuildProposalWithTwoOperationRevision();
+            DriveToStatusAndGetExpectedOperationCount(proposal, revision, status);
+            SeedRevisions(proposal.Id, revision);
+            page.Add(proposal);
+        }
+
+        _proposalRepoMock.Setup(r => r.GetByStatusAsync(status, 100, default)).ReturnsAsync(page);
+
+        var result = await _service.GetProposalsAsync(new ProposalFilterDto(Status: status));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().OnlyContain(p => p.Operations.Count == 2);
+
+        // Exactly two revision reads for the WHOLE page regardless of size: metadata for the page,
+        // then payloads for the winners only.
+        _revisionRepoMock.Verify(
+            r => r.GetRefsByProposalIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _revisionRepoMock.Verify(
+            r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        // No per-proposal shape may be touched — including the single by-id pin lookup that the
+        // single-proposal read legitimately uses.
+        _revisionRepoMock.Verify(
+            r => r.GetLatestByProposalIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _revisionRepoMock.Verify(
+            r => r.GetByProposalIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _revisionRepoMock.Verify(
+            r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        // Nothing else on the repository either — catches a "load everything and filter in memory"
+        // regression through the IRepository base methods (#1444 review).
+        _revisionRepoMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task GetProposalsAsync_ShouldNotLoadRevisionPayloads_ForProposalsThatResolveNone()
+    {
+        // The two-phase read exists so payloads are never loaded for revisions that lose. A page whose
+        // only candidate resolves NO revision — rejected, with its single revision saved AFTER the
+        // decision — must stop after the metadata phase (#1444 review).
+        var proposalId = Guid.NewGuid();
+        var decision = new DateTime(2026, 7, 18, 13, 0, 0, DateTimeKind.Utc);
+        var (proposal, _) = BuildRejectedProposalWithRevision(
+            proposalId,
+            decision,
+            new DateTimeOffset(decision.AddHours(1), TimeSpan.Zero));
+        _proposalRepoMock.Setup(r => r.GetByStatusAsync(ProposalStatus.Rejected, 100, default))
+            .ReturnsAsync(new[] { proposal });
+
+        var result = await _service.GetProposalsAsync(new ProposalFilterDto(Status: ProposalStatus.Rejected));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().ContainSingle().Which.Operations.Should().ContainSingle(
+            "a revision saved after the rejection is frozen out, so the original operations apply");
+
+        _revisionRepoMock.Verify(
+            r => r.GetRefsByProposalIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _revisionRepoMock.Verify(
+            r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "no revision won, so there is no payload to load");
+    }
+
+    [Fact]
+    public async Task GetProposalsAsync_ShouldNotQueryRevisions_WhenNoProposalCanHaveOne()
+    {
+        // CanHaveEffectiveRevision skips the revision read entirely for proposals that always use
+        // their original operations, so an unrevised queue page costs no revision query at all.
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat, Guid.NewGuid(), "Expired", RiskLevel.Low, Guid.NewGuid().ToString());
+        proposal.Expire();
+        _proposalRepoMock.Setup(r => r.GetByStatusAsync(ProposalStatus.Expired, 100, default))
+            .ReturnsAsync(new[] { proposal });
+
+        var result = await _service.GetProposalsAsync(new ProposalFilterDto(Status: ProposalStatus.Expired));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        _revisionRepoMock.Verify(
+            r => r.GetRefsByProposalIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _revisionRepoMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task GetProposalsAsync_ShouldReturnPinnedRevision_ForProposalDismissedAfterApply()
+    {
+        // #1444 review: the parity theory reaches Dismissed only via Expire(), which carries no pin. But
+        // CanBeDismissed also allows Applied/Failed/Approved-but-expired, and those DO carry a pin — so
+        // Dismissed's correct answer is 2 on that route and 1 on the Expired route, and only the 1 route
+        // was covered. A refactor of CanHaveEffectiveRevision into a plain status allowlist would make
+        // dismissed-after-Applied render its ORIGINALS: the audit trail for changes that already
+        // executed, showing a set that was never applied.
+        var (proposal, pinnedRevision) = BuildProposalWithTwoOperationRevision();
+        proposal.Approve(Guid.NewGuid(), pinnedRevision.Id);
+        proposal.MarkAsApplied();
+        proposal.Dismiss();
+        proposal.Status.Should().Be(ProposalStatus.Dismissed);
+        proposal.ApprovedRevisionId.Should().Be(pinnedRevision.Id, "the pin must survive dismissal");
+
+        _proposalRepoMock.Setup(r => r.GetByStatusAsync(ProposalStatus.Dismissed, 100, default))
+            .ReturnsAsync(new[] { proposal });
+        SeedRevisions(proposal.Id, pinnedRevision);
+
+        var result = await _service.GetProposalsAsync(new ProposalFilterDto(Status: ProposalStatus.Dismissed));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().ContainSingle().Which.Operations.Should().HaveCount(2,
+            "a dismissed-after-Applied proposal must still show the set that was actually executed");
+    }
+
+    [Fact]
+    public async Task GetProposalsAsync_ShouldShowOriginals_ForProposalDismissedAfterRejection()
+    {
+        // Documents PRE-EXISTING behaviour rather than endorsing it (#1444 review): dismissing a
+        // rejected, revised proposal moves it out of the Rejected freeze branch with no pin to fall back
+        // on, so its card flips from the frozen revised set to the originals. #1444 makes that flip
+        // newly visible in the queue. Pinned here so it cannot change silently; whether it SHOULD flip
+        // is tracked as #1465 (recommendation there: fold into #1453's reject-time pin).
+        var proposalId = Guid.NewGuid();
+        var decision = new DateTime(2026, 7, 18, 13, 0, 0, DateTimeKind.Utc);
+        var (proposal, _) = BuildRejectedProposalWithRevision(
+            proposalId, decision, new DateTimeOffset(decision.AddHours(-1), TimeSpan.Zero));
+        proposal.Dismiss();
+        proposal.ApprovedRevisionId.Should().BeNull("a rejected proposal never pinned a revision");
+
+        _proposalRepoMock.Setup(r => r.GetByStatusAsync(ProposalStatus.Dismissed, 100, default))
+            .ReturnsAsync(new[] { proposal });
+
+        var result = await _service.GetProposalsAsync(new ProposalFilterDto(Status: ProposalStatus.Dismissed));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().ContainSingle().Which.Operations.Should().ContainSingle(
+            "no pin and no longer Rejected, so the decision-time-frozen revision no longer applies");
+    }
+
+    public static TheoryData<ProposalStatus> AllProposalStatuses()
+    {
+        var data = new TheoryData<ProposalStatus>();
+        foreach (var status in Enum.GetValues<ProposalStatus>())
+            data.Add(status);
+        return data;
+    }
+
+    /// <summary>
+    /// Drives a fresh PendingReview proposal into <paramref name="status"/> by a representative
+    /// transition path and returns how many operations the EFFECTIVE set should then contain
+    /// (2 = the revision applies, 1 = the proposal's original operations apply).
+    /// <para>
+    /// Throws for an unmapped status on purpose: adding a value to <see cref="ProposalStatus"/>
+    /// without deciding how it resolves must fail this theory rather than silently inherit a
+    /// dispatcher default.
+    /// </para>
+    /// </summary>
+    private static int DriveToStatusAndGetExpectedOperationCount(
+        AutomationProposal proposal,
+        ProposalRevision revision,
+        ProposalStatus status)
+    {
+        switch (status)
+        {
+            case ProposalStatus.PendingReview:
+                return 2; // unconditional latest revision — what the reviewer sees
+
+            case ProposalStatus.Approved:
+                proposal.Approve(Guid.NewGuid(), revision.Id);
+                return 2; // pinned at approve time
+
+            case ProposalStatus.Applied:
+                proposal.Approve(Guid.NewGuid(), revision.Id);
+                proposal.MarkAsApplied();
+                return 2; // the pin survives execution
+
+            case ProposalStatus.Failed:
+                proposal.Approve(Guid.NewGuid(), revision.Id);
+                proposal.MarkAsFailed("executor failure");
+                return 2; // the pin survives a failed execution
+
+            case ProposalStatus.Rejected:
+                proposal.Reject(Guid.NewGuid(), "not needed");
+                SetDecidedAt(proposal, ParityRejectionDecidedAt);
+                SetRevisedAt(revision, new DateTimeOffset(ParityRejectionDecidedAt.AddHours(-1), TimeSpan.Zero));
+                return 2; // saved before the decision, so it IS what was rejected (#1439 freeze)
+
+            case ProposalStatus.Expired:
+                proposal.Expire();
+                return 1; // no pin and not pending/rejected -> originals
+
+            case ProposalStatus.Dismissed:
+                proposal.Expire();
+                proposal.Dismiss();
+                return 1; // dismissed from an unpinned terminal state -> originals
+
+            default:
+                throw new NotSupportedException(
+                    $"ProposalStatus.{status} is not covered by the #1444 effective-revision parity theory. " +
+                    "Add it here and decide whether an effective revision applies (see SelectEffectiveRevision).");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(AllProposalStatuses))]
+    public async Task GetProposalsAsync_ShouldAgreeWithSingleRead_ForEveryStatus(ProposalStatus status)
+    {
+        // The structural guard behind #1444: the list read and the single-proposal read now share ONE
+        // effective-revision dispatcher, so they must resolve identically for EVERY status. Enumerating
+        // the enum (rather than a hand-picked subset) means a new status cannot be added on one path
+        // only. Equality alone would be satisfied by two identically-wrong reads, so the expected
+        // effective operation count is pinned as well.
+        var (proposal, revision) = BuildProposalWithTwoOperationRevision();
+        var expectedOperationCount = DriveToStatusAndGetExpectedOperationCount(proposal, revision, status);
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default)).ReturnsAsync(proposal);
+        _proposalRepoMock.Setup(r => r.GetByStatusAsync(status, 100, default)).ReturnsAsync(new[] { proposal });
+        SeedRevisions(proposal.Id, revision);
+
+        var single = await _service.GetProposalByIdAsync(proposal.Id);
+        var list = await _service.GetProposalsAsync(new ProposalFilterDto(Status: status));
+
+        single.IsSuccess.Should().BeTrue(single.ErrorMessage);
+        list.IsSuccess.Should().BeTrue(list.ErrorMessage);
+        var listed = list.Value.Should().ContainSingle().Which;
+
+        single.Value.Operations.Should().HaveCount(expectedOperationCount,
+            $"the single read must resolve the expected effective set for {status}");
+        listed.Operations.Should().HaveCount(expectedOperationCount,
+            $"the list read must resolve the same effective set for {status}");
+        // Order-strict on both: operation order is semantically load-bearing (`sequence`), so an
+        // order-insensitive comparison would prove less than this assertion claims (#1444 review).
+        listed.Operations.Select(o => o.Parameters).Should()
+            .Equal(single.Value.Operations.Select(o => o.Parameters),
+                "operation order must match too, not just the set of parameters");
+        listed.Presentation.Should().BeEquivalentTo(single.Value.Presentation,
+            options => options.WithStrictOrdering(),
+            "a queue card and the detail view behind it must never present different content");
     }
 
     #endregion
