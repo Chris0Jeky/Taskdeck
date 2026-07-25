@@ -88,7 +88,10 @@ Read before editing — do not assume layout:
     actual check runs; don't assume.
   - Merge convention: **merge commits, never squash** — squash-merge destroys commit history and
     count, and it was disabled repo-side across the estate on 2026-07-18, so the option should
-    not even be offered. Rebase keeps the count and is acceptable; a merge commit is preferred.
+    not even be offered. Rebase preserves the count and is acceptable **for a standalone PR only**;
+    a merge commit is preferred everywhere and is **required for a stacked base**, because
+    rebase-merging a base rewrites its commits onto `main` while every child still descends the
+    original hashes — retargeting then loses the shared ancestry and manufactures conflicts.
     **Never `--delete-branch` a stacked base PR** (it cascade-closes children unreopenably). In a
     stack, **merge the oldest/base first**, then retarget/absorb children.
 - **Inventory** open PRs, open issues, red CI, `TODO`/`FIXME`, the failure ledger. This seeds

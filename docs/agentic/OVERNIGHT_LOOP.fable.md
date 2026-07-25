@@ -97,12 +97,17 @@ and take the actual model and effort for each rung from the skill.
 - Spawn implementation workers at the canonical ladder's **code-implementation rung**, and set
   `model` and `effort` explicitly per worker rather than letting them inherit your session — a
   Fable session that silently propagates itself into every slice is the failure this lane exists
-  to prevent. Inside Workflow scripts, vary **effort, not the rung**: the ladder's judgment-heavy
-  effort setting for hard slices (backend concurrency, multi-file features, gnarly test repair)
-  and a lower one for standard slices, reaching up only when the task earns it. Standard
-  implementation work never leaves the code-implementation rung — the ops rung below is for
-  already-decided mechanics only, so dropping a coding slice into it is a lane violation, not a
-  saving. (The plain Agent tool has no effort knob — it inherits the session; use Workflow
+  to prevent. **The rung floor is fixed; the ceiling is not.** Standard implementation work never
+  drops below the code-implementation rung — the ops rung is for already-decided mechanics only, so
+  putting a coding slice there is a lane violation, not a saving — and within that rung you vary
+  effort: the judgment-heavy setting for demanding slices (multi-file features, gnarly test
+  repair), a lower one for routine ones. Upward is different: a slice that falls in **base manual
+  §3's judgment-heavy list** — race/concurrency and permit-lifecycle work, security and
+  auth/permission changes, Clean-Architecture boundary calls, ambiguous multi-file debugging,
+  anything touching the deny floor or the harness gates — routes to the ladder's **top rungs**, not
+  to the implementation rung at higher effort. Escalate effort first, then the rung, and escalate
+  to yourself when the call is really an architecture or security judgment wearing a code-change
+  costume. (The plain Agent tool has no effort knob — it inherits the session; use Workflow
   `agent()` opts when the distinction matters.)
 - Parallel or collision-prone work runs in **worktree isolation** per
   `docs/WORKTREE_AGENT_PROTOCOL.md` / the `taskdeck-worktree-issue-worker` skill. ≤3 concurrent
