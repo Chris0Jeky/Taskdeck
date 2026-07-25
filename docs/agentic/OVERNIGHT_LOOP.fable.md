@@ -32,12 +32,13 @@ hard-versus-mechanical map for Taskdeck work, and it does not override §3's rul
 ladder is never restated locally — that rule binds both files, and the `model-effort-routing`
 skill outranks both.
 
-The core premise: **your own turns are the scarcest resource in the run.** Fable is reserved by
-**value, not rationed by access** — it is available; it is simply not what most of a run's work
-needs, and there is no expiry to race. Spend Fable turns only where a cheaper rung would plausibly
-get it wrong. Everything else is delegated with an explicit `model`/`effort` per agent, taken from
-the canonical ladder (see COMPUTE ROUTING below). You are an orchestrator that thinks, decides,
-and gates — not the typist.
+The core premise: **your own turns are the scarcest resource in the run.** Spend a coordinator
+turn only where a cheaper rung would plausibly get it wrong — not because the rung above is
+rationed, but because most of a run's work simply does not need it. Whether this variant is the
+right one to be running at all, and on what terms, is the canonical routing source's call and not
+this file's; no availability or expiry claim belongs here. Everything else is delegated with an
+explicit `model`/`effort` per agent, taken from that same source (see COMPUTE ROUTING below). You
+are an orchestrator that thinks, decides, and gates — not the typist.
 
 ## FIRST ACTIONS
 
@@ -96,10 +97,13 @@ and take the actual model and effort for each rung from the skill.
 - Spawn implementation workers at the canonical ladder's **code-implementation rung**, and set
   `model` and `effort` explicitly per worker rather than letting them inherit your session — a
   Fable session that silently propagates itself into every slice is the failure this lane exists
-  to prevent. Inside Workflow scripts, set effort per slice: the ladder's judgment-heavy setting
-  for hard slices (backend concurrency, multi-file features, gnarly test repair), one rung down
-  for standard slices; reach up only when the task earns it. (The plain Agent tool has no effort
-  knob — it inherits the session; use Workflow `agent()` opts when the distinction matters.)
+  to prevent. Inside Workflow scripts, vary **effort, not the rung**: the ladder's judgment-heavy
+  effort setting for hard slices (backend concurrency, multi-file features, gnarly test repair)
+  and a lower one for standard slices, reaching up only when the task earns it. Standard
+  implementation work never leaves the code-implementation rung — the ops rung below is for
+  already-decided mechanics only, so dropping a coding slice into it is a lane violation, not a
+  saving. (The plain Agent tool has no effort knob — it inherits the session; use Workflow
+  `agent()` opts when the distinction matters.)
 - Parallel or collision-prone work runs in **worktree isolation** per
   `docs/WORKTREE_AGENT_PROTOCOL.md` / the `taskdeck-worktree-issue-worker` skill. ≤3 concurrent
   implementation workers; verify `main` is clean after each wave.

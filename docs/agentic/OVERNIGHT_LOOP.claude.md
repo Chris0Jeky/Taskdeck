@@ -141,6 +141,15 @@ express a routing preference: **never Haiku** (standing owner directive, no exce
 **right-size effort → model → agent count, cheapest dial first** — don't reflexively fan out or
 crank the top model on trivia; that drains the run before the hard tasks land.
 
+**If the canonical source is unreachable** — a fresh clone, a different machine, a `~/.claude`
+that was never provisioned — do **not** reconstruct a ladder from memory, and do not fall back to
+whatever this file used to say (that text was wrong, which is why it is gone). The two constraints
+above still bind, and the safe degradation is to **run the session inline at whatever model the
+session is already on, delegating nothing**: a run with no fan-out is slower, not incorrect,
+whereas delegating to guessed rungs is how the wrong model silently gets the hard task. Record it
+in the ledger and raise it in the deferred-questions batch — an unreachable routing source is a
+maintainer-fixable setup gap, not a judgment call for the run to improvise around.
+
 What this file owns is the part the canonical skill cannot know: **which Taskdeck work is hard,
 which is genuinely mechanical, and how the lanes are shaped.**
 
