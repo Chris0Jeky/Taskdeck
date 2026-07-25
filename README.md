@@ -172,7 +172,7 @@ Repository rules for automated contributors live in [AGENTS.md](AGENTS.md).
 
 ## License and security
 
-Taskdeck is released under the [MIT License](LICENSE). The revival commitment is that code already shipped under MIT stays MIT; the complete licensing posture is the v0.1 [REVIVAL-03](https://github.com/Chris0Jeky/Taskdeck/issues/1299) deliverable.
+Taskdeck is released under the [MIT License](LICENSE). The permanent free-core boundary, the MIT-forever commitment for code already shipped, and the additive-only posture for any future commercial module are documented in [LICENSING.md](LICENSING.md) (REVIVAL-03, [#1299](https://github.com/Chris0Jeky/Taskdeck/issues/1299)).
 
 Found a vulnerability? Follow the private reporting process in [SECURITY.md](SECURITY.md). Do not open a public issue for a suspected security problem.
 

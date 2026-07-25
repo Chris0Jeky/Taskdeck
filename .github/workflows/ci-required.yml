@@ -5,6 +5,7 @@
 # Workflow Topology (see docs/analysis/2026-02-21_ci-github-actions-expansion-plan.md):
 #
 #   ci-required.yml          PR/push/merge_group gate (this file)
+#     ├── KineticCafe/actions-dco              DCO sign-off signal (PR-only, advisory)
 #     ├── reusable-docs-governance.yml        docs + golden-principles + ops governance
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
@@ -88,6 +89,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Advisory during the initial DCO rollout. The job-level continue-on-error
+  # keeps the required CI workflow green while contributors adopt `git commit -s`.
+  # Promotion into branch protection is a maintainer-owned settings change (#1173).
+  dco:
+    name: DCO (advisory)
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check commit sign-offs
+        uses: KineticCafe/actions-dco@1da04282bbf757dab7d92a5c8535dbfb8113da5c # v3.1.0
+
   docs-governance:
     name: Docs Governance
     uses: ./.github/workflows/reusable-docs-governance.yml
