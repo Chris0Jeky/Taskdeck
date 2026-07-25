@@ -355,9 +355,12 @@ def main() -> None:
     # The rubric scores "active days in the window", so the verdict must use the window too --
     # an all-time count lets long-dead activity satisfy a threshold about current use.
     n = len(recent_days)
-    if QUERY_ERRORS and not sorted_days:
-        p("**Inconclusive.** No activity was readable, but queries failed against this database "
-          "(see the warning below). Do NOT read this as \"not started\".")
+    if QUERY_ERRORS:
+        # Partial evidence must not yield a confident verdict either way: with one activity
+        # table unreadable, "Stalled" or "In progress" are as wrong as "not started".
+        p("**Inconclusive.** Some queries failed or were skipped against this database (see the "
+          "warning below), so the activity picture is incomplete. Do NOT read the numbers above "
+          "as a verdict in either direction.")
     elif not sorted_days:
         p("**Not started.** No recorded activity at all.")
     elif stale is not None and stale > 14:
