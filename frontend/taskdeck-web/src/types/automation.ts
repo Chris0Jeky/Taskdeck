@@ -74,11 +74,17 @@ export interface Proposal {
    * only. The MCP `proposal_detail` resource projects its own object that omits this field entirely,
    * so an MCP-facing surface cannot rely on it.
    *
+   * Declared required (not `?:`) deliberately, unlike its optional neighbours above: `MapToDto`
+   * always assigns it, and the API serializes with default options (bare `AddControllers()` in
+   * `Program.cs`, no `DefaultIgnoreCondition`), so an unpinned proposal arrives as an explicit
+   * `null`, never an absent key. `?:` would model a wire-level omission that does not occur, and
+   * would let a field-by-field rebuild drop the pin without a compile error.
+   *
    * Contract exposure only: nothing in the UI may assert anything about pinning on the strength of
    * this field without a separate design decision (`#1298` is the standing precedent against the
    * review surface advertising semantics it cannot back).
    */
-  approvedRevisionId?: string | null
+  approvedRevisionId: string | null
 }
 
 /**
