@@ -10,6 +10,21 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-25, PR-queue clearing wave)
+
+**8 PRs merged; the open-PR queue is down to a single human-gated draft.** Per-PR gate: independent adversarial review, all-severity findings fixed with posted evidence, required CI green on the exact head, every thread triaged.
+
+- **`#1469` (`#1462`)** — frontend `Proposal.approvedRevisionId`, declared **required** (the key is always on the wire), contract-only per `#1298`, guarded against a dead-code sweep by an exported type alias.
+- **`#1337` (`#1299`) — REVIVAL-03 licensing pack shipped.** `LICENSING.md` (MIT-forever, never-gated free boundary, additive-only commercial posture), reserved `ee/`, DCO guidance + SHA-pinned advisory CI job, MIT metadata across npm and 11 `.csproj`. Root `LICENSE` untouched. Name availability researched and recorded on `#1299` with filing costs and a **do-not-file-now** recommendation; pre-commercial legal residuals → **`#1482`**.
+- **`#1477` + `#1481` (`#1123`)** — the release pipeline can now be **rehearsed without pushing a tag**, which is what makes `#1303`'s tag push verifiable in advance rather than a first-run. Rehearsed live (run `30160400273`): four platforms built, **three smoke-tested**, `create-release` skipped, zero tags/releases created. `osx-x64` is built, packaged, checksummed and uploaded **without ever being launched** — it is cross-arch on the arm64 `macos-latest` runner (`if: matrix.rid != 'osx-x64'`), so that one archive carries less release evidence than the other three. Worth knowing before the `#1303` tag push.
+- **`#1478` (`#1271`) — dogfooding instrumented**, and the baseline measured: sustained use has **not** started (8 active days, three months stale, most boards fixtures), though the core loop works (**17/20 proposals reached Apply**, counted by `AppliedAt` — a status-based count reads 1/20 because `Dismiss()` overwrites an `Applied` status). Residual accuracy questions → **`#1480`**.
+- **`#1471`, `#1472`, `#1479`** — canonical-doc reconciliation, human-action tracking for `#1457`'s trust gate and the recurring worktree prune, and two record-only check-offs taken on explicit maintainer instruction.
+- **`#1295` closed as superseded** (13/13 bypass failures; targeted floor v1.3.0 vs installed 1.6.5). The overlay is still *needed* — 11 rule-classes are `allow` at every tier including T4 — so the salvage plan and acceptance criteria live on **`#1293`**.
+- **Repo hardening:** force-push and deletion blocked on `main` (otherwise deliberately relaxed); 288 truncation-hidden project-priority mismatches synced (`#1474`).
+- **`#1270` backlog triage:** 12 issues closed with dated notes; an adversarial pass bounced **13 of 25** proposed closures, including the `#1123` ship-gate item. `#1270` stays open — two of its own ACs are obsolete against ADR-0044 / REVIVAL_PLAN §6.
+- **Seeded:** `#1470` `#1473` `#1474` `#1475` `#1476` `#1480` `#1482`, plus upstream `agent-harness#56`.
+- **Remaining hold:** `#1457` only — pin refreshed to the installed floor; the interactive `/hooks` trust session and live canaries are maintainer-only.
+
 ## Delivery update (2026-07-23/24, overnight wave)
 
 **6 PRs merged + 3 dependabot PRs** — the four feature/substrate PRs below plus `#1447` (the docs sync recording the maintainer-merged `#1414` stored-preview presentation) and `#1448` (below) — (per-PR gate: two independent adversarial review lenses, all-severity fixes with posted evidence, full backend suite on the exact head where code changed, CI green, bot window + content sweep). This wave's own delivery sweep was `#1454`; `#1448`, `#1427`, and dependabot `#1441` merged after it ran, so their entries here were recorded on 2026-07-25:
