@@ -223,9 +223,25 @@ public class AutomationProposalService : IAutomationProposalService
         if (filter.RiskLevel.HasValue)
             proposals = proposals.Where(p => p.RiskLevel == filter.RiskLevel.Value);
 
-        proposals = proposals.Take(limit);
+        // Materialize the page ONCE before the revision read. The chain above is lazy, so the batch
+        // lookup and the DTO projection must be fed from the same materialized list — re-enumerating
+        // it would re-run every filter and could even resolve revisions for a different set of rows.
+        var page = proposals.Take(limit).ToList();
 
-        return Result.Success(proposals.Select(MapToDto));
+        // Resolve the effective revision for the whole page in a single revision query (#1444), so a
+        // review-queue card can no longer show the original summary/operations while the detail view,
+        // the diff and Apply all use the revised set. Absent from the dictionary means "no effective
+        // revision" — exactly the null the single-proposal read produces — so the builder maps the
+        // proposal's original operations for those items.
+        var effectiveRevisions = await GetEffectiveRevisionsAsync(page, cancellationToken);
+
+        var dtos = page
+            .Select(proposal => BuildEffectiveProposalDto(
+                proposal,
+                effectiveRevisions.TryGetValue(proposal.Id, out var revision) ? revision : null))
+            .ToList();
+
+        return Result.Success<IEnumerable<ProposalDto>>(dtos);
     }
 
     public async Task<Result<ProposalDto>> ApproveProposalAsync(Guid id, Guid decidedByUserId, CancellationToken cancellationToken = default)
@@ -308,7 +324,7 @@ public class AutomationProposalService : IAutomationProposalService
             // Echo the effective (pinned) operations Apply will run, not the stale originals (#1424).
             // latestRevision IS the pinned revision (its id was stored as ApprovedRevisionId), so map
             // the DTO from it directly rather than re-reading it via GetEffectiveRevisionAsync.
-            return BuildEffectiveProposalDto(proposal, latestRevision);
+            return Result.Success(BuildEffectiveProposalDto(proposal, latestRevision));
         }
         catch (DomainException ex)
         {
@@ -370,24 +386,109 @@ public class AutomationProposalService : IAutomationProposalService
         AutomationProposal proposal,
         CancellationToken cancellationToken)
     {
+        if (!CanHaveEffectiveRevision(proposal))
+            return null;
+
+        var revisions = await _unitOfWork.ProposalRevisions.GetByProposalIdAsync(proposal.Id, cancellationToken);
+        return SelectEffectiveRevision(proposal, revisions);
+    }
+
+    /// <summary>
+    /// Batch equivalent of <see cref="GetEffectiveRevisionAsync"/> for list reads: resolves the
+    /// effective revision for a whole page of proposals in ONE revision query instead of one per
+    /// proposal (#1444). Proposals that cannot resolve to a revision at all are excluded from the
+    /// query, and proposals with no effective revision are simply absent from the result — callers
+    /// treat "absent" exactly as <see cref="GetEffectiveRevisionAsync"/>'s null, i.e. use the
+    /// proposal's original operations. Selection runs through the same
+    /// <see cref="SelectEffectiveRevision"/> rules as the single-proposal path, so the list and the
+    /// detail view cannot disagree about which revision is effective.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, ProposalRevision>> GetEffectiveRevisionsAsync(
+        IReadOnlyCollection<AutomationProposal> proposals,
+        CancellationToken cancellationToken)
+    {
+        var candidates = proposals.Where(CanHaveEffectiveRevision).ToList();
+        if (candidates.Count == 0)
+            return new Dictionary<Guid, ProposalRevision>();
+
+        var revisions = await _unitOfWork.ProposalRevisions.GetByProposalIdsAsync(
+            candidates.Select(p => p.Id),
+            cancellationToken);
+
+        var revisionsByProposal = revisions
+            .GroupBy(r => r.ProposalId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<ProposalRevision>)g.ToList());
+
+        var effective = new Dictionary<Guid, ProposalRevision>();
+        foreach (var proposal in candidates)
+        {
+            if (!revisionsByProposal.TryGetValue(proposal.Id, out var proposalRevisions))
+                continue;
+
+            if (SelectEffectiveRevision(proposal, proposalRevisions) is ProposalRevision selected)
+                effective[proposal.Id] = selected;
+        }
+
+        return effective;
+    }
+
+    /// <summary>
+    /// True when <paramref name="proposal"/> could resolve to an effective revision at all, letting
+    /// read paths skip the revision query for proposals that always use their original operations
+    /// (any status other than PendingReview/Rejected without a pin). This predicate and
+    /// <see cref="SelectEffectiveRevision"/> must stay in agreement: returning false here MUST imply
+    /// the selector would return null, which the list/single parity tests pin across every
+    /// <see cref="ProposalStatus"/>.
+    /// </summary>
+    private static bool CanHaveEffectiveRevision(AutomationProposal proposal) =>
+        proposal.ApprovedRevisionId is not null
+        || proposal.Status is ProposalStatus.PendingReview or ProposalStatus.Rejected;
+
+    /// <summary>
+    /// The single implementation of the effective-revision rules, applied to the revisions of ONE
+    /// proposal. Both the single-proposal read (<see cref="GetEffectiveRevisionAsync"/>) and the
+    /// batched list read (<see cref="GetEffectiveRevisionsAsync"/>) select through this method, so
+    /// there is exactly one copy of the rules to keep correct rather than a duplicate per read shape.
+    /// <paramref name="revisionsForProposal"/> must contain only revisions of
+    /// <paramref name="proposal"/>; ordering within it is irrelevant (selection is explicit).
+    /// </summary>
+    private static ProposalRevision? SelectEffectiveRevision(
+        AutomationProposal proposal,
+        IReadOnlyList<ProposalRevision> revisionsForProposal)
+    {
         if (proposal.ApprovedRevisionId is Guid approvedRevisionId)
-            return await _unitOfWork.ProposalRevisions.GetByIdAsync(approvedRevisionId, cancellationToken);
+        {
+            // Resolved within the proposal's OWN revisions. A pin is only ever set from a revision of
+            // the same proposal (ApproveProposalAsync pins what GetLatestByProposalIdAsync returned),
+            // so this agrees with a global by-id lookup for every reachable state while making a
+            // cross-proposal id structurally unable to render as this proposal's content.
+            // If the pin resolves to nothing, reads fall back to the original operations while Apply
+            // REFUSES outright (AutomationExecutorService.MaterializeEffectiveProposalAsync returns
+            // InvalidOperation rather than executing an unapproved set). That asymmetry is
+            // pre-existing and unreachable in practice — a revision is cascade-owned by its proposal,
+            // so it can only vanish together with the proposal being read.
+            return revisionsForProposal.FirstOrDefault(r => r.Id == approvedRevisionId);
+        }
 
         if (proposal.Status is ProposalStatus.PendingReview)
-            return await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
+        {
+            // Unconditional latest: what the reviewer sees, and what approve would pin. Highest
+            // RevisionNumber, matching IProposalRevisionRepository.GetLatestByProposalIdAsync's
+            // ordering. Deterministic because (ProposalId, RevisionNumber) is uniquely indexed.
+            return revisionsForProposal.MaxBy(r => r.RevisionNumber);
+        }
 
         if (proposal.Status is ProposalStatus.Rejected)
         {
             // Freeze the rejected proposal at decision time. DecidedAt is always set by Reject, but
             // treat a null defensively as "no cutoff" and fall back to the unconditional latest.
             if (proposal.DecidedAt is not DateTime decidedAt)
-                return await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(proposal.Id, cancellationToken);
+                return revisionsForProposal.MaxBy(r => r.RevisionNumber);
 
             // Filter in memory (revision lists are small) rather than relying on EF's SQLite
             // provider to translate a DateTimeOffset-vs-DateTime comparison. RevisedAt is a
             // DateTimeOffset in UTC; compare its UtcDateTime against the UTC DecidedAt.
-            var revisions = await _unitOfWork.ProposalRevisions.GetByProposalIdAsync(proposal.Id, cancellationToken);
-            return revisions
+            return revisionsForProposal
                 .Where(r => r.RevisedAt.UtcDateTime <= decidedAt)
                 .OrderByDescending(r => r.RevisedAt)
                 .ThenByDescending(r => r.RevisionNumber)
@@ -402,18 +503,22 @@ public class AutomationProposalService : IAutomationProposalService
     /// <see cref="ProposalDto.Presentation"/> materialized together from the EFFECTIVE operation
     /// set (the pinned/latest revision when one applies, else the originals), so approve/reject/get
     /// responses no longer echo stale original operations for a revised proposal (#1424) and the
-    /// presentation block can never contradict the operations it accompanies. Deliberate scope
-    /// boundary: only the single-proposal read/decide paths use this builder — the list endpoint
-    /// (<see cref="GetProposalsAsync"/>) maps original operations without a per-proposal revision
-    /// lookup (avoiding an N+1 query); its items still expose
-    /// <see cref="ProposalDto.ApprovedRevisionId"/> so clients can detect a pinned revision.
+    /// presentation block can never contradict the operations it accompanies.
+    /// <para>
+    /// The list endpoint (<see cref="GetProposalsAsync"/>) now maps through the same builder, fed by
+    /// the batched <see cref="GetEffectiveRevisionsAsync"/>, so a review-queue card can no longer
+    /// show the ORIGINAL summary/operations while the detail view, diff and Apply all use the revised
+    /// set (#1444). The earlier original-operations boundary on list reads existed only to avoid a
+    /// per-proposal revision query; the batch read removes that cost, so the boundary is gone rather
+    /// than narrowed. List items continue to expose <see cref="ProposalDto.ApprovedRevisionId"/>.
+    /// </para>
     /// </summary>
     private async Task<Result<ProposalDto>> BuildEffectiveProposalDtoAsync(
         AutomationProposal proposal,
         CancellationToken cancellationToken)
     {
         var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
-        return BuildEffectiveProposalDto(proposal, effectiveRevision);
+        return Result.Success(BuildEffectiveProposalDto(proposal, effectiveRevision));
     }
 
     /// <summary>
@@ -423,16 +528,19 @@ public class AutomationProposalService : IAutomationProposalService
     /// originals when it is null). Split out so callers that have ALREADY read the effective
     /// revision — <see cref="ApproveProposalAsync"/> passes the latest revision it read to pin as
     /// <see cref="AutomationProposal.ApprovedRevisionId"/> — can build the DTO without a redundant
-    /// re-query (Gemini review, #1439).
+    /// re-query (Gemini review, #1439), and the batched list read can build a whole page from one
+    /// revision query (#1444). Returns a bare DTO rather than a <see cref="Result{T}"/> because every
+    /// branch succeeds: an unmaterializable revision degrades to the original operations, it does not
+    /// fail the read.
     /// </summary>
-    private static Result<ProposalDto> BuildEffectiveProposalDto(
+    private static ProposalDto BuildEffectiveProposalDto(
         AutomationProposal proposal,
         ProposalRevision? effectiveRevision)
     {
         var dto = MapToDto(proposal);
 
         if (effectiveRevision is null)
-            return Result.Success(dto);
+            return dto;
 
         if (!ProposalRevisionPayload.TryParseOperations(
                 proposal.Id,
@@ -443,10 +551,10 @@ public class AutomationProposalService : IAutomationProposalService
             // A saved revision is structure-validated at creation, so an unparseable payload is a
             // defensive impossibility. A read must not fail on it — the diff/approve/apply gates
             // own surfacing that error — so fall back to the persisted original operations.
-            return Result.Success(dto);
+            return dto;
         }
 
-        return Result.Success(dto with
+        return dto with
         {
             Operations = revisedOperations,
             Presentation = BuildPresentation(
@@ -454,7 +562,7 @@ public class AutomationProposalService : IAutomationProposalService
                 proposal.RiskLevel,
                 proposal.SourceType,
                 revisedOperations)
-        });
+        };
     }
 
     public async Task<Result<ProposalDto>> RejectProposalAsync(Guid id, Guid decidedByUserId, UpdateProposalStatusDto dto, CancellationToken cancellationToken = default)
