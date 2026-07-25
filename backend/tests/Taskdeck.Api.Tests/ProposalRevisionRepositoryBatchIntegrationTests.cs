@@ -13,22 +13,25 @@ using Xunit;
 namespace Taskdeck.Api.Tests;
 
 /// <summary>
-/// Integration tests for <see cref="ProposalRevisionRepository.GetByProposalIdsAsync"/> against real
-/// SQLite (#1444). The service-level tests mock this repository, so nothing else proves the EF
-/// translation of the batched read, its per-proposal ordering guarantee, or that its chunking never
-/// loses or duplicates a row at a chunk boundary.
+/// Integration tests for the two-phase batched revision read against real SQLite (#1444):
+/// <see cref="ProposalRevisionRepository.GetRefsByProposalIdsAsync"/> (payload-free metadata for a
+/// page) and <see cref="ProposalRevisionRepository.GetByIdsAsync"/> (payloads for the winners only).
+/// The service-level tests mock this repository, so nothing else proves the EF translation, the
+/// per-proposal ordering guarantee, that the ref projection really does not read the payload, or that
+/// chunking never loses or duplicates a row at a boundary.
 /// </summary>
 public sealed class ProposalRevisionRepositoryBatchIntegrationTests
 {
     /// <summary>
-    /// Must match <c>ProposalRevisionRepository.ProposalIdChunkSize</c>. Kept as a local literal
-    /// because the production constant is private; the boundary test below fails loudly if the two
-    /// ever diverge, since the expected query count is derived from this value.
+    /// Must match <c>ProposalRevisionRepository.IdChunkSize</c>. Kept as a local literal because the
+    /// production constant is private; the boundary tests below fail loudly if the two ever diverge,
+    /// since their expected query counts are derived from this value (a chunk size of 300 would give
+    /// 1 query where 2 is expected, and 100 would give 3).
     /// </summary>
     private const int ChunkSize = 200;
 
     [Fact]
-    public async Task GetByProposalIdsAsync_ResolvesEveryProposalInOneQuery_WithRevisionNumberOrderPerProposal()
+    public async Task GetRefsByProposalIdsAsync_ResolvesEveryProposalInOneQuery_WithRevisionNumberOrderPerProposal()
     {
         var (options, interceptor, dbPath) = CreateSqliteOptions();
         try
@@ -52,7 +55,7 @@ public sealed class ProposalRevisionRepositoryBatchIntegrationTests
             var repo = new ProposalRevisionRepository(db);
             interceptor.Clear();
 
-            var batch = await repo.GetByProposalIdsAsync(new[] { first, second });
+            var batch = await repo.GetRefsByProposalIdsAsync(new[] { first, second });
 
             batch.Where(r => r.ProposalId == first).Select(r => r.RevisionNumber).Should().Equal(1, 2, 3);
             batch.Where(r => r.ProposalId == second).Select(r => r.RevisionNumber).Should().Equal(1, 2);
@@ -70,7 +73,7 @@ public sealed class ProposalRevisionRepositoryBatchIntegrationTests
     }
 
     [Fact]
-    public async Task GetByProposalIdsAsync_AcrossAChunkBoundary_ReturnsEveryRowExactlyOnce()
+    public async Task GetRefsByProposalIdsAsync_AcrossAChunkBoundary_ReturnsEveryRowExactlyOnce()
     {
         var (options, interceptor, dbPath) = CreateSqliteOptions();
         try
@@ -91,7 +94,7 @@ public sealed class ProposalRevisionRepositoryBatchIntegrationTests
             var repo = new ProposalRevisionRepository(db);
             interceptor.Clear();
 
-            var batch = await repo.GetByProposalIdsAsync(proposalIds);
+            var batch = await repo.GetRefsByProposalIdsAsync(proposalIds);
 
             batch.Should().HaveCount((ChunkSize + 1) * 2, "no row may be lost or duplicated across chunks");
             batch.Select(r => r.Id).Should().OnlyHaveUniqueItems();
@@ -113,7 +116,162 @@ public sealed class ProposalRevisionRepositoryBatchIntegrationTests
     }
 
     [Fact]
-    public async Task GetByProposalIdsAsync_WithDuplicateIds_DoesNotDuplicateRowsOrQueries()
+    public async Task GetRefsByProposalIdsAsync_AtExactlyOneChunk_IssuesExactlyOneQuery()
+    {
+        // #1444 review: only chunk+1 was covered, so an off-by-one to `offset <= ids.Count` still gave
+        // 2 queries for 201 ids and passed — while every request whose id count is an exact multiple of
+        // the chunk size issued a wasted trailing `IN ()` query. Pin the exact-multiple case.
+        var (options, interceptor, dbPath) = CreateSqliteOptions();
+        try
+        {
+            await using var db = new TaskdeckDbContext(options);
+            await db.Database.MigrateAsync();
+
+            var proposalIds = Enumerable.Range(0, ChunkSize).Select(_ => AddProposal(db)).ToList();
+            foreach (var proposalId in proposalIds)
+                AddRevision(db, proposalId, 1);
+            await db.SaveChangesAsync();
+
+            var repo = new ProposalRevisionRepository(db);
+            interceptor.Clear();
+
+            var batch = await repo.GetRefsByProposalIdsAsync(proposalIds);
+
+            batch.Should().HaveCount(ChunkSize);
+            RevisionSelects(interceptor).Should().HaveCount(1,
+                $"exactly {ChunkSize} ids fill one chunk exactly and must not trigger a trailing empty query");
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_LoadsOnlyTheRequestedRevisions_WithTheirPayloads()
+    {
+        // Phase 2 of the two-phase read: once the refs decide which revisions win, only those are
+        // loaded — and unlike the refs, these carry the payload the DTO builder needs.
+        var (options, interceptor, dbPath) = CreateSqliteOptions();
+        try
+        {
+            await using var db = new TaskdeckDbContext(options);
+            await db.Database.MigrateAsync();
+
+            var proposalId = AddProposal(db);
+            AddRevision(db, proposalId, 1);
+            AddRevision(db, proposalId, 2);
+            AddRevision(db, proposalId, 3);
+            await db.SaveChangesAsync();
+
+            var repo = new ProposalRevisionRepository(db);
+            var all = await repo.GetByProposalIdAsync(proposalId);
+            var wanted = all.Single(r => r.RevisionNumber == 2);
+            interceptor.Clear();
+
+            var loaded = await repo.GetByIdsAsync(new[] { wanted.Id, wanted.Id });
+
+            loaded.Should().ContainSingle("repeated ids are de-duplicated");
+            loaded[0].Id.Should().Be(wanted.Id);
+            loaded[0].RevisedPayload.Should().Be(wanted.RevisedPayload,
+                "phase 2 exists precisely to carry the payload the ref projection omits");
+            RevisionSelects(interceptor).Should().HaveCount(1);
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_WithEmptyIdSet_ReturnsEmptyAndIssuesNoQuery()
+    {
+        // The list read skips phase 2 entirely when no revision won, so the empty short-circuit is on a
+        // real code path, not a defensive nicety (#1444 review).
+        var (options, interceptor, dbPath) = CreateSqliteOptions();
+        try
+        {
+            await using var db = new TaskdeckDbContext(options);
+            await db.Database.MigrateAsync();
+            var repo = new ProposalRevisionRepository(db);
+            interceptor.Clear();
+
+            var loaded = await repo.GetByIdsAsync(Array.Empty<Guid>());
+
+            loaded.Should().BeEmpty();
+            RevisionSelects(interceptor).Should().BeEmpty();
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_AcrossAChunkBoundary_ReturnsEveryRequestedRowExactlyOnce()
+    {
+        var (options, interceptor, dbPath) = CreateSqliteOptions();
+        try
+        {
+            await using var db = new TaskdeckDbContext(options);
+            await db.Database.MigrateAsync();
+
+            var proposalIds = Enumerable.Range(0, ChunkSize + 1).Select(_ => AddProposal(db)).ToList();
+            foreach (var proposalId in proposalIds)
+                AddRevision(db, proposalId, 1);
+            await db.SaveChangesAsync();
+
+            var repo = new ProposalRevisionRepository(db);
+            var revisionIds = (await repo.GetRefsByProposalIdsAsync(proposalIds)).Select(r => r.Id).ToList();
+            revisionIds.Should().HaveCount(ChunkSize + 1);
+            interceptor.Clear();
+
+            var loaded = await repo.GetByIdsAsync(revisionIds);
+
+            loaded.Should().HaveCount(ChunkSize + 1, "no row may be lost or duplicated across chunks");
+            loaded.Select(r => r.Id).Should().OnlyHaveUniqueItems();
+            RevisionSelects(interceptor).Should().HaveCount(2);
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRefsByProposalIdsAsync_DoesNotSelectTheRevisionPayload()
+    {
+        // The whole reason phase 1 exists (#1444 review): RevisedPayload is unbounded, so a page read
+        // must not pull it for revisions that will lose. The ref type has no payload member, so this
+        // asserts the generated SQL itself never mentions the column.
+        var (options, interceptor, dbPath) = CreateSqliteOptions();
+        try
+        {
+            await using var db = new TaskdeckDbContext(options);
+            await db.Database.MigrateAsync();
+
+            var proposalId = AddProposal(db);
+            AddRevision(db, proposalId, 1);
+            await db.SaveChangesAsync();
+
+            var repo = new ProposalRevisionRepository(db);
+            interceptor.Clear();
+
+            await repo.GetRefsByProposalIdsAsync(new[] { proposalId });
+
+            var sql = RevisionSelects(interceptor).Should().ContainSingle().Which;
+            sql.Should().NotContain("RevisedPayload",
+                "the ref projection must not read the unbounded payload column");
+            sql.Should().Contain("RevisionNumber", "but it must read the columns the selector compares");
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task GetRefsByProposalIdsAsync_WithDuplicateIds_DoesNotDuplicateRowsOrQueries()
     {
         var (options, interceptor, dbPath) = CreateSqliteOptions();
         try
@@ -128,7 +286,7 @@ public sealed class ProposalRevisionRepositoryBatchIntegrationTests
             var repo = new ProposalRevisionRepository(db);
             interceptor.Clear();
 
-            var batch = await repo.GetByProposalIdsAsync(new[] { proposalId, proposalId, proposalId });
+            var batch = await repo.GetRefsByProposalIdsAsync(new[] { proposalId, proposalId, proposalId });
 
             batch.Should().ContainSingle("repeated ids are de-duplicated, so a row cannot come back twice");
             RevisionSelects(interceptor).Should().HaveCount(1);
@@ -140,7 +298,7 @@ public sealed class ProposalRevisionRepositoryBatchIntegrationTests
     }
 
     [Fact]
-    public async Task GetByProposalIdsAsync_WithEmptyIdSet_ReturnsEmptyAndIssuesNoQuery()
+    public async Task GetRefsByProposalIdsAsync_WithEmptyIdSet_ReturnsEmptyAndIssuesNoQuery()
     {
         var (options, interceptor, dbPath) = CreateSqliteOptions();
         try
@@ -150,7 +308,7 @@ public sealed class ProposalRevisionRepositoryBatchIntegrationTests
             var repo = new ProposalRevisionRepository(db);
             interceptor.Clear();
 
-            var batch = await repo.GetByProposalIdsAsync(Array.Empty<Guid>());
+            var batch = await repo.GetRefsByProposalIdsAsync(Array.Empty<Guid>());
 
             batch.Should().BeEmpty();
             RevisionSelects(interceptor).Should().BeEmpty(
@@ -163,7 +321,7 @@ public sealed class ProposalRevisionRepositoryBatchIntegrationTests
     }
 
     [Fact]
-    public async Task GetByProposalIdsAsync_MatchesPerProposalRead_ForTheSameProposal()
+    public async Task GetRefsByProposalIdsAsync_MatchesPerProposalRead_ForTheSameProposal()
     {
         // Parity with the single-proposal read this method batches: the effective-revision selector is
         // shared between the list and single paths, so the two repository reads must agree on content.
@@ -182,7 +340,7 @@ public sealed class ProposalRevisionRepositoryBatchIntegrationTests
             var repo = new ProposalRevisionRepository(db);
 
             var single = await repo.GetByProposalIdAsync(proposalId);
-            var batch = await repo.GetByProposalIdsAsync(new[] { proposalId });
+            var batch = await repo.GetRefsByProposalIdsAsync(new[] { proposalId });
 
             batch.Select(r => r.Id).Should().Equal(single.Select(r => r.Id),
                 "the batched read must return the same revisions in the same per-proposal order");
