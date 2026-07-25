@@ -181,7 +181,7 @@ cannot. If the honest answer at the checkpoint is "no", the numbers do not matte
 
 **Any mixed outcome requires an explicit written assessment** — `docs/REVIVAL_PLAN.md` §149 says so
 in as many words ("Any mixed outcome requires an explicit maintainer assessment and plan amendment
-rather than an automatic archive decision"), mirrored in `IMPLEMENTATION_MASTERPLAN.md:103` and
+rather than an automatic archive decision"), mirrored in the masterplan's Checkpoint step and
 `OUTSTANDING_TASKS.md` §E. Silence is not a decision.
 
 ---
