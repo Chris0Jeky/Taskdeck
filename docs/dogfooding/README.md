@@ -121,9 +121,23 @@ Everything below assumes that separation. Without it the numbers mean what they 
 ### 1. Objective usage — `scripts/dogfooding/dogfood-snapshot.py`
 
 ```bash
-python scripts/dogfooding/dogfood-snapshot.py            # uses $TASKDECK_DOGFOOD_DB
-python scripts/dogfooding/dogfood-snapshot.py --markdown # paste-ready block
+# ALWAYS pass --db explicitly, or persist TASKDECK_DOGFOOD_DB for your user.
+# The export above is session-scoped: run this from a fresh terminal a week later and
+# find_db() falls back to a repo-local dev database, silently re-introducing exactly the
+# fixture contamination this protocol exists to prevent -- and the output would look fine.
+python scripts/dogfooding/dogfood-snapshot.py --db "$TASKDECK_DOGFOOD_DB"
+python scripts/dogfooding/dogfood-snapshot.py --db "$TASKDECK_DOGFOOD_DB" --markdown
 ```
+
+To persist it once (PowerShell), so the bare command is safe from any shell:
+
+```powershell
+[Environment]::SetEnvironmentVariable("TASKDECK_DOGFOOD_DB", "$env:USERPROFILE\taskdeck-dogfood\taskdeck.db", "User")
+```
+
+**Check the `Database:` line in the output every time.** It is the first line for exactly this
+reason — if it does not name your dogfooding database, the numbers below it are measuring
+development.
 
 Read-only (`mode=ro`), and reports **counts and dates only** — never card text, comments, chat
 content or transcripts — so its output is safe to paste into an issue. It reports active days,

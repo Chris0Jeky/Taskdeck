@@ -212,12 +212,13 @@ def main() -> None:
         ("AuditLogs", "Timestamp"),
         ("Cards", "CreatedAt"),
         ("AutomationProposals", "CreatedAt"),
-        # A day spent only REVIEWING (approve/reject/defer/dismiss) touches none of the
-        # CreatedAt columns, and DeferProposalAsync deliberately writes no audit row -- so a
-        # pure review day could vanish from the count entirely. Reviewing is the dogfooding.
+        # A day spent only REVIEWING touches none of the CreatedAt columns, so a pure review
+        # day could vanish from the count entirely. Only HUMAN-decision timestamps qualify:
+        # AutomationProposals.UpdatedAt is deliberately EXCLUDED because
+        # ProposalHousekeepingWorker.Expire() bumps it unattended, which would record the
+        # machine ticking over as personal use -- the exact opposite of what this measures.
         ("AutomationProposals", "DecidedAt"),
         ("AutomationProposals", "AppliedAt"),
-        ("AutomationProposals", "UpdatedAt"),
         ("Cards", "UpdatedAt"),
         ("ChatMessages", "CreatedAt"),
         # Captures (including transcript captures) persist as LlmRequests rows, so a day
@@ -265,7 +266,7 @@ def main() -> None:
                 )
             )
             for status, n in rows:
-                p(f"  - {PROPOSAL_STATUS.get(status, f'status {status}')}: {n} ({100*n/total:.0f}%)")
+                p(f"  - {PROPOSAL_STATUS.get(status, f'status {status}')}: {n} ({100*n/total:.1f}%)")
             # Status is NOT the way to count applies. Dismiss() accepts an Applied proposal
             # (CanBeDismissed includes Applied) and OVERWRITES Status with Dismissed, so
             # filing away a completed item erases the evidence that it ever applied. AppliedAt
@@ -278,7 +279,7 @@ def main() -> None:
                 q1(con, "select count(*) from AutomationProposals where DecidedAt is not null") or 0
             )
             p("")
-            p(f"**Reached Apply:** {applied}/{total} ({100*applied/total:.0f}%) "
+            p(f"**Reached Apply:** {applied}/{total} ({100*applied/total:.1f}%) "
               "-- this is the number that says whether the review-first loop pays off. "
               "Counted by `AppliedAt`, not status.")
             if filed:
