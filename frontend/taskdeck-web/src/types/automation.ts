@@ -59,11 +59,20 @@ export interface Proposal {
   /** When set and in the future, the proposal is snoozed (deferred) until this UTC instant. */
   deferredUntil?: string | null
   /**
-   * The revision pinned at approve time, which Apply executes exactly (`#1428`). Null means the
-   * proposal was approved from its original operations. Mirrors
-   * `Taskdeck.Application/DTOs/AutomationProposalDtos.cs` `ProposalDto.ApprovedRevisionId`, which the
-   * backend documents as being on the DTO "so clients can detect a pinned revision" — every read and
-   * decide response carries it, including list items (`#1444`).
+   * The revision pinned at approve time, which Apply executes exactly (`#1428`). Mirrors
+   * `ProposalDto.ApprovedRevisionId` (`Taskdeck.Application/DTOs/AutomationProposalDtos.cs`).
+   *
+   * **Null does NOT mean "approved from the originals".** `AutomationProposal.ApprovedRevisionId` is
+   * written only by `Approve`, so null covers *approved from the original operations* AND *not yet
+   * decided* AND rejected/expired/dismissed — i.e. most proposals in a queue. Reading null as an
+   * approval is the specific mistake this note exists to prevent; a non-null value is the only
+   * positive signal.
+   *
+   * Present on every REST proposal payload — list, single read, and every decide response — because
+   * they all map through `MapToDto`, and true since `#1439` (not `#1444`, which changed which
+   * *operations* list reads return, not whether the pin is carried). Scope: the REST `ProposalDto`
+   * only. The MCP `proposal_detail` resource projects its own object that omits this field entirely,
+   * so an MCP-facing surface cannot rely on it.
    *
    * Contract exposure only: nothing in the UI may assert anything about pinning on the strength of
    * this field without a separate design decision (`#1298` is the standing precedent against the
@@ -71,6 +80,17 @@ export interface Proposal {
    */
   approvedRevisionId?: string | null
 }
+
+/**
+ * The pinned-revision id as the wire carries it. Exported deliberately, and referenced from
+ * production source rather than a spec, because it is the ONLY thing that makes
+ * `Proposal.approvedRevisionId` survive a dead-code sweep: `tsconfig.app.json` excludes
+ * `src/tests/**`, so `npm run typecheck` never type-checks specs, and the field has no consumer yet
+ * (`#1298` forbids a UI claim without a design decision). Deleting the interface member makes this
+ * alias fail to compile, which is the gate the field would otherwise lack entirely (`#1462` review;
+ * the broader "specs are never type-checked" gap is `#1468`).
+ */
+export type ProposalApprovedRevisionId = Proposal['approvedRevisionId']
 
 export interface ProposalFilters {
   status?: ProposalStatus
