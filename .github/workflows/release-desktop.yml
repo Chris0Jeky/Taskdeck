@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing version tag to build and PUBLISH (e.g. v0.2.0). Leave BLANK for a rehearsal: builds and smoke-tests every platform, uploads artifacts, publishes nothing."
+        description: "Existing version tag to build and PUBLISH (e.g. v0.2.0). Leave BLANK when dispatching from a BRANCH for a rehearsal: builds, smoke-tests the runner-native platforms, uploads artifacts, publishes nothing. Dispatching from a TAG ref publishes that tag even with this left blank."
         required: false
         type: string
   push:
