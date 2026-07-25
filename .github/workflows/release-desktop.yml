@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version tag to build (e.g. v0.2.0). Defaults to current ref."
+        description: "Existing version tag to build and PUBLISH (e.g. v0.2.0). Leave BLANK for a rehearsal: builds and smoke-tests every platform, uploads artifacts, publishes nothing."
         required: false
         type: string
   push:
