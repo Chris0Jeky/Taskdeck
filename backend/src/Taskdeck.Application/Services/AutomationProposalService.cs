@@ -389,8 +389,18 @@ public class AutomationProposalService : IAutomationProposalService
         if (!CanHaveEffectiveRevision(proposal))
             return null;
 
-        var revisions = await _unitOfWork.ProposalRevisions.GetByProposalIdAsync(proposal.Id, cancellationToken);
-        return SelectEffectiveRevision(proposal, revisions);
+        // Two-phase (#1444 review): compare metadata to decide which revision wins, then load only
+        // that one's payload. Costs two cheap indexed queries instead of one, and in exchange no read
+        // path ever pulls a revision payload it will not use — the Rejected branch previously loaded
+        // EVERY payload for the proposal, so for that status this is strictly less work.
+        var refs = await _unitOfWork.ProposalRevisions.GetRefsByProposalIdsAsync(
+            new[] { proposal.Id },
+            cancellationToken);
+
+        if (SelectEffectiveRevisionRef(proposal, refs) is not ProposalRevisionRef winner)
+            return null;
+
+        return await _unitOfWork.ProposalRevisions.GetByIdAsync(winner.Id, cancellationToken);
     }
 
     /// <summary>
@@ -411,22 +421,43 @@ public class AutomationProposalService : IAutomationProposalService
         if (candidates.Count == 0)
             return new Dictionary<Guid, ProposalRevision>();
 
-        var revisions = await _unitOfWork.ProposalRevisions.GetByProposalIdsAsync(
+        // Phase 1: metadata for the whole page in one read. Payload-free, so page size drives row
+        // count but never bytes-per-row (#1444 review).
+        var refs = await _unitOfWork.ProposalRevisions.GetRefsByProposalIdsAsync(
             candidates.Select(p => p.Id),
             cancellationToken);
 
-        var revisionsByProposal = revisions
+        var refsByProposal = refs
             .GroupBy(r => r.ProposalId)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<ProposalRevision>)g.ToList());
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<ProposalRevisionRef>)g.ToList());
 
-        var effective = new Dictionary<Guid, ProposalRevision>();
+        var winners = new Dictionary<Guid, Guid>();
         foreach (var proposal in candidates)
         {
-            if (!revisionsByProposal.TryGetValue(proposal.Id, out var proposalRevisions))
+            if (!refsByProposal.TryGetValue(proposal.Id, out var proposalRefs))
                 continue;
 
-            if (SelectEffectiveRevision(proposal, proposalRevisions) is ProposalRevision selected)
-                effective[proposal.Id] = selected;
+            if (SelectEffectiveRevisionRef(proposal, proposalRefs) is ProposalRevisionRef winner)
+                winners[proposal.Id] = winner.Id;
+        }
+
+        if (winners.Count == 0)
+            return new Dictionary<Guid, ProposalRevision>();
+
+        // Phase 2: payloads for the winners only — at most one per proposal, and only for proposals
+        // that actually resolved a revision.
+        var winningRevisions = await _unitOfWork.ProposalRevisions.GetByIdsAsync(
+            winners.Values,
+            cancellationToken);
+        var byRevisionId = winningRevisions.ToDictionary(r => r.Id);
+
+        var effective = new Dictionary<Guid, ProposalRevision>();
+        foreach (var (proposalId, revisionId) in winners)
+        {
+            // Absent only if the row vanished between the two reads; treat it as "no effective
+            // revision", which is the same degradation the single-proposal path applies.
+            if (byRevisionId.TryGetValue(revisionId, out var revision))
+                effective[proposalId] = revision;
         }
 
         return effective;
@@ -434,27 +465,37 @@ public class AutomationProposalService : IAutomationProposalService
 
     /// <summary>
     /// True when <paramref name="proposal"/> could resolve to an effective revision at all, letting
-    /// read paths skip the revision query for proposals that always use their original operations
-    /// (any status other than PendingReview/Rejected without a pin). This predicate and
-    /// <see cref="SelectEffectiveRevision"/> must stay in agreement: returning false here MUST imply
-    /// the selector would return null, which the list/single parity tests pin across every
-    /// <see cref="ProposalStatus"/>.
+    /// read paths skip the revision query entirely for proposals that always use their original
+    /// operations (any status other than PendingReview/Rejected without a pin).
+    /// <para>
+    /// This predicate gates <see cref="SelectEffectiveRevisionRef"/> on BOTH read paths, so
+    /// "false here ⇒ original operations" holds by construction rather than by test. The parity tests
+    /// pin that the two paths AGREE and what each status resolves to; they cannot pin this
+    /// implication, because when the predicate is false the selector is never invoked at all. The
+    /// consequence to remember: adding a branch to the selector for a status this predicate excludes
+    /// would be dead code, and no test would say so (#1444 review).
+    /// </para>
     /// </summary>
     private static bool CanHaveEffectiveRevision(AutomationProposal proposal) =>
         proposal.ApprovedRevisionId is not null
         || proposal.Status is ProposalStatus.PendingReview or ProposalStatus.Rejected;
 
     /// <summary>
-    /// The single implementation of the effective-revision rules, applied to the revisions of ONE
-    /// proposal. Both the single-proposal read (<see cref="GetEffectiveRevisionAsync"/>) and the
+    /// The single implementation of the effective-revision rules, applied to the revision METADATA of
+    /// ONE proposal. Both the single-proposal read (<see cref="GetEffectiveRevisionAsync"/>) and the
     /// batched list read (<see cref="GetEffectiveRevisionsAsync"/>) select through this method, so
-    /// there is exactly one copy of the rules to keep correct rather than a duplicate per read shape.
-    /// <paramref name="revisionsForProposal"/> must contain only revisions of
-    /// <paramref name="proposal"/>; ordering within it is irrelevant (selection is explicit).
+    /// there is exactly one copy of the rules rather than a duplicate per read shape.
+    /// <para>
+    /// Takes <see cref="ProposalRevisionRef"/> rather than the entity because the rules only ever
+    /// compare revision numbers, timestamps and ids — never the payload. That is what lets callers
+    /// avoid loading payloads for revisions that lose (#1444 review).
+    /// </para>
+    /// <paramref name="refsForProposal"/> must contain only refs of <paramref name="proposal"/>;
+    /// ordering within it is irrelevant (selection is explicit).
     /// </summary>
-    private static ProposalRevision? SelectEffectiveRevision(
+    private static ProposalRevisionRef? SelectEffectiveRevisionRef(
         AutomationProposal proposal,
-        IReadOnlyList<ProposalRevision> revisionsForProposal)
+        IReadOnlyList<ProposalRevisionRef> refsForProposal)
     {
         if (proposal.ApprovedRevisionId is Guid approvedRevisionId)
         {
@@ -462,12 +503,19 @@ public class AutomationProposalService : IAutomationProposalService
             // the same proposal (ApproveProposalAsync pins what GetLatestByProposalIdAsync returned),
             // so this agrees with a global by-id lookup for every reachable state while making a
             // cross-proposal id structurally unable to render as this proposal's content.
-            // If the pin resolves to nothing, reads fall back to the original operations while Apply
-            // REFUSES outright (AutomationExecutorService.MaterializeEffectiveProposalAsync returns
-            // InvalidOperation rather than executing an unapproved set). That asymmetry is
-            // pre-existing and unreachable in practice — a revision is cascade-owned by its proposal,
-            // so it can only vanish together with the proposal being read.
-            return revisionsForProposal.FirstOrDefault(r => r.Id == approvedRevisionId);
+            //
+            // Two asymmetries against AutomationExecutorService.MaterializeEffectiveProposalAsync,
+            // stated in full because the containment above is only half the story (#1444 review):
+            //  - Scope: the executor resolves the pin GLOBALLY by id and does not check ProposalId.
+            //    For a pin pointing at ANOTHER proposal's revision, reads would now fall back to the
+            //    originals while Apply would execute the foreign revision — a preview/apply
+            //    divergence in a state where the two previously agreed (both used the foreign one).
+            //  - Missing row: reads fall back to the original operations, while Apply REFUSES
+            //    outright (InvalidOperation) rather than execute an unapproved set.
+            // Both states are unreachable: nothing but Approve writes ApprovedRevisionId, and a
+            // revision is cascade-owned by its proposal with no code path deleting one individually,
+            // so a pin can neither point elsewhere nor dangle while its proposal is readable.
+            return refsForProposal.FirstOrDefault(r => r.Id == approvedRevisionId);
         }
 
         if (proposal.Status is ProposalStatus.PendingReview)
@@ -475,7 +523,7 @@ public class AutomationProposalService : IAutomationProposalService
             // Unconditional latest: what the reviewer sees, and what approve would pin. Highest
             // RevisionNumber, matching IProposalRevisionRepository.GetLatestByProposalIdAsync's
             // ordering. Deterministic because (ProposalId, RevisionNumber) is uniquely indexed.
-            return revisionsForProposal.MaxBy(r => r.RevisionNumber);
+            return refsForProposal.MaxBy(r => r.RevisionNumber);
         }
 
         if (proposal.Status is ProposalStatus.Rejected)
@@ -483,12 +531,12 @@ public class AutomationProposalService : IAutomationProposalService
             // Freeze the rejected proposal at decision time. DecidedAt is always set by Reject, but
             // treat a null defensively as "no cutoff" and fall back to the unconditional latest.
             if (proposal.DecidedAt is not DateTime decidedAt)
-                return revisionsForProposal.MaxBy(r => r.RevisionNumber);
+                return refsForProposal.MaxBy(r => r.RevisionNumber);
 
-            // Filter in memory (revision lists are small) rather than relying on EF's SQLite
-            // provider to translate a DateTimeOffset-vs-DateTime comparison. RevisedAt is a
-            // DateTimeOffset in UTC; compare its UtcDateTime against the UTC DecidedAt.
-            return revisionsForProposal
+            // Compare in memory rather than relying on EF's SQLite provider to translate a
+            // DateTimeOffset-vs-DateTime comparison. RevisedAt is a DateTimeOffset in UTC; compare
+            // its UtcDateTime against the UTC DecidedAt.
+            return refsForProposal
                 .Where(r => r.RevisedAt.UtcDateTime <= decidedAt)
                 .OrderByDescending(r => r.RevisedAt)
                 .ThenByDescending(r => r.RevisionNumber)
@@ -528,10 +576,20 @@ public class AutomationProposalService : IAutomationProposalService
     /// originals when it is null). Split out so callers that have ALREADY read the effective
     /// revision — <see cref="ApproveProposalAsync"/> passes the latest revision it read to pin as
     /// <see cref="AutomationProposal.ApprovedRevisionId"/> — can build the DTO without a redundant
-    /// re-query (Gemini review, #1439), and the batched list read can build a whole page from one
-    /// revision query (#1444). Returns a bare DTO rather than a <see cref="Result{T}"/> because every
-    /// branch succeeds: an unmaterializable revision degrades to the original operations, it does not
-    /// fail the read.
+    /// re-query (Gemini review, #1439), and the batched list read can build a whole page without a
+    /// per-proposal query (#1444). Returns a bare DTO rather than a <see cref="Result{T}"/> because
+    /// every branch succeeds: an unmaterializable revision degrades to the original operations, it does
+    /// not fail the read.
+    /// <para>
+    /// Known unevenness (#1444 review): this overwrites <c>Operations</c> and <c>Presentation</c> but
+    /// leaves the stored <see cref="ProposalDto.DiffPreview"/> alone, so a proposal that carried a
+    /// creation-time preview could in principle expose an original-operations preview beside revised
+    /// operations — the split-brain <see cref="GetTerminalProposalStoredPreviewAsync"/> suppresses on
+    /// the MCP terminal path. Unreachable today: nothing in the backend calls
+    /// <see cref="AutomationProposal.SetDiffPreview"/>, so <c>DiffPreview</c> is always null in
+    /// practice. Deliberately NOT suppressed here — doing so would push more readers onto the
+    /// recorded-operations fallback, which is exactly the surface #1464 is about.
+    /// </para>
     /// </summary>
     private static ProposalDto BuildEffectiveProposalDto(
         AutomationProposal proposal,
