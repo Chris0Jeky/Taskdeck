@@ -13,11 +13,17 @@ using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
-public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
+// Uses the worker-disabled factory (issue #1418, convention #1335): this class seeds a
+// Processing capture that LlmQueueToProposalWorker would otherwise claim and flip to a terminal
+// state mid-test (and Home's PendingReview proposal seeds are likewise shielded from
+// ProposalHousekeepingWorker expiry).
+// Safe because no test here depends on a live worker — all set statuses directly and assert
+// aggregation.
+public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
 
-    public WorkspaceApiTests(TestWebApplicationFactory factory)
+    public WorkspaceApiTests(HostedWorkerDisabledTestWebApplicationFactory factory)
     {
         _factory = factory;
     }
@@ -255,6 +261,36 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Today_ShouldKeepApplyStepIncomplete_WhenProposalReviewedButNotApplied()
+    {
+        // Real capture→review journey WITHOUT an apply: the apply milestone stays open and
+        // onboarding must not be marked complete (the #1301 contract the review flagged).
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "workspace-today-apply-gap");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-today-apply-gap-board");
+
+        await SeedWorkspaceReviewedNotAppliedAsync(user.UserId, board.Id);
+
+        var response = await client.GetAsync("/api/workspace/today");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var today = await response.Content.ReadFromJsonAsync<WorkspaceTodayDto>();
+        today.Should().NotBeNull();
+        today!.Onboarding.IsComplete.Should().BeFalse();
+        today.Onboarding.CurrentStepId.Should().Be("apply-first-proposal");
+        today.Onboarding.Steps.Should().HaveCount(4);
+        today.Onboarding.Steps
+            .Single(step => step.StepId == "review-first-proposal").IsComplete.Should().BeTrue();
+        today.Onboarding.Steps
+            .Single(step => step.StepId == "apply-first-proposal").IsComplete.Should().BeFalse();
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persistedPreference = dbContext.UserPreferences.Single(preference => preference.UserId == user.UserId);
+        persistedPreference.OnboardingCompletedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task AgendaRepository_ShouldOnlyReturnCardsThatNeedAgendaAttention()
     {
         using var client = _factory.CreateClient();
@@ -364,7 +400,10 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
             RiskLevel.Low,
             Guid.NewGuid().ToString("N"),
             boardId);
+        // Carry the proposal all the way to Applied so the capture→review→apply loop
+        // (all four onboarding milestones) completes for the deciding user.
         reviewedProposal.Approve(decidedByUserId ?? userId);
+        reviewedProposal.MarkAsApplied();
 
         dbContext.Columns.Add(column);
         dbContext.Cards.AddRange(overdueCard, dueTodayCard, blockedCard);
@@ -391,6 +430,27 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         dbContext.Columns.Add(column);
         dbContext.LlmRequests.Add(CreateCaptureRequest(userId, boardId, RequestStatus.Pending));
         dbContext.AutomationProposals.Add(proposal);
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    private async Task SeedWorkspaceReviewedNotAppliedAsync(Guid userId, Guid boardId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+
+        var reviewedProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Reviewed but not applied",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString("N"),
+            boardId);
+        // Approved (reviewed) but deliberately NOT applied — the apply milestone must stay open.
+        reviewedProposal.Approve(userId);
+
+        dbContext.LlmRequests.Add(CreateCaptureRequest(userId, boardId, RequestStatus.Pending));
+        dbContext.AutomationProposals.Add(reviewedProposal);
 
         await dbContext.SaveChangesAsync();
     }

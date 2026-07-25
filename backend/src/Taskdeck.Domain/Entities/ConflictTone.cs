@@ -6,7 +6,7 @@ namespace Taskdeck.Domain.Entities;
 /// </summary>
 public enum ConflictTone
 {
-    Warn,
-    Info,
-    Ok
+    Warn = 0,
+    Info = 1,
+    Ok = 2
 }

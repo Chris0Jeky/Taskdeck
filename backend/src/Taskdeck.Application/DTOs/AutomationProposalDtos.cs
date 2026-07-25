@@ -37,6 +37,22 @@ public record ProposalDto(
     /// client clock can resurface it in-session and a re-snooze toast can confirm the new window.
     /// </summary>
     public DateTime? DeferredUntil { get; init; }
+
+    /// <summary>
+    /// The revision pinned at approve time that Apply will materialize (#1428). <c>null</c> is NOT
+    /// an approval signal: <c>Approve</c> is the only writer, so null covers "approved from the
+    /// original operations" AND every proposal Approve never ran on — pending, rejected, expired,
+    /// and dismissed-from-rejected alike. Note that Reject DOES set <see cref="DecidedAt"/>, so
+    /// "not yet decided" does not describe the null set. A non-null value is the only positive signal.
+    /// A set pin also means <see cref="Operations"/> and <see cref="Presentation"/> carry that pinned
+    /// revision's effective operation set — on LIST items as well as on single-proposal responses
+    /// (get by id, approve, reject) since #1444. The former boundary, where list items exposed the pin
+    /// but deliberately mapped the ORIGINAL operations to avoid a per-item revision lookup, is GONE:
+    /// a batched two-phase read resolves the whole page, so a client no longer needs the
+    /// single-proposal read or the diff endpoint to obtain a listed proposal's effective set, and
+    /// doing so would reintroduce the N+1 that boundary existed to avoid.
+    /// </summary>
+    public Guid? ApprovedRevisionId { get; init; }
 }
 
 public record ProposalPresentationDto(

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PaperBoardCard from '../../../views/paper/PaperBoardCard.vue'
 import type { Card } from '../../../types/board'
@@ -85,15 +85,50 @@ describe('PaperBoardCard', () => {
   it('emits click with the card payload when activated', async () => {
     const card = makeCard()
     const wrapper = mount(PaperBoardCard, { props: { card } })
-    await wrapper.trigger('click')
+    await wrapper.find('.paper-board-card__open').trigger('click')
     expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
   })
 
   it('emits click with the card payload from Space key activation', async () => {
     const card = makeCard()
     const wrapper = mount(PaperBoardCard, { props: { card } })
-    await wrapper.trigger('keydown', { key: ' ' })
+    await wrapper.find('.paper-board-card__open').trigger('keydown', { key: ' ' })
     expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
+  })
+
+  it('handles opener Enter without reaching the global board shortcut', () => {
+    const card = makeCard()
+    const wrapper = mount(PaperBoardCard, { props: { card }, attachTo: document.body })
+    const globalKeydown = vi.fn()
+    window.addEventListener('keydown', globalKeydown)
+
+    try {
+      wrapper.find('.paper-board-card__open').element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      )
+
+      expect(wrapper.emitted('click')?.[0]?.[0]).toStrictEqual(card)
+      expect(globalKeydown).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('keydown', globalKeydown)
+      wrapper.unmount()
+    }
+  })
+
+  it('keeps the card opener separate from the pointer-only drag affordance', () => {
+    const wrapper = mount(PaperBoardCard, { props: { card: makeCard() } })
+    const opener = wrapper.find('.paper-board-card__open')
+    const dragHandle = wrapper.find('[data-action="drag-card-handle"]')
+
+    expect(opener.element.tagName).toBe('BUTTON')
+    expect(opener.attributes('data-action')).toBe('open-card')
+    expect(dragHandle.element.tagName).toBe('SPAN')
+    expect(opener.element.contains(dragHandle.element)).toBe(false)
+    expect(dragHandle.attributes('aria-hidden')).toBe('true')
+    expect(dragHandle.attributes('tabindex')).toBeUndefined()
+    expect(dragHandle.attributes('title')).toBe('Drag Set up CI pipeline')
+    expect(wrapper.attributes('role')).toBeUndefined()
+    expect(wrapper.attributes('tabindex')).toBeUndefined()
   })
 
   it('emits dragstart and dragend events', async () => {

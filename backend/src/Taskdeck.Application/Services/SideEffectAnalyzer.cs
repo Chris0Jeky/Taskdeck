@@ -9,7 +9,7 @@ namespace Taskdeck.Application.Services;
 /// <summary>
 /// Analyzes a proposal's operations to produce a 7-category side-effect breakdown
 /// (Cards, Subtasks, Comments, Activity log, Notifications, Webhooks, Calendar)
-/// and a reversibility posture.
+/// and an apply-risk posture.
 /// </summary>
 public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
 {
@@ -46,11 +46,11 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         }
 
         var rows = BuildSideEffectRows(operations, hasActiveWebhooks);
-        var reversibility = ComputeReversibility(operations, proposal.RiskLevel);
+        var applyRisk = ComputeApplyRiskPosture(operations, proposal.RiskLevel);
 
         var dto = new ProposalSideEffectsDto(
             Rows: rows.Select(r => new SideEffectRowDto(r.Key, r.Value, r.Tone.ToString().ToLowerInvariant())).ToList(),
-            Reversibility: new ReversibilityDto(reversibility.Summary, reversibility.Description, reversibility.WindowMs));
+            Reversibility: new ReversibilityDto(applyRisk.Summary, applyRisk.Description, applyRisk.WindowMs));
 
         return Result.Success(dto);
     }
@@ -120,55 +120,49 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         };
     }
 
-    internal static Reversibility ComputeReversibility(
+    internal static Reversibility ComputeApplyRiskPosture(
         IReadOnlyList<AutomationProposalOperation> operations,
         RiskLevel riskLevel)
     {
-        // Base window is 6 hours
+        // WindowMs is retained for the stable side-effect endpoint contract. It is a legacy
+        // review-attention horizon, not an undo or recovery guarantee.
         long windowMs = Reversibility.DefaultWindowMs;
 
-        // Adjust window based on risk level
         string summary;
         string description;
 
         switch (riskLevel)
         {
             case RiskLevel.Critical:
-                windowMs = Reversibility.DefaultWindowMs / 2; // 3 hours -- tighter for critical
-                summary = "3 hours · manual intervention required";
-                description = "Critical-risk operations may require manual intervention to reverse. " +
-                              "Archive and delete operations can be recovered within the window, " +
-                              "but downstream effects (webhooks, notifications) cannot be recalled.";
+                windowMs = Reversibility.DefaultWindowMs / 2;
+                summary = "Critical risk · manual recovery";
+                description = "Critical-risk operations may remove data or trigger downstream effects. " +
+                              "Inspect every operation before applying; recovery may require manual intervention.";
                 break;
 
             case RiskLevel.High:
-                windowMs = Reversibility.DefaultWindowMs; // 6 hours
-                summary = "6 hours · single keystroke";
-                description = "High-risk operations can be reversed within the window. " +
-                              "Card moves and updates are fully reversible; " +
-                              "archived cards can be restored from the archive.";
+                summary = "High risk · inspect every change";
+                description = "High-risk operations can affect multiple records or external systems. " +
+                              "Review targets and downstream effects before applying.";
                 break;
 
             case RiskLevel.Medium:
-                windowMs = Reversibility.DefaultWindowMs; // 6 hours
-                summary = "6 hours · single keystroke";
-                description = "Medium-risk operations are fully reversible within the window. " +
-                              "All board mutations can be undone from the activity log.";
+                summary = "Medium risk · review affected items";
+                description = "Medium-risk operations change board state. " +
+                              "Review the affected items before applying.";
                 break;
 
             case RiskLevel.Low:
             default:
-                windowMs = Reversibility.DefaultWindowMs; // 6 hours
-                summary = "6 hours · single keystroke";
-                description = "Low-risk operations are fully reversible within the window. " +
-                              "All board mutations can be undone from the activity log.";
+                summary = "Low risk · confirm before apply";
+                description = "Low-risk operations still change board state. " +
+                              "Confirm the affected items before applying.";
                 break;
         }
 
-        // If there are no operations, the proposal is a no-op
         if (operations.Count == 0)
         {
-            summary = "6 hours · no operations";
+            summary = "No operations to apply";
             description = "This proposal contains no operations and will have no effect.";
             windowMs = Reversibility.DefaultWindowMs;
         }

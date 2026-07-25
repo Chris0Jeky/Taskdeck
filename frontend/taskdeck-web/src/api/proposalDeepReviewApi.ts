@@ -27,8 +27,11 @@ export interface SideEffectRowDto {
 }
 
 export interface ReversibilityDto {
+  /** Apply-risk summary exposed through the endpoint's stable historical field name. */
   summary: string
+  /** Manual-recovery/impact guidance; does not promise an undo capability. */
   description: string
+  /** Legacy review-attention metadata retained for compatibility. */
   windowMs: number
 }
 
@@ -37,8 +40,31 @@ export interface ProposalSideEffectsDto {
   reversibility: ReversibilityDto
 }
 
+/**
+ * Numeric System.Text.Json enum values emitted by the deep-review API.
+ * Keep these ordinals aligned with the backend enums; API contract coverage
+ * pins the serialized values so an enum reorder cannot silently break Paper.
+ */
+export const conflictToneWireValues = {
+  Warn: 0,
+  Info: 1,
+  Ok: 2,
+} as const
+
+export type ConflictToneWireValue =
+  (typeof conflictToneWireValues)[keyof typeof conflictToneWireValues]
+
+export const cardHistoryStatusWireValues = {
+  Pending: 0,
+  Applied: 1,
+  Past: 2,
+} as const
+
+export type CardHistoryStatusWireValue =
+  (typeof cardHistoryStatusWireValues)[keyof typeof cardHistoryStatusWireValues]
+
 export interface ConflictRowDto {
-  tone: 'Warn' | 'Info' | 'Ok'
+  tone: ConflictToneWireValue
   key: string
   value: string
 }
@@ -47,7 +73,7 @@ export interface CardHistoryRowDto {
   serial: string
   event: string
   age: string
-  status: 'Pending' | 'Applied' | 'Past'
+  status: CardHistoryStatusWireValue
 }
 
 export interface SimilarPastDecisionDto {

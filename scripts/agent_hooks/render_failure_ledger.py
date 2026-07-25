@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,6 +14,7 @@ HEADER = """# Agent Failure Ledger
 
 This is the human-readable view of recurring agent, tool, test, CI, and workflow failures.
 Machine-appended raw entries live in `docs/agentic/failure_ledger.jsonl`.
+Rows sharing a surface and first tracking issue in `future_fix` show only their latest state here; the JSONL retains append-only history.
 
 ## Entries
 
@@ -35,14 +37,42 @@ A ledger entry should become a guide or skill update only when it is reproducibl
 Use `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`; do not mutate root instructions after a single ambiguous failure.
 """
 
+TRACKING_ISSUE = re.compile(r"#\d+")
+
 
 def cell(value: object, limit: int = 160) -> str:
     text = str(value or "").replace("\n", " ").replace("|", "\\|")
     return text[:limit] + ("..." if len(text) > limit else "")
 
 
+def projection_key(entry: dict[str, object], index: int) -> tuple[str, ...]:
+    tracking_issue = TRACKING_ISSUE.search(str(entry.get("future_fix", "")))
+    if tracking_issue is None:
+        return ("row", str(index))
+
+    return ("tracked_failure", str(entry.get("surface", "")), tracking_issue.group(0))
+
+
+def project_latest_entries(entries: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Keep the latest file-order state for each tracked surface/issue pair."""
+    latest_indexes: dict[tuple[str, ...], int] = {}
+    keys: list[tuple[str, ...]] = []
+
+    for index, entry in enumerate(entries):
+        key = projection_key(entry, index)
+        keys.append(key)
+        latest_indexes[key] = index
+
+    return [
+        entry
+        for index, (entry, key) in enumerate(zip(entries, keys, strict=True))
+        if latest_indexes[key] == index
+    ]
+
+
 def main() -> int:
     rows: list[str] = []
+    entries: list[dict[str, object]] = []
     if JSONL.exists():
         for line in JSONL.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -51,6 +81,11 @@ def main() -> int:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(entry, dict):
+                continue
+            entries.append(entry)
+
+        for entry in project_latest_entries(entries):
             date = str(entry.get("ts", ""))[:10] or "unknown"
             rows.append(
                 f"| {cell(date, 20)} | {cell(entry.get('class'), 40)} | {cell(entry.get('surface'), 80)} | "

@@ -44,7 +44,7 @@ describe('proposalDeepReviewApi', () => {
   })
 
   it('fetches conflicts for a proposal', async () => {
-    const conflicts = [{ tone: 'Warn', key: 'stale', value: 'desc' }]
+    const conflicts = JSON.parse('[{"tone":0,"key":"stale","value":"desc"}]')
     vi.mocked(http.get).mockResolvedValue({ data: conflicts })
 
     const result = await proposalDeepReviewApi.getConflicts('p-1')
@@ -54,7 +54,7 @@ describe('proposalDeepReviewApi', () => {
   })
 
   it('fetches card history for a proposal', async () => {
-    const history = [{ serial: '#1', event: 'created', age: '2h', status: 'Applied' }]
+    const history = JSON.parse('[{"serial":"#1","event":"created","age":"2h","status":1}]')
     vi.mocked(http.get).mockResolvedValue({ data: history })
 
     const result = await proposalDeepReviewApi.getHistory('p-1')

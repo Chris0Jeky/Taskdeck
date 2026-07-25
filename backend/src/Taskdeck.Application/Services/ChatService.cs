@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -35,6 +36,7 @@ public class ChatService : IChatService
     private readonly IBoardContextBuilder? _boardContextBuilder;
     private readonly ToolCallingChatOrchestrator? _toolCallingOrchestrator;
     private readonly LlmToolCallingSettings _toolCallingSettings;
+    private readonly ILogger<ChatService>? _logger;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -48,7 +50,8 @@ public class ChatService : IChatService
         ILlmKillSwitchService? killSwitchService = null,
         IBoardContextBuilder? boardContextBuilder = null,
         ToolCallingChatOrchestrator? toolCallingOrchestrator = null,
-        LlmToolCallingSettings? toolCallingSettings = null)
+        LlmToolCallingSettings? toolCallingSettings = null,
+        ILogger<ChatService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -62,6 +65,7 @@ public class ChatService : IChatService
         _boardContextBuilder = boardContextBuilder;
         _toolCallingOrchestrator = toolCallingOrchestrator;
         _toolCallingSettings = toolCallingSettings ?? new LlmToolCallingSettings();
+        _logger = logger;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -123,6 +127,16 @@ public class ChatService : IChatService
 
     public async Task<Result<ChatMessageDto>> SendMessageAsync(Guid sessionId, Guid userId, SendChatMessageDto dto, CancellationToken ct = default)
     {
+        // Atomic quota reservation (issue #1313): reserve a slot before the LLM call, then commit it
+        // with the actual token counts or release it (no usage / failure). The finally guarantees no
+        // reservation leaks on any exit path, including a thrown provider error. Billed usage is
+        // tracked alongside so the finally can SETTLE (commit billed tokens rather than release them)
+        // when the in-try commit itself failed (#1427 review).
+        Guid? quotaReservationId = null;
+        var quotaCommitted = false;
+        string? quotaBilledProvider = null;
+        string? quotaBilledModel = null;
+        var quotaBilledTokens = 0;
         try
         {
             if (string.IsNullOrWhiteSpace(dto.Content))
@@ -172,9 +186,10 @@ public class ChatService : IChatService
 
             if (_quotaService != null)
             {
-                var quotaCheck = await _quotaService.CheckQuotaAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
-                if (!quotaCheck.Allowed)
-                    return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, quotaCheck.DeniedReason ?? "LLM quota exceeded");
+                var reservation = await _quotaService.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
+                if (!reservation.Allowed)
+                    return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, reservation.DeniedReason ?? "LLM quota exceeded");
+                quotaReservationId = reservation.ReservationId;
             }
 
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
@@ -255,14 +270,22 @@ public class ChatService : IChatService
                             proposalId = toolResult.ProposalId.Value;
                         }
 
-                        // Record usage for quota tracking
-                        if (_quotaService != null && toolResult.TokensUsed > 0)
+                        // Finalize the quota reservation with the actual token count
+                        if (_quotaService != null && quotaReservationId is Guid toolResId && toolResult.TokensUsed > 0)
                         {
-                            await _quotaService.RecordUsageAsync(
+                            // CancellationToken.None (M1, #1427 review): once billable tokens exist,
+                            // finalization must not be client-cancellable — a cancelled commit would
+                            // trip the finally-release and erase genuinely billed usage (quota bypass).
+                            quotaBilledProvider = toolResult.Provider;
+                            quotaBilledModel = toolResult.Model;
+                            quotaBilledTokens = toolResult.TokensUsed;
+                            await _quotaService.CommitReservationAsync(
+                                toolResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 toolResult.Provider, toolResult.Model,
                                 toolResult.TokensUsed, 0,
-                                ct);
+                                CancellationToken.None);
+                            quotaCommitted = true;
                         }
                     }
                     else if (!toolResult.IsDegraded && !string.IsNullOrWhiteSpace(toolResult.Content))
@@ -297,14 +320,20 @@ public class ChatService : IChatService
                             IsDegraded: false,
                             Instructions: classifiedInstructions);
 
-                        // Record usage for the already-made call
-                        if (_quotaService != null && toolResult.TokensUsed > 0)
+                        // Finalize the quota reservation for the already-made call
+                        if (_quotaService != null && quotaReservationId is Guid reuseResId && toolResult.TokensUsed > 0)
                         {
-                            await _quotaService.RecordUsageAsync(
+                            // CancellationToken.None (M1, #1427 review): see the tool-result commit above.
+                            quotaBilledProvider = toolResult.Provider;
+                            quotaBilledModel = toolResult.Model;
+                            quotaBilledTokens = toolResult.TokensUsed;
+                            await _quotaService.CommitReservationAsync(
+                                reuseResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 toolResult.Provider, toolResult.Model,
                                 toolResult.TokensUsed, 0,
-                                ct);
+                                CancellationToken.None);
+                            quotaCommitted = true;
                         }
                     }
                     // else: degraded with null content — fall through to single-turn
@@ -348,17 +377,23 @@ public class ChatService : IChatService
                             SystemPrompt: clarificationPrompt);
                         llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
 
-                        // Record usage for quota tracking. The provider reports a combined
-                        // TokensUsed total without an input/output split. Record the full
-                        // total as input tokens and 0 for output until providers surface
+                        // Finalize the quota reservation with the actual token count. The provider
+                        // reports a combined TokensUsed total without an input/output split. Record
+                        // the full total as input tokens and 0 for output until providers surface
                         // separate counts.
-                        if (_quotaService != null && llmResult.TokensUsed > 0)
+                        if (_quotaService != null && quotaReservationId is Guid singleResId && llmResult.TokensUsed > 0)
                         {
-                            await _quotaService.RecordUsageAsync(
+                            // CancellationToken.None (M1, #1427 review): see the tool-result commit above.
+                            quotaBilledProvider = llmResult.Provider;
+                            quotaBilledModel = llmResult.Model;
+                            quotaBilledTokens = llmResult.TokensUsed;
+                            await _quotaService.CommitReservationAsync(
+                                singleResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 llmResult.Provider, llmResult.Model,
                                 llmResult.TokensUsed, 0,
-                                ct);
+                                CancellationToken.None);
+                            quotaCommitted = true;
                         }
                     }
 
@@ -492,6 +527,42 @@ public class ChatService : IChatService
         {
             return Result.Failure<ChatMessageDto>(ex.ErrorCode, ex.Message);
         }
+        finally
+        {
+            // Settle any reservation that was never committed (#1427 review): if billed tokens exist
+            // (the in-try commit itself failed on a DB fault), COMMIT them — releasing would erase real
+            // usage; otherwise release (no-LLM paths, a zero-token call, a pre-billing exception) so the
+            // slot consumes no quota. CancellationToken.None so cleanup runs under a cancelled request
+            // token; try/catch so a settle failure cannot mask the original exception.
+            if (_quotaService != null && quotaReservationId is Guid rid && !quotaCommitted)
+            {
+                try
+                {
+                    if (quotaBilledTokens > 0 && quotaBilledProvider != null && quotaBilledModel != null)
+                    {
+                        await _quotaService.CommitReservationAsync(
+                            rid,
+                            userId, Domain.Enums.LlmSurface.Chat,
+                            quotaBilledProvider, quotaBilledModel,
+                            quotaBilledTokens, 0,
+                            CancellationToken.None);
+                    }
+                    else
+                    {
+                        await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                    }
+                }
+                catch (Exception settleEx)
+                {
+                    _logger?.LogError(
+                        settleEx,
+                        "Quota reservation {ReservationId} settle failed in SendMessageAsync (billed tokens: {Tokens}); " +
+                        "the row stays Reserved until the TTL sweep.",
+                        rid,
+                        quotaBilledTokens);
+                }
+            }
+        }
     }
 
     public async IAsyncEnumerable<LlmTokenEvent> StreamResponseAsync(Guid sessionId, Guid userId, [EnumeratorCancellation] CancellationToken ct = default)
@@ -507,27 +578,23 @@ public class ChatService : IChatService
             yield break;
         }
 
+        // Atomic quota reservation (issue #1313), mirroring the non-streaming path.
+        Guid? quotaReservationId = null;
+        var quotaCommitted = false;
+        var quotaEstimatedTokens = 0;
         if (_quotaService != null)
         {
-            var quotaCheck = await _quotaService.CheckQuotaAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
-            if (!quotaCheck.Allowed)
+            var reservation = await _quotaService.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
+            if (!reservation.Allowed)
             {
-                yield return new LlmTokenEvent(string.Empty, true, Error: quotaCheck.DeniedReason ?? "LLM quota exceeded");
+                yield return new LlmTokenEvent(string.Empty, true, Error: reservation.DeniedReason ?? "LLM quota exceeded");
                 yield break;
             }
+            quotaReservationId = reservation.ReservationId;
+            // Kept for the abandoned-stream settle: with no final usage event, the reserved estimate
+            // is the best available token count to commit.
+            quotaEstimatedTokens = reservation.EstimatedTokens;
         }
-
-        var chatMessages = session.Messages
-            .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
-            .ToList();
-
-        // Build board context for board-scoped sessions
-        var boardContext = await BuildBoardContextForSessionAsync(session, ct);
-
-        var request = new ChatCompletionRequest(
-            chatMessages,
-            Attribution: BuildAttribution(session, userId),
-            BoardContext: boardContext);
 
         // Accumulate streamed content and capture usage from the final token event
         // so we can persist an assistant message and record quota usage after the
@@ -536,43 +603,129 @@ public class ChatService : IChatService
         int? tokensUsed = null;
         string? provider = null;
         string? model = null;
+        // True once the provider has delivered at least one non-error event: the LLM call was made and
+        // tokens flowed, so the reservation is billable even if the final usage event never arrives.
+        var providerStreamed = false;
 
-        await foreach (var token in _llmProvider.StreamAsync(request, ct))
+        // try/finally (no catch — legal around `yield` in an iterator) guarantees the reservation is
+        // settled if the stream throws or yields no usable tokens. The scope opens immediately after
+        // the reservation (Codex P2, #1427): request/board-context construction can throw or be
+        // cancelled, and outside the try that would leak the reserved slot until the TTL sweep,
+        // causing false quota denials for a call that never reached the provider.
+        try
         {
-            contentBuilder.Append(token.Token);
-            if (token.IsComplete)
+            var chatMessages = session.Messages
+                .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
+                .ToList();
+
+            // Build board context for board-scoped sessions
+            var boardContext = await BuildBoardContextForSessionAsync(session, ct);
+
+            var request = new ChatCompletionRequest(
+                chatMessages,
+                Attribution: BuildAttribution(session, userId),
+                BoardContext: boardContext);
+
+            await foreach (var token in _llmProvider.StreamAsync(request, ct))
             {
-                tokensUsed = token.TokensUsed;
-                provider = token.Provider;
-                model = token.Model;
+                // An error event carries no delivered tokens (the adapter surfaced a failure), so it
+                // does not make the stream billable on its own.
+                if (token.Error == null)
+                    providerStreamed = true;
+
+                contentBuilder.Append(token.Token);
+                // Best-known provider/model: any event may carry them; the final usage event is
+                // authoritative and overwrites earlier values.
+                if (token.Provider != null)
+                    provider = token.Provider;
+                if (token.Model != null)
+                    model = token.Model;
+                if (token.IsComplete)
+                    tokensUsed = token.TokensUsed;
+
+                yield return token;
             }
 
-            yield return token;
-        }
+            // Persist the streamed assistant message with token usage so the streaming
+            // path is consistent with the non-streaming SendMessageAsync path.
+            var streamedContent = contentBuilder.ToString();
+            if (!string.IsNullOrEmpty(streamedContent))
+            {
+                var assistantMessage = new ChatMessage(
+                    sessionId,
+                    ChatMessageRole.Assistant,
+                    streamedContent,
+                    tokenUsage: tokensUsed);
+                session.AddMessage(assistantMessage);
+                await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
 
-        // Persist the streamed assistant message with token usage so the streaming
-        // path is consistent with the non-streaming SendMessageAsync path.
-        var streamedContent = contentBuilder.ToString();
-        if (!string.IsNullOrEmpty(streamedContent))
-        {
-            var assistantMessage = new ChatMessage(
-                sessionId,
-                ChatMessageRole.Assistant,
-                streamedContent,
-                tokenUsage: tokensUsed);
-            session.AddMessage(assistantMessage);
-            await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
+            // Finalize the reservation with actual usage, matching the non-streaming path behavior.
+            // CancellationToken.None (M1, #1427 review): once billable tokens exist, finalization
+            // must not be client-cancellable.
+            if (_quotaService != null && quotaReservationId is Guid rid && tokensUsed is > 0 && provider != null && model != null)
+            {
+                await _quotaService.CommitReservationAsync(
+                    rid,
+                    userId, Domain.Enums.LlmSurface.Chat,
+                    provider, model,
+                    tokensUsed.Value, 0,
+                    CancellationToken.None);
+                quotaCommitted = true;
+            }
         }
-
-        // Record usage for quota tracking, matching the non-streaming path behavior
-        if (_quotaService != null && tokensUsed is > 0 && provider != null && model != null)
+        finally
         {
-            await _quotaService.RecordUsageAsync(
-                userId, Domain.Enums.LlmSurface.Chat,
-                provider, model,
-                tokensUsed.Value, 0,
-                ct);
+            // Settle, don't just release (M1 + P1, #1427 review): a provider-started stream is
+            // billable. (a) Final usage known → commit the actuals. (b) The provider delivered at
+            // least one token but the client abandoned the stream (disconnect/dispose) before the
+            // final usage event → commit the reserved estimate; releasing here would let a client
+            // that reads one token and disconnects run unmetered LLM calls, a quota bypass.
+            // (c) The provider never delivered anything → nothing billable, release the slot.
+            // try/catch so a settle failure (this finally also runs during iterator disposal)
+            // cannot mask the original exception.
+            if (_quotaService != null && quotaReservationId is Guid rid && !quotaCommitted)
+            {
+                try
+                {
+                    if (tokensUsed is > 0 && provider != null && model != null)
+                    {
+                        await _quotaService.CommitReservationAsync(
+                            rid,
+                            userId, Domain.Enums.LlmSurface.Chat,
+                            provider, model,
+                            tokensUsed.Value, 0,
+                            CancellationToken.None);
+                    }
+                    else if (providerStreamed)
+                    {
+                        // No final count exists, so the reserved estimate is committed as input tokens
+                        // (output 0) — the deliberate over-count-not-bypass posture: better to charge
+                        // the estimate than to let abandonment erase real usage. Unknown provider/model
+                        // fall back to the repository's reservation placeholder.
+                        await _quotaService.CommitReservationAsync(
+                            rid,
+                            userId, Domain.Enums.LlmSurface.Chat,
+                            provider ?? string.Empty, model ?? string.Empty,
+                            quotaEstimatedTokens, 0,
+                            CancellationToken.None);
+                    }
+                    else
+                    {
+                        await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                    }
+                }
+                catch (Exception settleEx)
+                {
+                    _logger?.LogError(
+                        settleEx,
+                        "Quota reservation {ReservationId} settle failed in StreamResponseAsync (billed tokens: {Tokens}); " +
+                        "the row stays Reserved until the TTL sweep.",
+                        rid,
+                        tokensUsed ?? 0);
+                }
+            }
         }
     }
 

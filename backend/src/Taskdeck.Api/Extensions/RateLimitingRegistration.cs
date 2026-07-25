@@ -17,6 +17,28 @@ public static class RateLimitingRegistration
         RateLimitingSettings settings)
     {
         services.AddRateLimiter(options => ConfigureRateLimiting(options, settings));
+
+        // Factory registrations (not pre-built instances): the container disposes only singletons it
+        // constructed itself, so `AddSingleton(new ...)` would leak each limiter's background
+        // replenishment timer past host shutdown (one leaked timer per WebApplicationFactory host in
+        // tests). Both limiters are IDisposable; factory registration ties their disposal to the host.
+        // Construction is therefore lazy (first resolution, not registration) — callers that must
+        // fail fast on invalid settings validate BEFORE calling this method (see the standalone host
+        // in Program.cs), so the ordering guarantee is unchanged.
+        services.AddSingleton(_ => new McpAuthenticationAttemptLimiter(
+            settings.McpAuthenticationPerIp,
+            settings.McpAuthenticationPerIpConcurrency));
+
+        // Per-key MCP budget is enforced inside ApiKeyMiddleware (#1384), not as an endpoint-stage
+        // policy, so it charges once at the earliest point the key ID is known. Registered only when
+        // rate limiting is enabled: ApiKeyMiddleware resolves it optionally and skips the check when
+        // absent, preserving the "no MCP throttling when disabled" behaviour. Both the co-hosted API
+        // and the standalone MCP host call this method, so both pipelines get the same enforcement.
+        if (settings.Enabled)
+        {
+            services.AddSingleton(_ => new McpPerApiKeyRateLimiter(settings.McpPerApiKey));
+        }
+
         return services;
     }
 
@@ -80,12 +102,10 @@ public static class RateLimitingRegistration
             return BuildFixedWindowPartition(partitionKey, settings.NoteImportPerUser);
         });
 
-        options.AddPolicy(RateLimitingPolicyNames.McpPerApiKey, httpContext =>
-        {
-            // Partition by API key user or fall back to IP for unauthenticated attempts.
-            var partitionKey = $"mcp-apikey:{ResolveUserOrClientIdentifier(httpContext)}";
-            return BuildFixedWindowPartition(partitionKey, settings.McpPerApiKey);
-        });
+        // The per-key MCP budget (McpPerApiKey) is no longer an endpoint-stage policy: it is enforced
+        // inside ApiKeyMiddleware via McpPerApiKeyRateLimiter (#1384), before the user lookup and
+        // last-used write, so a valid-but-over-quota key cannot drive that per-request database work.
+        // Registering it here as well would double-charge requests that pass the early check.
 
         options.AddPolicy(RateLimitingPolicyNames.TokenRefreshPerUser, httpContext =>
         {

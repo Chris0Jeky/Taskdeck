@@ -296,6 +296,146 @@ public class AutomationExecutorServiceTests
     }
 
     [Fact]
+    public async Task ExecuteProposal_ShouldMaterializePinnedRevision_NotLatest()
+    {
+        // #1428: Apply materializes the revision pinned at approve time (proposal.ApprovedRevisionId),
+        // looked up by id — NOT the latest revision. This pins that the executor no longer consults
+        // GetLatestByProposalIdAsync, so a later revision cannot hijack the applied operations.
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "board",
+                    targetId = board.Id.ToString(),
+                    parameters = $$"""{"boardId":"{{board.Id}}","name":"Pinned Rename"}""",
+                    idempotencyKey = "pinned-key"
+                }
+            }
+        });
+        var pinnedRevision = new ProposalRevision(proposalId, 1, userId, revisedPayload, "pinned edit");
+
+        // The DTO carries the pin; its own Operations are irrelevant (materialization replaces them).
+        var proposal = CreateApprovedProposal(proposalId, userId, board.Id, new List<ProposalOperationDto>()) with
+        {
+            ApprovedRevisionId = pinnedRevision.Id
+        };
+        var proposalEntity = CreateApprovedProposalEntity(userId, board.Id);
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _proposalRevisionRepoMock.Setup(r => r.GetByIdAsync(pinnedRevision.Id, default))
+            .ReturnsAsync(pinnedRevision);
+        _policyEngineMock.Setup(e => e.ValidatePolicy(It.IsAny<ProposalDto>())).Returns(Result.Success());
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(
+                userId, board.Id, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .ReturnsAsync(Result.Success());
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
+
+        // Act
+        var result = await _service.ExecuteProposalAsync(proposalId, "execution-key");
+
+        // Assert: succeeded by materializing the PINNED revision, never consulting the latest.
+        result.IsSuccess.Should().BeTrue();
+        _proposalRevisionRepoMock.Verify(r => r.GetByIdAsync(pinnedRevision.Id, default), Times.Once);
+        _proposalRevisionRepoMock.Verify(
+            r => r.GetLatestByProposalIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(a => a.EntityType == "board" && a.EntityId == board.Id),
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_WithNullPin_ShouldApplyOriginalOperations_IgnoringAnyRevision()
+    {
+        // #1428, null-pin direction: a proposal approved from its original operations pins nothing,
+        // so Apply runs the original operations and never looks up a revision at all.
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var operations = new List<ProposalOperationDto>
+        {
+            new(
+                Guid.NewGuid(),
+                proposalId,
+                0,
+                "update",
+                "board",
+                board.Id.ToString(),
+                $$"""{"boardId":"{{board.Id}}","name":"Original Rename"}""",
+                "key1",
+                null)
+        };
+
+        // ApprovedRevisionId defaults to null on CreateApprovedProposal.
+        var proposal = CreateApprovedProposal(proposalId, userId, board.Id, operations);
+        var proposalEntity = CreateApprovedProposalEntity(userId, board.Id);
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, default))
+            .ReturnsAsync(Result.Success());
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
+
+        // Act
+        var result = await _service.ExecuteProposalAsync(proposalId, "execution-key");
+
+        // Assert: applied the originals without any revision lookup.
+        result.IsSuccess.Should().BeTrue();
+        _proposalRevisionRepoMock.Verify(
+            r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _proposalRevisionRepoMock.Verify(
+            r => r.GetLatestByProposalIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_WithDanglingPin_ShouldRefuseAsInvariantViolation_NotNotFound()
+    {
+        // #1428 defensive branch: a pinned revision is cascade-owned by its proposal, so a
+        // missing pinned revision is a server invariant violation, not a lookup miss. The
+        // executor must refuse with InvalidOperation — NotFound would misread as "proposal not
+        // found" for a proposal that plainly exists — and must never fall back to the
+        // unapproved original operations.
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var danglingRevisionId = Guid.NewGuid();
+
+        var proposal = CreateApprovedProposal(proposalId, userId, board.Id, new List<ProposalOperationDto>()) with
+        {
+            ApprovedRevisionId = danglingRevisionId
+        };
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _proposalRevisionRepoMock.Setup(r => r.GetByIdAsync(danglingRevisionId, default))
+            .ReturnsAsync((ProposalRevision?)null);
+
+        // Act
+        var result = await _service.ExecuteProposalAsync(proposalId, "execution-key");
+
+        // Assert: refused as an invariant violation before any transaction begins.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Contain(danglingRevisionId.ToString());
+        result.ErrorMessage.Should().Contain("invariant");
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task ExecuteProposal_ShouldMarkLinkedCaptureAsConverted_WhenCaptureBackedProposalIsApplied()
     {
         var proposalId = Guid.NewGuid();

@@ -69,7 +69,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
           cache: true
@@ -79,7 +79,7 @@ jobs:
             backend/Directory.Packages.props
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
@@ -162,6 +162,7 @@ jobs:
           # Use || true to capture the exit code for the analysis step.
           k6_exit=0
           docker run --rm --network host \
+            --user "$(id -u):$(id -g)" \
             -e K6_BASE_URL="http://127.0.0.1:5000/api" \
             -e K6_VUS="$K6_VUS" \
             -e K6_DURATION="$K6_DURATION" \
@@ -176,17 +177,17 @@ jobs:
 
           echo "k6_exit_code=$k6_exit" >> "$GITHUB_ENV"
 
+      - name: Require k6 summary artifact
+        if: always()
+        run: node scripts/ci/require-k6-summary.mjs frontend/taskdeck-web/test-results/perf/k6-summary.json
+
       - name: Analyze k6 thresholds
         if: always()
         run: |
-          if [ -f frontend/taskdeck-web/test-results/perf/k6-summary.json ]; then
-            node scripts/ci/check-k6-thresholds.mjs \
-              frontend/taskdeck-web/test-results/perf/k6-summary.json \
-              --fail-on-breach \
-              --output-json frontend/taskdeck-web/test-results/perf/k6-threshold-report.json
-          else
-            echo "::warning::k6 summary file not found — threshold analysis skipped."
-          fi
+          node scripts/ci/check-k6-thresholds.mjs \
+            frontend/taskdeck-web/test-results/perf/k6-summary.json \
+            --fail-on-breach \
+            --output-json frontend/taskdeck-web/test-results/perf/k6-threshold-report.json
 
       - name: Fail if k6 thresholds breached
         if: always()

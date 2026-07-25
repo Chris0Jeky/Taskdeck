@@ -5,7 +5,7 @@ namespace Taskdeck.Application.Services;
 
 /// <summary>
 /// Analyzes a proposal's operations to produce a 7-category side-effect breakdown
-/// and a reversibility posture.
+/// and an apply-risk posture.
 /// </summary>
 public interface ISideEffectAnalyzer
 {

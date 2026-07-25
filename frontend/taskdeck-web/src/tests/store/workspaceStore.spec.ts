@@ -108,9 +108,13 @@ describe('workspaceStore', () => {
     await store.updateMode('agent')
 
     expect(store.mode).toBe('agent')
-    expect(store.onboarding?.visibility).toBe('dismissed')
     expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
+    expect(store.preferencesHydrated).toBe(true)
     expect(workspaceApi.updatePreferences).toHaveBeenCalledWith({ workspaceMode: 'agent' })
+    // Writes confirm, never re-apply (issue #1343): the save's response is an
+    // echo and must not write field values back — its onboarding payload does
+    // NOT apply. Onboarding state arrives via reads (summary/hydrate) instead.
+    expect(store.onboarding).toBeNull()
   })
 
   it('keeps the latest mode when an older hydration request resolves after an update', async () => {
@@ -161,6 +165,30 @@ describe('workspaceStore', () => {
 
     expect(store.mode).toBe('agent')
     expect(toastMocks.warning).toHaveBeenCalledWith('save failed. Keeping the local selection for now.')
+  })
+
+  it('uses plain-language fallbacks when a failed request has no message', async () => {
+    const store = useWorkspaceStore()
+
+    vi.mocked(workspaceApi.getPreferences).mockRejectedValueOnce(null)
+    await store.hydratePreferences()
+    expect(store.preferenceError).toBe("We couldn't load your workspace preferences")
+
+    vi.mocked(workspaceApi.updatePreferences).mockRejectedValueOnce(null)
+    await store.updateMode('workbench')
+    expect(store.preferenceError).toBe("We couldn't save this workspace mode")
+
+    vi.mocked(workspaceApi.getHomeSummary).mockRejectedValueOnce(null)
+    await store.fetchHomeSummary().catch(() => undefined)
+    expect(store.homeError).toBe("We couldn't load your workspace overview")
+
+    vi.mocked(workspaceApi.getTodaySummary).mockRejectedValueOnce(null)
+    await store.fetchTodaySummary().catch(() => undefined)
+    expect(store.todayError).toBe("We couldn't load today's overview")
+
+    vi.mocked(workspaceApi.updateOnboarding).mockRejectedValueOnce(null)
+    await store.updateOnboarding('replay').catch(() => undefined)
+    expect(store.preferenceError).toBe("We couldn't update the setup guide")
   })
 
   it('loads home summary and syncs mode and onboarding from the payload', async () => {

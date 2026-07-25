@@ -43,8 +43,22 @@ public static class SettingsRegistration
         };
         services.AddSingleton(databaseExportImportSettings);
 
+        var artefactStorageSettings = configuration.GetSection("Artefacts").Get<ArtefactStorageSettings>()
+            ?? new ArtefactStorageSettings();
+        services.AddSingleton(artefactStorageSettings);
+
+        // Extraction permit gate: a process-wide singleton so its permits bound the
+        // number of concurrent (and concurrently-abandoned) parse workers box-wide.
+        // Built from the same ArtefactStorageSettings bound just above.
+        services.AddSingleton<ArtefactExtractionGate>();
+
         jwtSettings = configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
         services.AddSingleton(jwtSettings);
+
+        var registrationSettings = configuration
+            .GetSection("Auth:Registration")
+            .Get<RegistrationSettings>() ?? new RegistrationSettings();
+        services.AddSingleton(registrationSettings);
 
         gitHubOAuthSettings = configuration.GetSection("GitHubOAuth").Get<GitHubOAuthSettings>() ?? new GitHubOAuthSettings();
         services.AddSingleton(gitHubOAuthSettings);

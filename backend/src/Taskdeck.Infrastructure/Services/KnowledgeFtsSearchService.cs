@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -117,7 +118,9 @@ public class KnowledgeFtsSearchService : IFtsKnowledgeSearchService
         return string.Join(" ", words);
     }
 
-    private static KnowledgeSearchResultDto MapRowToDto(KnowledgeSearchRow row)
+    // Internal (not private) so the culture-regression test can call it directly via
+    // InternalsVisibleTo("Taskdeck.Api.Tests") — see KnowledgeFtsSearchServiceCultureTests.
+    internal static KnowledgeSearchResultDto MapRowToDto(KnowledgeSearchRow row)
     {
         Guid? boardId = null;
         if (!string.IsNullOrEmpty(row.BoardId) && Guid.TryParse(row.BoardId, out var parsedBoardId))
@@ -131,7 +134,12 @@ public class KnowledgeFtsSearchService : IFtsKnowledgeSearchService
             ? parsedDocId
             : Guid.Empty;
 
-        var createdAt = DateTimeOffset.TryParse(row.CreatedAt, out var parsedDate)
+        // InvariantCulture: EF Core stores DateTimeOffset in SQLite as invariant TEXT
+        // ("yyyy-MM-dd HH:mm:ss.FFFFFFFzzz"). A culture-sensitive TryParse would fail on hosts
+        // whose culture uses a non-':' time separator and silently yield DateTimeOffset.MinValue
+        // (issue #1393 bug class, read side).
+        var createdAt = DateTimeOffset.TryParse(
+            row.CreatedAt, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate)
             ? parsedDate
             : DateTimeOffset.MinValue;
 

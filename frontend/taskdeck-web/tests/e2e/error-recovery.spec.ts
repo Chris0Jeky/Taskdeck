@@ -22,7 +22,7 @@ import { assertOk } from './support/httpAsserts'
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'error-recovery')
+  auth = await registerAndAttachSession(page, request, 'error-recovery', { theme: 'legacy' })
 })
 
 // ─── Scenario 1: Board load failure → error state shown → retry succeeds ─────
@@ -326,10 +326,35 @@ test('boards list API failure should show error in boards workspace', async ({ p
 // mode", exercised by smoke.spec.ts). On a failed PUT the workspace store
 // keeps the local selection and raises a warning toast (role="status"):
 // "<message>. Keeping the local selection for now."
+//
+// This scenario also pins the ordering guard from issue #1343: a Home summary
+// response that started BEFORE the user's newer mode choice must not overwrite
+// it when it resolves afterward. Rather than depend on CI timing (the original
+// flake source), we hold the first Home summary GET until after the user has
+// switched to `workbench`, and rewrite that held response to carry the stale
+// `guided` mode. With the guard the newer local choice survives; without it the
+// late summary silently overwrites the selection.
 
 test('workspace preferences save failure should show error and not silently discard input', async ({ page }) => {
-  await page.goto('/workspace/home')
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
+  let releaseHome!: () => void
+  const homeReleased = new Promise<void>((resolve) => { releaseHome = resolve })
+  let homeHeld = false
+
+  // Hold the FIRST Home summary GET (topbar select stays reachable while it is
+  // pending) and force its payload to the stale `guided` mode. Later GETs pass
+  // through untouched.
+  await page.route('**/api/workspace/home', async (route) => {
+    if (route.request().method() !== 'GET' || homeHeld) {
+      await route.continue()
+      return
+    }
+    homeHeld = true
+    const response = await route.fetch()
+    const payload = await response.json()
+    payload.workspaceMode = 'guided'
+    await homeReleased
+    await route.fulfill({ response, json: payload })
+  })
 
   // Intercept the preferences PUT and simulate a server error
   await page.route('**/api/workspace/preferences', async (route) => {
@@ -347,8 +372,13 @@ test('workspace preferences save failure should show error and not silently disc
     await route.continue()
   })
 
+  await page.goto('/workspace/home')
+
+  // The mode selector lives in the always-mounted top bar, so it is reachable
+  // while the Home summary is still held. It starts at the local default.
   const workspaceModeSelect = page.getByLabel('Workspace mode')
   await expect(workspaceModeSelect).toBeVisible({ timeout: 5_000 })
+  await expect(workspaceModeSelect).toHaveValue('guided')
 
   const failedSave = page.waitForResponse((response) =>
     response.url().includes('/api/workspace/preferences') &&
@@ -356,6 +386,17 @@ test('workspace preferences save failure should show error and not silently disc
     response.status() === 500)
   await workspaceModeSelect.selectOption('workbench')
   await failedSave
+
+  // Optimistic local selection is applied immediately, before the save settles.
+  await expect(workspaceModeSelect).toHaveValue('workbench')
+
+  // Release the stale Home summary now — it began before the mode change, so the
+  // #1343 ordering guard must drop its mode rather than restore `guided`.
+  const lateHome = page.waitForResponse((response) =>
+    response.url().includes('/api/workspace/home') &&
+    response.request().method() === 'GET')
+  releaseHome()
+  await lateHome
 
   // The save attempt surfaces a warning toast naming the failure.
   // The preferences PUT is idempotent, so httpRetry.ts retries it 3 times
@@ -368,6 +409,23 @@ test('workspace preferences save failure should show error and not silently disc
     page.getByText(/failed to save workspace/i).first(),
   ).toBeVisible({ timeout: 20_000 })
 
-  // The user's selection is kept locally rather than silently discarded
+  // The user's selection is kept locally rather than silently discarded, even
+  // after the late `guided` summary landed.
+  await expect(workspaceModeSelect).toHaveValue('workbench')
+
+  // Post-failed-save re-navigation (issue #1343 unsaved-choice seam): a FRESH
+  // summary fetched after the failed save still carries the server's stale
+  // mode — the intercepted PUT never reached the server, so it truly holds
+  // `guided`. The session-scoped unsaved-choice flag must keep `workbench`.
+  // Navigate client-side only: a full reload starts a new session, which
+  // legitimately re-syncs from server truth.
+  const todaySummaryFetch = page.waitForResponse((response) =>
+    response.url().includes('/api/workspace/today') &&
+    response.request().method() === 'GET')
+  await page.getByRole('link', { name: 'Today' }).click()
+  await todaySummaryFetch
+
+  // The fresh Today summary (server mode `guided`) must not revert the
+  // unsaved local choice.
   await expect(workspaceModeSelect).toHaveValue('workbench')
 })

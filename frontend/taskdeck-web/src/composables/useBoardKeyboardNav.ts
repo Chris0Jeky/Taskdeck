@@ -6,6 +6,11 @@ import type { Card, Column } from '../types/board'
  * Composable encapsulating card/column keyboard navigation state and actions
  * for the board view. Also provides keyboard-driven card movement between
  * columns (Alt+Left/Right) and reordering within a column (Alt+Up/Down).
+ *
+ * Selection movement is focus-aware (roving pattern): when DOM focus sits
+ * inside a card while J/K/H/L (or plain arrows) change the selection, focus
+ * follows the newly selected card's activator so Enter always opens the card
+ * the user sees highlighted. See `withFocusFollowingSelection`.
  */
 export function useBoardKeyboardNav(
   sortedColumns: ComputedRef<Column[]>,
@@ -17,11 +22,58 @@ export function useBoardKeyboardNav(
   const selectedCardId = ref<string | null>(null)
   const selectedColumnIndex = ref<number>(0)
 
+  function cardActivator(cardElement: HTMLElement): HTMLElement {
+    return cardElement.querySelector<HTMLElement>('[data-action="open-card"]') ?? cardElement
+  }
+
   function cardsForColumn(columnId: string): Card[] {
     return cardsByColumnSource?.value.get(columnId) ?? boardStore.cardsByColumn.get(columnId) ?? []
   }
 
+  function focusIsWithinBoardCard(): boolean {
+    const active = document.activeElement
+    return active instanceof Element && active.closest('[data-card-id]') !== null
+  }
+
+  /**
+   * Roving focus for selection movement: when a board selection shortcut
+   * (J/K/H/L or plain arrows) changes the selected card while DOM focus sits
+   * inside a card (e.g. on its `data-action="open-card"` activator), focus
+   * follows the new selection so the focused card and the visible selection
+   * highlight can never disagree — the focused opener's own Enter handler and
+   * the global Enter shortcut then open the same card. When focus is elsewhere
+   * (body, composer, modal), selection movement leaves focus untouched.
+   */
+  function withFocusFollowingSelection(applySelection: () => void) {
+    const focusWasWithinCard = focusIsWithinBoardCard()
+    const previousCardId = selectedCardId.value
+    applySelection()
+    if (
+      focusWasWithinCard &&
+      selectedCardId.value !== null &&
+      selectedCardId.value !== previousCardId
+    ) {
+      void focusSelectedCard()
+    }
+  }
+
   function selectNextCard() {
+    withFocusFollowingSelection(applySelectNextCard)
+  }
+
+  function selectPreviousCard() {
+    withFocusFollowingSelection(applySelectPreviousCard)
+  }
+
+  function selectNextColumn() {
+    withFocusFollowingSelection(applySelectNextColumn)
+  }
+
+  function selectPreviousColumn() {
+    withFocusFollowingSelection(applySelectPreviousColumn)
+  }
+
+  function applySelectNextCard() {
     const columns = sortedColumns.value
     if (columns.length === 0) return
 
@@ -42,7 +94,7 @@ export function useBoardKeyboardNav(
     }
   }
 
-  function selectPreviousCard() {
+  function applySelectPreviousCard() {
     const columns = sortedColumns.value
     if (columns.length === 0) return
 
@@ -63,7 +115,7 @@ export function useBoardKeyboardNav(
     }
   }
 
-  function selectNextColumn() {
+  function applySelectNextColumn() {
     const columns = sortedColumns.value
     if (columns.length === 0) return
 
@@ -77,7 +129,7 @@ export function useBoardKeyboardNav(
     }
   }
 
-  function selectPreviousColumn() {
+  function applySelectPreviousColumn() {
     const columns = sortedColumns.value
     if (columns.length === 0) return
 
@@ -115,7 +167,7 @@ export function useBoardKeyboardNav(
     if (!cardElement) return
 
     cardElement.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    cardElement.click()
+    cardActivator(cardElement).click()
   }
 
   function createCardInSelectedColumn() {
@@ -159,7 +211,7 @@ export function useBoardKeyboardNav(
     ) as HTMLElement | null
     if (el) {
       el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-      el.focus()
+      cardActivator(el).focus()
     }
   }
 

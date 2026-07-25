@@ -67,6 +67,21 @@ public class AutomationPolicyEngineTests
         risk.Should().Be(RiskLevel.Low);
     }
 
+    [Theory]
+    [InlineData("update", "{\"dueDate\":\"2026-07-14T00:00:00+00:00\"}")]
+    [InlineData("add-label", "{\"labelName\":\"urgent\"}")]
+    [InlineData("remove-label", "{\"labelName\":\"urgent\"}")]
+    public void ClassifyRisk_ShouldReturnLow_ForReversibleCardMetadataChanges(string actionType, string parameters)
+    {
+        var operations = new List<ProposalOperationDto>
+        {
+            new(Guid.NewGuid(), Guid.NewGuid(), 0, actionType, "card", Guid.NewGuid().ToString(), parameters, "key1", null)
+        };
+
+        _engine.ClassifyRisk(operations).Should().Be(RiskLevel.Low,
+            "due-date and label metadata changes follow the existing reversible card-update category pending #1307");
+    }
+
     [Fact]
     public void ClassifyRisk_ShouldReturnMedium_ForArchiveOperation()
     {
@@ -183,6 +198,29 @@ public class AutomationPolicyEngineTests
         result.IsSuccess.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("\"text\"")]
+    public async Task ValidatePermissions_ShouldReturnValidationError_ForNonObjectParameters(string parameters)
+    {
+        var userId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedPassword");
+        var operations = new List<ProposalOperationDto>
+        {
+            new(Guid.NewGuid(), Guid.NewGuid(), 0, "create", "card", null, parameters, "key1", null)
+        };
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+
+        var result = await _engine.ValidatePermissionsAsync(userId, null, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("JSON object");
+    }
+
     [Fact]
     public async Task ValidatePermissions_ShouldReturnFailure_ForInvalidUserId()
     {
@@ -269,6 +307,114 @@ public class AutomationPolicyEngineTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    // #1426: the empty-operations case must run the FULL requester/board access gate — only the
+    // per-operation contract checks are operation-dependent. The three tests below pin that an
+    // operation-less proposal is gated on board existence and board access exactly like an
+    // operation-bearing one; previously the empty-list short-circuit returned Success with the
+    // board half skipped (the trap that forced every new consumer to add a manual fallback).
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldReturnNotFound_ForEmptyOperations_WhenBoardMissing()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedPassword");
+        var operations = new List<ProposalOperationDto>();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync((Board?)null);
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldReturnValidationError_ForNullOperations()
+    {
+        // Arrange: a null operations argument is guarded before any work, returning the method's
+        // own ValidationError rather than throwing ArgumentNullException from ToList().
+        var userId = Guid.NewGuid();
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, null, null!);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldReturnNotFound_ForEmptyOperations_WhenRequesterMissing()
+    {
+        // Arrange: the requester-existence half of the gate must also run for an empty op list
+        // with a set boardId (the board-scoped path), not just the null-board path.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var operations = new List<ProposalOperationDto>();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync((User?)null);
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldReturnForbidden_ForEmptyOperations_WhenBoardAccessDenied()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var operations = new List<ProposalOperationDto>();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, It.IsAny<Taskdeck.Domain.Enums.UserRole?>(), default))
+            .ReturnsAsync(false);
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldReturnSuccess_ForEmptyOperations_WhenBoardAccessGranted()
+    {
+        // Arrange: empty op list with a board the requester can access — the access gate passes
+        // and the per-operation contract validator is (correctly) skipped, so the result is Success.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var operations = new List<ProposalOperationDto>();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, It.IsAny<Taskdeck.Domain.Enums.UserRole?>(), default))
+            .ReturnsAsync(true);
+
+        // Act
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
     }
 
     #endregion

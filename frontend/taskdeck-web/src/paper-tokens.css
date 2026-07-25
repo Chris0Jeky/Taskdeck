@@ -7,9 +7,8 @@
    remain canonical until Paper is promoted by paperThemeStore.
    ========================================================= */
 
-/* Paper references preferred local font names first and falls back to system
-   families. External font imports are intentionally avoided so production CSP
-   can keep style-src locked to self. */
+/* Paper fonts are bundled from local WOFF2 subsets in paper-fonts.css and fall
+   back to system families. No Paper font request leaves the application. */
 
 .paper {
   /* --- Substrate --- */
@@ -26,7 +25,8 @@
   --ink-deep:     #0a0908;
   --ink-2:        #3a352d;
   --mute:         #6c6557;
-  --faint:        #a39c8b;
+  /* Small text uses this token, so it must clear 4.5:1 on the darkest Paper surface. */
+  --faint:        #6c6557;
   --whisper:      #c2bba8;
 
   /* --- Ember --- */
@@ -35,6 +35,9 @@
   --ember-bloom:  #a8421f1a;
   --ember-tint:   #f0d9c8;
   --ember-ink:    #6e2810;
+  /* Text ON an ember-filled surface (primary CTAs). Paper's ember is dark, so a
+     warm near-white clears 4.5:1 at rest and under the brightness(1.1) hover. */
+  --td-on-ember:  #fefaf6;
 
   /* --- Earth-tone semantics --- */
   --applied:      #4a6b3f;
@@ -100,7 +103,7 @@
   --ink-deep:     #fbf3df;
   --ink-2:        #c8bfa9;
   --mute:         #9a8f7a;
-  --faint:        #685e4c;
+  --faint:        #8f846f;
   --whisper:      #3e362a;
 
   --ember:        #d96a3e;
@@ -108,6 +111,8 @@
   --ember-bloom:  #d96a3e22;
   --ember-tint:   #2d1a12;
   --ember-ink:    #ffb38c;
+  /* Night ember is brighter, so on-ember text goes dark to clear 4.5:1 (base + hover). */
+  --td-on-ember:  #1c0d04;
 
   --applied:      #8aae72;
   --applied-tint: #1d2417;
@@ -430,17 +435,6 @@
   text-decoration: line-through;
   text-decoration-color: var(--ember);
   text-decoration-thickness: 1px;
-}
-
-/* =========================================================
-   Erasing dotted underline — reversibility countdown
-   ========================================================= */
-.paper .erase-line, .paper-night .erase-line {
-  background-image: linear-gradient(90deg, var(--ember) 50%, transparent 50%);
-  background-size: 6px 1px;
-  background-repeat: repeat-x;
-  background-position: 0 100%;
-  padding-bottom: 4px;
 }
 
 /* =========================================================

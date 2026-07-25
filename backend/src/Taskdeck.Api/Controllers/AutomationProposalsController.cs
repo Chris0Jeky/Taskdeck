@@ -395,7 +395,8 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
     /// <summary>
     /// Gets the side-effect analysis for a proposal, including the 7-category breakdown
-    /// and reversibility posture.
+    /// and apply-risk posture. The response retains its historical reversibility field name
+    /// for compatibility, but does not advertise an undo capability.
     /// </summary>
     [HttpGet("{id}/side-effects")]
     public async Task<IActionResult> GetProposalSideEffects(Guid id, CancellationToken cancellationToken = default)

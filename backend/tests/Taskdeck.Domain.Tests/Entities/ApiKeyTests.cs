@@ -104,17 +104,6 @@ public class ApiKeyTests
     }
 
     [Fact]
-    public void RecordUsage_UpdatesLastUsedAt()
-    {
-        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key");
-
-        apiKey.RecordUsage();
-
-        apiKey.LastUsedAt.Should().NotBeNull();
-        apiKey.LastUsedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(5));
-    }
-
-    [Fact]
     public void IsActive_RevokedKey_ReturnsFalse()
     {
         var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key");

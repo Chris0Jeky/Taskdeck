@@ -41,13 +41,16 @@ const {
   proposalActionBusyId,
   selectedDiffProposalId,
   selectedDiff,
+  selectedDiffMode,
+  selectedDiffInvalidReason,
+  selectedDiffRevised,
   handleApproveProposal,
   handleRejectProposal,
   handleExecuteProposal,
   handleToggleDiff,
   handleDismissProposal,
   handleDismissApplied,
-} = useReviewActions(proposals, dismissableProposalIds, loadProposals)
+} = useReviewActions(proposals, dismissableProposalIds, loadProposals, isProposalExpired)
 
 const _vl = useVirtualList({
   count: computed(() => visibleProposals.value.length),
@@ -220,6 +223,9 @@ onUnmounted(() => {
               :is-busy="proposalActionBusyId === visibleProposals[virtualRow.index]!.id"
               :selected-diff-proposal-id="selectedDiffProposalId"
               :selected-diff="selectedDiff"
+              :selected-diff-mode="selectedDiffMode"
+              :selected-diff-invalid-reason="selectedDiffInvalidReason"
+              :selected-diff-revised="selectedDiffRevised"
               :capture-href="captureHrefForProposal(visibleProposals[virtualRow.index]!)"
               :proposal-href="proposalHref(visibleProposals[virtualRow.index]!)"
               @approve="handleApproveProposal"

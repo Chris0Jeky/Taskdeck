@@ -40,6 +40,10 @@ public static class WriteToolSchemas
                         "type": "string",
                         "description": "Optional card description"
                     },
+                    "due_date": {
+                        "type": "string",
+                        "description": "Optional due date as YYYY-MM-DD or an ISO-8601 timestamp with an offset"
+                    },
                     "labels": {
                         "type": "array",
                         "items": { "type": "string" },
@@ -97,7 +101,7 @@ public static class WriteToolSchemas
 
     public static TaskdeckToolSchema ProposeUpdateCard() => new(
         Name: "propose_update_card",
-        Description: "Create a proposal to update a card's title, description, or labels. The proposal must be reviewed before it takes effect.",
+        Description: "Create a proposal to update a card's title, description, due date, or labels. The proposal must be reviewed before it takes effect.",
         ParametersSchema: ParseSchema("""
             {
                 "type": "object",
@@ -113,6 +117,14 @@ public static class WriteToolSchemas
                     "description": {
                         "type": "string",
                         "description": "New description (omit to keep current)"
+                    },
+                    "due_date": {
+                        "type": "string",
+                        "description": "New due date as YYYY-MM-DD or an ISO-8601 timestamp with an offset (omit to keep current)"
+                    },
+                    "clear_due_date": {
+                        "type": "boolean",
+                        "description": "Set true to remove the current due date; do not combine with due_date"
                     },
                     "labels": {
                         "type": "array",

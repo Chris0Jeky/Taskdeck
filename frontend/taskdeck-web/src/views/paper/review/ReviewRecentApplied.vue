@@ -1,17 +1,14 @@
 <script setup lang="ts">
 /**
- * ReviewRecentApplied — "Recently applied · undoable" stack with
- * countdown timers. Each row shows ↶ left or "sealed" once the window
- * closed. The countdown text is supplied by the parent (formatted on
- * the same clock that drives the queue's now()).
+ * ReviewRecentApplied — factual recency ledger for settled proposals.
+ * It records when an apply happened without implying a recovery action.
  */
 export interface RecentlyAppliedRow {
   id: string
   serial: string
   title: string
-  /** Pre-formatted "5h 48m" string, or null when expired. */
-  left: string | null
-  expired: boolean
+  /** Pre-formatted age supplied by the parent (for example "30m"). */
+  age: string
 }
 
 defineProps<{
@@ -21,7 +18,7 @@ defineProps<{
 
 <template>
   <div class="paper-review-recent">
-    <div class="tk-eyebrow paper-review-recent__heading">Recently applied · undoable</div>
+    <div class="tk-eyebrow paper-review-recent__heading">Recently applied</div>
     <div v-if="rows.length === 0" class="tk-meta paper-review-recent__empty">
       Nothing applied yet today.
     </div>
@@ -29,15 +26,10 @@ defineProps<{
       v-for="row in rows"
       :key="row.id"
       class="paper-review-recent__row"
-      :data-expired="row.expired ? 'true' : null"
     >
       <div class="paper-review-recent__head">
         <span class="tk-serial">{{ row.serial }}</span>
-        <span
-          v-if="!row.expired"
-          class="tk-serial paper-review-recent__left"
-        >↶ {{ row.left ?? '—' }}</span>
-        <span v-else class="tk-serial paper-review-recent__sealed">sealed</span>
+        <span class="tk-serial paper-review-recent__age">{{ row.age }} ago</span>
       </div>
       <div class="paper-review-recent__title">{{ row.title }}</div>
     </div>
@@ -62,18 +54,12 @@ defineProps<{
   font-size: 11.5px;
   color: var(--ink-2, var(--ink));
 }
-.paper-review-recent__row[data-expired='true'] {
-  color: var(--faint);
-}
 .paper-review-recent__head {
   display: flex;
   justify-content: space-between;
   margin-bottom: 2px;
 }
-.paper-review-recent__left {
-  color: var(--ember);
-}
-.paper-review-recent__sealed {
+.paper-review-recent__age {
   color: var(--faint);
 }
 .paper-review-recent__title {

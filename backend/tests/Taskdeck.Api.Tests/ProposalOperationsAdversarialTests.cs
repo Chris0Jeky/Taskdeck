@@ -280,6 +280,34 @@ public class ProposalOperationsAdversarialTests : IClassFixture<TestWebApplicati
             $"non-JSON operation parameters must be rejected with 400. body={respBody}");
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("\"text\"")]
+    public async Task NonObjectParameters_ShouldReturn400(string parameters)
+    {
+        await EnsureAuthenticatedAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/automation/proposals",
+            new CreateProposalDto(
+                ProposalSourceType.Manual,
+                Guid.NewGuid(),
+                "test",
+                RiskLevel.Low,
+                Guid.NewGuid().ToString(),
+                Operations: new List<CreateProposalOperationDto>
+                {
+                    new(0, "create", "card", parameters, Guid.NewGuid().ToString())
+                }));
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+    }
+
     [Fact]
     public async Task TooDeeplyNestedParameters_ShouldReturn400()
     {

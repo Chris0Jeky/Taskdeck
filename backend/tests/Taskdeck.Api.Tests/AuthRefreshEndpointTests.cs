@@ -278,7 +278,8 @@ public class AuthRefreshEndpointTests : IClassFixture<TestWebApplicationFactory>
             new OidcSettings(),
             CreateMockMfaService(),
             userContext,
-            unitOfWork);
+            unitOfWork,
+            Mock.Of<IRegistrationPolicyService>());
     }
 
     private static (Mock<IUnitOfWork> UnitOfWork, AuthenticationService AuthService) CreateMockAuthServiceWithUow()
@@ -288,7 +289,11 @@ public class AuthRefreshEndpointTests : IClassFixture<TestWebApplicationFactory>
         unitOfWorkMock.Setup(u => u.Users).Returns(userRepoMock.Object);
         unitOfWorkMock.Setup(u => u.ExternalLogins).Returns(new Mock<IExternalLoginRepository>().Object);
 
-        var authService = new AuthenticationService(unitOfWorkMock.Object, DefaultJwtSettings);
+        var authService = new AuthenticationService(
+            unitOfWorkMock.Object,
+            DefaultJwtSettings,
+            Mock.Of<IRegistrationPolicyService>(),
+            new BcryptPasswordHasher());
         return (unitOfWorkMock, authService);
     }
 

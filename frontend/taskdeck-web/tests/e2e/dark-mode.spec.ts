@@ -4,9 +4,9 @@
  * Dark mode ships as the Paper night theme: PaperSidebar exposes a theme
  * toggle ("Switch to dark Paper theme") and paperThemeStore applies the
  * `paper-night` class to <body>, persisting the choice in localStorage
- * under `td.paper.mode`. Paper mode must be ON for the toggle to exist,
- * so tests seed `td.paper.mode = 'paper'` before app load (same pattern
- * as paper-night.spec.ts / paper-board-drag.spec.ts).
+ * under `td.paper.mode`. Paper mode must be ON for the toggle to exist. The
+ * shared session now defaults to Paper; these tests still seed it defensively
+ * before app load and preserve an in-test switch to paper-night across reloads.
  *
  * Covered:
  * - Night theme persists when navigating between Home, Boards, Inbox, and Today views
@@ -14,8 +14,8 @@
  * - Toggling the night theme off restores the light Paper theme
  *
  * Still pending (test.fixme):
- * - System prefers-color-scheme on first visit (default mode is 'off'; the
- *   opt-in 'auto' mode exists but automatic first-visit detection is not shipped)
+ * - System prefers-color-scheme on first visit (the opt-in 'auto' mode exists,
+ *   but automatic first-visit detection is not shipped)
  */
 
 import type { Page } from '@playwright/test'
@@ -42,9 +42,8 @@ const PAPER_LIGHT_CLASS = /(^|\s)paper(\s|$)/
  */
 async function enablePaperMode(page: Page) {
   await page.addInitScript(() => {
-    // Default is Legacy in E2E (authSession pins td.paper.mode.v2='off'); seed Paper unless a
-    // paper-family value is already set — overrides the off-pin AND preserves a value the test
-    // toggled (e.g. paper-night) across reloads. Order-independent vs the auth pin.
+    // Reinforce Paper unless a paper-family value is already set, preserving a value
+    // the test toggled (for example paper-night) across reloads.
     const m = window.localStorage.getItem('td.paper.mode.v2')
     if (m !== 'paper' && m !== 'paper-night' && m !== 'auto') {
       window.localStorage.setItem('td.paper.mode.v2', 'paper')
@@ -85,6 +84,13 @@ test('night theme should persist when navigating between Home, Boards, Inbox, an
   await page.goto('/workspace/today')
   await expect(page.locator('[data-paper-today]')).toBeVisible()
   await expect(page.locator('body')).toHaveClass(PAPER_NIGHT_CLASS)
+  await expect(page.getByRole('heading', { name: 'Today, at a glance.' })).toBeVisible()
+  await expect(page.locator('[data-empty-state="ledger"]')).toContainText('No events are being invented')
+  await expect(page.locator('[data-empty-state="decisions"]')).toBeVisible()
+  await expect(page.locator('[data-empty-state="boards"]')).toBeVisible()
+  await expect(page.locator('[data-action="pin-tomorrow"]')).toHaveCount(0)
+  await expect(page.getByText('A quiet Saturday', { exact: false })).toHaveCount(0)
+  await expect(page.getByText('haiku', { exact: false })).toHaveCount(0)
 })
 
 // --- Dark mode with board content ---

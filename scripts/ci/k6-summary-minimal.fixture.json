@@ -1,0 +1,64 @@
+{
+  "metrics": {
+    "http_req_failed": {
+      "passes": 0,
+      "fails": 100,
+      "thresholds": {
+        "rate<0.01": false
+      },
+      "value": 0
+    },
+    "checks": {
+      "passes": 100,
+      "fails": 0,
+      "thresholds": {
+        "rate>0.99": false
+      },
+      "value": 1
+    },
+    "http_req_duration": {
+      "avg": 350,
+      "min": 25,
+      "med": 240,
+      "p(90)": 700,
+      "p(95)": 800,
+      "p(99)": 1100,
+      "max": 1400,
+      "thresholds": {
+        "p(95)<2000": false,
+        "p(99)<5000": false
+      }
+    },
+    "http_req_duration{workload:board-read}": {
+      "avg": 250,
+      "min": 20,
+      "med": 180,
+      "p(90)": 500,
+      "p(95)": 650,
+      "p(99)": 800,
+      "max": 900,
+      "thresholds": {
+        "p(95)<900": false
+      }
+    },
+    "http_req_duration{workload:board-write}": {
+      "avg": 900,
+      "min": 100,
+      "med": 700,
+      "p(90)": 1600,
+      "p(95)": 1900,
+      "p(99)": 2050,
+      "max": 2150,
+      "thresholds": {
+        "p(95)<4500": false
+      }
+    }
+  },
+  "root_group": {
+    "id": "d41d8cd98f00b204e9800998ecf8427e",
+    "groups": {},
+    "checks": {},
+    "name": "",
+    "path": ""
+  }
+}

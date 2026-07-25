@@ -1,6 +1,6 @@
 # Active Taskdeck Agent Context
 
-Last updated: 2026-06-13
+Last updated: 2026-07-13
 
 This file is the Codex active-gate pointer for Taskdeck. It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
@@ -18,7 +18,7 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 
 ## Current Focus Snapshot
 
-**Direction (2026-06-13 archive pivot):** Taskdeck will not be distributed — finish it for personal use, then archive. Active sequencing is the archive-pivot **waves** (Paper UI activation → trivially-easy local run → general quality → clean archive), per the Direction sections of `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md`. The prior "review-first AI / Paper backend gap delivery" RFAI phase is **historical** — do not resume distribution/GTM/cloud/mobile work. The project thesis remains unchanged:
+**Direction (2026-07-10 revival pivot, ADR-0044; extended 2026-07-13 by ADR-0046):** Taskdeck is being revived and shipped as a **free open beta** — the local-first, review-first action-item engine (transcripts/notes/artefacts in → evidence-linked proposals out → human-approved board apply), with the write-gated MCP server as the developer-facing second act. Active sequencing is `docs/REVIVAL_PLAN.md` (waves REVIVAL-00..14 `#1297`–`#1311`, `#1311` is the tracker; plus Phase 4 GEN-00..12 `#1315`–`#1327` — **ADR-0046 Accepted 2026-07-13, tracker GEN-00 `#1327`**), and the v0.1 ship gate has top priority. The 2026-06-13 archive pivot is **superseded** and retained only as the traction-checkpoint fallback. ADR-0046 adds generalist reach in the single app — artefact intake beyond transcripts, project dossiers, mode-scoped legibility; the twin generalist app is deferred behind the GEN-12 (`#1326`) evidence gate. Work not on the ratified wave list is not taken. The project thesis remains unchanged:
 
 - capture should be near-zero friction
 - automation-originated board writes must remain proposal-first and human-approved

@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-13
+Last Updated: 2026-07-14
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -522,7 +522,15 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Oidc"
 
 ### MCP HTTP Transport Tests (`#654`/`#819`)
 
-31 tests (11 domain + 20 integration) covering API key entity (`tdsk_` prefix, SHA-256 hashing), `ApiKeyMiddleware` Bearer validation, HTTP user context mapping, REST key management, and rate limiting per API key.
+49 tests (11 domain + 38 integration) covering the API key entity (`tdsk_` prefix, SHA-256 hashing), real Streamable HTTP initialize/session/resource traffic at `/mcp`, missing/invalid/expired/revoked/valid Bearer keys, root-route exclusion, cross-user board isolation, correlation-matched telemetry, pre-authentication IP throttling, literal per-key partitioning, explicit no-CORS preflight behavior, all ASP.NET any-host forms, standalone loopback defaults, and REST key management.
+
+Focused gate:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~McpHttpTransportApiKeyTests"
+```
+
+The standalone runtime proof also starts the normal API and `--mcp --transport http` against one throwaway SQLite database, creates a user/board/key through REST, then verifies `401 / 200 / 202 / 200` for missing-key, initialize, initialized notification, and `taskdeck://boards`, plus `404` at `/`. The security repair probe starts standalone with `AllowedHosts=localhost;*` and a one-request authentication window, proving hostile Host `400`, then missing-key `401`, repeated-attempt `429`, and root `404`. On Windows PowerShell 5.1, capture non-2xx status from `WebException.Response`; `Invoke-WebRequest -SkipHttpErrorCheck` is PowerShell 7-only.
 
 ## E2E Parallelization (TST-60, `#867`/`#949`)
 
@@ -1246,6 +1254,7 @@ Run local k6 board-heavy profile (backend API must be reachable at `K6_BASE_URL`
 
 ```bash
 docker run --rm --network host \
+  --user "$(id -u):$(id -g)" \
   -e K6_BASE_URL=http://127.0.0.1:5000/api \
   -e K6_VUS=20 \
   -e K6_DURATION=90s \
@@ -1259,6 +1268,11 @@ docker run --rm --network host \
 
 Notes:
 - tune `K6_VUS`, `K6_DURATION`, and `K6_USER_POOL` per machine capacity.
+- the default 20-VU SQLite profile warns when tagged board writes reach the measured 2000 ms p95 capacity and fails at 4500 ms; together with the 5000 ms global p99 gate these sit at ~1.5–1.7× the worst same-code nightly tail observed on shared runners (calibrated 2026-07-23 — evidence in #1445; the write-tail itself is tracked in #1446).
+- aggregate p95/p99, board-read p95, error-rate, and check-rate thresholds remain hard gates.
+- both reusable k6 workflows fail closed when the required summary is missing, empty, malformed, lacks any hard-gate metric, contains an out-of-domain direct/nested value, mixes conflicting flattened/nested metric evidence, or has threshold evidence that contradicts the corresponding strict numeric comparator (including equality boundaries); pinned k6 0.49's flattened breach flags are normalized before analysis, aggregate p95 must not exceed p99, and the `always()` artifact uploads still preserve available diagnostics.
+- run `node --test scripts/ci/require-k6-summary.test.mjs` from the repository root for summary validation and workflow-wiring checks.
+- run `node --test scripts/ci/check-k6-thresholds.test.mjs` from the repository root for the focused tagged-capacity analyzer checks.
 - script thresholds fail on sustained latency/error budget breaches and emit actionable status/body diagnostics.
 
 ## Container Baseline Validation
@@ -1426,7 +1440,7 @@ Extended workflow: `.github/workflows/ci-extended.yml`
   - advisory mode by default; enforceable via workflow input
   - `scripts/ci/summarize-sast-findings.mjs` produces human-readable summary
 - `performance-regression-gate`
-  - k6 thresholds (p95 <2s, error rate <1%) + bundle size checks via `reusable-performance-regression-gate.yml` (CI-03, `#872`/`#918`)
+  - k6 thresholds (aggregate p95 <2s and p99 <5s, tagged SQLite board-write p95 <4.5s with a warning at the measured 2s capacity, error rate <1%) + bundle size checks via `reusable-performance-regression-gate.yml` (CI-03, `#872`/`#918`, recalibrated by `#1358` then `#1445`)
   - opt-in on PRs labeled `performance` or manual `workflow_dispatch`
   - `scripts/ci/check-bundle-size.mjs` and `scripts/ci/check-k6-thresholds.mjs` for deterministic threshold enforcement
 

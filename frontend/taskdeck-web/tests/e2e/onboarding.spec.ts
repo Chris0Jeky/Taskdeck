@@ -3,7 +3,7 @@
  *
  * Covers the initial experience for new users including:
  * - Empty state CTAs on Today, Boards, and Inbox views
- * - Starter pack application from the Today view
+ * - Starter pack application from Paper Home's guided setup
  * - Help-text visibility for first-time users across views
  * - Setup dialog validation (empty name, template selection)
  */
@@ -32,33 +32,28 @@ test('fresh user boards view should show empty state with New Board CTA', async 
 
 test('fresh user inbox should show empty state with guidance', async ({ page }) => {
   await page.goto('/workspace/inbox')
-  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: "What's on your mind, quickly?" })).toBeVisible()
 
-  // Inbox should show the empty-state message for users with no captures
-  await expect(page.getByText('No capture items yet')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('No captures yet')).toBeVisible({ timeout: 10_000 })
 
-  // Help text explaining what Inbox is for should be visible
-  await expect(page.getByText('What is Inbox for?')).toBeVisible()
+  await expect(page.getByText('Nothing flows to the board without your approval.')).toBeVisible()
 })
 
 test('fresh user today view should show onboarding steps', async ({ page }) => {
   await page.goto('/workspace/today')
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today, at a glance.' })).toBeVisible()
 
-  // The onboarding loop should be visible with setup steps
-  await expect(page.getByText('What is Today for?')).toBeVisible()
-
-  // The "Start Useful Board" CTA should be available
-  await expect(page.getByRole('button', { name: 'Start Useful Board' })).toBeVisible()
+  await expect(page.getByText('captures to triage')).toBeVisible()
+  await expect(page.getByText('Open Review for live proposals.')).toBeVisible()
 })
 
 // --- Setup dialog validation ---
 
 test('setup dialog should require a board name before creation', async ({ page }) => {
-  await page.goto('/workspace/today')
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await page.goto('/workspace/home')
+  await expect(page.getByTestId('paper-home')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Start Useful Board' }).click()
+  await page.getByRole('button', { name: 'Start guided setup' }).click()
   const setupDialog = page.getByRole('dialog', { name: 'Workspace setup' })
   await expect(setupDialog).toBeVisible()
 
@@ -75,10 +70,10 @@ test('setup dialog should require a board name before creation', async ({ page }
 test('starter pack engineering template should create board with Backlog and Review columns', async ({ page }) => {
   const boardName = `Starter Pack ${Date.now()}`
 
-  await page.goto('/workspace/today')
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await page.goto('/workspace/home')
+  await expect(page.getByTestId('paper-home')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Start Useful Board' }).click()
+  await page.getByRole('button', { name: 'Start guided setup' }).click()
   const setupDialog = page.getByRole('dialog', { name: 'Workspace setup' })
   await expect(setupDialog).toBeVisible()
 

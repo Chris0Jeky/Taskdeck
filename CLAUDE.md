@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A local-first execution workspace for developers. Core thesis: near-zero-friction capture with review-first (proposal-based) automation -- no silent or destructive mutations. Local persistence via SQLite.
 
+**Direction (2026-07-10, ADR-0044):** revival — ship a **free open beta** (adoption/feedback/exposure; commercial side developed in parallel), positioned as the local-first, review-first **action-item engine** (transcripts in → evidence-linked proposals → human-approved board changes) with the write-gated MCP server as the developer second act. The active planning spine is `docs/REVIVAL_PLAN.md`; work not on its ratified wave list is not taken. This supersedes the 2026-06-13 archive pivot (retained as the checkpoint fallback).
+
 ## Outstanding Tasks (read first, surface always)
 
 `OUTSTANDING_TASKS.md` (repo root) is the maintainer's durable cross-session checklist.
@@ -170,8 +172,10 @@ ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template 
 
 - `docs/STATUS.md` -- current shipped reality (what is true now)
 - `docs/IMPLEMENTATION_MASTERPLAN.md` -- delivery history, roadmap, and planned work (what was done and what comes next)
-- `docs/PROJECT_TRAJECTORY.md` -- 2026-07-02 whole-project analysis: strengths, pivot-goal scoring, and the remaining path to archive (closeout tracker `#1278`)
-- `docs/COURSE_CORRECTION.md` -- 2026-07-02 whole-project analysis: what must change (strategy + execution), the ordered closeout plan, and the proposed archive exit criteria
+- `docs/REVIVAL_PLAN.md` -- **the active planning spine** (2026-07-10 revival pivot, ADR-0044): positioning, business posture, phased waves, the v0.1 ship gate, issue map, traction checkpoint
+- `docs/analysis/2026-07-10_revival_assessment.md` -- the revive-vs-archive evidence base (code review + market research, adversarially verified) behind ADR-0044
+- `docs/PROJECT_TRAJECTORY.md` -- 2026-07-02 whole-project analysis: strengths, pivot-goal scoring, and the remaining path to archive (superseded direction; retained as the checkpoint fallback + evidence)
+- `docs/COURSE_CORRECTION.md` -- 2026-07-02 whole-project analysis: what must change (strategy + execution); its finite-work discipline carries into the revival ship gate
 - `docs/GOLDEN_PRINCIPLES.md` -- stable invariants
 - `docs/decisions/INDEX.md` -- architecture decision records
 - `docs/TESTING_GUIDE.md` -- test operations reference

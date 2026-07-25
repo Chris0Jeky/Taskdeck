@@ -25,6 +25,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
+import { expectDialog } from './support/dialogs'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -35,7 +36,7 @@ import { assertOk } from './support/httpAsserts'
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'edge-journeys')
+  auth = await registerAndAttachSession(page, request, 'edge-journeys', { theme: 'legacy' })
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -174,8 +175,17 @@ test('rejecting a proposal should remove it from the review queue', async ({ pag
     .first()
   await expect(rejectButton).toBeVisible()
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await rejectButton.click()
+  // handleRejectProposal (useReviewActions.ts) has TWO prompt templates:
+  // 'Optional rejection reason:' for Low/Medium risk and 'Reason is required
+  // for this risk level:' for High/Critical — match both, and submit a
+  // non-empty reason so the rejection succeeds regardless of how this
+  // fixture's proposal is risk-classified (High/Critical rejects an empty
+  // reason and would leave the proposal in the queue).
+  await expectDialog(page, () => rejectButton.click(), {
+    type: 'prompt',
+    message: /reason/i,
+    promptText: 'e2e: rejected by test',
+  })
 
   // Proposal card must disappear from the review queue
   await expect(proposalCard).toHaveCount(0, { timeout: 10_000 })
@@ -210,8 +220,10 @@ test('proposal approve should reflect on board immediately without manual refres
   await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
+  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
+    type: 'confirm',
+    message: 'Apply this approved proposal to the board now?',
+  })
   await expect(proposalCard).not.toBeVisible()
 
   // Navigate to board and check card appears without manual refresh
@@ -331,9 +343,8 @@ const PAPER_NIGHT_CLASS = /(^|\s)paper-night(\s|$)/
 
 async function enablePaperMode(page: Page) {
   await page.addInitScript(() => {
-    // Default is Legacy in E2E (authSession pins td.paper.mode.v2='off'); seed Paper unless a
-    // paper-family value is already set — overrides the off-pin AND preserves a value the test
-    // toggled (e.g. paper-night) across reloads. Order-independent vs the auth pin.
+    // This frozen-DOM suite opts into Legacy; override it for this Paper-specific scenario
+    // while preserving a paper-family value the test toggles across reloads.
     const m = window.localStorage.getItem('td.paper.mode.v2')
     if (m !== 'paper' && m !== 'paper-night' && m !== 'auto') {
       window.localStorage.setItem('td.paper.mode.v2', 'paper')

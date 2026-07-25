@@ -22,6 +22,7 @@ public static class OptionsValidationRegistration
         // ── Settings from SettingsRegistration ──────────────────────────────
 
         services.RegisterValidatedOptions<JwtSettings>(configuration, "Jwt");
+        services.RegisterValidatedOptions<RegistrationSettings>(configuration, "Auth:Registration");
         services.RegisterValidatedOptions<ObservabilitySettings>(configuration, "Observability");
         services.RegisterValidatedOptions<RateLimitingSettings>(configuration, "RateLimiting");
         services.RegisterValidatedOptions<SecurityHeadersSettings>(configuration, "SecurityHeaders");
@@ -29,6 +30,7 @@ public static class OptionsValidationRegistration
         services.RegisterValidatedOptions<TelemetrySettings>(configuration, "Telemetry");
         services.RegisterValidatedOptions<AnalyticsSettings>(configuration, "Analytics");
         services.RegisterValidatedOptions<MfaPolicySettings>(configuration, "MfaPolicy");
+        services.RegisterValidatedOptions<ArtefactStorageSettings>(configuration, "Artefacts");
 
         // ── Settings from LlmProviderRegistration ──────────────────────────
 
@@ -36,6 +38,7 @@ public static class OptionsValidationRegistration
         services.RegisterValidatedOptions<LlmQuotaSettings>(configuration, "LlmQuota");
         services.RegisterValidatedOptions<LlmToolCallingSettings>(configuration, "LlmToolCalling");
         services.RegisterValidatedOptions<AbuseDetectionSettings>(configuration, "AbuseDetection");
+        services.RegisterValidatedOptions<LlmCaptureTriageSettings>(configuration, "CaptureTriageLlm");
 
         // ── Settings from WorkerRegistration ────────────────────────────────
 

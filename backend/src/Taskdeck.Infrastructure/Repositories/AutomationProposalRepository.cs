@@ -54,6 +54,18 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
                 cancellationToken);
     }
 
+    public async Task<bool> HasAppliedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        // The apply onboarding milestone demands a genuine capture→review→board apply:
+        // only a proposal the user carried all the way to Applied counts. Approved,
+        // Rejected, and Failed are deliberately excluded (reviewed, but never applied).
+        return await _dbSet
+            .AsNoTracking()
+            .AnyAsync(
+                proposal => proposal.DecidedByUserId == userId && proposal.Status == ProposalStatus.Applied,
+                cancellationToken);
+    }
+
     public async Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(
@@ -293,6 +305,55 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
 
         var boundedLimit = limit <= 0 ? DefaultLimit : limit;
 
+        if (_context.Database.IsSqlite())
+        {
+            // EF Core's SQLite provider cannot translate the UpdatedAt DateTimeOffset tiebreaker.
+            // Keep the action/status/scope filters plus ORDER BY and LIMIT in SQLite so the
+            // similar-past lookback remains bounded instead of materializing all history.
+            var sql = new StringBuilder(
+                "SELECT * FROM AutomationProposals AS p " +
+                "WHERE p.Status IN ({0}, {1}) " +
+                "AND EXISTS (" +
+                "SELECT 1 FROM AutomationProposalOperations AS op " +
+                "WHERE op.ProposalId = p.Id AND op.ActionType = {2})");
+            var parameters = new List<object>
+            {
+                (int)ProposalStatus.Applied,
+                (int)ProposalStatus.Rejected,
+                actionType,
+            };
+
+            if (boardId.HasValue)
+            {
+                sql.Append(" AND p.BoardId = {").Append(parameters.Count).Append('}');
+                parameters.Add(boardId.Value);
+            }
+            else
+            {
+                sql.Append(" AND p.RequestedByUserId = {").Append(parameters.Count).Append('}');
+                parameters.Add(userId);
+            }
+
+            sql.Append(" ORDER BY p.DecidedAt DESC, p.UpdatedAt DESC, p.Id LIMIT {")
+                .Append(parameters.Count)
+                .Append('}');
+            parameters.Add(boundedLimit);
+
+            var rows = await _dbSet
+                .FromSqlRaw(sql.ToString(), parameters.ToArray())
+                .AsNoTracking()
+                .Include(p => p.Operations)
+                .ToListAsync(cancellationToken);
+
+            // Include composes over the raw query and does not guarantee the inner order survives.
+            // Re-sort the already bounded result to preserve the repository's newest-first contract.
+            return rows
+                .OrderByDescending(p => p.DecidedAt)
+                .ThenByDescending(p => p.UpdatedAt)
+                .ThenBy(p => p.Id.ToString(), StringComparer.Ordinal)
+                .ToList();
+        }
+
         // Find proposal IDs whose operations match the action type
         var matchingProposalIds = _context.AutomationProposalOperations
             .Where(op => op.ActionType == actionType)
@@ -319,6 +380,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .AsNoTracking()
             .OrderByDescending(p => p.DecidedAt)
             .ThenByDescending(p => p.UpdatedAt)
+            .ThenBy(p => p.Id)
             .Take(boundedLimit)
             .Select(p => p.Id)
             .ToListAsync(cancellationToken);
@@ -335,6 +397,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         return proposals
             .OrderByDescending(p => p.DecidedAt)
             .ThenByDescending(p => p.UpdatedAt)
+            .ThenBy(p => p.Id)
             .ToList();
     }
 

@@ -1,5 +1,6 @@
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -9,8 +10,6 @@ namespace Taskdeck.Application.Services;
 public class AutomationPolicyEngine : IAutomationPolicyEngine
 {
     private readonly IUnitOfWork _unitOfWork;
-    private const int MaxOperationCount = 50;
-    private const int MaxParametersLength = 10000;
 
     public AutomationPolicyEngine(IUnitOfWork unitOfWork)
     {
@@ -55,19 +54,15 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
         return RiskLevel.Low;
     }
 
-    public async Task<Result> ValidatePermissionsAsync(Guid userId, Guid? boardId, IEnumerable<ProposalOperationDto> operations, CancellationToken cancellationToken = default)
+    public async Task<Result> ValidateBoardAccessAsync(Guid requesterUserId, Guid? boardId, CancellationToken cancellationToken = default)
     {
-        if (userId == Guid.Empty)
+        if (requesterUserId == Guid.Empty)
             return Result.Failure(ErrorCodes.ValidationError, "UserId cannot be empty");
 
         // Verify user exists
-        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        var user = await _unitOfWork.Users.GetByIdAsync(requesterUserId, cancellationToken);
         if (user == null)
-            return Result.Failure(ErrorCodes.NotFound, $"User with ID {userId} not found");
-
-        var opList = operations.ToList();
-        if (!opList.Any())
-            return Result.Success();
+            return Result.Failure(ErrorCodes.NotFound, $"User with ID {requesterUserId} not found");
 
         // If board-scoped, verify board exists and user has access
         if (boardId.HasValue)
@@ -76,53 +71,54 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
             if (board == null)
                 return Result.Failure(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
-            var hasAccess = await _unitOfWork.BoardAccesses.HasAccessAsync(boardId.Value, userId, null, cancellationToken);
+            var hasAccess = await _unitOfWork.BoardAccesses.HasAccessAsync(boardId.Value, requesterUserId, null, cancellationToken);
             if (!hasAccess)
                 return Result.Failure(ErrorCodes.Forbidden, $"User does not have access to board {boardId}");
         }
 
-        // Validate each operation targets entities within the board scope
-        foreach (var operation in opList)
-        {
-            if (boardId.HasValue && operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(operation.TargetId))
-            {
-                if (Guid.TryParse(operation.TargetId, out var cardId))
-                {
-                    var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
-                    if (card != null && card.BoardId != boardId.Value)
-                        return Result.Failure(ErrorCodes.Forbidden, $"Card {cardId} does not belong to board {boardId}");
-                }
-            }
-        }
-
         return Result.Success();
     }
 
-    public Result ValidateOperationStructure(IReadOnlyCollection<ProposalOperationDto> operations)
+    public async Task<Result> ValidatePermissionsAsync(Guid userId, Guid? boardId, IEnumerable<ProposalOperationDto> operations, CancellationToken cancellationToken = default)
     {
-        if (operations == null || operations.Count == 0)
-            return Result.Failure(ErrorCodes.ValidationError, "Proposal must contain at least one operation");
+        if (operations is null)
+            return Result.Failure(ErrorCodes.ValidationError, "Operations cannot be null");
 
-        if (operations.Count > MaxOperationCount)
-            return Result.Failure(ErrorCodes.ValidationError, $"Proposal exceeds maximum operation count of {MaxOperationCount}");
+        // The full requester/board access gate ALWAYS runs — including for an empty operation
+        // list. Only the per-operation contract checks are operation-dependent; requester
+        // existence and board access are not, so an operation-less proposal must be gated on the
+        // board it targets exactly like an operation-bearing one. Emptiness itself is NOT rejected
+        // here: it is a legitimate transient shape (a proposal may be created empty and revised
+        // into validity, pinned by #1423), and the "nothing to apply" rejection belongs to the
+        // structure gate (ValidateOperationStructure / ProposalOperationStructureValidator), which
+        // runs BEFORE this method in every approve/apply/diff chain. Previously an empty list
+        // short-circuited to Success with the board half skipped (boardId forced to null), which
+        // silently treated an operation-less proposal as permitted and forced every new consumer
+        // to bolt on its own board-access fallback (the #1415/#1425 trap this hardens away, #1426).
+        var accessValidation = await ValidateBoardAccessAsync(
+            userId,
+            boardId,
+            cancellationToken);
+        if (!accessValidation.IsSuccess)
+            return accessValidation;
 
-        // Validate operation sequences are unique and non-negative
-        var sequences = operations.Select(o => o.Sequence).ToList();
-        if (sequences.Distinct().Count() != sequences.Count)
-            return Result.Failure(ErrorCodes.ValidationError, "Operation sequences must be unique");
+        // Materialize only after the access gate passes — the per-operation contract validator
+        // below is the sole consumer of the list, so a failed access check pays no allocation.
+        var opList = operations.ToList();
+        if (opList.Count == 0)
+            return Result.Success();
 
-        if (sequences.Any(s => s < 0))
-            return Result.Failure(ErrorCodes.ValidationError, "Operation sequences must be non-negative");
-
-        // Validate parameters size
-        foreach (var operation in operations)
-        {
-            if (operation.Parameters.Length > MaxParametersLength)
-                return Result.Failure(ErrorCodes.ValidationError, $"Operation parameters exceed maximum length of {MaxParametersLength}");
-        }
-
-        return Result.Success();
+        return await ProposalOperationContractValidator.ValidateAsync(
+            _unitOfWork,
+            boardId,
+            opList,
+            cancellationToken);
     }
+
+    // Delegates to the shared structure validator so Apply, revision-save, and the
+    // original-proposal diff all enforce the same operation-shape invariants (#1370).
+    public Result ValidateOperationStructure(IReadOnlyCollection<ProposalOperationDto> operations)
+        => ProposalOperationStructureValidator.Validate(operations);
 
     public Result ValidatePolicy(ProposalDto proposal)
     {

@@ -31,6 +31,7 @@ Source files used to build this reference:
   - [`LlmToolCalling`](#llmtoolcalling)
   - [`LlmQuota`](#llmquota)
   - [`LlmKillSwitch`](#llmkillswitch)
+  - [`CaptureTriageLlm`](#capturetriagellm)
   - [`AbuseDetection`](#abusedetection)
 - [Workers](#workers)
   - [`Workers`](#workers-1)
@@ -56,6 +57,7 @@ Source files used to build this reference:
   - [`ConnectionStrings`](#connectionstrings)
   - [`Database`](#database)
   - [`ExportImport`](#exportimport)
+  - [`Artefacts`](#artefacts)
   - [`FirstRun`](#firstrun)
   - [`DevelopmentSandbox`](#developmentsandbox)
 - [Connectors](#connectors)
@@ -134,6 +136,30 @@ Developers can alternatively supply the secret via `dotnet user-secrets` or the
 | `Jwt:Issuer` | `string` | `Taskdeck` | `iss` claim and validation value. | Yes |
 | `Jwt:Audience` | `string` | `TaskdeckUsers` | `aud` claim and validation value. | Yes |
 | `Jwt:ExpirationMinutes` | `int` | `1440` (24h) | Access-token lifetime in minutes. | No |
+
+### `Auth:Registration`
+
+Bound to `RegistrationSettings`. The application default is `Open` so local
+development, demo seeding, and existing integrations keep their current
+behavior. Production container templates override this to restrictive `Closed`.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Auth:Registration:Mode` | `RegistrationMode` | `Open` | `Open` allows new accounts. `InviteOnly` requires a valid one-time, expiring invite for every account. `Closed` requires such an invite for the first owner, then denies every later registration. | No |
+
+For either restrictive mode, a local operator mints the first-owner code with
+`taskdeck invite create --expires 7`. Production images include the CLI at
+`/app/cli/Taskdeck.Cli.dll`; for Compose use
+`docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec --user 10001:10001 api dotnet /app/cli/Taskdeck.Cli.dll invite create --expires 7`.
+Run the container command as the documented non-root UID so CLI-created SQLite
+sidecars remain accessible to the API. Only a SHA-256 hash is stored and the
+plaintext code is shown once. In `Closed`, only the first owner can redeem a
+code; use `InviteOnly` and mint a separate code for each later account. OAuth/OIDC
+logins for already-linked accounts remain available in every mode. Until
+[#1301](https://github.com/Chris0Jeky/Taskdeck/issues/1301) adds invite entry to
+the browser form, redeem the code with `POST /api/auth/register` as shown in
+[`AUTHENTICATION.md`](../api/AUTHENTICATION.md), then link an external account
+from settings.
 
 ### `GitHubOAuth`
 
@@ -219,6 +245,8 @@ Bound to `LlmQuotaSettings`.
 | `LlmQuota:RequestsPerHour` | `int` | `60` | Max LLM requests per user per hour. `0` means unlimited. | No |
 | `LlmQuota:TokensPerDay` | `long` | `100000` | Max combined input+output tokens per user per day. `0` means unlimited. | No |
 | `LlmQuota:GlobalBudgetCeilingTokens` | `long` | `0` | Global per-day token ceiling across all users. `0` means unlimited. | No |
+| `LlmQuota:ReservationEstimatedTokens` | `int` | `2000` | Tokens held per in-flight quota reservation before the actual usage is known (issue #1313). This estimate is what bounds concurrent token-budget overshoot: in-flight callers see each other's estimates against `TokensPerDay`/`GlobalBudgetCeilingTokens`, so worst-case overshoot per boundary crossing is roughly one call's real usage beyond the estimate. Replaced by the real count when the reservation commits. Minimum `1` — `0` would make reservations invisible to the token sums and reopen the concurrent-token race. | No |
+| `LlmQuota:ReservationTtlSeconds` | `int` | `120` | How long a quota reservation stays live before it is treated as stale (a crashed process between reserve and commit) and swept. Must outlast the slowest expected LLM call: if a call finishes after its reservation was swept, the billed usage is still recovered into a committed row, but a warning is logged and the slot briefly frees early. | No |
 
 ### `LlmKillSwitch`
 
@@ -232,6 +260,23 @@ Bound to `LlmKillSwitchSettings`. Runtime changes are held in memory only
 | `LlmKillSwitch:KilledSurfaces` | `string[]` (set) | `[]` | Surface names to block individually (e.g. `Chat`, `CaptureTriage`, `Worker`). Case-insensitive. | No |
 | `LlmKillSwitch:KilledUserIds` | `string[]` (set) | `[]` | User IDs to block individually. Case-insensitive. | No |
 | `LlmKillSwitch:Reasons` | `object` (map) | `{}` | Map keyed by surface name or user ID to reason string. | No |
+
+### `CaptureTriageLlm`
+
+Bound to `LlmCaptureTriageSettings`. Registered in
+`LlmProviderRegistration.AddLlmProviders`. Controls the LLM-backed transcript
+triage strategy (REVIVAL-08, ADR-0045): it only ever runs for transcript-source
+captures when a live (non-mock) provider resolves, and any failure — provider
+down, kill switch (`LlmKillSwitch` surface `CaptureTriage`), quota
+(`LlmQuota`), unparseable output — degrades to the deterministic extractor
+instead of failing the capture. The section is absent from `appsettings.json`;
+class defaults apply.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `CaptureTriageLlm:Enabled` | `bool` | `true` | Master switch for LLM transcript triage. When false, transcript captures triage through the deterministic extractor exactly as before REVIVAL-08. | No |
+| `CaptureTriageLlm:MaxOutputTokens` | `int` | `4096` | Completion-token budget for the extraction response (range 256–32768). Sized for the worst-case 20-task v1 output with headroom; a truncated response is detected as degraded and falls back deterministically. | No |
+| `CaptureTriageLlm:Temperature` | `double` | `0.1` | Sampling temperature for extraction (range 0–2). Low by default: fidelity over creativity. | No |
 
 ### `AbuseDetection`
 
@@ -304,10 +349,19 @@ hit CORS and are unaffected.
 
 ### `ForwardedHeaders`
 
-Consumed directly by `PipelineConfiguration.BuildForwardedHeadersOptions`.
-If both `KnownProxies` and `KnownNetworks` are empty, forwarded-header
-handling is left disabled and a warning is logged when rate limiting is
-enabled.
+Consumed directly by `PipelineConfiguration.BuildForwardedHeadersOptions`,
+in both the co-hosted API pipeline and the standalone MCP HTTP host
+(`--mcp --transport http`). If both `KnownProxies` and `KnownNetworks` are
+empty, forwarded-header handling is left disabled (**default OFF**) and a
+warning is logged when rate limiting is enabled in the co-hosted API.
+
+**Security caveat:** `X-Forwarded-For` is never trusted by default. Enable it
+only by naming the trusted reverse proxy under `KnownProxies` (or its network
+under `KnownNetworks`) — a spoofed `X-Forwarded-For` from an untrusted peer is
+ignored, so it cannot let a caller rotate to a fresh rate-limit bucket. When
+enabled, `UseForwardedHeaders` runs before the MCP pre-auth failure-budget
+limiter and per-key policy, so both key on the real client behind the proxy
+instead of collapsing every client into the proxy's single address.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
@@ -317,12 +371,24 @@ enabled.
 
 ### `AllowedHosts`
 
-ASP.NET Core built-in. Defaults to `*` in `appsettings.json`. Restrict to
-your deployed host name(s) for defense-in-depth against host-header attacks.
+ASP.NET Core built-in. The full API defaults to `*` in `appsettings.json`;
+restrict it to deployed host names for defense-in-depth against host-header
+attacks. Standalone MCP HTTP mode applies one rule, mirroring the
+host-filtering middleware's own parse exactly (split on `;` dropping only
+EMPTY entries — no trimming — then `HostString.ToUriComponent()` per entry,
+which retains any `:port` suffix): the value is replaced with
+`localhost;127.0.0.1;[::1]` exactly when the middleware itself would
+disable filtering — zero parsed entries (blank, `";"`, `";;"`) or a
+top-level wildcard entry (`*`, `0.0.0.0`, `[::]`, including mixed lists).
+Every other value is preserved verbatim because the middleware fails closed
+on it: port-suffixed entries such as `0.0.0.0:5001` and whitespace-bearing
+entries such as `" ; "` are literal patterns that real `Host` headers never
+match (effectively deny-all — misconfigurations that fail safe), not
+wildcards.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `AllowedHosts` | `string` | `*` | Semicolon-separated list of allowed `Host` header values. `*` accepts all. | No |
+| `AllowedHosts` | `string` | Full API: `*`; standalone MCP: loopback allowlist | Semicolon-separated allowed `Host` values. Remote MCP deployments must set exact public host names and terminate TLS; `--host` changes the bind address but does not relax this filter. | Required for non-loopback MCP HTTP |
 
 ## Rate limiting
 
@@ -348,6 +414,9 @@ defaults** come from `RateLimitingSettings` constructors; the
 | `RateLimiting:NoteImportPerUser:WindowSeconds` | `int` | `60` | same | Window length in seconds. | No |
 | `RateLimiting:McpPerApiKey:PermitLimit` | `int` | `60` (class default) | same | Per-API-key permits for the MCP HTTP transport. | No |
 | `RateLimiting:McpPerApiKey:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
+| `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `int` | `120` (class default) | same | Per-client-address MCP authentication **failure** budget. A permit is spent only when authentication fails (401); once spent, further attempts from that address are rejected with 429 before the API-key parse/database lookup. Successful requests never spend this budget, so multiple valid keys behind one egress address (NAT/proxy/CI) keep their independent per-key budgets. Keys on the trusted client address (see `ForwardedHeaders`). | No |
+| `RateLimiting:McpAuthenticationPerIp:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds for the MCP authentication-failure budget. A pre-check 429 always reports the FULL window as `Retry-After` — a deliberate safe over-estimate: the non-consuming availability check does not expose the exact replenishment instant, so clients may be told to wait longer than strictly necessary. | No |
+| `RateLimiting:McpAuthenticationPerIpConcurrency` | `int` | `16` (class default) | same | Maximum concurrent in-flight `/mcp` requests per client address admitted past the pre-authentication gate; the excess is rejected immediately with 429 (`Retry-After: 1`). Admission control for pre-auth work: the failure budget bounds cumulative failures per window, this cap bounds instantaneous concurrency — failed-auth key lookups per address per window never exceed `McpAuthenticationPerIp:PermitLimit` plus this cap. Long-lived (e.g. streaming) requests hold a slot for their full duration; raise this for clients that legitimately multiplex many concurrent requests through one address. | No |
 | `RateLimiting:TokenRefreshPerUser:PermitLimit` | `int` | `5` (class default) | same | Per-user permits for the token refresh endpoint. Tight limit to prevent token farming. | No |
 | `RateLimiting:TokenRefreshPerUser:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
 
@@ -524,6 +593,30 @@ Consumed directly by `SettingsRegistration.cs`. Backs
 | --- | --- | --- | --- | --- |
 | `ExportImport:MaxDatabaseImportBytes` | `int` | `52428800` (50 MiB) | Maximum accepted size of a SQLite database file on import. | No |
 
+### `Artefacts`
+
+Bound to `ArtefactStorageSettings`
+(`Taskdeck.Application.Services.ArtefactStorageSettings`) and validated at
+startup. Source artefact metadata and blobs stay in the same SQLite database;
+the blob table is queried only for explicit content retrieval and GDPR export.
+The storage limits are enforced from server configuration, never from multipart
+form fields. Concurrent uploads serialize the quota check with the SQLite write.
+`ExtractionTimeoutSeconds` additionally bounds the local text-extraction path so
+a crafted parser-bomb artefact cannot spin the parse thread indefinitely, and
+`ExtractionMaxConcurrency` caps how many extraction parse workers (including
+runaway, already-abandoned ones) may run at once so box-wide CPU burn cannot
+accumulate without bound (see ADR-0047). Note: this permit gate bounds
+concurrency and abandoned-thread accumulation, not a single parse's peak memory;
+the decompression-bomb containment boundary for one parse is tracked separately
+(ADR-0048 / #1379).
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Artefacts:MaxBytesPerArtefact` | `long` | `10485760` (10 MiB) | Maximum bytes accepted for one PNG, JPEG, WebP, PDF, TXT, or Markdown artefact. The upload stream stops and returns HTTP 413 once this bound is crossed. The API raises Kestrel's request-body ceiling to this value plus 128 KiB of bounded multipart overhead. This setting is capped at `int.MaxValue` because upload validation materializes one accepted artefact as a `byte[]` before the atomic SQLite write. Environment variable: `Artefacts__MaxBytesPerArtefact`. | No |
+| `Artefacts:MaxBytesPerUser` | `long` | `209715200` (200 MiB) | Aggregate source-artefact quota for one user, including blob bytes. Uploads that would cross it return HTTP 413. Environment variable: `Artefacts__MaxBytesPerUser`. | No |
+| `Artefacts:ExtractionTimeoutSeconds` | `double` | `30` | Wall-clock budget for a single local text extraction (PdfPig / plain-text / Markdown). The byte, page, and character caps bound the input and persisted output but not the parser's in-memory work; a crafted PDF (deeply nested object streams, decompression bombs) that stays under those caps can still spin PdfPig's synchronous `PdfDocument.Open(...)` arbitrarily long. When the budget is exceeded the extraction is abandoned and recorded as an immutable extraction-history row carrying the `extraction-timeout` warning (no HTTP 500; the artefact stays stored). Bounded to `[1, 3600]`; raise it toward the ceiling to effectively disable the budget. Environment variable: `Artefacts__ExtractionTimeoutSeconds`. | No |
+| `Artefacts:ExtractionMaxConcurrency` | `int` | `2` | Maximum number of extraction parse workers permitted to run at once, enforced by a process-wide permit gate (`ArtefactExtractionGate`). A parser-bomb PDF that never observes cancellation keeps a thread-pool thread at full CPU until PdfPig's synchronous parse finishes — only the request is bounded by `ExtractionTimeoutSeconds`, not the abandoned thread — and the permit is held for that thread's full lifetime, not just the request's. Once the permits are exhausted (including by abandoned bombs still spinning), further extractions are rejected pre-parse with `TooManyRequests` and write no extraction-history row, so box-wide CPU burn is capped at this many spinning threads. Rejection, not queueing: a queue in front of held permits would be a second unbounded backlog. This bounds concurrency and abandoned-thread accumulation; it does not bound one parse's peak decoded memory (ADR-0048 / #1379). Bounded to `[1, 64]`. Environment variable: `Artefacts__ExtractionMaxConcurrency`. | No |
+
 ### `FirstRun`
 
 Bound to `FirstRunSettings` (`Taskdeck.Api.FirstRun.FirstRunSettings`).
@@ -556,6 +649,17 @@ integration credentials (e.g., GitHub tokens) at rest in the SQLite database.
 Docker Compose variable: `TASKDECK_CONNECTORS_ENCRYPTION_KEY`
 
 ## MCP server
+
+Standalone HTTP listens at `http://127.0.0.1:5001/mcp` by default. `--port`
+changes the port and `--host` changes the bind host. Non-loopback binds require
+an exact `AllowedHosts` value and TLS termination before untrusted network
+traffic. Browser cross-origin access is disabled explicitly on the MCP endpoint,
+even when the co-hosted frontend CORS policy allows that origin. The co-hosted
+API exposes the same authenticated `/mcp` route on its configured base URL.
+Every HTTP request must send `Authorization: Bearer tdsk_...`; a 120 requests /
+60 seconds client-address limit bounds work before key validation, then the
+60 requests / 60 seconds policy partitions valid traffic by the opaque API-key
+ID. Resource/tool authorization uses the key owner's user ID.
 
 Read directly from configuration by
 `Taskdeck.Infrastructure.Mcp.StdioUserContextProvider`. Only consulted when
@@ -611,9 +715,12 @@ Examples:
 | JSON key | Environment variable |
 | --- | --- |
 | `Jwt:SecretKey` | `Jwt__SecretKey` |
+| `Auth:Registration:Mode` | `Auth__Registration__Mode` |
 | `Llm:OpenAi:ApiKey` | `Llm__OpenAi__ApiKey` |
 | `Workers:RetryBackoffSeconds:0` | `Workers__RetryBackoffSeconds__0` |
 | `RateLimiting:AuthPerIp:PermitLimit` | `RateLimiting__AuthPerIp__PermitLimit` |
+| `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `RateLimiting__McpAuthenticationPerIp__PermitLimit` |
+| `RateLimiting:McpPerApiKey:PermitLimit` | `RateLimiting__McpPerApiKey__PermitLimit` |
 | `SignalR:Redis:ConnectionString` | `SignalR__Redis__ConnectionString` |
 | `Cors:AllowedOrigins` (as comma-separated string) | `Cors__AllowedOrigins` |
 
@@ -629,6 +736,7 @@ container as standard ASP.NET Core environment variables.
 | `TASKDECK_JWT_ISSUER` | `Jwt__Issuer` | `Taskdeck` | No |
 | `TASKDECK_JWT_AUDIENCE` | `Jwt__Audience` | `TaskdeckUsers` | No |
 | `TASKDECK_JWT_EXPIRATION_MINUTES` | `Jwt__ExpirationMinutes` | `1440` | No |
+| `TASKDECK_REGISTRATION_MODE` | `Auth__Registration__Mode` | `Closed` | No |
 | `TASKDECK_LLM_ENABLE_LIVE_PROVIDERS` | `Llm__EnableLiveProviders` | `false` | No |
 | `TASKDECK_LLM_PROVIDER` | `Llm__Provider` | `Mock` | No |
 | `TASKDECK_LLM_OPENAI_API_KEY` | `Llm__OpenAi__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=OpenAi` |

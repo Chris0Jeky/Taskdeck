@@ -9,7 +9,7 @@ import { registerAndAttachSession } from '../e2e/support/authSession'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-home')
+  await registerAndAttachSession(page, request, 'visual-home', { theme: 'legacy' })
 })
 
 test('home view default state', async ({ page }) => {

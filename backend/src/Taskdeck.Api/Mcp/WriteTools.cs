@@ -4,6 +4,7 @@ using ModelContextProtocol.Server;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Api.Mcp;
@@ -19,15 +20,38 @@ public class WriteTools
     private readonly IAutomationProposalService _proposalService;
     private readonly IUserContextProvider _userContext;
     private readonly ICaptureService _captureService;
+    private readonly IUnitOfWork _unitOfWork;
 
     public WriteTools(
         IAutomationProposalService proposalService,
         IUserContextProvider userContext,
-        ICaptureService captureService)
+        ICaptureService captureService,
+        IUnitOfWork unitOfWork)
     {
         _proposalService = proposalService;
         _userContext = userContext;
         _captureService = captureService;
+        _unitOfWork = unitOfWork;
+    }
+
+    /// <summary>
+    /// Rejects label IDs that are not labels on the target board before a proposal is
+    /// created, so an MCP caller gets immediate feedback instead of a dead proposal that
+    /// only fails when the shared preview/apply contract runs. Returns an error message
+    /// when any ID is unknown, otherwise null.
+    /// </summary>
+    private async Task<string?> ValidateBoardLabelsAsync(Guid boardId, IReadOnlyCollection<Guid> labelIds)
+    {
+        if (labelIds.Count == 0)
+            return null;
+
+        var boardLabelIds = (await _unitOfWork.Labels.GetByBoardIdAsync(boardId))
+            .Select(label => label.Id)
+            .ToHashSet();
+        var missing = labelIds.Where(id => !boardLabelIds.Contains(id)).Distinct().ToList();
+        return missing.Count == 0
+            ? null
+            : $"label_ids not found on board: {string.Join(", ", missing)}";
     }
 
     /// <summary>
@@ -50,7 +74,9 @@ public class WriteTools
         [Description("Optional. Card description in plain text.")]
         string? description = null,
         [Description("Optional. Label IDs to apply to the card (comma-separated UUIDs).")]
-        string? label_ids = null)
+        string? label_ids = null,
+        [Description("Optional. Due date as YYYY-MM-DD or an ISO-8601 timestamp with an explicit offset.")]
+        string? due_date = null)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();
 
@@ -74,13 +100,27 @@ public class WriteTools
             parameters["description"] = description;
 
         if (!string.IsNullOrWhiteSpace(label_ids))
-            parameters["labelIds"] = ParseGuidList(label_ids);
+        {
+            if (!TryParseGuidList(label_ids, out var labelIds))
+                return Error("label_ids must contain only comma-separated non-empty UUIDs");
+            var labelError = await ValidateBoardLabelsAsync(boardGuid, labelIds);
+            if (labelError != null)
+                return Error(labelError);
+            parameters["labelIds"] = labelIds;
+        }
+
+        if (due_date != null)
+        {
+            if (!TryParseDueDate(due_date, out var dueDate, out var dueDateError))
+                return Error(dueDateError);
+            parameters["dueDate"] = dueDate;
+        }
 
         var dto = new CreateProposalDto(
             SourceType: ProposalSourceType.Manual,
             RequestedByUserId: userId,
             Summary: $"Create card: {title}",
-            RiskLevel: RiskLevel.Medium,
+            RiskLevel: RiskLevel.Low,
             CorrelationId: Guid.NewGuid().ToString(),
             BoardId: boardGuid,
             Operations: new List<CreateProposalOperationDto>
@@ -129,8 +169,9 @@ public class WriteTools
         {
             ["boardId"] = boardGuid,
             ["cardId"] = cardGuid,
-            ["targetColumnId"] = targetColumnGuid,
-            ["targetPosition"] = 0
+            // The proposal executor's canonical move contract is columnId. Keep
+            // target_column_id as the public MCP argument, but normalize it here.
+            ["columnId"] = targetColumnGuid
         };
 
         var dto = new CreateProposalDto(
@@ -159,12 +200,12 @@ public class WriteTools
     }
 
     /// <summary>
-    /// Creates a PROPOSAL to update card fields (title, description, labels).
+    /// Creates a PROPOSAL to update card fields (title, description, due date, labels).
     /// The card is NOT updated immediately -- the proposal must be approved first.
     /// Returns the proposal ID.
     /// </summary>
     [McpServerTool(Name = "update_card"), Description(
-        "Creates a PROPOSAL to update card fields (title, description, labels). " +
+        "Creates a PROPOSAL to update card fields (title, description, due date, labels). " +
         "The card is NOT updated immediately -- the proposal must be approved first. " +
         "Returns the proposal ID.")]
     public async Task<string> UpdateCard(
@@ -177,7 +218,11 @@ public class WriteTools
         [Description("Optional. New description.")]
         string? description = null,
         [Description("Optional. Replace label set with these IDs (comma-separated UUIDs).")]
-        string? label_ids = null)
+        string? label_ids = null,
+        [Description("Optional. New due date as YYYY-MM-DD or an ISO-8601 timestamp with an explicit offset.")]
+        string? due_date = null,
+        [Description("Optional. Set true to remove the current due date.")]
+        bool clear_due_date = false)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();
 
@@ -186,8 +231,8 @@ public class WriteTools
         if (!Guid.TryParse(card_id, out var cardGuid))
             return Error("Invalid card_id format");
 
-        if (title == null && description == null && label_ids == null)
-            return Error("At least one field (title, description, or label_ids) must be provided");
+        if (title == null && description == null && label_ids == null && due_date == null && !clear_due_date)
+            return Error("At least one field (title, description, due_date, clear_due_date, or label_ids) must be provided");
 
         var parameters = new Dictionary<string, object?>
         {
@@ -197,7 +242,27 @@ public class WriteTools
 
         if (title != null) parameters["title"] = title;
         if (description != null) parameters["description"] = description;
-        if (label_ids != null) parameters["labelIds"] = ParseGuidList(label_ids);
+        if (label_ids != null)
+        {
+            if (!TryParseGuidList(label_ids, out var labelIds))
+                return Error("label_ids must contain only comma-separated non-empty UUIDs");
+            var labelError = await ValidateBoardLabelsAsync(boardGuid, labelIds);
+            if (labelError != null)
+                return Error(labelError);
+            parameters["labelIds"] = labelIds;
+        }
+
+        if (due_date != null)
+        {
+            if (!TryParseDueDate(due_date, out var dueDate, out var dueDateError))
+                return Error(dueDateError);
+            if (clear_due_date)
+                return Error("due_date and clear_due_date cannot both be specified");
+            parameters["dueDate"] = dueDate;
+        }
+
+        if (clear_due_date)
+            parameters["clearDueDate"] = true;
 
         var summary = title != null ? $"Update card: {title}" : "Update card fields";
 
@@ -205,7 +270,7 @@ public class WriteTools
             SourceType: ProposalSourceType.Manual,
             RequestedByUserId: userId,
             Summary: summary,
-            RiskLevel: RiskLevel.Medium,
+            RiskLevel: RiskLevel.Low,
             CorrelationId: Guid.NewGuid().ToString(),
             BoardId: boardGuid,
             Operations: new List<CreateProposalOperationDto>
@@ -373,13 +438,39 @@ public class WriteTools
         return ProposalCreated(result.Value.Id, "Proposal created. Review and approve in Taskdeck to create the column.");
     }
 
-    private static List<Guid> ParseGuidList(string commaSeparated)
+    private static bool TryParseGuidList(string commaSeparated, out List<Guid> values)
     {
-        return commaSeparated
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(s => Guid.TryParse(s, out _))
-            .Select(Guid.Parse)
-            .ToList();
+        values = new List<Guid>();
+        if (string.IsNullOrWhiteSpace(commaSeparated))
+            return true;
+
+        var parts = commaSeparated.Split(',', StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            if (string.IsNullOrWhiteSpace(part) || !Guid.TryParse(part, out var value) || value == Guid.Empty)
+                return false;
+            values.Add(value);
+        }
+
+        return true;
+    }
+
+    private static bool TryParseDueDate(string raw, out string normalized, out string error)
+    {
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(new { dueDate = raw }));
+        if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
+                document.RootElement,
+                "dueDate",
+                out _,
+                out var dueDate,
+                out error))
+        {
+            normalized = string.Empty;
+            return false;
+        }
+
+        normalized = dueDate!.Value.ToString("O");
+        return true;
     }
 
     private static string Error(string message)

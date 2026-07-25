@@ -20,6 +20,14 @@ namespace Taskdeck.Api.Controllers;
 public record ChangePasswordRequest(string CurrentPassword, string NewPassword, string? MfaCode = null);
 public record ExchangeCodeRequest(string Code);
 public record LinkExchangeRequest(string Code);
+public record RegistrationAvailabilityResponse(
+    string Mode,
+    bool IsRegistrationAvailable,
+    bool InviteRequired);
+public record AuthProvidersResponse(
+    bool GitHub,
+    IReadOnlyList<OidcProviderInfoDto> Oidc,
+    RegistrationAvailabilityResponse Registration);
 
 /// <summary>
 /// Authentication endpoints — register, login, change password, and GitHub OAuth flow.
@@ -35,6 +43,7 @@ public class AuthController : AuthenticatedControllerBase
     private readonly OidcSettings _oidcSettings;
     private readonly MfaService _mfaService;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IRegistrationPolicyService _registrationPolicy;
 
     public AuthController(
         AuthenticationService authService,
@@ -42,7 +51,8 @@ public class AuthController : AuthenticatedControllerBase
         OidcSettings oidcSettings,
         MfaService mfaService,
         IUserContext userContext,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IRegistrationPolicyService registrationPolicy)
         : base(userContext)
     {
         _authService = authService;
@@ -50,6 +60,7 @@ public class AuthController : AuthenticatedControllerBase
         _oidcSettings = oidcSettings;
         _mfaService = mfaService;
         _unitOfWork = unitOfWork;
+        _registrationPolicy = registrationPolicy;
     }
 
     /// <summary>
@@ -95,6 +106,7 @@ public class AuthController : AuthenticatedControllerBase
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Register([FromBody] CreateUserDto dto)
     {
@@ -510,17 +522,22 @@ public class AuthController : AuthenticatedControllerBase
     /// </summary>
     [HttpGet("providers")]
     [AllowAnonymous]
-    public IActionResult GetProviders()
+    [ProducesResponseType(typeof(AuthProvidersResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProviders(CancellationToken cancellationToken)
     {
         var oidcProviders = _oidcSettings.ConfiguredProviders
             .Select(p => new OidcProviderInfoDto(p.Name, p.DisplayName))
             .ToList();
 
-        return Ok(new
-        {
-            GitHub = _gitHubOAuthSettings.IsConfigured,
-            Oidc = oidcProviders
-        });
+        var registration = await _registrationPolicy.GetAvailabilityAsync(cancellationToken);
+
+        return Ok(new AuthProvidersResponse(
+            _gitHubOAuthSettings.IsConfigured,
+            oidcProviders,
+            new RegistrationAvailabilityResponse(
+                registration.Mode.ToString(),
+                registration.IsRegistrationAvailable,
+                registration.InviteRequired)));
     }
 
     /// <summary>

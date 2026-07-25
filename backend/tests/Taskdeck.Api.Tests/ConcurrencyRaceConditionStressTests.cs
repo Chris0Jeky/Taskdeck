@@ -841,49 +841,548 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
     // ── SignalR Presence Concurrency ────────────────────────────────────────
 
     /// <summary>
-    /// Waits for the presence snapshot to stabilize (no new events for
-    /// <paramref name="stableFor"/>) and returns the last snapshot.
-    /// Tracks total event count rather than member count so that events
-    /// with the same member count (e.g., simultaneous join + leave) still
-    /// reset the stabilization timer. Throws when no stable window is observed
-    /// before timeout.
+    /// Waits for the snapshot published by an owner's uniquely identifiable
+    /// editing-state barrier. The marker supplies causal identity that wall-clock
+    /// timestamps cannot: delayed pre-barrier snapshots cannot contain it, even
+    /// when their timestamps tie or callbacks arrive out of order.
     /// </summary>
-    private static async Task<BoardPresenceSnapshot?> WaitForPresenceStabilizationAsync(
+    private static async Task<BoardPresenceSnapshot> WaitForPresenceBarrierAsync(
         EventCollector<BoardPresenceSnapshot> events,
-        TimeSpan? timeout = null,
-        TimeSpan? stableFor = null)
+        Guid ownerUserId,
+        Guid editingMarker,
+        TimeSpan? timeout = null)
     {
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(30);
-        var effectiveStableFor = stableFor ?? TimeSpan.FromSeconds(2);
         var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
-        var lastEventCount = -1;
-        var lastChangeTime = DateTimeOffset.UtcNow;
 
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var allSnapshots = events.ToList();
-            var currentEventCount = allSnapshots.Count;
+            var barrierSnapshot = events.ToList().LastOrDefault(snapshot =>
+                snapshot.Members.Any(member =>
+                    member.UserId == ownerUserId
+                    && member.EditingCardId == editingMarker));
 
-            if (currentEventCount != lastEventCount)
-            {
-                lastEventCount = currentEventCount;
-                lastChangeTime = DateTimeOffset.UtcNow;
-            }
-            else if (currentEventCount > 0 && DateTimeOffset.UtcNow - lastChangeTime >= effectiveStableFor)
-            {
-                // No new events have arrived for the required duration
-                return allSnapshots.Last();
-            }
+            if (barrierSnapshot is not null)
+                return barrierSnapshot;
 
             await Task.Delay(50);
         }
 
-        var last = events.ToList().LastOrDefault();
-        var snapshotCount = events.ToList().Count;
+        var observedSnapshots = events.ToList();
         throw new TimeoutException(
-            $"Presence snapshots did not stabilize for {effectiveStableFor.TotalSeconds}s within {effectiveTimeout.TotalSeconds}s. " +
-            $"Observed {snapshotCount} snapshots; last member count was {last?.Members.Count ?? 0}.");
+            $"No presence snapshot contained the requested owner editing marker within {effectiveTimeout.TotalSeconds}s. " +
+            $"Observed {observedSnapshots.Count} total snapshots; " +
+            $"owner={ownerUserId:N}, marker={editingMarker:N}.");
     }
+
+    private static void AssertPresenceMembers(
+        BoardPresenceSnapshot snapshot,
+        IEnumerable<Guid> expectedUserIds,
+        string phase)
+    {
+        var expected = expectedUserIds.Distinct().ToList();
+        snapshot.Members.Select(member => member.UserId).Should().BeEquivalentTo(expected,
+            $"the {phase} barrier should contain exactly the users whose hub operations succeeded");
+    }
+
+    private static bool SnapshotCarriesOwnerMarker(
+        BoardPresenceSnapshot snapshot,
+        Guid ownerUserId,
+        Guid editingMarker)
+        => snapshot.Members.Any(member =>
+            member.UserId == ownerUserId && member.EditingCardId == editingMarker);
+
+    /// <summary>
+    /// Presence snapshots observed for a phase that are NOT the causal marker
+    /// snapshot — i.e. the JoinBoard/LeaveBoard-originated deltas. The marker is
+    /// delivered by a separate <c>SetEditingCard</c> broadcast carrying full
+    /// tracker state, so these deltas are the only proof that the join/leave
+    /// events themselves reached the observer rather than merely mutating the
+    /// tracker (issue #1371).
+    /// </summary>
+    private static IReadOnlyList<BoardPresenceSnapshot> SelectPhaseBroadcasts(
+        IEnumerable<BoardPresenceSnapshot> observed,
+        Guid ownerUserId,
+        Guid editingMarker)
+        => observed
+            .Where(snapshot => !SnapshotCarriesOwnerMarker(snapshot, ownerUserId, editingMarker))
+            .ToList();
+
+    /// <summary>
+    /// Drains the observer's phase broadcasts until every expected join/leave
+    /// delta has been received (or a bounded timeout elapses). The owner's marker
+    /// snapshot ends the causal barrier, but the observer's later marker send is
+    /// not a delivery fence for the OTHER connections' join/leave broadcasts, so a
+    /// legitimate delta can land just after the barrier resolves. Waiting for the
+    /// full expected count both (a) prevents a false-red when a delta is merely
+    /// slow, and (b) guarantees every phase broadcast has been consumed before the
+    /// caller clears the collector — so no straggler from this phase can leak into
+    /// the next and masquerade as one of its deltas. If a delta is genuinely
+    /// dropped, the timeout elapses and the delivery assertion fails closed on the
+    /// short count. Extra broadcasts beyond the expected count are impossible here
+    /// (one per successful invocation), so the count is exact on the green path.
+    /// </summary>
+    private static async Task<IReadOnlyList<BoardPresenceSnapshot>> DrainPhaseBroadcastsAsync(
+        EventCollector<BoardPresenceSnapshot> events,
+        Guid ownerUserId,
+        Guid editingMarker,
+        int expectedDeliveryCount,
+        TimeSpan? timeout = null)
+    {
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(15);
+        var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(events.ToList(), ownerUserId, editingMarker);
+        while (phaseBroadcasts.Count < expectedDeliveryCount && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+            phaseBroadcasts = SelectPhaseBroadcasts(events.ToList(), ownerUserId, editingMarker);
+        }
+
+        return phaseBroadcasts;
+    }
+
+    /// <summary>
+    /// Asserts every successful join was delivered to the observer as its own
+    /// presence broadcast, not merely reflected in the marker snapshot. Each
+    /// JoinBoard publishes exactly one snapshot, and the owner marker fence keeps
+    /// stragglers out of the phase window, so a per-phase count floor catches the
+    /// case where some (not all) join broadcasts are dropped — full-state
+    /// snapshots would otherwise let a later cumulative delta mask an earlier
+    /// suppressed one. Fails closed when any join broadcast is suppressed or a
+    /// joined identity never appears in a delta (issue #1371).
+    /// </summary>
+    private static void AssertJoinBroadcastsObserved(
+        IReadOnlyList<BoardPresenceSnapshot> phaseBroadcasts,
+        IEnumerable<Guid> joinedUserIds)
+    {
+        var expectedIds = joinedUserIds.Distinct().ToList();
+
+        phaseBroadcasts.Count.Should().BeGreaterThanOrEqualTo(expectedIds.Count,
+            "every successful join must reach the observer as its own presence broadcast " +
+            "distinct from the SetEditingCard marker snapshot; otherwise the test proves " +
+            "tracker membership but not per-join delivery (issue #1371)");
+
+        var deliveredUserIds = phaseBroadcasts
+            .SelectMany(snapshot => snapshot.Members.Select(member => member.UserId))
+            .ToHashSet();
+
+        foreach (var joinedUserId in expectedIds)
+        {
+            deliveredUserIds.Should().Contain(joinedUserId,
+                "every successful join must be visible in an observed join-originated presence " +
+                "broadcast, not only in the marker snapshot");
+        }
+    }
+
+    /// <summary>
+    /// Asserts every successful leave was delivered to the observer as its own
+    /// shrink broadcast, not merely reflected in the marker snapshot. Because hub
+    /// broadcasts are full-state snapshots, a leaver is absent from every later
+    /// snapshot once removed — so a bare "absent from some delta" check would pass
+    /// even if that leaver's own LeaveBoard broadcast was dropped and only a
+    /// co-leaver's arrived. Each LeaveBoard publishes exactly one snapshot and the
+    /// marker fence keeps stragglers out of the phase window, so the per-phase
+    /// count floor requires one delivered broadcast per successful leave. Fails
+    /// closed when any leave broadcast is suppressed, or when a supposedly-left
+    /// identity is still present in every observed delta (issue #1371).
+    /// </summary>
+    private static void AssertLeaveBroadcastsObserved(
+        IReadOnlyList<BoardPresenceSnapshot> phaseBroadcasts,
+        IEnumerable<Guid> leftUserIds)
+    {
+        var expectedIds = leftUserIds.Distinct().ToList();
+
+        phaseBroadcasts.Count.Should().BeGreaterThanOrEqualTo(expectedIds.Count,
+            "every successful leave must reach the observer as its own presence broadcast " +
+            "distinct from the SetEditingCard marker snapshot; otherwise a co-leaver's " +
+            "full-state snapshot could mask a suppressed leave broadcast (issue #1371)");
+
+        foreach (var leftUserId in expectedIds)
+        {
+            phaseBroadcasts.Should().Contain(
+                snapshot => snapshot.Members.All(member => member.UserId != leftUserId),
+                "every successful leave must be visible as a shrink in an observed leave-originated " +
+                "presence broadcast, not only in the marker snapshot");
+        }
+    }
+
+    private static async Task InvokePresenceMutationAndRecordSuccessAsync(
+        Func<Task> invoke,
+        Action recordSuccess)
+    {
+        await invoke();
+        recordSuccess();
+    }
+
+    [Fact]
+    public async Task PresenceBarrier_UsesMarker_WhenTimestampsTieAndDeliveryIsReordered()
+    {
+        var boardId = Guid.NewGuid();
+        var ownerUserId = Guid.NewGuid();
+        var remainingUserId = Guid.NewGuid();
+        var editingMarker = Guid.NewGuid();
+        var tiedOccurrence = DateTimeOffset.UtcNow;
+        var staleSnapshot = new BoardPresenceSnapshot(
+            boardId,
+            [
+                new BoardPresenceMember(ownerUserId, "Owner", null),
+                new BoardPresenceMember(Guid.NewGuid(), "Stale member", null),
+                new BoardPresenceMember(Guid.NewGuid(), "Stale growth", null)
+            ],
+            tiedOccurrence);
+        var barrierSnapshot = new BoardPresenceSnapshot(
+            boardId,
+            [
+                new BoardPresenceMember(ownerUserId, "Owner", editingMarker),
+                new BoardPresenceMember(remainingUserId, "Remaining", null)
+            ],
+            tiedOccurrence);
+        var events = new EventCollector<BoardPresenceSnapshot>();
+        events.Add(staleSnapshot);
+        events.Add(barrierSnapshot);
+
+        var selected = await WaitForPresenceBarrierAsync(
+            events,
+            ownerUserId,
+            editingMarker,
+            timeout: TimeSpan.FromSeconds(1));
+
+        selected.Should().BeSameAs(barrierSnapshot,
+            "the causal marker, not a tied timestamp or callback order, identifies current state");
+        AssertPresenceMembers(selected, [ownerUserId, remainingUserId], "post-leave");
+    }
+
+    [Fact]
+    public async Task PresenceBarrier_StillRejectsGrowthAfterLeaves()
+    {
+        var boardId = Guid.NewGuid();
+        var ownerUserId = Guid.NewGuid();
+        var remainingUserId = Guid.NewGuid();
+        var unexpectedUserId = Guid.NewGuid();
+        var editingMarker = Guid.NewGuid();
+        var tiedOccurrence = DateTimeOffset.UtcNow;
+        var grownBarrierSnapshot = new BoardPresenceSnapshot(
+            boardId,
+            [
+                new BoardPresenceMember(ownerUserId, "Owner", editingMarker),
+                new BoardPresenceMember(remainingUserId, "Remaining", null),
+                new BoardPresenceMember(unexpectedUserId, "Unexpected growth", null)
+            ],
+            tiedOccurrence);
+        var delayedStaleSnapshot = new BoardPresenceSnapshot(
+            boardId,
+            [
+                new BoardPresenceMember(ownerUserId, "Owner", null),
+                new BoardPresenceMember(remainingUserId, "Remaining", null)
+            ],
+            tiedOccurrence);
+        var events = new EventCollector<BoardPresenceSnapshot>();
+        events.Add(grownBarrierSnapshot);
+        events.Add(delayedStaleSnapshot);
+
+        var selected = await WaitForPresenceBarrierAsync(
+            events,
+            ownerUserId,
+            editingMarker,
+            timeout: TimeSpan.FromSeconds(1));
+
+        var act = () => AssertPresenceMembers(
+            selected,
+            [ownerUserId, remainingUserId],
+            "post-leave");
+
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*post-leave barrier should contain exactly*");
+    }
+
+    [Fact]
+    public async Task PresenceBarrier_WithoutMatchingMarker_ThrowsDiagnosticTimeout()
+    {
+        var ownerUserId = Guid.NewGuid();
+        var editingMarker = Guid.NewGuid();
+        var events = new EventCollector<BoardPresenceSnapshot>();
+        events.Add(new BoardPresenceSnapshot(
+            Guid.NewGuid(),
+            [new BoardPresenceMember(ownerUserId, "Owner", null)],
+            DateTimeOffset.UtcNow));
+
+        var act = () => WaitForPresenceBarrierAsync(
+            events,
+            ownerUserId,
+            editingMarker,
+            timeout: TimeSpan.FromMilliseconds(150));
+
+        await act.Should().ThrowAsync<TimeoutException>()
+            .WithMessage("*No presence snapshot contained the requested owner editing marker*Observed 1 total snapshots*");
+    }
+
+    [Theory]
+    [InlineData("JoinBoard")]
+    [InlineData("LeaveBoard")]
+    public async Task PresenceMutation_PostMutationFailure_CommitsTrackerStateThenFailsClosed(
+        string operation)
+    {
+        // Production ordering (BoardsHub.cs): JoinBoard mutates the tracker at :37
+        // and then awaits the broadcast at :38; LeaveBoard mutates at :53 then
+        // broadcasts at :54. A broadcast/transport failure therefore lands *after*
+        // the tracker has already committed the membership change, leaving the
+        // invocation outcome ambiguous. This control drives the real production
+        // InMemoryBoardPresenceTracker to that committed post-mutation state, then
+        // proves the fail-closed helper propagates the ambiguity instead of
+        // recording a success that would diverge from committed tracker state.
+        // (The broadcast failure is simulated because the hub exposes no
+        // broadcast-fault seam; the tracker state under assertion is genuine.)
+        var tracker = new InMemoryBoardPresenceTracker();
+        var boardId = Guid.NewGuid();
+        var subjectUserId = Guid.NewGuid();
+        const string subjectConnection = "conn-subject";
+
+        // An owner keeps the board alive so leave snapshots stay non-empty.
+        tracker.Join(boardId, "conn-owner", Guid.NewGuid(), "Owner");
+
+        BoardPresenceSnapshot committedSnapshot;
+        bool subjectCommittedPresent;
+        Exception broadcastFailure;
+        if (operation == "JoinBoard")
+        {
+            committedSnapshot = tracker.Join(boardId, subjectConnection, subjectUserId, "Subject");
+            subjectCommittedPresent = true;
+            broadcastFailure = new HubException("broadcast failed after tracker mutation");
+        }
+        else
+        {
+            tracker.Join(boardId, subjectConnection, subjectUserId, "Subject");
+            committedSnapshot = tracker.Leave(boardId, subjectConnection);
+            subjectCommittedPresent = false;
+            broadcastFailure = new HttpRequestException("transport lost the result after tracker mutation");
+        }
+
+        committedSnapshot.Members.Any(member => member.UserId == subjectUserId)
+            .Should().Be(subjectCommittedPresent,
+                "the production tracker commits the membership change before the broadcast await");
+
+        var recordedSuccessUserIds = new HashSet<Guid>();
+        async Task InvokeWithPostMutationBroadcastFailure()
+        {
+            await Task.Yield();
+            throw broadcastFailure;
+        }
+
+        var act = () => InvokePresenceMutationAndRecordSuccessAsync(
+            InvokeWithPostMutationBroadcastFailure,
+            () => recordedSuccessUserIds.Add(subjectUserId));
+
+        (await act.Should().ThrowAsync<Exception>())
+            .Which.Should().BeSameAs(broadcastFailure,
+                $"the ambiguous {operation} failure must propagate unchanged so the scenario aborts");
+
+        // The committed tracker already reflects the mutation (asserted above), but
+        // the expectation set is never updated because the broadcast failed. For a
+        // JoinBoard this is an outright divergence (tracker has the member, the
+        // expectation set does not); for a LeaveBoard the risk is the mirror image
+        // under different timing. Either way the fail-closed helper must abort
+        // rather than silently record an ambiguous outcome.
+        recordedSuccessUserIds.Should().NotContain(subjectUserId,
+            "a post-mutation broadcast failure is ambiguous and must never be recorded as a success");
+    }
+
+    [Fact]
+    public void JoinBroadcastAssertion_Passes_WhenEveryJoinDeltaObserved()
+    {
+        var ownerUserId = Guid.NewGuid();
+        var firstJoiner = Guid.NewGuid();
+        var secondJoiner = Guid.NewGuid();
+        var marker = Guid.NewGuid();
+        var observed = new[]
+        {
+            SnapshotWith([(ownerUserId, null), (firstJoiner, null)]),
+            SnapshotWith([(ownerUserId, null), (firstJoiner, null), (secondJoiner, null)]),
+            SnapshotWith([(ownerUserId, marker), (firstJoiner, null), (secondJoiner, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, marker);
+
+        phaseBroadcasts.Should().HaveCount(2, "only the marker snapshot is excluded");
+        var act = () => AssertJoinBroadcastsObserved(phaseBroadcasts, [firstJoiner, secondJoiner]);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void JoinBroadcastAssertion_FailsClosed_WhenAllJoinBroadcastsSuppressed()
+    {
+        // Regression the delivery assertion exists to catch (issue #1371): the
+        // tracker mutated and the SetEditingCard marker snapshot carries full
+        // membership, but every JoinBoard broadcast was dropped, so no
+        // observer-visible join delta ever arrived.
+        var ownerUserId = Guid.NewGuid();
+        var joinedUserId = Guid.NewGuid();
+        var marker = Guid.NewGuid();
+        var markerOnly = new[]
+        {
+            SnapshotWith([(ownerUserId, marker), (joinedUserId, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(markerOnly, ownerUserId, marker);
+
+        phaseBroadcasts.Should().BeEmpty();
+        var act = () => AssertJoinBroadcastsObserved(phaseBroadcasts, [joinedUserId]);
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*its own presence broadcast*");
+    }
+
+    [Fact]
+    public void JoinBroadcastAssertion_FailsClosed_WhenAJoinedIdentityNeverBroadcast()
+    {
+        // A join delta reached the observer, but one joined identity's broadcast
+        // was dropped; it only appears in the marker snapshot.
+        var ownerUserId = Guid.NewGuid();
+        var deliveredJoiner = Guid.NewGuid();
+        var droppedJoiner = Guid.NewGuid();
+        var marker = Guid.NewGuid();
+        var observed = new[]
+        {
+            SnapshotWith([(ownerUserId, null), (deliveredJoiner, null)]),
+            SnapshotWith([(ownerUserId, marker), (deliveredJoiner, null), (droppedJoiner, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, marker);
+
+        var act = () => AssertJoinBroadcastsObserved(phaseBroadcasts, [deliveredJoiner, droppedJoiner]);
+        act.Should().Throw<Xunit.Sdk.XunitException>();
+    }
+
+    [Fact]
+    public void LeaveBroadcastAssertion_Passes_WhenEveryLeaveShrinkObserved()
+    {
+        var ownerUserId = Guid.NewGuid();
+        var priorMarker = Guid.NewGuid();
+        var leaveMarker = Guid.NewGuid();
+        var stayer = Guid.NewGuid();
+        var firstLeaver = Guid.NewGuid();
+        var secondLeaver = Guid.NewGuid();
+        var observed = new[]
+        {
+            // Leave deltas still carry the previous phase's owner marker, never the
+            // current leave marker, so they classify as phase broadcasts.
+            SnapshotWith([(ownerUserId, priorMarker), (stayer, null), (secondLeaver, null)]),
+            SnapshotWith([(ownerUserId, priorMarker), (stayer, null)]),
+            SnapshotWith([(ownerUserId, leaveMarker), (stayer, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, leaveMarker);
+
+        phaseBroadcasts.Should().HaveCount(2);
+        var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [firstLeaver, secondLeaver]);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void LeaveBroadcastAssertion_FailsClosed_WhenAllLeaveBroadcastsSuppressed()
+    {
+        var ownerUserId = Guid.NewGuid();
+        var leaveMarker = Guid.NewGuid();
+        var stayer = Guid.NewGuid();
+        var markerOnly = new[]
+        {
+            SnapshotWith([(ownerUserId, leaveMarker), (stayer, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(markerOnly, ownerUserId, leaveMarker);
+
+        phaseBroadcasts.Should().BeEmpty();
+        var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [Guid.NewGuid()]);
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*its own presence broadcast*");
+    }
+
+    [Fact]
+    public void LeaveBroadcastAssertion_FailsClosed_WhenALeftIdentityStillPresent()
+    {
+        // A shrink delta arrived, but the supposedly-left identity is still a
+        // member of every observed delta — its LeaveBoard broadcast never landed.
+        var ownerUserId = Guid.NewGuid();
+        var priorMarker = Guid.NewGuid();
+        var leaveMarker = Guid.NewGuid();
+        var stayer = Guid.NewGuid();
+        var stillPresentLeaver = Guid.NewGuid();
+        var observed = new[]
+        {
+            SnapshotWith([(ownerUserId, priorMarker), (stayer, null), (stillPresentLeaver, null)]),
+            SnapshotWith([(ownerUserId, leaveMarker), (stayer, null), (stillPresentLeaver, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, leaveMarker);
+
+        var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [stillPresentLeaver]);
+        act.Should().Throw<Xunit.Sdk.XunitException>();
+    }
+
+    [Fact]
+    public void JoinBroadcastAssertion_FailsClosed_WhenSomeJoinBroadcastsDropped()
+    {
+        // Two joins, but only one cumulative delta reached the observer (the other
+        // JoinBoard broadcast was dropped). Because snapshots are full-state, the
+        // surviving delta carries both identities, so the union check alone would
+        // false-green; the per-join count floor catches the missing broadcast.
+        var ownerUserId = Guid.NewGuid();
+        var firstJoiner = Guid.NewGuid();
+        var secondJoiner = Guid.NewGuid();
+        var marker = Guid.NewGuid();
+        var observed = new[]
+        {
+            SnapshotWith([(ownerUserId, null), (firstJoiner, null), (secondJoiner, null)]),
+            SnapshotWith([(ownerUserId, marker), (firstJoiner, null), (secondJoiner, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, marker);
+
+        phaseBroadcasts.Should().HaveCount(1, "only one join delta survived");
+        var act = () => AssertJoinBroadcastsObserved(phaseBroadcasts, [firstJoiner, secondJoiner]);
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*per-join delivery*");
+    }
+
+    [Fact]
+    public void LeaveBroadcastAssertion_FailsClosed_WhenSomeLeaveBroadcastsDropped()
+    {
+        // Two leaves, but only the co-leaver's shrink delta reached the observer
+        // (the other LeaveBoard broadcast was dropped). Both leavers are absent
+        // from the surviving full-state delta, so the bare absence check alone
+        // would false-green; the per-leave count floor catches the missing
+        // broadcast. This is the exact partial-suppression gap flagged in review.
+        var ownerUserId = Guid.NewGuid();
+        var priorMarker = Guid.NewGuid();
+        var leaveMarker = Guid.NewGuid();
+        var stayer = Guid.NewGuid();
+        var firstLeaver = Guid.NewGuid();
+        var secondLeaver = Guid.NewGuid();
+        var observed = new[]
+        {
+            // Only the second leave's snapshot survives; both leavers already absent.
+            SnapshotWith([(ownerUserId, priorMarker), (stayer, null)]),
+            SnapshotWith([(ownerUserId, leaveMarker), (stayer, null)])
+        };
+
+        var phaseBroadcasts = SelectPhaseBroadcasts(observed, ownerUserId, leaveMarker);
+
+        phaseBroadcasts.Should().HaveCount(1, "only one leave delta survived");
+        var act = () => AssertLeaveBroadcastsObserved(phaseBroadcasts, [firstLeaver, secondLeaver]);
+        act.Should().Throw<Xunit.Sdk.XunitException>()
+            .WithMessage("*its own presence broadcast*");
+    }
+
+    private static BoardPresenceSnapshot SnapshotWith(
+        IEnumerable<(Guid UserId, Guid? EditingCardId)> members)
+        => new(
+            Guid.NewGuid(),
+            members
+                .Select(member => new BoardPresenceMember(
+                    member.UserId,
+                    member.UserId.ToString("N")[..8],
+                    member.EditingCardId))
+                .ToList(),
+            DateTimeOffset.UtcNow);
 
     /// <summary>
     /// Scenario 14: Rapid join/leave stress.
@@ -925,11 +1424,16 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // All users join simultaneously via Barrier for true synchronization.
         // Unlike SemaphoreSlim, Barrier ensures all participants reach the
         // barrier point before any of them proceed past it.
-        // Under load, some SignalR invocations may fail with transient 500
-        // errors (e.g., SQLite contention). We track join successes to set
-        // correct expectations for the eventual-consistency assertion.
+        // Every invocation must complete successfully before its identity is
+        // used in the exact barrier expectation. A transport or hub failure can
+        // happen after the server mutates the tracker, so swallowing it would
+        // leave the expected state ambiguous and recreate a false-red assertion.
+        // Fail-closed is safe here because the test host now mirrors production
+        // SQLite settings (busy_timeout 5000ms / WAL) via UseTaskdeckSqlite (#1373),
+        // so the auth-check reads these invocations make no longer flake under
+        // contention. Repeated-run evidence backs this before merge (issue #1371).
         var connections = new List<HubConnection>();
-        var joinedConnections = new ConcurrentBag<HubConnection>();
+        var joinedConnections = new ConcurrentBag<(HubConnection Connection, Guid UserId)>();
         try
         {
             using var joinBarrier = new Barrier(connectionCount + 1);
@@ -940,84 +1444,91 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 await conn.StartAsync();
                 lock (connections) { connections.Add(conn); }
                 joinBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
-                try
-                {
-                    await conn.InvokeAsync("JoinBoard", board.Id);
-                    joinedConnections.Add(conn);
-                }
-                catch (Exception ex) when (ex is HubException or HttpRequestException)
-                {
-                    // Tolerate transient HubException (e.g., SQLite contention
-                    // under rapid-fire stress). The eventual-consistency check
-                    // below uses the actual success count.
-                }
+                await InvokePresenceMutationAndRecordSuccessAsync(
+                    () => conn.InvokeAsync("JoinBoard", board.Id),
+                    () => joinedConnections.Add((conn, user.UserId)));
             }).ToArray();
 
             joinBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
             await Task.WhenAll(joinTasks);
 
-            var actualJoined = joinedConnections.Count;
-            actualJoined.Should().BeGreaterThanOrEqualTo(1,
-                "at least one concurrent join must succeed to validate rapid join/leave behavior");
+            joinedConnections.Should().HaveCount(connectionCount,
+                "every concurrent join must complete unambiguously before evaluating presence");
 
-            // Wait for presence to stabilize after the burst of joins.
-            // On resource-constrained CI runners, SignalR presence broadcasts
-            // from concurrent joins may take time to propagate. Rather than
-            // asserting an exact count (which is fragile when some joins
-            // succeed at the Hub level but the presence broadcast is delayed
-            // or coalesced), we wait for the snapshot to stop changing and
-            // then verify it settled to a reasonable value.
-            var afterJoin = await WaitForPresenceStabilizationAsync(
-                observerEvents, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(2));
-            afterJoin.Should().NotBeNull("at least one presence snapshot should arrive after joins");
-            var settledJoinCount = afterJoin!.Members.Count;
-            // Must include the owner plus at least one joined user
-            settledJoinCount.Should().BeGreaterThanOrEqualTo(2,
-                "presence should include the owner plus at least one joined user");
-            // Should not exceed theoretical maximum (all joined + owner)
-            settledJoinCount.Should().BeLessThanOrEqualTo(actualJoined + 1,
-                "presence should not exceed the number of successfully joined users plus the owner");
+            // Publish a uniquely identifiable current-state barrier after every
+            // join invocation settles. Earlier snapshots cannot contain this
+            // marker, so timestamp ties and callback reordering are irrelevant.
+            var joinEditingMarker = Guid.NewGuid();
+            await observer.InvokeAsync("SetEditingCard", board.Id, joinEditingMarker);
+            var afterJoin = await WaitForPresenceBarrierAsync(
+                observerEvents,
+                owner.UserId,
+                joinEditingMarker,
+                TimeSpan.FromSeconds(30));
+            var expectedAfterJoin = joinedConnections
+                .Select(joined => joined.UserId)
+                .Append(owner.UserId)
+                .ToHashSet();
+            AssertPresenceMembers(afterJoin, expectedAfterJoin, "post-join");
+
+            // Delivery coverage (issue #1371): the marker snapshot alone would pass
+            // even if every JoinBoard broadcast were dropped, because SetEditingCard
+            // republishes full tracker state. Require the join burst to have reached
+            // the observer as its own presence deltas, carrying each joined identity.
+            // Drain until every join delta has arrived (the observer's marker send is
+            // not a delivery fence for the other connections' broadcasts), which also
+            // consumes every join broadcast before the clear below so none can leak
+            // into the leave phase.
+            var observedJoinBroadcasts = await DrainPhaseBroadcastsAsync(
+                observerEvents, owner.UserId, joinEditingMarker, joinedConnections.Count);
+            AssertJoinBroadcastsObserved(
+                observedJoinBroadcasts,
+                joinedConnections.Select(joined => joined.UserId));
 
             // First half of successfully-joined connections leave rapidly.
-            // Use the settled count from the join phase (not client-side
-            // joinedConnections count) to set realistic leave expectations.
             observerEvents.Clear();
             var leavingConns = joinedConnections.Take(Math.Max(1, joinedConnections.Count / 2)).ToList();
             leavingConns.Should().NotBeEmpty(
                 "rapid join/leave stress must attempt at least one leave");
-            var leaveSuccessCount = 0;
+            var leftUserIds = new ConcurrentBag<Guid>();
             using var leaveBarrier = new Barrier(leavingConns.Count + 1);
-            var leaveTasks = leavingConns.Select(async conn =>
+            var leaveTasks = leavingConns.Select(async leaving =>
             {
                 leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
-                try
-                {
-                    await conn.InvokeAsync("LeaveBoard", board.Id);
-                    Interlocked.Increment(ref leaveSuccessCount);
-                }
-                catch (Exception ex) when (ex is HubException or HttpRequestException)
-                {
-                    // Tolerate individual transient failures, but require at least
-                    // one successful leave below so this test still covers leave behavior.
-                }
+                await InvokePresenceMutationAndRecordSuccessAsync(
+                    () => leaving.Connection.InvokeAsync("LeaveBoard", board.Id),
+                    () => leftUserIds.Add(leaving.UserId));
             }).ToArray();
 
             leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
             await Task.WhenAll(leaveTasks);
 
-            var actualLeft = Interlocked.CompareExchange(ref leaveSuccessCount, 0, 0);
-            actualLeft.Should().BeGreaterThan(0,
-                "at least one LeaveBoard invocation must succeed to validate rapid leave behavior");
+            leftUserIds.Should().HaveCount(leavingConns.Count,
+                "every concurrent leave must complete unambiguously before evaluating presence");
 
-            // Wait for presence to stabilize after the burst of leaves.
-            var afterLeave = await WaitForPresenceStabilizationAsync(
-                observerEvents, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(2));
-            afterLeave.Should().NotBeNull("at least one presence snapshot should arrive after leaves");
-            var settledLeaveCount = afterLeave!.Members.Count;
-            settledLeaveCount.Should().BeLessThanOrEqualTo(settledJoinCount,
-                "presence count should not grow after members leave");
-            settledLeaveCount.Should().BeGreaterThanOrEqualTo(1,
-                "the observer owner should always remain in presence");
+            // A second unique marker identifies the current state after every
+            // leave attempt. Exact identities prove each successful leave took
+            // effect; an unchanged/no-op leave can no longer pass by equality.
+            var leaveEditingMarker = Guid.NewGuid();
+            await observer.InvokeAsync("SetEditingCard", board.Id, leaveEditingMarker);
+            var afterLeave = await WaitForPresenceBarrierAsync(
+                observerEvents,
+                owner.UserId,
+                leaveEditingMarker,
+                TimeSpan.FromSeconds(30));
+            var expectedAfterLeave = expectedAfterJoin
+                .Except(leftUserIds)
+                .ToHashSet();
+            AssertPresenceMembers(afterLeave, expectedAfterLeave, "post-leave");
+
+            // Delivery coverage (issue #1371): prove each leave reached the observer
+            // as its own shrink broadcast, not only via the SetEditingCard marker
+            // snapshot which republishes the already-mutated tracker state. Drain
+            // until every leave delta has arrived; the join phase was fully drained
+            // before the clear above, so these non-marker deltas are leave-only.
+            var observedLeaveBroadcasts = await DrainPhaseBroadcastsAsync(
+                observerEvents, owner.UserId, leaveEditingMarker, leftUserIds.Count);
+            AssertLeaveBroadcastsObserved(observedLeaveBroadcasts, leftUserIds);
         }
         finally
         {

@@ -15,7 +15,7 @@ import { addColumn, createBoard, seedMinimalBoard } from './board-setup-helpers'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-board-modals')
+  await registerAndAttachSession(page, request, 'visual-board-modals', { theme: 'legacy' })
 })
 
 test('card modal edit state', async ({ page }) => {

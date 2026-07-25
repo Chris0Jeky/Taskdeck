@@ -16,6 +16,219 @@ namespace Taskdeck.Api.Tests.Validation;
 /// </summary>
 public class OptionsValidationTests
 {
+    [Fact]
+    public void ArtefactStorageSettings_AcceptsAggregateQuotaAboveTwoGiB()
+    {
+        var settings = new ArtefactStorageSettings
+        {
+            MaxBytesPerArtefact = int.MaxValue,
+            MaxBytesPerUser = (long)int.MaxValue + 1
+        };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings,
+            context,
+            results,
+            validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_RejectsSingleArtefactAboveByteArrayLimit()
+    {
+        var settings = new ArtefactStorageSettings
+        {
+            MaxBytesPerArtefact = (long)int.MaxValue + 1,
+            MaxBytesPerUser = (long)int.MaxValue + 1
+        };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings,
+            context,
+            results,
+            validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, result => result.MemberNames.Contains(nameof(settings.MaxBytesPerArtefact)));
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-1.0)]
+    [InlineData(0.5)]
+    // 0.6 and 0.9 round UP to 1 under an int-operand range but are below the real
+    // 1.0 floor — they must be rejected by the double-operand range.
+    [InlineData(0.6)]
+    [InlineData(0.9)]
+    [InlineData(3601.0)]
+    // Non-finite doubles bind successfully from configuration strings ("NaN",
+    // "Infinity") and would reach TimeSpan.FromSeconds — which throws for NaN.
+    // The double-operand range rejects all three today; pin that so removing or
+    // weakening the attribute cannot silently open the FromSeconds(NaN) throw path.
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void ArtefactStorageSettings_ExtractionTimeoutSeconds_RejectsOutOfRange(double value)
+    {
+        var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(ArtefactStorageSettings.ExtractionTimeoutSeconds)));
+    }
+
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(30.0)]
+    [InlineData(3600.0)]
+    public void ArtefactStorageSettings_ExtractionTimeoutSeconds_AcceptsValidValues(double value)
+    {
+        var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_BindsExtractionTimeoutFromConfiguration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Artefacts:ExtractionTimeoutSeconds"] = "12.5"
+            })
+            .Build();
+
+        var settings = configuration.GetSection("Artefacts").Get<ArtefactStorageSettings>();
+
+        Assert.NotNull(settings);
+        Assert.Equal(12.5, settings!.ExtractionTimeoutSeconds);
+        Assert.Equal(TimeSpan.FromSeconds(12.5), settings.ExtractionTimeout);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_DefaultExtractionTimeout_IsThirtySeconds()
+    {
+        var settings = new ArtefactStorageSettings();
+
+        Assert.Equal(ArtefactStorageSettings.DefaultExtractionTimeoutSeconds, settings.ExtractionTimeoutSeconds);
+        Assert.Equal(TimeSpan.FromSeconds(30), settings.ExtractionTimeout);
+    }
+
+    [Fact]
+    public void AddOptionsValidation_RejectsExtractionTimeoutOutOfRangeAtStartup()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Artefacts:ExtractionTimeoutSeconds"] = "0"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddOptionsValidation(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<ArtefactStorageSettings>>().Value);
+        Assert.Contains(nameof(ArtefactStorageSettings.ExtractionTimeoutSeconds), exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(65)]
+    [InlineData(int.MaxValue)]
+    public void ArtefactStorageSettings_ExtractionMaxConcurrency_RejectsOutOfRange(int value)
+    {
+        var settings = new ArtefactStorageSettings { ExtractionMaxConcurrency = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(ArtefactStorageSettings.ExtractionMaxConcurrency)));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(64)]
+    public void ArtefactStorageSettings_ExtractionMaxConcurrency_AcceptsValidValues(int value)
+    {
+        var settings = new ArtefactStorageSettings { ExtractionMaxConcurrency = value };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.True(isValid);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_ExtractionMaxConcurrency_HasExpectedDefault()
+    {
+        var settings = new ArtefactStorageSettings();
+
+        Assert.Equal(2, settings.ExtractionMaxConcurrency);
+        Assert.Equal(ArtefactStorageSettings.DefaultExtractionMaxConcurrency, settings.ExtractionMaxConcurrency);
+    }
+
+    [Fact]
+    public void ArtefactStorageSettings_BindsExtractionMaxConcurrencyFromConfiguration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Artefacts:ExtractionMaxConcurrency"] = "4"
+            })
+            .Build();
+
+        var settings = configuration.GetSection("Artefacts").Get<ArtefactStorageSettings>();
+
+        Assert.NotNull(settings);
+        Assert.Equal(4, settings!.ExtractionMaxConcurrency);
+    }
+
+    [Fact]
+    public void AddOptionsValidation_RejectsExtractionMaxConcurrencyOutOfRangeAtStartup()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Artefacts:ExtractionMaxConcurrency"] = "0"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddOptionsValidation(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<ArtefactStorageSettings>>().Value);
+        Assert.Contains(nameof(ArtefactStorageSettings.ExtractionMaxConcurrency), exception.Message);
+    }
+
     // ── JwtSettingsValidator ─────────────────────────────────────────────
 
     [Fact]
@@ -239,6 +452,41 @@ public class OptionsValidationTests
     }
 
     [Fact]
+    public void RateLimitingValidator_Fails_WhenMcpAuthenticationPolicyIsInvalid()
+    {
+        var validator = new RateLimitingSettingsValidator();
+        var settings = new RateLimitingSettings
+        {
+            Enabled = true,
+            McpAuthenticationPerIp = new RateLimitPolicySettings(0, 60)
+        };
+
+        var result = validator.Validate(null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("McpAuthenticationPerIp", result.FailureMessage);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(10001)]
+    public void RateLimitingValidator_Fails_WhenMcpAuthenticationConcurrencyIsOutOfRange(int concurrency)
+    {
+        var validator = new RateLimitingSettingsValidator();
+        var settings = new RateLimitingSettings
+        {
+            Enabled = true,
+            McpAuthenticationPerIpConcurrency = concurrency
+        };
+
+        var result = validator.Validate(null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("McpAuthenticationPerIpConcurrency", result.FailureMessage);
+    }
+
+    [Fact]
     public void RateLimitingValidator_Succeeds_WithDefaultSettings()
     {
         var validator = new RateLimitingSettingsValidator();
@@ -256,7 +504,8 @@ public class OptionsValidationTests
         var settings = new RateLimitingSettings
         {
             Enabled = false,
-            AuthPerIp = new RateLimitPolicySettings(0, 0) // invalid, but should be skipped
+            AuthPerIp = new RateLimitPolicySettings(0, 0), // invalid, but should be skipped
+            McpAuthenticationPerIpConcurrency = 0 // invalid, but should be skipped
         };
 
         var result = validator.Validate(null, settings);
@@ -731,6 +980,30 @@ public class OptionsValidationTests
             response.IsSuccessStatusCode,
             $"App should start successfully with default valid config. " +
             $"Status: {(int)response.StatusCode}, Body: {body}");
+    }
+
+    [Fact]
+    public async Task App_StartsSuccessfully_WhenRateLimitingDisabled_WithOutOfRangeMcpConcurrency()
+    {
+        // With RateLimiting:Enabled=false the MCP pre-auth limiter is never constructed, so a
+        // stale or experimental out-of-range concurrency value must not fail ValidateOnStart.
+        // The range (1-10000) is deliberately enforced only by RateLimitingSettingsValidator —
+        // which skips when disabled, like the nested policy settings — and NOT by a data
+        // annotation, which ValidateDataAnnotations() would apply regardless of Enabled.
+        await using var baseFactory = new TestWebApplicationFactory();
+        await using var factory = baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("RateLimiting:Enabled", "false");
+            builder.UseSetting("RateLimiting:McpAuthenticationPerIpConcurrency", "0");
+        });
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health/live");
+
+        Assert.True(
+            response.IsSuccessStatusCode,
+            "A disabled rate-limiting configuration with an out-of-range MCP concurrency value " +
+            $"must still boot. Status: {(int)response.StatusCode}");
     }
 
     [Fact]

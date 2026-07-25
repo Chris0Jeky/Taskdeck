@@ -381,8 +381,627 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
 
       await store.updateOnboarding('replay')
 
+      // Writes confirm, never re-apply (issue #1343): the action's visibility
+      // intent applies optimistically from the known local base; the response's
+      // server-computed detail (currentStepId) does NOT re-apply. Server truth
+      // arrives via the next clean read.
+      expect(store.onboarding?.visibility).toBe('active')
+      expect(store.onboarding?.currentStepId).toBe('create-first-board')
+      expect(store.todaySummary?.onboarding.visibility).toBe('active')
+
+      vi.mocked(http.get).mockResolvedValue({
+        data: makeTodaySummary({ onboarding: replayed }),
+      })
+      await store.fetchTodaySummary()
       expect(store.onboarding?.currentStepId).toBe('step-2')
-      expect(store.todaySummary?.onboarding.currentStepId).toBe('step-2')
+    })
+  })
+
+  // ── late summary vs. newer local mode choice (issue #1343) ────────────────
+  // A Home/Today summary request that started before a newer local mode choice
+  // (updateMode) must not overwrite that choice when it resolves afterward.
+  // Genuinely newer summaries — those that start after the local action has
+  // settled — must still apply server truth. Ordering is made deterministic by
+  // controlling exactly when each request resolves, so these are not timing
+  // races: they exercise the store's version guard directly.
+
+  describe('late summary cannot overwrite a newer local mode choice', () => {
+    it('keeps a failed-save mode choice when a late Home summary resolves afterward', async () => {
+      // Home request begins first (carries the stale server mode 'guided').
+      let resolveHome!: (value: { data: HomeSummary }) => void
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => { resolveHome = resolve }),
+      )
+      // The user's preference save then fails, so the local selection is kept.
+      vi.mocked(http.put).mockRejectedValue(new Error('Failed to save workspace preferences'))
+
+      const store = useWorkspaceStore()
+      const homeRequest = store.fetchHomeSummary()
+
+      // User picks 'workbench' while the Home request is still in flight.
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+      // Failed save keeps the local selection and records the error (drives the warning).
+      expect(store.preferenceError).toBe('Failed to save workspace preferences')
+      expect(store.preferencesHydrated).toBe(false)
+
+      // The older Home response finally resolves carrying the stale 'guided' mode.
+      resolveHome({ data: makeHomeSummary({ workspaceMode: 'guided' }) })
+      await homeRequest
+
+      // The newer local choice survives; the late summary does not overwrite it.
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+      // Summary data still applied (mode AND onboarding are ordering-guarded),
+      // but the failed save's hydration state is not clobbered back to true by
+      // the late summary.
+      expect(store.homeSummary).not.toBeNull()
+      expect(store.preferencesHydrated).toBe(false)
+    })
+
+    it('keeps a newer mode choice when a late Today summary resolves afterward', async () => {
+      let resolveToday!: (value: { data: TodaySummary }) => void
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: TodaySummary }>((resolve) => { resolveToday = resolve }),
+      )
+      vi.mocked(http.put).mockResolvedValue({ data: makePreferencePayload('workbench') })
+
+      const store = useWorkspaceStore()
+      const todayRequest = store.fetchTodaySummary()
+
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+
+      resolveToday({ data: makeTodaySummary({ workspaceMode: 'guided' }) })
+      await todayRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+      // Today summary data is still populated even though its stale mode was dropped.
+      expect(store.todaySummary).not.toBeNull()
+    })
+
+    it('applies a Home summary mode that starts after the local choice has settled', async () => {
+      // Opposite interleaving: the local choice is fully settled first, then a
+      // Home summary begins — it is genuinely newer, so server truth applies.
+      vi.mocked(http.put).mockResolvedValue({ data: makePreferencePayload('workbench') })
+
+      const store = useWorkspaceStore()
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+
+      vi.mocked(http.get).mockResolvedValue({ data: makeHomeSummary({ workspaceMode: 'agent' }) })
+      await store.fetchHomeSummary()
+
+      expect(store.mode).toBe('agent')
+      expect(store.preferencesHydrated).toBe(true)
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
+    })
+
+    it('applies a Today summary mode that starts after the local choice has settled', async () => {
+      vi.mocked(http.put).mockResolvedValue({ data: makePreferencePayload('workbench') })
+
+      const store = useWorkspaceStore()
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+
+      vi.mocked(http.get).mockResolvedValue({ data: makeTodaySummary({ workspaceMode: 'agent' }) })
+      await store.fetchTodaySummary()
+
+      expect(store.mode).toBe('agent')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
+    })
+
+    it('drops a late Home mode even when the newer preference save succeeds', async () => {
+      // Ordering guard must fire regardless of whether the concurrent save
+      // succeeds or fails — it is the ordering, not the save outcome, that wins.
+      let resolveHome!: (value: { data: HomeSummary }) => void
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => { resolveHome = resolve }),
+      )
+      vi.mocked(http.put).mockResolvedValue({ data: makePreferencePayload('workbench') })
+
+      const store = useWorkspaceStore()
+      const homeRequest = store.fetchHomeSummary()
+
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+
+      resolveHome({ data: makeHomeSummary({ workspaceMode: 'guided' }) })
+      await homeRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+    })
+  })
+
+  // ── unsaved local choice survives SUBSEQUENT summaries (issue #1343, FIX A) ─
+  // After a FAILED save, the preference version is stable while the server still
+  // holds the old mode. Summaries fetched AFTER the failure capture the current
+  // version, so the version guard alone cannot block them — the session-scoped
+  // unsaved-choice flag must.
+
+  describe('failed save keeps the local choice against subsequent summaries', () => {
+    it('keeps the unsaved mode when summaries fetched AFTER the failed save resolve', async () => {
+      vi.mocked(http.put).mockRejectedValue(new Error('save failed'))
+
+      const store = useWorkspaceStore()
+      await store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+
+      // Fresh fetches after the failure: version is current, server still 'guided'.
+      vi.mocked(http.get)
+        .mockResolvedValueOnce({ data: makeHomeSummary({ workspaceMode: 'guided' }) })
+        .mockResolvedValueOnce({ data: makeTodaySummary({ workspaceMode: 'guided' }) })
+
+      await store.fetchHomeSummary()
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(false)
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+
+      await store.fetchTodaySummary()
+      expect(store.mode).toBe('workbench')
+      // Summary data itself still lands (only preference state is guarded).
+      expect(store.homeSummary).not.toBeNull()
+      expect(store.todaySummary).not.toBeNull()
+    })
+
+    it('clears the unsaved flag when a later save succeeds so newer summaries apply again', async () => {
+      vi.mocked(http.put).mockRejectedValueOnce(new Error('save failed'))
+
+      const store = useWorkspaceStore()
+      await store.updateMode('workbench')
+
+      vi.mocked(http.put).mockResolvedValueOnce({ data: makePreferencePayload('workbench') })
+      await store.updateMode('workbench')
+
+      vi.mocked(http.get).mockResolvedValue({ data: makeHomeSummary({ workspaceMode: 'agent' }) })
+      await store.fetchHomeSummary()
+
+      expect(store.mode).toBe('agent')
+      expect(store.preferencesHydrated).toBe(true)
+    })
+
+    it('hydratePreferences keeps the unsaved local mode while the server still disagrees', async () => {
+      vi.mocked(http.put).mockRejectedValue(new Error('save failed'))
+
+      const store = useWorkspaceStore()
+      await store.updateMode('workbench')
+
+      vi.mocked(http.get).mockResolvedValueOnce({ data: makePreferencePayload('guided') })
+      await store.hydratePreferences()
+
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(false)
+      // Onboarding has no unsaved local state, so the fresh server copy applies.
+      expect(store.onboarding).not.toBeNull()
+    })
+
+    it('hydratePreferences confirming the local mode clears the unsaved flag', async () => {
+      vi.mocked(http.put).mockRejectedValue(new Error('save failed'))
+
+      const store = useWorkspaceStore()
+      await store.updateMode('workbench')
+
+      // Server now matches the local choice (e.g. the save actually committed
+      // despite the error response, or another client saved the same mode).
+      vi.mocked(http.get).mockResolvedValueOnce({ data: makePreferencePayload('workbench') })
+      await store.hydratePreferences()
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+
+      // Flag cleared: a genuinely newer summary applies server truth again.
+      vi.mocked(http.get).mockResolvedValueOnce({ data: makeHomeSummary({ workspaceMode: 'agent' }) })
+      await store.fetchHomeSummary()
+      expect(store.mode).toBe('agent')
+    })
+
+    it('rejects a summary resolving while the preference save is still in flight', async () => {
+      // The summary starts AFTER the save began, so its captured version is
+      // current — but its payload may predate the save's server-side commit.
+      // The pending-preference-request check at apply time must reject it; the
+      // save's own resolution applies the authoritative state.
+      let resolveSave!: (value: unknown) => void
+      vi.mocked(http.put).mockReturnValueOnce(
+        new Promise<unknown>((resolve) => { resolveSave = resolve }),
+      )
+      vi.mocked(http.get).mockResolvedValue({ data: makeHomeSummary({ workspaceMode: 'guided' }) })
+
+      const store = useWorkspaceStore()
+      const saveRequest = store.updateMode('workbench')
+      expect(store.mode).toBe('workbench')
+
+      await store.fetchHomeSummary()
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(false)
+
+      resolveSave({ data: makePreferencePayload('workbench') })
+      await saveRequest
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+    })
+  })
+
+  // ── summaries that STARTED during a pending save (issue #1343, Codex P2#1) ──
+  // A summary GET that begins after a save bumped the version but before the
+  // PUT commits can read the OLD server mode. If the save then settles before
+  // the summary resolves, version/pending/dirty are all clean at apply time —
+  // only the pending-at-start capture can identify the summary as suspect.
+
+  describe('summaries that started during a pending save', () => {
+    it('rejects a Home summary that started during a save even when the save settles first', async () => {
+      let resolveSave!: (value: unknown) => void
+      let resolveHome!: (value: { data: HomeSummary }) => void
+      vi.mocked(http.put).mockReturnValueOnce(
+        new Promise<unknown>((resolve) => { resolveSave = resolve }),
+      )
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => { resolveHome = resolve }),
+      )
+
+      const store = useWorkspaceStore()
+      const saveRequest = store.updateMode('workbench')
+      // Summary begins while the save is in flight: its server-side read may
+      // predate the save's commit, so its payload carries 'guided'.
+      const homeRequest = store.fetchHomeSummary()
+
+      // The save settles FIRST: version stable, nothing pending, flag clean.
+      resolveSave({ data: makePreferencePayload('workbench') })
+      await saveRequest
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+
+      // The overlapped summary resolves LAST with the stale mode.
+      resolveHome({ data: makeHomeSummary({ workspaceMode: 'guided' }) })
+      await homeRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+      expect(store.homeSummary).not.toBeNull()
+    })
+
+    it('rejects a Today summary that started during a save even when the save settles first', async () => {
+      let resolveSave!: (value: unknown) => void
+      let resolveToday!: (value: { data: TodaySummary }) => void
+      vi.mocked(http.put).mockReturnValueOnce(
+        new Promise<unknown>((resolve) => { resolveSave = resolve }),
+      )
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: TodaySummary }>((resolve) => { resolveToday = resolve }),
+      )
+
+      const store = useWorkspaceStore()
+      const saveRequest = store.updateMode('workbench')
+      const todayRequest = store.fetchTodaySummary()
+
+      resolveSave({ data: makePreferencePayload('workbench') })
+      await saveRequest
+      expect(store.mode).toBe('workbench')
+
+      resolveToday({ data: makeTodaySummary({ workspaceMode: 'guided' }) })
+      await todayRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
+      expect(store.todaySummary).not.toBeNull()
+    })
+  })
+
+  // ── onboarding actions must not supersede mode saves (Codex P2#2) ──────────
+  // The mode and onboarding guards are versioned per field: an onboarding
+  // dismiss/replay that starts while a mode save is in flight must neither
+  // suppress the save's success/failure handling nor be reverted by the save's
+  // incidental onboarding echo.
+
+  describe('onboarding actions do not supersede mode saves', () => {
+    it('an onboarding action during a pending save does not suppress the failed-save handling', async () => {
+      let rejectSave!: (reason: unknown) => void
+      vi.mocked(http.put)
+        .mockReturnValueOnce(
+          new Promise<unknown>((_resolve, reject) => { rejectSave = reject }),
+        )
+        .mockResolvedValueOnce({ data: makeOnboarding({ visibility: 'dismissed' }) })
+
+      const store = useWorkspaceStore()
+      const saveRequest = store.updateMode('workbench')
+
+      // User dismisses the setup guide while the save is still in flight
+      // (reachable: the topbar fires updateMode un-awaited and Home setup
+      // actions stay clickable during the retry window).
+      await store.updateOnboarding('dismiss')
+      expect(store.onboarding?.visibility).toBe('dismissed')
+
+      // The save now fails. Its handling must still run: error + unsaved flag.
+      rejectSave(new Error('save failed'))
+      await saveRequest
+      expect(store.preferenceError).toBe('save failed')
+      expect(store.preferencesHydrated).toBe(false)
+
+      // Because the flag was set, a subsequent stale-mode summary cannot revert.
+      vi.mocked(http.get).mockResolvedValue({
+        data: makeHomeSummary({
+          workspaceMode: 'guided',
+          onboarding: makeOnboarding({ visibility: 'dismissed' }),
+        }),
+      })
+      await store.fetchHomeSummary()
+      expect(store.mode).toBe('workbench')
+      expect(store.onboarding?.visibility).toBe('dismissed')
+    })
+
+    it('a mode save settling after an onboarding dismissal keeps both results', async () => {
+      let resolveSave!: (value: unknown) => void
+      vi.mocked(http.put)
+        .mockReturnValueOnce(
+          new Promise<unknown>((resolve) => { resolveSave = resolve }),
+        )
+        .mockResolvedValueOnce({ data: makeOnboarding({ visibility: 'dismissed' }) })
+
+      const store = useWorkspaceStore()
+      const saveRequest = store.updateMode('workbench')
+      await store.updateOnboarding('dismiss')
+
+      // The save's response echoes onboarding as of ITS commit — before the
+      // dismissal. The echo must not revert the newer explicit dismissal, but
+      // the save's own mode confirmation must still land.
+      resolveSave({ data: makePreferencePayload('workbench') })
+      await saveRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+      expect(store.onboarding?.visibility).toBe('dismissed')
+    })
+  })
+
+  // ── writes confirm, never re-apply (issue #1343, round 4) ──────────────────
+  // Write responses never write field values back into the store, so no echo
+  // can cross fields or revert newer intent; each field's read guard is fully
+  // independent of the other field's in-flight writes.
+
+  describe('write responses confirm without re-applying', () => {
+    it('a mode save echo cannot revert an onboarding action that was already in flight', async () => {
+      // The onboarding action starts BEFORE the mode save, so the save's echo
+      // reflects pre-dismissal server state. Once the dismissal settles, the
+      // later-resolving save must not resurrect the old onboarding.
+      let resolveDismiss!: (value: unknown) => void
+      let resolveSave!: (value: unknown) => void
+      vi.mocked(http.put)
+        .mockReturnValueOnce(
+          new Promise<unknown>((resolve) => { resolveDismiss = resolve }),
+        )
+        .mockReturnValueOnce(
+          new Promise<unknown>((resolve) => { resolveSave = resolve }),
+        )
+
+      const store = useWorkspaceStore()
+      store.homeSummary = makeHomeSummary() // local onboarding base ('active')
+
+      const dismissRequest = store.updateOnboarding('dismiss')
+      const saveRequest = store.updateMode('workbench')
+
+      resolveDismiss({ data: makeOnboarding({ visibility: 'dismissed' }) })
+      await dismissRequest
+      expect(store.onboarding?.visibility).toBe('dismissed')
+
+      // The save resolves LAST; its payload carries pre-dismissal onboarding.
+      resolveSave({ data: makePreferencePayload('workbench') })
+      await saveRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(true)
+      expect(store.onboarding?.visibility).toBe('dismissed')
+      expect(store.homeSummary?.onboarding.visibility).toBe('dismissed')
+    })
+
+    it('a later failed onboarding action is not clobbered by an earlier overlapping success', async () => {
+      let resolveFirst!: (value: unknown) => void
+      let rejectSecond!: (reason: unknown) => void
+      vi.mocked(http.put)
+        .mockReturnValueOnce(
+          new Promise<unknown>((resolve) => { resolveFirst = resolve }),
+        )
+        .mockReturnValueOnce(
+          new Promise<unknown>((_resolve, reject) => { rejectSecond = reject }),
+        )
+
+      const store = useWorkspaceStore()
+      store.homeSummary = makeHomeSummary() // local onboarding base ('active')
+
+      const dismiss = store.updateOnboarding('dismiss') // intent: dismissed
+      const replay = store.updateOnboarding('replay')   // latest intent: active
+
+      resolveFirst({ data: makeOnboarding({ visibility: 'dismissed' }) })
+      await dismiss
+      // The earlier success must not re-apply its result over the later intent.
+      expect(store.onboarding?.visibility).toBe('active')
+
+      rejectSecond(new Error('replay failed'))
+      await expect(replay).rejects.toThrow('replay failed')
+      expect(store.preferenceError).toBe('replay failed')
+      // The latest local intent stands (kept + flagged unsaved).
+      expect(store.onboarding?.visibility).toBe('active')
+
+      // And the unsaved intent survives a subsequent summary carrying the
+      // server's actual state (dismissed — the first action committed).
+      vi.mocked(http.get).mockResolvedValue({
+        data: makeHomeSummary({ onboarding: makeOnboarding({ visibility: 'dismissed' }) }),
+      })
+      await store.fetchHomeSummary()
+      expect(store.onboarding?.visibility).toBe('active')
+    })
+
+    it('a pending onboarding action does not block a summary from hydrating mode', async () => {
+      let resolveDismiss!: (value: unknown) => void
+      vi.mocked(http.put).mockReturnValueOnce(
+        new Promise<unknown>((resolve) => { resolveDismiss = resolve }),
+      )
+      vi.mocked(http.get).mockResolvedValue({ data: makeHomeSummary({ workspaceMode: 'agent' }) })
+
+      const store = useWorkspaceStore()
+      store.todaySummary = makeTodaySummary() // local onboarding base
+      const dismiss = store.updateOnboarding('dismiss') // onboarding write pending
+
+      // The summary starts and resolves entirely during the onboarding write.
+      await store.fetchHomeSummary()
+
+      // Per-field guard: the pending ONBOARDING write must not block MODE.
+      expect(store.mode).toBe('agent')
+      expect(store.preferencesHydrated).toBe(true)
+      // The summary's onboarding overlapped the write and is blocked; the
+      // local dismissal intent stays visible.
+      expect(store.onboarding?.visibility).toBe('dismissed')
+
+      resolveDismiss({ data: makeOnboarding({ visibility: 'dismissed' }) })
+      await dismiss
+      expect(store.onboarding?.visibility).toBe('dismissed')
+    })
+  })
+
+  // ── stale summaries cannot revert onboarding either (issue #1343, FIX B) ───
+  // Guarding only the mode would let a stale summary revert a newer onboarding
+  // change (a dismissed setup guide reappearing) and make mode/onboarding
+  // diverge. Explicit onboarding actions version the same guard.
+
+  describe('late summary cannot overwrite newer onboarding state', () => {
+    it('stale summary cannot revert a newer onboarding dismissal', async () => {
+      let resolveHome!: (value: { data: HomeSummary }) => void
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => { resolveHome = resolve }),
+      )
+      vi.mocked(http.put).mockResolvedValue({ data: makeOnboarding({ visibility: 'dismissed' }) })
+
+      const store = useWorkspaceStore()
+      const homeRequest = store.fetchHomeSummary()
+
+      // User dismisses the setup guide while the Home request is in flight.
+      await store.updateOnboarding('dismiss')
+      expect(store.onboarding?.visibility).toBe('dismissed')
+
+      resolveHome({
+        data: makeHomeSummary({ onboarding: makeOnboarding({ visibility: 'active' }) }),
+      })
+      await homeRequest
+
+      // The dismissal survives, and the stored summary is patched to match the
+      // guarded onboarding rather than carrying the stale 'active' copy.
+      expect(store.onboarding?.visibility).toBe('dismissed')
+      expect(store.homeSummary?.onboarding.visibility).toBe('dismissed')
+    })
+
+    it('a stale summary blocks both mode and onboarding after a dismissal and a failed save (no divergence)', async () => {
+      // The summary starts FIRST, so its payload legitimately predates both the
+      // dismissal and the (failed) mode save: it carries 'active' + 'guided'.
+      let resolveHome!: (value: { data: HomeSummary }) => void
+      vi.mocked(http.get).mockReturnValueOnce(
+        new Promise<{ data: HomeSummary }>((resolve) => { resolveHome = resolve }),
+      )
+      vi.mocked(http.put)
+        .mockResolvedValueOnce({ data: makeOnboarding({ visibility: 'dismissed' }) })
+        .mockRejectedValueOnce(new Error('save failed'))
+
+      const store = useWorkspaceStore()
+      const homeRequest = store.fetchHomeSummary()
+
+      await store.updateOnboarding('dismiss')
+      await store.updateMode('workbench')
+
+      resolveHome({
+        data: makeHomeSummary({
+          workspaceMode: 'guided',
+          onboarding: makeOnboarding({ visibility: 'active' }),
+        }),
+      })
+      await homeRequest
+
+      // Neither half of the preference state reverts: no mode/onboarding divergence.
+      expect(store.mode).toBe('workbench')
+      expect(store.onboarding?.visibility).toBe('dismissed')
+      expect(store.homeSummary?.onboarding.visibility).toBe('dismissed')
+    })
+
+    it('a fresh summary after a failed save applies current onboarding while the unsaved mode survives', async () => {
+      // Per-field independence: the failed MODE save must not freeze onboarding
+      // sync. A summary fetched after the failure carries the server's CURRENT
+      // onboarding (the dismissal committed) — it applies — while its stale
+      // mode is still blocked by the unsaved-choice flag.
+      vi.mocked(http.put)
+        .mockResolvedValueOnce({ data: makeOnboarding({ visibility: 'dismissed' }) })
+        .mockRejectedValueOnce(new Error('save failed'))
+
+      const store = useWorkspaceStore()
+      await store.updateOnboarding('dismiss')
+      await store.updateMode('workbench')
+
+      vi.mocked(http.get).mockResolvedValue({
+        data: makeHomeSummary({
+          workspaceMode: 'guided',
+          onboarding: makeOnboarding({ visibility: 'dismissed', currentStepId: 'step-3' }),
+        }),
+      })
+      await store.fetchHomeSummary()
+
+      expect(store.mode).toBe('workbench')
+      expect(store.preferencesHydrated).toBe(false)
+      // The genuinely-newer onboarding copy applied.
+      expect(store.onboarding?.currentStepId).toBe('step-3')
+    })
+  })
+
+  // ── Today dual-guard combinations (issue #1343, FIX C) ─────────────────────
+  // fetchTodaySummary carries two guards: todayRequestVersion (Today-vs-Today
+  // ordering, #1333) and the preference guard. Pin each combination.
+
+  describe('Today dual-guard combinations', () => {
+    it('applies nothing when todayRequestVersion is stale even though the preference version is current', async () => {
+      let resolveOld!: (value: { data: TodaySummary }) => void
+      vi.mocked(http.get).mockImplementationOnce(
+        () => new Promise((resolve) => { resolveOld = resolve }),
+      )
+
+      const store = useWorkspaceStore()
+      const oldRequest = store.fetchTodaySummary()
+      // Bumps todayRequestVersion; the preference version is untouched.
+      store.clearTodaySummary()
+
+      resolveOld({
+        data: makeTodaySummary({
+          workspaceMode: 'agent',
+          onboarding: makeOnboarding({ visibility: 'dismissed' }),
+        }),
+      })
+      await oldRequest
+
+      expect(store.mode).toBe('guided')
+      expect(store.todaySummary).toBeNull()
+      expect(store.onboarding).toBeNull()
+    })
+
+    it('applies nothing when both todayRequestVersion and the preference version are stale', async () => {
+      let resolveOld!: (value: { data: TodaySummary }) => void
+      vi.mocked(http.get).mockImplementationOnce(
+        () => new Promise((resolve) => { resolveOld = resolve }),
+      )
+      vi.mocked(http.put).mockResolvedValue({ data: makePreferencePayload('workbench') })
+
+      const store = useWorkspaceStore()
+      const oldRequest = store.fetchTodaySummary()
+      store.clearTodaySummary()
+      await store.updateMode('workbench')
+
+      resolveOld({
+        data: makeTodaySummary({
+          workspaceMode: 'agent',
+          onboarding: makeOnboarding({ visibility: 'dismissed' }),
+        }),
+      })
+      await oldRequest
+
+      expect(store.mode).toBe('workbench')
+      expect(store.todaySummary).toBeNull()
+      // Nothing has synced onboarding: the stale summary is discarded wholesale
+      // and (round 4) the save's response echo never applies field values.
+      expect(store.onboarding).toBeNull()
     })
   })
 })

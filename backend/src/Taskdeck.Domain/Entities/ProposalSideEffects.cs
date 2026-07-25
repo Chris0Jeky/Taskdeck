@@ -2,14 +2,14 @@ namespace Taskdeck.Domain.Entities;
 
 /// <summary>
 /// Value object aggregating the full side-effect analysis for a proposal:
-/// the 7-row breakdown and the reversibility posture.
+/// the 7-row breakdown and the apply-risk posture.
 /// </summary>
 public sealed class ProposalSideEffects : IEquatable<ProposalSideEffects>
 {
     /// <summary>The 7-category side-effect breakdown.</summary>
     public IReadOnlyList<SideEffectRow> Rows { get; }
 
-    /// <summary>The reversibility posture for this proposal.</summary>
+    /// <summary>The apply-risk posture, exposed through the historical property name.</summary>
     public Reversibility Reversibility { get; }
 
     public ProposalSideEffects(IReadOnlyList<SideEffectRow> rows, Reversibility reversibility)

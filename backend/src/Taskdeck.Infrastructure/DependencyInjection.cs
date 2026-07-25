@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -31,19 +30,11 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        // Command timeout + WAL/busy_timeout interceptor live in UseTaskdeckSqlite —
+        // the single shared helper the API test factory also calls, so the test
+        // registration cannot drift from this one (#1282).
         services.AddDbContext<TaskdeckDbContext>(options =>
-            options
-                .UseSqlite(connectionString, sqliteOptions =>
-                {
-                    // Apply command timeout from configuration (default: 30s).
-                    // This applies to all EF Core commands including Database.Migrate().
-                    sqliteOptions.CommandTimeout(databaseSettings.CommandTimeoutSeconds);
-                })
-                // Enable WAL + busy_timeout on every connection so the local-first
-                // UI + MCP + CLI processes sharing one SQLite file don't hit
-                // SQLITE_BUSY ("database is locked") under normal concurrency.
-                .AddInterceptors(new SqlitePragmaConnectionInterceptor(
-                    databaseSettings.BusyTimeoutMilliseconds)));
+            options.UseTaskdeckSqlite(connectionString, databaseSettings));
 
         services.AddScoped<IBoardRepository, BoardRepository>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
@@ -86,6 +77,10 @@ public static class DependencyInjection
         services.AddScoped<IDailySnapshotRepository, DailySnapshotRepository>();
         services.AddScoped<ITomorrowNoteRepository, TomorrowNoteRepository>();
         services.AddScoped<IMcpToolHashRepository, McpToolHashRepository>();
+        services.AddScoped<IRegistrationPolicyStore, RegistrationPolicyStore>();
+        services.AddScoped<ISourceArtefactRepository, SourceArtefactRepository>();
+        services.AddScoped<IArtefactExtractionRepository, ArtefactExtractionRepository>();
+        services.AddScoped<IArtefactTextExtractor, PdfPigArtefactTextExtractor>();
 
         // Vector index is local; hash-based in-memory embeddings are development/test
         // oriented and stay disabled unless explicitly opted in.

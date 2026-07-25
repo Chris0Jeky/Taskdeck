@@ -15,7 +15,7 @@ interface ChatSessionListDto {
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await registerAndAttachSession(page, request, 'slicec-chat')
+  auth = await registerAndAttachSession(page, request, 'slicec-chat', { theme: 'legacy' })
 })
 
 test.describe('TST09 Chat Session Behavior', () => {

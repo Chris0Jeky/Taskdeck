@@ -104,23 +104,29 @@ When PRs #1013, #1014, #1025, #1026, #1027, #1028 merge, re-run the audit
 across `frontend/taskdeck-web/src/views/paper/**`. Per-surface follow-up
 issues will be filed referencing #1008.
 
-## CI baseline — `paper-tokens.css` (68 hex occurrences)
+## CI baseline — `paper-tokens.css` (70 hex occurrences)
 
 The CI workflow counts individual hex occurrences (not matching lines) in
 non-comment lines of `paper-tokens.css`.  The breakdown:
 
 | Category | Count |
 |---|---|
-| Token declarations (`.paper` block, lines 16-44) | 23 |
+| Token declarations (`.paper` block, lines 16-44) | 24 |
 | Shadow constants (`.paper` block, lines 71-74) | 4 |
-| Token declarations (`.paper-night` block, lines 91-116) | 22 |
+| Token declarations (`.paper-night` block, lines 91-116) | 23 |
 | Shadow constants (`.paper-night` block, lines 121-124) | 5 |
 | Substrate fiber texture (`.paper`, lines 137-140) | 3 |
 | Substrate fiber texture (`.paper-night`, lines 149-152) | 3 |
 | Letterpress shadows (`.paper` + `.paper-night`, lines 272-273) | 4 |
 | `.pbtn-primary:hover` (`.paper`-scoped, `#000` ×2, line 351) | 2 |
 | `.pbtn-ember` (`#fbf2e8` + `#ffffff20`, lines 356-357) | 2 |
-| Total | **68** |
+| Total | **70** |
+
+**2026-07-13 (REVIVAL-05 / #1344):** +2 for the new theme-aware `--td-on-ember`
+on-ember text token (`.paper` `#fefaf6`, `.paper-night` `#1c0d04`). It gives
+default Paper primary CTAs a WCAG-AA on-ember text colour (≥4.5:1) instead of the
+inherited `--td-text-inverse`, which computed to 3.06:1 against `--ember`. Both are
+token declaration sites that invert cleanly per theme.
 
 When adding new hex literals, bump the baseline in
 `reusable-paper-color-audit.yml` and add the rationale to this table in

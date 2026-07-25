@@ -8,12 +8,12 @@ import type { RecentlyAppliedRow } from './review/ReviewRecentApplied.vue'
 import ReviewMain from './review/ReviewMain.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
-import { useReviewProposals } from '../../composables/useReviewProposals'
+import { useReviewProposals, isProposalReadOnly } from '../../composables/useReviewProposals'
 import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useProposalRevisions } from '../../composables/useProposalRevisions'
-import { getErrorDisplay } from '../../composables/useErrorMapper'
+import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from '../../composables/useErrorMapper'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
@@ -59,6 +59,7 @@ const {
   isProposalExpired,
   isApplyActionable,
   isRejectActionable,
+  isProposalDeferred,
   isProposalDismissable,
   isStaleProposal,
   clearProposalDeepLink,
@@ -94,7 +95,7 @@ const {
   handleExecuteProposal,
   handleDismissProposal,
   handleDismissApplied,
-} = useReviewActions(proposals, ownedDismissableIds, loadProposals)
+} = useReviewActions(proposals, ownedDismissableIds, loadProposals, isProposalExpired)
 
 // --- Active proposal ---------------------------------------------------
 
@@ -187,7 +188,52 @@ const previewDiff = ref<string | null>(null)
 const previewDiffProposalId = ref<string | null>(null)
 const previewDiffLoading = ref(false)
 const previewDiffSection = ref<HTMLElement | null>(null)
+// How the diff pane presents (#1397): `live` fetched diff, `stored` read-only
+// diffPreview for a terminal/expired proposal, or `invalid` when the backend's
+// Apply-time gates reject the proposal. Null while nothing is shown.
+const previewDiffMode = ref<'live' | 'stored' | 'invalid' | null>(null)
+// The ACTUAL rejection reason for `invalid` mode — the backend's message for a
+// /diff 400 ("Proposal has expired" vs "Proposal must contain at least one
+// operation"), or the local zero-op wording for the pre-fetch guard. The pane
+// must never hardcode one reason for every 400 (#1397 MEDIUM-1).
+const previewDiffInvalidReason = ref<string | null>(null)
 let latestDiffRequestId = 0
+
+function clearPreviewDiff() {
+  previewDiffProposalId.value = null
+  previewDiff.value = null
+  previewDiffMode.value = null
+  previewDiffInvalidReason.value = null
+  previewDiffLoading.value = false
+}
+
+// The read-only banner label for the active proposal's stored preview: 'Expired'
+// when the clock/domain says so, otherwise its terminal status.
+const previewReadOnlyLabel = computed(() => {
+  const p = activeProposal.value
+  if (!p) return ''
+  if (isProposalExpired(p)) return 'Expired'
+  return normalizeProposalStatus(p.status)
+})
+
+// Read-only fallback when the proposal never captured a `diffPreview` (normal
+// creation flows leave it null — Codex review on #1414): derive a minimal
+// operation listing from the proposal's own recorded operations so a
+// terminal/expired proposal that still HAS operations is inspectable instead of
+// a dead "no stored preview" end. Local rendering only — the live `/diff` 400s
+// for these proposals (#1397).
+const storedOperationsFallback = computed(() => {
+  if (previewDiffMode.value !== 'stored' || previewDiff.value) return null
+  const ops = activeProposal.value?.operations ?? []
+  if (ops.length === 0) return null
+  return [...ops]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map(
+      (op, index) =>
+        `${index + 1}. ${formatActionLabel(op.actionType)} · ${op.targetType}${op.targetId ? ` (${op.targetId})` : ''}`,
+    )
+    .join('\n')
+})
 // Guards against a double-click firing two feedback POSTs (the backend is idempotent as a backstop).
 const reportingProposalId = ref<string | null>(null)
 
@@ -208,10 +254,44 @@ watch(
   (id) => {
     if (previewDiffProposalId.value && previewDiffProposalId.value !== id) {
       latestDiffRequestId += 1
-      previewDiffProposalId.value = null
-      previewDiff.value = null
-      previewDiffLoading.value = false
+      clearPreviewDiff()
     }
+  },
+)
+
+// #1397 LOW-5: the pane's presentation is chosen when it opens, but the active
+// proposal can turn read-only WHILE the pane is open — a status change (e.g.
+// apply lands, a refresh maps a terminal state in) or the 60s expiry clock
+// ticking past expiresAt. Re-derive: an open live/invalid pane flips to the
+// stored read-only presentation the moment the classification flips.
+watch(
+  () => {
+    const p = activeProposal.value
+    if (!p || previewDiffProposalId.value !== p.id) return false
+    return isProposalReadOnly(p, isProposalExpired(p))
+  },
+  (readOnly) => {
+    if (!readOnly) return
+    // SEAM INVARIANT (#1397 round 3, aligned with the Legacy watcher): a
+    // read-only conversion invalidates EVERY non-stored pane state. Paper sets
+    // previewDiffMode 'live' synchronously before its fetch, so unlike Legacy a
+    // null mode cannot coexist with an open pane id today — but the guard must
+    // not depend on that: only an already-stored presentation is skippable.
+    if (previewDiffMode.value === 'stored') return
+    const p = activeProposal.value
+    if (!p || previewDiffProposalId.value !== p.id) return
+    // Cancel any in-flight live fetch so a late response can't overwrite the
+    // read-only presentation.
+    const requestId = ++latestDiffRequestId
+    previewDiff.value = p.diffPreview
+    previewDiffMode.value = 'stored'
+    previewDiffInvalidReason.value = null
+    previewDiffLoading.value = false
+    // #1414 P2: this conversion newly presents the stored preview, so re-check
+    // access (parity with the Legacy watcher, which routes through
+    // presentStoredPreview). The prior live pane was access-checked at open, but
+    // access can be revoked in the window before it expires into read-only.
+    void verifyStoredPreviewAccess(p.id, requestId)
   },
 )
 
@@ -300,33 +380,21 @@ const queueItems = computed<QueueRailItem[]>(() =>
 )
 
 const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
-  const cutoff = nowMs.value - 6 * 60 * 60 * 1000 // 6h undo window
   return proposals.value
     .filter((p) => matchesActiveBoardFilter(p.boardId))
     .filter((p) => normalizeProposalStatus(p.status) === 'Applied' && p.appliedAt)
     .sort((a, b) => new Date(b.appliedAt as string).getTime() - new Date(a.appliedAt as string).getTime())
-    .map((p) => {
-      const appliedMs = new Date(p.appliedAt as string).getTime()
-      const left = appliedMs + 6 * 60 * 60 * 1000 - nowMs.value
-      const expired = appliedMs < cutoff || left <= 0
-      return {
-        id: p.id,
-        serial: `#${p.id.slice(0, 4).toUpperCase()}`,
-        title: p.summary || '(applied)',
-        left: expired ? null : formatRemaining(left),
-        expired,
-      }
-    })
+    .map((p) => ({
+      id: p.id,
+      serial: `#${p.id.slice(0, 4).toUpperCase()}`,
+      title: p.summary || '(applied)',
+      // Pass the backend ISO string straight through (same pattern as queueItems):
+      // ageLabel degrades gracefully on an unparseable value, whereas the previous
+      // Date→ms→Date→toISOString roundtrip threw RangeError on an invalid date.
+      age: ageLabel(p.appliedAt as string),
+    }))
     .slice(0, 4)
 })
-
-function formatRemaining(ms: number): string {
-  const totalMin = Math.max(0, Math.floor(ms / 60_000))
-  const h = Math.floor(totalMin / 60)
-  const m = totalMin % 60
-  if (h <= 0) return `${m}m`
-  return `${h}h ${m.toString().padStart(2, '0')}m`
-}
 
 // --- Main column data --------------------------------------------------
 
@@ -376,7 +444,7 @@ const decisionSummary = computed(() => {
   const p = activeProposal.value
   if (!p) return 'Nothing to decide right now'
   const ops = p.operations?.length ?? 0
-  return `${ops} ${ops === 1 ? 'operation' : 'operations'} · undo 6h · atomic`
+  return `${ops} ${ops === 1 ? 'operation' : 'operations'} · explicit review · atomic apply`
 })
 
 const headerSerial = computed(() => {
@@ -531,8 +599,18 @@ const whyNowBody = computed(() => {
 // --- Action wiring -----------------------------------------------------
 
 const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
+// #1414 round 4 P2-A: the zero-op apply guard's revision-load await participates
+// in the SHARED decision lock. While it is in flight the whole rail (buttons via
+// :busy, keymap via its !busy gate) is disabled — otherwise a Defer/Reject
+// during the await, with the #proposal- hash carve-out keeping selection
+// stable, could change the proposal's state under the resumed Apply.
+const applyGuardBusy = ref(false)
 const busy = computed(
-  () => proposalActionBusyId.value !== null || revisionBusy.value || bulkDismissBusy.value,
+  () =>
+    proposalActionBusyId.value !== null ||
+    revisionBusy.value ||
+    bulkDismissBusy.value ||
+    applyGuardBusy.value,
 )
 
 // True once the active proposal is settled (Applied/Rejected/Failed/Expired/
@@ -579,9 +657,10 @@ function onFileAwayBulk() {
   void handleDismissApplied()
 }
 
-function onApply() {
+async function onApply() {
   const p = activeProposal.value
   if (!p) return
+  if (applyGuardBusy.value) return
   if (revisionBusy.value) {
     toast.info('Save or cancel the revision before applying this proposal.')
     return
@@ -590,7 +669,53 @@ function onApply() {
     toast.info('This proposal is no longer actionable. Refresh review to see current status.')
     return
   }
-  const status = normalizeProposalStatus(p.status)
+  // #1397 P2-A: SEAM INVARIANT — a zero-operation proposal is only approved (or
+  // executed, #1414 round 4 P2-B: this guard sits BEFORE the Approved dispatch,
+  // so pre-#1423 Approved zero-op data gets the same verdict instead of a doomed
+  // execute round-trip) when its revision state is KNOWN (revisionsLoaded true).
+  // A saved revision carries operations the backend applies revision-aware
+  // (#1235); without the list we cannot distinguish "truly empty" from
+  // "revised". Unknown after the attempt (failed, or cancelled by a concurrent
+  // load) blocks the action. Since #1423 the backend enforces this at approve
+  // time too (zero-op approve 400s server-side, revision-aware) — this guard is
+  // UX-only: it saves the round-trip and gives the inline verdict.
+  if ((p.operations?.length ?? 0) === 0) {
+    if (!revisionsLoaded.value) {
+      applyGuardBusy.value = true
+      try {
+        await loadRevisionState(p.id)
+      } finally {
+        applyGuardBusy.value = false
+      }
+      // The active proposal can change during the await; only keep deciding on it.
+      if (activeProposal.value?.id !== p.id) return
+      // #1414 round 4 P2-A: identity is not enough — the proposal's STATE can
+      // change under the await from another surface or session (deferred,
+      // dismissed, status change) even while the shared busy lock holds this
+      // rail. Re-check actionability on the CURRENT object and no-op if it is
+      // no longer applyable or has been snoozed.
+      const current = activeProposal.value
+      if (!current || !isApplyActionable(current) || isProposalDeferred(current)) return
+    }
+    if (!revisionsLoaded.value) {
+      // Load failed or was cancelled — the revision-history-unavailable error
+      // toast (from loadRevisionState) covers the failure case; this names why
+      // Apply did not proceed.
+      toast.info('Revision history is unavailable, so this proposal cannot be verified for Apply. Try again.')
+      return
+    }
+    if (revisionCount.value === 0) {
+      const approvedZeroOp =
+        normalizeProposalStatus((activeProposal.value ?? p).status) === 'Approved'
+      toast.info(
+        approvedZeroOp
+          ? 'This proposal contains no operations — applying it to the board will be rejected.'
+          : 'This proposal contains no operations to apply — Apply will reject it. Reject or file it away instead.',
+      )
+      return
+    }
+  }
+  const status = normalizeProposalStatus((activeProposal.value ?? p).status)
   if (status === 'Approved') {
     void handleExecuteProposal(p.id)
     return
@@ -612,6 +737,13 @@ function onReject() {
     toast.info('Save or cancel the revision before rejecting this proposal.')
     return
   }
+  // #1414 round 4 P2-A: mirror onDefer/onFileAway — a decision must not fire
+  // while another action holds the shared lock (notably the zero-op apply
+  // guard's revision-load await). The keymap (!busy gate) and the disabled
+  // button already block Reject during that window; this internal guard keeps
+  // the invariant local so a future caller can't reopen the Defer/Reject-under-
+  // Apply race the P2-A busy join closed.
+  if (busy.value) return
   if (!isRejectActionable(p)) {
     toast.info('This proposal can no longer be rejected. Refresh review to see current status.')
     return
@@ -657,6 +789,42 @@ function onToggleProvenance() {
   toast.info('Provenance toggle is not wired yet; provenance is rendered inline below.')
 }
 
+// #1414 P2: revealing the stored `diffPreview` locally skips the `/diff` call
+// that used to re-run AuthorizeProposalAsync, so re-authorize on reveal. Render
+// SYNCHRONOUSLY (the #1397 seam invariant: local content is never network-gated),
+// then probe access via GET proposal — which returns 200 for a still-readable
+// terminal/expired proposal (unlike `/diff`, it does not 400 on expiry). ONLY a
+// genuine 403/404 retracts the preview; a transient error must not tear down an
+// inspectable local preview. The refreshed DTO is deliberately NOT rendered:
+// #1397 keeps the decision-time stored artifact (a live re-render can drift).
+// Guarded by requestId + proposal id so a late response for a toggled-off or
+// switched proposal cannot tear down the wrong pane.
+async function verifyStoredPreviewAccess(proposalId: string, requestId: number) {
+  try {
+    await automationApi.getProposal(proposalId)
+  } catch (e: unknown) {
+    if (!isAccessDeniedError(e)) return
+    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== proposalId) return
+    clearPreviewDiff()
+    toast.error('This proposal is no longer available to you.')
+  }
+}
+
+// Present a proposal's STORED preview read-only (no live `/diff`). The stored
+// `diffPreview` is LOCAL content and renders synchronously. Bumping the diff
+// request id also cancels any live fetch that this preview supersedes, so a
+// late 400 from a superseded request cannot overwrite the stored pane.
+function presentStoredPreview(target: ApiProposal) {
+  const requestId = ++latestDiffRequestId
+  previewDiffProposalId.value = target.id
+  previewDiff.value = target.diffPreview
+  previewDiffMode.value = 'stored'
+  previewDiffInvalidReason.value = null
+  previewDiffLoading.value = false
+  scrollDiffIntoView()
+  void verifyStoredPreviewAccess(target.id, requestId)
+}
+
 async function onPreviewDiff() {
   const p = activeProposal.value
   if (!p) return
@@ -664,37 +832,89 @@ async function onPreviewDiff() {
   // Already showing this proposal's diff → toggle it off.
   if (previewDiffProposalId.value === p.id) {
     latestDiffRequestId += 1
-    previewDiffProposalId.value = null
-    previewDiff.value = null
-    previewDiffLoading.value = false
+    clearPreviewDiff()
+    return
+  }
+
+  // Read-only / terminal proposals (expired, Applied, Rejected, Failed,
+  // Dismissed) never fire the live diff — PR #1395 makes `/diff` 400 for them.
+  // Present the stored `diffPreview` under an explicit read-only banner; when no
+  // stored preview exists, the banner + a "no stored preview" state, never an
+  // error toast (#1397 maintainer decision: stay inspectable, don't burden the
+  // UI).
+  //
+  // SEAM INVARIANT (#1397 round 3): the stored preview is LOCAL content and
+  // renders SYNCHRONOUSLY — no network gate may delay or veto it. The revision
+  // metadata GET (which only gates the revised-note caveat, #1397 MEDIUM-2:
+  // `diffPreview` is creation-time content revisions never update) runs async
+  // AFTERWARDS, augment-only and silent: a slow GET must not make the toggle
+  // look dead, and a failed GET must not error-toast over a presentable
+  // preview. Staleness of the caveat itself is handled inside loadRevisionState
+  // (generation counter + active-proposal-id re-check).
+  //
+  // PREVIEW-SOURCE SELECTION SEAM (#1397 Q1, maintainer ruling 2026-07-18):
+  // for a terminal/expired proposal we present the STORED `diffPreview`
+  // (`previewDiff.value = p.diffPreview` below) rather than a live diff. This is
+  // BY DESIGN — the stored preview is the artifact the reviewer actually saw at
+  // decision time; a live diff of a terminal proposal can drift from it (a later
+  // revision, board change, or backend re-render), which would break review-first
+  // provenance. The alternative (live diff for non-expired *terminal* proposals,
+  // Codex's Q1 suggestion) would be switched HERE: narrow this branch to only
+  // isExpired/domain-Expired and let non-expired terminal statuses fall through to
+  // the live `/diff` fetch below. See issue #1397 for the option analysis and the
+  // experiment path before making that flip.
+  if (isProposalReadOnly(p, isProposalExpired(p))) {
+    presentStoredPreview(p)
+    if (!revisionsLoaded.value) {
+      void loadRevisionState(p.id, { silent: true })
+    }
     return
   }
 
   // A saved revision is rendered revision-aware by the backend (#1235), so a
   // proposal with a revision must fetch even when its ORIGINAL operations are
   // empty. Settle the revision list first so a still-loading revisionCount of 0
-  // can't short-circuit a revised proposal to the empty surface.
+  // can't short-circuit a revised proposal to the invalid surface.
   if (!revisionsLoaded.value) {
     await loadRevisionState(p.id)
     if (activeProposal.value?.id !== p.id) return
+    // #1414 final round: identity is not enough. The proposal can transition to
+    // read-only DURING the revision-load await — expire on the 60s clock, be
+    // refreshed to a terminal status, or be executed from another session — all
+    // with the SAME id, so the identity check above passes. Re-run the read-only
+    // classification on the CURRENT object and divert to the stored preview
+    // rather than falling through to a live `/diff` that #1395 guarantees will
+    // 400 for a terminal/expired proposal (which would defeat #1397's stored-
+    // preview guarantee and show the invalid/error surface). Mirrors the onApply
+    // post-await re-check. The read-only watcher (which converts an ALREADY-open
+    // pane) cannot cover this window: previewDiffProposalId is not set to this id
+    // until after the await, so the watcher is inert here.
+    const current = activeProposal.value
+    if (current && isProposalReadOnly(current, isProposalExpired(current))) {
+      presentStoredPreview(current)
+      return
+    }
   }
 
-  // No-op proposals: the backend `/diff` (GetProposalDiffAsync) returns 404 when
-  // there is no stored DiffPreview AND no operations. The view already renders a
-  // "No operation preview" change section for that state, so show the empty-diff
-  // surface directly rather than firing a request that 404s. Only take this path
-  // when the revision list is authoritatively loaded and empty — a saved revision
-  // carries operations the backend renders revision-aware (#1235), and if the
-  // revision load failed we fetch so the backend, not a stale count, decides.
+  // Zero-operation proposals: the backend `/diff` rejects them with 400
+  // ValidationError "Proposal must contain at least one operation" — the same
+  // rejection Apply gives (#1376 preview == apply). Surface that verdict as an
+  // explicit invalid state (with or without a cached preview) so the reviewer
+  // sees the rejection BEFORE approving, instead of a "No changes" surface they
+  // could approve into a 400. Only take this path when the revision list is
+  // authoritatively loaded and empty — a saved revision carries operations the
+  // backend renders revision-aware (#1235), and if the revision load failed we
+  // fetch so the backend, not a stale count, decides. #1397
   if (
-    !p.diffPreview &&
     (p.operations?.length ?? 0) === 0 &&
     revisionsLoaded.value &&
     revisionCount.value === 0
   ) {
     latestDiffRequestId += 1
     previewDiffProposalId.value = p.id
-    previewDiff.value = ''
+    previewDiff.value = null
+    previewDiffMode.value = 'invalid'
+    previewDiffInvalidReason.value = 'This proposal contains no operations to apply'
     previewDiffLoading.value = false
     scrollDiffIntoView()
     return
@@ -703,6 +923,8 @@ async function onPreviewDiff() {
   const requestId = ++latestDiffRequestId
   previewDiffProposalId.value = p.id
   previewDiff.value = null
+  previewDiffMode.value = 'live'
+  previewDiffInvalidReason.value = null
   previewDiffLoading.value = true
   // Scroll to the loading state immediately so a slow `/diff` doesn't look like a
   // no-op on a long review surface (the final result re-scrolls when it lands).
@@ -713,15 +935,30 @@ async function onPreviewDiff() {
     // Ignore stale responses and ones whose target proposal has changed.
     if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
     previewDiff.value = diff
+    previewDiffMode.value = 'live'
     scrollDiffIntoView()
   } catch (e: unknown) {
     if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
-    // The no-op case (no diff to show) is handled by the guard above BEFORE
-    // fetching, so a failure here is a real error — most often a 404 because the
-    // proposal was deleted/dismissed from another session. Surface it rather than
-    // silently rendering an empty diff for a proposal that no longer exists.
-    previewDiffProposalId.value = null
-    previewDiff.value = null
+    // A 400 ValidationError means the backend ran Apply's gates at diff time
+    // (#1376/#1395). It carries one of two distinct reasons — "Proposal must
+    // contain at least one operation" or "Proposal has expired" (the expiry
+    // race: the 60s review clock can lag a server-side expiry). Present the
+    // backend's ACTUAL message inline — never one hardcoded reason for every
+    // 400 — rather than tearing the pane down + toasting (#1397 MEDIUM-1).
+    if (isValidationError(e)) {
+      previewDiff.value = null
+      previewDiffMode.value = 'invalid'
+      // Use the backend's ACTUAL reason, but treat a blank message as absent so
+      // the template's specific "no operations" fallback copy applies rather than
+      // the generic ValidationError string masking it (#1397 / #1414 review).
+      previewDiffInvalidReason.value = getValidationReason(e)
+      previewDiffLoading.value = false
+      scrollDiffIntoView()
+      return
+    }
+    // Any other failure (e.g. a 404 because the proposal was deleted/dismissed
+    // from another session) stays a toast with a clean teardown.
+    clearPreviewDiff()
     toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)
   } finally {
     if (requestId === latestDiffRequestId) {
@@ -737,9 +974,7 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   // pre-revision preview (#1235). Re-opening the diff fetches the revision-aware one.
   if (previewDiffProposalId.value) {
     latestDiffRequestId += 1
-    previewDiffProposalId.value = null
-    previewDiff.value = null
-    previewDiffLoading.value = false
+    clearPreviewDiff()
   }
 }
 
@@ -858,8 +1093,41 @@ function onQueueFilterChange(filter: QueueFilter) {
           <h3 class="tk-h3 paper-review-deep__diff-title">Operation details</h3>
           <span class="tk-meta paper-review-deep__diff-sub">Press Space to hide</span>
         </header>
+        <!-- Read-only banner: a terminal/expired proposal's stored preview (#1397) -->
         <p
-          v-if="revisionCount > 0"
+          v-if="previewDiffMode === 'stored'"
+          class="paper-review-deep__diff-banner tk-meta"
+          role="status"
+          data-testid="paper-review-diff-banner"
+        >
+          {{ previewReadOnlyLabel }} · read-only — showing the stored preview from the
+          original submission.
+        </p>
+        <!-- diffPreview is creation-time content revisions never update, so a revised
+             proposal's stored preview — or the recorded-operations fallback when no
+             preview was captured — is NOT what a revision-aware Apply would have
+             executed. Disclose it, and word it for whichever is actually on screen
+             (the fallback is not a "stored preview") (#1397 MEDIUM-2 / #1414 review). -->
+        <p
+          v-if="previewDiffMode === 'stored' && revisionCount > 0 && previewDiff"
+          class="paper-review-deep__diff-caveat tk-meta"
+          role="status"
+          data-testid="paper-review-diff-revised-note"
+        >
+          ✎ This proposal was <strong>revised</strong> after submission — the stored
+          preview shows the original operations, not the revised ones.
+        </p>
+        <p
+          v-else-if="previewDiffMode === 'stored' && revisionCount > 0 && storedOperationsFallback"
+          class="paper-review-deep__diff-caveat tk-meta"
+          role="status"
+          data-testid="paper-review-diff-revised-note"
+        >
+          ✎ This proposal was <strong>revised</strong> after submission — the recorded
+          operations show the original submission, not the revised one.
+        </p>
+        <p
+          v-if="revisionCount > 0 && previewDiffMode === 'live'"
           class="paper-review-deep__diff-caveat tk-meta"
           data-testid="paper-review-diff-revision-caveat"
         >
@@ -874,6 +1142,35 @@ function onQueueFilterChange(filter: QueueFilter) {
           >
             Loading diff…
           </p>
+          <!-- Invalid: the backend's Apply-time gates reject this proposal; render
+               the ACTUAL reason (expired vs zero-op), never a hardcoded one
+               (#1397 MEDIUM-1). -->
+          <p
+            v-else-if="previewDiffMode === 'invalid'"
+            class="paper-review-deep__diff-invalid tk-meta"
+            role="status"
+            data-testid="paper-review-diff-invalid"
+          >
+            {{ previewDiffInvalidReason || 'This proposal contains no operations to apply' }}
+            — Apply will reject this proposal.
+          </p>
+          <!-- Read-only proposal without a stored preview: fall back to the
+               proposal's own recorded operations before giving up (#1397 /
+               Codex review on #1414). -->
+          <pre
+            v-else-if="storedOperationsFallback"
+            class="paper-review-deep__diff-pre"
+            role="region"
+            aria-label="Recorded proposal operations"
+            data-testid="paper-review-diff-stored-operations"
+          >{{ storedOperationsFallback }}</pre>
+          <p
+            v-else-if="previewDiffMode === 'stored' && !previewDiff"
+            class="paper-review-deep__diff-empty tk-meta"
+            data-testid="paper-review-diff-stored-empty"
+          >
+            No stored preview is available for this proposal.
+          </p>
           <p
             v-else-if="!previewDiff"
             class="paper-review-deep__diff-empty tk-meta"
@@ -885,7 +1182,7 @@ function onQueueFilterChange(filter: QueueFilter) {
             v-else
             class="paper-review-deep__diff-pre"
             role="region"
-            aria-label="Proposal operation diff"
+            :aria-label="previewDiffMode === 'stored' ? 'Stored proposal preview' : 'Proposal operation diff'"
             data-testid="paper-review-diff-pre"
           >{{ previewDiff }}</pre>
         </div>
@@ -987,6 +1284,16 @@ function onQueueFilterChange(filter: QueueFilter) {
 .paper-review-deep__diff-caveat {
   margin: 0 0 8px;
   color: var(--ink-2);
+}
+.paper-review-deep__diff-banner {
+  margin: 0 0 8px;
+  font-weight: 600;
+  color: var(--ember, #c2410c);
+}
+.paper-review-deep__diff-invalid {
+  padding: 16px;
+  font-weight: 600;
+  color: var(--ember, #c2410c);
 }
 .paper-review-deep__diff-empty {
   padding: 16px;

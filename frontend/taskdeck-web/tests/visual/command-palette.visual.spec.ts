@@ -10,7 +10,7 @@ import { registerAndAttachSession } from '../e2e/support/authSession'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-palette')
+  await registerAndAttachSession(page, request, 'visual-palette', { theme: 'legacy' })
 })
 
 test('command palette open state', async ({ page }) => {

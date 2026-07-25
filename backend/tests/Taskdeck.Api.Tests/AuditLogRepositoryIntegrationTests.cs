@@ -13,12 +13,22 @@ namespace Taskdeck.Api.Tests;
 /// Integration tests for AuditLogRepository against real SQLite.
 /// Covers cross-user isolation, unknown level handling, board-scoped queries,
 /// time-range filtering, and entity-type case-insensitivity.
+///
+/// Runs on <see cref="HostedWorkerDisabledTestWebApplicationFactory"/> (#1438, same family as
+/// #1391/#1383): one test — <c>GetByUserAsync_ShouldOrderByTimestampDesc</c> — seeds
+/// <c>AuditLog</c> rows backdated well past the production <c>AuditRetentionWorker</c>'s 90-day
+/// cutoff. On the worker-enabled base factory, the worker's startup retention pass can delete
+/// those backdated rows between seed and assertion, intermittently failing lookups with a -1
+/// index. With the worker removed from this host, every seed/read here is deterministic; the
+/// class-level swap (rather than isolating just that one test) matches the granularity of the
+/// other #1391-family adoptions. No test in this class exercises the retention worker itself,
+/// so there is no conflicting need to keep it live.
 /// </summary>
-public class AuditLogRepositoryIntegrationTests : IClassFixture<TestWebApplicationFactory>
+public class AuditLogRepositoryIntegrationTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
 
-    public AuditLogRepositoryIntegrationTests(TestWebApplicationFactory factory)
+    public AuditLogRepositoryIntegrationTests(HostedWorkerDisabledTestWebApplicationFactory factory)
     {
         _factory = factory;
     }

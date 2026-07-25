@@ -2,10 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -250,6 +252,395 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task RevisedDueDate_PreviewShouldEqualAppliedCardDueDate()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-due-date");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-due-date-board");
+        var originalDueDate = new DateTimeOffset(2026, 7, 14, 9, 30, 0, TimeSpan.FromHours(2));
+        var revisedDueDate = new DateTimeOffset(2026, 7, 20, 16, 0, 0, TimeSpan.FromHours(-4));
+        var proposal = await CreateTestProposalAsync(
+            client, user.UserId, board.Id, column.Id, "Dated Card", originalDueDate);
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildRevisionPayload("Dated Card", board.Id, column.Id, revisedDueDate),
+                reason = "Use revised due date"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        diffResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var diff = (await diffResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("diff").GetString();
+        diff.Should().Contain($"set due date to {revisedDueDate.ToUniversalTime():O}");
+        diff.Should().NotContain(originalDueDate.ToUniversalTime().ToString("O"));
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var cardsResponse = await client.GetAsync($"/api/boards/{board.Id}/cards");
+        cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
+        cards.Should().ContainSingle(card =>
+            card.Title == "Dated Card" && card.DueDate == revisedDueDate.ToUniversalTime());
+    }
+
+    [Theory]
+    [InlineData("2026-07-14T09:30:00")]
+    [InlineData("07/14/2026")]
+    public async Task RevisedDueDate_InvalidFormat_ShouldFailPreviewAndApprove(string dueDate)
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-invalid-due");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-invalid-due-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+        var revisedParameters = JsonSerializer.Serialize(new
+        {
+            title = "Invalid date card",
+            boardId = board.Id,
+            columnId = column.Id,
+            dueDate
+        });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayloadWithParameters(revisedParameters), reason = "invalid date" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // #1416 approve == apply: approve runs the same gates preview/apply run, so the invalid
+        // revision is rejected at approve with the identical error contract instead of being
+        // approved and only failing at apply.
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // Never approved -> the executor's status guard refuses execution outright (409),
+        // pinning that a statically invalid revision can no longer reach the apply stage at all.
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+    }
+
+    [Fact]
+    public async Task RevisedLabels_MalformedArray_ShouldFailPreview()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-invalid-labels");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-invalid-labels-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+        var revisedParameters = $$"""{"title":"Invalid labels","boardId":"{{board.Id}}","columnId":"{{column.Id}}","labels":["urgent",42]}""";
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayloadWithParameters(revisedParameters), reason = "invalid labels" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task RevisedDueDate_SetAndClear_ShouldFailPreviewWithExactConflict()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-conflicting-due");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-conflicting-due-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+        var revisedParameters = JsonSerializer.Serialize(new
+        {
+            title = "Conflicting date card",
+            boardId = board.Id,
+            columnId = column.Id,
+            dueDate = "2026-07-14",
+            clearDueDate = true
+        });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayloadWithParameters(revisedParameters), reason = "conflicting due date" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+        var error = await diffResponse.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("message").GetString().Should().Be(
+            "Parameters 'dueDate' and 'clearDueDate' cannot both be specified");
+    }
+
+    [Fact]
+    public async Task RevisedUpdate_WithOnlyFalseClearDueDate_ShouldFailPreviewAndApprove()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-noop-update");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-noop-update-board");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged card");
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = JsonSerializer.Serialize(new { cardId = card.Id, clearDueDate = false });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload(
+                    "update", "card", parameters, card.Id.ToString()),
+                reason = "attempt a no-op update"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // #1416 approve == apply: the contract-violating revision is rejected at approve with the
+        // identical error; the never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Title == "Unchanged card");
+    }
+
+    [Fact]
+    public async Task RevisedLabelOperation_WithoutCardId_ShouldFailPreviewAndApprove()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-label-missing-card");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-label-missing-card-board");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged labels");
+        var label = await CreateLabelAsync(client, board.Id, "urgent");
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = JsonSerializer.Serialize(new { labelId = label.Id });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload("add-label", "card", parameters),
+                reason = "omit the card identity"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // #1416 approve == apply: rejected at approve with the identical error; the
+        // never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+    }
+
+    [Fact]
+    public async Task RevisedUpdate_WithEmptyLabelId_ShouldFailPreviewAndApprove()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-empty-label-id");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-empty-label-id-board");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged empty label card");
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = JsonSerializer.Serialize(new { cardId = card.Id, labelIds = new[] { Guid.Empty } });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload(
+                    "update", "card", parameters, card.Id.ToString()),
+                reason = "attempt an empty label identity"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // #1416 approve == apply: rejected at approve with the identical error; the
+        // never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
+    }
+
+    [Theory]
+    [InlineData("add--label")]
+    [InlineData("add_-label")]
+    [InlineData("remove__label")]
+    [InlineData("add..label")]
+    public async Task RevisedLabelOperation_WithUnregisteredAlias_ShouldFailPreviewAndApprove(string actionType)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, $"rev-label-alias-{suffix}");
+        var (board, column) = await CreateBoardWithColumnAsync(client, $"rev-label-alias-board-{suffix}");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged alias card");
+        var label = await CreateLabelAsync(client, board.Id, $"urgent-{suffix}");
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = JsonSerializer.Serialize(new { cardId = card.Id, labelId = label.Id });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload(
+                    actionType, "card", parameters, card.Id.ToString()),
+                reason = "attempt an unregistered label alias"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // #1416 approve == apply: rejected at approve with the identical error; the
+        // never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
+    }
+
+    [Fact]
+    public async Task RevisedCreate_WithoutRequiredTitle_ShouldFailPreviewAndApprove()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-create-missing-title");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-create-missing-title-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id);
+        var parameters = JsonSerializer.Serialize(new { boardId = board.Id, columnId = column.Id });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload("create", "card", parameters),
+                reason = "omit an apply-required create field"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // #1416 approve == apply: rejected at approve with the identical error; the
+        // never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+
+        (await ReadCardsAsync(client, board.Id)).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("update")]
+    [InlineData("add-label")]
+    public async Task RevisedLabelName_WithAmbiguousBoardMatches_ShouldFailPreviewAndApply(string actionType)
+    {
+        // #1416 restructure: approve now runs the same gates apply runs, so a revision that is
+        // ALREADY ambiguous at approve time is rejected at approve (parity pinned below). The
+        // apply-side ambiguity rejection therefore only remains reachable through the genuinely
+        // time-dependent path — approve while the name is unique, then the ambiguity appears
+        // AFTER approval — which is exactly what this test now pins: preview and apply both
+        // reject the approved-but-no-longer-appliable proposal with the same error.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, $"rev-label-ambiguous-{suffix}");
+        var (board, column) = await CreateBoardWithColumnAsync(client, $"rev-label-ambiguous-board-{suffix}");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged ambiguous label card");
+        var labelName = $"urgent-{suffix}";
+        _ = await CreateLabelAsync(client, board.Id, labelName);
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = actionType == "update"
+            ? JsonSerializer.Serialize(new { cardId = card.Id, labels = new[] { labelName } })
+            : JsonSerializer.Serialize(new { cardId = card.Id, labelName });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload(
+                    actionType, "card", parameters, card.Id.ToString()),
+                reason = "name-based label operation, unique at approval time"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // Unique name: valid at approve time, so approve accepts — exactly what apply would do.
+        (await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // The ambiguity appears AFTER approval (a case-insensitive duplicate label).
+        _ = await CreateLabelAsync(client, board.Id, labelName.ToUpperInvariant());
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
+    }
+
+    [Theory]
+    [InlineData("update")]
+    [InlineData("add-label")]
+    public async Task RevisedLabelName_AlreadyAmbiguousAtApproveTime_ShouldFailApprove(string actionType)
+    {
+        // #1416 approve == apply, static-ambiguity direction: when the ambiguity already exists
+        // at approve time, approve rejects with the same ValidationError preview/apply produce,
+        // so the reviewer can never commit to a name-based operation the executor would refuse.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, $"rev-label-preambig-{suffix}");
+        var (board, column) = await CreateBoardWithColumnAsync(client, $"rev-label-preambig-board-{suffix}");
+        var card = await CreateCardAsync(client, board.Id, column.Id, "Unchanged ambiguous label card");
+        var labelName = $"urgent-{suffix}";
+        _ = await CreateLabelAsync(client, board.Id, labelName);
+        _ = await CreateLabelAsync(client, board.Id, labelName.ToUpperInvariant());
+        var proposal = await CreateUpdateProposalAsync(client, user.UserId, board.Id, card.Id);
+        var parameters = actionType == "update"
+            ? JsonSerializer.Serialize(new { cardId = card.Id, labels = new[] { labelName } })
+            : JsonSerializer.Serialize(new { cardId = card.Id, labelName });
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildSingleOperationRevisionPayload(
+                    actionType, "card", parameters, card.Id.ToString()),
+                reason = "attempt an ambiguous name-based label operation"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        var executeResponse = await ExecuteProposalAsync(client, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(candidate => candidate.Id == card.Id && candidate.Labels.Count == 0);
+    }
+
+    [Fact]
     public async Task CreateRevision_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
     {
         var ownerClient = _factory.CreateClient();
@@ -267,12 +658,328 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
+    [Fact]
+    public async Task RevisedUpdate_CannotRedirectAuthorizedTargetToAnotherUsersCard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var victimClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "rev-scope-update-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(victimClient, "rev-scope-update-victim");
+        var (ownerBoard, ownerColumn) = await CreateBoardWithColumnAsync(ownerClient, "rev-scope-update-owner-board");
+        var (victimBoard, victimColumn) = await CreateBoardWithColumnAsync(victimClient, "rev-scope-update-victim-board");
+        var ownerCard = await CreateCardAsync(ownerClient, ownerBoard.Id, ownerColumn.Id, "Owner card");
+        var victimCard = await CreateCardAsync(victimClient, victimBoard.Id, victimColumn.Id, "Victim card");
+        var proposal = await CreateUpdateProposalAsync(ownerClient, owner.UserId, ownerBoard.Id, ownerCard.Id);
+
+        var revisionResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildUpdateRevisionPayload(ownerCard.Id, victimCard.Id, "Redirected title"),
+                reason = "attempt to redirect the parameter identity"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertErrorContractAsync(diffResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // #1416 approve == apply: the identity-redirecting revision is rejected at approve with
+        // the identical error; the never-approved proposal then cannot reach the apply stage (409).
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertErrorContractAsync(approveResponse, HttpStatusCode.BadRequest, "ValidationError");
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await ownerClient.SendAsync(executeRequest);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+
+        var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
+        victimCards.Should().ContainSingle(card => card.Id == victimCard.Id && card.Title == "Victim card");
+    }
+
+    [Fact]
+    public async Task RevisedUpdate_CannotTargetAnotherUsersCardWithMatchingIdentities()
+    {
+        var ownerClient = _factory.CreateClient();
+        var victimClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "rev-scope-matched-card-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(victimClient, "rev-scope-matched-card-victim");
+        var (ownerBoard, ownerColumn) = await CreateBoardWithColumnAsync(ownerClient, "rev-scope-matched-card-owner-board");
+        var (victimBoard, victimColumn) = await CreateBoardWithColumnAsync(victimClient, "rev-scope-matched-card-victim-board");
+        var ownerCard = await CreateCardAsync(ownerClient, ownerBoard.Id, ownerColumn.Id, "Owner card");
+        var victimCard = await CreateCardAsync(victimClient, victimBoard.Id, victimColumn.Id, "Victim card");
+        var proposal = await CreateUpdateProposalAsync(ownerClient, owner.UserId, ownerBoard.Id, ownerCard.Id);
+
+        var revisionResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildUpdateRevisionPayload(victimCard.Id, victimCard.Id, "Redirected title"),
+                reason = "attempt to redirect both identities"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertForbiddenAsync(diffResponse);
+
+        // #1416 approve == apply: the cross-user revision is rejected at approve with the same
+        // Forbidden apply produces; the never-approved proposal cannot reach the apply stage (409).
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertForbiddenAsync(approveResponse);
+        var executeResponse = await ExecuteProposalAsync(ownerClient, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+
+        var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
+        victimCards.Should().ContainSingle(card => card.Id == victimCard.Id && card.Title == "Victim card");
+    }
+
+    [Fact]
+    public async Task RevisedCreate_CannotRedirectBoardAndColumnToAnotherUsersBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var victimClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "rev-scope-create-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(victimClient, "rev-scope-create-victim");
+        var (ownerBoard, ownerColumn) = await CreateBoardWithColumnAsync(ownerClient, "rev-scope-create-owner-board");
+        var (victimBoard, victimColumn) = await CreateBoardWithColumnAsync(victimClient, "rev-scope-create-victim-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, ownerBoard.Id, ownerColumn.Id);
+
+        var revisionResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildRevisionPayload("Cross-board card", victimBoard.Id, victimColumn.Id),
+                reason = "attempt to redirect create scope"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertForbiddenAsync(diffResponse);
+
+        // #1416 approve == apply: the cross-board revision is rejected at approve with the same
+        // Forbidden apply produces; the never-approved proposal cannot reach the apply stage (409).
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertForbiddenAsync(approveResponse);
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await ownerClient.SendAsync(executeRequest);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+
+        var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
+        victimCards.Should().NotContain(card => card.Title == "Cross-board card");
+    }
+
+    [Fact]
+    public async Task RevisedCreate_CannotUseAnotherUsersColumnWithinAuthorizedBoardParameters()
+    {
+        var ownerClient = _factory.CreateClient();
+        var victimClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "rev-scope-column-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(victimClient, "rev-scope-column-victim");
+        var (ownerBoard, ownerColumn) = await CreateBoardWithColumnAsync(ownerClient, "rev-scope-column-owner-board");
+        var (victimBoard, victimColumn) = await CreateBoardWithColumnAsync(victimClient, "rev-scope-column-victim-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, ownerBoard.Id, ownerColumn.Id);
+
+        var revisionResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new
+            {
+                revisedPayload = BuildRevisionPayload("Cross-board column card", ownerBoard.Id, victimColumn.Id),
+                reason = "attempt to redirect only the column"
+            });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var diffResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertForbiddenAsync(diffResponse);
+
+        // #1416 approve == apply: the cross-board column revision is rejected at approve with the
+        // same Forbidden apply produces; the never-approved proposal cannot reach apply (409).
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertForbiddenAsync(approveResponse);
+        var executeResponse = await ExecuteProposalAsync(ownerClient, proposal.Id);
+        await ApiTestHarness.AssertErrorContractAsync(executeResponse, HttpStatusCode.Conflict, "InvalidOperation");
+
+        var victimCards = await ReadCardsAsync(victimClient, victimBoard.Id);
+        victimCards.Should().NotContain(card => card.Title == "Cross-board column card");
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_WithRacedRevisionSavedAfterApprove_AppliesPinnedRevision_NotLater()
+    {
+        // #1428 core: approve validates and PINS the latest revision at approve time; Apply must
+        // materialize THAT pinned revision, never a later one. This simulates the race where a
+        // revision-save whose PendingReview guard-read predated approve's commit lands a new
+        // revision (N+1) after approval — by inserting it straight into the store, bypassing the
+        // guard the normal API path enforces. Apply must still run the pinned revision N.
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-pin-later");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-pin-later-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Card");
+
+        // Revision 1 (the one the reviewer sees and approves).
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayload("Pinned Edit", board.Id, column.Id), reason = "reviewed edit" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Revision 2 races in AFTER approval, straight into the store (past the PendingReview guard).
+        await InsertRevisionDirectlyAsync(
+            proposal.Id,
+            revisionNumber: 2,
+            editorUserId: user.UserId,
+            revisedPayload: BuildRevisionPayload("Raced Edit", board.Id, column.Id),
+            reason: "raced edit after approval");
+
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(card => card.Title == "Pinned Edit");
+        cards.Should().NotContain(card => card.Title == "Raced Edit");
+        cards.Should().NotContain(card => card.Title == "Original Card");
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ApprovedFromOriginal_IgnoresRacedRevision()
+    {
+        // #1428, null-pin direction: a proposal approved with NO revision pins nothing, so Apply
+        // materializes the ORIGINAL operations. Before pinning, Apply materialized the LATEST
+        // revision, so a revision that raced in after approval would hijack the applied content.
+        // This pins that it no longer can.
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-pin-original");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-pin-original-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Card");
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var approved = await approveResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        approved!.ApprovedRevisionId.Should().BeNull("approving from original operations pins no revision");
+
+        // A revision races in after approval, straight into the store.
+        await InsertRevisionDirectlyAsync(
+            proposal.Id,
+            revisionNumber: 1,
+            editorUserId: user.UserId,
+            revisedPayload: BuildRevisionPayload("Hijack Card", board.Id, column.Id),
+            reason: "raced revision on an original-approved proposal");
+
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var cards = await ReadCardsAsync(client, board.Id);
+        cards.Should().ContainSingle(card => card.Title == "Original Card");
+        cards.Should().NotContain(card => card.Title == "Hijack Card");
+    }
+
+    [Fact]
+    public async Task ApproveAndGetResponses_ForRevisedProposal_ReflectEffectivePinnedOperations()
+    {
+        // #1424: approve/get response DTOs must surface the EFFECTIVE (pinned) operations Apply will
+        // run, not the stale original operations, and expose the pinned revision id.
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-effective-dto");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-effective-dto-board");
+        var proposal = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Card");
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayload("Effective Edit", board.Id, column.Id), reason = "edit before approve" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var revision = await revisionResponse.Content.ReadFromJsonAsync<ProposalRevisionDto>();
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var approved = await approveResponse.Content.ReadFromJsonAsync<ProposalDto>();
+
+        approved!.ApprovedRevisionId.Should().Be(revision!.Id);
+        approved.Operations.Should().ContainSingle();
+        approved.Operations[0].Parameters.Should().Contain("Effective Edit");
+        approved.Operations[0].Parameters.Should().NotContain("Original Card");
+        // Split-brain guard: the presentation block must describe the SAME effective operations
+        // the response carries, never the stale originals.
+        approved.Presentation.OperationHeadlines.Should().ContainSingle(h => h.Contains("Effective Edit"));
+        approved.Presentation.OperationHeadlines.Should().NotContain(h => h.Contains("Original Card"));
+
+        // GET reflects the same effective (pinned) operations.
+        var getResponse = await client.GetAsync($"/api/automation/proposals/{proposal.Id}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var fetched = await getResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        fetched!.ApprovedRevisionId.Should().Be(revision.Id);
+        fetched.Operations.Should().ContainSingle();
+        fetched.Operations[0].Parameters.Should().Contain("Effective Edit");
+        fetched.Operations[0].Parameters.Should().NotContain("Original Card");
+        fetched.Presentation.OperationHeadlines.Should().ContainSingle(h => h.Contains("Effective Edit"));
+        fetched.Presentation.OperationHeadlines.Should().NotContain(h => h.Contains("Original Card"));
+    }
+
+    [Fact]
+    public async Task ProposalList_AfterSavingRevision_ShouldReturnEffectiveOperations_NotOriginals()
+    {
+        // #1444: the review-queue LIST endpoint mapped ORIGINAL operations by design, so a reviewer who
+        // saved a revision and refreshed the queue saw the original summary/operations on the card while
+        // the detail view, the diff and Apply all used the revised set. This drives the real HTTP list
+        // surface against real SQLite, which also exercises the batched revision query's EF translation
+        // (the service-level tests mock the repository and cannot prove that).
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "rev-list-effective");
+        var (board, column) = await CreateBoardWithColumnAsync(client, "rev-list-effective-board");
+        var revised = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Original Listed Card");
+        var untouched = await CreateTestProposalAsync(client, user.UserId, board.Id, column.Id, "Untouched Listed Card");
+
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{revised.Id}/revisions",
+            new { revisedPayload = BuildRevisionPayload("Listed Edit", board.Id, column.Id), reason = "edit before review" });
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var listResponse = await client.GetAsync($"/api/automation/proposals?boardId={board.Id}");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listed = await listResponse.Content.ReadFromJsonAsync<List<ProposalDto>>();
+        listed.Should().NotBeNull();
+
+        var revisedCard = listed!.Should().ContainSingle(p => p.Id == revised.Id).Which;
+        revisedCard.Operations.Should().ContainSingle();
+        revisedCard.Operations[0].Parameters.Should().Contain("Listed Edit");
+        revisedCard.Operations[0].Parameters.Should().NotContain("Original Listed Card");
+        // Split-brain guard on the card itself: the presentation block must describe the same effective
+        // operations the list item carries.
+        revisedCard.Presentation.OperationHeadlines.Should().ContainSingle(h => h.Contains("Listed Edit"));
+        revisedCard.Presentation.OperationHeadlines.Should().NotContain(h => h.Contains("Original Listed Card"));
+
+        // An unrevised proposal on the SAME page keeps its own original operations: the batched
+        // resolution must group per proposal and never leak one proposal's revision onto another.
+        var untouchedCard = listed.Should().ContainSingle(p => p.Id == untouched.Id).Which;
+        untouchedCard.Operations.Should().ContainSingle();
+        untouchedCard.Operations[0].Parameters.Should().Contain("Untouched Listed Card");
+        untouchedCard.Operations[0].Parameters.Should().NotContain("Listed Edit");
+    }
+
+    private async Task InsertRevisionDirectlyAsync(
+        Guid proposalId,
+        int revisionNumber,
+        Guid editorUserId,
+        string revisedPayload,
+        string reason)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        db.ProposalRevisions.Add(new ProposalRevision(proposalId, revisionNumber, editorUserId, revisedPayload, reason));
+        await db.SaveChangesAsync();
+    }
+
     private static async Task<ProposalDto> CreateTestProposalAsync(
         HttpClient client,
         Guid userId,
         Guid boardId,
         Guid columnId,
-        string title = "Test Card")
+        string title = "Test Card",
+        DateTimeOffset? dueDate = null)
     {
         var createRequest = new CreateProposalDto(
             SourceType: ProposalSourceType.Chat,
@@ -287,7 +994,7 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
                     Sequence: 1,
                     ActionType: "create",
                     TargetType: "card",
-                    Parameters: BuildCreateCardParameters(title, boardId, columnId),
+                    Parameters: BuildCreateCardParameters(title, boardId, columnId, dueDate),
                     IdempotencyKey: Guid.NewGuid().ToString())
             });
 
@@ -311,7 +1018,114 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         return (board, column!);
     }
 
-    private static string BuildRevisionPayload(string title, Guid boardId, Guid columnId)
+    private static async Task<CardDto> CreateCardAsync(
+        HttpClient client,
+        Guid boardId,
+        Guid columnId,
+        string title)
+    {
+        var response = await client.PostAsJsonAsync(
+            $"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, columnId, title, null, null, null));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<CardDto>())!;
+    }
+
+    private static async Task<LabelDto> CreateLabelAsync(HttpClient client, Guid boardId, string name)
+    {
+        var response = await client.PostAsJsonAsync(
+            $"/api/boards/{boardId}/labels",
+            new CreateLabelDto(boardId, name, "#FF0000"));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<LabelDto>())!;
+    }
+
+    private static async Task<List<CardDto>> ReadCardsAsync(HttpClient client, Guid boardId)
+    {
+        var response = await client.GetAsync($"/api/boards/{boardId}/cards");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<List<CardDto>>())!;
+    }
+
+    private static async Task<HttpResponseMessage> ExecuteProposalAsync(HttpClient client, Guid proposalId)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposalId}/execute");
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<ProposalDto> CreateUpdateProposalAsync(
+        HttpClient client,
+        Guid userId,
+        Guid boardId,
+        Guid cardId)
+    {
+        var parameters = JsonSerializer.Serialize(new { cardId, title = "Safe title" });
+        var request = new CreateProposalDto(
+            ProposalSourceType.Chat,
+            userId,
+            "Update one card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            Operations: new List<CreateProposalOperationDto>
+            {
+                new(0, "update", "card", parameters, Guid.NewGuid().ToString(), cardId.ToString())
+            });
+        var response = await client.PostAsJsonAsync("/api/automation/proposals", request);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
+    }
+
+    private static string BuildUpdateRevisionPayload(Guid targetId, Guid parameterCardId, string title)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "card",
+                    targetId = targetId.ToString(),
+                    parameters = JsonSerializer.Serialize(new { cardId = parameterCardId, title }),
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    expectedVersion = (string?)null
+                }
+            }
+        });
+    }
+
+    private static string BuildSingleOperationRevisionPayload(
+        string actionType,
+        string targetType,
+        string parameters,
+        string? targetId = null)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType,
+                    targetType,
+                    targetId,
+                    parameters,
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    expectedVersion = (string?)null
+                }
+            }
+        });
+    }
+
+    private static string BuildRevisionPayload(
+        string title,
+        Guid boardId,
+        Guid columnId,
+        DateTimeOffset? dueDate = null)
     {
         var payload = new
         {
@@ -323,7 +1137,7 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
                     actionType = "create",
                     targetType = "card",
                     targetId = (string?)null,
-                    parameters = BuildCreateCardParameters(title, boardId, columnId),
+                    parameters = BuildCreateCardParameters(title, boardId, columnId, dueDate),
                     idempotencyKey = Guid.NewGuid().ToString(),
                     expectedVersion = (string?)null
                 }
@@ -333,13 +1147,41 @@ public class ProposalRevisionApiTests : IClassFixture<TestWebApplicationFactory>
         return JsonSerializer.Serialize(payload);
     }
 
-    private static string BuildCreateCardParameters(string title, Guid boardId, Guid columnId)
+    private static string BuildRevisionPayloadWithParameters(string parameters)
     {
         return JsonSerializer.Serialize(new
         {
-            title,
-            boardId,
-            columnId
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 1,
+                    actionType = "create",
+                    targetType = "card",
+                    targetId = (string?)null,
+                    parameters,
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    expectedVersion = (string?)null
+                }
+            }
         });
+    }
+
+    private static string BuildCreateCardParameters(
+        string title,
+        Guid boardId,
+        Guid columnId,
+        DateTimeOffset? dueDate = null)
+    {
+        var parameters = new Dictionary<string, object>
+        {
+            ["title"] = title,
+            ["boardId"] = boardId,
+            ["columnId"] = columnId
+        };
+        if (dueDate.HasValue)
+            parameters["dueDate"] = dueDate.Value.ToString("O");
+
+        return JsonSerializer.Serialize(parameters);
     }
 }

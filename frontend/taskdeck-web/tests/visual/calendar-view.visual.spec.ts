@@ -16,7 +16,7 @@ import { registerAndAttachSession } from '../e2e/support/authSession'
 import { prepareForScreenshot } from './visual-test-helpers'
 
 test.beforeEach(async ({ page, request }) => {
-  await registerAndAttachSession(page, request, 'visual-calendar')
+  await registerAndAttachSession(page, request, 'visual-calendar', { theme: 'legacy' })
 })
 
 test('calendar view default state', async ({ page }) => {

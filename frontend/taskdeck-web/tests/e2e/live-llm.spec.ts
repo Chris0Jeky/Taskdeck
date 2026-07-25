@@ -9,7 +9,7 @@ test.describe('live llm chat', () => {
   )
 
   test('first chat turn should use a live provider and answer the prompt directly', async ({ page, request }) => {
-    await registerAndAttachSession(page, request, 'live-llm')
+    await registerAndAttachSession(page, request, 'live-llm', { theme: 'legacy' })
 
     await page.goto('/workspace/automations/chat')
     await expect(page.locator('[data-llm-health-state="configured"]')).toBeVisible()
