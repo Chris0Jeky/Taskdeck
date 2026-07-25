@@ -9,8 +9,13 @@ failure mode it invites is arriving at the checkpoint with only a recollection.
 This reads the database and reports what actually happened.
 
 It is READ-ONLY (opens the DB with mode=ro) and reports COUNTS AND DATES ONLY --
-never card text, comments, chat content, or transcripts. It is safe to paste the
-output into an issue.
+never card text, comments, chat content, or transcripts. The database path is
+printed home-relative. It is safe to paste the output into an issue.
+
+Known limitation: days are grouped by the stored UTC date, not local time, so
+activity either side of local midnight can land on the neighbouring calendar day.
+That shifts which day a session counts as; it does not change whether it counts,
+so day TOTALS are unaffected and only streak boundaries can move by one.
 
 The demo problem
 ----------------
@@ -60,6 +65,10 @@ QUERY_ERRORS: list[str] = []
 DEFAULT_DB_CANDIDATES = (
     "taskdeck.db",
     os.path.join("backend", "src", "Taskdeck.Api", "taskdeck.db"),
+    # A published/self-contained run resolves its DB here via FirstRunBootstrapper rather than
+    # into the repo, so a maintainer dogfooding the packaged exe would otherwise get
+    # "No database found" while their real data sat in LOCALAPPDATA.
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Taskdeck", "taskdeck.db"),
 )
 
 
