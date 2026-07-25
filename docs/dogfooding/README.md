@@ -30,12 +30,24 @@ First activity:              2026-03-27
 Last activity:               2026-04-23   (93 days ago)
 
 Boards: 13 total, 10 demo/test residue, 3 plausibly real
-Proposals created: 20  ->  Dismissed 18 (90%) | Approved 1 (5%) | Applied 1 (5%)
-Reached Apply: 1/20
+Proposals created: 20  ->  status: Dismissed 18 | Approved 1 | Applied 1
+Reached Apply: 17/20 (85%)   <- 16 of them later filed away, so status reads "Dismissed"
 ```
 
-Read honestly, that says: **dogfooding has not started.** The core loop — capture → proposal →
-approve → apply — completed **once**, ever.
+Read honestly, that says: **use has not been sustained.** Note carefully what it does *not* say —
+the loop itself worked. **17 of 20 proposals reached Apply**, which is a healthy funnel, not a
+broken one.
+
+> **Counting applies by status is wrong, and this is the trap.** `Dismiss()` accepts an already-
+> `Applied` proposal (`CanBeDismissed` includes `Applied`) and **overwrites** `Status` with
+> `Dismissed` — so filing away a finished item erases the evidence that it ever applied. A
+> status-based count reports **1/20**; `AppliedAt`, which survives the transition, reports
+> **17/20**. The first draft of this document made exactly that error and concluded "the core loop
+> completed once, ever". It didn't. If you take one thing from this file, take this: **count applies
+> by `AppliedAt`.**
+
+What has genuinely not happened is *sustained* use: 8 active days, none in the last 28, last
+activity three months ago, and most of the boards are fixtures.
 
 On the boards: the classifier flags **10 of 13** as `DEMO:`/`Test Board`/`Browser Test` residue.
 Of the three it passes, two (`onboarding`, `calendar`) are lowercase single-word boards created
@@ -49,10 +61,12 @@ Two things follow, and they shaped everything below.
 
 1. **The evidence was available all along.** Nobody had to wait 8 weeks to learn this; it was
    sitting in a file. Measure early and often, not at the checkpoint.
-2. **Dev traffic and real use are indistinguishable in one database.** Ninety percent of the
-   proposals were dismissed, which most likely means "cleaning up test noise" rather than
-   "rejecting bad proposals" — but nothing in the data can tell those apart. That contamination
-   has to be designed out, or the checkpoint number will be unreadable.
+2. **Dev traffic and real use are indistinguishable in one database.** Most of those applies
+   happened on `DEMO:` boards, so they measure the *engine* working, not a person choosing to use
+   it — and nothing in the data separates the two. That contamination has to be designed out, or
+   the checkpoint number will be unreadable.
+3. **The measurement can be wrong in the flattering direction too.** The status-based apply count
+   understated the funnel by 17×. Instruments need the same adversarial reading as the code.
 
 ---
 

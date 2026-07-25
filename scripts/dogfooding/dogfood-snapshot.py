@@ -166,13 +166,17 @@ def main() -> None:
         ("Cards", "CreatedAt"),
         ("AutomationProposals", "CreatedAt"),
         ("ChatMessages", "CreatedAt"),
+        # Captures (including transcript captures) persist as LlmRequests rows, so a day
+        # spent only capturing would otherwise not count as an active day at all.
+        ("LlmRequests", "CreatedAt"),
     ):
         days |= day_set(con, table, col)
 
     sorted_days = sorted(d for d in days if safe_date(d))
     last = sorted_days[-1] if sorted_days else None
     stale = (date.today() - safe_date(last)).days if last else None
-    cutoff = (date.today() - timedelta(days=args.days)).isoformat()
+    # `days - 1` so `--days 28` is a 28-day window inclusive of today, not 29.
+    cutoff = (date.today() - timedelta(days=max(args.days - 1, 0))).isoformat()
     recent_days = [d for d in sorted_days if d >= cutoff]
 
     p(f"**Database:** `{path}`")
@@ -207,14 +211,25 @@ def main() -> None:
                 )
             )
             for status, n in rows:
-                p(f"  - {PROPOSAL_STATUS.get(status, f'status {status}')}: {n} ({100*n//total}%)")
-            applied = q1(con, "select count(*) from AutomationProposals where Status=3") or 0
+                p(f"  - {PROPOSAL_STATUS.get(status, f'status {status}')}: {n} ({100*n/total:.0f}%)")
+            # Status is NOT the way to count applies. Dismiss() accepts an Applied proposal
+            # (CanBeDismissed includes Applied) and OVERWRITES Status with Dismissed, so
+            # filing away a completed item erases the evidence that it ever applied. AppliedAt
+            # survives that transition, so it is the only reliable signal.
+            applied = q1(con, "select count(*) from AutomationProposals where AppliedAt is not null") or 0
+            filed = q1(
+                con, "select count(*) from AutomationProposals where AppliedAt is not null and Status=6"
+            ) or 0
             decided = (
                 q1(con, "select count(*) from AutomationProposals where DecidedAt is not null") or 0
             )
             p("")
-            p(f"**Reached Apply:** {applied}/{total} ({100*applied//total if total else 0}%) "
-              "-- this is the number that says whether the review-first loop pays off.")
+            p(f"**Reached Apply:** {applied}/{total} ({100*applied/total:.0f}%) "
+              "-- this is the number that says whether the review-first loop pays off. "
+              "Counted by `AppliedAt`, not status.")
+            if filed:
+                p(f"  - of those, **{filed}** were later filed away and now read as `Dismissed`. "
+                  "A status-based count would have reported them as never applied.")
             p(f"**Ever decided:** {decided}/{total}")
             if "DecidedAt" in columns(con, "AutomationProposals"):
                 # The LIMIT must be parity-aware. With a hardcoded `limit 2` this averages
@@ -250,17 +265,20 @@ def main() -> None:
     # ---- verdict ----------------------------------------------------------
     p("")
     p("### Read")
-    n = len(sorted_days)
-    if n == 0:
+    # The rubric scores "active days in the window", so the verdict must use the window too --
+    # an all-time count lets long-dead activity satisfy a threshold about current use.
+    n = len(recent_days)
+    if not sorted_days:
         p("**Not started.** No recorded activity at all.")
     elif stale is not None and stale > 30:
         p(f"**Stalled.** Last activity was {stale} days ago. Whatever the totals say, this is "
           "not sustained use, and #1271 asks for sustained use.")
     elif n < 10:
-        p(f"**In progress:** {n} of the 10 active days #1271 asks for.")
+        p(f"**In progress:** {n} of the 10 active days #1271 asks for, in the last "
+          f"{args.days} days ({len(sorted_days)} all time).")
     else:
-        p(f"**Threshold met on volume:** {n} active days. Judge quality from the loop numbers "
-          "above and the friction log, not from the day count alone.")
+        p(f"**Threshold met on volume:** {n} active days in the last {args.days}. Judge quality "
+          "from the loop numbers above and the friction log, not from the day count alone.")
 
     text = "\n".join(out)
     if args.markdown:
