@@ -39,8 +39,11 @@ public record ProposalDto(
     public DateTime? DeferredUntil { get; init; }
 
     /// <summary>
-    /// The revision pinned at approve time that Apply will materialize (#1428), or <c>null</c>
-    /// when the proposal was approved from its original operations (or is not yet decided).
+    /// The revision pinned at approve time that Apply will materialize (#1428). <c>null</c> is NOT
+    /// an approval signal: <c>Approve</c> is the only writer, so null covers "approved from the
+    /// original operations" AND every proposal Approve never ran on — pending, rejected, expired,
+    /// and dismissed-from-rejected alike. Note that Reject DOES set <see cref="DecidedAt"/>, so
+    /// "not yet decided" does not describe the null set. A non-null value is the only positive signal.
     /// A set pin also means <see cref="Operations"/> and <see cref="Presentation"/> carry that pinned
     /// revision's effective operation set — on LIST items as well as on single-proposal responses
     /// (get by id, approve, reject) since #1444. The former boundary, where list items exposed the pin
