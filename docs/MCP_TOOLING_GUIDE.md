@@ -269,14 +269,17 @@ you intended:
 
 - Treat ripgrep exit code `1` as an expected "no matches" result only when the search is optional;
   propagate exit codes greater than `1`. Keep optional searches separate from gate evidence, or use
-  all-settled semantics, so one expected non-zero result cannot hide independent outputs:
+  all-settled semantics, so one expected non-zero result cannot hide independent outputs. Resolve
+  the executable first so a launch failure cannot leave `$LASTEXITCODE` null or stale:
 
   ```powershell
-  $searchResults = rg -n 'pattern' docs
-  switch ($LASTEXITCODE) {
+  $rg = Get-Command -Name rg -CommandType Application -TotalCount 1 -ErrorAction Stop
+  $searchResults = & $rg.Source -n 'pattern' docs
+  $searchExit = $LASTEXITCODE
+  switch ($searchExit) {
       0 { $searchResults }
       1 { Write-Output 'No matches.' }
-      default { exit $LASTEXITCODE }
+      default { exit $searchExit }
   }
   ```
 
