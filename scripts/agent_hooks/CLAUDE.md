@@ -28,9 +28,12 @@ Native Windows-hosted configured-handler smoke (Bash payloads):
 POSIX direct renderer checks:
 ```sh
 set -e
-python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 python3 -B scripts/agent_hooks/render_failure_ledger.py
+python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 ```
+
+Local update workflows render first so a hook-appended JSONL entry can be projected, then test
+synchronization. Required CI never renders and deliberately tests the checked-in projection first.
 
 The smoke harness launches child Python scripts through its active `sys.executable` with `-B`,
 while the Windows-only commands in `.claude/settings.json` use the verified `py -3 -B` launcher.

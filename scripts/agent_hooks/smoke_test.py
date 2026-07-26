@@ -119,6 +119,73 @@ def load_settings() -> dict[str, object]:
     return json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
 
 
+def expect_text_order(path: str, before: str, after: str, label: str) -> None:
+    text = (ROOT / path).read_text(encoding="utf-8")
+    before_index = text.find(before)
+    after_index = text.find(after)
+    if before_index < 0 or after_index < 0:
+        raise AssertionError(
+            f"{label} missing expected commands: before_found={before_index >= 0}, after_found={after_index >= 0}"
+        )
+    if before_index >= after_index:
+        raise AssertionError(f"{label} must render the failure ledger before testing synchronization")
+
+
+def test_failure_ledger_command_order() -> None:
+    local_workflows = [
+        (
+            "docs/TESTING_GUIDE.md",
+            "py -3 -B scripts/agent_hooks/render_failure_ledger.py",
+            "py -3 -B -m unittest discover -s scripts/agent_hooks",
+            "Windows testing guide",
+        ),
+        (
+            "docs/TESTING_GUIDE.md",
+            "python3 -B scripts/agent_hooks/render_failure_ledger.py",
+            "python3 -B -m unittest discover -s scripts/agent_hooks",
+            "POSIX testing guide",
+        ),
+        (
+            "scripts/agent_hooks/CLAUDE.md",
+            "python3 -B scripts/agent_hooks/render_failure_ledger.py",
+            "python3 -B -m unittest discover -s scripts/agent_hooks",
+            "agent-hook POSIX guide",
+        ),
+        (
+            ".codex/skills/taskdeck-failure-capture/SKILL.md",
+            "py -3 -B scripts/agent_hooks/render_failure_ledger.py",
+            "py -3 -B -m unittest discover -s scripts/agent_hooks",
+            "Codex failure-capture Windows workflow",
+        ),
+        (
+            ".codex/skills/taskdeck-failure-capture/SKILL.md",
+            "python3 -B scripts/agent_hooks/render_failure_ledger.py",
+            "python3 -B -m unittest discover -s scripts/agent_hooks",
+            "Codex failure-capture POSIX workflow",
+        ),
+        (
+            ".claude/skills/taskdeck-failure-capture/SKILL.md",
+            "py -3 -B scripts/agent_hooks/render_failure_ledger.py",
+            "py -3 -B -m unittest discover -s scripts/agent_hooks",
+            "Claude failure-capture Windows workflow",
+        ),
+        (
+            ".claude/skills/taskdeck-failure-capture/SKILL.md",
+            "python3 -B scripts/agent_hooks/render_failure_ledger.py",
+            "python3 -B -m unittest discover -s scripts/agent_hooks",
+            "Claude failure-capture POSIX workflow",
+        ),
+    ]
+    for path, renderer, synchronization_test, label in local_workflows:
+        expect_text_order(path, renderer, synchronization_test, label)
+
+    ci_workflow = (ROOT / ".github" / "workflows" / "reusable-docs-governance.yml").read_text(encoding="utf-8")
+    if 'run: python -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"' not in ci_workflow:
+        raise AssertionError("Required Docs Governance lost its failure-ledger synchronization test")
+    if "scripts/agent_hooks/render_failure_ledger.py" in ci_workflow:
+        raise AssertionError("Required Docs Governance must not render before validating the checked-in projection")
+
+
 def validate_configured_python_launchers(settings: dict[str, object]) -> None:
     hooks = settings["hooks"]  # type: ignore[index]
     agent_hooks_path_pattern = re.compile(r"scripts[\\/]+agent_hooks", re.IGNORECASE)
@@ -403,6 +470,7 @@ def test_pre_commit_hook(settings: dict[str, object]) -> None:
 
 def main() -> int:
     settings = load_settings()
+    test_failure_ledger_command_order()
     test_configured_python_launchers(settings)
     test_pre_tool_use(settings)
     test_powershell_command_lookup_fails_loudly()
