@@ -381,11 +381,14 @@ try {
     $seedScriptsPath = Join-Path $seedPath "scripts"
     New-Item -ItemType Directory -Path $seedScriptsPath | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../worktree_guard.ps1") -Destination (Join-Path $seedScriptsPath "worktree_guard.ps1")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "scripts/worktree_guard.ps1")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Add worktree guard")
+    $guardOnlyCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
     $seedGitScriptsPath = Join-Path $seedScriptsPath "git"
     New-Item -ItemType Directory -Path $seedGitScriptsPath | Out-Null
     Copy-Item -LiteralPath $initializerPath -Destination (Join-Path $seedGitScriptsPath "Initialize-CodexIssueWorktree.ps1")
-    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "scripts/worktree_guard.ps1", "scripts/git/Initialize-CodexIssueWorktree.ps1")
-    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Add worktree handoff artifacts")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Add worktree initializer")
     $helperArtifactCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
     Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "advanced" -Encoding Ascii
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "tracked.txt")
@@ -935,9 +938,17 @@ try {
         Assert-True (-not (Test-Path -LiteralPath $oldTagTarget)) "Rejected old tag should not leave a target path."
         $oldTagBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-454/old-tag-base") -WorkingDirectory $callerPath
         Assert-Equal 1 $oldTagBranch.ExitCode "Rejected old tag should not create the planned branch."
+
+        $missingInitializerTarget = Join-Path $callerPath ".worktrees/codex-456-missing-initializer-base"
+        $missingInitializerBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "456", "-Slug", "missing-initializer-base", "-BaseBranch", $guardOnlyCommit)
+        Assert-True ($missingInitializerBase.ExitCode -ne 0) "A base containing the guard but predating the initializer should fail closed."
+        Assert-Contains $missingInitializerBase.Output "does not contain required handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1'" "Guard-only base rejection should name the missing initializer artifact."
+        Assert-True (-not (Test-Path -LiteralPath $missingInitializerTarget)) "Rejected guard-only base should not leave a target path."
+        $missingInitializerBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-456/missing-initializer-base") -WorkingDirectory $callerPath
+        Assert-Equal 1 $missingInitializerBranch.ExitCode "Rejected guard-only base should not create the planned branch."
         $registrationsAfterMissingArtifacts = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
-        Assert-Equal $registrationsBeforeMissingArtifacts $registrationsAfterMissingArtifacts "Rejected old commit or tag changed Git worktree registrations."
-        Complete-Test "bases missing handoff artifacts fail before path, branch, or worktree registration creation"
+        Assert-Equal $registrationsBeforeMissingArtifacts $registrationsAfterMissingArtifacts "Rejected old commit, tag, or guard-only base changed Git worktree registrations."
+        Complete-Test "bases missing the guard or initializer fail before path, branch, or worktree registration creation"
     }
 
     if (Test-CaseSelected "fully-qualified-ref") {
