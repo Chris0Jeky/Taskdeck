@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-14
+Last Updated: 2026-07-26
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -71,6 +71,7 @@ python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_valida
 python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-interface-map
 Get-ChildItem scripts\agent_hooks -Filter *.py | ForEach-Object { python -m py_compile $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
 python scripts\agent_hooks\smoke_test.py
+py -3 -B -m unittest discover -s scripts\agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 python scripts\agent_hooks\render_failure_ledger.py
 node scripts\check-docs-governance.mjs
 node scripts\check-golden-principles.mjs

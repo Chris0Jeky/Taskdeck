@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +41,10 @@ Use `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`; do not mutate root instructions aft
 TRACKING_ISSUE = re.compile(r"#\d+")
 
 
+class LedgerFormatError(ValueError):
+    """Raised when a nonblank JSONL line is not a JSON object."""
+
+
 def cell(value: object, limit: int = 160) -> str:
     text = str(value or "").replace("\n", " ").replace("|", "\\|")
     return text[:limit] + ("..." if len(text) > limit else "")
@@ -54,49 +59,74 @@ def projection_key(entry: dict[str, object], index: int) -> tuple[str, ...]:
 
 
 def project_latest_entries(entries: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Keep the latest file-order state for each tracked surface/issue pair."""
+    """Hide seed metadata and keep the latest tracked surface/issue state."""
+    visible_entries = [entry for entry in entries if entry.get("class") != "seed"]
     latest_indexes: dict[tuple[str, ...], int] = {}
     keys: list[tuple[str, ...]] = []
 
-    for index, entry in enumerate(entries):
+    for index, entry in enumerate(visible_entries):
         key = projection_key(entry, index)
         keys.append(key)
         latest_indexes[key] = index
 
     return [
         entry
-        for index, (entry, key) in enumerate(zip(entries, keys, strict=True))
+        for index, (entry, key) in enumerate(zip(visible_entries, keys, strict=True))
         if latest_indexes[key] == index
     ]
 
 
-def main() -> int:
+def render_markdown(entries: list[dict[str, object]]) -> str:
+    """Render projected ledger entries without inventing fallback history."""
     rows: list[str] = []
-    entries: list[dict[str, object]] = []
-    if JSONL.exists():
-        for line in JSONL.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(entry, dict):
-                continue
-            entries.append(entry)
+    for entry in project_latest_entries(entries):
+        date = str(entry.get("ts", ""))[:10] or "unknown"
+        rows.append(
+            f"| {cell(date, 20)} | {cell(entry.get('class'), 40)} | {cell(entry.get('surface'), 80)} | "
+            f"{cell(entry.get('failure'))} | {cell(entry.get('workaround'))} | {cell(entry.get('future_fix'))} | {cell(entry.get('status'), 40)} |"
+        )
 
-        for entry in project_latest_entries(entries):
-            date = str(entry.get("ts", ""))[:10] or "unknown"
-            rows.append(
-                f"| {cell(date, 20)} | {cell(entry.get('class'), 40)} | {cell(entry.get('surface'), 80)} | "
-                f"{cell(entry.get('failure'))} | {cell(entry.get('workaround'))} | {cell(entry.get('future_fix'))} | {cell(entry.get('status'), 40)} |"
+    return HEADER + "\n".join(rows) + FOOTER
+
+
+def load_entries(path: Path) -> list[dict[str, object]]:
+    """Load and validate every nonblank JSONL line before rendering."""
+    try:
+        content = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+
+    entries: list[dict[str, object]] = []
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        if not line.strip():
+            continue
+
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise LedgerFormatError(
+                f"{path}: line {line_number}: invalid JSON: {exc.msg} at column {exc.colno}"
+            ) from exc
+
+        if not isinstance(entry, dict):
+            raise LedgerFormatError(
+                f"{path}: line {line_number}: expected a JSON object, got {type(entry).__name__}"
             )
 
-    if not rows:
-        rows.append("| 2026-05-11 | seed | agentic-pack | Ledger created | n/a | Start recording recurring failures and promote confirmed lessons | open |")
+        entries.append(entry)
+
+    return entries
+
+
+def main() -> int:
+    try:
+        entries = load_entries(JSONL)
+    except (LedgerFormatError, OSError, UnicodeError) as exc:
+        print(f"Failure ledger render failed: {exc}", file=sys.stderr)
+        return 1
 
     MD.parent.mkdir(parents=True, exist_ok=True)
-    MD.write_text(HEADER + "\n".join(rows) + FOOTER, encoding="utf-8")
+    MD.write_text(render_markdown(entries), encoding="utf-8")
     return 0
 
 

@@ -10,6 +10,10 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-26, agentic governance)
+
+- **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI before regeneration can mask it. The agentic operating-layer smoke sequence records the same fail-before-render order.
+
 ## Delivery update (2026-07-26, security runway)
 
 - **SQLite native security floor (`#1345`):** centrally pin `SQLitePCLRaw.bundle_e_sqlite3` 2.1.12 and make Infrastructure's dependency direct, which moves the matched bundle/core/provider/native family from 2.1.6 to 2.1.12 without enabling global transitive pinning. A runtime regression enforces SQLite >= 3.50.2 (2.1.12 loads 3.53.3); the NuGet vulnerability audit is clean, EF reports no pending model changes after a fresh update, and a self-contained `win-x64` binary reaches `/health/ready` with SQLite loaded.
