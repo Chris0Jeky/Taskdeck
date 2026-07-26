@@ -77,6 +77,11 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
   -BranchName "feature/custom-branch"
 ```
 
+Custom branches must also be representable as Windows ref paths. The helper rejects `<`, `>`, `:`,
+`"`, `\`, `|`, `?`, `*`, trailing periods, and Windows-reserved device components such as `CON` or
+`LPT1` before it creates a target. Git's platform-neutral `check-ref-format` alone accepts some names
+that Windows cannot create as loose refs or lock files.
+
 Run the helper's entire printed PowerShell block unchanged from the new worktree. It invokes the
 target initializer at its exact absolute path; that path's selected-base blob identity was checked
 when the worktree was created. The wrapper runs the guard as its first internal action with the
@@ -115,8 +120,8 @@ that rule could match the wrong checkout. The helper prints an exact full-comman
 for each task, including the target, pinned Git, branch, worktree, and head arguments with no
 wildcard; review and add that rule explicitly when the launch surface requires it.
 
-**Headless workers.** Current Claude Code documents that `claude -p --worktree` skips the trust
-dialog. That does not make an untrusted workspace trusted: project `permissions.allow` and
+**Headless workers.** Current Claude Code documents that non-interactive `claude -p` does not show
+the trust dialog. That does not make an untrusted workspace trusted: project `permissions.allow` and
 `additionalDirectories` are ignored until project trust has been accepted. Skipping the dialog also
 does not approve unmatched commands. `--allowedTools` adds launch rules; in a trusted workspace it
 does not replace allows from other enabled settings sources. The command-line
@@ -124,8 +129,8 @@ does not replace allows from other enabled settings sources. The command-line
 `bypassPermissions`, but it likewise does not erase merged allow rules. The supported unattended
 posture for this repository is:
 
-1. Before relying on project settings, permissions, hooks, or environment, accept this workspace's
-   trust in a prior interactive coordinator session. `-p --worktree` is not a trust grant.
+1. Before relying on project settings, permissions, or hooks, accept this workspace's trust in a
+   prior interactive coordinator session. `-p` is not a trust grant.
 2. Use a Claude Code version that supports `--setting-sources` and launch with
    `--setting-sources project`. This excludes file-backed user and project-local permissions,
    including approvals stored in the main checkout for linked worktrees.
@@ -134,30 +139,36 @@ posture for this repository is:
    are an administrator-owned trust boundary that this flag cannot remove; do not use an
    unattended worker if that boundary is not trusted for the task.
 4. Add only the task-specific launch rules that the worker needs, including the exact additive
-   full-command initializer rule printed by the helper, then use `--permission-mode dontAsk` so
+   full-command initializer rule printed by the helper. Keep all other command execution on the
+   repository's Git Bash surface, then use `--permission-mode dontAsk` so
    calls that would otherwise prompt are denied. This mode does not revoke matching allow rules,
    built-in read-only Bash commands, or applicable hook approvals; those remain part of the
    reviewed trust surface.
 
-For an intentionally untrusted launch, do not rely on project permissions, hooks, additional
-directories, or environment. Pass every required allow rule through CLI argv, set
-`CLAUDE_CODE_USE_POWERSHELL_TOOL=1` in the trusted host environment, and proceed only if the task
-does not require ignored project configuration.
+For an intentionally untrusted launch, do not rely on project-provided permissions, hooks,
+additional directories, or environment. Pass every required allow rule through CLI argv and
+proceed only if the task does not require ignored project configuration.
 
 For example:
 
 ```powershell
+Set-Location -LiteralPath '<exact helper-created worktree>'
+$env:CLAUDE_CODE_USE_POWERSHELL_TOOL = '1'
 $initializerAllowRule = @'
 PowerShell(<exact absolute initializer command and pinned arguments printed by the helper>)
 '@
-claude -p --worktree --setting-sources project --allowedTools $initializerAllowRule <other reviewed task arguments> --permission-mode dontAsk
+claude -p --setting-sources project --allowedTools $initializerAllowRule <other reviewed task arguments> --permission-mode dontAsk
 ```
 
-The helper handoff itself requires the PowerShell tool shape. The committed project environment
-sets `CLAUDE_CODE_USE_POWERSHELL_TOOL=1` so current Windows Claude Code clients expose that
-progressive tool deterministically in a trusted project. An untrusted launch must set the same
-value in its host environment because it cannot rely on project environment. Do not present the launch allowlist as the sole authorization
-boundary, and do not present
+Do not add `--worktree`: Claude Code would create a second `.claude/worktrees/...` checkout instead
+of staying in the helper-created target, so the exact-worktree guard would reject the handoff. The
+helper handoff requires the PowerShell tool shape, but the repository deliberately does not enable
+that tool project-wide. Enable it only in the trusted host environment for this task-scoped launch.
+When enabled, PowerShell becomes Claude Code's primary shell; on Windows it is not sandboxed, and
+Taskdeck's command deny/failure/pre-commit hooks are currently Bash-only. Therefore the unattended
+posture permits only the exact initializer PowerShell rule; keep other command execution on Git Bash
+until PowerShell hook parity is separately reviewed. Do not present the launch allowlist as the sole
+authorization boundary, and do not present
 `acceptEdits`, disabled trust verification, or `--dangerously-skip-permissions` as authorization
 for the wrapper. If the installed CLI does not support the PowerShell tool enablement or cannot
 exclude user and local setting sources, use an interactive coordinator launch instead of claiming
@@ -165,7 +176,9 @@ the unattended posture; broader bypass requires a separately approved disposable
 boundary.
 See Claude Code's current [permission and settings-precedence contract](https://code.claude.com/docs/en/permissions#settings-precedence),
 [`--setting-sources` CLI contract](https://code.claude.com/docs/en/cli-usage#cli-flags), and
-[trust-verification exception for `-p`/`--worktree`](https://code.claude.com/docs/en/security).
+[non-interactive trust behavior](https://code.claude.com/docs/en/permissions#project-allow-rules-and-workspace-trust),
+[manual-worktree launch guidance](https://code.claude.com/docs/en/worktrees#manage-worktrees-manually), and
+[PowerShell preview limitations](https://code.claude.com/docs/en/tools-reference#preview-limitations).
 
 ## First Worker Command
 

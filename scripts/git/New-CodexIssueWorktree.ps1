@@ -496,6 +496,16 @@ $branchValidationResult = Invoke-GitCommand -Arguments @("check-ref-format", "--
 if ($branchValidationResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($branchValidationResult.Stdout) -or $branchValidationResult.Stdout.Trim() -cne $BranchName) {
     throw "Invalid branch name: $BranchName$(Format-GitContext $branchValidationResult.Output)"
 }
+$windowsInvalidRefCharacters = [char[]]@('<', '>', ':', '"', '\', '|', '?', '*')
+$windowsReservedRefComponent = '^(?i:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM(?:[1-9]|\u00B9|\u00B2|\u00B3)|LPT(?:[1-9]|\u00B9|\u00B2|\u00B3))(?:\.|$)'
+$hasWindowsIncompatibleRefComponent = @(
+    $BranchName -split '/' | Where-Object {
+        $_ -match $windowsReservedRefComponent -or $_.EndsWith('.') -or $_.EndsWith(' ')
+    }
+).Count -gt 0
+if ($BranchName.IndexOfAny($windowsInvalidRefCharacters) -ge 0 -or $hasWindowsIncompatibleRefComponent) {
+    throw "Invalid branch name for Windows-compatible worktrees: $BranchName"
+}
 
 $worktreeDir = Join-Path $requestedWorktreeRoot "codex-$IssueNumber-$Slug"
 $branchLookupResult = Invoke-GitCommand -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$BranchName")
@@ -595,10 +605,10 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     Write-Host ""
     $initializerAllowRule = "PowerShell($initializerInvocation)"
     Write-Host "Claude Code task-scoped initializer allow rule (additive PowerShell transport):"
-    Write-Host "  `$initializerAllowRule = @'"
-    Write-Host "  $initializerAllowRule"
-    Write-Host "  '@"
-    Write-Host '  # Pass as one argv value: claude ... --allowedTools $initializerAllowRule'
+    Write-Host "`$initializerAllowRule = @'"
+    Write-Host $initializerAllowRule
+    Write-Host "'@"
+    Write-Host '# Pass as one argv value: claude ... --allowedTools $initializerAllowRule'
     Write-Host ""
     Write-Host "PowerShell worker handoff (run this entire block unchanged):"
     Write-Host "  $initializerInvocation"

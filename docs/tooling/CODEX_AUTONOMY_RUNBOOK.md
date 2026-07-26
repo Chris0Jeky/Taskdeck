@@ -102,9 +102,11 @@ bytes at execution: same-user replacement of the initializer or guard after crea
 during handoff remains an explicit TOCTOU residual that requires an external hash-pinned launcher
 to close. The helper also prints the matching task-scoped PowerShell allow rule; add it explicitly
 when the launch surface requires it rather than committing a generic relative rule. It emits the
-rule in a PowerShell single-quoted here-string variable; pass that variable as one `--allowedTools`
-argv value so Git-valid branch names containing quotes cannot alter CLI parsing. The rule matches
-the complete emitted command and all pinned arguments without a wildcard:
+rule in a directly pasteable PowerShell single-quoted here-string variable; pass that variable as
+one `--allowedTools` argv value. Branch names must also be Windows-path compatible: the helper
+rejects characters and reserved components that Git's platform-neutral syntax check accepts but
+NTFS cannot create as loose refs or lock files. The rule matches the complete emitted command and
+all pinned arguments without a wildcard:
 
 ```powershell
 & '<exact helper-created worktree>\scripts\git\Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
@@ -116,17 +118,18 @@ The initializer is the first worktree command and its first internal action is t
 helper-selected native Git. Any guard, exact-worktree, detached-base, or switch failure stops the
 block. This handoff is PowerShell-only and invokes the initializer in the already-running host;
 Bash workers must launch a reviewed absolute PowerShell application in the worktree and run the
-whole printed block. For headless Claude workers, follow the reviewed effective-permission posture
-in `docs/WORKTREE_AGENT_PROTOCOL.md`: exclude user/local file sources, review committed
-permission/hook configuration and explicit rules together, account for built-in read-only Bash,
-and treat managed policy as an administrator-owned trust boundary. Project settings enable the
-progressive Windows PowerShell tool with `CLAUDE_CODE_USE_POWERSHELL_TOOL=1`; older or unsupported
-clients require an interactive coordinator launch. `claude -p --worktree` skips the trust dialog but
-does not make an untrusted workspace trusted; project allows and additional directories are ignored
-until trust is accepted. Accept trust in a prior interactive coordinator session when relying on
-project settings or hooks. Otherwise pass every required rule through CLI argv, set the PowerShell
-tool flag in the host environment, and do not rely on ignored project configuration. `acceptEdits`
-alone is not command authorization.
+whole printed block. For headless Claude workers, launch `claude -p` from that exact target; do not
+add `--worktree`, which creates a second `.claude/worktrees/...` checkout. Follow the reviewed
+effective-permission posture in `docs/WORKTREE_AGENT_PROTOCOL.md`: exclude user/local file sources,
+review committed permission/hook configuration and explicit rules together, account for built-in
+read-only Bash,
+and treat managed policy as an administrator-owned trust boundary. The repository does not enable
+the progressive Windows PowerShell tool project-wide. Set `CLAUDE_CODE_USE_POWERSHELL_TOOL=1` only
+in the trusted host environment for the task-scoped initializer launch; PowerShell is unsandboxed on
+Windows and Taskdeck's command hooks are Bash-only, so keep all other commands on Git Bash. Older or
+unsupported clients require an interactive coordinator launch. Non-interactive `-p` does not make
+an untrusted workspace trusted; project allows and additional directories remain ignored until
+trust is accepted. `acceptEdits` alone is not command authorization.
 
 Worker prompts must not include absolute paths to the main checkout. The helper-printed absolute
 target initializer path is the deliberate exception: it binds execution to the created worktree.

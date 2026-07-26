@@ -1211,11 +1211,12 @@ Required workflow: `.github/workflows/ci-required.yml`
   committed versions. These in-helper checks run before its intended mutations but do not
   authenticate the helper before PowerShell starts it; an external hash-pinned launcher remains a
   separate bootstrap trust boundary. The same residual applies after creation: a same-user process
-  can replace the target initializer or guard before handoff execution. Project settings now enable
-  Claude Code's progressive Windows PowerShell tool explicitly; unsupported clients require an
-  interactive coordinator launch. The helper is main-checkout-only and rejects linked-source
-  invocation before mutation. Headless guidance now distinguishes skipped trust dialogs from
-  accepted project trust and transports exact quote-bearing rules as one CLI argv value
+  can replace the target initializer or guard before handoff execution. The repository does not
+  enable Claude Code's unsandboxed Windows PowerShell tool project-wide; headless initialization
+  requires a task-scoped host opt-in and exact rule while later commands remain on the Bash-only
+  hook surface. The helper is main-checkout-only, rejects linked-source invocation before mutation,
+  rejects Git-syntax-valid names that cannot be Windows ref paths, and keeps `claude -p` in the
+  helper-created target instead of creating a second Claude worktree.
 - `backend-architecture` (Ubuntu)
 - `backend-unit` (Ubuntu/Windows)
 - `api-integration` (Ubuntu/Windows)

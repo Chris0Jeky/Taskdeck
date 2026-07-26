@@ -1395,9 +1395,10 @@ Required workflow: `.github/workflows/ci-required.yml`
     permission-contract regressions. The helper's self-check is covered as pre-mutation hygiene, not
     as authentication before PowerShell starts executing it; selected-base OID checks likewise do
     not authenticate target initializer/guard bytes at handoff execution time. The permission model
-    asserts committed opt-in to Claude Code's progressive Windows PowerShell tool, trusted versus
-    untrusted project settings, main-checkout-only helper invocation, and single-argv transport for
-    exact rules containing Git-valid quote-bearing branches
+    asserts no project-wide opt-in to Claude Code's unsandboxed Windows PowerShell tool, trusted
+    versus untrusted project settings, main-checkout-only helper invocation, exact-target launch
+    without a second Claude worktree, directly pasteable here-string syntax, real PowerShell 5.1
+    single-argv transport, and pre-mutation rejection of Windows-incompatible branch refs
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`

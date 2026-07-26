@@ -392,11 +392,11 @@ function Get-PrintedInitializerLaunchRule {
     $markerIndex = [Array]::IndexOf($outputLines, $marker)
     Assert-True ($markerIndex -ge 0) "Helper output omitted the task-scoped initializer allow-rule marker."
     Assert-True (($markerIndex + 4) -lt $outputLines.Count) "Helper output omitted the task-scoped initializer allow-rule transport."
-    Assert-Equal "`$initializerAllowRule = @'" $outputLines[$markerIndex + 1].TrimStart() "Helper output omitted the single-quoted here-string opener."
-    Assert-Equal "'@" $outputLines[$markerIndex + 3].TrimStart() "Helper output omitted the single-quoted here-string terminator."
-    Assert-Equal '# Pass as one argv value: claude ... --allowedTools $initializerAllowRule' $outputLines[$markerIndex + 4].TrimStart() "Helper output did not pass the rule variable as one CLI argv value."
+    Assert-Equal "`$initializerAllowRule = @'" $outputLines[$markerIndex + 1] "Helper output omitted a directly pasteable single-quoted here-string opener."
+    Assert-Equal "'@" $outputLines[$markerIndex + 3] "Helper output omitted a column-one single-quoted here-string terminator."
+    Assert-Equal '# Pass as one argv value: claude ... --allowedTools $initializerAllowRule' $outputLines[$markerIndex + 4] "Helper output did not pass the rule variable as one CLI argv value."
 
-    return $outputLines[$markerIndex + 2].TrimStart()
+    return $outputLines[$markerIndex + 2]
 }
 
 try {
@@ -615,7 +615,7 @@ try {
             Assert-Equal "dontAsk" $dontAskWithLocalConfiguration.PermissionMode "The command-line dontAsk mode should override a local bypassPermissions default."
             Assert-True ($dontAskWithLocalConfiguration.Allow -contains $broadLocalRule) "Command-line dontAsk should not erase a broad local allow while the local source remains enabled."
 
-            $taskLaunchRule = "PowerShell(dotnet test backend/Taskdeck.sln -c Release -m:1)"
+            $taskLaunchRule = "Bash(dotnet test backend/Taskdeck.sln -c Release -m:1)"
             $reviewedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($powerShellInitializerRule, $taskLaunchRule) -CommandLinePermissionMode "dontAsk"
             Assert-Equal "dontAsk" $reviewedConfiguration.PermissionMode "The supported project-only posture should use the explicit dontAsk mode."
             Assert-True ($reviewedConfiguration.Allow -notcontains $broadLocalRule) "The supported project-only source posture should exclude the main-checkout local allow."
@@ -623,7 +623,7 @@ try {
             $alteredInitializerRule = $powerShellInitializerRule.Replace("issue-424/dirty-source", "issue-424/other-branch")
             Assert-True ($reviewedConfiguration.Allow -notcontains $alteredInitializerRule) "The exact initializer rule must not authorize substituted branch arguments."
             Assert-True ($reviewedConfiguration.Allow -contains $taskLaunchRule) "The reviewed effective permissions should include explicit task launch rules."
-            Assert-Equal "1" $reviewedConfiguration.Environment["CLAUDE_CODE_USE_POWERSHELL_TOOL"] "Project settings should enable Claude Code's progressive Windows PowerShell tool surface."
+            Assert-True (-not $reviewedConfiguration.Environment.ContainsKey("CLAUDE_CODE_USE_POWERSHELL_TOOL")) "Project settings must not enable the unsandboxed Windows PowerShell tool repo-wide."
             $committedProjectGuardRule = "PowerShell(powershell -File scripts/worktree_guard.ps1:*)"
             Assert-True ($reviewedConfiguration.Allow -contains $committedProjectGuardRule) "A trusted project source should include committed project allow rules."
 
@@ -647,14 +647,19 @@ try {
                 Assert-Contains $guidance "Initialize-CodexIssueWorktree.ps1" "Detached-first guidance omitted the reviewed initializer wrapper: $guidancePath"
             }
             $protocol = Get-Content -Raw -LiteralPath $worktreeProtocolPath
-            Assert-Contains $protocol 'claude -p --worktree --setting-sources project --allowedTools $initializerAllowRule' "Headless guidance omitted the project-only source posture and quote-safe task initializer launch rule."
+            Assert-Contains $protocol 'claude -p --setting-sources project --allowedTools $initializerAllowRule' "Headless guidance omitted the exact-target project-only launch and task initializer rule."
+            Assert-True (-not $protocol.Contains('claude -p --worktree')) "Headless guidance would create a second Claude worktree instead of staying in the helper-created target."
+            Assert-Contains $protocol "Set-Location -LiteralPath '<exact helper-created worktree>'" "Headless guidance did not bind the Claude process cwd to the helper-created target."
             Assert-NormalizedContains $protocol "acceptEdits does not approve arbitrary Git or PowerShell commands" "Headless guidance must not present acceptEdits as sufficient command authorization."
             Assert-NormalizedContains $protocol "Do not present the launch allowlist as the sole authorization boundary" "Headless guidance must describe the complete effective permission boundary."
             Assert-NormalizedContains $protocol "Organization-managed settings remain effective" "Headless guidance must bound residual administrator-owned trust."
             Assert-NormalizedContains $protocol "built-in read-only Bash commands, or applicable hook approvals" "Headless guidance must retain documented non-allowlist authorization paths."
             Assert-NormalizedContains $protocol 'overrides a file-backed `defaultMode` for that session' "Headless guidance must distinguish the command-line mode override from merged allow rules."
-            Assert-Contains $protocol "CLAUDE_CODE_USE_POWERSHELL_TOOL" "Headless guidance omitted the committed PowerShell-tool enablement."
-            Assert-NormalizedContains $protocol "does not make an untrusted workspace trusted" "Headless guidance must not treat -p --worktree as accepted project trust."
+            Assert-Contains $protocol "CLAUDE_CODE_USE_POWERSHELL_TOOL" "Headless guidance omitted the task-scoped host PowerShell-tool enablement."
+            Assert-NormalizedContains $protocol "repository deliberately does not enable that tool project-wide" "Headless guidance omitted the no-project-wide-PowerShell boundary."
+            Assert-NormalizedContains $protocol "on Windows it is not sandboxed" "Headless guidance omitted the PowerShell sandbox limitation."
+            Assert-NormalizedContains $protocol "command deny/failure/pre-commit hooks are currently Bash-only" "Headless guidance omitted the repository hook-coverage boundary."
+            Assert-NormalizedContains $protocol "does not make an untrusted workspace trusted" "Headless guidance must not treat -p as accepted project trust."
             Assert-NormalizedContains $protocol "Pass every required allow rule through CLI argv" "Headless guidance omitted the untrusted-workspace CLI-only posture."
             Assert-Contains $protocol '$initializerAllowRule = @''' "Headless guidance omitted quote-safe allow-rule transport."
             Assert-Contains $protocol "--permission-mode dontAsk" "Headless guidance omitted the non-prompting permission mode for reviewed effective permissions."
@@ -723,29 +728,41 @@ try {
             $metacharCreatedBranch = Invoke-Git -WorkingDirectory $powerShellHostWorktree -Arguments @("branch", "--show-current")
             Assert-Equal $metacharBranch $metacharCreatedBranch "Initializer did not create the intended metacharacter branch through native argv."
 
-            $quotedBranch = 'issue-469/quoted"rule'
-            $quotedRuleResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "469", "-Slug", "quoted-rule", "-BranchName", $quotedBranch)
-            Assert-Equal 0 $quotedRuleResult.ExitCode "Git-valid quote-bearing branch should survive helper validation and detached creation.`n$($quotedRuleResult.Output)"
-            $quotedInitializerRule = Get-PrintedInitializerLaunchRule -Output $quotedRuleResult.Output
-            Assert-True $quotedInitializerRule.Contains('"') "Quote-bearing custom branch was lost from the exact initializer allow rule."
-            $quotedHandoffLines = @(Get-PrintedHandoffLines -Output $quotedRuleResult.Output)
-            Assert-Equal "PowerShell($($quotedHandoffLines[0]))" $quotedInitializerRule "Here-string transport changed the exact quote-bearing initializer rule."
-            $quotedOutputLines = @($quotedRuleResult.Output -split '\r?\n')
-            $quotedRuleMarkerIndex = [Array]::IndexOf($quotedOutputLines, "Claude Code task-scoped initializer allow rule (additive PowerShell transport):")
-            $quotedRuleCapturePath = Join-Path $fixtureRoot "quoted-rule-argv.txt"
-            $escapedQuotedRuleCapturePath = $quotedRuleCapturePath.Replace("'", "''")
-            $quotedRuleTransportScript = Join-Path $fixtureRoot "quoted-rule-transport.ps1"
-            Set-Content -LiteralPath $quotedRuleTransportScript -Encoding Ascii -Value @(
-                $quotedOutputLines[$quotedRuleMarkerIndex + 1].TrimStart(),
-                $quotedOutputLines[$quotedRuleMarkerIndex + 2].TrimStart(),
-                $quotedOutputLines[$quotedRuleMarkerIndex + 3].TrimStart(),
-                '$capturedArguments = @("--allowedTools", $initializerAllowRule)',
-                'if ($capturedArguments.Count -ne 2) { exit 91 }',
-                "[System.IO.File]::WriteAllText('$escapedQuotedRuleCapturePath', `$capturedArguments[1])"
+            $metacharInitializerRule = Get-PrintedInitializerLaunchRule -Output $powerShellHostResult.Output
+            $metacharOutputLines = @($powerShellHostResult.Output -split '\r?\n')
+            $metacharRuleMarkerIndex = [Array]::IndexOf($metacharOutputLines, "Claude Code task-scoped initializer allow rule (additive PowerShell transport):")
+            $ruleCapturePath = Join-Path $fixtureRoot "initializer-rule-argv.txt"
+            $escapedRuleCapturePath = $ruleCapturePath.Replace("'", "''")
+            $ruleCaptureScript = Join-Path $fixtureRoot "initializer-rule-capture.ps1"
+            Set-Content -LiteralPath $ruleCaptureScript -Encoding Ascii -Value @(
+                'if ($args.Count -ne 2 -or $args[0] -cne ''--allowedTools'') { exit 91 }',
+                "[System.IO.File]::WriteAllText('$escapedRuleCapturePath', `$args[1])"
             )
-            $quotedRuleTransport = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $quotedRuleTransportScript) -WorkingDirectory $fixtureRoot
-            Assert-Equal 0 $quotedRuleTransport.ExitCode "Single-quoted here-string transport should preserve the rule as one argv value.`n$($quotedRuleTransport.Output)"
-            Assert-Equal $quotedInitializerRule ([System.IO.File]::ReadAllText($quotedRuleCapturePath)) "Single-argv transport changed the quote-bearing initializer rule."
+            $escapedPowerShellExecutable = $powerShellExecutable.Replace("'", "''")
+            $escapedRuleCaptureScript = $ruleCaptureScript.Replace("'", "''")
+            $ruleTransportScript = Join-Path $fixtureRoot "initializer-rule-transport.ps1"
+            Set-Content -LiteralPath $ruleTransportScript -Encoding Ascii -Value @(
+                $metacharOutputLines[$metacharRuleMarkerIndex + 1],
+                $metacharOutputLines[$metacharRuleMarkerIndex + 2],
+                $metacharOutputLines[$metacharRuleMarkerIndex + 3],
+                "& '$escapedPowerShellExecutable' -NoLogo -NoProfile -NonInteractive -File '$escapedRuleCaptureScript' --allowedTools `$initializerAllowRule",
+                'exit $LASTEXITCODE'
+            )
+            $ruleTransport = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $ruleTransportScript) -WorkingDirectory $fixtureRoot
+            Assert-Equal 0 $ruleTransport.ExitCode "Exact emitted here-string should parse and cross a real PowerShell 5.1 native boundary as one argv value.`n$($ruleTransport.Output)"
+            Assert-Equal $metacharInitializerRule ([System.IO.File]::ReadAllText($ruleCapturePath)) "Native argv transport changed the exact initializer rule."
+
+            $quotedBranch = 'issue-469/quoted"rule'
+            $quoteRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            $quotedRuleResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "469", "-Slug", "quoted-rule", "-BranchName", $quotedBranch)
+            $quotedRuleWorktree = Join-Path $callerPath ".worktrees/codex-469-quoted-rule"
+            Assert-True ($quotedRuleResult.ExitCode -ne 0) "Windows-incompatible quote-bearing branch should fail before detached worktree creation."
+            Assert-Contains $quotedRuleResult.Output "Invalid branch name for Windows-compatible worktrees: $quotedBranch" "Quote-bearing branch rejection omitted its portability diagnostic."
+            Assert-True (-not (Test-Path -LiteralPath $quotedRuleWorktree)) "Rejected quote-bearing branch left a target path."
+            $quotedBranchRef = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$quotedBranch") -WorkingDirectory $callerPath
+            Assert-Equal 1 $quotedBranchRef.ExitCode "Rejected quote-bearing branch created a shared ref."
+            $quoteRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            Assert-Equal $quoteRegistrationsBefore $quoteRegistrationsAfter "Rejected quote-bearing branch changed worktree registrations."
             Complete-Test "printed handoff stays in the trusted PowerShell host and uses pinned Git under a shimmed PATH"
         }
     }
@@ -988,9 +1005,25 @@ try {
         Assert-True ($invalidBranch.ExitCode -ne 0) "Invalid branch should fail closed."
         Assert-Contains $invalidBranch.Output "Invalid branch name: invalid branch" "Invalid branch diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $invalidBranchTarget)) "Invalid branch should not create a target path."
+
+        $windowsIncompatibleBranchCases = @(
+            @{ IssueNumber = '470'; Slug = 'reserved-branch'; BranchName = 'issue-470/CON' },
+            @{ IssueNumber = '471'; Slug = 'superscript-device'; BranchName = "issue-471/COM$([char]0x00B9)" },
+            @{ IssueNumber = '472'; Slug = 'trailing-period'; BranchName = 'issue-472/trailing./leaf' },
+            @{ IssueNumber = '473'; Slug = 'console-device'; BranchName = 'issue-473/CONIN$' }
+        )
+        foreach ($branchCase in $windowsIncompatibleBranchCases) {
+            $branchTarget = Join-Path $callerPath ".worktrees/codex-$($branchCase.IssueNumber)-$($branchCase.Slug)"
+            $branchResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", $branchCase.IssueNumber, "-Slug", $branchCase.Slug, "-BranchName", $branchCase.BranchName)
+            Assert-True ($branchResult.ExitCode -ne 0) "Windows-incompatible branch '$($branchCase.BranchName)' should fail closed."
+            Assert-Contains $branchResult.Output "Invalid branch name for Windows-compatible worktrees: $($branchCase.BranchName)" "Windows-incompatible branch diagnostic was not clear."
+            Assert-True (-not (Test-Path -LiteralPath $branchTarget)) "Windows-incompatible branch '$($branchCase.BranchName)' should not create a target path."
+            $branchRef = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$($branchCase.BranchName)") -WorkingDirectory $callerPath
+            Assert-Equal 1 $branchRef.ExitCode "Windows-incompatible branch '$($branchCase.BranchName)' created a shared ref."
+        }
         $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-Equal $registrationsBefore $registrationsAfter "Invalid branch changed Git worktree registrations."
-        Complete-Test "invalid branch fails closed without target or registration mutation"
+        Complete-Test "invalid and Windows-incompatible branches fail closed without target or registration mutation"
     }
 
     if (Test-CaseSelected "batch-shim-bypass") {
