@@ -390,12 +390,19 @@ try {
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Add worktree initializer")
     $helperArtifactCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("switch", "-c", "modified-handoff-base")
+    Add-Content -LiteralPath (Join-Path $seedGitScriptsPath "Initialize-CodexIssueWorktree.ps1") -Value "# Modified fixture initializer." -Encoding Ascii
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Modify fixture initializer")
+    $modifiedHandoffCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("switch", "main")
     Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "advanced" -Encoding Ascii
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "tracked.txt")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Advance fixture")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("remote", "add", "origin", $remotePath)
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "-u", "origin", "main")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "pre-helper-base")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "modified-handoff-base")
     $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @("clone", "-b", "main", $remotePath, $callerPath)
 
     $fixtureBase = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-list", "-n", "1", "--end-of-options", "origin/main")
@@ -946,9 +953,68 @@ try {
         Assert-True (-not (Test-Path -LiteralPath $missingInitializerTarget)) "Rejected guard-only base should not leave a target path."
         $missingInitializerBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-456/missing-initializer-base") -WorkingDirectory $callerPath
         Assert-Equal 1 $missingInitializerBranch.ExitCode "Rejected guard-only base should not create the planned branch."
+
+        $modifiedArtifactTarget = Join-Path $callerPath ".worktrees/codex-457-modified-artifact-base"
+        $modifiedArtifactBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "457", "-Slug", "modified-artifact-base", "-BaseBranch", $modifiedHandoffCommit)
+        Assert-True ($modifiedArtifactBase.ExitCode -ne 0) "A base containing a different initializer blob should fail closed."
+        Assert-Contains $modifiedArtifactBase.Output "handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' does not match the reviewed artifact in the invoking checkout HEAD" "Modified-artifact rejection should name the initializer trust mismatch."
+        Assert-True (-not (Test-Path -LiteralPath $modifiedArtifactTarget)) "Rejected modified-artifact base should not leave a target path."
+        $modifiedArtifactBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-457/modified-artifact-base") -WorkingDirectory $callerPath
+        Assert-Equal 1 $modifiedArtifactBranch.ExitCode "Rejected modified-artifact base should not create the planned branch."
+
+        $callerInitializerPath = Join-Path $callerPath "scripts/git/Initialize-CodexIssueWorktree.ps1"
+        $originalInitializerBytes = [System.IO.File]::ReadAllBytes($callerInitializerPath)
+        $dirtySourceMarker = "# Uncommitted source-artifact canary."
+        try {
+            Add-Content -LiteralPath $callerInitializerPath -Value $dirtySourceMarker -Encoding Ascii
+            $dirtySourceTarget = Join-Path $callerPath ".worktrees/codex-458-dirty-source-artifact"
+            $dirtySource = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "458", "-Slug", "dirty-source-artifact")
+            Assert-True ($dirtySource.ExitCode -ne 0) "A dirty invoking-checkout initializer should fail closed."
+            Assert-Contains $dirtySource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' has unstaged changes" "Dirty source-artifact rejection should identify the uncommitted initializer."
+            Assert-Contains (Get-Content -Raw -LiteralPath $callerInitializerPath) $dirtySourceMarker "Source-artifact rejection should preserve the maintainer-owned dirty content."
+            Assert-True (-not (Test-Path -LiteralPath $dirtySourceTarget)) "Dirty source-artifact rejection should not leave a target path."
+            $dirtySourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-458/dirty-source-artifact") -WorkingDirectory $callerPath
+            Assert-Equal 1 $dirtySourceBranch.ExitCode "Dirty source-artifact rejection should not create the planned branch."
+        }
+        finally {
+            [System.IO.File]::WriteAllBytes($callerInitializerPath, $originalInitializerBytes)
+        }
+
+        $stagedSourceMarker = "# Staged source-artifact canary."
+        try {
+            Add-Content -LiteralPath $callerInitializerPath -Value $stagedSourceMarker -Encoding Ascii
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1")
+            $stagedSourceTarget = Join-Path $callerPath ".worktrees/codex-460-staged-source-artifact"
+            $stagedSource = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "460", "-Slug", "staged-source-artifact")
+            Assert-True ($stagedSource.ExitCode -ne 0) "A staged invoking-checkout initializer should fail closed."
+            Assert-Contains $stagedSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' has staged changes" "Staged source-artifact rejection should identify the indexed initializer."
+            Assert-Contains (Get-Content -Raw -LiteralPath $callerInitializerPath) $stagedSourceMarker "Source-artifact rejection should preserve the maintainer-owned staged content."
+            Assert-True (-not (Test-Path -LiteralPath $stagedSourceTarget)) "Staged source-artifact rejection should not leave a target path."
+            $stagedSourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-460/staged-source-artifact") -WorkingDirectory $callerPath
+            Assert-Equal 1 $stagedSourceBranch.ExitCode "Staged source-artifact rejection should not create the planned branch."
+        }
+        finally {
+            [System.IO.File]::WriteAllBytes($callerInitializerPath, $originalInitializerBytes)
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1")
+        }
+
+        $missingSourceBackup = Join-Path $fixtureRoot "missing-source-initializer.ps1"
+        Move-Item -LiteralPath $callerInitializerPath -Destination $missingSourceBackup
+        try {
+            $missingSourceTarget = Join-Path $callerPath ".worktrees/codex-459-missing-source-artifact"
+            $missingSource = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "459", "-Slug", "missing-source-artifact")
+            Assert-True ($missingSource.ExitCode -ne 0) "A missing invoking-checkout initializer should fail closed."
+            Assert-Contains $missingSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' is missing from the invoking checkout" "Missing source-artifact rejection should identify the absent initializer."
+            Assert-True (-not (Test-Path -LiteralPath $missingSourceTarget)) "Missing source-artifact rejection should not leave a target path."
+            $missingSourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-459/missing-source-artifact") -WorkingDirectory $callerPath
+            Assert-Equal 1 $missingSourceBranch.ExitCode "Missing source-artifact rejection should not create the planned branch."
+        }
+        finally {
+            Move-Item -LiteralPath $missingSourceBackup -Destination $callerInitializerPath
+        }
         $registrationsAfterMissingArtifacts = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
-        Assert-Equal $registrationsBeforeMissingArtifacts $registrationsAfterMissingArtifacts "Rejected old commit, tag, or guard-only base changed Git worktree registrations."
-        Complete-Test "bases missing the guard or initializer fail before path, branch, or worktree registration creation"
+        Assert-Equal $registrationsBeforeMissingArtifacts $registrationsAfterMissingArtifacts "Rejected historical, modified-base, or invalid source artifact changed Git worktree registrations."
+        Complete-Test "handoff artifacts are clean at source and exact-blob pinned in every selected local base"
     }
 
     if (Test-CaseSelected "fully-qualified-ref") {

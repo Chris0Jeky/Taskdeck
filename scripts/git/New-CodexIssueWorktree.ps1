@@ -136,6 +136,9 @@ function Format-GitContext {
 function Resolve-BaseCommit {
     param(
         [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
         [string]$Reference,
 
         [Parameter(Mandatory = $true)]
@@ -143,13 +146,13 @@ function Resolve-BaseCommit {
     )
 
     $baseCommitExpression = "${Reference}^{commit}"
-    $baseLookupResult = Invoke-GitCommand -Arguments @("rev-parse", "--verify", "--end-of-options", $baseCommitExpression)
+    $baseLookupResult = Invoke-GitCommand -Arguments @("-C", $Repository, "rev-parse", "--verify", "--end-of-options", $baseCommitExpression)
     if ($baseLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseLookupResult.Stdout)) {
         throw "Base commit not found: $DisplayName$(Format-GitContext $baseLookupResult.Output)"
     }
 
     $resolvedCommit = $baseLookupResult.Stdout.Trim()
-    $baseTypeResult = Invoke-GitCommand -Arguments @("cat-file", "-t", $resolvedCommit)
+    $baseTypeResult = Invoke-GitCommand -Arguments @("-C", $Repository, "cat-file", "-t", $resolvedCommit)
     if ($baseTypeResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseTypeResult.Stdout) -or $baseTypeResult.Stdout.Trim() -cne "commit") {
         throw "Base does not resolve to a commit: $DisplayName$(Format-GitContext $baseTypeResult.Output)"
     }
@@ -157,26 +160,91 @@ function Resolve-BaseCommit {
     return $resolvedCommit
 }
 
-function Assert-BaseContainsHandoffArtifacts {
+function Get-ReviewedHandoffArtifacts {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Commit,
-
-        [Parameter(Mandatory = $true)]
-        [string]$DisplayName
+        [string]$Repository
     )
 
     $requiredArtifacts = @(
         "scripts/worktree_guard.ps1",
         "scripts/git/Initialize-CodexIssueWorktree.ps1"
     )
+    $sourceHead = Resolve-BaseCommit -Repository $Repository -Reference "HEAD" -DisplayName "invoking checkout HEAD"
+    $reviewedArtifacts = [ordered]@{}
     foreach ($artifact in $requiredArtifacts) {
+        $objectExpression = "${sourceHead}:$artifact"
+        $artifactLookupResult = Invoke-GitCommand -Arguments @("-C", $Repository, "rev-parse", "--verify", "--end-of-options", $objectExpression)
+        if ($artifactLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($artifactLookupResult.Stdout)) {
+            throw "Invoking checkout HEAD does not contain required handoff artifact '$artifact'.$(Format-GitContext $artifactLookupResult.Output)"
+        }
+
+        $artifactBlob = $artifactLookupResult.Stdout.Trim()
+        $artifactTypeResult = Invoke-GitCommand -Arguments @("-C", $Repository, "cat-file", "-t", $artifactBlob)
+        if ($artifactTypeResult.ExitCode -ne 0 -or
+            [string]::IsNullOrWhiteSpace($artifactTypeResult.Stdout) -or
+            $artifactTypeResult.Stdout.Trim() -cne "blob") {
+            throw "Invoking checkout HEAD handoff artifact '$artifact' is not a blob.$(Format-GitContext $artifactTypeResult.Output)"
+        }
+
+        $artifactPath = Join-Path $Repository $artifact
+        if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+            throw "Reviewed handoff artifact '$artifact' is missing from the invoking checkout."
+        }
+
+        $worktreeDiff = Invoke-GitCommand -Arguments @("-C", $Repository, "diff", "--no-ext-diff", "--quiet", "--", $artifact)
+        if ($worktreeDiff.ExitCode -eq 1) {
+            throw "Reviewed handoff artifact '$artifact' has unstaged changes in the invoking checkout."
+        }
+        if ($worktreeDiff.ExitCode -ne 0) {
+            throw "Git could not inspect unstaged changes for reviewed handoff artifact '$artifact'.$(Format-GitContext $worktreeDiff.Output)"
+        }
+
+        $indexDiff = Invoke-GitCommand -Arguments @("-C", $Repository, "diff", "--cached", "--no-ext-diff", "--quiet", $sourceHead, "--", $artifact)
+        if ($indexDiff.ExitCode -eq 1) {
+            throw "Reviewed handoff artifact '$artifact' has staged changes in the invoking checkout."
+        }
+        if ($indexDiff.ExitCode -ne 0) {
+            throw "Git could not inspect staged changes for reviewed handoff artifact '$artifact'.$(Format-GitContext $indexDiff.Output)"
+        }
+
+        $reviewedArtifacts[$artifact] = $artifactBlob
+    }
+
+    return $reviewedArtifacts
+}
+
+function Assert-BaseMatchesReviewedHandoffArtifacts {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Commit,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$ReviewedArtifacts
+    )
+
+    foreach ($artifact in $ReviewedArtifacts.Keys) {
         $objectExpression = "${Commit}:$artifact"
-        $artifactTypeResult = Invoke-GitCommand -Arguments @("cat-file", "-t", $objectExpression)
+        $artifactLookupResult = Invoke-GitCommand -Arguments @("-C", $Repository, "rev-parse", "--verify", "--end-of-options", $objectExpression)
+        if ($artifactLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($artifactLookupResult.Stdout)) {
+            throw "Base commit '$DisplayName' does not contain required handoff artifact '$artifact'.$(Format-GitContext $artifactLookupResult.Output)"
+        }
+
+        $artifactBlob = $artifactLookupResult.Stdout.Trim()
+        $artifactTypeResult = Invoke-GitCommand -Arguments @("-C", $Repository, "cat-file", "-t", $artifactBlob)
         if ($artifactTypeResult.ExitCode -ne 0 -or
             [string]::IsNullOrWhiteSpace($artifactTypeResult.Stdout) -or
             $artifactTypeResult.Stdout.Trim() -cne "blob") {
             throw "Base commit '$DisplayName' does not contain required handoff artifact '$artifact'.$(Format-GitContext $artifactTypeResult.Output)"
+        }
+        if ($artifactBlob -cne $ReviewedArtifacts[$artifact]) {
+            throw "Base commit '$DisplayName' handoff artifact '$artifact' does not match the reviewed artifact in the invoking checkout HEAD."
         }
     }
 }
@@ -240,6 +308,7 @@ $repoRoot = [System.IO.Path]::GetFullPath($repoRootResult.Stdout.Trim()).TrimEnd
     [System.IO.Path]::DirectorySeparatorChar,
     [System.IO.Path]::AltDirectorySeparatorChar)
 Set-Location -LiteralPath $repoRoot
+$reviewedHandoffArtifacts = Get-ReviewedHandoffArtifacts -Repository $repoRoot
 
 if ([System.IO.Path]::IsPathRooted($WorktreeRoot)) {
     throw "Invalid worktree root: '$WorktreeRoot'. Codex issue worktrees must use the repository's .worktrees directory."
@@ -337,8 +406,8 @@ if ($WhatIfPreference) {
         Assert-RemoteBaseExistsWithoutFetch -Remote $candidateRemote -Branch $candidateBranch -DisplayName $BaseBranch
     }
     else {
-        $whatIfBaseCommit = Resolve-BaseCommit -Reference $baseCommitReference -DisplayName $BaseBranch
-        Assert-BaseContainsHandoffArtifacts -Commit $whatIfBaseCommit -DisplayName $BaseBranch
+        $whatIfBaseCommit = Resolve-BaseCommit -Repository $repoRoot -Reference $baseCommitReference -DisplayName $BaseBranch
+        Assert-BaseMatchesReviewedHandoffArtifacts -Repository $repoRoot -Commit $whatIfBaseCommit -DisplayName $BaseBranch -ReviewedArtifacts $reviewedHandoffArtifacts
     }
 }
 
@@ -351,8 +420,8 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
         }
     }
 
-    $baseCommit = Resolve-BaseCommit -Reference $baseCommitReference -DisplayName $BaseBranch
-    Assert-BaseContainsHandoffArtifacts -Commit $baseCommit -DisplayName $BaseBranch
+    $baseCommit = Resolve-BaseCommit -Repository $repoRoot -Reference $baseCommitReference -DisplayName $BaseBranch
+    Assert-BaseMatchesReviewedHandoffArtifacts -Repository $repoRoot -Commit $baseCommit -DisplayName $BaseBranch -ReviewedArtifacts $reviewedHandoffArtifacts
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $worktreeDir) | Out-Null
     Assert-SafeWorktreeRoot -Path $requestedWorktreeRoot
