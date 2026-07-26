@@ -82,7 +82,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - Run `bash scripts/check-git-env.sh` at the start of a session to validate git resolution and index.lock state.
 - In PowerShell/Codex-native sessions, prefer `powershell -File scripts/check-git-env.ps1`; the Bash script remains available for Bash shells.
 - If `git` resolves to Cygwin or produces signal/pipe-style failures, use `C:\Program Files\Git\cmd\git.exe` explicitly for repo operations (or add `C:\Program Files\Git\cmd` to the front of `PATH`).
-- When running automated commits in the background terminal, append `--no-gpg-sign` to `git commit` to prevent hidden GPG pinentry prompts from freezing the process. Do NOT use `--no-verify` — pre-commit hooks must run; if a hook fails, investigate and fix the underlying issue.
+- Every new commit must include a `Signed-off-by:` trailer. In automated/background terminals, use `git commit -s --no-gpg-sign` so `-s` adds the DCO trailer while `--no-gpg-sign` avoids hidden GPG pinentry. Never use `--no-verify`; hooks must run, and failures must be investigated.
 - If a commit fails because `.git/index.lock` cannot be created, first check for active `git` processes; remove `.git/index.lock` only when no git process is running. The `check-git-env.sh` script automates this detection.
 - For stacked branches with small conflict surfaces, prefer `merge` over `rebase` when branch reconciliation starts stalling (for example long-running interactive/conflict loops). Resolve conflicts once, merge, and continue delivery.
 
