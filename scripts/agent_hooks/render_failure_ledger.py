@@ -54,24 +54,37 @@ def projection_key(entry: dict[str, object], index: int) -> tuple[str, ...]:
 
 
 def project_latest_entries(entries: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Keep the latest file-order state for each tracked surface/issue pair."""
+    """Hide seed metadata and keep the latest tracked surface/issue state."""
+    visible_entries = [entry for entry in entries if entry.get("class") != "seed"]
     latest_indexes: dict[tuple[str, ...], int] = {}
     keys: list[tuple[str, ...]] = []
 
-    for index, entry in enumerate(entries):
+    for index, entry in enumerate(visible_entries):
         key = projection_key(entry, index)
         keys.append(key)
         latest_indexes[key] = index
 
     return [
         entry
-        for index, (entry, key) in enumerate(zip(entries, keys, strict=True))
+        for index, (entry, key) in enumerate(zip(visible_entries, keys, strict=True))
         if latest_indexes[key] == index
     ]
 
 
-def main() -> int:
+def render_markdown(entries: list[dict[str, object]]) -> str:
+    """Render projected ledger entries without inventing fallback history."""
     rows: list[str] = []
+    for entry in project_latest_entries(entries):
+        date = str(entry.get("ts", ""))[:10] or "unknown"
+        rows.append(
+            f"| {cell(date, 20)} | {cell(entry.get('class'), 40)} | {cell(entry.get('surface'), 80)} | "
+            f"{cell(entry.get('failure'))} | {cell(entry.get('workaround'))} | {cell(entry.get('future_fix'))} | {cell(entry.get('status'), 40)} |"
+        )
+
+    return HEADER + "\n".join(rows) + FOOTER
+
+
+def main() -> int:
     entries: list[dict[str, object]] = []
     if JSONL.exists():
         for line in JSONL.read_text(encoding="utf-8").splitlines():
@@ -85,18 +98,8 @@ def main() -> int:
                 continue
             entries.append(entry)
 
-        for entry in project_latest_entries(entries):
-            date = str(entry.get("ts", ""))[:10] or "unknown"
-            rows.append(
-                f"| {cell(date, 20)} | {cell(entry.get('class'), 40)} | {cell(entry.get('surface'), 80)} | "
-                f"{cell(entry.get('failure'))} | {cell(entry.get('workaround'))} | {cell(entry.get('future_fix'))} | {cell(entry.get('status'), 40)} |"
-            )
-
-    if not rows:
-        rows.append("| 2026-05-11 | seed | agentic-pack | Ledger created | n/a | Start recording recurring failures and promote confirmed lessons | open |")
-
     MD.parent.mkdir(parents=True, exist_ok=True)
-    MD.write_text(HEADER + "\n".join(rows) + FOOTER, encoding="utf-8")
+    MD.write_text(render_markdown(entries), encoding="utf-8")
     return 0
 
 
