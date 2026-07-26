@@ -4,56 +4,200 @@ param(
     [int]$IssueNumber,
 
     [Parameter(Mandatory = $true)]
-    [ValidatePattern("^[a-z0-9][a-z0-9-]{1,60}$")]
     [string]$Slug,
 
-    [string]$BaseBranch = "main",
+    [string]$BaseBranch = "origin/main",
     [string]$WorktreeRoot = ".worktrees",
     [string]$BranchName
 )
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = (& git rev-parse --show-toplevel 2>$null)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoRoot)) {
-    throw "Run this script from inside a git repository."
+$gitCommand = Get-Command git -CommandType Application -All -ErrorAction SilentlyContinue |
+    Where-Object { [System.IO.Path]::GetExtension($_.Source) -notin @('.cmd', '.bat') } |
+    Select-Object -First 1
+if ($null -eq $gitCommand) {
+    throw "No argv-safe Git executable was found on PATH; .cmd and .bat shims are not supported."
 }
 
-$repoRoot = $repoRoot.Trim()
+$gitExecutable = $gitCommand.Source
+
+function ConvertTo-NativeArgument {
+    param(
+        [AllowEmptyString()]
+        [string]$Argument
+    )
+
+    if ([string]::IsNullOrEmpty($Argument)) {
+        return '""'
+    }
+    if ($Argument -notmatch '[\s"]') {
+        return $Argument
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashCount = 0
+    foreach ($character in $Argument.ToCharArray()) {
+        if ($character -eq [char]'\') {
+            $backslashCount++
+            continue
+        }
+
+        $escapedBackslashCount = if ($character -eq [char]'"') {
+            ($backslashCount * 2) + 1
+        }
+        else {
+            $backslashCount
+        }
+        for ($index = 0; $index -lt $escapedBackslashCount; $index++) {
+            [void]$builder.Append([char]'\')
+        }
+        [void]$builder.Append($character)
+        $backslashCount = 0
+    }
+
+    for ($index = 0; $index -lt ($backslashCount * 2); $index++) {
+        [void]$builder.Append([char]'\')
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Invoke-GitCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    $process = $null
+    try {
+        $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $gitExecutable
+        $startInfo.WorkingDirectory = (Get-Location).Path
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+
+        if ($null -ne $startInfo.PSObject.Properties['ArgumentList']) {
+            foreach ($argument in $Arguments) {
+                $startInfo.ArgumentList.Add($argument)
+            }
+        }
+        else {
+            $startInfo.Arguments = (($Arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+        }
+
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $startInfo
+        if (-not $process.Start()) {
+            throw "Git process did not start."
+        }
+
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult().Trim()
+        $stderr = $stderrTask.GetAwaiter().GetResult().Trim()
+        $output = (@($stdout, $stderr) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
+
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            Stdout = $stdout
+            Stderr = $stderr
+            Output = $output
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            ExitCode = -1
+            Stdout = ""
+            Stderr = $_.Exception.Message
+            Output = $_.Exception.Message
+        }
+    }
+    finally {
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
+    }
+}
+
+function Format-GitContext {
+    param([string]$Output)
+
+    if ([string]::IsNullOrWhiteSpace($Output)) {
+        return ""
+    }
+
+    return "`nGit: $Output"
+}
+
+$repoRootResult = Invoke-GitCommand -Arguments @("rev-parse", "--show-toplevel")
+if ($repoRootResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($repoRootResult.Stdout)) {
+    throw "Run this script from inside a git repository.$(Format-GitContext $repoRootResult.Output)"
+}
+
+$repoRoot = $repoRootResult.Stdout.Trim()
 Set-Location -LiteralPath $repoRoot
+
+if ($Slug -notmatch "^[a-z0-9][a-z0-9-]{1,60}$") {
+    throw "Invalid slug: '$Slug'. Use 2-61 lowercase letters, digits, or hyphens, starting with a letter or digit."
+}
 
 if ([string]::IsNullOrWhiteSpace($BranchName)) {
     $BranchName = "issue-$IssueNumber/$Slug"
 }
 
+$branchValidationResult = Invoke-GitCommand -Arguments @("check-ref-format", "--branch", $BranchName)
+if ($branchValidationResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($branchValidationResult.Stdout) -or $branchValidationResult.Stdout.Trim() -cne $BranchName) {
+    throw "Invalid branch name: $BranchName$(Format-GitContext $branchValidationResult.Output)"
+}
+
 $worktreeDir = Join-Path $repoRoot (Join-Path $WorktreeRoot "codex-$IssueNumber-$Slug")
-$existingBranch = (& git branch --list $BranchName)
-if (-not [string]::IsNullOrWhiteSpace($existingBranch)) {
+$branchLookupResult = Invoke-GitCommand -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$BranchName")
+if ($branchLookupResult.ExitCode -eq 0) {
     throw "Branch already exists: $BranchName"
+}
+if ($branchLookupResult.ExitCode -ne 1) {
+    throw "Git could not check branch '$BranchName' (exit code $($branchLookupResult.ExitCode)).$(Format-GitContext $branchLookupResult.Output)"
 }
 
 if (Test-Path -LiteralPath $worktreeDir) {
     throw "Worktree path already exists: $worktreeDir"
 }
 
-$status = (& git status --short)
-if (-not [string]::IsNullOrWhiteSpace($status)) {
-    throw "Main checkout is not clean. Commit/stash unrelated work before creating a parallel issue worktree."
+$baseLookupResult = Invoke-GitCommand -Arguments @("rev-parse", "--verify", "--end-of-options", $BaseBranch)
+if ($baseLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseLookupResult.Stdout)) {
+    throw "Base commit not found: $BaseBranch$(Format-GitContext $baseLookupResult.Output)"
+}
+$baseCommit = $baseLookupResult.Stdout.Trim()
+$baseTypeResult = Invoke-GitCommand -Arguments @("cat-file", "-t", $baseCommit)
+if ($baseTypeResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseTypeResult.Stdout) -or $baseTypeResult.Stdout.Trim() -cne "commit") {
+    throw "Base does not resolve to a commit: $BaseBranch$(Format-GitContext $baseTypeResult.Output)"
 }
 
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $worktreeDir) | Out-Null
+if ($PSCmdlet.ShouldProcess($worktreeDir, "Create detached worktree from $BaseBranch")) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $worktreeDir) | Out-Null
 
-if ($PSCmdlet.ShouldProcess($worktreeDir, "Create worktree on branch $BranchName from $BaseBranch")) {
-    & git worktree add -b $BranchName $worktreeDir $BaseBranch
-    if ($LASTEXITCODE -ne 0) {
-        throw "git worktree add failed."
+    $worktreeAddResult = Invoke-GitCommand -Arguments @("worktree", "add", "--detach", $worktreeDir, $baseCommit)
+    if ($worktreeAddResult.ExitCode -ne 0) {
+        throw "git worktree add failed for '$worktreeDir' from '$BaseBranch' (exit code $($worktreeAddResult.ExitCode)).$(Format-GitContext $worktreeAddResult.Output)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($worktreeAddResult.Output)) {
+        Write-Host $worktreeAddResult.Output
     }
 
-    Write-Host "Created Codex issue worktree."
-    Write-Host "  issue:    #$IssueNumber"
-    Write-Host "  branch:   $BranchName"
-    Write-Host "  worktree: $worktreeDir"
+    $escapedBranchName = $BranchName.Replace("'", "''")
+    $escapedGitExecutable = $gitExecutable.Replace("'", "''")
+
+    Write-Host "Created detached Codex issue worktree."
+    Write-Host "  issue:          #$IssueNumber"
+    Write-Host "  base:           $BaseBranch ($baseCommit)"
+    Write-Host "  planned branch: $BranchName (not created yet)"
+    Write-Host "  worktree:       $worktreeDir"
     Write-Host ""
-    Write-Host "First command in the worker session:"
+    Write-Host "First commands in the worker session (run in this order):"
     Write-Host "  powershell -File scripts/worktree_guard.ps1"
+    Write-Host "  & '$escapedGitExecutable' switch -c '$escapedBranchName'"
 }
