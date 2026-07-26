@@ -147,7 +147,7 @@ Every code review — self-review, adversarial review, subagent review — follo
 - **Backend**: C# conventions, 4-space indent, PascalCase for public members, camelCase for locals. Respect layer boundaries (Domain must not reference Infrastructure).
 - **Frontend**: TypeScript + Vue SFCs in PascalCase. Use `<script setup>` and composition API. Meaningful names over abbreviations.
 - **Commits**: Present-tense, small, focused. One commit per file when spanning multiple files. File move/rename batches are fine as single commits.
-- **DCO sign-off**: Every new commit, including a merge commit, must include a `Signed-off-by:` trailer. In automated/background terminals, use `git commit -s --no-gpg-sign` for ordinary commits and `git merge --signoff --no-gpg-sign <branch>` when a merge creates a commit; `-s`/`--signoff` adds the DCO trailer while `--no-gpg-sign` avoids hidden GPG pinentry. Never use `--no-verify`; hooks must run, and failures must be investigated.
+- **DCO sign-off**: Every new commit, including a merge commit, must include a `Signed-off-by:` trailer. In automated/background terminals, use `git commit -s --no-gpg-sign` for ordinary commits and `git merge --signoff --no-gpg-sign BRANCH_NAME` when a merge creates a commit (replace `BRANCH_NAME` with the source ref); `-s`/`--signoff` adds the DCO trailer while `--no-gpg-sign` avoids hidden GPG pinentry. Never use `--no-verify`; hooks must run, and failures must be investigated.
 
 ## Testing Guidelines
 

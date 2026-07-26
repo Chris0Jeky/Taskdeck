@@ -137,7 +137,7 @@ For each PR:
 5. Push and monitor updated CI.
 6. Comment with the fix and verification.
 
-For conflicts, prefer merge over rebase when reconciliation stalls. Start a commit-producing merge with `git merge --signoff --no-gpg-sign <branch>`, preserve both branches' intended behavior, and re-run tests for both touched areas.
+For conflicts, prefer merge over rebase when reconciliation stalls. Replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`, preserve both branches' intended behavior, and re-run tests for both touched areas.
 
 ## Deferrals And Follow-Ups
 

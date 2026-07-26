@@ -30,7 +30,7 @@ For the CI topology (`ci-required.yml` = the merge gate; `reusable-*` + schedule
 ## Conflict Rules
 
 - Preserve both branches' intended behavior.
-- Prefer merge over rebase when conflict resolution starts stalling; start a commit-producing merge with `git merge --signoff --no-gpg-sign <branch>`.
+- Prefer merge over rebase when conflict resolution starts stalling; replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`.
 - Do not rewrite history unless explicitly authorized.
 - Re-run tests for both sides of the conflict surface.
 
