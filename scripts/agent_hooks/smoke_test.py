@@ -133,13 +133,22 @@ def test_configured_python_launchers(settings: dict[str, object]) -> None:
     ]
     if not allowed_agent_commands:
         raise AssertionError("no agent-hook permission commands found")
-    launcher_prefixes = ("Bash(py -3 -B ", "Bash(python3 -B ")
-    for rule in allowed_agent_commands:
-        if not rule.startswith(launcher_prefixes):
-            raise AssertionError(f"agent-hook permission must use a verified platform launcher: {rule!r}")
-    for prefix in launcher_prefixes:
-        if not any(rule.startswith(prefix) for rule in allowed_agent_commands):
-            raise AssertionError(f"agent-hook permissions missing launcher family: {prefix!r}")
+    scripts = {
+        "pre_tool_use.py",
+        "post_tool_use.py",
+        "post_tool_failure.py",
+        "render_failure_ledger.py",
+        "smoke_test.py",
+    }
+    expected_agent_commands = {
+        f"Bash({launcher} scripts/agent_hooks/{script}:*)"
+        for launcher in ("py -3 -B", "python3 -B")
+        for script in scripts
+    }
+    if set(allowed_agent_commands) != expected_agent_commands:
+        missing = sorted(expected_agent_commands - set(allowed_agent_commands))
+        unexpected = sorted(set(allowed_agent_commands) - expected_agent_commands)
+        raise AssertionError(f"agent-hook launcher permissions drifted: missing={missing!r}, unexpected={unexpected!r}")
 
 
 def test_pre_tool_use(settings: dict[str, object]) -> None:
