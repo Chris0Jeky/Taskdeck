@@ -10,7 +10,7 @@ Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turn
 
 ![Taskdeck capture, proposal, review, and apply loop](docs/assets/taskdeck-core-loop.gif)
 
-> **Beta software:** Taskdeck is in the v0.x free open beta. Expect breaking changes while the public run paths, onboarding, and transcript workflow are hardened. The shipped repository remains MIT; the fuller permanent-license commitment and DCO gate are tracked in [REVIVAL-03](https://github.com/Chris0Jeky/Taskdeck/issues/1299) for the v0.1 ship gate.
+> **Beta software:** Taskdeck is in the v0.x free open beta. Expect breaking changes while the public run paths, onboarding, and transcript workflow are hardened. The shipped repository remains MIT, and the permanent licensing commitment is published in [LICENSING.md](LICENSING.md). The DCO check is active but advisory; promotion into branch protection remains maintainer-owned under [#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173).
 
 ## The loop
 
@@ -166,7 +166,7 @@ See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for suite ownership and CI parity.
 
 ## Contributing
 
-PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick or open an issue before a larger change, keep the scope focused, and include verification evidence. Taskdeck is adopting a Developer Certificate of Origin workflow in [REVIVAL-03](https://github.com/Chris0Jeky/Taskdeck/issues/1299); until that gate lands, do not claim the DCO check is active.
+PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick or open an issue before a larger change, keep the scope focused, and include verification evidence. Every new commit must include a `Signed-off-by:` trailer; see the [Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin). The pull-request DCO check is active but advisory; promotion into branch protection remains maintainer-owned under [#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173).
 
 Repository rules for automated contributors live in [AGENTS.md](AGENTS.md).
 
