@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-14
+Last Updated: 2026-07-26
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -85,6 +85,36 @@ When `.claude/settings.json` changes outside the agentic smoke path, also parse 
 ```powershell
 Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
 ```
+
+## GitHub Project Priority Audit Checks
+
+For changes to `scripts/github/Sync-TaskdeckProjectPriority.ps1`, run the offline parser and regression checks first:
+
+```powershell
+$script = "scripts\github\Sync-TaskdeckProjectPriority.ps1"
+$tokens = $null
+$parseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script).Path, [ref]$tokens, [ref]$parseErrors) | Out-Null
+if ($parseErrors.Count -ne 0) { $parseErrors | Format-List; exit 1 }
+
+powershell -NoProfile -File $script -SelfTest
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+```
+
+`-SelfTest` is authentication-free and currently reports 17 checks. It includes a mocked 1,001-item project plus fail-closed cases for early termination, exact duplicate IDs, case-distinct IDs, count/stamp drift, repeated or missing cursors, truncated nested connections, a positive limit ceiling, and missing/multiple issue priority labels.
+
+Then exercise the live read-only boundaries:
+
+```powershell
+# On a project larger than 1,000 items, this must exit nonzero rather than sample.
+powershell -NoProfile -File $script -Limit 1000 -Json
+if ($LASTEXITCODE -eq 0) { throw "Expected the configured ceiling to fail closed." }
+
+# Complete audit. Do not treat a nonzero exit as a clean result.
+powershell -NoProfile -File $script -Json
+```
+
+A successful JSON audit must say `complete: true`, with `scanned == reportedTotalCount`; a clean audit additionally requires `needsUpdate: 0`. Missing or multiple issue priority labels are data-policy failures and abort before writes. Fix those labels first. Never add `-Apply` merely to test the helper. Only with `project` scope and reviewed updates should an operator run `-Apply`, then repeat the read-only audit to prove the resulting project is complete and clean.
 
 ## Paper Backend Gap Testing (2026-05-05, PRs `#1031`–`#1040`)
 

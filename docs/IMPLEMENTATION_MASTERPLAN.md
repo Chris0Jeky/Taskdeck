@@ -13,6 +13,7 @@ Companion Active Docs:
 ## Delivery update (2026-07-26, security runway)
 
 - **SQLite native security floor (`#1345`):** centrally pin `SQLitePCLRaw.bundle_e_sqlite3` 2.1.12 and make Infrastructure's dependency direct, which moves the matched bundle/core/provider/native family from 2.1.6 to 2.1.12 without enabling global transitive pinning. A runtime regression enforces SQLite >= 3.50.2 (2.1.12 loads 3.53.3); the NuGet vulnerability audit is clean, EF reports no pending model changes after a fresh update, and a self-contained `win-x64` binary reaches `/health/ready` with SQLite loaded.
+- **Project priority completeness (`#1458`):** replace the capped ProjectV2 item sample with cursor-complete, stable-snapshot pagination and fail-closed checks for saturation, item/cursor identity, nested-connection truncation, project drift, and invalid issue priority labels. The code path has a 17-check offline self-test and revalidates the project stamp before writes. Delivery remains data-gated: a complete 1,458-item read found 130 issues without a single priority label plus six deterministic PR fallback updates, so no `-Apply` ran and `#1458` stays open until labels are classified and a post-apply audit proves zero drift.
 
 ## Delivery update (2026-07-25, PR-queue clearing wave)
 
@@ -24,10 +25,10 @@ Companion Active Docs:
 - **`#1478` (`#1271`) — dogfooding instrumented**, and the baseline measured: sustained use has **not** started (8 active days, three months stale, most boards fixtures), though the core loop works (**17/20 proposals reached Apply**, counted by `AppliedAt` — a status-based count reads 1/20 because `Dismiss()` overwrites an `Applied` status). Residual accuracy questions → **`#1480`**.
 - **`#1471`, `#1472`, `#1479`** — canonical-doc reconciliation, human-action tracking for `#1457`'s trust gate and the recurring worktree prune, and two record-only check-offs taken on explicit maintainer instruction.
 - **`#1295` closed as superseded** (13/13 bypass failures; targeted floor v1.3.0 vs installed 1.6.5). The overlay is still *needed* — 11 rule-classes are `allow` at every tier including T4 — so the salvage plan and acceptance criteria live on **`#1293`**.
-- **Repo hardening:** force-push and deletion blocked on `main` (otherwise deliberately relaxed); 288 truncation-hidden project-priority mismatches synced (`#1474`).
+- **Repo hardening:** force-push and deletion blocked on `main` (otherwise deliberately relaxed); a 1,444-item snapshot synced 288 truncation-hidden project-priority mismatches (`#1474`), while `#1458` owns the durable complete-audit and remaining data-cleanup gate.
 - **`#1270` backlog triage:** 12 issues closed with dated notes; an adversarial pass bounced **13 of 25** proposed closures, including the `#1123` ship-gate item. `#1270` stays open — two of its own ACs are obsolete against ADR-0044 / REVIVAL_PLAN §6.
 - **Seeded:** `#1470` `#1473` `#1474` `#1475` `#1476` `#1480` `#1482`, plus upstream `agent-harness#56`.
-- **Remaining hold:** `#1457` only — pin refreshed to the installed floor; the interactive `/hooks` trust session and live canaries are maintainer-only.
+- **Remaining T4 hold:** `#1457` only — do not run the published canaries yet. Its current head has red DCO, stale review evidence, and material main-branch drift; the 2026-07-26 audit also found its v1.6.5 pin behind the installed/producer v1.6.12 floor while root/common-directory hook discovery remains unresolved. Repair those prerequisites and regenerate exact-head CI/reviews before the maintainer-only `/hooks` trust and live-canary step.
 
 ## Delivery update (2026-07-23/24, overnight wave)
 
