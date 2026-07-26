@@ -95,7 +95,7 @@ powershell -File scripts/worktree_guard.ps1
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not reference or edit the main checkout. Do not revert edits made by others.
-Keep scope to acceptance criteria. Make small signed commits with git commit -s --no-gpg-sign.
+Keep scope to acceptance criteria. Make small signed-off commits with git commit -s --no-gpg-sign.
 Run targeted tests first. Open a PR with Closes #NNN and test evidence.
 After opening the PR, self-review, post findings or explicit no-finding result, fix findings, and report back.
 ```
@@ -115,7 +115,7 @@ When multiple worktrees run local services:
 - Commit with `git commit -s --no-gpg-sign` in automated/background terminals.
 - Do not use `--no-verify`.
 - Do not use force push unless the user explicitly asks.
-- Prefer merge over rebase when reconciliation stalls.
+- Prefer merge over rebase when reconciliation stalls; start a commit-producing merge with `git merge --signoff --no-gpg-sign <branch>`.
 - Check for active Git processes before removing `.git/index.lock`.
 
 ## Post-Run Verification

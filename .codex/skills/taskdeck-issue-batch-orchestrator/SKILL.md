@@ -66,7 +66,7 @@ For each issue:
 3. Require first command: `powershell -File scripts/worktree_guard.ps1`.
 4. Tell the worker which files or module it owns.
 5. Tell the worker it is not alone in the codebase and must not revert others' edits.
-6. Require small signed commits with `git commit -s --no-gpg-sign` when committing.
+6. Require small signed-off commits with `git commit -s --no-gpg-sign` when committing.
 7. Require targeted tests before PR.
 
 Use `taskdeck-worktree-issue-worker` for implementation workers.
