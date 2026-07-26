@@ -72,25 +72,31 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber 123 -Slug s
 
 The helper defaults to the explicit remote base `origin/main`, refreshes a named remote branch
 before resolving it, preserves unrelated source-checkout state, and creates a detached worktree
-under the repository's required `.worktrees/` root. It rejects rooted, traversing, alternate,
+under the repository's required exact lowercase `.worktrees/` root. It rejects case variants,
+rooted, traversing, alternate,
 junction-backed, or symlink-backed worktree roots. It prints the planned issue branch but does not
-create it.
+create it. `-WhatIf` resolves local bases and checks explicit remote bases with `git ls-remote`
+without updating refs; a missing base fails instead of producing a false-green dry run.
 
 Run the complete printed PowerShell handoff unchanged inside the worker worktree. It uses the
 stable reviewed initializer wrapper, which runs the guard first, verifies the exact worktree and
 detached base, and only then creates and switches to the issue branch:
 
 ```powershell
-powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1 -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
+& 'scripts/git/Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
 $handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE
 if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }
 ```
 
 The initializer is the first worktree command and its first internal action is the guard using the
 helper-selected native Git. Any guard, exact-worktree, detached-base, or switch failure stops the
-block. This handoff is PowerShell-only; Bash workers must launch PowerShell in the worktree and run
-the whole printed block. For headless Claude workers, follow the narrow stable-wrapper permission
-contract in `docs/WORKTREE_AGENT_PROTOCOL.md`; `acceptEdits` alone is not command authorization.
+block. This handoff is PowerShell-only and invokes the initializer in the already-running host;
+Bash workers must launch a reviewed absolute PowerShell application in the worktree and run the
+whole printed block. For headless Claude workers, follow the reviewed effective-permission posture
+in `docs/WORKTREE_AGENT_PROTOCOL.md`: exclude user/local file sources, review committed
+permission/hook configuration and explicit rules together, account for built-in read-only Bash,
+and treat managed policy as an administrator-owned trust boundary. `acceptEdits` alone is not
+command authorization.
 
 Worker prompts must not include absolute paths to the main checkout. Use relative paths and tell
 workers to derive absolute paths with the helper-printed native Git executable and

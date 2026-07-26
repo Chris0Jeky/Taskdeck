@@ -133,6 +133,57 @@ function Format-GitContext {
     return "`nGit: $Output"
 }
 
+function Resolve-BaseCommit {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Reference,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName
+    )
+
+    $baseCommitExpression = "${Reference}^{commit}"
+    $baseLookupResult = Invoke-GitCommand -Arguments @("rev-parse", "--verify", "--end-of-options", $baseCommitExpression)
+    if ($baseLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseLookupResult.Stdout)) {
+        throw "Base commit not found: $DisplayName$(Format-GitContext $baseLookupResult.Output)"
+    }
+
+    $resolvedCommit = $baseLookupResult.Stdout.Trim()
+    $baseTypeResult = Invoke-GitCommand -Arguments @("cat-file", "-t", $resolvedCommit)
+    if ($baseTypeResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseTypeResult.Stdout) -or $baseTypeResult.Stdout.Trim() -cne "commit") {
+        throw "Base does not resolve to a commit: $DisplayName$(Format-GitContext $baseTypeResult.Output)"
+    }
+
+    return $resolvedCommit
+}
+
+function Assert-RemoteBaseExistsWithoutFetch {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Remote,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Branch,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName
+    )
+
+    $remoteReference = "refs/heads/$Branch"
+    $remoteLookupResult = Invoke-GitCommand -Arguments @("ls-remote", "--exit-code", "--heads", "--", $Remote, $remoteReference)
+    $matchingRemoteRefs = @(
+        $remoteLookupResult.Stdout -split '\r?\n' |
+            Where-Object {
+                $fields = $_ -split "`t", 2
+                $fields.Count -eq 2 -and $fields[1] -ceq $remoteReference -and
+                    $fields[0] -match '^[0-9a-fA-F]+$'
+            }
+    )
+    if ($remoteLookupResult.ExitCode -ne 0 -or $matchingRemoteRefs.Count -ne 1) {
+        throw "Base commit not found: $DisplayName. The explicit remote base could not be verified without updating refs.$(Format-GitContext $remoteLookupResult.Output)"
+    }
+}
+
 function Assert-SafeWorktreeRoot {
     param(
         [Parameter(Mandatory = $true)]
@@ -179,7 +230,7 @@ else {
 $logicalWorktreeRoot = $WorktreeRoot.TrimEnd(
     [System.IO.Path]::DirectorySeparatorChar,
     [System.IO.Path]::AltDirectorySeparatorChar)
-if (-not $logicalWorktreeRoot.Equals(".worktrees", $pathComparison)) {
+if (-not $logicalWorktreeRoot.Equals(".worktrees", [System.StringComparison]::Ordinal)) {
     throw "Invalid worktree root: '$WorktreeRoot'. Codex issue worktrees must use the repository's .worktrees directory."
 }
 
@@ -248,6 +299,22 @@ foreach ($remoteNameCandidate in $configuredRemotes) {
     }
 }
 
+$baseCommitReference = if ($null -ne $candidateRemote) {
+    "refs/remotes/$candidateRemote/$candidateBranch"
+}
+else {
+    $BaseBranch
+}
+
+if ($WhatIfPreference) {
+    if ($null -ne $candidateRemote) {
+        Assert-RemoteBaseExistsWithoutFetch -Remote $candidateRemote -Branch $candidateBranch -DisplayName $BaseBranch
+    }
+    else {
+        $null = Resolve-BaseCommit -Reference $baseCommitReference -DisplayName $BaseBranch
+    }
+}
+
 if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and create a detached worktree from $BaseBranch")) {
     if ($null -ne $candidateRemote) {
         $remoteRefspec = "+refs/heads/$candidateBranch`:refs/remotes/$candidateRemote/$candidateBranch"
@@ -257,22 +324,7 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
         }
     }
 
-    $baseCommitReference = if ($null -ne $candidateRemote) {
-        "refs/remotes/$candidateRemote/$candidateBranch"
-    }
-    else {
-        $BaseBranch
-    }
-    $baseCommitExpression = "${baseCommitReference}^{commit}"
-    $baseLookupResult = Invoke-GitCommand -Arguments @("rev-parse", "--verify", "--end-of-options", $baseCommitExpression)
-    if ($baseLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseLookupResult.Stdout)) {
-        throw "Base commit not found: $BaseBranch$(Format-GitContext $baseLookupResult.Output)"
-    }
-    $baseCommit = $baseLookupResult.Stdout.Trim()
-    $baseTypeResult = Invoke-GitCommand -Arguments @("cat-file", "-t", $baseCommit)
-    if ($baseTypeResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseTypeResult.Stdout) -or $baseTypeResult.Stdout.Trim() -cne "commit") {
-        throw "Base does not resolve to a commit: $BaseBranch$(Format-GitContext $baseTypeResult.Output)"
-    }
+    $baseCommit = Resolve-BaseCommit -Reference $baseCommitReference -DisplayName $BaseBranch
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $worktreeDir) | Out-Null
     Assert-SafeWorktreeRoot -Path $requestedWorktreeRoot
@@ -296,7 +348,7 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     Write-Host "  worktree:       $worktreeDir"
     Write-Host ""
     Write-Host "PowerShell worker handoff (run this entire block unchanged):"
-    Write-Host "  powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1 -GitExecutable '$escapedGitExecutable' -BranchName '$escapedBranchName' -ExpectedWorktree '$escapedWorktreeDir' -ExpectedHead '$baseCommit'"
+    Write-Host "  & 'scripts/git/Initialize-CodexIssueWorktree.ps1' -GitExecutable '$escapedGitExecutable' -BranchName '$escapedBranchName' -ExpectedWorktree '$escapedWorktreeDir' -ExpectedHead '$baseCommit'"
     Write-Host '  $handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE'
     Write-Host '  if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }'
 }

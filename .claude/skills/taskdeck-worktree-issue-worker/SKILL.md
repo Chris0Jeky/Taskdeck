@@ -12,9 +12,12 @@ Use this skill when assigned one issue or task in an isolated worktree.
 When the coordinator used `New-CodexIssueWorktree.ps1`, run its complete printed PowerShell
 handoff block unchanged. Its stable relative `scripts/git/Initialize-CodexIssueWorktree.ps1`
 wrapper runs the pinned-Git guard first, verifies the exact helper-created worktree and detached
-base, then performs `switch -c`; every failure exits before implementation. From Bash, launch
-PowerShell in the worktree for that block. For headless launch authorization, use the narrow
-stable-wrapper allow rule in `docs/WORKTREE_AGENT_PROTOCOL.md`; `acceptEdits` alone is insufficient.
+base, then performs `switch -c`; every failure exits before implementation. The printed block
+invokes the wrapper in the already-running PowerShell host. From Bash, launch a reviewed absolute
+PowerShell application in the worktree for that block; never resolve a bare `powershell` command
+through PATH. For headless launch authorization, use the reviewed
+effective-permission posture in `docs/WORKTREE_AGENT_PROTOCOL.md`; the launch allowlist is not the
+sole boundary, and `acceptEdits` alone is insufficient.
 
 For an already-created worktree that does not need the helper handoff, validate isolation with:
 

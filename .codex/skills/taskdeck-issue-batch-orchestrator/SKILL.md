@@ -64,7 +64,7 @@ For each issue:
 1. Create a detached worktree with `scripts/git/New-CodexIssueWorktree.ps1`; preserve source-checkout state and retain its printed planned branch.
 2. In the worker prompt, forbid absolute paths to the main checkout.
 3. Require the helper's complete printed PowerShell handoff block as the first worker commands. The stable relative `scripts/git/Initialize-CodexIssueWorktree.ps1` wrapper runs the pinned-Git guard first, binds the exact helper-created worktree and detached base, and only then runs `switch -c`.
-4. If the worker entered through Bash, require it to launch PowerShell in the worktree and run that whole block unchanged; do not substitute a PATH-first batch shim or translate only the switch command.
+4. If the worker entered through Bash, require it to launch a reviewed absolute PowerShell application in the worktree and run that whole block unchanged; do not resolve bare `powershell`, substitute a PATH-first batch shim, or translate only the switch command.
 5. Tell the worker which files or module it owns.
 6. Tell the worker it is not alone in the codebase and must not revert others' edits.
 7. Require small signed-off commits with `git commit -s --no-gpg-sign` when committing.

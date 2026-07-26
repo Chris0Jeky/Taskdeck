@@ -13,6 +13,7 @@ param(
         "worktree-root-traversal",
         "worktree-root-rooted",
         "worktree-root-unapproved",
+        "worktree-root-case-variant",
         "worktree-root-reparse",
         "invalid-slug",
         "invalid-branch",
@@ -38,6 +39,7 @@ param(
         "worktree-root-traversal",
         "worktree-root-rooted",
         "worktree-root-unapproved",
+        "worktree-root-case-variant",
         "worktree-root-reparse",
         "invalid-slug",
         "invalid-branch",
@@ -278,6 +280,62 @@ function Test-CaseSelected {
     return $selectedCases.Contains($Name)
 }
 
+function Get-ModeledEffectivePermissionConfiguration {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$SettingSources,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectSettingsPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$MainCheckoutLocalSettingsPath,
+
+        [string[]]$CommandLineAllowRules = @(),
+
+        [string]$CommandLinePermissionMode
+    )
+
+    $effectiveRules = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $effectivePermissionMode = $null
+    foreach ($source in $SettingSources) {
+        $settingsPath = switch ($source) {
+            "project" { $ProjectSettingsPath }
+            "local" { $MainCheckoutLocalSettingsPath }
+            default { throw "Unsupported modeled setting source: $source" }
+        }
+
+        if (-not (Test-Path -LiteralPath $settingsPath -PathType Leaf)) {
+            continue
+        }
+
+        $settings = Get-Content -Raw -LiteralPath $settingsPath | ConvertFrom-Json
+        if (-not [string]::IsNullOrWhiteSpace($settings.permissions.defaultMode)) {
+            $effectivePermissionMode = [string]$settings.permissions.defaultMode
+        }
+        foreach ($rule in @($settings.permissions.allow)) {
+            if (-not [string]::IsNullOrWhiteSpace($rule)) {
+                $null = $effectiveRules.Add([string]$rule)
+            }
+        }
+    }
+
+    foreach ($rule in $CommandLineAllowRules) {
+        if (-not [string]::IsNullOrWhiteSpace($rule)) {
+            $null = $effectiveRules.Add($rule)
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($CommandLinePermissionMode)) {
+        $effectivePermissionMode = $CommandLinePermissionMode
+    }
+
+    return [pscustomobject]@{
+        PermissionMode = $effectivePermissionMode
+        Allow = @($effectiveRules)
+    }
+}
+
 function Get-PrintedHandoffLines {
     param(
         [Parameter(Mandatory = $true)]
@@ -310,7 +368,7 @@ try {
     $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @("init", "-b", "main", $seedPath)
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("config", "user.name", "Taskdeck Test")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("config", "user.email", "taskdeck-test@example.invalid")
-    Set-Content -LiteralPath (Join-Path $seedPath ".gitignore") -Value ".worktrees/" -Encoding Ascii
+    Set-Content -LiteralPath (Join-Path $seedPath ".gitignore") -Value @(".worktrees/", ".claude/settings.local.json") -Encoding Ascii
     Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "committed" -Encoding Ascii
     $seedScriptsPath = Join-Path $seedPath "scripts"
     New-Item -ItemType Directory -Path $seedScriptsPath | Out-Null
@@ -430,7 +488,7 @@ try {
             $escapedGitExecutable = $gitExecutable.Replace("'", "''")
             $escapedWorktree = $createdWorktree.Replace("'", "''")
             $expectedHandoffHead = Invoke-Git -WorkingDirectory $createdWorktree -Arguments @("rev-parse", "HEAD")
-            $initializerLine = "powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1 -GitExecutable '$escapedGitExecutable' -BranchName 'issue-424/dirty-source' -ExpectedWorktree '$escapedWorktree' -ExpectedHead '$expectedHandoffHead'"
+            $initializerLine = "& 'scripts/git/Initialize-CodexIssueWorktree.ps1' -GitExecutable '$escapedGitExecutable' -BranchName 'issue-424/dirty-source' -ExpectedWorktree '$escapedWorktree' -ExpectedHead '$expectedHandoffHead'"
             $handoffCaptureLine = '$handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE'
             $handoffExitLine = 'if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }'
             $handoffLines = @(Get-PrintedHandoffLines -Output $success.Output)
@@ -439,33 +497,66 @@ try {
             Assert-Equal $handoffExitLine $handoffLines[2] "Handoff output omitted the initializer fail-fast gate."
 
             $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
-            Assert-True ($claudeSettings.permissions.allow -contains "PowerShell(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)") "Claude PowerShell permissions omitted the stable initializer prefix."
-            Assert-True ($claudeSettings.permissions.allow -contains "Bash(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)") "Claude Bash permissions omitted the stable initializer prefix."
+            Assert-True ($claudeSettings.permissions.allow -contains "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)") "Claude PowerShell permissions omitted the in-process stable initializer prefix."
+            Assert-True ($claudeSettings.permissions.allow -notcontains "Bash(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)") "Claude permissions retained the PATH-resolved PowerShell initializer rule."
             Complete-Test "handoff uses one allowlisted, exact-worktree-bound initializer with a fail-fast gate"
         }
 
         if (Test-CaseSelected "headless-permission-contract") {
-            $initializerInvocationPrefix = "powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1"
+            $initializerInvocationPrefix = "& 'scripts/git/Initialize-CodexIssueWorktree.ps1'"
             $headlessHandoffLines = @(Get-PrintedHandoffLines -Output $success.Output)
             Assert-True ($headlessHandoffLines[0].StartsWith($initializerInvocationPrefix, [System.StringComparison]::Ordinal)) "Printed handoff must use the stable relative initializer wrapper."
 
             $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
             $powerShellInitializerRule = "PowerShell(${initializerInvocationPrefix}:*)"
-            $bashInitializerRule = "Bash(${initializerInvocationPrefix}:*)"
             Assert-True ($claudeSettings.permissions.allow -contains $powerShellInitializerRule) "Claude PowerShell permissions omitted the narrow stable initializer rule."
-            Assert-True ($claudeSettings.permissions.allow -contains $bashInitializerRule) "Claude Bash permissions omitted the narrow stable initializer rule."
+
+            $mainCheckoutClaudeDirectory = Join-Path $callerPath ".claude"
+            $mainCheckoutLocalSettingsPath = Join-Path $mainCheckoutClaudeDirectory "settings.local.json"
+            $linkedWorktreeLocalSettingsPath = Join-Path $createdWorktree ".claude/settings.local.json"
+            $broadLocalRule = "PowerShell(*)"
+            New-Item -ItemType Directory -Path $mainCheckoutClaudeDirectory | Out-Null
+            [ordered]@{
+                permissions = [ordered]@{
+                    defaultMode = "bypassPermissions"
+                    allow = @($broadLocalRule)
+                }
+            } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $mainCheckoutLocalSettingsPath -Encoding Ascii
+            Assert-True (Test-Path -LiteralPath $mainCheckoutLocalSettingsPath -PathType Leaf) "Permission fixture omitted the main-checkout local settings file."
+            $localSettingsIgnore = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("check-ignore", "--quiet", ".claude/settings.local.json") -WorkingDirectory $callerPath
+            Assert-Equal 0 $localSettingsIgnore.ExitCode "Permission fixture should model a gitignored main-checkout local settings file."
+            Assert-True (-not (Test-Path -LiteralPath $linkedWorktreeLocalSettingsPath)) "Permission fixture should not copy the local settings file into the linked worktree."
+
+            $inheritedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project", "local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath
+            Assert-Equal "bypassPermissions" $inheritedConfiguration.PermissionMode "The main-checkout local default mode should override the committed project default when local settings are enabled."
+            Assert-True ($inheritedConfiguration.Allow -contains $broadLocalRule) "A main-checkout local allow should remain effective for a linked worktree when the local source is enabled."
+
+            $dontAskWithLocalConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project", "local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLinePermissionMode "dontAsk"
+            Assert-Equal "dontAsk" $dontAskWithLocalConfiguration.PermissionMode "The command-line dontAsk mode should override a local bypassPermissions default."
+            Assert-True ($dontAskWithLocalConfiguration.Allow -contains $broadLocalRule) "Command-line dontAsk should not erase a broad local allow while the local source remains enabled."
+
+            $taskLaunchRule = "PowerShell(dotnet test backend/Taskdeck.sln -c Release -m:1)"
+            $reviewedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($taskLaunchRule) -CommandLinePermissionMode "dontAsk"
+            Assert-Equal "dontAsk" $reviewedConfiguration.PermissionMode "The supported project-only posture should use the explicit dontAsk mode."
+            Assert-True ($reviewedConfiguration.Allow -notcontains $broadLocalRule) "The supported project-only source posture should exclude the main-checkout local allow."
+            Assert-True ($reviewedConfiguration.Allow -contains $powerShellInitializerRule) "The reviewed effective permissions should include the committed initializer rule."
+            Assert-True ($reviewedConfiguration.Allow -contains $taskLaunchRule) "The reviewed effective permissions should include explicit task launch rules."
 
             foreach ($guidancePath in $worktreeGuidancePaths) {
                 $guidance = Get-Content -Raw -LiteralPath $guidancePath
                 Assert-Contains $guidance "Initialize-CodexIssueWorktree.ps1" "Detached-first guidance omitted the reviewed initializer wrapper: $guidancePath"
             }
             $protocol = Get-Content -Raw -LiteralPath $worktreeProtocolPath
-            Assert-Contains $protocol '--allowedTools "PowerShell(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)"' "Headless guidance omitted the narrow initializer allow rule."
-            Assert-Contains $protocol "acceptEdits does not approve arbitrary Git or PowerShell commands" "Headless guidance must not present acceptEdits as sufficient command authorization."
-            Assert-Contains $protocol "--permission-mode dontAsk" "Headless guidance omitted the fail-closed permission-mode option for a complete task allowlist."
+            Assert-Contains $protocol '--setting-sources project --allowedTools "PowerShell(& ''scripts/git/Initialize-CodexIssueWorktree.ps1'':*)"' "Headless guidance omitted the project-only source posture and in-process initializer launch rule."
+            Assert-NormalizedContains $protocol "acceptEdits does not approve arbitrary Git or PowerShell commands" "Headless guidance must not present acceptEdits as sufficient command authorization."
+            Assert-NormalizedContains $protocol "Do not present the launch allowlist as the sole authorization boundary" "Headless guidance must describe the complete effective permission boundary."
+            Assert-NormalizedContains $protocol "Organization-managed settings remain effective" "Headless guidance must bound residual administrator-owned trust."
+            Assert-NormalizedContains $protocol "built-in read-only Bash commands, or applicable hook approvals" "Headless guidance must retain documented non-allowlist authorization paths."
+            Assert-NormalizedContains $protocol 'overrides a file-backed `defaultMode` for that session' "Headless guidance must distinguish the command-line mode override from merged allow rules."
+            Assert-Contains $protocol "--permission-mode dontAsk" "Headless guidance omitted the non-prompting permission mode for reviewed effective permissions."
             Assert-Contains $protocol '$coordinatorBranchBaseline' "Post-run guidance omitted the pre-creation coordinator branch baseline."
             Assert-Contains $protocol '$coordinatorStatusBaseline' "Post-run guidance omitted the pre-creation coordinator status baseline."
-            Complete-Test "headless guidance and settings authorize the stable initializer without broadening the command boundary"
+            Complete-Test "headless posture excludes inherited local allows and reviews the complete effective permission set"
         }
 
         if (Test-CaseSelected "guard-then-branch") {
@@ -499,7 +590,35 @@ try {
             Assert-NormalizedContains $outsideRepoGuard.Output "not inside a git repository" "Guard should distinguish an ordinary non-repository result from executable launch failure."
             $createdBranch = Invoke-Git -WorkingDirectory $createdWorktree -Arguments @("branch", "--show-current")
             Assert-Equal "issue-424/dirty-source" $createdBranch "Post-guard branch command created the wrong branch."
-            Complete-Test "printed handoff executes with pinned Git under a shimmed PATH"
+
+            $metacharBranch = "issue-449/powershell&safe"
+            $powerShellHostResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "449", "-Slug", "powershell-host", "-BranchName", $metacharBranch)
+            Assert-Equal 0 $powerShellHostResult.ExitCode "PowerShell-host fixture worktree creation should succeed.`n$($powerShellHostResult.Output)"
+            $powerShellHostWorktree = Join-Path $callerPath ".worktrees/codex-449-powershell-host"
+            $powerShellHostScript = Join-Path $fixtureRoot "powershell-host-handoff.ps1"
+            Set-Content -LiteralPath $powerShellHostScript -Value @(Get-PrintedHandoffLines -Output $powerShellHostResult.Output) -Encoding Ascii
+            $powerShellShimSentinel = Join-Path $shimDirectory "powershell-shim-invoked.txt"
+            $powerShellShimCanary = Join-Path $powerShellHostWorktree "powershell-host-canary.txt"
+            Set-Content -LiteralPath (Join-Path $shimDirectory "powershell.cmd") -Encoding Ascii -Value @(
+                '@echo off',
+                'echo invoked>"%~dp0powershell-shim-invoked.txt"',
+                'echo TASKDECK_CANARY>powershell-host-canary.txt',
+                'exit /b 99'
+            )
+            $previousPath = $env:PATH
+            try {
+                $env:PATH = "$shimDirectory$([System.IO.Path]::PathSeparator)$previousPath"
+                $powerShellHostHandoff = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $powerShellHostScript) -WorkingDirectory $powerShellHostWorktree
+            }
+            finally {
+                $env:PATH = $previousPath
+            }
+            Assert-Equal 0 $powerShellHostHandoff.ExitCode "In-process handoff should create a metacharacter branch without resolving PowerShell through PATH.`n$($powerShellHostHandoff.Output)"
+            Assert-True (-not (Test-Path -LiteralPath $powerShellShimSentinel)) "Printed handoff executed the PATH-first PowerShell batch shim."
+            Assert-True (-not (Test-Path -LiteralPath $powerShellShimCanary)) "PowerShell shim or branch metacharacters executed the canary."
+            $metacharCreatedBranch = Invoke-Git -WorkingDirectory $powerShellHostWorktree -Arguments @("branch", "--show-current")
+            Assert-Equal $metacharBranch $metacharCreatedBranch "Initializer did not create the intended metacharacter branch through native argv."
+            Complete-Test "printed handoff stays in the trusted PowerShell host and uses pinned Git under a shimmed PATH"
         }
     }
 
@@ -668,6 +787,18 @@ try {
         Complete-Test "unapproved in-repository worktree root fails closed"
     }
 
+    if (Test-CaseSelected "worktree-root-case-variant") {
+        $registrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $caseVariantTarget = Join-Path $callerPath ".WORKTREES/codex-450-case-variant-root"
+        $caseVariant = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "450", "-Slug", "case-variant-root", "-WorktreeRoot", ".WORKTREES")
+        Assert-True ($caseVariant.ExitCode -ne 0) "Case-variant worktree root should fail closed."
+        Assert-Contains $caseVariant.Output "Invalid worktree root: '.WORKTREES'." "Case-variant root diagnostic was not clear."
+        Assert-True (-not (Test-Path -LiteralPath $caseVariantTarget)) "Case-variant root created a target."
+        $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        Assert-Equal $registrationsBefore $registrationsAfter "Case-variant root changed Git worktree registrations."
+        Complete-Test "case-variant worktree root fails closed before handoff"
+    }
+
     if (Test-CaseSelected "invalid-slug") {
         $registrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         $invalidSlugTarget = Join-Path $callerPath ".worktrees/codex-427-Invalid-Slug"
@@ -782,7 +913,25 @@ try {
         Assert-Equal 1 $whatIfBranch.ExitCode "WhatIf must not create the planned branch."
         $whatIfTrackingAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/origin/main")
         Assert-Equal $whatIfTrackingBefore $whatIfTrackingAfter "WhatIf must not refresh the remote-tracking ref."
-        Complete-Test "WhatIf performs no worktree, branch, or remote-ref mutation"
+
+        $whatIfRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $whatIfRefsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+        $missingLocalWhatIfTarget = Join-Path $callerPath ".worktrees/codex-451-what-if-local-missing"
+        $missingLocalWhatIf = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "451", "-Slug", "what-if-local-missing", "-BaseBranch", "refs/heads/definitely-missing-what-if", "-WhatIf")
+        Assert-True ($missingLocalWhatIf.ExitCode -ne 0) "WhatIf should fail when a local base cannot resolve."
+        Assert-Contains $missingLocalWhatIf.Output "Base commit not found: refs/heads/definitely-missing-what-if" "Missing local WhatIf base diagnostic was not clear."
+        Assert-True (-not (Test-Path -LiteralPath $missingLocalWhatIfTarget)) "Missing local WhatIf base created a target."
+
+        $missingRemoteWhatIfTarget = Join-Path $callerPath ".worktrees/codex-452-what-if-remote-missing"
+        $missingRemoteWhatIf = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "452", "-Slug", "what-if-remote-missing", "-BaseBranch", "origin/definitely-missing-what-if", "-WhatIf")
+        Assert-True ($missingRemoteWhatIf.ExitCode -ne 0) "WhatIf should fail when an explicit remote base does not exist."
+        Assert-Contains $missingRemoteWhatIf.Output "Base commit not found: origin/definitely-missing-what-if" "Missing remote WhatIf base diagnostic was not clear."
+        Assert-True (-not (Test-Path -LiteralPath $missingRemoteWhatIfTarget)) "Missing remote WhatIf base created a target."
+        $whatIfRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $whatIfRefsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+        Assert-Equal $whatIfRegistrationsBefore $whatIfRegistrationsAfter "Missing-base WhatIf probes changed Git worktree registrations."
+        Assert-Equal $whatIfRefsBefore $whatIfRefsAfter "Missing-base WhatIf probes changed Git refs."
+        Complete-Test "WhatIf validates local and remote bases without worktree, branch, or ref mutation"
     }
 
     if (Test-CaseSelected "git-add-failure") {

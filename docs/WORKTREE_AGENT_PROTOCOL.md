@@ -12,8 +12,9 @@ Accepted agent worktree roots:
 - Claude Code: `.claude/worktrees/agent-<id>/`
 
 Other roots are allowed only when the coordinator explicitly names them and updates guard configuration.
-The Codex helper intentionally accepts only the repository's `.worktrees/` root; a different
-approved root requires a separately reviewed creation path after the guard configuration changes.
+The Codex helper intentionally accepts only the exact lowercase repository `.worktrees/` root; a
+different spelling or approved root requires a separately reviewed creation path after the guard
+configuration changes.
 
 ## Coordinator Rules
 
@@ -46,6 +47,10 @@ and creates only a detached worktree:
 - detached base: `origin/main`
 - planned branch: `issue-123/short-slug` (printed, but not created yet)
 
+With `-WhatIf`, the helper resolves local bases and queries explicit remote bases with
+`git ls-remote` without updating local refs. Missing bases still fail; valid dry runs create no
+target, branch, worktree registration, or ref update.
+
 If you need a custom branch:
 
 ```powershell
@@ -61,40 +66,66 @@ action with the helper-selected argv-safe Git executable, verifies the exact hel
 worktree and detached base, and only then creates and switches to the planned branch:
 
 ```powershell
-powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1 -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
+& 'scripts/git/Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
 $handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE
 if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }
 ```
 
 The helper rejects alternate, traversing, rooted, junction-backed, and symlink-backed worktree
-roots. Its detached-first handoff is PowerShell-only. From a Bash worker, start PowerShell in the
-printed worktree and run the complete block there; do not translate only the branch command.
+roots, including case variants such as `.WORKTREES`. Its detached-first handoff is PowerShell-only
+and invokes the initializer in the already-running host instead of resolving another PowerShell
+command through PATH. From a Bash worker, start a reviewed absolute `powershell.exe` or `pwsh.exe`
+application in the printed worktree and run the complete block there; do not use a bare
+`powershell` command or translate only the branch command.
 
 ## Permission Posture In Worktrees
 
-Worktree checkouts do NOT contain the gitignored `.claude/settings.local.json`, so worker
-sessions use the committed permissions plus any explicit launch rules. The committed
-`acceptEdits` default auto-approves in-scope edits and common filesystem operations, but
-acceptEdits does not approve arbitrary Git or PowerShell commands and is not sufficient by itself
-for the detached-first handoff. `.claude/settings.json` narrowly allowlists the stable relative
-`Initialize-CodexIssueWorktree.ps1` wrapper for both shell-tool shapes.
+The linked-worktree checkout does not physically contain the gitignored
+`.claude/settings.local.json`, but Claude Code stores project-local approvals at the main
+repository root and applies them to sessions in its linked worktrees. Permission allow arrays also
+merge across enabled settings sources. Physical absence therefore does not mean that a local or
+user allow rule is ineffective. The committed `acceptEdits` default auto-approves in-scope edits
+and common filesystem operations, but acceptEdits does not approve arbitrary Git or PowerShell
+commands and is not sufficient by itself for the detached-first handoff. The committed
+`.claude/settings.json` allowlists the stable in-process
+`Initialize-CodexIssueWorktree.ps1` invocation for the PowerShell tool shape as one rule in the
+effective permission set.
 
 **Headless workers.** Current Claude Code documents that ordinary non-interactive `-p` runs
 disable trust verification, while `--worktree` remains an exception that requires accepted trust.
-Skipping that trust check does not approve unmatched commands. Launch a headless worker with the
-stable initializer rule plus the task's other reviewed command rules, for example:
+Skipping that trust check does not approve unmatched commands. `--allowedTools` adds launch rules;
+it does not replace allows from other enabled settings sources. The command-line
+`--permission-mode dontAsk` overrides a file-backed `defaultMode` for that session, including
+`bypassPermissions`, but it likewise does not erase merged allow rules. The supported unattended
+posture for this repository is:
+
+1. Use a Claude Code version that supports `--setting-sources` and launch with
+   `--setting-sources project`. This excludes file-backed user and project-local permissions,
+   including approvals stored in the main checkout for linked worktrees.
+2. Review the committed `.claude/settings.json` permission and hook rules plus every explicit
+   launch rule as one effective configuration. Organization-managed settings remain effective and
+   are an administrator-owned trust boundary that this flag cannot remove; do not use an
+   unattended worker if that boundary is not trusted for the task.
+3. Add only the task-specific launch rules that the worker needs, including the stable initializer
+   rule, then use `--permission-mode dontAsk` so calls that would otherwise prompt are denied. This
+   mode does not revoke matching allow rules, built-in read-only Bash commands, or applicable hook
+   approvals; those remain part of the reviewed trust surface.
+
+For example:
 
 ```text
---allowedTools "PowerShell(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)" <other narrow task rules>
+--setting-sources project --allowedTools "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)" <other reviewed task rules> --permission-mode dontAsk
 ```
 
-When the supplied allowlist covers the whole task, add `--permission-mode dontAsk` so unmatched
-tools fail closed instead of prompting in a session that cannot answer. Use the `Bash(...)` form
-of the same stable relative prefix when that is the enabled shell tool. Do not present
+The helper handoff itself requires the PowerShell tool shape. Do not present the launch allowlist
+as the sole authorization boundary, and do not present
 `acceptEdits`, disabled trust verification, or `--dangerously-skip-permissions` as authorization
-for the wrapper; broader bypass requires a separately approved disposable isolation boundary.
-See Claude Code's current [permission-mode contract](https://code.claude.com/docs/en/permissions)
-and [trust-verification exception for `-p`/`--worktree`](https://code.claude.com/docs/en/security).
+for the wrapper. If the installed CLI cannot exclude user and local setting sources, use an
+interactive reviewed launch instead of claiming the unattended posture; broader bypass requires a
+separately approved disposable isolation boundary.
+See Claude Code's current [permission and settings-precedence contract](https://code.claude.com/docs/en/permissions#settings-precedence),
+[`--setting-sources` CLI contract](https://code.claude.com/docs/en/cli-usage#cli-flags), and
+[trust-verification exception for `-p`/`--worktree`](https://code.claude.com/docs/en/security).
 
 ## First Worker Command
 
@@ -116,8 +147,9 @@ source scripts/worktree_guard.sh
 ```
 
 The Bash guard remains valid for an already-created worktree that does not need the helper's
-detached-first handoff. For a helper-created worktree, launch PowerShell and run the complete
-printed PowerShell block so its pinned-Git and fail-fast guarantees remain intact.
+detached-first handoff. For a helper-created worktree, launch a reviewed absolute PowerShell
+application and run the complete printed block so its pinned-Git and fail-fast guarantees remain
+intact; never reopen resolution through a bare `powershell` command.
 
 The guard sets these values in the process where it runs:
 
