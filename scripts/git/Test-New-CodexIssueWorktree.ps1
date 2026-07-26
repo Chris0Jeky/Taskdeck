@@ -7,6 +7,7 @@ param(
         "handoff-fail-fast",
         "handoff-missing-executable",
         "initializer-validation",
+        "headless-permission-contract",
         "existing-branch",
         "existing-path",
         "worktree-root-traversal",
@@ -31,6 +32,7 @@ param(
         "handoff-fail-fast",
         "handoff-missing-executable",
         "initializer-validation",
+        "headless-permission-contract",
         "existing-branch",
         "existing-path",
         "worktree-root-traversal",
@@ -55,6 +57,19 @@ $ErrorActionPreference = "Stop"
 $helperPath = Join-Path $PSScriptRoot "New-CodexIssueWorktree.ps1"
 $initializerPath = Join-Path $PSScriptRoot "Initialize-CodexIssueWorktree.ps1"
 $claudeSettingsPath = Join-Path $PSScriptRoot "../../.claude/settings.json"
+$worktreeProtocolPath = Join-Path $PSScriptRoot "../../docs/WORKTREE_AGENT_PROTOCOL.md"
+$worktreeGuidancePaths = @(
+    $worktreeProtocolPath,
+    (Join-Path $PSScriptRoot "../../docs/tooling/CODEX_AUTONOMY_RUNBOOK.md"),
+    (Join-Path $PSScriptRoot "../../AGENTS.md"),
+    (Join-Path $PSScriptRoot "../../CLAUDE.md"),
+    (Join-Path $PSScriptRoot "../../.claude/README.md"),
+    (Join-Path $PSScriptRoot "../../.claude/skills/issue-to-pr/SKILL.md"),
+    (Join-Path $PSScriptRoot "../../.claude/skills/taskdeck-issue-batch-orchestrator/SKILL.md"),
+    (Join-Path $PSScriptRoot "../../.claude/skills/taskdeck-worktree-issue-worker/SKILL.md"),
+    (Join-Path $PSScriptRoot "../../.codex/skills/taskdeck-issue-batch-orchestrator/SKILL.md"),
+    (Join-Path $PSScriptRoot "../../.codex/skills/taskdeck-worktree-issue-worker/SKILL.md")
+)
 $gitCommand = Get-Command git -CommandType Application -All -ErrorAction SilentlyContinue |
     Where-Object { [System.IO.Path]::GetExtension($_.Source) -notin @('.cmd', '.bat') } |
     Select-Object -First 1
@@ -346,7 +361,16 @@ try {
         $optionRemoteWorktree = Join-Path $callerPath ".worktrees/codex-445-option-remote"
         $optionRemoteHead = Invoke-Git -WorkingDirectory $optionRemoteWorktree -Arguments @("rev-parse", "HEAD")
         Assert-Equal $freshRemoteBase $optionRemoteHead "Option-looking remote worktree should detach at its fully qualified tracking ref."
-        Complete-Test "remote bases are option-delimited, refreshed, and resolved without local-ref shadowing"
+
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "add", "team/origin", $remotePath)
+        $slashRemote = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "448", "-Slug", "slash-remote", "-BaseBranch", "team/origin/main")
+        Assert-Equal 0 $slashRemote.ExitCode "A configured remote containing a slash should be matched as one complete name.`n$($slashRemote.Output)"
+        $slashRemoteWorktree = Join-Path $callerPath ".worktrees/codex-448-slash-remote"
+        $slashRemoteHead = Invoke-Git -WorkingDirectory $slashRemoteWorktree -Arguments @("rev-parse", "HEAD")
+        $slashRemoteTrackingRef = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/team/origin/main")
+        Assert-Equal $freshRemoteBase $slashRemoteHead "Slash-containing remote worktree should detach at the freshly fetched commit."
+        Assert-Equal $freshRemoteBase $slashRemoteTrackingRef "Slash-containing remote should refresh its fully qualified tracking ref."
+        Complete-Test "complete remote names are option-delimited, refreshed, and resolved without local-ref shadowing"
     }
 
     Set-Content -LiteralPath (Join-Path $callerPath "tracked.txt") -Value "maintainer-owned change" -Encoding Ascii
@@ -379,6 +403,7 @@ try {
     $requiresCreatedWorktree =
         (Test-CaseSelected "success-detached") -or
         (Test-CaseSelected "handoff-order") -or
+        (Test-CaseSelected "headless-permission-contract") -or
         (Test-CaseSelected "guard-then-branch")
     if ($requiresCreatedWorktree) {
         $success = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "424", "-Slug", "dirty-source")
@@ -417,6 +442,28 @@ try {
             Assert-True ($claudeSettings.permissions.allow -contains "PowerShell(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)") "Claude PowerShell permissions omitted the stable initializer prefix."
             Assert-True ($claudeSettings.permissions.allow -contains "Bash(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)") "Claude Bash permissions omitted the stable initializer prefix."
             Complete-Test "handoff uses one allowlisted, exact-worktree-bound initializer with a fail-fast gate"
+        }
+
+        if (Test-CaseSelected "headless-permission-contract") {
+            $initializerInvocationPrefix = "powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1"
+            $headlessHandoffLines = @(Get-PrintedHandoffLines -Output $success.Output)
+            Assert-True $headlessHandoffLines[0].StartsWith($initializerInvocationPrefix, [System.StringComparison]::Ordinal) "Printed handoff must use the stable relative initializer wrapper."
+
+            $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
+            $powerShellInitializerRule = "PowerShell(${initializerInvocationPrefix}:*)"
+            $bashInitializerRule = "Bash(${initializerInvocationPrefix}:*)"
+            Assert-True ($claudeSettings.permissions.allow -contains $powerShellInitializerRule) "Claude PowerShell permissions omitted the narrow stable initializer rule."
+            Assert-True ($claudeSettings.permissions.allow -contains $bashInitializerRule) "Claude Bash permissions omitted the narrow stable initializer rule."
+
+            foreach ($guidancePath in $worktreeGuidancePaths) {
+                $guidance = Get-Content -Raw -LiteralPath $guidancePath
+                Assert-Contains $guidance "Initialize-CodexIssueWorktree.ps1" "Detached-first guidance omitted the reviewed initializer wrapper: $guidancePath"
+            }
+            $protocol = Get-Content -Raw -LiteralPath $worktreeProtocolPath
+            Assert-Contains $protocol '--allowedTools "PowerShell(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)"' "Headless guidance omitted the narrow initializer allow rule."
+            Assert-Contains $protocol "acceptEdits does not approve arbitrary Git or PowerShell commands" "Headless guidance must not present acceptEdits as sufficient command authorization."
+            Assert-Contains $protocol "--permission-mode dontAsk" "Headless guidance omitted the fail-closed permission-mode option for a complete task allowlist."
+            Complete-Test "headless guidance and settings authorize the stable initializer without broadening the command boundary"
         }
 
         if (Test-CaseSelected "guard-then-branch") {
@@ -626,9 +673,18 @@ try {
         Assert-True ($invalidSlug.ExitCode -ne 0) "Invalid slug should fail closed."
         Assert-Contains $invalidSlug.Output "Invalid slug: 'Invalid-Slug'." "Invalid slug diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $invalidSlugTarget)) "Invalid slug should not create a target path."
+
+        $newlineSlug = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "447", "-Slug", "valid-slug`n")
+        Assert-True ($newlineSlug.ExitCode -ne 0) "A slug ending in a line feed should fail closed."
+        Assert-Contains $newlineSlug.Output "Invalid slug:" "Final-line-feed slug diagnostic was not clear."
+        $newlineSlugTargets = @(
+            Get-ChildItem -LiteralPath (Join-Path $callerPath ".worktrees") -Force |
+                Where-Object { $_.Name.StartsWith("codex-447-", [System.StringComparison]::Ordinal) }
+        )
+        Assert-Equal 0 $newlineSlugTargets.Count "Final-line-feed slug should not create a target path."
         $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-Equal $registrationsBefore $registrationsAfter "Invalid slug changed Git worktree registrations."
-        Complete-Test "uppercase slug fails closed without target or registration mutation"
+        Complete-Test "uppercase and final-line-feed slugs fail closed without target or registration mutation"
     }
 
     if (Test-CaseSelected "invalid-branch") {

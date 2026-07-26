@@ -194,7 +194,7 @@ if (-not $requestedWorktreeRoot.Equals($expectedWorktreeRoot, $pathComparison)) 
 }
 Assert-SafeWorktreeRoot -Path $requestedWorktreeRoot
 
-if ($Slug -cnotmatch "^[a-z0-9][a-z0-9-]{1,60}$") {
+if ($Slug -cnotmatch "^[a-z0-9][a-z0-9-]{1,60}\z") {
     throw "Invalid slug: '$Slug'. Use 2-61 lowercase letters, digits, or hyphens, starting with a letter or digit."
 }
 
@@ -222,17 +222,29 @@ if (Test-Path -LiteralPath $worktreeDir) {
 
 $candidateRemote = $null
 $candidateBranch = $null
-$remoteSeparatorIndex = $BaseBranch.IndexOf('/')
-if ($remoteSeparatorIndex -gt 0 -and $remoteSeparatorIndex -lt ($BaseBranch.Length - 1)) {
-    $remoteNameCandidate = $BaseBranch.Substring(0, $remoteSeparatorIndex)
-    $remoteBranchCandidate = $BaseBranch.Substring($remoteSeparatorIndex + 1)
-    $remoteLookupResult = Invoke-GitCommand -Arguments @("remote", "get-url", "--", $remoteNameCandidate)
+$remoteListResult = Invoke-GitCommand -Arguments @("remote")
+if ($remoteListResult.ExitCode -ne 0) {
+    throw "Git could not enumerate configured remotes.$(Format-GitContext $remoteListResult.Output)"
+}
+$configuredRemotes = @(
+    $remoteListResult.Stdout -split '\r?\n' |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Sort-Object { $_.Length } -Descending
+)
+foreach ($remoteNameCandidate in $configuredRemotes) {
+    $remotePrefix = "$remoteNameCandidate/"
+    if (-not $BaseBranch.StartsWith($remotePrefix, [System.StringComparison]::Ordinal) -or
+        $BaseBranch.Length -le $remotePrefix.Length) {
+        continue
+    }
+
+    $remoteBranchCandidate = $BaseBranch.Substring($remotePrefix.Length)
     $remoteBranchValidation = Invoke-GitCommand -Arguments @("check-ref-format", "--branch", $remoteBranchCandidate)
-    if ($remoteLookupResult.ExitCode -eq 0 -and
-        $remoteBranchValidation.ExitCode -eq 0 -and
+    if ($remoteBranchValidation.ExitCode -eq 0 -and
         $remoteBranchValidation.Stdout.Trim() -ceq $remoteBranchCandidate) {
         $candidateRemote = $remoteNameCandidate
         $candidateBranch = $remoteBranchCandidate
+        break
     }
 }
 
