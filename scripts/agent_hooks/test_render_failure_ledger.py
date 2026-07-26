@@ -250,6 +250,28 @@ class FailureLedgerEntryPointTests(unittest.TestCase):
             "expected a JSON object, got list",
         )
 
+    def test_permission_denied_source_returns_nonzero_when_exists_reports_false(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "failure_ledger.jsonl"
+            target = Path(directory) / "FAILURE_LEDGER.md"
+            target.write_text("sentinel", encoding="utf-8")
+            stderr = io.StringIO()
+            permission_error = PermissionError(13, "Permission denied", str(source))
+
+            with (
+                patch.object(ledger, "JSONL", source),
+                patch.object(ledger, "MD", target),
+                patch.object(Path, "exists", return_value=False),
+                patch.object(Path, "read_text", side_effect=permission_error),
+                redirect_stderr(stderr),
+            ):
+                return_code = ledger.main()
+
+            self.assertNotEqual(return_code, 0)
+            self.assertEqual(target.read_text(encoding="utf-8"), "sentinel")
+            self.assertIn(source.name, stderr.getvalue())
+            self.assertIn("Permission denied", stderr.getvalue())
+
     def test_missing_empty_and_seed_only_sources_remain_valid(self) -> None:
         seed = {
             "ts": "2026-05-11T00:00:00Z",

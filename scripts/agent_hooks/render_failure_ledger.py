@@ -91,11 +91,13 @@ def render_markdown(entries: list[dict[str, object]]) -> str:
 
 def load_entries(path: Path) -> list[dict[str, object]]:
     """Load and validate every nonblank JSONL line before rendering."""
-    if not path.exists():
+    try:
+        content = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return []
 
     entries: list[dict[str, object]] = []
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_number, line in enumerate(content.splitlines(), start=1):
         if not line.strip():
             continue
 
