@@ -100,7 +100,9 @@ Read before editing — do not assume layout:
   `C:\Program Files\Git\cmd\git.exe` explicitly. In PowerShell, `&&` is a parser error — use
   `;` and check `$LASTEXITCODE`, or run POSIX in a bash shell. `reset --hard`/force-push are
   hook-blocked — recover with `merge --abort`, `merge --signoff --no-gpg-sign origin/main`, and
-  `push HEAD:<branch>`.
+  `git push origin HEAD:BRANCH_NAME` after replacing `BRANCH_NAME`. If that merge conflicts,
+  resolve and stage the files, then finish with `git commit -s --no-gpg-sign --no-edit` instead of
+  `git merge --continue`.
 
 If a needed convention is genuinely undiscoverable, pick a sane default, **record the
 assumption in the state file**, and proceed.

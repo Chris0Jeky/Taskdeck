@@ -115,7 +115,7 @@ When multiple worktrees run local services:
 - Commit with `git commit -s --no-gpg-sign` in automated/background terminals.
 - Do not use `--no-verify`.
 - Do not use force push unless the user explicitly asks.
-- Prefer merge over rebase when reconciliation stalls; replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`.
+- Prefer merge over rebase when reconciliation stalls; replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`. After a conflict, resolve and stage the files, then use `git commit -s --no-gpg-sign --no-edit` instead of `git merge --continue`.
 - Check for active Git processes before removing `.git/index.lock`.
 
 ## Post-Run Verification

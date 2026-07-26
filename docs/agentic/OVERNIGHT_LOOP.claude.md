@@ -85,7 +85,9 @@ Prefer the **`taskdeck-repo-onramp`** skill to orient fast. Read before editing:
 - **Windows/env:** if git misbehaves, use `C:\Program Files\Git\cmd\git.exe`; PowerShell `&&` is
   a parser error (use `;` + `$LASTEXITCODE`, or the Bash tool); `reset --hard`/force-push are
   hook-blocked — recover via `merge --abort` / `merge --signoff --no-gpg-sign origin/main` /
-  `push HEAD:<branch>`.
+  `git push origin HEAD:BRANCH_NAME` after replacing `BRANCH_NAME`. If that merge conflicts,
+  resolve and stage the files, then finish with `git commit -s --no-gpg-sign --no-edit` instead of
+  `git merge --continue`.
 
 Undiscoverable-but-needed convention → sane default, record the assumption, proceed.
 

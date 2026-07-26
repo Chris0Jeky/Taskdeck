@@ -34,7 +34,7 @@ Recover PRs by identifying the failing lane, fixing the root cause, and reportin
 - Fix root causes, not snapshots.
 - Keep fix commits scoped to the failing PR.
 - Do not use `git reset --hard` or force push unless the user explicitly asks.
-- Prefer merge over rebase if reconciliation starts stalling; replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`.
+- Prefer merge over rebase if reconciliation starts stalling; replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`. After a conflict, stage the resolution and finish with `git commit -s --no-gpg-sign --no-edit` instead of `git merge --continue`.
 - Preserve other workers' commits.
 
 ## Conflict rules
