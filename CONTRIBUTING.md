@@ -231,8 +231,8 @@ For full test operations, fixtures, and troubleshooting, see
 
 ## Developer Certificate of Origin
 
-Every commit must include a `Signed-off-by:` trailer certifying the
-[Developer Certificate of Origin 1.1](https://developercertificate.org/).
+Every commit submitted as part of a pull request must include a `Signed-off-by:`
+trailer certifying the [Developer Certificate of Origin 1.1](https://developercertificate.org/).
 Create the trailer from your configured Git name and email with `-s`:
 
 ```bash
@@ -247,11 +247,13 @@ under which the core is distributed, so the
 [MIT-forever commitment](LICENSING.md) does not depend on collecting unilateral
 relicensing rights.
 
-The CI check is advisory through the first rollout week (target: 2026-07-20).
-Missing sign-offs still need to be corrected before the check is promoted into
-branch protection under
+The pull-request CI check is active and currently advisory
+(`continue-on-error: true`). Missing sign-offs still need to be corrected, and
+promotion into branch protection remains maintainer-owned under
 [#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173). A sign-off is not a
-cryptographic signature; do not add one on another contributor's behalf.
+cryptographic signature; do not add one on another contributor's behalf. The
+server-generated merge commit that GitHub creates after accepting a pull request
+is not one of the submitted pull-request commits and is outside this check.
 
 ---
 

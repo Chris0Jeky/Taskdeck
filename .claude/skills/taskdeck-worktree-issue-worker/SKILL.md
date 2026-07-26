@@ -25,7 +25,7 @@ Own only the files/modules assigned by the coordinator. You are not alone in the
 - do not broaden scope without coordinator approval
 - keep commits small and present tense
 - do not use `--no-verify`
-- use `--no-gpg-sign` only when the environment requires it
+- require a `Signed-off-by:` trailer on every new commit; use `git commit -s --no-gpg-sign` in automated/background terminals
 
 ## Implementation Loop
 

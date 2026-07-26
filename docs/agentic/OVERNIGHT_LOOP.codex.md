@@ -99,7 +99,10 @@ Read before editing — do not assume layout:
 - **Windows/env quirks** (this box): git may resolve to a wrapper — if git misbehaves, use
   `C:\Program Files\Git\cmd\git.exe` explicitly. In PowerShell, `&&` is a parser error — use
   `;` and check `$LASTEXITCODE`, or run POSIX in a bash shell. `reset --hard`/force-push are
-  hook-blocked — recover with `merge --abort`, `merge origin/main`, and `push HEAD:<branch>`.
+  hook-blocked — recover with `git merge --abort`, `git merge --signoff --no-gpg-sign origin/main`, and
+  `git push origin HEAD:BRANCH_NAME` after replacing `BRANCH_NAME`. If that merge conflicts,
+  resolve and stage the files, then finish with `git commit -s --no-gpg-sign --no-edit` instead of
+  `git merge --continue`.
 
 If a needed convention is genuinely undiscoverable, pick a sane default, **record the
 assumption in the state file**, and proceed.
@@ -215,7 +218,7 @@ direction docs or a security gate that flips project posture, that's a **maintai
 ## 6) SAFETY GUARDRAILS (hard rules)
 
 - Never force-push, rebase shared branches, amend after pushing, or `reset --hard`/discard work
-  without approval. `merge --abort` / `stash` are fine.
+  without approval. `git merge --abort` / `git stash` are fine.
 - Never commit secrets. If you find one in-repo, **STOP** and propose rotation.
 - Don't touch production credentials/data, branch protections, release tags, licensing/legal
   posture, or trademark decisions — those are maintainer-owned. (The deny-floor / harness

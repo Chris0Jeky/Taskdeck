@@ -41,7 +41,7 @@ Command shape:
 
 ```powershell
 git add <paths>
-git commit --no-gpg-sign -m "<present-tense message>"
+git commit -s --no-gpg-sign -m "<present-tense message>"
 ```
 
 Do not use `--no-verify`. If hooks fail, fix the cause.

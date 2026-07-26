@@ -1379,8 +1379,8 @@ Required workflow: `.github/workflows/ci-required.yml`
 - `dco`
   - Checks every pull-request commit for a DCO `Signed-off-by:` trailer with the
     SHA-pinned `KineticCafe/actions-dco` action
-  - **Advisory** through the first rollout week, targeted to end 2026-07-20
-    (`continue-on-error: true`); promotion into branch protection is
+  - Active for pull requests and currently **advisory**
+    (`continue-on-error: true`); promotion into branch protection remains
     maintainer-owned under #1173
 - `docs-governance`
   - Enforces required active docs and docs index invariants
