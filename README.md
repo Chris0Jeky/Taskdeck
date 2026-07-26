@@ -166,7 +166,7 @@ See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for suite ownership and CI parity.
 
 ## Contributing
 
-PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick or open an issue before a larger change, keep the scope focused, and include verification evidence. Every new commit must include a `Signed-off-by:` trailer; see the [Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin). The pull-request DCO check is active but advisory; promotion into branch protection remains maintainer-owned under [#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173).
+PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick or open an issue before a larger change, keep the scope focused, and include verification evidence. Every commit submitted in a pull request must include a `Signed-off-by:` trailer; see the [Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin). The pull-request DCO check is active but advisory; promotion into branch protection remains maintainer-owned under [#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173).
 
 Repository rules for automated contributors live in [AGENTS.md](AGENTS.md).
 
