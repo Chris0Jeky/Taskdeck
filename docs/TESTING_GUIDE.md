@@ -1389,7 +1389,8 @@ Required workflow: `.github/workflows/ci-required.yml`
     Principles, and GitHub-operations invariants
   - Windows `Worktree Helper (Windows PowerShell)` runs
     `powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1`
-    to enforce detached-first creation, fail-closed initialization, and permission-contract regressions
+    as a 26-case harness enforcing detached-first creation, required base-resident handoff artifacts,
+    fail-closed initialization, and permission-contract regressions
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`

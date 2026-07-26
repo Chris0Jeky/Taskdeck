@@ -75,8 +75,13 @@ before resolving it, preserves unrelated source-checkout state, and creates a de
 under the repository's required exact lowercase `.worktrees/` root. It rejects case variants,
 rooted, traversing, alternate,
 junction-backed, or symlink-backed worktree roots. It prints the planned issue branch but does not
-create it. `-WhatIf` resolves local bases and checks explicit remote bases with `git ls-remote`
-without updating refs; a missing base fails instead of producing a false-green dry run.
+create it. The selected base must contain `scripts/worktree_guard.ps1` and
+`scripts/git/Initialize-CodexIssueWorktree.ps1`; older commits or tags missing either artifact are
+rejected before target-path or worktree-registration creation. `-WhatIf` resolves local bases and
+checks their artifacts, while explicit remote bases are checked with `git ls-remote` without
+updating refs. A remote dry run proves existence only; actual creation verifies both artifacts
+after its controlled fetch and before mutation. A missing base fails instead of producing a
+false-green dry run.
 
 Run the complete printed PowerShell handoff unchanged inside the worker worktree. It uses the
 stable reviewed initializer wrapper, which runs the guard first, verifies the exact worktree and

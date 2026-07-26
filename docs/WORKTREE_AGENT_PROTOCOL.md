@@ -41,7 +41,10 @@ or untracked coordinator changes; the helper preserves them instead of requiring
 
 The helper refreshes an explicit remote branch base (default `origin/main`) before resolving it,
 peels annotated tags to one commit, preserves any tracked or untracked source-checkout changes,
-and creates only a detached worktree:
+and creates only a detached worktree. Every selected base must contain
+`scripts/worktree_guard.ps1` and `scripts/git/Initialize-CodexIssueWorktree.ps1`; a commit or tag
+that predates either handoff artifact is rejected before the target path or Git worktree
+registration is created:
 
 - worktree: `.worktrees/codex-123-short-slug`
 - detached base: `origin/main`
@@ -49,7 +52,10 @@ and creates only a detached worktree:
 
 With `-WhatIf`, the helper resolves local bases and queries explicit remote bases with
 `git ls-remote` without updating local refs. Missing bases still fail; valid dry runs create no
-target, branch, worktree registration, or ref update.
+target, branch, worktree registration, or ref update. Local dry runs also verify the required
+handoff artifacts. An explicit remote dry run can only prove that the remote branch exists without
+fetching it; an actual creation verifies both artifacts after the controlled fetch and before any
+target or registration mutation.
 
 If you need a custom branch:
 

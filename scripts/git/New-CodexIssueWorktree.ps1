@@ -157,6 +157,30 @@ function Resolve-BaseCommit {
     return $resolvedCommit
 }
 
+function Assert-BaseContainsHandoffArtifacts {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Commit,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName
+    )
+
+    $requiredArtifacts = @(
+        "scripts/worktree_guard.ps1",
+        "scripts/git/Initialize-CodexIssueWorktree.ps1"
+    )
+    foreach ($artifact in $requiredArtifacts) {
+        $objectExpression = "${Commit}:$artifact"
+        $artifactTypeResult = Invoke-GitCommand -Arguments @("cat-file", "-t", $objectExpression)
+        if ($artifactTypeResult.ExitCode -ne 0 -or
+            [string]::IsNullOrWhiteSpace($artifactTypeResult.Stdout) -or
+            $artifactTypeResult.Stdout.Trim() -cne "blob") {
+            throw "Base commit '$DisplayName' does not contain required handoff artifact '$artifact'.$(Format-GitContext $artifactTypeResult.Output)"
+        }
+    }
+}
+
 function Assert-RemoteBaseExistsWithoutFetch {
     param(
         [Parameter(Mandatory = $true)]
@@ -282,20 +306,22 @@ $configuredRemotes = @(
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         Sort-Object { $_.Length } -Descending
 )
-foreach ($remoteNameCandidate in $configuredRemotes) {
-    $remotePrefix = "$remoteNameCandidate/"
-    if (-not $BaseBranch.StartsWith($remotePrefix, [System.StringComparison]::Ordinal) -or
-        $BaseBranch.Length -le $remotePrefix.Length) {
-        continue
-    }
+if (-not $BaseBranch.StartsWith("refs/", [System.StringComparison]::Ordinal)) {
+    foreach ($remoteNameCandidate in $configuredRemotes) {
+        $remotePrefix = "$remoteNameCandidate/"
+        if (-not $BaseBranch.StartsWith($remotePrefix, [System.StringComparison]::Ordinal) -or
+            $BaseBranch.Length -le $remotePrefix.Length) {
+            continue
+        }
 
-    $remoteBranchCandidate = $BaseBranch.Substring($remotePrefix.Length)
-    $remoteBranchValidation = Invoke-GitCommand -Arguments @("check-ref-format", "--branch", $remoteBranchCandidate)
-    if ($remoteBranchValidation.ExitCode -eq 0 -and
-        $remoteBranchValidation.Stdout.Trim() -ceq $remoteBranchCandidate) {
-        $candidateRemote = $remoteNameCandidate
-        $candidateBranch = $remoteBranchCandidate
-        break
+        $remoteBranchCandidate = $BaseBranch.Substring($remotePrefix.Length)
+        $remoteBranchValidation = Invoke-GitCommand -Arguments @("check-ref-format", "--branch", $remoteBranchCandidate)
+        if ($remoteBranchValidation.ExitCode -eq 0 -and
+            $remoteBranchValidation.Stdout.Trim() -ceq $remoteBranchCandidate) {
+            $candidateRemote = $remoteNameCandidate
+            $candidateBranch = $remoteBranchCandidate
+            break
+        }
     }
 }
 
@@ -311,7 +337,8 @@ if ($WhatIfPreference) {
         Assert-RemoteBaseExistsWithoutFetch -Remote $candidateRemote -Branch $candidateBranch -DisplayName $BaseBranch
     }
     else {
-        $null = Resolve-BaseCommit -Reference $baseCommitReference -DisplayName $BaseBranch
+        $whatIfBaseCommit = Resolve-BaseCommit -Reference $baseCommitReference -DisplayName $BaseBranch
+        Assert-BaseContainsHandoffArtifacts -Commit $whatIfBaseCommit -DisplayName $BaseBranch
     }
 }
 
@@ -325,6 +352,7 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     }
 
     $baseCommit = Resolve-BaseCommit -Reference $baseCommitReference -DisplayName $BaseBranch
+    Assert-BaseContainsHandoffArtifacts -Commit $baseCommit -DisplayName $BaseBranch
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $worktreeDir) | Out-Null
     Assert-SafeWorktreeRoot -Path $requestedWorktreeRoot

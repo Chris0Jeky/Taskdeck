@@ -21,6 +21,8 @@ param(
         "metachar-base",
         "revision-range-base",
         "annotated-tag-base",
+        "base-missing-handoff-artifacts",
+        "fully-qualified-ref",
         "refresh-remote-base",
         "missing-base",
         "what-if",
@@ -47,6 +49,8 @@ param(
         "metachar-base",
         "revision-range-base",
         "annotated-tag-base",
+        "base-missing-handoff-artifacts",
+        "fully-qualified-ref",
         "refresh-remote-base",
         "missing-base",
         "what-if",
@@ -370,19 +374,25 @@ try {
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("config", "user.email", "taskdeck-test@example.invalid")
     Set-Content -LiteralPath (Join-Path $seedPath ".gitignore") -Value @(".worktrees/", ".claude/settings.local.json") -Encoding Ascii
     Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "committed" -Encoding Ascii
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitignore", "tracked.txt")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Seed pre-helper fixture")
+    $preHelperCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("tag", "pre-helper-base", $preHelperCommit)
     $seedScriptsPath = Join-Path $seedPath "scripts"
     New-Item -ItemType Directory -Path $seedScriptsPath | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../worktree_guard.ps1") -Destination (Join-Path $seedScriptsPath "worktree_guard.ps1")
     $seedGitScriptsPath = Join-Path $seedScriptsPath "git"
     New-Item -ItemType Directory -Path $seedGitScriptsPath | Out-Null
     Copy-Item -LiteralPath $initializerPath -Destination (Join-Path $seedGitScriptsPath "Initialize-CodexIssueWorktree.ps1")
-    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitignore", "tracked.txt", "scripts/worktree_guard.ps1", "scripts/git/Initialize-CodexIssueWorktree.ps1")
-    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Seed fixture")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "scripts/worktree_guard.ps1", "scripts/git/Initialize-CodexIssueWorktree.ps1")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Add worktree handoff artifacts")
+    $helperArtifactCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
     Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "advanced" -Encoding Ascii
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "tracked.txt")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Advance fixture")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("remote", "add", "origin", $remotePath)
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "-u", "origin", "main")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "pre-helper-base")
     $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @("clone", "-b", "main", $remotePath, $callerPath)
 
     $fixtureBase = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-list", "-n", "1", "--end-of-options", "origin/main")
@@ -637,6 +647,12 @@ try {
         New-Item -ItemType Directory -Path $misleadingParent -Force | Out-Null
         $misleadingCoordinator = Join-Path $misleadingParent "standalone-coordinator"
         $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @("clone", "-b", "main", $remotePath, $misleadingCoordinator)
+        $standaloneGuard = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @(
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-File", "scripts/worktree_guard.ps1",
+            "-GitExecutable", $gitExecutable
+        ) -WorkingDirectory $misleadingCoordinator
+        Assert-Equal 1 $standaloneGuard.ExitCode "The guard itself should reject a standalone checkout beneath a .worktrees ancestor."
+        Assert-NormalizedContains $standaloneGuard.Output "main checkout or an unrecognized worktree" "Standalone-checkout rejection should come from the linked-layout guard diagnostic."
         $misleadingFailure = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $failFastScript) -WorkingDirectory $misleadingCoordinator
         Assert-Equal 1 $misleadingFailure.ExitCode "A standalone checkout beneath a .worktrees ancestor must fail the linked-worktree guard."
         $misleadingBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-441/fail-fast") -WorkingDirectory $misleadingCoordinator
@@ -652,7 +668,7 @@ try {
         Assert-Equal 1 $unexpectedSharedBranch.ExitCode "Wrong-worktree handoff must stop before shared branch creation."
         $failFastSymbolicHead = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("symbolic-ref", "-q", "HEAD") -WorkingDirectory $failFastWorktree
         Assert-Equal 1 $failFastSymbolicHead.ExitCode "The intended worktree should remain detached until its own handoff runs."
-        Complete-Test "main, misleading, and wrong-worktree handoffs all stop before branch creation"
+        Complete-Test "guard directly rejects standalone layout and all wrong-context handoffs stop before branch creation"
     }
 
     if (Test-CaseSelected "handoff-missing-executable") {
@@ -699,6 +715,20 @@ try {
         $detachedAfterCollision = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("symbolic-ref", "-q", "HEAD") -WorkingDirectory $initializerWorktree
         Assert-Equal 1 $detachedAfterCollision.ExitCode "Branch collision should leave the helper-created worktree detached."
 
+        $mismatchedExpectedHead = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "$initializerHead^")
+        $baseMismatchBranch = "issue-446/base-mismatch"
+        $baseMismatch = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @(
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-File", "scripts/git/Initialize-CodexIssueWorktree.ps1",
+            "-GitExecutable", $gitExecutable,
+            "-BranchName", $baseMismatchBranch,
+            "-ExpectedWorktree", $initializerWorktree,
+            "-ExpectedHead", $mismatchedExpectedHead
+        ) -WorkingDirectory $initializerWorktree
+        Assert-Equal 1 $baseMismatch.ExitCode "Initializer should reject a detached HEAD that differs from the helper-selected base."
+        Assert-NormalizedContains $baseMismatch.Output "detached HEAD '$initializerHead' does not match the helper-created base '$mismatchedExpectedHead'" "Detached-base mismatch should retain the exact-base diagnostic."
+        $baseMismatchRef = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$baseMismatchBranch") -WorkingDirectory $callerPath
+        Assert-Equal 1 $baseMismatchRef.ExitCode "Detached-base mismatch must stop before branch creation."
+
         $canaryPath = Join-Path $initializerWorktree "initializer-canary.txt"
         $invalidInitializer = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @(
             "-NoLogo", "-NoProfile", "-NonInteractive", "-File", "scripts/git/Initialize-CodexIssueWorktree.ps1",
@@ -729,7 +759,7 @@ try {
         ) -WorkingDirectory $initializerWorktree
         Assert-Equal 1 $attachedInitializer.ExitCode "Initializer should reject an already-attached helper worktree."
         Assert-Equal "manual-attached" (Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("branch", "--show-current")) "Attached-worktree rejection should preserve the current branch."
-        Complete-Test "initializer fails closed on collisions, invalid input, wrong executables, and attached HEAD"
+        Complete-Test "initializer fails closed on collisions, detached-base mismatch, invalid input, wrong executables, and attached HEAD"
     }
 
     if (Test-CaseSelected "existing-branch") {
@@ -886,6 +916,50 @@ try {
         $annotatedHead = Invoke-Git -WorkingDirectory $annotatedWorktree -Arguments @("rev-parse", "HEAD")
         Assert-Equal $fixtureBase $annotatedHead "Annotated tag worktree should detach at the tagged commit."
         Complete-Test "annotated tag peels to one commit"
+    }
+
+    if (Test-CaseSelected "base-missing-handoff-artifacts") {
+        $registrationsBeforeMissingArtifacts = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $oldCommitTarget = Join-Path $callerPath ".worktrees/codex-453-old-commit-base"
+        $oldCommitBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "453", "-Slug", "old-commit-base", "-BaseBranch", $preHelperCommit)
+        Assert-True ($oldCommitBase.ExitCode -ne 0) "A commit predating the handoff artifacts should fail closed."
+        Assert-Contains $oldCommitBase.Output "does not contain required handoff artifact 'scripts/worktree_guard.ps1'" "Old-commit rejection should name the missing handoff artifact."
+        Assert-True (-not (Test-Path -LiteralPath $oldCommitTarget)) "Rejected old commit should not leave a target path."
+        $oldCommitBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-453/old-commit-base") -WorkingDirectory $callerPath
+        Assert-Equal 1 $oldCommitBranch.ExitCode "Rejected old commit should not create the planned branch."
+
+        $oldTagTarget = Join-Path $callerPath ".worktrees/codex-454-old-tag-base"
+        $oldTagBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "454", "-Slug", "old-tag-base", "-BaseBranch", "pre-helper-base")
+        Assert-True ($oldTagBase.ExitCode -ne 0) "A tag predating the handoff artifacts should fail closed."
+        Assert-Contains $oldTagBase.Output "does not contain required handoff artifact 'scripts/worktree_guard.ps1'" "Old-tag rejection should name the missing handoff artifact."
+        Assert-True (-not (Test-Path -LiteralPath $oldTagTarget)) "Rejected old tag should not leave a target path."
+        $oldTagBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-454/old-tag-base") -WorkingDirectory $callerPath
+        Assert-Equal 1 $oldTagBranch.ExitCode "Rejected old tag should not create the planned branch."
+        $registrationsAfterMissingArtifacts = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        Assert-Equal $registrationsBeforeMissingArtifacts $registrationsAfterMissingArtifacts "Rejected old commit or tag changed Git worktree registrations."
+        Complete-Test "bases missing handoff artifacts fail before path, branch, or worktree registration creation"
+    }
+
+    if (Test-CaseSelected "fully-qualified-ref") {
+        $explicitReference = "refs/heads/explicit-base"
+        $competingRemoteReference = "refs/heads/heads/explicit-base"
+        Assert-True ($fixtureBase -cne $helperArtifactCommit) "Fully-qualified-ref fixture commits must differ."
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("update-ref", $explicitReference, $fixtureBase)
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "add", "refs", $remotePath)
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "${helperArtifactCommit}:$competingRemoteReference")
+        $unexpectedTrackingRef = "refs/remotes/refs/heads/explicit-base"
+        $trackingBeforeExplicitRef = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", $unexpectedTrackingRef) -WorkingDirectory $callerPath
+        Assert-Equal 1 $trackingBeforeExplicitRef.ExitCode "Competing remote-tracking ref should be absent before the explicit-ref probe."
+
+        $explicitRefResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "455", "-Slug", "fully-qualified-ref", "-BaseBranch", $explicitReference)
+        Assert-Equal 0 $explicitRefResult.ExitCode "A fully-qualified local ref should win over a same-prefix remote name.`n$($explicitRefResult.Output)"
+        $explicitRefWorktree = Join-Path $callerPath ".worktrees/codex-455-fully-qualified-ref"
+        $explicitRefHead = Invoke-Git -WorkingDirectory $explicitRefWorktree -Arguments @("rev-parse", "HEAD")
+        Assert-Equal $fixtureBase $explicitRefHead "Fully-qualified ref should resolve directly instead of as remote shorthand."
+        Assert-True ($explicitRefHead -cne $helperArtifactCommit) "Fully-qualified ref unexpectedly selected the competing remote branch."
+        $trackingAfterExplicitRef = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", $unexpectedTrackingRef) -WorkingDirectory $callerPath
+        Assert-Equal 1 $trackingAfterExplicitRef.ExitCode "Explicit refs/... input should not fetch or create a same-prefix remote-tracking ref."
+        Complete-Test "fully-qualified refs bypass competing remote shorthand"
     }
 
     if (Test-CaseSelected "missing-base") {

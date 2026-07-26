@@ -1204,8 +1204,9 @@ Result:
 
 Required workflow: `.github/workflows/ci-required.yml`
 
-- `docs-governance` reusable call: active-doc/agentic governance (Ubuntu) plus the detached-first
-  worktree-helper regression harness (Windows PowerShell)
+- `docs-governance` reusable call: active-doc/agentic governance (Ubuntu) plus the 26-case
+  detached-first worktree-helper regression harness (Windows PowerShell), including rejection of
+  selected bases that lack the guard or initializer required by the printed worker handoff
 - `backend-architecture` (Ubuntu)
 - `backend-unit` (Ubuntu/Windows)
 - `api-integration` (Ubuntu/Windows)
