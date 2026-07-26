@@ -170,6 +170,79 @@ function Invoke-ProjectItemsPage {
     Invoke-GhJson -Arguments $arguments
 }
 
+function ConvertFrom-GitHubIssueApiTarget {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowNull()]
+        [object]$Target,
+        [Parameter(Mandatory = $true)]
+        [string]$RequestedRepository,
+        [Parameter(Mandatory = $true)]
+        [int]$RequestedNumber
+    )
+
+    $requestedKey = Get-IssueReferenceKey -RepositoryName $RequestedRepository -Number $RequestedNumber
+    if ($null -eq $Target -or
+        -not ($Target.PSObject.Properties.Name -contains "number") -or
+        -not ($Target.PSObject.Properties.Name -contains "repository_url") -or
+        [string]::IsNullOrWhiteSpace([string]$Target.repository_url)) {
+        throw "GitHub returned an incomplete typed reference target for '$RequestedRepository#$RequestedNumber'."
+    }
+
+    try {
+        $repositoryUri = [System.Uri][string]$Target.repository_url
+        $repositoryPath = $repositoryUri.AbsolutePath.Trim("/")
+    } catch {
+        throw "GitHub returned an invalid repository identity '$($Target.repository_url)' for '$RequestedRepository#$RequestedNumber'."
+    }
+    $repositorySegments = @($repositoryPath.Split("/"))
+    if ($repositorySegments.Count -ne 3 -or
+        -not [string]::Equals($repositorySegments[0], "repos", [System.StringComparison]::OrdinalIgnoreCase) -or
+        [string]::IsNullOrWhiteSpace($repositorySegments[1]) -or
+        [string]::IsNullOrWhiteSpace($repositorySegments[2])) {
+        throw "GitHub returned an invalid repository identity '$($Target.repository_url)' for '$RequestedRepository#$RequestedNumber'."
+    }
+
+    $canonicalRepository = "$($repositorySegments[1])/$($repositorySegments[2])"
+    try {
+        $targetNumber = [int]$Target.number
+        $targetKey = Get-IssueReferenceKey -RepositoryName $canonicalRepository -Number $targetNumber
+    } catch {
+        throw "GitHub returned an invalid repository or number identity for '$RequestedRepository#$RequestedNumber'."
+    }
+    if (-not [string]::Equals($requestedKey, $targetKey, [System.StringComparison]::Ordinal)) {
+        throw "GitHub reference identity mismatch for '$RequestedRepository#$RequestedNumber': returned '$canonicalRepository#$targetNumber'."
+    }
+
+    $hasPullRequestMetadata = $Target.PSObject.Properties.Name -contains "pull_request"
+    if ($hasPullRequestMetadata -and $null -eq $Target.pull_request) {
+        throw "GitHub returned null PullRequest metadata for '$RequestedRepository#$RequestedNumber'."
+    }
+    $contentType = if ($hasPullRequestMetadata) { "PullRequest" } else { "Issue" }
+    $labels = if ($contentType -eq "Issue") {
+        if (-not ($Target.PSObject.Properties.Name -contains "labels") -or $null -eq $Target.labels) {
+            throw "GitHub returned an Issue without label data for '$RequestedRepository#$RequestedNumber'."
+        }
+        @($Target.labels | ForEach-Object {
+            if ($null -eq $_ -or
+                -not ($_.PSObject.Properties.Name -contains "name") -or
+                [string]::IsNullOrWhiteSpace([string]$_.name)) {
+                throw "GitHub returned malformed Issue label data for '$RequestedRepository#$RequestedNumber'."
+            }
+            [string]$_.name
+        })
+    } else {
+        @()
+    }
+
+    [pscustomobject]@{
+        type = $contentType
+        repository = $canonicalRepository
+        number = $targetNumber
+        labels = $labels
+    }
+}
+
 function Get-LiveReferenceTarget {
     param(
         [Parameter(Mandatory = $true)]
@@ -180,36 +253,10 @@ function Get-LiveReferenceTarget {
 
     Get-IssueReferenceKey -RepositoryName $RepositoryName -Number $Number | Out-Null
     $target = Invoke-GhJson -Arguments @("api", "repos/$RepositoryName/issues/$Number")
-    if ($null -eq $target -or
-        -not ($target.PSObject.Properties.Name -contains "number") -or
-        -not ($target.PSObject.Properties.Name -contains "repository_url")) {
-        throw "GitHub returned an incomplete typed reference target for '$RepositoryName#$Number'."
-    }
-
-    $repositoryPath = ([System.Uri][string]$target.repository_url).AbsolutePath.Trim("/")
-    $repositorySegments = @($repositoryPath.Split("/"))
-    if ($repositorySegments.Count -ne 3 -or
-        -not [string]::Equals($repositorySegments[0], "repos", [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "GitHub returned an invalid repository identity '$($target.repository_url)' for '$RepositoryName#$Number'."
-    }
-
-    $canonicalRepository = "$($repositorySegments[1])/$($repositorySegments[2])"
-    $contentType = if ($target.PSObject.Properties.Name -contains "pull_request") { "PullRequest" } else { "Issue" }
-    $labels = if ($contentType -eq "Issue") {
-        if (-not ($target.PSObject.Properties.Name -contains "labels") -or $null -eq $target.labels) {
-            throw "GitHub returned an Issue without label data for '$RepositoryName#$Number'."
-        }
-        @($target.labels | ForEach-Object { [string]$_.name })
-    } else {
-        @()
-    }
-
-    [pscustomobject]@{
-        type = $contentType
-        repository = $canonicalRepository
-        number = [int]$target.number
-        labels = $labels
-    }
+    ConvertFrom-GitHubIssueApiTarget `
+        -Target $target `
+        -RequestedRepository $RepositoryName `
+        -RequestedNumber $Number
 }
 
 function Assert-CompleteNestedConnection {
@@ -491,6 +538,7 @@ function Invoke-SelfTest {
     $priorityFieldId = "priority-field"
     $statusFieldId = "status-field"
     $projectId = "project-id"
+    $canonicalRepository = "Chris0Jeky/Taskdeck"
     $stableUpdatedAt = "2026-07-26T00:00:00Z"
     $checks = 0
 
@@ -709,6 +757,110 @@ function Invoke-SelfTest {
         @((Get-SelfTestSnapshot -Pages $pages).items)
     }
 
+    $rawIssueTarget = ConvertFrom-GitHubIssueApiTarget `
+        -Target ([pscustomobject]@{
+            number = 42
+            repository_url = "https://api.github.com/repos/Chris0Jeky/Taskdeck"
+            labels = @(
+                [pscustomobject]@{ name = "Priority II" },
+                [pscustomobject]@{ name = "bug" }
+            )
+        }) `
+        -RequestedRepository $canonicalRepository `
+        -RequestedNumber 42
+    $checks += Assert-SelfTest `
+        -Condition ($rawIssueTarget.type -ceq "Issue" -and
+            $rawIssueTarget.repository -ceq $canonicalRepository -and
+            $rawIssueTarget.number -eq 42 -and
+            [string]::Join("|", @($rawIssueTarget.labels)) -ceq "Priority II|bug") `
+        -Message "raw REST Issue normalization must preserve canonical identity and labels"
+
+    $rawPullRequestTarget = ConvertFrom-GitHubIssueApiTarget `
+        -Target ([pscustomobject]@{
+            number = 43
+            repository_url = "https://api.github.com/repos/Chris0Jeky/Taskdeck"
+            labels = @([pscustomobject]@{ name = "Priority I" })
+            pull_request = [pscustomobject]@{ url = "https://api.github.com/repos/Chris0Jeky/Taskdeck/pulls/43" }
+        }) `
+        -RequestedRepository $canonicalRepository `
+        -RequestedNumber 43
+    $checks += Assert-SelfTest `
+        -Condition ($rawPullRequestTarget.type -ceq "PullRequest" -and
+            $rawPullRequestTarget.repository -ceq $canonicalRepository -and
+            $rawPullRequestTarget.number -eq 43 -and
+            @($rawPullRequestTarget.labels).Count -eq 0) `
+        -Message "raw REST PullRequest normalization must ignore coincidental Priority labels"
+
+    $checks += Assert-SelfTestThrows -Action {
+        ConvertFrom-GitHubIssueApiTarget `
+            -Target ([pscustomobject]@{
+                repository_url = "https://api.github.com/repos/Chris0Jeky/Taskdeck"
+                labels = @()
+            }) `
+            -RequestedRepository $canonicalRepository `
+            -RequestedNumber 42
+    } -MessagePattern "incomplete typed reference target"
+    $checks += Assert-SelfTestThrows -Action {
+        ConvertFrom-GitHubIssueApiTarget `
+            -Target ([pscustomobject]@{
+                number = 42
+                repository_url = "https://api.github.com/repositories/123"
+                labels = @()
+            }) `
+            -RequestedRepository $canonicalRepository `
+            -RequestedNumber 42
+    } -MessagePattern "invalid repository identity"
+    $checks += Assert-SelfTestThrows -Action {
+        ConvertFrom-GitHubIssueApiTarget `
+            -Target ([pscustomobject]@{
+                number = 42
+                repository_url = "https://api.github.com/repos/Chris0Jeky/Taskdeck"
+            }) `
+            -RequestedRepository $canonicalRepository `
+            -RequestedNumber 42
+    } -MessagePattern "Issue without label data"
+    $checks += Assert-SelfTestThrows -Action {
+        ConvertFrom-GitHubIssueApiTarget `
+            -Target ([pscustomobject]@{
+                number = 42
+                repository_url = "https://api.github.com/repos/Chris0Jeky/Taskdeck"
+                labels = @([pscustomobject]@{ name = "" })
+            }) `
+            -RequestedRepository $canonicalRepository `
+            -RequestedNumber 42
+    } -MessagePattern "malformed Issue label data"
+    $checks += Assert-SelfTestThrows -Action {
+        ConvertFrom-GitHubIssueApiTarget `
+            -Target ([pscustomobject]@{
+                number = 42
+                repository_url = "https://api.github.com/repos/Chris0Jeky/Taskdeck"
+                labels = @()
+                pull_request = $null
+            }) `
+            -RequestedRepository $canonicalRepository `
+            -RequestedNumber 42
+    } -MessagePattern "null PullRequest metadata"
+    $checks += Assert-SelfTestThrows -Action {
+        ConvertFrom-GitHubIssueApiTarget `
+            -Target ([pscustomobject]@{
+                number = 42
+                repository_url = "https://api.github.com/repos/owner/other"
+                labels = @()
+            }) `
+            -RequestedRepository $canonicalRepository `
+            -RequestedNumber 42
+    } -MessagePattern "identity mismatch"
+    $checks += Assert-SelfTestThrows -Action {
+        ConvertFrom-GitHubIssueApiTarget `
+            -Target ([pscustomobject]@{
+                number = 99
+                repository_url = "https://api.github.com/repos/Chris0Jeky/Taskdeck"
+                labels = @()
+            }) `
+            -RequestedRepository $canonicalRepository `
+            -RequestedNumber 42
+    } -MessagePattern "identity mismatch"
+
     $allItems = @(for ($index = 0; $index -lt 1001; $index++) {
         New-SelfTestItem -Id "item-$index" -Number ($index + 1)
     })
@@ -846,6 +998,7 @@ function Invoke-SelfTest {
     )
     $strictFallbackAudit = New-PriorityAuditState `
         -Items $strictFallbackItems `
+        -CanonicalRepository $canonicalRepository `
         -ReferenceProvider { throw "Unexpected provider call" }
     $checks += Assert-SelfTest `
         -Condition ($strictFallbackAudit.updates.Count -eq 1 -and
@@ -866,7 +1019,7 @@ function Invoke-SelfTest {
             -Body "Refs other/repo#99" `
             -ClosingIssues @($closingIssue))
     )
-    $closingAudit = New-PriorityAuditState -Items $closingItems -ReferenceProvider {
+    $closingAudit = New-PriorityAuditState -Items $closingItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
         param($repositoryName, $issueNumber)
         $closingProviderState.calls++
         throw "Body fallback should not run when closing links exist"
@@ -877,7 +1030,32 @@ function Invoke-SelfTest {
             $closingProviderState.calls -eq 0) `
         -Message "closing issues must win before body references"
 
-    $crossRepoProviderState = [pscustomobject]@{ repository = $null; number = 0; calls = 0 }
+    $sameRepoProviderState = [pscustomobject]@{ repository = $null; number = 0; calls = 0 }
+    $sameRepoItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "same-repo-pr" `
+            -ContentType "PullRequest" `
+            -Priority "Priority V" `
+            -Body "Refs Chris0Jeky/Taskdeck#42")
+    )
+    $sameRepoAudit = New-PriorityAuditState -Items $sameRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
+        param($repositoryName, $issueNumber)
+        $sameRepoProviderState.repository = $repositoryName
+        $sameRepoProviderState.number = $issueNumber
+        $sameRepoProviderState.calls++
+        New-SelfTestReferenceTarget `
+            -RepositoryName $repositoryName `
+            -Number $issueNumber `
+            -Labels @("Priority I")
+    }
+    $checks += Assert-SelfTest `
+        -Condition ($sameRepoProviderState.calls -eq 1 -and
+            $sameRepoProviderState.repository -ceq $canonicalRepository -and
+            $sameRepoProviderState.number -eq 42 -and
+            $sameRepoAudit.updates[0].expectedPriority -ceq "Priority I") `
+        -Message "same-repository qualified body references must preserve identity and derive Priority"
+
+    $crossRepoProviderState = [pscustomobject]@{ calls = 0 }
     $crossRepoItems = Get-NormalizedSelfTestItems -RawItems @(
         (New-SelfTestItem `
             -Id "cross-repo-pr" `
@@ -885,31 +1063,94 @@ function Invoke-SelfTest {
             -Priority "Priority V" `
             -Body "Refs owner/other#42")
     )
-    $crossRepoAudit = New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider {
-        param($repositoryName, $issueNumber)
-        $crossRepoProviderState.repository = $repositoryName
-        $crossRepoProviderState.number = $issueNumber
-        $crossRepoProviderState.calls++
-        New-SelfTestReferenceTarget `
-            -RepositoryName $repositoryName `
-            -Number $issueNumber `
-            -Labels @("Priority I")
-    }
+    $checks += Assert-SelfTestThrows -Action {
+        New-PriorityAuditState -Items $crossRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
+            param($repositoryName, $issueNumber)
+            $crossRepoProviderState.calls++
+            New-SelfTestReferenceTarget `
+                -RepositoryName $repositoryName `
+                -Number $issueNumber `
+                -Labels @("Priority I")
+        }
+    } -MessagePattern "Cross-repository Issue reference.*is disabled"
     $checks += Assert-SelfTest `
-        -Condition ($crossRepoProviderState.calls -eq 1 -and
-            $crossRepoProviderState.repository -ceq "owner/other" -and
-            $crossRepoProviderState.number -eq 42 -and
-            $crossRepoAudit.updates[0].expectedPriority -ceq "Priority I") `
-        -Message "qualified body references must preserve repository identity"
+        -Condition ($crossRepoProviderState.calls -eq 1) `
+        -Message "cross-repository body references must be typed before Issue-only policy rejection"
+
+    $crossRepoPullRequestAudit = New-PriorityAuditState `
+        -Items $crossRepoItems `
+        -CanonicalRepository $canonicalRepository `
+        -ReferenceProvider {
+            param($repositoryName, $issueNumber)
+            New-SelfTestReferenceTarget `
+                -Type "PullRequest" `
+                -RepositoryName $repositoryName `
+                -Number $issueNumber `
+                -Labels @("Priority I")
+        }
+    $checks += Assert-SelfTest `
+        -Condition ($crossRepoPullRequestAudit.updates.Count -eq 0 -and
+            $crossRepoPullRequestAudit.audit[0].expectedPriority -ceq "Priority V" -and
+            $crossRepoPullRequestAudit.audit[0].references -match ":PullRequest$") `
+        -Message "validated cross-repository PullRequest references must remain ignorable"
+
+    $crossRepoClosingIssue = New-SelfTestClosingIssue `
+        -RepositoryName "owner/other" `
+        -Number 42 `
+        -Labels @("Priority I")
+    $crossRepoClosingItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "cross-repo-closing-pr" `
+            -ContentType "PullRequest" `
+            -Priority "Priority V" `
+            -ClosingIssues @($crossRepoClosingIssue))
+    )
+    $checks += Assert-SelfTestThrows -Action {
+        New-PriorityAuditState `
+            -Items $crossRepoClosingItems `
+            -CanonicalRepository $canonicalRepository `
+            -ReferenceProvider { throw "Unexpected provider call" }
+    } -MessagePattern "Cross-repository Issue reference.*is disabled"
+
+    $crossRepoProjectIssueItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "cross-repo-project-issue" `
+            -ContentType "Issue" `
+            -RepositoryName "owner/other" `
+            -Number 42 `
+            -Labels @("Priority I"))
+    )
+    $checks += Assert-SelfTestThrows -Action {
+        New-PriorityAuditState `
+            -Items $crossRepoProjectIssueItems `
+            -CanonicalRepository $canonicalRepository `
+            -ReferenceProvider { throw "Unexpected provider call" }
+    } -MessagePattern "Cross-repository Issue reference.*is disabled"
+
+    $crossRepoProjectPullRequestItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "cross-repo-project-pr" `
+            -ContentType "PullRequest" `
+            -RepositoryName "owner/other" `
+            -Number 43 `
+            -Priority "Priority V" `
+            -Body "No issue references")
+    )
+    $checks += Assert-SelfTestThrows -Action {
+        New-PriorityAuditState `
+            -Items $crossRepoProjectPullRequestItems `
+            -CanonicalRepository $canonicalRepository `
+            -ReferenceProvider { throw "Unexpected provider call" }
+    } -MessagePattern "Cross-repository project content.*is disabled"
 
     $checks += Assert-SelfTestThrows -Action {
-        New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider {
-            New-SelfTestReferenceTarget -RepositoryName "owner/other" -Number 42 -Labels @()
+        New-PriorityAuditState -Items $sameRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
+            New-SelfTestReferenceTarget -RepositoryName $canonicalRepository -Number 42 -Labels @()
         }
     } -MessagePattern "has missing Priority labels"
     $checks += Assert-SelfTestThrows -Action {
-        New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider {
-            New-SelfTestReferenceTarget -RepositoryName "owner/other" -Number 42 -Labels @("Priority I", "Priority II")
+        New-PriorityAuditState -Items $sameRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
+            New-SelfTestReferenceTarget -RepositoryName $canonicalRepository -Number 42 -Labels @("Priority I", "Priority II")
         }
     } -MessagePattern "has multiple Priority labels"
 
@@ -921,7 +1162,7 @@ function Invoke-SelfTest {
             -Priority "Priority I" `
             -Body "Closes #123")
     )
-    $pullRequestReferenceAudit = New-PriorityAuditState -Items $pullRequestReferenceItems -ReferenceProvider {
+    $pullRequestReferenceAudit = New-PriorityAuditState -Items $pullRequestReferenceItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
         param($repositoryName, $issueNumber)
         $pullRequestReferenceState.calls++
         New-SelfTestReferenceTarget `
@@ -946,7 +1187,7 @@ function Invoke-SelfTest {
             -Priority "Priority V" `
             -Body "Closes #123`nRefs #42")
     )
-    $mixedReferenceAudit = New-PriorityAuditState -Items $mixedReferenceItems -ReferenceProvider {
+    $mixedReferenceAudit = New-PriorityAuditState -Items $mixedReferenceItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
         param($repositoryName, $issueNumber)
         $mixedReferenceState.calls++
         if ($issueNumber -eq 123) {
@@ -963,12 +1204,12 @@ function Invoke-SelfTest {
         -Message "mixed body references must ignore PullRequests and derive from actual Issues"
 
     $checks += Assert-SelfTestThrows -Action {
-        New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider {
-            New-SelfTestReferenceTarget -RepositoryName "owner/wrong" -Number 42 -Labels @("Priority I")
+        New-PriorityAuditState -Items $sameRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
+            New-SelfTestReferenceTarget -RepositoryName "Chris0Jeky/wrong" -Number 42 -Labels @("Priority I")
         }
     } -MessagePattern "identity mismatch"
     $checks += Assert-SelfTestThrows -Action {
-        New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider { throw "synthetic unreadable target" }
+        New-PriorityAuditState -Items $sameRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider { throw "synthetic unreadable target" }
     } -MessagePattern "Failed to read reference.*synthetic unreadable target"
 
     $truncatedClosing = New-SelfTestClosingIssue -RepositoryName "Chris0Jeky/Taskdeck" -Number 43
@@ -999,16 +1240,16 @@ function Invoke-SelfTest {
                 -Id "source-drift-pr" `
                 -ContentType "PullRequest" `
                 -Priority "Priority V" `
-                -Body "Refs owner/other#42")) `
+                -Body "Refs #42")) `
             -HasNextPage $false `
             -EndCursor $null
     }
     $sourceSnapshot = Get-SelfTestSnapshot -Pages $strictSnapshotPages
-    $sourceAuditInitial = New-PriorityAuditState -Items $sourceSnapshot.items -ReferenceProvider {
-        New-SelfTestReferenceTarget -RepositoryName "owner/other" -Number 42 -Labels @("Priority II")
+    $sourceAuditInitial = New-PriorityAuditState -Items $sourceSnapshot.items -CanonicalRepository $canonicalRepository -ReferenceProvider {
+        New-SelfTestReferenceTarget -RepositoryName $canonicalRepository -Number 42 -Labels @("Priority II")
     }
-    $sourceAuditCurrent = New-PriorityAuditState -Items $sourceSnapshot.items -ReferenceProvider {
-        New-SelfTestReferenceTarget -RepositoryName "owner/other" -Number 42 -Labels @("Priority I")
+    $sourceAuditCurrent = New-PriorityAuditState -Items $sourceSnapshot.items -CanonicalRepository $canonicalRepository -ReferenceProvider {
+        New-SelfTestReferenceTarget -RepositoryName $canonicalRepository -Number 42 -Labels @("Priority I")
     }
     $sourceInitialState = New-PriorityExecutionState `
         -Snapshot $sourceSnapshot `
@@ -1128,34 +1369,50 @@ function Invoke-SelfTest {
 
     $successfulInitialState = [pscustomobject]@{
         guardFingerprint = "successful-guard"
-        updates = @([pscustomobject]@{ itemId = "successful-item"; expectedPriority = "Priority I" })
-        audit = @([pscustomobject]@{ itemId = "successful-item"; needsUpdate = $true })
+        updates = @(
+            [pscustomobject]@{ itemId = "ordered-first"; expectedPriority = "Priority II" },
+            [pscustomobject]@{ itemId = "ordered-second"; expectedPriority = "Priority I" }
+        )
+        audit = @(
+            [pscustomobject]@{ itemId = "ordered-first"; needsUpdate = $true },
+            [pscustomobject]@{ itemId = "ordered-second"; needsUpdate = $true }
+        )
         snapshot = [pscustomobject]@{
             projectUpdatedAt = "before-success"
-            totalCount = 1
+            totalCount = 2
             pageCount = 1
-            items = @("before-item")
+            items = @("before-item-1", "before-item-2")
         }
     }
     $successfulPostState = [pscustomobject]@{
         guardFingerprint = "successful-post-guard"
         updates = @()
-        audit = @([pscustomobject]@{ itemId = "successful-item"; needsUpdate = $false })
+        audit = @(
+            [pscustomobject]@{ itemId = "ordered-first"; needsUpdate = $false },
+            [pscustomobject]@{ itemId = "ordered-second"; needsUpdate = $false }
+        )
         snapshot = [pscustomobject]@{
-            projectUpdatedAt = "after-success"
+            projectUpdatedAt = "after-ordered-success"
             totalCount = 2
             pageCount = 2
             items = @("after-item-1", "after-item-2")
         }
     }
-    $successfulApplyState = [pscustomobject]@{ writes = 0; postAudits = 0 }
+    $successfulApplyState = [pscustomobject]@{
+        currentChecks = 0
+        writes = [System.Collections.Generic.List[string]]::new()
+        postAudits = 0
+    }
     $successfulOutcome = Invoke-PriorityApplyWithAudit `
         -InitialState $successfulInitialState `
         -OptionMap $testOptionMap `
-        -CurrentStateProvider { $successfulInitialState } `
+        -CurrentStateProvider {
+            $successfulApplyState.currentChecks++
+            $successfulInitialState
+        } `
         -ItemWriter {
             param($update, $optionId)
-            $successfulApplyState.writes++
+            $successfulApplyState.writes.Add("$($update.itemId)|$optionId")
         } `
         -PostAuditProvider {
             $successfulApplyState.postAudits++
@@ -1163,13 +1420,29 @@ function Invoke-SelfTest {
         }
     $successfulReport = New-PriorityReportState -InitialState $successfulInitialState -ApplyOutcome $successfulOutcome
     $checks += Assert-SelfTest `
-        -Condition ($successfulApplyState.writes -eq 1 -and
+        -Condition ($successfulApplyState.currentChecks -eq 1 -and
+            $successfulApplyState.writes.Count -eq 2 -and
+            $successfulApplyState.writes[0] -ceq "ordered-first|option-ii" -and
+            $successfulApplyState.writes[1] -ceq "ordered-second|option-i" -and
+            $successfulApplyState.postAudits -eq 1) `
+        -Message "successful Apply must preserve planned item order and map each expected Priority to its exact option id"
+    $checks += Assert-SelfTest `
+        -Condition ($successfulOutcome.plannedCount -eq 2 -and
+            $successfulOutcome.attemptedCount -eq 2 -and
+            $successfulOutcome.succeededCount -eq 2 -and
+            $null -eq $successfulOutcome.failedItemId -and
+            $null -eq $successfulOutcome.writeErrorMessage -and
             $successfulApplyState.postAudits -eq 1 -and
-            $successfulReport.postApplyVerified -and
-            $successfulReport.plannedCount -eq 1 -and
-            $successfulReport.appliedCount -eq 1 -and
+            $successfulOutcome.postApplyVerified -and
+            $successfulOutcome.remainingCount -eq 0) `
+        -Message "successful Apply must retain exact writer counts and complete post-audit evidence"
+    $checks += Assert-SelfTest `
+        -Condition ($successfulReport.postApplyVerified -and
+            $successfulReport.plannedCount -eq 2 -and
+            $successfulReport.attemptedCount -eq 2 -and
+            $successfulReport.appliedCount -eq 2 -and
             $successfulReport.updates.Count -eq 0 -and
-            $successfulReport.snapshot.projectUpdatedAt -ceq "after-success" -and
+            $successfulReport.snapshot.projectUpdatedAt -ceq "after-ordered-success" -and
             $successfulReport.snapshot.items.Count -eq 2) `
         -Message "successful Apply reports current post-audit truth and retains planned/applied evidence"
 
@@ -1184,19 +1457,43 @@ function Get-PriorityLabels {
     @($Labels | Where-Object { $priorityRank.ContainsKey([string]$_) })
 }
 
+function Get-RepositoryKey {
+    param([string]$RepositoryName)
+
+    if ([string]::IsNullOrWhiteSpace($RepositoryName) -or
+        $RepositoryName -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
+        throw "Invalid repository identity '$RepositoryName'."
+    }
+
+    $RepositoryName.ToLowerInvariant()
+}
+
 function Get-IssueReferenceKey {
     param(
         [string]$RepositoryName,
         [int]$Number
     )
 
-    if ([string]::IsNullOrWhiteSpace($RepositoryName) -or
-        $RepositoryName -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or
-        $Number -le 0) {
+    if ($Number -le 0) {
         throw "Invalid issue reference '$RepositoryName#$Number'."
     }
 
-    "$($RepositoryName.ToLowerInvariant())#$Number"
+    "$((Get-RepositoryKey -RepositoryName $RepositoryName))#$Number"
+}
+
+function Assert-CanonicalIssueReference {
+    param(
+        [string]$RepositoryName,
+        [int]$Number,
+        [string]$CanonicalRepository
+    )
+
+    Get-IssueReferenceKey -RepositoryName $RepositoryName -Number $Number | Out-Null
+    $repositoryKey = Get-RepositoryKey -RepositoryName $RepositoryName
+    $canonicalRepositoryKey = Get-RepositoryKey -RepositoryName $CanonicalRepository
+    if (-not [string]::Equals($repositoryKey, $canonicalRepositoryKey, [System.StringComparison]::Ordinal)) {
+        throw "Cross-repository Issue reference '$RepositoryName#$Number' is disabled; canonical repository is '$CanonicalRepository'."
+    }
 }
 
 function Get-BodyIssueReferences {
@@ -1286,7 +1583,11 @@ function Add-IssueLabelsToCache {
 }
 
 function New-IssueLabelCache {
-    param([object[]]$Items)
+    param(
+        [object[]]$Items,
+        [Parameter(Mandatory = $true)]
+        [string]$CanonicalRepository
+    )
 
     $cache = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($item in $Items) {
@@ -1294,9 +1595,17 @@ function New-IssueLabelCache {
             continue
         }
         if ($item.content.type -eq "Issue") {
+            Assert-CanonicalIssueReference `
+                -RepositoryName $item.content.repository `
+                -Number $item.content.number `
+                -CanonicalRepository $CanonicalRepository
             Add-IssueLabelsToCache -Cache $cache -RepositoryName $item.content.repository -Number $item.content.number -Labels $item.labels
         } elseif ($item.content.type -eq "PullRequest") {
             foreach ($closingIssue in @($item.content.closingIssues)) {
+                Assert-CanonicalIssueReference `
+                    -RepositoryName $closingIssue.repository `
+                    -Number $closingIssue.number `
+                    -CanonicalRepository $CanonicalRepository
                 Add-IssueLabelsToCache -Cache $cache -RepositoryName $closingIssue.repository -Number $closingIssue.number -Labels $closingIssue.labels
             }
         }
@@ -1308,10 +1617,17 @@ function Resolve-PriorityReferenceTarget {
     param(
         [object]$Reference,
         [object]$IssueLabelCache,
+        [Parameter(Mandatory = $true)]
+        [string]$CanonicalRepository,
         [scriptblock]$ReferenceProvider
     )
 
-    if (-not $IssueLabelCache.ContainsKey($Reference.key)) {
+    if ($IssueLabelCache.ContainsKey($Reference.key)) {
+        Assert-CanonicalIssueReference `
+            -RepositoryName $Reference.repository `
+            -Number $Reference.number `
+            -CanonicalRepository $CanonicalRepository
+    } else {
         if ($null -eq $ReferenceProvider) {
             throw "No provider is available for reference '$($Reference.repository)#$($Reference.number)'."
         }
@@ -1355,6 +1671,10 @@ function Resolve-PriorityReferenceTarget {
         if (-not ($target.PSObject.Properties.Name -contains "labels") -or $null -eq $target.labels) {
             throw "Reference provider returned an Issue without label data for '$($Reference.repository)#$($Reference.number)'."
         }
+        Assert-CanonicalIssueReference `
+            -RepositoryName ([string]$target.repository) `
+            -Number ([int]$target.number) `
+            -CanonicalRepository $CanonicalRepository
         Add-IssueLabelsToCache `
             -Cache $IssueLabelCache `
             -RepositoryName ([string]$target.repository) `
@@ -1426,14 +1746,24 @@ function Get-PriorityAuditFingerprints {
 function New-PriorityAuditState {
     param(
         [object[]]$Items,
+        [Parameter(Mandatory = $true)]
+        [string]$CanonicalRepository,
         [scriptblock]$ReferenceProvider
     )
 
-    $issueLabelCache = New-IssueLabelCache -Items $Items
+    $canonicalRepositoryKey = Get-RepositoryKey -RepositoryName $CanonicalRepository
+    $issueLabelCache = New-IssueLabelCache -Items $Items -CanonicalRepository $CanonicalRepository
     $audit = @(foreach ($item in $Items) {
         $content = $item.content
         if ($null -eq $content) {
             continue
+        }
+        if (($content.type -ceq "Issue" -or $content.type -ceq "PullRequest") -and
+            -not [string]::Equals(
+                (Get-RepositoryKey -RepositoryName ([string]$content.repository)),
+                $canonicalRepositoryKey,
+                [System.StringComparison]::Ordinal)) {
+            throw "Cross-repository project content '$($content.repository)#$($content.number)' is disabled; canonical repository is '$CanonicalRepository'."
         }
 
         $expectedPriority = $null
@@ -1458,6 +1788,7 @@ function New-PriorityAuditState {
                     Resolve-PriorityReferenceTarget `
                         -Reference $_ `
                         -IssueLabelCache $issueLabelCache `
+                        -CanonicalRepository $CanonicalRepository `
                         -ReferenceProvider $ReferenceProvider
                 })
                 $referencedPriorities = @($referenceTargets | Where-Object { $_.type -ceq "Issue" } | ForEach-Object { $_.priority })
@@ -1721,6 +2052,8 @@ function Get-LivePriorityExecutionContext {
         [int]$Number,
         [string]$ProjectId,
         [int]$ItemLimit,
+        [Parameter(Mandatory = $true)]
+        [string]$CanonicalRepository,
         [scriptblock]$ReferenceProvider
     )
 
@@ -1749,7 +2082,10 @@ function Get-LivePriorityExecutionContext {
         throw "ProjectV2 '$ProjectId' reported number $($snapshot.projectNumber), expected $Number."
     }
 
-    $auditState = New-PriorityAuditState -Items @($snapshot.items) -ReferenceProvider $ReferenceProvider
+    $auditState = New-PriorityAuditState `
+        -Items @($snapshot.items) `
+        -CanonicalRepository $CanonicalRepository `
+        -ReferenceProvider $ReferenceProvider
     $executionState = New-PriorityExecutionState `
         -Snapshot $snapshot `
         -AuditState $auditState `
@@ -1791,6 +2127,7 @@ $context = Get-LivePriorityExecutionContext `
     -Number $ProjectNumber `
     -ProjectId $project.id `
     -ItemLimit $Limit `
+    -CanonicalRepository $Repository `
     -ReferenceProvider $referenceProvider
 $executionState = $context.executionState
 $applyOutcome = $null
@@ -1802,6 +2139,7 @@ if ($Apply) {
             -Number $ProjectNumber `
             -ProjectId $project.id `
             -ItemLimit $Limit `
+            -CanonicalRepository $Repository `
             -ReferenceProvider $referenceProvider).executionState
     }
     $itemWriter = {
@@ -1825,6 +2163,7 @@ if ($Apply) {
             -Number $ProjectNumber `
             -ProjectId $project.id `
             -ItemLimit $Limit `
+            -CanonicalRepository $Repository `
             -ReferenceProvider $referenceProvider).executionState
     }
 
