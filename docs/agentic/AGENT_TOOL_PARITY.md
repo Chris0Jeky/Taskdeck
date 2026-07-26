@@ -77,6 +77,6 @@ Known intentional difference:
 
 ## Verification
 
-For parity-only changes, run the platform-specific, fail-fast **Agentic Operating Layer Smoke Checks** in `docs/TESTING_GUIDE.md`. The full configured-handler `smoke_test.py` is native-Windows-only because `.claude/settings.json` declares `shell: powershell`; POSIX verification covers direct utilities with `python3 -B`, not that Windows handler contract.
+For parity-only changes, run the platform-specific, fail-fast **Agentic Operating Layer Smoke Checks** in `docs/TESTING_GUIDE.md`. The full configured-handler `smoke_test.py` is native-Windows-host-only because `.claude/settings.json` declares `shell: powershell`; POSIX verification covers direct utilities with `python3 -B`, not that Windows handler contract. The smoke still submits `Bash` tool payloads, so native PowerShell-tool deny coverage is not implied and remains tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497).
 
 Use runtime MCP list commands when available, but do not claim remote MCP connectivity unless the current session actually verified it.

@@ -28,15 +28,24 @@ Use `docs/agentic/FAILURE_LEDGER.md` and `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`
 On Windows PowerShell:
 
 ```powershell
-py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-py -3 -B scripts/agent_hooks/render_failure_ledger.py
+$ErrorActionPreference = "Stop"
+try {
+    Get-Command py -ErrorAction Stop | Out-Null
+    py -3 -B scripts/agent_hooks/render_failure_ledger.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+}
 ```
 
 On POSIX:
 
 ```sh
 set -e
-python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 python3 -B scripts/agent_hooks/render_failure_ledger.py
+python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 ```
+
+Render first, then run the synchronization test before handoff when a raw JSONL entry should become visible. The Required CI gate deliberately keeps the opposite fail-before-render order so an unrendered JSONL change cannot be masked.
 

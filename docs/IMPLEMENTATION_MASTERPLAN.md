@@ -13,7 +13,7 @@ Companion Active Docs:
 ## Delivery update (2026-07-26, agentic governance)
 
 - **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI before regeneration can mask it. The agentic operating-layer smoke sequence records the same fail-before-render order.
-- **Cross-platform agent-hook launchers (`#1487`):** native-Windows handlers and agent-utility commands use the verified `py -3 -B` launcher instead of the unusable Microsoft Store aliases, while POSIX guidance keeps `python3 -B`. The smoke harness uses its active `sys.executable -B` for child scripts and rejects drift in the paired five-utility permission matrix; no interpreter install, PATH mutation, resolver wrapper, or product-runtime change is added.
+- **Cross-platform agent-hook launchers (`#1487`):** native-Windows handlers and PowerShell-scoped agent-utility commands use the verified `py -3 -B` launcher instead of the unusable Microsoft Store aliases, while POSIX Bash guidance keeps `python3 -B`. The smoke harness uses its active `sys.executable -B` for child scripts, rejects drift in the exact configured-handler inventory and the five-utilities-plus-renderer-test permission surface, and proves that missing PreToolUse launchers or policies fail closed with exit 2. The smoke payloads identify `Bash`; native PowerShell-tool deny coverage is separate T4 work tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497). No interpreter install, PATH mutation, resolver wrapper, or product-runtime change is added.
 
 ## Delivery update (2026-07-26, security runway)
 

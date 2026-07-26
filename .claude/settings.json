@@ -36,16 +36,18 @@
       "Bash(npx playwright:*)",
       "Bash(npx vue-tsc:*)",
       "Bash(npx eslint:*)",
-      "Bash(py -3 -B scripts/agent_hooks/pre_tool_use.py:*)",
-      "Bash(py -3 -B scripts/agent_hooks/post_tool_use.py:*)",
-      "Bash(py -3 -B scripts/agent_hooks/post_tool_failure.py:*)",
-      "Bash(py -3 -B scripts/agent_hooks/render_failure_ledger.py:*)",
-      "Bash(py -3 -B scripts/agent_hooks/smoke_test.py:*)",
+      "PowerShell(py -3 -B scripts/agent_hooks/pre_tool_use.py:*)",
+      "PowerShell(py -3 -B scripts/agent_hooks/post_tool_use.py:*)",
+      "PowerShell(py -3 -B scripts/agent_hooks/post_tool_failure.py:*)",
+      "PowerShell(py -3 -B scripts/agent_hooks/render_failure_ledger.py:*)",
+      "PowerShell(py -3 -B scripts/agent_hooks/smoke_test.py:*)",
+      "PowerShell(py -3 -B -m unittest discover -s scripts/agent_hooks -p \"test_render_failure_ledger.py\":*)",
       "Bash(python3 -B scripts/agent_hooks/pre_tool_use.py:*)",
       "Bash(python3 -B scripts/agent_hooks/post_tool_use.py:*)",
       "Bash(python3 -B scripts/agent_hooks/post_tool_failure.py:*)",
       "Bash(python3 -B scripts/agent_hooks/render_failure_ledger.py:*)",
       "Bash(python3 -B scripts/agent_hooks/smoke_test.py:*)",
+      "Bash(python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py':*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
@@ -91,7 +93,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\pre_tool_use.py\"",
+            "command": "$ErrorActionPreference = 'Stop'; try { & py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\pre_tool_use.py\"; if ($LASTEXITCODE -ne 0) { [Console]::Error.WriteLine('Taskdeck PreToolUse policy process failed; blocking command.'); exit 2 }; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 2 }",
             "timeout": 5
           }
         ]
