@@ -43,10 +43,12 @@ The helper refreshes an explicit remote branch base (default `origin/main`) befo
 peels annotated tags to one commit, preserves any tracked or untracked source-checkout changes,
 and creates only a detached worktree. The invoking checkout's committed, clean helper, guard, and
 initializer are the reviewed source anchor: the helper binds its own exact repository path and
-refuses staged, unstaged, or missing source artifacts. Every selected base must contain the exact
-reviewed `scripts/worktree_guard.ps1` and `scripts/git/Initialize-CodexIssueWorktree.ps1` blob
-identities. A commit or tag with missing or different handoff code is rejected before the target
-path or Git worktree registration is created:
+refuses staged, unstaged, or missing source artifacts. It also hashes each actual working file
+through Git's path filters and requires the reviewed `HEAD` blob, so index flags such as
+`skip-worktree` cannot hide executed bytes. Every selected base must contain the exact reviewed
+`scripts/worktree_guard.ps1` and `scripts/git/Initialize-CodexIssueWorktree.ps1` blob identities. A
+commit or tag with missing or different handoff code is rejected before the target path or Git
+worktree registration is created:
 
 - worktree: `.worktrees/codex-123-short-slug`
 - detached base: `origin/main`

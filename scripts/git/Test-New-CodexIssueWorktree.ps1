@@ -1051,6 +1051,27 @@ try {
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1")
         }
 
+        $hiddenSourceCanary = Join-Path $callerPath "skip-worktree-initializer-executed.txt"
+        $escapedHiddenSourceCanary = $hiddenSourceCanary.Replace("'", "''")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("update-index", "--skip-worktree", "--", "scripts/git/Initialize-CodexIssueWorktree.ps1")
+        try {
+            Add-Content -LiteralPath $callerInitializerPath -Encoding Ascii -Value "[System.IO.File]::WriteAllText('$escapedHiddenSourceCanary', 'EXECUTED')"
+            $hiddenDiff = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("diff", "--no-ext-diff", "--quiet", "--", "scripts/git/Initialize-CodexIssueWorktree.ps1") -WorkingDirectory $callerPath
+            Assert-Equal 0 $hiddenDiff.ExitCode "skip-worktree fixture should demonstrate that the ordinary diff check hides modified initializer bytes."
+            $hiddenSourceTarget = Join-Path $callerPath ".worktrees/codex-463-hidden-source-artifact"
+            $hiddenSource = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "463", "-Slug", "hidden-source-artifact")
+            Assert-True ($hiddenSource.ExitCode -ne 0) "A skip-worktree-hidden initializer modification should fail closed."
+            Assert-Contains $hiddenSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' working content does not match the invoking checkout HEAD blob" "Direct source hashing should identify the hidden initializer mismatch."
+            Assert-True (-not (Test-Path -LiteralPath $hiddenSourceCanary)) "Hidden source initializer code executed despite the reviewed-blob mismatch."
+            Assert-True (-not (Test-Path -LiteralPath $hiddenSourceTarget)) "Hidden source-artifact rejection should not leave a target path."
+            $hiddenSourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-463/hidden-source-artifact") -WorkingDirectory $callerPath
+            Assert-Equal 1 $hiddenSourceBranch.ExitCode "Hidden source-artifact rejection should not create the planned branch."
+        }
+        finally {
+            [System.IO.File]::WriteAllBytes($callerInitializerPath, $originalInitializerBytes)
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("update-index", "--no-skip-worktree", "--", "scripts/git/Initialize-CodexIssueWorktree.ps1")
+        }
+
         $callerHelperPath = Join-Path $callerPath "scripts/git/New-CodexIssueWorktree.ps1"
         $originalHelperBytes = [System.IO.File]::ReadAllBytes($callerHelperPath)
         $dirtyHelperMarker = "# Uncommitted helper self-check canary."

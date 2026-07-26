@@ -77,10 +77,12 @@ rooted, traversing, alternate,
 junction-backed, or symlink-backed worktree roots. It prints the planned issue branch but does not
 create it. The invoking checkout's committed, clean helper, guard, and initializer are the reviewed
 source anchor: the helper binds its own exact repository path and missing, staged, or unstaged
-source artifacts fail closed. The selected base must carry the exact reviewed guard and initializer
-blob identities. Older or divergent commits/tags are rejected before target-path or
-worktree-registration creation. `-WhatIf` resolves local bases and compares their artifacts, while
-explicit remote bases are checked with `git ls-remote` without updating refs. A remote dry run
+source artifacts fail closed. It directly hashes the filtered working-file content against each
+reviewed `HEAD` blob, so index flags cannot hide different executed bytes. The selected base must
+carry the exact reviewed guard and initializer blob identities. Older or divergent commits/tags are
+rejected before target-path or worktree-registration creation. `-WhatIf` resolves local bases and
+compares their artifacts, while explicit remote bases are checked with `git ls-remote` without
+updating refs. A remote dry run
 proves existence only; actual creation performs its controlled tracking-ref refresh and then
 compares both blobs before target or registration mutation. A missing base fails instead of
 producing a false-green dry run.

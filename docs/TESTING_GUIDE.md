@@ -1390,7 +1390,8 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Windows `Worktree Helper (Windows PowerShell)` runs
     `powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1`
     as a 26-case harness enforcing detached-first creation, clean source helper/guard/initializer
-    artifacts, exact selected-base blob pinning, fail-closed initialization, and permission-contract regressions
+    artifacts (including index-hidden byte changes), exact selected-base blob pinning, fail-closed
+    initialization, and permission-contract regressions
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`

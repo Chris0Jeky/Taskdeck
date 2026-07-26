@@ -213,6 +213,19 @@ function Get-ReviewedHandoffArtifacts {
             throw "Git could not inspect staged changes for reviewed handoff artifact '$artifact'.$(Format-GitContext $indexDiff.Output)"
         }
 
+        $workingBlobResult = Invoke-GitCommand -Arguments @("-C", $Repository, "hash-object", "--path=$artifact", "--", $artifactPath)
+        $workingBlobIds = @(
+            $workingBlobResult.Stdout -split '\r?\n' |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+        if ($workingBlobResult.ExitCode -ne 0 -or $workingBlobIds.Count -ne 1 -or
+            $workingBlobIds[0] -notmatch '^[0-9a-fA-F]+$') {
+            throw "Git could not hash reviewed handoff artifact '$artifact' from the invoking checkout.$(Format-GitContext $workingBlobResult.Output)"
+        }
+        if ($workingBlobIds[0] -cne $artifactBlob) {
+            throw "Reviewed handoff artifact '$artifact' working content does not match the invoking checkout HEAD blob."
+        }
+
         if ($selectedBaseArtifacts -ccontains $artifact) {
             $reviewedArtifacts[$artifact] = $artifactBlob
         }
