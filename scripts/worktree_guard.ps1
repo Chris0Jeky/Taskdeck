@@ -1,13 +1,43 @@
 [CmdletBinding()]
 param(
-    [string[]]$AllowedMarkers = @("\.worktrees\", "/.worktrees/", "\.codex\worktrees\", "/.codex/worktrees/", "\.claude\worktrees\", "/.claude/worktrees/")
+    [string[]]$AllowedMarkers = @("\.worktrees\", "/.worktrees/", "\.codex\worktrees\", "/.codex/worktrees/", "\.claude\worktrees\", "/.claude/worktrees/"),
+    [string]$GitExecutable = "git"
 )
 
 $ErrorActionPreference = "Stop"
 
-$topLevel = (& git rev-parse --show-toplevel 2>$null)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($topLevel)) {
-    Write-Error "ERROR [worktree_guard]: not inside a git repository."
+$gitCommand = Get-Command $GitExecutable -CommandType Application -All -ErrorAction SilentlyContinue |
+    Where-Object { [System.IO.Path]::GetExtension($_.Source) -notin @('.cmd', '.bat') } |
+    Select-Object -First 1
+if ($null -eq $gitCommand) {
+    Write-Error "ERROR [worktree_guard]: no argv-safe Git executable was found; .cmd and .bat shims are not supported." -ErrorAction Continue
+    exit 2
+}
+
+$topLevel = $null
+$gitInvocationSucceeded = $false
+$gitExitCode = $null
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$global:LASTEXITCODE = $null
+try {
+    $topLevel = (& $gitCommand.Source rev-parse --show-toplevel 2>$null)
+    $gitInvocationSucceeded = $?
+    $gitExitCode = $LASTEXITCODE
+}
+catch {
+    Write-Error "ERROR [worktree_guard]: the selected Git executable could not be run." -ErrorAction Continue
+    exit 2
+}
+finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+}
+if (-not $gitInvocationSucceeded -and $null -eq $gitExitCode) {
+    Write-Error "ERROR [worktree_guard]: the selected Git executable could not be run." -ErrorAction Continue
+    exit 2
+}
+if ($gitExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($topLevel)) {
+    Write-Error "ERROR [worktree_guard]: not inside a git repository." -ErrorAction Continue
     exit 2
 }
 
@@ -24,7 +54,7 @@ foreach ($marker in $AllowedMarkers) {
 }
 
 if (-not $isAllowed) {
-    Write-Error @"
+    Write-Error -ErrorAction Continue @"
 FATAL [worktree_guard]: You are in the main checkout or an unrecognized worktree.
   toplevel: $topLevel
 

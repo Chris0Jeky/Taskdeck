@@ -21,6 +21,7 @@ if ($null -eq $gitCommand) {
 }
 
 $gitExecutable = $gitCommand.Source
+$powerShellExecutable = (Get-Process -Id $PID).Path
 
 function ConvertTo-NativeArgument {
     param(
@@ -133,6 +134,29 @@ function Format-GitContext {
     return "`nGit: $Output"
 }
 
+function Assert-SafeWorktreeRoot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    try {
+        $rootItem = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    }
+    catch [System.Management.Automation.ItemNotFoundException] {
+        return
+    }
+    catch {
+        throw "Unsafe worktree root: '$Path' could not be inspected. $($_.Exception.Message)"
+    }
+    if (-not $rootItem.PSIsContainer) {
+        throw "Unsafe worktree root: '$Path' exists but is not a directory."
+    }
+    if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Unsafe worktree root: '$Path' is a reparse point or symbolic link."
+    }
+}
+
 $repoRootResult = Invoke-GitCommand -Arguments @("rev-parse", "--show-toplevel")
 if ($repoRootResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($repoRootResult.Stdout)) {
     throw "Run this script from inside a git repository.$(Format-GitContext $repoRootResult.Output)"
@@ -169,6 +193,7 @@ $requestedWorktreeRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $Wor
 if (-not $requestedWorktreeRoot.Equals($expectedWorktreeRoot, $pathComparison)) {
     throw "Invalid worktree root: '$WorktreeRoot'. Codex issue worktrees must use the repository's .worktrees directory."
 }
+Assert-SafeWorktreeRoot -Path $requestedWorktreeRoot
 
 if ($Slug -notmatch "^[a-z0-9][a-z0-9-]{1,60}$") {
     throw "Invalid slug: '$Slug'. Use 2-61 lowercase letters, digits, or hyphens, starting with a letter or digit."
@@ -196,18 +221,44 @@ if (Test-Path -LiteralPath $worktreeDir) {
     throw "Worktree path already exists: $worktreeDir"
 }
 
-$baseLookupResult = Invoke-GitCommand -Arguments @("rev-parse", "--verify", "--end-of-options", $BaseBranch)
-if ($baseLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseLookupResult.Stdout)) {
-    throw "Base commit not found: $BaseBranch$(Format-GitContext $baseLookupResult.Output)"
-}
-$baseCommit = $baseLookupResult.Stdout.Trim()
-$baseTypeResult = Invoke-GitCommand -Arguments @("cat-file", "-t", $baseCommit)
-if ($baseTypeResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseTypeResult.Stdout) -or $baseTypeResult.Stdout.Trim() -cne "commit") {
-    throw "Base does not resolve to a commit: $BaseBranch$(Format-GitContext $baseTypeResult.Output)"
+$candidateRemote = $null
+$candidateBranch = $null
+$remoteSeparatorIndex = $BaseBranch.IndexOf('/')
+if ($remoteSeparatorIndex -gt 0 -and $remoteSeparatorIndex -lt ($BaseBranch.Length - 1)) {
+    $remoteNameCandidate = $BaseBranch.Substring(0, $remoteSeparatorIndex)
+    $remoteBranchCandidate = $BaseBranch.Substring($remoteSeparatorIndex + 1)
+    $remoteLookupResult = Invoke-GitCommand -Arguments @("remote", "get-url", "--", $remoteNameCandidate)
+    $remoteBranchValidation = Invoke-GitCommand -Arguments @("check-ref-format", "--branch", $remoteBranchCandidate)
+    if ($remoteLookupResult.ExitCode -eq 0 -and
+        $remoteBranchValidation.ExitCode -eq 0 -and
+        $remoteBranchValidation.Stdout.Trim() -ceq $remoteBranchCandidate) {
+        $candidateRemote = $remoteNameCandidate
+        $candidateBranch = $remoteBranchCandidate
+    }
 }
 
-if ($PSCmdlet.ShouldProcess($worktreeDir, "Create detached worktree from $BaseBranch")) {
+if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and create a detached worktree from $BaseBranch")) {
+    if ($null -ne $candidateRemote) {
+        $remoteRefspec = "+refs/heads/$candidateBranch`:refs/remotes/$candidateRemote/$candidateBranch"
+        $fetchResult = Invoke-GitCommand -Arguments @("fetch", "--no-tags", "--no-recurse-submodules", $candidateRemote, $remoteRefspec)
+        if ($fetchResult.ExitCode -ne 0) {
+            throw "Base commit not found: $BaseBranch. Failed to refresh the explicit remote base.$(Format-GitContext $fetchResult.Output)"
+        }
+    }
+
+    $baseCommitExpression = "${BaseBranch}^{commit}"
+    $baseLookupResult = Invoke-GitCommand -Arguments @("rev-parse", "--verify", "--end-of-options", $baseCommitExpression)
+    if ($baseLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseLookupResult.Stdout)) {
+        throw "Base commit not found: $BaseBranch$(Format-GitContext $baseLookupResult.Output)"
+    }
+    $baseCommit = $baseLookupResult.Stdout.Trim()
+    $baseTypeResult = Invoke-GitCommand -Arguments @("cat-file", "-t", $baseCommit)
+    if ($baseTypeResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseTypeResult.Stdout) -or $baseTypeResult.Stdout.Trim() -cne "commit") {
+        throw "Base does not resolve to a commit: $BaseBranch$(Format-GitContext $baseTypeResult.Output)"
+    }
+
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $worktreeDir) | Out-Null
+    Assert-SafeWorktreeRoot -Path $requestedWorktreeRoot
 
     $worktreeAddResult = Invoke-GitCommand -Arguments @("worktree", "add", "--detach", $worktreeDir, $baseCommit)
     if ($worktreeAddResult.ExitCode -ne 0) {
@@ -219,6 +270,7 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Create detached worktree from $BaseBr
 
     $escapedBranchName = $BranchName.Replace("'", "''")
     $escapedGitExecutable = $gitExecutable.Replace("'", "''")
+    $escapedPowerShellExecutable = $powerShellExecutable.Replace("'", "''")
 
     Write-Host "Created detached Codex issue worktree."
     Write-Host "  issue:          #$IssueNumber"
@@ -226,7 +278,11 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Create detached worktree from $BaseBr
     Write-Host "  planned branch: $BranchName (not created yet)"
     Write-Host "  worktree:       $worktreeDir"
     Write-Host ""
-    Write-Host "First commands in the worker session (run in this order):"
-    Write-Host "  powershell -File scripts/worktree_guard.ps1"
+    Write-Host "PowerShell-only worker handoff (run this entire block in order):"
+    Write-Host "  & '$escapedPowerShellExecutable' -NoLogo -NoProfile -NonInteractive -File scripts/worktree_guard.ps1 -GitExecutable '$escapedGitExecutable'"
+    Write-Host '  $guardSucceeded = $?; $guardExitCode = $LASTEXITCODE'
+    Write-Host '  if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }'
     Write-Host "  & '$escapedGitExecutable' switch -c '$escapedBranchName'"
+    Write-Host '  $switchSucceeded = $?; $switchExitCode = $LASTEXITCODE'
+    Write-Host '  if (-not $switchSucceeded -or $switchExitCode -ne 0) { if ($null -ne $switchExitCode -and $switchExitCode -ne 0) { exit $switchExitCode }; exit 1 }'
 }
