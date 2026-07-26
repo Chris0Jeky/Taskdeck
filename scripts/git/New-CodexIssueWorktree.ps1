@@ -138,8 +138,37 @@ if ($repoRootResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($repoRootRes
     throw "Run this script from inside a git repository.$(Format-GitContext $repoRootResult.Output)"
 }
 
-$repoRoot = $repoRootResult.Stdout.Trim()
+$repoRoot = [System.IO.Path]::GetFullPath($repoRootResult.Stdout.Trim()).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar)
 Set-Location -LiteralPath $repoRoot
+
+if ([System.IO.Path]::IsPathRooted($WorktreeRoot)) {
+    throw "Invalid worktree root: '$WorktreeRoot'. Codex issue worktrees must use the repository's .worktrees directory."
+}
+
+$pathComparison = if ([System.IO.Path]::DirectorySeparatorChar -eq [char]'\') {
+    [System.StringComparison]::OrdinalIgnoreCase
+}
+else {
+    [System.StringComparison]::Ordinal
+}
+$logicalWorktreeRoot = $WorktreeRoot.TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar)
+if (-not $logicalWorktreeRoot.Equals(".worktrees", $pathComparison)) {
+    throw "Invalid worktree root: '$WorktreeRoot'. Codex issue worktrees must use the repository's .worktrees directory."
+}
+
+$expectedWorktreeRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot ".worktrees")).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar)
+$requestedWorktreeRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $WorktreeRoot)).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar)
+if (-not $requestedWorktreeRoot.Equals($expectedWorktreeRoot, $pathComparison)) {
+    throw "Invalid worktree root: '$WorktreeRoot'. Codex issue worktrees must use the repository's .worktrees directory."
+}
 
 if ($Slug -notmatch "^[a-z0-9][a-z0-9-]{1,60}$") {
     throw "Invalid slug: '$Slug'. Use 2-61 lowercase letters, digits, or hyphens, starting with a letter or digit."
@@ -154,7 +183,7 @@ if ($branchValidationResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($bra
     throw "Invalid branch name: $BranchName$(Format-GitContext $branchValidationResult.Output)"
 }
 
-$worktreeDir = Join-Path $repoRoot (Join-Path $WorktreeRoot "codex-$IssueNumber-$Slug")
+$worktreeDir = Join-Path $requestedWorktreeRoot "codex-$IssueNumber-$Slug"
 $branchLookupResult = Invoke-GitCommand -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$BranchName")
 if ($branchLookupResult.ExitCode -eq 0) {
     throw "Branch already exists: $BranchName"

@@ -12,6 +12,8 @@ Accepted agent worktree roots:
 - Claude Code: `.claude/worktrees/agent-<id>/`
 
 Other roots are allowed only when the coordinator explicitly names them and updates guard configuration.
+The Codex helper intentionally accepts only the repository's `.worktrees/` root; a different
+approved root requires a separately reviewed creation path after the guard configuration changes.
 
 ## Coordinator Rules
 

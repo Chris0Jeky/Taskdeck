@@ -71,7 +71,9 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber 123 -Slug s
 ```
 
 The helper defaults to the explicit remote base `origin/main`, preserves unrelated source-checkout
-state, and creates a detached worktree. It prints the planned issue branch but does not create it.
+state, and creates a detached worktree under the repository's required `.worktrees/` root. It
+rejects rooted, traversing, or alternate worktree roots. It prints the planned issue branch but
+does not create it.
 
 Run the printed handoff in order inside the worker worktree:
 

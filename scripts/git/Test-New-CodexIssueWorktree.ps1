@@ -6,6 +6,9 @@ param(
         "guard-then-branch",
         "existing-branch",
         "existing-path",
+        "worktree-root-traversal",
+        "worktree-root-rooted",
+        "worktree-root-unapproved",
         "invalid-slug",
         "invalid-branch",
         "batch-shim-bypass",
@@ -21,6 +24,9 @@ param(
         "guard-then-branch",
         "existing-branch",
         "existing-path",
+        "worktree-root-traversal",
+        "worktree-root-rooted",
+        "worktree-root-unapproved",
         "invalid-slug",
         "invalid-branch",
         "batch-shim-bypass",
@@ -331,6 +337,43 @@ try {
         Assert-True ($pathCollision.ExitCode -ne 0) "Existing target path should fail closed."
         Assert-Contains $pathCollision.Output "Worktree path already exists:" "Path collision diagnostic was not clear."
         Complete-Test "existing target path fails closed"
+    }
+
+    if (Test-CaseSelected "worktree-root-traversal") {
+        $registrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $traversalTarget = Join-Path (Split-Path -Parent $callerPath) "escaped-worktrees/codex-435-root-traversal"
+        $traversal = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "435", "-Slug", "root-traversal", "-WorktreeRoot", "../escaped-worktrees")
+        Assert-True ($traversal.ExitCode -ne 0) "Traversal worktree root should fail closed."
+        Assert-Contains $traversal.Output "Invalid worktree root: '../escaped-worktrees'." "Traversal-root diagnostic was not clear."
+        Assert-True (-not (Test-Path -LiteralPath $traversalTarget)) "Traversal root created an out-of-bound target."
+        $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        Assert-Equal $registrationsBefore $registrationsAfter "Traversal root changed Git worktree registrations."
+        Complete-Test "traversal worktree root fails closed"
+    }
+
+    if (Test-CaseSelected "worktree-root-rooted") {
+        $registrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $rootedWorktreeRoot = Join-Path $fixtureRoot "rooted worktrees"
+        $rootedTarget = Join-Path $rootedWorktreeRoot "codex-436-rooted-root"
+        $rooted = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "436", "-Slug", "rooted-root", "-WorktreeRoot", $rootedWorktreeRoot)
+        Assert-True ($rooted.ExitCode -ne 0) "Rooted worktree root should fail closed."
+        Assert-Contains $rooted.Output "Invalid worktree root:" "Rooted-root diagnostic was not clear."
+        Assert-True (-not (Test-Path -LiteralPath $rootedTarget)) "Rooted input created an out-of-bound target."
+        $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        Assert-Equal $registrationsBefore $registrationsAfter "Rooted input changed Git worktree registrations."
+        Complete-Test "rooted worktree root fails closed"
+    }
+
+    if (Test-CaseSelected "worktree-root-unapproved") {
+        $registrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $unapprovedTarget = Join-Path $callerPath "custom-worktrees/codex-437-unapproved-root"
+        $unapproved = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "437", "-Slug", "unapproved-root", "-WorktreeRoot", "custom-worktrees")
+        Assert-True ($unapproved.ExitCode -ne 0) "Unapproved in-repository worktree root should fail closed."
+        Assert-Contains $unapproved.Output "Invalid worktree root: 'custom-worktrees'." "Unapproved-root diagnostic was not clear."
+        Assert-True (-not (Test-Path -LiteralPath $unapprovedTarget)) "Unapproved root created a target."
+        $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        Assert-Equal $registrationsBefore $registrationsAfter "Unapproved root changed Git worktree registrations."
+        Complete-Test "unapproved in-repository worktree root fails closed"
     }
 
     if (Test-CaseSelected "invalid-slug") {
