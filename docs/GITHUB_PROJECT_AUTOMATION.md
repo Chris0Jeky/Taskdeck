@@ -158,15 +158,15 @@ Local helper scripts:
 - `scripts/github/Sync-TaskdeckProjectPriority.ps1` — audit issue/PR Project v2 `Priority` drift and optionally apply fixes.
 
 These helpers are fallbacks for GitHub MCP gaps. Project v2 priority audit needs `read:project`; applying field updates with `Sync-TaskdeckProjectPriority.ps1 -Apply` requires `gh auth refresh -s project`.
-The sync helper enforces the PR rule above: complete linked closing issues take precedence over repository-aware body references, the highest derived urgency wins, and a PR with no references receives `Priority V`. A reference whose issue priority is missing, ambiguous, or unreadable fails closed instead of becoming a fallback.
+The sync helper enforces the PR rule above: complete linked closing issues take precedence over repository-aware body references, the highest derived urgency wins, and a PR with no issue references receives `Priority V`. Every body reference is resolved to a typed, repository-matching object. Only actual issues contribute Priority labels; a validated pull-request reference is ignored. An actual issue whose priority is missing, ambiguous, unreadable, or identity-mismatched fails closed instead of becoming a fallback.
 
 The priority helper's completeness contract is fail-closed:
 - It walks the ProjectV2 item connection by cursor and reports clean only after the collected item count exactly matches a stable `totalCount`/`updatedAt` snapshot.
 - It rejects repeated or non-advancing cursors, ordinal duplicate item IDs, truncated label/field-value/closing-issue connections, and project changes observed during pagination.
 - `-Limit 0` (the default) means no configured ceiling. A positive `-Limit` is a safety ceiling, not a sample size; if the project is larger, the command exits nonzero without a completeness claim.
 - An issue with zero or multiple priority labels aborts before a clean result or any `-Apply` write. Issue priorities are never guessed; fix the labels first under the issue-item rule above.
-- `-Apply` validates every planned Priority option, rebuilds the complete snapshot and source-derived update plan immediately before writes, and aborts before the first write if either plan drifts. It then runs a complete post-apply audit because ProjectV2 edits are not transactional as a batch.
-- `-SelfTest` exercises the offline pagination, saturation, identity, cursor, nested-connection, reference-derivation, plan-drift, and zero-write apply guards without requiring `gh` authentication.
+- `-Apply` validates every planned Priority option, rebuilds the complete snapshot and source-derived update plan immediately before writes, and aborts before the first write if either plan drifts. After the first write attempt it always runs a complete post-apply audit, including when a later write fails, because ProjectV2 edits are not transactional as a batch. Success output is built from that verified post-state; a partial failure reports both the writer error and whether the final state was auditable.
+- `-SelfTest` exercises the offline pagination, saturation, identity, cursor, nested-connection, typed reference derivation, plan drift, zero-write preflight, partial-writer failure, and post-apply output guards without requiring `gh` authentication.
 
 ## Weekly Backlog Seeding Cadence (OPS-06)
 
