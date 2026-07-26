@@ -170,6 +170,48 @@ function Invoke-ProjectItemsPage {
     Invoke-GhJson -Arguments $arguments
 }
 
+function Get-LiveReferenceTarget {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryName,
+        [Parameter(Mandatory = $true)]
+        [int]$Number
+    )
+
+    Get-IssueReferenceKey -RepositoryName $RepositoryName -Number $Number | Out-Null
+    $target = Invoke-GhJson -Arguments @("api", "repos/$RepositoryName/issues/$Number")
+    if ($null -eq $target -or
+        -not ($target.PSObject.Properties.Name -contains "number") -or
+        -not ($target.PSObject.Properties.Name -contains "repository_url")) {
+        throw "GitHub returned an incomplete typed reference target for '$RepositoryName#$Number'."
+    }
+
+    $repositoryPath = ([System.Uri][string]$target.repository_url).AbsolutePath.Trim("/")
+    $repositorySegments = @($repositoryPath.Split("/"))
+    if ($repositorySegments.Count -ne 3 -or
+        -not [string]::Equals($repositorySegments[0], "repos", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "GitHub returned an invalid repository identity '$($target.repository_url)' for '$RepositoryName#$Number'."
+    }
+
+    $canonicalRepository = "$($repositorySegments[1])/$($repositorySegments[2])"
+    $contentType = if ($target.PSObject.Properties.Name -contains "pull_request") { "PullRequest" } else { "Issue" }
+    $labels = if ($contentType -eq "Issue") {
+        if (-not ($target.PSObject.Properties.Name -contains "labels") -or $null -eq $target.labels) {
+            throw "GitHub returned an Issue without label data for '$RepositoryName#$Number'."
+        }
+        @($target.labels | ForEach-Object { [string]$_.name })
+    } else {
+        @()
+    }
+
+    [pscustomobject]@{
+        type = $contentType
+        repository = $canonicalRepository
+        number = [int]$target.number
+        labels = $labels
+    }
+}
+
 function Assert-CompleteNestedConnection {
     param(
         [AllowNull()]
@@ -516,6 +558,23 @@ function Invoke-SelfTest {
         }
     }
 
+    function New-SelfTestReferenceTarget {
+        param(
+            [ValidateSet("Issue", "PullRequest")]
+            [string]$Type = "Issue",
+            [string]$RepositoryName = "Chris0Jeky/Taskdeck",
+            [int]$Number = 1,
+            [string[]]$Labels = @("Priority I")
+        )
+
+        [pscustomobject]@{
+            type = $Type
+            repository = $RepositoryName
+            number = $Number
+            labels = @($Labels)
+        }
+    }
+
     function New-SelfTestItem {
         param(
             [string]$Id,
@@ -787,7 +846,7 @@ function Invoke-SelfTest {
     )
     $strictFallbackAudit = New-PriorityAuditState `
         -Items $strictFallbackItems `
-        -IssueLabelProvider { throw "Unexpected provider call" }
+        -ReferenceProvider { throw "Unexpected provider call" }
     $checks += Assert-SelfTest `
         -Condition ($strictFallbackAudit.updates.Count -eq 1 -and
             $strictFallbackAudit.updates[0].expectedPriority -ceq "Priority V" -and
@@ -807,7 +866,7 @@ function Invoke-SelfTest {
             -Body "Refs other/repo#99" `
             -ClosingIssues @($closingIssue))
     )
-    $closingAudit = New-PriorityAuditState -Items $closingItems -IssueLabelProvider {
+    $closingAudit = New-PriorityAuditState -Items $closingItems -ReferenceProvider {
         param($repositoryName, $issueNumber)
         $closingProviderState.calls++
         throw "Body fallback should not run when closing links exist"
@@ -826,12 +885,15 @@ function Invoke-SelfTest {
             -Priority "Priority V" `
             -Body "Refs owner/other#42")
     )
-    $crossRepoAudit = New-PriorityAuditState -Items $crossRepoItems -IssueLabelProvider {
+    $crossRepoAudit = New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider {
         param($repositoryName, $issueNumber)
         $crossRepoProviderState.repository = $repositoryName
         $crossRepoProviderState.number = $issueNumber
         $crossRepoProviderState.calls++
-        @("Priority I")
+        New-SelfTestReferenceTarget `
+            -RepositoryName $repositoryName `
+            -Number $issueNumber `
+            -Labels @("Priority I")
     }
     $checks += Assert-SelfTest `
         -Condition ($crossRepoProviderState.calls -eq 1 -and
@@ -841,11 +903,73 @@ function Invoke-SelfTest {
         -Message "qualified body references must preserve repository identity"
 
     $checks += Assert-SelfTestThrows -Action {
-        New-PriorityAuditState -Items $crossRepoItems -IssueLabelProvider { @() }
+        New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider {
+            New-SelfTestReferenceTarget -RepositoryName "owner/other" -Number 42 -Labels @()
+        }
     } -MessagePattern "has missing Priority labels"
     $checks += Assert-SelfTestThrows -Action {
-        New-PriorityAuditState -Items $crossRepoItems -IssueLabelProvider { @("Priority I", "Priority II") }
+        New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider {
+            New-SelfTestReferenceTarget -RepositoryName "owner/other" -Number 42 -Labels @("Priority I", "Priority II")
+        }
     } -MessagePattern "has multiple Priority labels"
+
+    $pullRequestReferenceState = [pscustomobject]@{ calls = 0 }
+    $pullRequestReferenceItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "pull-request-reference" `
+            -ContentType "PullRequest" `
+            -Priority "Priority I" `
+            -Body "Closes #123")
+    )
+    $pullRequestReferenceAudit = New-PriorityAuditState -Items $pullRequestReferenceItems -ReferenceProvider {
+        param($repositoryName, $issueNumber)
+        $pullRequestReferenceState.calls++
+        New-SelfTestReferenceTarget `
+            -Type "PullRequest" `
+            -RepositoryName $repositoryName `
+            -Number $issueNumber `
+            -Labels @("Priority I")
+    }
+    $checks += Assert-SelfTest `
+        -Condition ($pullRequestReferenceState.calls -eq 1 -and
+            $pullRequestReferenceAudit.updates.Count -eq 1 -and
+            $pullRequestReferenceAudit.updates[0].expectedPriority -ceq "Priority V" -and
+            $pullRequestReferenceAudit.updates[0].reason -ceq "pr-no-derived-issue-fallback" -and
+            $pullRequestReferenceAudit.updates[0].references -match ":PullRequest$") `
+        -Message "Priority-labelled PullRequest body targets must not contribute issue priority"
+
+    $mixedReferenceState = [pscustomobject]@{ calls = 0 }
+    $mixedReferenceItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "mixed-reference" `
+            -ContentType "PullRequest" `
+            -Priority "Priority V" `
+            -Body "Closes #123`nRefs #42")
+    )
+    $mixedReferenceAudit = New-PriorityAuditState -Items $mixedReferenceItems -ReferenceProvider {
+        param($repositoryName, $issueNumber)
+        $mixedReferenceState.calls++
+        if ($issueNumber -eq 123) {
+            New-SelfTestReferenceTarget -Type "PullRequest" -RepositoryName $repositoryName -Number $issueNumber -Labels @("Priority I")
+        } else {
+            New-SelfTestReferenceTarget -Type "Issue" -RepositoryName $repositoryName -Number $issueNumber -Labels @("Priority II")
+        }
+    }
+    $checks += Assert-SelfTest `
+        -Condition ($mixedReferenceState.calls -eq 2 -and
+            $mixedReferenceAudit.updates.Count -eq 1 -and
+            $mixedReferenceAudit.updates[0].expectedPriority -ceq "Priority II" -and
+            $mixedReferenceAudit.updates[0].reason -ceq "pr-body-reference") `
+        -Message "mixed body references must ignore PullRequests and derive from actual Issues"
+
+    $checks += Assert-SelfTestThrows -Action {
+        New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider {
+            New-SelfTestReferenceTarget -RepositoryName "owner/wrong" -Number 42 -Labels @("Priority I")
+        }
+    } -MessagePattern "identity mismatch"
+    $checks += Assert-SelfTestThrows -Action {
+        New-PriorityAuditState -Items $crossRepoItems -ReferenceProvider { throw "synthetic unreadable target" }
+    } -MessagePattern "Failed to read reference.*synthetic unreadable target"
 
     $truncatedClosing = New-SelfTestClosingIssue -RepositoryName "Chris0Jeky/Taskdeck" -Number 43
     $truncatedClosingPages = @{
@@ -880,8 +1004,12 @@ function Invoke-SelfTest {
             -EndCursor $null
     }
     $sourceSnapshot = Get-SelfTestSnapshot -Pages $strictSnapshotPages
-    $sourceAuditInitial = New-PriorityAuditState -Items $sourceSnapshot.items -IssueLabelProvider { @("Priority II") }
-    $sourceAuditCurrent = New-PriorityAuditState -Items $sourceSnapshot.items -IssueLabelProvider { @("Priority I") }
+    $sourceAuditInitial = New-PriorityAuditState -Items $sourceSnapshot.items -ReferenceProvider {
+        New-SelfTestReferenceTarget -RepositoryName "owner/other" -Number 42 -Labels @("Priority II")
+    }
+    $sourceAuditCurrent = New-PriorityAuditState -Items $sourceSnapshot.items -ReferenceProvider {
+        New-SelfTestReferenceTarget -RepositoryName "owner/other" -Number 42 -Labels @("Priority I")
+    }
     $sourceInitialState = New-PriorityExecutionState `
         -Snapshot $sourceSnapshot `
         -AuditState $sourceAuditInitial `
@@ -938,6 +1066,112 @@ function Invoke-SelfTest {
     $checks += Assert-SelfTest `
         -Condition ($missingOptionGuard.providerCalls -eq 0 -and $missingOptionGuard.writes -eq 0) `
         -Message "all option ids must validate before recheck or writes"
+
+    $partialInitialState = [pscustomobject]@{
+        guardFingerprint = "partial-guard"
+        updates = @(
+            [pscustomobject]@{ itemId = "partial-first"; expectedPriority = "Priority I" },
+            [pscustomobject]@{ itemId = "partial-second"; expectedPriority = "Priority II" }
+        )
+        audit = @()
+        snapshot = [pscustomobject]@{ projectUpdatedAt = "before-partial"; items = @() }
+    }
+    $partialPostState = [pscustomobject]@{
+        guardFingerprint = "post-partial-guard"
+        updates = @([pscustomobject]@{ itemId = "partial-second"; expectedPriority = "Priority II" })
+        audit = @()
+        snapshot = [pscustomobject]@{ projectUpdatedAt = "after-partial"; items = @() }
+    }
+    $partialApplyState = [pscustomobject]@{ writes = 0; postAudits = 0 }
+    $checks += Assert-SelfTestThrows -Action {
+        Invoke-PriorityApplyWithAudit `
+            -InitialState $partialInitialState `
+            -OptionMap $testOptionMap `
+            -CurrentStateProvider { $partialInitialState } `
+            -ItemWriter {
+                param($update, $optionId)
+                $partialApplyState.writes++
+                if ($update.itemId -ceq "partial-second") {
+                    throw "synthetic writer failure"
+                }
+            } `
+            -PostAuditProvider {
+                $partialApplyState.postAudits++
+                $partialPostState
+            }
+    } -MessagePattern "failed after 1 of 2 planned writes.*synthetic writer failure.*post-Apply audit completed: remaining=1.*authoritative"
+    $checks += Assert-SelfTest `
+        -Condition ($partialApplyState.writes -eq 2 -and $partialApplyState.postAudits -eq 1) `
+        -Message "writer failure must still invoke the complete post-Apply audit"
+
+    $failedAuditState = [pscustomobject]@{ writes = 0; postAudits = 0 }
+    $checks += Assert-SelfTestThrows -Action {
+        Invoke-PriorityApplyWithAudit `
+            -InitialState $partialInitialState `
+            -OptionMap $testOptionMap `
+            -CurrentStateProvider { $partialInitialState } `
+            -ItemWriter {
+                param($update, $optionId)
+                $failedAuditState.writes++
+                if ($update.itemId -ceq "partial-second") {
+                    throw "synthetic writer failure"
+                }
+            } `
+            -PostAuditProvider {
+                $failedAuditState.postAudits++
+                throw "synthetic post-audit failure"
+            }
+    } -MessagePattern "synthetic writer failure.*post-Apply audit failed: synthetic post-audit failure.*Final project state is unknown"
+    $checks += Assert-SelfTest `
+        -Condition ($failedAuditState.writes -eq 2 -and $failedAuditState.postAudits -eq 1) `
+        -Message "writer and audit failures must both retain their invocation evidence"
+
+    $successfulInitialState = [pscustomobject]@{
+        guardFingerprint = "successful-guard"
+        updates = @([pscustomobject]@{ itemId = "successful-item"; expectedPriority = "Priority I" })
+        audit = @([pscustomobject]@{ itemId = "successful-item"; needsUpdate = $true })
+        snapshot = [pscustomobject]@{
+            projectUpdatedAt = "before-success"
+            totalCount = 1
+            pageCount = 1
+            items = @("before-item")
+        }
+    }
+    $successfulPostState = [pscustomobject]@{
+        guardFingerprint = "successful-post-guard"
+        updates = @()
+        audit = @([pscustomobject]@{ itemId = "successful-item"; needsUpdate = $false })
+        snapshot = [pscustomobject]@{
+            projectUpdatedAt = "after-success"
+            totalCount = 2
+            pageCount = 2
+            items = @("after-item-1", "after-item-2")
+        }
+    }
+    $successfulApplyState = [pscustomobject]@{ writes = 0; postAudits = 0 }
+    $successfulOutcome = Invoke-PriorityApplyWithAudit `
+        -InitialState $successfulInitialState `
+        -OptionMap $testOptionMap `
+        -CurrentStateProvider { $successfulInitialState } `
+        -ItemWriter {
+            param($update, $optionId)
+            $successfulApplyState.writes++
+        } `
+        -PostAuditProvider {
+            $successfulApplyState.postAudits++
+            $successfulPostState
+        }
+    $successfulReport = New-PriorityReportState -InitialState $successfulInitialState -ApplyOutcome $successfulOutcome
+    $checks += Assert-SelfTest `
+        -Condition ($successfulApplyState.writes -eq 1 -and
+            $successfulApplyState.postAudits -eq 1 -and
+            $successfulReport.postApplyVerified -and
+            $successfulReport.plannedCount -eq 1 -and
+            $successfulReport.appliedCount -eq 1 -and
+            $successfulReport.updates.Count -eq 0 -and
+            $successfulReport.snapshot.projectUpdatedAt -ceq "after-success" -and
+            $successfulReport.snapshot.items.Count -eq 2) `
+        -Message "successful Apply reports current post-audit truth and retains planned/applied evidence"
 
     Write-Host "SelfTest passed: $checks checks."
 }
@@ -1070,23 +1304,62 @@ function New-IssueLabelCache {
     return ,$cache
 }
 
-function Get-IssuePriority {
+function Resolve-PriorityReferenceTarget {
     param(
         [object]$Reference,
         [object]$IssueLabelCache,
-        [scriptblock]$IssueLabelProvider
+        [scriptblock]$ReferenceProvider
     )
 
     if (-not $IssueLabelCache.ContainsKey($Reference.key)) {
-        if ($null -eq $IssueLabelProvider) {
-            throw "No provider is available for referenced issue '$($Reference.repository)#$($Reference.number)'."
+        if ($null -eq $ReferenceProvider) {
+            throw "No provider is available for reference '$($Reference.repository)#$($Reference.number)'."
         }
         try {
-            $labels = @(& $IssueLabelProvider $Reference.repository $Reference.number)
+            $targets = @(& $ReferenceProvider $Reference.repository $Reference.number)
         } catch {
-            throw "Failed to read referenced issue '$($Reference.repository)#$($Reference.number)': $($_.Exception.Message)"
+            throw "Failed to read reference '$($Reference.repository)#$($Reference.number)': $($_.Exception.Message)"
         }
-        Add-IssueLabelsToCache -Cache $IssueLabelCache -RepositoryName $Reference.repository -Number $Reference.number -Labels $labels
+
+        if ($targets.Count -ne 1 -or $null -eq $targets[0]) {
+            throw "Reference provider returned $($targets.Count) targets for '$($Reference.repository)#$($Reference.number)'; expected exactly one typed target."
+        }
+
+        $target = $targets[0]
+        if (-not ($target.PSObject.Properties.Name -contains "type") -or
+            -not ($target.PSObject.Properties.Name -contains "repository") -or
+            -not ($target.PSObject.Properties.Name -contains "number")) {
+            throw "Reference provider returned an incomplete typed target for '$($Reference.repository)#$($Reference.number)'."
+        }
+
+        $targetType = [string]$target.type
+        if ($targetType -cne "Issue" -and $targetType -cne "PullRequest") {
+            throw "Reference provider returned unsupported type '$targetType' for '$($Reference.repository)#$($Reference.number)'."
+        }
+
+        $targetKey = Get-IssueReferenceKey -RepositoryName ([string]$target.repository) -Number ([int]$target.number)
+        if (-not [string]::Equals($Reference.key, $targetKey, [System.StringComparison]::Ordinal)) {
+            throw "Reference provider identity mismatch for '$($Reference.repository)#$($Reference.number)': returned '$($target.repository)#$($target.number)'."
+        }
+
+        if ($targetType -ceq "PullRequest") {
+            if ($Reference.source -ceq "closing") {
+                throw "Closing issue reference '$($Reference.repository)#$($Reference.number)' resolved as PullRequest."
+            }
+            return [pscustomobject]@{
+                type = "PullRequest"
+                priority = $null
+            }
+        }
+
+        if (-not ($target.PSObject.Properties.Name -contains "labels") -or $null -eq $target.labels) {
+            throw "Reference provider returned an Issue without label data for '$($Reference.repository)#$($Reference.number)'."
+        }
+        Add-IssueLabelsToCache `
+            -Cache $IssueLabelCache `
+            -RepositoryName ([string]$target.repository) `
+            -Number ([int]$target.number) `
+            -Labels @($target.labels)
     }
 
     $entry = $IssueLabelCache[$Reference.key]
@@ -1095,7 +1368,10 @@ function Get-IssuePriority {
         $reason = if ($priorityLabels.Count -eq 0) { "missing" } else { "multiple" }
         throw "Referenced issue '$($Reference.repository)#$($Reference.number)' has $reason Priority labels; refusing Priority V fallback."
     }
-    [string]$priorityLabels[0]
+    [pscustomobject]@{
+        type = "Issue"
+        priority = [string]$priorityLabels[0]
+    }
 }
 
 function Get-PriorityAuditFingerprints {
@@ -1150,7 +1426,7 @@ function Get-PriorityAuditFingerprints {
 function New-PriorityAuditState {
     param(
         [object[]]$Items,
-        [scriptblock]$IssueLabelProvider
+        [scriptblock]$ReferenceProvider
     )
 
     $issueLabelCache = New-IssueLabelCache -Items $Items
@@ -1163,6 +1439,7 @@ function New-PriorityAuditState {
         $expectedPriority = $null
         $reason = $null
         $references = @()
+        $referenceTargets = @()
 
         if ($content.type -eq "Issue") {
             $priorityLabels = @(Get-PriorityLabels -Labels $item.labels)
@@ -1177,11 +1454,20 @@ function New-PriorityAuditState {
         } elseif ($content.type -eq "PullRequest") {
             $references = @(Get-PullRequestIssueReferences -Content $content)
             if ($references.Count -gt 0) {
-                $referencedPriorities = @($references | ForEach-Object {
-                    Get-IssuePriority -Reference $_ -IssueLabelCache $issueLabelCache -IssueLabelProvider $IssueLabelProvider
+                $referenceTargets = @($references | ForEach-Object {
+                    Resolve-PriorityReferenceTarget `
+                        -Reference $_ `
+                        -IssueLabelCache $issueLabelCache `
+                        -ReferenceProvider $ReferenceProvider
                 })
-                $expectedPriority = [string](@($referencedPriorities | Sort-Object { $priorityRank[$_] })[0])
-                $reason = if ($references[0].source -eq "closing") { "pr-closing-issue" } else { "pr-body-reference" }
+                $referencedPriorities = @($referenceTargets | Where-Object { $_.type -ceq "Issue" } | ForEach-Object { $_.priority })
+                if ($referencedPriorities.Count -gt 0) {
+                    $expectedPriority = [string](@($referencedPriorities | Sort-Object { $priorityRank[$_] })[0])
+                    $reason = if ($references[0].source -eq "closing") { "pr-closing-issue" } else { "pr-body-reference" }
+                } else {
+                    $expectedPriority = "Priority V"
+                    $reason = "pr-no-derived-issue-fallback"
+                }
             } else {
                 $expectedPriority = "Priority V"
                 $reason = "pr-no-derived-issue-fallback"
@@ -1193,7 +1479,9 @@ function New-PriorityAuditState {
         $actualPriority = [string]$item.priority
         $needsUpdate = -not [string]::IsNullOrWhiteSpace($expectedPriority) -and
             -not [string]::Equals($actualPriority, $expectedPriority, [System.StringComparison]::Ordinal)
-        $referenceText = @($references | ForEach-Object { "$($_.source):$($_.repository)#$($_.number)" }) -join ", "
+        $referenceText = @(for ($referenceIndex = 0; $referenceIndex -lt $references.Count; $referenceIndex++) {
+            "$($references[$referenceIndex].source):$($references[$referenceIndex].repository)#$($references[$referenceIndex].number):$($referenceTargets[$referenceIndex].type)"
+        }) -join ", "
 
         [pscustomobject]@{
             itemId = $item.id
@@ -1299,23 +1587,132 @@ function Invoke-PriorityUpdatePlan {
         [scriptblock]$ItemWriter
     )
 
-    Assert-PriorityOptionsForUpdates -Updates $InitialState.updates -OptionMap $OptionMap
+    $plannedItems = @($InitialState.updates)
+    Assert-PriorityOptionsForUpdates -Updates $plannedItems -OptionMap $OptionMap
     $currentState = & $CurrentStateProvider
     if ($null -eq $currentState -or
         -not [string]::Equals($InitialState.guardFingerprint, $currentState.guardFingerprint, [System.StringComparison]::Ordinal)) {
         throw "Project priority derivation/write plan drifted after the audit; refusing -Apply before the first write."
     }
 
-    $applied = 0
-    foreach ($update in @($InitialState.updates)) {
+    $outcome = [pscustomobject]@{
+        plannedItems = $plannedItems
+        plannedCount = $plannedItems.Count
+        attemptedCount = 0
+        succeededCount = 0
+        failedItemId = $null
+        writeErrorMessage = $null
+    }
+    foreach ($update in $plannedItems) {
+        $outcome.attemptedCount++
         try {
             & $ItemWriter $update $OptionMap[$update.expectedPriority] | Out-Null
-            $applied++
+            $outcome.succeededCount++
         } catch {
-            throw "Project priority apply failed after $applied of $($InitialState.updates.Count) writes. Writes are non-transactional: $($_.Exception.Message)"
+            $outcome.failedItemId = [string]$update.itemId
+            $outcome.writeErrorMessage = [string]$_.Exception.Message
+            break
         }
     }
-    $applied
+    $outcome
+}
+
+function Invoke-PriorityApplyWithAudit {
+    param(
+        [object]$InitialState,
+        [object]$OptionMap,
+        [scriptblock]$CurrentStateProvider,
+        [scriptblock]$ItemWriter,
+        [scriptblock]$PostAuditProvider
+    )
+
+    $writeOutcome = Invoke-PriorityUpdatePlan `
+        -InitialState $InitialState `
+        -OptionMap $OptionMap `
+        -CurrentStateProvider $CurrentStateProvider `
+        -ItemWriter $ItemWriter
+
+    $postState = $null
+    $postAuditErrorMessage = $null
+    try {
+        $postStates = @(& $PostAuditProvider)
+        if ($postStates.Count -ne 1 -or $null -eq $postStates[0]) {
+            throw "Post-audit provider returned $($postStates.Count) states; expected exactly one complete state."
+        }
+        $postState = $postStates[0]
+        if (-not ($postState.PSObject.Properties.Name -contains "snapshot") -or
+            -not ($postState.PSObject.Properties.Name -contains "audit") -or
+            -not ($postState.PSObject.Properties.Name -contains "updates") -or
+            $null -eq $postState.snapshot) {
+            throw "Post-audit provider returned an incomplete execution state."
+        }
+    } catch {
+        $postAuditErrorMessage = [string]$_.Exception.Message
+    }
+
+    $remainingCount = if ($null -ne $postState) { @($postState.updates).Count } else { $null }
+    $postApplyVerified = $null -eq $postAuditErrorMessage -and $remainingCount -eq 0
+    $outcome = [pscustomobject]@{
+        plannedItems = $writeOutcome.plannedItems
+        plannedCount = $writeOutcome.plannedCount
+        attemptedCount = $writeOutcome.attemptedCount
+        succeededCount = $writeOutcome.succeededCount
+        failedItemId = $writeOutcome.failedItemId
+        writeErrorMessage = $writeOutcome.writeErrorMessage
+        postAuditAttempted = $true
+        postState = $postState
+        postAuditErrorMessage = $postAuditErrorMessage
+        remainingCount = $remainingCount
+        postApplyVerified = $postApplyVerified
+    }
+
+    if ($null -ne $outcome.writeErrorMessage -or -not $outcome.postApplyVerified) {
+        $writeStatus = if ($null -ne $outcome.writeErrorMessage) {
+            "Project priority writer failed after $($outcome.succeededCount) of $($outcome.plannedCount) planned writes ($($outcome.attemptedCount) attempts; failed item '$($outcome.failedItemId)'). Writes are non-transactional: $($outcome.writeErrorMessage)."
+        } else {
+            "Project priority writer completed $($outcome.succeededCount) of $($outcome.plannedCount) planned writes. Writes are non-transactional."
+        }
+        $auditStatus = if ($null -ne $outcome.postAuditErrorMessage) {
+            "Complete post-Apply audit failed: $($outcome.postAuditErrorMessage). Final project state is unknown."
+        } else {
+            "Complete post-Apply audit completed: remaining=$($outcome.remainingCount), updatedAt='$($outcome.postState.snapshot.projectUpdatedAt)'. Post-audit state is authoritative."
+        }
+        throw "$writeStatus $auditStatus"
+    }
+
+    $outcome
+}
+
+function New-PriorityReportState {
+    param(
+        [object]$InitialState,
+        [AllowNull()]
+        [object]$ApplyOutcome
+    )
+
+    $currentState = $InitialState
+    $plannedItems = @($InitialState.updates)
+    $attemptedCount = 0
+    $appliedCount = 0
+    $postApplyVerified = $false
+    if ($null -ne $ApplyOutcome) {
+        $currentState = $ApplyOutcome.postState
+        $plannedItems = @($ApplyOutcome.plannedItems)
+        $attemptedCount = [int]$ApplyOutcome.attemptedCount
+        $appliedCount = [int]$ApplyOutcome.succeededCount
+        $postApplyVerified = [bool]$ApplyOutcome.postApplyVerified
+    }
+
+    [pscustomobject]@{
+        snapshot = $currentState.snapshot
+        audit = @($currentState.audit)
+        updates = @($currentState.updates)
+        plannedItems = $plannedItems
+        plannedCount = $plannedItems.Count
+        attemptedCount = $attemptedCount
+        appliedCount = $appliedCount
+        postApplyVerified = $postApplyVerified
+    }
 }
 
 function Get-LivePriorityExecutionContext {
@@ -1324,7 +1721,7 @@ function Get-LivePriorityExecutionContext {
         [int]$Number,
         [string]$ProjectId,
         [int]$ItemLimit,
-        [scriptblock]$IssueLabelProvider
+        [scriptblock]$ReferenceProvider
     )
 
     $fieldList = Invoke-GhJson -Arguments @("project", "field-list", "$Number", "--owner", $OwnerName, "--format", "json")
@@ -1352,7 +1749,7 @@ function Get-LivePriorityExecutionContext {
         throw "ProjectV2 '$ProjectId' reported number $($snapshot.projectNumber), expected $Number."
     }
 
-    $auditState = New-PriorityAuditState -Items @($snapshot.items) -IssueLabelProvider $IssueLabelProvider
+    $auditState = New-PriorityAuditState -Items @($snapshot.items) -ReferenceProvider $ReferenceProvider
     $executionState = New-PriorityExecutionState `
         -Snapshot $snapshot `
         -AuditState $auditState `
@@ -1384,10 +1781,9 @@ if ($null -eq $project) {
     throw "Project number $ProjectNumber was not found for owner $Owner."
 }
 
-$issueLabelProvider = {
+$referenceProvider = {
     param($repositoryName, $issueNumber)
-    $issue = Invoke-GhJson -Arguments @("issue", "view", "$issueNumber", "--repo", $repositoryName, "--json", "labels")
-    @($issue.labels | ForEach-Object { [string]$_.name })
+    Get-LiveReferenceTarget -RepositoryName $repositoryName -Number $issueNumber
 }
 
 $context = Get-LivePriorityExecutionContext `
@@ -1395,14 +1791,9 @@ $context = Get-LivePriorityExecutionContext `
     -Number $ProjectNumber `
     -ProjectId $project.id `
     -ItemLimit $Limit `
-    -IssueLabelProvider $issueLabelProvider
+    -ReferenceProvider $referenceProvider
 $executionState = $context.executionState
-$snapshot = $executionState.snapshot
-$items = @($snapshot.items)
-$audit = @($executionState.audit)
-$updates = @($executionState.updates)
-$appliedCount = 0
-$postApplyVerified = $false
+$applyOutcome = $null
 
 if ($Apply) {
     $currentStateProvider = {
@@ -1411,7 +1802,7 @@ if ($Apply) {
             -Number $ProjectNumber `
             -ProjectId $project.id `
             -ItemLimit $Limit `
-            -IssueLabelProvider $issueLabelProvider).executionState
+            -ReferenceProvider $referenceProvider).executionState
     }
     $itemWriter = {
         param($update, $optionId)
@@ -1428,27 +1819,28 @@ if ($Apply) {
         }
     }
 
-    $appliedCount = Invoke-PriorityUpdatePlan `
-        -InitialState $executionState `
-        -OptionMap $context.optionMap `
-        -CurrentStateProvider $currentStateProvider `
-        -ItemWriter $itemWriter
-
-    try {
-        $postApplyContext = Get-LivePriorityExecutionContext `
+    $postAuditProvider = {
+        (Get-LivePriorityExecutionContext `
             -OwnerName $Owner `
             -Number $ProjectNumber `
             -ProjectId $project.id `
             -ItemLimit $Limit `
-            -IssueLabelProvider $issueLabelProvider
-        if ($postApplyContext.executionState.updates.Count -ne 0) {
-            throw "post-Apply audit still reports $($postApplyContext.executionState.updates.Count) update(s)"
-        }
-        $postApplyVerified = $true
-    } catch {
-        throw "Applied $appliedCount writes, but the complete post-Apply audit failed. Writes are non-transactional: $($_.Exception.Message)"
+            -ReferenceProvider $referenceProvider).executionState
     }
+
+    $applyOutcome = Invoke-PriorityApplyWithAudit `
+        -InitialState $executionState `
+        -OptionMap $context.optionMap `
+        -CurrentStateProvider $currentStateProvider `
+        -ItemWriter $itemWriter `
+        -PostAuditProvider $postAuditProvider
 }
+
+$reportState = New-PriorityReportState -InitialState $executionState -ApplyOutcome $applyOutcome
+$snapshot = $reportState.snapshot
+$items = @($snapshot.items)
+$audit = @($reportState.audit)
+$updates = @($reportState.updates)
 
 if ($Json) {
     [pscustomobject]@{
@@ -1463,8 +1855,11 @@ if ($Json) {
         projectUpdatedAt = $snapshot.projectUpdatedAt
         limit = $Limit
         needsUpdate = $updates.Count
-        applied = $appliedCount
-        postApplyVerified = $postApplyVerified
+        planned = $reportState.plannedCount
+        writerAttempts = $reportState.attemptedCount
+        applied = $reportState.appliedCount
+        postApplyVerified = $reportState.postApplyVerified
+        plannedItems = $reportState.plannedItems
         items = $updates
     } | ConvertTo-Json -Depth 8
     return
@@ -1477,7 +1872,9 @@ Write-Host "Items scanned: $($items.Count)"
 Write-Host "Completeness: COMPLETE ($($items.Count)/$($snapshot.totalCount) items across $($snapshot.pageCount) pages; project updatedAt $($snapshot.projectUpdatedAt))"
 Write-Host "Items needing priority sync: $($updates.Count)"
 if ($Apply) {
-    Write-Host "Items updated: $appliedCount"
+    Write-Host "Initial updates planned: $($reportState.plannedCount)"
+    Write-Host "Writer attempts: $($reportState.attemptedCount)"
+    Write-Host "Writer-confirmed updates: $($reportState.appliedCount)"
     Write-Host "Post-Apply complete audit: VERIFIED"
 }
 Write-Host ""
