@@ -1,6 +1,6 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-05-05
+Last Updated: 2026-07-26
 
 Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "spin fresh adversarial reviewers", "fix failing CI", or "reconcile docs after a batch".
 
@@ -203,7 +203,7 @@ powershell -File scripts/github/Sync-TaskdeckProjectPriority.ps1 -Apply
 ```
 
 Audit mode requires `read:project`. Apply mode requires the broader GitHub CLI project write scope: `gh auth refresh -s project`. If GitHub MCP or `gh` project writes are unavailable, report exactly what could not be synced.
-The helper does not overwrite an existing PR priority when no linked/referenced issue can be derived unless `-StrictFallbackPriority` is supplied.
+The helper enforces canonical PR derivation: complete closing-issue links first, then repository-aware body references, highest urgency when several apply, and `Priority V` only when no reference exists. Ambiguous or unreadable referenced-issue priority fails closed; do not bypass that gate with a guessed fallback.
 
 ## Stop Conditions
 

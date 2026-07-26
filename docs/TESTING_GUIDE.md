@@ -101,7 +101,7 @@ powershell -NoProfile -File $script -SelfTest
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
-`-SelfTest` is authentication-free and currently reports 17 checks. It includes a mocked 1,001-item project plus fail-closed cases for early termination, exact duplicate IDs, case-distinct IDs, count/stamp drift, repeated or missing cursors, truncated nested connections, a positive limit ceiling, and missing/multiple issue priority labels.
+`-SelfTest` is authentication-free and reports its exact check count. It includes a mocked 1,001-item project plus fail-closed cases for early termination, exact duplicate IDs, case-distinct IDs, count/stamp drift, repeated or missing cursors, truncated nested connections, a positive limit ceiling, missing/multiple issue priority labels, repository-aware PR references, strict `Priority V` fallback, source-plan drift, and zero-write option validation.
 
 Then exercise the live read-only boundaries:
 
