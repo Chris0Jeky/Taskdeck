@@ -5,6 +5,8 @@ param(
     [string]$Repository = "Chris0Jeky/Taskdeck",
     [ValidateRange(0, [int]::MaxValue)]
     [int]$Limit = 0,
+    # Retained for CLI compatibility; canonical Priority V fallback is now unconditional.
+    [switch]$StrictFallbackPriority,
     [switch]$Apply,
     [switch]$Json,
     [switch]$SelfTest
@@ -126,20 +128,6 @@ query($projectId: ID!, $after: String) {
 }
 '@
 
-$script:ProjectStampQuery = @'
-query($projectId: ID!) {
-  node(id: $projectId) {
-    ... on ProjectV2 {
-      id
-      updatedAt
-      items(first: 1) {
-        totalCount
-      }
-    }
-  }
-}
-'@
-
 function Invoke-GhJson {
     param(
         [Parameter(Mandatory = $true)]
@@ -180,44 +168,6 @@ function Invoke-ProjectItemsPage {
     }
 
     Invoke-GhJson -Arguments $arguments
-}
-
-function Get-ProjectStamp {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$ProjectId
-    )
-
-    $response = Invoke-GhJson -Arguments @(
-        "api",
-        "graphql",
-        "-f",
-        "query=$script:ProjectStampQuery",
-        "-F",
-        "projectId=$ProjectId"
-    )
-
-    if ($response.PSObject.Properties.Name -contains "errors" -and @($response.errors).Count -gt 0) {
-        throw "Project stamp query returned GraphQL errors: $($response.errors | ConvertTo-Json -Compress -Depth 4)"
-    }
-
-    $projectNode = $response.data.node
-    if ($null -eq $projectNode -or
-        -not [string]::Equals([string]$projectNode.id, $ProjectId, [System.StringComparison]::Ordinal)) {
-        throw "Project stamp query did not return ProjectV2 '$ProjectId'."
-    }
-
-    if ([string]::IsNullOrWhiteSpace([string]$projectNode.updatedAt) -or
-        $null -eq $projectNode.items -or
-        -not ($projectNode.items.PSObject.Properties.Name -contains "totalCount")) {
-        throw "Project stamp query returned an incomplete ProjectV2 shape for '$ProjectId'."
-    }
-
-    [pscustomobject]@{
-        projectId = [string]$projectNode.id
-        projectUpdatedAt = [string]$projectNode.updatedAt
-        totalCount = [int]$projectNode.items.totalCount
-    }
 }
 
 function Assert-CompleteNestedConnection {
