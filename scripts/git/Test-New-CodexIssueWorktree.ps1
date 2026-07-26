@@ -236,6 +236,16 @@ function Assert-Contains {
     }
 }
 
+function Assert-NormalizedContains {
+    param(
+        [string]$Text,
+        [string]$ExpectedSubstring,
+        [string]$Message
+    )
+
+    Assert-Contains ($Text -replace '\s+', ' ') ($ExpectedSubstring -replace '\s+', ' ') $Message
+}
+
 function Complete-Test {
     param([string]$Name)
 
@@ -419,7 +429,7 @@ try {
             Assert-Equal 2 $missingGuard.ExitCode "Guard should preserve its advertised setup-failure exit code."
             $outsideRepoGuard = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", (Join-Path $createdWorktree "scripts/worktree_guard.ps1"), "-GitExecutable", $gitExecutable) -WorkingDirectory $fixtureRoot
             Assert-Equal 2 $outsideRepoGuard.ExitCode "Guard should fail with its advertised repository-check exit code outside Git."
-            Assert-Contains $outsideRepoGuard.Output "not inside a git repository" "Guard should distinguish an ordinary non-repository result from executable launch failure."
+            Assert-NormalizedContains $outsideRepoGuard.Output "not inside a git repository" "Guard should distinguish an ordinary non-repository result from executable launch failure."
             $createdBranch = Invoke-Git -WorkingDirectory $createdWorktree -Arguments @("branch", "--show-current")
             Assert-Equal "issue-424/dirty-source" $createdBranch "Post-guard branch command created the wrong branch."
             Complete-Test "printed handoff executes with pinned Git under a shimmed PATH"
@@ -626,7 +636,7 @@ try {
         $gitFailure = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "431", "-Slug", "git-failure")
         Assert-True ($gitFailure.ExitCode -ne 0) "Native git worktree failure should fail closed."
         Assert-Contains $gitFailure.Output "git worktree add failed for" "Git failure diagnostic omitted the failed operation."
-        Assert-Contains ($gitFailure.Output -replace '\s+', ' ') "is a missing but already registered worktree" "Git stderr context should be preserved."
+        Assert-NormalizedContains $gitFailure.Output "is a missing but already registered worktree" "Git stderr context should be preserved."
         Assert-Contains $gitFailure.Output "(exit code 128)" "Git failure diagnostic omitted the native exit code."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-431-git-failure"))) "Failed git worktree add should not leave a target worktree."
         Complete-Test "native git failure propagates with a clear diagnostic"
