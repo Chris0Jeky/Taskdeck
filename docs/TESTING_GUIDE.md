@@ -73,6 +73,7 @@ Get-ChildItem scripts\agent_hooks -Filter *.py | ForEach-Object { python -m py_c
 python scripts\agent_hooks\smoke_test.py
 py -3 -B -m unittest discover -s scripts\agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 python scripts\agent_hooks\render_failure_ledger.py
+powershell -NoLogo -NoProfile -NonInteractive -File scripts\git\Test-New-CodexIssueWorktree.ps1
 node scripts\check-docs-governance.mjs
 node scripts\check-golden-principles.mjs
 ```
@@ -1384,7 +1385,11 @@ Required workflow: `.github/workflows/ci-required.yml`
     (`continue-on-error: true`); promotion into branch protection remains
     maintainer-owned under #1173
 - `docs-governance`
-  - Enforces required active docs and docs index invariants
+  - Ubuntu `Docs Governance` enforces required active docs, failure-ledger synchronization, Golden
+    Principles, and GitHub-operations invariants
+  - Windows `Worktree Helper (Windows PowerShell)` runs
+    `powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1`
+    to enforce detached-first creation, fail-closed initialization, and permission-contract regressions
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`

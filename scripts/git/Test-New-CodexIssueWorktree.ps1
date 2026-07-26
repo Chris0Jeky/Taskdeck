@@ -447,7 +447,7 @@ try {
         if (Test-CaseSelected "headless-permission-contract") {
             $initializerInvocationPrefix = "powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1"
             $headlessHandoffLines = @(Get-PrintedHandoffLines -Output $success.Output)
-            Assert-True $headlessHandoffLines[0].StartsWith($initializerInvocationPrefix, [System.StringComparison]::Ordinal) "Printed handoff must use the stable relative initializer wrapper."
+            Assert-True ($headlessHandoffLines[0].StartsWith($initializerInvocationPrefix, [System.StringComparison]::Ordinal)) "Printed handoff must use the stable relative initializer wrapper."
 
             $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
             $powerShellInitializerRule = "PowerShell(${initializerInvocationPrefix}:*)"
@@ -463,6 +463,8 @@ try {
             Assert-Contains $protocol '--allowedTools "PowerShell(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)"' "Headless guidance omitted the narrow initializer allow rule."
             Assert-Contains $protocol "acceptEdits does not approve arbitrary Git or PowerShell commands" "Headless guidance must not present acceptEdits as sufficient command authorization."
             Assert-Contains $protocol "--permission-mode dontAsk" "Headless guidance omitted the fail-closed permission-mode option for a complete task allowlist."
+            Assert-Contains $protocol '$coordinatorBranchBaseline' "Post-run guidance omitted the pre-creation coordinator branch baseline."
+            Assert-Contains $protocol '$coordinatorStatusBaseline' "Post-run guidance omitted the pre-creation coordinator status baseline."
             Complete-Test "headless guidance and settings authorize the stable initializer without broadening the command boundary"
         }
 

@@ -76,20 +76,21 @@ under the repository's required `.worktrees/` root. It rejects rooted, traversin
 junction-backed, or symlink-backed worktree roots. It prints the planned issue branch but does not
 create it.
 
-Run the complete printed PowerShell handoff unchanged inside the worker worktree:
+Run the complete printed PowerShell handoff unchanged inside the worker worktree. It uses the
+stable reviewed initializer wrapper, which runs the guard first, verifies the exact worktree and
+detached base, and only then creates and switches to the issue branch:
 
 ```powershell
-& '<PowerShell host printed by the helper>' -NoLogo -NoProfile -NonInteractive -File scripts/worktree_guard.ps1 -GitExecutable '<native Git executable printed by the helper>'
-$guardSucceeded = $?; $guardExitCode = $LASTEXITCODE
-if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }
-& '<native Git executable printed by the helper>' switch -c 'issue-123/short-slug'
-$switchSucceeded = $?; $switchExitCode = $LASTEXITCODE
-if (-not $switchSucceeded -or $switchExitCode -ne 0) { if ($null -ne $switchExitCode -and $switchExitCode -ne 0) { exit $switchExitCode }; exit 1 }
+powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1 -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
+$handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE
+if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }
 ```
 
-The guard is the first worktree command, uses the helper-selected native Git, and stops the block
-before branch creation if it fails. This handoff is PowerShell-only; Bash workers must launch
-PowerShell in the worktree and run the whole printed block.
+The initializer is the first worktree command and its first internal action is the guard using the
+helper-selected native Git. Any guard, exact-worktree, detached-base, or switch failure stops the
+block. This handoff is PowerShell-only; Bash workers must launch PowerShell in the worktree and run
+the whole printed block. For headless Claude workers, follow the narrow stable-wrapper permission
+contract in `docs/WORKTREE_AGENT_PROTOCOL.md`; `acceptEdits` alone is not command authorization.
 
 Worker prompts must not include absolute paths to the main checkout. Use relative paths and tell
 workers to derive absolute paths with the helper-printed native Git executable and
@@ -111,10 +112,8 @@ Use this shape for implementation workers:
 You are implementing Taskdeck issue #NNN in an isolated Codex worktree.
 
 First PowerShell commands (copy the complete block printed by the helper):
-<pinned-native-Git guard command>
-<capture and fail-fast gate for guard status and exit code>
-<pinned-native-Git switch command>
-<capture and fail-fast gate for switch status and exit code>
+<relative scripts/git/Initialize-CodexIssueWorktree.ps1 command with pinned Git, branch, exact worktree, and detached base>
+<capture and fail-fast gate for initializer status and exit code>
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not revert edits made by others. Keep scope to the issue acceptance criteria.

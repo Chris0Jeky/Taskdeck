@@ -24,7 +24,8 @@ This `.claude/` layer contains Claude Code settings and skills for Taskdeck. It 
 
 - Use `docs/WORKTREE_AGENT_PROTOCOL.md` for Claude `isolation: "worktree"` sessions.
 - Do not pass absolute main-checkout paths into worktree worker prompts.
-- First command in a worktree worker should validate isolation with the repo guard script.
+- For a helper-created detached worktree, the first command is the complete printed `scripts/git/Initialize-CodexIssueWorktree.ps1` handoff. The reviewed relative wrapper runs the pinned-Git guard first, binds the exact worktree and detached base, and switches branches only after those checks pass.
+- For headless workers, explicitly allowlist that stable relative wrapper plus the task's other narrow commands; `acceptEdits` alone does not authorize it. Use the generic guard first only for worktrees that were not created by the detached-first helper.
 - Keep one coordinator responsible for final synthesis, docs updates, and verification claims.
 
 ## Review Policy

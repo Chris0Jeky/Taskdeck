@@ -30,8 +30,13 @@ approved root requires a separately reviewed creation path after the guard confi
 From the main checkout:
 
 ```powershell
+$coordinatorBranchBaseline = git branch --show-current
+$coordinatorStatusBaseline = @(git status --short --untracked-files=all)
 powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber 123 -Slug short-slug
 ```
+
+Keep the branch and status baselines for post-run comparison. They may include intentional tracked
+or untracked coordinator changes; the helper preserves them instead of requiring a clean checkout.
 
 The helper refreshes an explicit remote branch base (default `origin/main`) before resolving it,
 peels annotated tags to one commit, preserves any tracked or untracked source-checkout changes,
@@ -50,16 +55,15 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
   -BranchName "feature/custom-branch"
 ```
 
-Run the helper's entire printed PowerShell block unchanged from the new worktree. The guard pins
-the same argv-safe native Git executable selected by the helper, and each command is fail-fast:
+Run the helper's entire printed PowerShell block unchanged from the new worktree. It invokes one
+stable, reviewed relative initializer wrapper. The wrapper runs the guard as its first internal
+action with the helper-selected argv-safe Git executable, verifies the exact helper-created
+worktree and detached base, and only then creates and switches to the planned branch:
 
 ```powershell
-& '<PowerShell host printed by the helper>' -NoLogo -NoProfile -NonInteractive -File scripts/worktree_guard.ps1 -GitExecutable '<native Git executable printed by the helper>'
-$guardSucceeded = $?; $guardExitCode = $LASTEXITCODE
-if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }
-& '<native Git executable printed by the helper>' switch -c 'issue-123/short-slug'
-$switchSucceeded = $?; $switchExitCode = $LASTEXITCODE
-if (-not $switchSucceeded -or $switchExitCode -ne 0) { if ($null -ne $switchExitCode -and $switchExitCode -ne 0) { exit $switchExitCode }; exit 1 }
+powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1 -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
+$handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE
+if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }
 ```
 
 The helper rejects alternate, traversing, rooted, junction-backed, and symlink-backed worktree
@@ -69,21 +73,28 @@ printed worktree and run the complete block there; do not translate only the bra
 ## Permission Posture In Worktrees
 
 Worktree checkouts do NOT contain the gitignored `.claude/settings.local.json`, so worker
-sessions run under the committed default (`acceptEdits`) plus the committed allowlist — not
-`bypassPermissions`. The guard commands below are allowlisted in `.claude/settings.json`; if a
-worker needs broader trust, launch it with an explicit `--permission-mode` or seed a
-`settings.local.json` into the worktree at creation time.
+sessions use the committed permissions plus any explicit launch rules. The committed
+`acceptEdits` default auto-approves in-scope edits and common filesystem operations, but
+acceptEdits does not approve arbitrary Git or PowerShell commands and is not sufficient by itself
+for the detached-first handoff. `.claude/settings.json` narrowly allowlists the stable relative
+`Initialize-CodexIssueWorktree.ps1` wrapper for both shell-tool shapes.
 
-**Workspace-trust caveat (headless workers).** A committed allowlist is necessary but not
-sufficient. Claude Code applies a project's `permissions.allow` rules only after the workspace
-is *trusted*, and trust is keyed on the git-repository root — a freshly created worktree is a
-new, untrusted root. In non-interactive mode (`claude -p` / `--print`) the trust dialog never
-appears and untrusted project allow rules **stay ignored**, so even the allowlisted guard
-command can prompt or block. A headless worktree worker must therefore be launched with one of:
-`--allowedTools "Bash(powershell -File scripts/worktree_guard.ps1:*) ..."`, an explicit
-`--permission-mode acceptEdits`, or `--dangerously-skip-permissions` in a disposable
-environment. Interactive workers accept the one-time trust prompt instead. (Refs: Claude Code
-permissions — *project allow rules and workspace trust*; security — *trust verification*.)
+**Headless workers.** Current Claude Code documents that ordinary non-interactive `-p` runs
+disable trust verification, while `--worktree` remains an exception that requires accepted trust.
+Skipping that trust check does not approve unmatched commands. Launch a headless worker with the
+stable initializer rule plus the task's other reviewed command rules, for example:
+
+```text
+--allowedTools "PowerShell(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)" <other narrow task rules>
+```
+
+When the supplied allowlist covers the whole task, add `--permission-mode dontAsk` so unmatched
+tools fail closed instead of prompting in a session that cannot answer. Use the `Bash(...)` form
+of the same stable relative prefix when that is the enabled shell tool. Do not present
+`acceptEdits`, disabled trust verification, or `--dangerously-skip-permissions` as authorization
+for the wrapper; broader bypass requires a separately approved disposable isolation boundary.
+See Claude Code's current [permission-mode contract](https://code.claude.com/docs/en/permissions)
+and [trust-verification exception for `-p`/`--worktree`](https://code.claude.com/docs/en/security).
 
 ## First Worker Command
 
@@ -93,9 +104,10 @@ PowerShell:
 powershell -File scripts/worktree_guard.ps1
 ```
 
-When the coordinator used `New-CodexIssueWorktree.ps1`, use the helper's complete printed
-PowerShell block instead of this generic command. It pins native Git into the guard and stops on
-both guard and branch-creation failures.
+When the coordinator used `New-CodexIssueWorktree.ps1`, the first worktree command is the helper's
+complete printed `Initialize-CodexIssueWorktree.ps1` handoff instead of this generic command. The
+initializer runs the guard first and stops before branch creation on any exact-worktree, detached
+base, guard, or switch failure.
 
 Bash:
 
@@ -123,10 +135,8 @@ PowerShell process changed the parent environment or location.
 You are implementing Taskdeck issue #NNN in an isolated worktree.
 
 First PowerShell commands (copy the complete block printed by New-CodexIssueWorktree.ps1):
-<pinned-native-Git guard command>
-<capture and fail-fast gate for guard status and exit code>
-<pinned-native-Git switch command>
-<capture and fail-fast gate for switch status and exit code>
+<relative scripts/git/Initialize-CodexIssueWorktree.ps1 command with pinned Git, branch, exact worktree, and detached base>
+<capture and fail-fast gate for initializer status and exit code>
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not reference or edit the main checkout. Do not revert edits made by others.
@@ -165,8 +175,9 @@ git worktree list
 
 Expected:
 
-- main checkout remains on the intended coordinator branch
-- unrelated changes are not present in the main checkout
+- main checkout branch exactly matches `$coordinatorBranchBaseline`
+- `git status --short --untracked-files=all` exactly matches `$coordinatorStatusBaseline`, including
+  every preserved pre-existing user change and no newly introduced coordinator-checkout change
 - completed worktrees can be removed only after their branches/PRs are safely pushed
 
 Remove a completed worktree only when the coordinator is sure it is no longer needed:
@@ -177,4 +188,7 @@ git worktree remove .worktrees/codex-123-short-slug
 
 ## Why This Exists
 
-Observed production issue: parallel agents resolved paths back to the main checkout, raced on branch switches, and landed commits on wrong branches. Path-marker guards are intentionally simple because they survive Windows/MSYS path-format differences better than comparing low-level Git directory paths.
+Observed production issue: parallel agents resolved paths back to the main checkout, raced on
+branch switches, and landed commits on wrong branches. The generic guard combines approved path
+markers with an actual linked-worktree check. The detached-first initializer adds the stronger
+helper-specific binding to the exact canonical worktree and detached base before branch creation.

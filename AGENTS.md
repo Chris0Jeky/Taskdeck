@@ -88,8 +88,8 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ### Codex Worktree Safety
 - Use `scripts/git/New-CodexIssueWorktree.ps1` to create isolated issue worktrees under `.worktrees/`.
-- First command in a Codex worktree worker session must be `powershell -File scripts/worktree_guard.ps1` (or `source scripts/worktree_guard.sh` in Bash).
-- Do not pass absolute main-checkout paths to worktree workers; derive paths from `$env:WT_PROJECT_DIR` or `git rev-parse --show-toplevel`.
+- For a helper-created detached worktree, the first worker command must be the helper's complete printed `scripts/git/Initialize-CodexIssueWorktree.ps1` handoff. Its first internal action is the pinned-Git guard; it verifies the exact helper-created worktree and detached base before `switch -c`, and every failure stops before work. For other already-created worktrees, first run `powershell -File scripts/worktree_guard.ps1` (or `source scripts/worktree_guard.sh` in Bash).
+- Do not pass absolute main-checkout paths to worktree workers. Derive paths in the current process with `git rev-parse --show-toplevel`; do not rely on a child PowerShell guard to export `$env:WT_PROJECT_DIR` back to its parent.
 - Only the coordinator should update canonical batch docs such as `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, and `docs/TESTING_GUIDE.md` unless a worker explicitly owns a docs-only issue.
 
 ### Small Mainline Exception

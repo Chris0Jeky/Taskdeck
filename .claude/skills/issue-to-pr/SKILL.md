@@ -43,10 +43,11 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
   -Slug <short-slug>
 ```
 
-Enter the printed worktree and run the helper's complete printed PowerShell block unchanged. It
-passes the selected native Git into the guard and exits before branch creation if the guard fails.
-From Bash, launch PowerShell in the worktree for the whole block; do not translate only the branch
-command or substitute a PATH-first batch shim.
+Enter the printed worktree and run the helper's complete printed PowerShell block unchanged. Its
+stable relative `scripts/git/Initialize-CodexIssueWorktree.ps1` wrapper runs the selected-native-Git
+guard first, verifies the exact helper-created worktree and detached base, then performs `switch -c`;
+every failure exits before implementation. From Bash, launch PowerShell in the worktree for the
+whole block; do not translate only the branch command or substitute a PATH-first batch shim.
 
 Branch naming remains `issue-<number>/<2-4 word slug>` (for example,
 `issue-350/capture-validation`). Continue the implementation there; never switch the coordinator

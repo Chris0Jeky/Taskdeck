@@ -9,7 +9,7 @@ Deliver one issue cleanly from an isolated worktree.
 
 ## First actions
 
-1. If the coordinator used `New-CodexIssueWorktree.ps1`, run its complete printed PowerShell handoff block unchanged; it pins native Git into the guard and stops before `switch -c` if the guard fails. From Bash, launch PowerShell in the worktree for this block.
+1. If the coordinator used `New-CodexIssueWorktree.ps1`, run its complete printed PowerShell handoff block unchanged. Its stable relative `scripts/git/Initialize-CodexIssueWorktree.ps1` wrapper runs the pinned-Git guard first, verifies the exact helper-created worktree and detached base, then performs `switch -c`; every failure exits before implementation. From Bash, launch PowerShell in the worktree for this block.
 2. Otherwise run `powershell -File scripts/worktree_guard.ps1`. Do not substitute a PATH-first batch shim.
 3. Read `docs/STATUS.md`.
 4. Read `AGENTS.md`.
