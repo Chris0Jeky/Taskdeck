@@ -93,7 +93,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "$ErrorActionPreference = 'Stop'; try { & py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\pre_tool_use.py\"; if ($LASTEXITCODE -ne 0) { [Console]::Error.WriteLine('Taskdeck PreToolUse policy process failed; blocking command.'); exit 2 }; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 2 }",
+            "command": "$ErrorActionPreference = 'Stop'; try { & py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\pre_tool_use.py\"; if ($LASTEXITCODE -ne 0) { [Console]::Error.WriteLine('Taskdeck PreToolUse policy process failed; blocking command.'); exit 2 }; exit 0 } catch { [Console]::Error.WriteLine('Taskdeck PreToolUse handler launch failed; blocking command.'); exit 2 }",
             "timeout": 5
           }
         ]

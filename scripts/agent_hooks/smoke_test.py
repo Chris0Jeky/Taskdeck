@@ -301,11 +301,12 @@ def test_pre_tool_use(settings: dict[str, object]) -> None:
     )
     if missing_launcher_handler["command"] == configured_command:
         raise AssertionError("configured PreToolUse command no longer exposes its verified launcher")
-    expect_returncode(
-        run_handler(missing_launcher_handler, failure_payload),
-        2,
-        "configured PreToolUse missing launcher fails closed",
-    )
+    missing_launcher_result = run_handler(missing_launcher_handler, failure_payload)
+    expect_returncode(missing_launcher_result, 2, "configured PreToolUse missing launcher fails closed")
+    if "Taskdeck PreToolUse handler launch failed; blocking command." not in missing_launcher_result.stderr:
+        raise AssertionError(
+            f"configured PreToolUse launcher failure lacked a stable reason: {missing_launcher_result.stderr!r}"
+        )
 
     missing_policy_handler = dict(pre_tool_handler)
     missing_policy_handler["command"] = configured_command.replace(
