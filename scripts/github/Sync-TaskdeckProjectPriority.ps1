@@ -1055,13 +1055,76 @@ function Invoke-SelfTest {
             $sameRepoAudit.updates[0].expectedPriority -ceq "Priority I") `
         -Message "same-repository qualified body references must preserve identity and derive Priority"
 
+    $colonReferences = @(Get-BodyIssueReferences `
+        -Body "Closes: #40`nRefs: Chris0Jeky/Taskdeck#41" `
+        -DefaultRepository $canonicalRepository)
+    $checks += Assert-SelfTest `
+        -Condition ($colonReferences.Count -eq 2 -and
+            $colonReferences[0].repository -ceq $canonicalRepository -and
+            $colonReferences[0].number -eq 40 -and
+            $colonReferences[1].repository -ceq $canonicalRepository -and
+            $colonReferences[1].number -eq 41) `
+        -Message "colon-form closing and reference directives must preserve every Issue reference"
+
+    $multipleProviderState = [pscustomobject]@{ calls = 0; numbers = @() }
+    $multipleItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "multiple-body-reference-pr" `
+            -ContentType "PullRequest" `
+            -Priority "Priority V" `
+            -Body "Refs #41, #42 and #43")
+    )
+    $multipleAudit = New-PriorityAuditState -Items $multipleItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
+        param($repositoryName, $issueNumber)
+        $multipleProviderState.calls++
+        $multipleProviderState.numbers += $issueNumber
+        $priority = switch ($issueNumber) {
+            41 { "Priority II" }
+            42 { "Priority I" }
+            43 { "Priority III" }
+            default { throw "Unexpected multiple-reference Issue number $issueNumber" }
+        }
+        New-SelfTestReferenceTarget `
+            -RepositoryName $repositoryName `
+            -Number $issueNumber `
+            -Labels @($priority)
+    }
+    $checks += Assert-SelfTest `
+        -Condition ($multipleProviderState.calls -eq 3 -and
+            (@($multipleProviderState.numbers) -join ",") -ceq "41,42,43" -and
+            $multipleAudit.updates[0].expectedPriority -ceq "Priority I" -and
+            $multipleAudit.updates[0].reason -ceq "pr-body-reference") `
+        -Message "every Issue in a comma-and body clause must contribute to derived Priority"
+
+    $lateCrossRepoProviderState = [pscustomobject]@{ calls = 0 }
+    $lateCrossRepoItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "late-cross-repo-pr" `
+            -ContentType "PullRequest" `
+            -Priority "Priority V" `
+            -Body "Refs #41, owner/other#42")
+    )
+    $checks += Assert-SelfTestThrows -Action {
+        New-PriorityAuditState -Items $lateCrossRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
+            param($repositoryName, $issueNumber)
+            $lateCrossRepoProviderState.calls++
+            New-SelfTestReferenceTarget `
+                -RepositoryName $repositoryName `
+                -Number $issueNumber `
+                -Labels @("Priority I")
+        }
+    } -MessagePattern "Cross-repository Issue reference.*is disabled"
+    $checks += Assert-SelfTest `
+        -Condition ($lateCrossRepoProviderState.calls -eq 2) `
+        -Message "a later cross-repository reference in one clause must reach fail-closed validation"
+
     $crossRepoProviderState = [pscustomobject]@{ calls = 0 }
     $crossRepoItems = Get-NormalizedSelfTestItems -RawItems @(
         (New-SelfTestItem `
             -Id "cross-repo-pr" `
             -ContentType "PullRequest" `
             -Priority "Priority V" `
-            -Body "Refs owner/other#42")
+            -Body "Refs: owner/other#42")
     )
     $checks += Assert-SelfTestThrows -Action {
         New-PriorityAuditState -Items $crossRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
@@ -1506,25 +1569,31 @@ function Get-BodyIssueReferences {
         return @()
     }
 
-    $pattern = '(?im)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?|references?)\s+(?:(?<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#(?<number>\d+)'
+    $directivePattern = '(?im)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?|references?)(?:\s*:\s*|\s+)(?<references>(?:(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#\d+)(?:\s*(?:,\s*(?:and\s+)?|\band\s+)(?:(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#\d+))*)'
+    $referencePattern = '(?:(?<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#(?<number>\d+)'
     $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    @([regex]::Matches($Body, $pattern) | ForEach-Object {
-        $repositoryName = if ($_.Groups["repository"].Success) {
-            $_.Groups["repository"].Value
-        } else {
-            $DefaultRepository
-        }
-        $number = [int]$_.Groups["number"].Value
-        $key = Get-IssueReferenceKey -RepositoryName $repositoryName -Number $number
-        if ($seen.Add($key)) {
-            [pscustomobject]@{
-                source = "body"
-                repository = $repositoryName
-                number = $number
-                key = $key
+    $references = @()
+    foreach ($directive in [regex]::Matches($Body, $directivePattern)) {
+        foreach ($reference in [regex]::Matches($directive.Groups["references"].Value, $referencePattern)) {
+            $repositoryName = if ($reference.Groups["repository"].Success) {
+                $reference.Groups["repository"].Value
+            } else {
+                $DefaultRepository
+            }
+            $number = [int]$reference.Groups["number"].Value
+            $key = Get-IssueReferenceKey -RepositoryName $repositoryName -Number $number
+            if ($seen.Add($key)) {
+                $references += [pscustomobject]@{
+                    source = "body"
+                    repository = $repositoryName
+                    number = $number
+                    key = $key
+                }
             }
         }
-    })
+    }
+
+    @($references)
 }
 
 function Get-PullRequestIssueReferences {
