@@ -101,7 +101,7 @@ powershell -NoProfile -File $script -SelfTest
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
-`-SelfTest` is authentication-free and reports its exact check count. It includes a mocked 1,001-item project plus fail-closed cases for early termination, exact duplicate IDs, case-distinct IDs, count/stamp drift, repeated or missing cursors, truncated nested connections, a positive limit ceiling, missing/multiple issue priority labels, typed repository-aware Issue/PullRequest references, strict `Priority V` fallback, source-plan drift, zero-write option validation, partial writer failures, and verified post-apply output.
+`-SelfTest` is authentication-free and reports its exact check count. It includes a mocked 1,001-item project plus fail-closed cases for early termination, exact duplicate IDs, case-distinct IDs, count/stamp drift, repeated or missing cursors, truncated nested connections, a positive limit ceiling, missing/multiple issue priority labels, raw REST Issue/PullRequest normalization, same-repository authority, default-off cross-repository Issues, strict `Priority V` fallback, source-plan drift, ordered option dispatch, zero-write option validation, partial writer failures, and verified post-apply output.
 
 Then exercise the live read-only boundaries:
 
@@ -114,7 +114,7 @@ if ($LASTEXITCODE -eq 0) { throw "Expected the configured ceiling to fail closed
 powershell -NoProfile -File $script -Json
 ```
 
-A successful JSON audit must say `complete: true`, with `scanned == reportedTotalCount`; a clean audit additionally requires `needsUpdate: 0`. Body references that resolve to pull requests do not contribute issue priority, while missing or multiple labels on actual issues are data-policy failures and abort before writes. Fix those labels first. Never add `-Apply` merely to test the helper. Only with `project` scope and reviewed updates should an operator run `-Apply`; the command must perform its complete post-apply audit even after a partial writer failure, and a final separate read-only audit must prove the resulting project is complete and clean.
+A successful JSON audit must say `complete: true`, with `scanned == reportedTotalCount`; a clean audit additionally requires `needsUpdate: 0`. Body references that resolve to pull requests do not contribute issue priority; cross-repository Issues fail closed by default; and missing or multiple labels on actual same-repository issues are data-policy failures that abort before writes. Fix those labels first. Never add `-Apply` merely to test the helper. Only with `project` scope and reviewed updates should an operator run `-Apply`; the command must perform its complete post-apply audit even after a partial writer failure, and a final separate read-only audit must prove the resulting project is complete and clean.
 
 ## Paper Backend Gap Testing (2026-05-05, PRs `#1031`–`#1040`)
 

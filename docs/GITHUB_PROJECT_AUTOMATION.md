@@ -158,7 +158,7 @@ Local helper scripts:
 - `scripts/github/Sync-TaskdeckProjectPriority.ps1` — audit issue/PR Project v2 `Priority` drift and optionally apply fixes.
 
 These helpers are fallbacks for GitHub MCP gaps. Project v2 priority audit needs `read:project`; applying field updates with `Sync-TaskdeckProjectPriority.ps1 -Apply` requires `gh auth refresh -s project`.
-The sync helper enforces the PR rule above: complete linked closing issues take precedence over repository-aware body references, the highest derived urgency wins, and a PR with no issue references receives `Priority V`. Every body reference is resolved to a typed, repository-matching object. Only actual issues contribute Priority labels; a validated pull-request reference is ignored. An actual issue whose priority is missing, ambiguous, unreadable, or identity-mismatched fails closed instead of becoming a fallback.
+The sync helper enforces the PR rule above: complete linked closing issues take precedence over repository-aware body references, the highest derived urgency wins, and a PR with no issue references receives `Priority V`. Every body reference is resolved to a typed, repository-matching object. Only actual same-repository issues contribute Priority labels; a validated pull-request reference is ignored, and every cross-repository Issue fails closed unless a future reviewed policy explicitly opts in. An actual same-repository issue whose priority is missing, ambiguous, unreadable, or identity-mismatched also fails closed instead of becoming a fallback.
 
 The priority helper's completeness contract is fail-closed:
 - It walks the ProjectV2 item connection by cursor and reports clean only after the collected item count exactly matches a stable `totalCount`/`updatedAt` snapshot.

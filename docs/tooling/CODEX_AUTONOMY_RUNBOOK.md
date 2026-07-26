@@ -203,7 +203,7 @@ powershell -File scripts/github/Sync-TaskdeckProjectPriority.ps1 -Apply
 ```
 
 Audit mode requires `read:project`. Apply mode requires the broader GitHub CLI project write scope: `gh auth refresh -s project`. If GitHub MCP or `gh` project writes are unavailable, report exactly what could not be synced.
-The helper enforces canonical PR derivation: complete closing-issue links first, then repository-aware body references, highest urgency when several actual issues apply, and `Priority V` only when no issue reference exists. It resolves each body reference to a typed, repository-matching object: validated pull-request references are ignored, while ambiguous, unreadable, identity-mismatched, or invalidly labelled issues fail closed. Do not bypass that gate with a guessed fallback. After any write attempt, including a partial writer failure, the helper must complete its post-apply audit and report the verified state or that the final state is unknown.
+The helper enforces canonical PR derivation: complete closing-issue links first, then repository-aware body references, highest urgency when several actual same-repository issues apply, and `Priority V` only when no issue reference exists. It resolves each body reference to a typed, repository-matching object: validated pull-request references are ignored; cross-repository Issues are default-off; and ambiguous, unreadable, identity-mismatched, or invalidly labelled same-repository issues fail closed. Do not bypass either gate with a guessed fallback. After any write attempt, including a partial writer failure, the helper must complete its post-apply audit and report the verified state or that the final state is unknown.
 
 ## Stop Conditions
 
