@@ -624,13 +624,18 @@ try {
             Assert-True ($reviewedConfiguration.Allow -notcontains $alteredInitializerRule) "The exact initializer rule must not authorize substituted branch arguments."
             Assert-True ($reviewedConfiguration.Allow -contains $taskLaunchRule) "The reviewed effective permissions should include explicit task launch rules."
             Assert-True (-not $reviewedConfiguration.Environment.ContainsKey("CLAUDE_CODE_USE_POWERSHELL_TOOL")) "Project settings must not enable the unsandboxed Windows PowerShell tool repo-wide."
-            $committedProjectGuardRule = "PowerShell(powershell -File scripts/worktree_guard.ps1:*)"
-            Assert-True ($reviewedConfiguration.Allow -contains $committedProjectGuardRule) "A trusted project source should include committed project allow rules."
+            $committedPowerShellRules = @($claudeSettings.permissions.allow | Where-Object { $_.StartsWith('PowerShell(', [System.StringComparison]::Ordinal) })
+            Assert-Equal 0 $committedPowerShellRules.Count "Project settings must not grant unsandboxed PowerShell commands outside the Bash-only command-hook boundary."
+            $effectivePowerShellRules = @($reviewedConfiguration.Allow | Where-Object { $_.StartsWith('PowerShell(', [System.StringComparison]::Ordinal) })
+            Assert-Equal 1 $effectivePowerShellRules.Count "The supported headless posture should permit only one PowerShell command."
+            Assert-Equal $powerShellInitializerRule $effectivePowerShellRules[0] "The supported headless posture should permit only the exact initializer PowerShell rule."
 
             $untrustedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($powerShellInitializerRule, $taskLaunchRule) -CommandLinePermissionMode "dontAsk" -WorkspaceTrusted $false
-            Assert-True ($untrustedConfiguration.Allow -notcontains $committedProjectGuardRule) "An untrusted workspace should ignore committed project allow rules."
             Assert-True ($untrustedConfiguration.Allow -contains $powerShellInitializerRule) "An untrusted workspace should retain the exact initializer rule supplied through CLI argv."
             Assert-True ($untrustedConfiguration.Allow -contains $taskLaunchRule) "An untrusted workspace should retain other explicitly supplied CLI rules."
+            $untrustedPowerShellRules = @($untrustedConfiguration.Allow | Where-Object { $_.StartsWith('PowerShell(', [System.StringComparison]::Ordinal) })
+            Assert-Equal 1 $untrustedPowerShellRules.Count "An untrusted workspace should retain only the exact CLI-supplied PowerShell rule."
+            Assert-Equal $powerShellInitializerRule $untrustedPowerShellRules[0] "An untrusted workspace changed the exact CLI-supplied PowerShell boundary."
             Assert-True (-not $untrustedConfiguration.Environment.ContainsKey("CLAUDE_CODE_USE_POWERSHELL_TOOL")) "An untrusted workspace should not rely on the project environment for PowerShell tool enablement."
 
             $projectTrustFixturePath = Join-Path $fixtureRoot "project-trust-settings.json"
@@ -656,7 +661,9 @@ try {
             Assert-NormalizedContains $protocol "built-in read-only Bash commands, or applicable hook approvals" "Headless guidance must retain documented non-allowlist authorization paths."
             Assert-NormalizedContains $protocol 'overrides a file-backed `defaultMode` for that session' "Headless guidance must distinguish the command-line mode override from merged allow rules."
             Assert-Contains $protocol "CLAUDE_CODE_USE_POWERSHELL_TOOL" "Headless guidance omitted the task-scoped host PowerShell-tool enablement."
-            Assert-NormalizedContains $protocol "repository deliberately does not enable that tool project-wide" "Headless guidance omitted the no-project-wide-PowerShell boundary."
+            Assert-Contains $protocol "Remove-Item Env:CLAUDE_CODE_USE_POWERSHELL_TOOL" "Headless guidance did not restore an absent host PowerShell-tool value after launch."
+            Assert-NormalizedContains $protocol 'restore its prior process value after `claude -p` returns' "Headless guidance did not bound the PowerShell-tool opt-in to one launch."
+            Assert-NormalizedContains $protocol "repository deliberately does not enable that tool or grant PowerShell commands project-wide" "Headless guidance omitted the no-project-wide-PowerShell boundary."
             Assert-NormalizedContains $protocol "on Windows it is not sandboxed" "Headless guidance omitted the PowerShell sandbox limitation."
             Assert-NormalizedContains $protocol "command deny/failure/pre-commit hooks are currently Bash-only" "Headless guidance omitted the repository hook-coverage boundary."
             Assert-NormalizedContains $protocol "does not make an untrusted workspace trusted" "Headless guidance must not treat -p as accepted project trust."
@@ -665,6 +672,51 @@ try {
             Assert-Contains $protocol "--permission-mode dontAsk" "Headless guidance omitted the non-prompting permission mode for reviewed effective permissions."
             Assert-Contains $protocol '$coordinatorBranchBaseline' "Post-run guidance omitted the pre-creation coordinator branch baseline."
             Assert-Contains $protocol '$coordinatorStatusBaseline' "Post-run guidance omitted the pre-creation coordinator status baseline."
+
+            $headlessExampleStart = $protocol.IndexOf("Set-Location -LiteralPath '<exact helper-created worktree>'", [System.StringComparison]::Ordinal)
+            $headlessExampleEnd = $protocol.IndexOf('```', $headlessExampleStart, [System.StringComparison]::Ordinal)
+            Assert-True ($headlessExampleStart -ge 0 -and $headlessExampleEnd -gt $headlessExampleStart) "Headless guidance omitted its executable PowerShell example."
+            $headlessExampleScript = $protocol.Substring($headlessExampleStart, $headlessExampleEnd - $headlessExampleStart)
+            $documentedLaunchLine = 'claude -p --setting-sources project --allowedTools $initializerAllowRule <other reviewed task arguments> --permission-mode dontAsk'
+            $launchProbeLine = '$script:observedHeadlessPowerShellToolValue = $env:CLAUDE_CODE_USE_POWERSHELL_TOOL; throw ''Taskdeck headless launch canary'''
+            $escapedHeadlessWorktree = $createdWorktree.Replace("'", "''")
+            $headlessExampleScript = $headlessExampleScript.Replace("'<exact helper-created worktree>'", "'$escapedHeadlessWorktree'").Replace($documentedLaunchLine, $launchProbeLine)
+            $headlessExampleBlock = [scriptblock]::Create($headlessExampleScript)
+            $originalHeadlessLocation = (Get-Location).Path
+            $originalPowerShellToolValue = [Environment]::GetEnvironmentVariable('CLAUDE_CODE_USE_POWERSHELL_TOOL', [EnvironmentVariableTarget]::Process)
+            $powerShellToolRestoreCases = @(
+                [pscustomobject]@{ Exists = $false; Value = $null },
+                [pscustomobject]@{ Exists = $true; Value = '0' }
+            )
+            try {
+                foreach ($restoreCase in $powerShellToolRestoreCases) {
+                    if ($restoreCase.Exists) {
+                        $env:CLAUDE_CODE_USE_POWERSHELL_TOOL = $restoreCase.Value
+                    } else {
+                        Remove-Item Env:CLAUDE_CODE_USE_POWERSHELL_TOOL -ErrorAction SilentlyContinue
+                    }
+                    $script:observedHeadlessPowerShellToolValue = $null
+                    $launchProbeFailed = $false
+                    try {
+                        & $headlessExampleBlock
+                    } catch {
+                        $launchProbeFailed = $true
+                        Assert-Contains $_.Exception.Message 'Taskdeck headless launch canary' "Headless launch probe failed for an unexpected reason."
+                    }
+                    Assert-True $launchProbeFailed "Headless launch probe should exercise the documented finally block."
+                    Assert-Equal '1' $script:observedHeadlessPowerShellToolValue "Headless launch did not enable the PowerShell tool for its child process."
+                    $restoredPowerShellToolValue = [Environment]::GetEnvironmentVariable('CLAUDE_CODE_USE_POWERSHELL_TOOL', [EnvironmentVariableTarget]::Process)
+                    Assert-Equal $restoreCase.Value $restoredPowerShellToolValue "Headless launch did not restore the prior PowerShell-tool process value."
+                }
+            } finally {
+                if ($null -eq $originalPowerShellToolValue) {
+                    Remove-Item Env:CLAUDE_CODE_USE_POWERSHELL_TOOL -ErrorAction SilentlyContinue
+                } else {
+                    $env:CLAUDE_CODE_USE_POWERSHELL_TOOL = $originalPowerShellToolValue
+                }
+                Set-Location -LiteralPath $originalHeadlessLocation
+                Remove-Variable -Name observedHeadlessPowerShellToolValue -Scope Script -ErrorAction SilentlyContinue
+            }
             Complete-Test "headless posture excludes inherited local allows and reviews the complete effective permission set"
         }
 
@@ -912,11 +964,27 @@ try {
 
     if (Test-CaseSelected "existing-branch") {
         $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "issue-425/existing", "refs/remotes/origin/main")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "namespace-ancestor", "refs/remotes/origin/main")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "namespace-descendant/child", "refs/remotes/origin/main")
+        $registrationsBeforeBranchCollisions = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $branchesBeforeBranchCollisions = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname)", "--", "refs/heads/")
         $branchCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "425", "-Slug", "existing")
         Assert-True ($branchCollision.ExitCode -ne 0) "Existing requested branch should fail closed."
         Assert-Contains $branchCollision.Output "Branch already exists: issue-425/existing" "Branch collision diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-425-existing"))) "Branch collision should not create a worktree."
-        Complete-Test "existing branch fails closed"
+        $ancestorCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "477", "-Slug", "ancestor-collision", "-BranchName", "namespace-ancestor/child")
+        Assert-True ($ancestorCollision.ExitCode -ne 0) "An existing ancestor branch should fail closed."
+        Assert-Contains $ancestorCollision.Output "Branch namespace conflicts with existing branch 'namespace-ancestor': namespace-ancestor/child" "Ancestor branch collision diagnostic was not clear."
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-477-ancestor-collision"))) "Ancestor branch collision should not create a worktree."
+        $descendantCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "478", "-Slug", "descendant-collision", "-BranchName", "namespace-descendant")
+        Assert-True ($descendantCollision.ExitCode -ne 0) "An existing descendant branch should fail closed."
+        Assert-Contains $descendantCollision.Output "Branch namespace conflicts with existing branch 'namespace-descendant/child': namespace-descendant" "Descendant branch collision diagnostic was not clear."
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-478-descendant-collision"))) "Descendant branch collision should not create a worktree."
+        $registrationsAfterBranchCollisions = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $branchesAfterBranchCollisions = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname)", "--", "refs/heads/")
+        Assert-Equal $registrationsBeforeBranchCollisions $registrationsAfterBranchCollisions "Branch namespace collision changed worktree registrations."
+        Assert-Equal $branchesBeforeBranchCollisions $branchesAfterBranchCollisions "Branch namespace collision changed local refs."
+        Complete-Test "existing branch and ref namespace collisions fail closed"
     }
 
     if (Test-CaseSelected "existing-path") {
@@ -1010,13 +1078,15 @@ try {
             @{ IssueNumber = '470'; Slug = 'reserved-branch'; BranchName = 'issue-470/CON' },
             @{ IssueNumber = '471'; Slug = 'superscript-device'; BranchName = "issue-471/COM$([char]0x00B9)" },
             @{ IssueNumber = '472'; Slug = 'trailing-period'; BranchName = 'issue-472/trailing./leaf' },
-            @{ IssueNumber = '473'; Slug = 'console-device'; BranchName = 'issue-473/CONIN$' }
+            @{ IssueNumber = '473'; Slug = 'console-device'; BranchName = 'issue-473/CONIN$' },
+            @{ IssueNumber = '474'; Slug = 'long-directory'; BranchName = "issue-474/$('a' * 256)/leaf" },
+            @{ IssueNumber = '475'; Slug = 'long-lock'; BranchName = "issue-475/$('b' * 251)" }
         )
         foreach ($branchCase in $windowsIncompatibleBranchCases) {
             $branchTarget = Join-Path $callerPath ".worktrees/codex-$($branchCase.IssueNumber)-$($branchCase.Slug)"
             $branchResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", $branchCase.IssueNumber, "-Slug", $branchCase.Slug, "-BranchName", $branchCase.BranchName)
             Assert-True ($branchResult.ExitCode -ne 0) "Windows-incompatible branch '$($branchCase.BranchName)' should fail closed."
-            Assert-Contains $branchResult.Output "Invalid branch name for Windows-compatible worktrees: $($branchCase.BranchName)" "Windows-incompatible branch diagnostic was not clear."
+            Assert-Contains $branchResult.Output "Invalid branch name for Windows-compatible worktrees:" "Windows-incompatible branch diagnostic was not clear."
             Assert-True (-not (Test-Path -LiteralPath $branchTarget)) "Windows-incompatible branch '$($branchCase.BranchName)' should not create a target path."
             $branchRef = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$($branchCase.BranchName)") -WorkingDirectory $callerPath
             Assert-Equal 1 $branchRef.ExitCode "Windows-incompatible branch '$($branchCase.BranchName)' created a shared ref."

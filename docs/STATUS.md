@@ -1212,11 +1212,12 @@ Required workflow: `.github/workflows/ci-required.yml`
   authenticate the helper before PowerShell starts it; an external hash-pinned launcher remains a
   separate bootstrap trust boundary. The same residual applies after creation: a same-user process
   can replace the target initializer or guard before handoff execution. The repository does not
-  enable Claude Code's unsandboxed Windows PowerShell tool project-wide; headless initialization
-  requires a task-scoped host opt-in and exact rule while later commands remain on the Bash-only
-  hook surface. The helper is main-checkout-only, rejects linked-source invocation before mutation,
-  rejects Git-syntax-valid names that cannot be Windows ref paths, and keeps `claude -p` in the
-  helper-created target instead of creating a second Claude worktree.
+  enable or grant Claude Code's unsandboxed Windows PowerShell tool project-wide; headless
+  initialization requires a restored-after-launch host opt-in and exact rule while later commands
+  remain on the Bash-only hook surface. The helper is main-checkout-only, rejects linked-source invocation before mutation,
+  rejects Git-syntax-valid names, overlong lock paths, and branch namespace collisions that cannot
+  become Windows loose refs, and keeps `claude -p` in the helper-created target instead of creating
+  a second Claude worktree.
 - `backend-architecture` (Ubuntu)
 - `backend-unit` (Ubuntu/Windows)
 - `api-integration` (Ubuntu/Windows)

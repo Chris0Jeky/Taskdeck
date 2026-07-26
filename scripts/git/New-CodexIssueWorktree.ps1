@@ -498,11 +498,19 @@ if ($branchValidationResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($bra
 }
 $windowsInvalidRefCharacters = [char[]]@('<', '>', ':', '"', '\', '|', '?', '*')
 $windowsReservedRefComponent = '^(?i:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM(?:[1-9]|\u00B9|\u00B2|\u00B3)|LPT(?:[1-9]|\u00B9|\u00B2|\u00B3))(?:\.|$)'
-$hasWindowsIncompatibleRefComponent = @(
-    $BranchName -split '/' | Where-Object {
-        $_ -match $windowsReservedRefComponent -or $_.EndsWith('.') -or $_.EndsWith(' ')
+$branchComponents = @($BranchName -split '/')
+$hasWindowsIncompatibleRefComponent = $false
+for ($componentIndex = 0; $componentIndex -lt $branchComponents.Count; $componentIndex++) {
+    $component = $branchComponents[$componentIndex]
+    $maximumComponentLength = if ($componentIndex -eq ($branchComponents.Count - 1)) { 250 } else { 255 }
+    if ($component -match $windowsReservedRefComponent -or
+        $component.EndsWith('.') -or
+        $component.EndsWith(' ') -or
+        $component.Length -gt $maximumComponentLength) {
+        $hasWindowsIncompatibleRefComponent = $true
+        break
     }
-).Count -gt 0
+}
 if ($BranchName.IndexOfAny($windowsInvalidRefCharacters) -ge 0 -or $hasWindowsIncompatibleRefComponent) {
     throw "Invalid branch name for Windows-compatible worktrees: $BranchName"
 }
@@ -514,6 +522,23 @@ if ($branchLookupResult.ExitCode -eq 0) {
 }
 if ($branchLookupResult.ExitCode -ne 1) {
     throw "Git could not check branch '$BranchName' (exit code $($branchLookupResult.ExitCode)).$(Format-GitContext $branchLookupResult.Output)"
+}
+$branchInventoryResult = Invoke-GitCommand -Arguments @("for-each-ref", "--format=%(refname)", "--", "refs/heads/")
+if ($branchInventoryResult.ExitCode -ne 0) {
+    throw "Git could not inspect the local branch namespace.$(Format-GitContext $branchInventoryResult.Output)"
+}
+$namespaceConflicts = @(
+    $branchInventoryResult.Stdout -split '\r?\n' |
+        Where-Object { $_.StartsWith('refs/heads/', [System.StringComparison]::Ordinal) } |
+        ForEach-Object { $_.Substring('refs/heads/'.Length) } |
+        Where-Object {
+            $_.Equals($BranchName, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $BranchName.StartsWith("$_/", [System.StringComparison]::OrdinalIgnoreCase) -or
+            $_.StartsWith("$BranchName/", [System.StringComparison]::OrdinalIgnoreCase)
+        }
+)
+if ($namespaceConflicts.Count -gt 0) {
+    throw "Branch namespace conflicts with existing branch '$($namespaceConflicts[0])': $BranchName"
 }
 
 if (Test-Path -LiteralPath $worktreeDir) {

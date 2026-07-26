@@ -1397,8 +1397,9 @@ Required workflow: `.github/workflows/ci-required.yml`
     not authenticate target initializer/guard bytes at handoff execution time. The permission model
     asserts no project-wide opt-in to Claude Code's unsandboxed Windows PowerShell tool, trusted
     versus untrusted project settings, main-checkout-only helper invocation, exact-target launch
-    without a second Claude worktree, directly pasteable here-string syntax, real PowerShell 5.1
-    single-argv transport, and pre-mutation rejection of Windows-incompatible branch refs
+    without a second Claude worktree, restored host opt-in, directly pasteable here-string syntax,
+    real PowerShell 5.1 single-argv transport, and pre-mutation rejection of invalid, overlong, or
+    namespace-colliding Windows branch refs
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`

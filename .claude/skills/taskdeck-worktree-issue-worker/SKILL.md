@@ -20,9 +20,10 @@ outside this boundary. From Bash, launch a reviewed absolute
 PowerShell application in the worktree for that block; never resolve a bare `powershell` command
 through PATH. Pass the helper's single-quoted here-string rule variable as one `--allowedTools`
 argv value. For a headless worker, start `claude -p` in the exact helper-created target without
-`--worktree`, accept project trust interactively before relying on settings or hooks, and enable the
-PowerShell tool only through the trusted host environment for the exact initializer rule. The tool
-is unsandboxed on Windows and Taskdeck's command hooks are Bash-only, so keep later commands on Git
+`--worktree`, accept project trust interactively before relying on settings or hooks, and note that
+the project grants no PowerShell commands. Enable the PowerShell tool only through the trusted host
+environment for the exact initializer rule and restore the prior host value when the launch returns.
+The tool is unsandboxed on Windows and Taskdeck's command hooks are Bash-only, so keep later commands on Git
 Bash. For an untrusted launch, supply every allow through CLI argv. Unsupported clients require an
 interactive coordinator launch. For headless launch authorization, use the reviewed
 effective-permission posture and exact additive full-command task rule printed by the helper,

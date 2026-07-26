@@ -78,9 +78,11 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
 ```
 
 Custom branches must also be representable as Windows ref paths. The helper rejects `<`, `>`, `:`,
-`"`, `\`, `|`, `?`, `*`, trailing periods, and Windows-reserved device components such as `CON` or
-`LPT1` before it creates a target. Git's platform-neutral `check-ref-format` alone accepts some names
-that Windows cannot create as loose refs or lock files.
+`"`, `\`, `|`, `?`, `*`, trailing periods, Windows-reserved device components such as `CON` or
+`LPT1`, directory components longer than 255 UTF-16 code units, and final components longer than 250
+so Git's `.lock` suffix still fits. It also rejects an existing local branch at any ancestor or
+descendant of the planned name. Git's platform-neutral `check-ref-format` alone accepts names that
+Windows cannot create as loose refs or lock files, and exact ref lookup misses namespace collisions.
 
 Run the helper's entire printed PowerShell block unchanged from the new worktree. It invokes the
 target initializer at its exact absolute path; that path's selected-base blob identity was checked
@@ -153,17 +155,27 @@ For example:
 
 ```powershell
 Set-Location -LiteralPath '<exact helper-created worktree>'
-$env:CLAUDE_CODE_USE_POWERSHELL_TOOL = '1'
-$initializerAllowRule = @'
+$previousPowerShellToolValue = [Environment]::GetEnvironmentVariable('CLAUDE_CODE_USE_POWERSHELL_TOOL', [EnvironmentVariableTarget]::Process)
+try {
+    $env:CLAUDE_CODE_USE_POWERSHELL_TOOL = '1'
+    $initializerAllowRule = @'
 PowerShell(<exact absolute initializer command and pinned arguments printed by the helper>)
 '@
-claude -p --setting-sources project --allowedTools $initializerAllowRule <other reviewed task arguments> --permission-mode dontAsk
+    claude -p --setting-sources project --allowedTools $initializerAllowRule <other reviewed task arguments> --permission-mode dontAsk
+} finally {
+    if ($null -eq $previousPowerShellToolValue) {
+        Remove-Item Env:CLAUDE_CODE_USE_POWERSHELL_TOOL -ErrorAction SilentlyContinue
+    } else {
+        $env:CLAUDE_CODE_USE_POWERSHELL_TOOL = $previousPowerShellToolValue
+    }
+}
 ```
 
 Do not add `--worktree`: Claude Code would create a second `.claude/worktrees/...` checkout instead
 of staying in the helper-created target, so the exact-worktree guard would reject the handoff. The
 helper handoff requires the PowerShell tool shape, but the repository deliberately does not enable
-that tool project-wide. Enable it only in the trusted host environment for this task-scoped launch.
+that tool or grant PowerShell commands project-wide. Enable it only in the trusted host environment
+for this task-scoped launch, and restore its prior process value after `claude -p` returns.
 When enabled, PowerShell becomes Claude Code's primary shell; on Windows it is not sandboxed, and
 Taskdeck's command deny/failure/pre-commit hooks are currently Bash-only. Therefore the unattended
 posture permits only the exact initializer PowerShell rule; keep other command execution on Git Bash
