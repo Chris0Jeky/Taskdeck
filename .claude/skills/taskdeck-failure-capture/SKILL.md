@@ -25,7 +25,18 @@ Use `docs/agentic/FAILURE_LEDGER.md` and `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`
 
 ## Optional Ledger Update
 
+On Windows PowerShell:
+
 ```powershell
-python scripts/agent_hooks/render_failure_ledger.py
+py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+py -3 -B scripts/agent_hooks/render_failure_ledger.py
+```
+
+On POSIX:
+
+```sh
+set -e
+python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
+python3 -B scripts/agent_hooks/render_failure_ledger.py
 ```
 

@@ -28,7 +28,16 @@ Use `docs/agentic/FAILURE_LEDGER.md` and `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`
 If a failure is likely to recur or affected the work plan:
 
 ```powershell
-python scripts/agent_hooks/render_failure_ledger.py
+py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+py -3 -B scripts/agent_hooks/render_failure_ledger.py
+```
+
+On POSIX, use the verified platform launcher instead:
+
+```sh
+set -e
+python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
+python3 -B scripts/agent_hooks/render_failure_ledger.py
 ```
 
 Claude Code hook failures may append raw entries to `docs/agentic/failure_ledger.jsonl`; render the ledger before handoff when those entries should become visible.

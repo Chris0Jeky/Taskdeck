@@ -38,6 +38,7 @@ Both agents must preserve:
 | Containers/OpenAPI/SQLite docs | Docker MCP gateway | Docker MCP gateway from `.mcp.json` | `docker`/repo scripts |
 | High-autonomy issue work | Codex skills, configured agents/worktrees when runtime policy allows | Claude skills, hooks, worktree sessions | local coordinator flow |
 | Guardrails | system policy, `AGENTS.md`, `.codex/config.toml`, worktree guards | `.claude/settings.json`, hooks, skills, worktree guards | stop and ask for safety blockers |
+| Agent utility Python | `py -3 -B` on native Windows; `python3 -B` on POSIX | same platform launchers; smoke children use the active `sys.executable -B` | stop loudly if the platform launcher is unavailable |
 
 ## Codex Strengths To Use
 
@@ -76,19 +77,6 @@ Known intentional difference:
 
 ## Verification
 
-For parity-only changes, run:
-
-```powershell
-Get-Content -Raw .mcp.json | ConvertFrom-Json | Out-Null
-Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-question-batch
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-failure-capture
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-interface-map
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-question-batch
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-failure-capture
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-interface-map
-node scripts\check-docs-governance.mjs
-node scripts\check-golden-principles.mjs
-```
+For parity-only changes, run the platform-specific, fail-fast **Agentic Operating Layer Smoke Checks** in `docs/TESTING_GUIDE.md`. The full configured-handler `smoke_test.py` is native-Windows-only because `.claude/settings.json` declares `shell: powershell`; POSIX verification covers direct utilities with `python3 -B`, not that Windows handler contract.
 
 Use runtime MCP list commands when available, but do not claim remote MCP connectivity unless the current session actually verified it.

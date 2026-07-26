@@ -22,12 +22,18 @@ the FLOOR-consolidation issue; don't assume this file is the only gate and don't
 regex sets drift further apart. Changes to either floor are T4-class work.
 
 ## Verify
-Windows PowerShell:
+Native Windows PowerShell configured-handler smoke:
 `py -3 -B scripts/agent_hooks/smoke_test.py`
 
-POSIX:
-`python3 -B scripts/agent_hooks/smoke_test.py`
+POSIX direct renderer checks:
+```sh
+set -e
+python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
+python3 -B scripts/agent_hooks/render_failure_ledger.py
+```
 
 The smoke harness launches child Python scripts through its active `sys.executable` with `-B`,
 while the Windows-only commands in `.claude/settings.json` use the verified `py -3 -B` launcher.
+The full configured-handler smoke is native-Windows-only because those handlers declare
+`shell: powershell`; do not claim it as POSIX proof unless that shell contract is redesigned.
 Seam map: `autodoc/AGENT_INDEX.md`
