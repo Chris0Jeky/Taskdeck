@@ -1,7 +1,14 @@
+import io
+import json
+import tempfile
 import unittest
 from collections import Counter
+from contextlib import redirect_stderr
+from pathlib import Path
+from unittest.mock import patch
 
-from render_failure_ledger import project_latest_entries, render_markdown
+import render_failure_ledger as ledger
+from render_failure_ledger import load_entries, project_latest_entries, render_markdown
 
 
 class FailureLedgerProjectionTests(unittest.TestCase):
@@ -77,6 +84,36 @@ class FailureLedgerProjectionTests(unittest.TestCase):
 
         self.assertNotIn("| seed |", rendered)
         self.assertFalse(any(line.startswith("| ") for line in data_rows.splitlines()))
+
+    def test_mixed_input_renders_issue_less_row_but_not_seed(self) -> None:
+        entries = [
+            {
+                "ts": "2026-05-11T00:00:00Z",
+                "class": "seed",
+                "surface": "agentic-pack",
+                "failure": "Ledger created",
+                "status": "open",
+            },
+            {
+                "ts": "2026-07-25T00:00:00Z",
+                "class": "invalid_signal",
+                "surface": "ci/e2e-smoke",
+                "failure": "Archive-to-restore seed was transiently unavailable",
+                "workaround": "Rerun after seed creation",
+                "future_fix": "Stabilize the archive-to-restore seed",
+                "status": "open",
+            },
+        ]
+
+        rendered = render_markdown(entries)
+
+        self.assertNotIn("| seed |", rendered)
+        self.assertIn("| invalid_signal | ci/e2e-smoke |", rendered)
+
+    def test_checked_in_markdown_matches_jsonl_projection(self) -> None:
+        entries = load_entries(ledger.JSONL)
+
+        self.assertEqual(ledger.MD.read_text(encoding="utf-8"), render_markdown(entries))
 
     def test_reconciled_targets_project_exact_latest_state(self) -> None:
         entries = [
@@ -170,6 +207,79 @@ class FailureLedgerProjectionTests(unittest.TestCase):
             [(entry["class"], entry["surface"]) for entry in open_entries],
             [("invalid_signal", "ci/e2e-smoke")],
         )
+
+
+class FailureLedgerEntryPointTests(unittest.TestCase):
+    def assert_invalid_input_preserves_target(
+        self,
+        payload: str,
+        expected_line: int,
+        expected_error: str,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "failure_ledger.jsonl"
+            target = Path(directory) / "FAILURE_LEDGER.md"
+            source.write_text(payload, encoding="utf-8")
+            target.write_text("sentinel", encoding="utf-8")
+            stderr = io.StringIO()
+
+            with (
+                patch.object(ledger, "JSONL", source),
+                patch.object(ledger, "MD", target),
+                redirect_stderr(stderr),
+            ):
+                return_code = ledger.main()
+
+            self.assertNotEqual(return_code, 0)
+            self.assertEqual(target.read_text(encoding="utf-8"), "sentinel")
+            self.assertIn(str(source), stderr.getvalue())
+            self.assertIn(f"line {expected_line}", stderr.getvalue())
+            self.assertIn(expected_error, stderr.getvalue())
+
+    def test_malformed_json_returns_nonzero_without_overwriting_markdown(self) -> None:
+        self.assert_invalid_input_preserves_target(
+            '{"status": "open"}\n{not-json}\n',
+            2,
+            "invalid JSON",
+        )
+
+    def test_non_object_json_returns_nonzero_without_overwriting_markdown(self) -> None:
+        self.assert_invalid_input_preserves_target(
+            "[]\n",
+            1,
+            "expected a JSON object, got list",
+        )
+
+    def test_missing_empty_and_seed_only_sources_remain_valid(self) -> None:
+        seed = {
+            "ts": "2026-05-11T00:00:00Z",
+            "class": "seed",
+            "surface": "agentic-pack",
+            "failure": "Ledger created",
+            "status": "open",
+        }
+        cases = {
+            "missing": None,
+            "empty": "\n",
+            "seed-only": json.dumps(seed) + "\n",
+        }
+
+        for name, payload in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory) / "failure_ledger.jsonl"
+                target = Path(directory) / "FAILURE_LEDGER.md"
+                if payload is not None:
+                    source.write_text(payload, encoding="utf-8")
+
+                with (
+                    patch.object(ledger, "JSONL", source),
+                    patch.object(ledger, "MD", target),
+                ):
+                    return_code = ledger.main()
+
+                self.assertEqual(return_code, 0)
+                self.assertTrue(target.exists())
+                self.assertNotIn("| seed |", target.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

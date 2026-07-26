@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +39,10 @@ Use `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`; do not mutate root instructions aft
 """
 
 TRACKING_ISSUE = re.compile(r"#\d+")
+
+
+class LedgerFormatError(ValueError):
+    """Raised when a nonblank JSONL line is not a JSON object."""
 
 
 def cell(value: object, limit: int = 160) -> str:
@@ -84,19 +89,39 @@ def render_markdown(entries: list[dict[str, object]]) -> str:
     return HEADER + "\n".join(rows) + FOOTER
 
 
-def main() -> int:
+def load_entries(path: Path) -> list[dict[str, object]]:
+    """Load and validate every nonblank JSONL line before rendering."""
+    if not path.exists():
+        return []
+
     entries: list[dict[str, object]] = []
-    if JSONL.exists():
-        for line in JSONL.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(entry, dict):
-                continue
-            entries.append(entry)
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise LedgerFormatError(
+                f"{path}: line {line_number}: invalid JSON: {exc.msg} at column {exc.colno}"
+            ) from exc
+
+        if not isinstance(entry, dict):
+            raise LedgerFormatError(
+                f"{path}: line {line_number}: expected a JSON object, got {type(entry).__name__}"
+            )
+
+        entries.append(entry)
+
+    return entries
+
+
+def main() -> int:
+    try:
+        entries = load_entries(JSONL)
+    except (LedgerFormatError, OSError, UnicodeError) as exc:
+        print(f"Failure ledger render failed: {exc}", file=sys.stderr)
+        return 1
 
     MD.parent.mkdir(parents=True, exist_ok=True)
     MD.write_text(render_markdown(entries), encoding="utf-8")
