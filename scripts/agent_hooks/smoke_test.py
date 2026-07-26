@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -28,12 +29,16 @@ def run_bash(command: str, payload: object | None = None, env: dict[str, str] | 
     )
 
 
-def run_bash_raw(command: str, stdin: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def run_python(script: str, payload: object | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return run_python_raw(script, None if payload is None else json.dumps(payload), env)
+
+
+def run_python_raw(script: str, stdin: str | None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     merged = os.environ.copy()
     if env:
         merged.update(env)
     return subprocess.run(
-        ["bash", "-lc", command],
+        [sys.executable, "-B", str(ROOT / script)],
         input=stdin,
         text=True,
         capture_output=True,
@@ -90,7 +95,7 @@ def expect_json_context(result: subprocess.CompletedProcess[str], label: str, ev
 
 def expect_pretool_deny(command: str, handler: dict[str, Any] | None = None) -> None:
     payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command}}
-    result = run_handler(handler, payload) if handler else run_bash("python scripts/agent_hooks/pre_tool_use.py", payload)
+    result = run_handler(handler, payload) if handler else run_python("scripts/agent_hooks/pre_tool_use.py", payload)
     expect_ok(result, f"blocked: {command}")
     if not result.stdout.strip():
         raise AssertionError(f"blocked: {command} expected deny JSON")
@@ -105,6 +110,38 @@ def load_settings() -> dict[str, object]:
     return json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
 
 
+def test_configured_python_launchers(settings: dict[str, object]) -> None:
+    hooks = settings["hooks"]  # type: ignore[index]
+    commands = [
+        str(handler["command"])
+        for groups in hooks.values()
+        for group in groups
+        for handler in group["hooks"]
+        if "scripts\\agent_hooks" in str(handler.get("command", ""))
+    ]
+    if not commands:
+        raise AssertionError("no configured Python hook commands found")
+    for command in commands:
+        if not command.startswith("py -3 -B "):
+            raise AssertionError(f"configured hook must use the verified Windows launcher: {command!r}")
+
+    permissions = settings["permissions"]  # type: ignore[index]
+    allowed_agent_commands = [
+        str(rule)
+        for rule in permissions["allow"]
+        if "scripts/agent_hooks" in str(rule)
+    ]
+    if not allowed_agent_commands:
+        raise AssertionError("no agent-hook permission commands found")
+    launcher_prefixes = ("Bash(py -3 -B ", "Bash(python3 -B ")
+    for rule in allowed_agent_commands:
+        if not rule.startswith(launcher_prefixes):
+            raise AssertionError(f"agent-hook permission must use a verified platform launcher: {rule!r}")
+    for prefix in launcher_prefixes:
+        if not any(rule.startswith(prefix) for rule in allowed_agent_commands):
+            raise AssertionError(f"agent-hook permissions missing launcher family: {prefix!r}")
+
+
 def test_pre_tool_use(settings: dict[str, object]) -> None:
     hooks = settings["hooks"]  # type: ignore[index]
     pre_tool_handler = hooks["PreToolUse"][0]["hooks"][0]  # type: ignore[index]
@@ -117,13 +154,13 @@ def test_pre_tool_use(settings: dict[str, object]) -> None:
         "configured safe bash command",
     )
     expect_empty(
-        run_bash(
-            "python scripts/agent_hooks/pre_tool_use.py",
+        run_python(
+            "scripts/agent_hooks/pre_tool_use.py",
             {"hook_event_name": "PreToolUse", "tool_name": "Read", "tool_input": {"file_path": "docs/STATUS.md"}},
         ),
         "non-bash tool ignored",
     )
-    expect_empty(run_bash_raw("python scripts/agent_hooks/pre_tool_use.py", "{not json"), "invalid json ignored")
+    expect_empty(run_python_raw("scripts/agent_hooks/pre_tool_use.py", "{not json"), "invalid json ignored")
 
     for command in [
         "rm -rf /tmp/build",
@@ -160,8 +197,8 @@ def test_pre_tool_use(settings: dict[str, object]) -> None:
     expect_pretool_deny("git restore --worktree docs/STATUS.md", pre_tool_handler)
 
     expect_empty(
-        run_bash(
-            "python scripts/agent_hooks/pre_tool_use.py",
+        run_python(
+            "scripts/agent_hooks/pre_tool_use.py",
             {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "Get-Content .env.example"}},
         ),
         "secret read allowed",
@@ -260,6 +297,7 @@ def test_pre_commit_hook(settings: dict[str, object]) -> None:
 
 def main() -> int:
     settings = load_settings()
+    test_configured_python_launchers(settings)
     test_pre_tool_use(settings)
     test_configured_commands(settings)
     test_failure_capture(settings)

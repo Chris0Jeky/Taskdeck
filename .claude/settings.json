@@ -36,11 +36,16 @@
       "Bash(npx playwright:*)",
       "Bash(npx vue-tsc:*)",
       "Bash(npx eslint:*)",
-      "Bash(python scripts/agent_hooks/pre_tool_use.py:*)",
-      "Bash(python scripts/agent_hooks/post_tool_use.py:*)",
-      "Bash(python scripts/agent_hooks/post_tool_failure.py:*)",
-      "Bash(python scripts/agent_hooks/render_failure_ledger.py:*)",
-      "Bash(python scripts/agent_hooks/smoke_test.py:*)",
+      "Bash(py -3 -B scripts/agent_hooks/pre_tool_use.py:*)",
+      "Bash(py -3 -B scripts/agent_hooks/post_tool_use.py:*)",
+      "Bash(py -3 -B scripts/agent_hooks/post_tool_failure.py:*)",
+      "Bash(py -3 -B scripts/agent_hooks/render_failure_ledger.py:*)",
+      "Bash(py -3 -B scripts/agent_hooks/smoke_test.py:*)",
+      "Bash(python3 -B scripts/agent_hooks/pre_tool_use.py:*)",
+      "Bash(python3 -B scripts/agent_hooks/post_tool_use.py:*)",
+      "Bash(python3 -B scripts/agent_hooks/post_tool_failure.py:*)",
+      "Bash(python3 -B scripts/agent_hooks/render_failure_ledger.py:*)",
+      "Bash(python3 -B scripts/agent_hooks/smoke_test.py:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
@@ -86,7 +91,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "python \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\pre_tool_use.py\"",
+            "command": "py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\pre_tool_use.py\"",
             "timeout": 5
           }
         ]
@@ -112,7 +117,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "python \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\post_tool_use.py\"",
+            "command": "py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\post_tool_use.py\"",
             "timeout": 5
           }
         ]
@@ -124,7 +129,7 @@
             "type": "command",
             "if": "Bash(gh pr create*)",
             "shell": "powershell",
-            "command": "python \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\post_tool_use.py\"",
+            "command": "py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\post_tool_use.py\"",
             "timeout": 5
           }
         ]
@@ -137,7 +142,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "python \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\post_tool_failure.py\"",
+            "command": "py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\post_tool_failure.py\"",
             "timeout": 10
           }
         ]

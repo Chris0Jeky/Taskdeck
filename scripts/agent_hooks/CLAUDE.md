@@ -22,5 +22,12 @@ the FLOOR-consolidation issue; don't assume this file is the only gate and don't
 regex sets drift further apart. Changes to either floor are T4-class work.
 
 ## Verify
-`python scripts/agent_hooks/smoke_test.py`
+Windows PowerShell:
+`py -3 -B scripts/agent_hooks/smoke_test.py`
+
+POSIX:
+`python3 -B scripts/agent_hooks/smoke_test.py`
+
+The smoke harness launches child Python scripts through its active `sys.executable` with `-B`,
+while the Windows-only commands in `.claude/settings.json` use the verified `py -3 -B` launcher.
 Seam map: `autodoc/AGENT_INDEX.md`
