@@ -123,6 +123,114 @@ function Invoke-GitCommand {
     }
 }
 
+function Invoke-GitBlobBytes {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Blob
+    )
+
+    $process = $null
+    $memoryStream = $null
+    try {
+        $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $gitExecutable
+        $startInfo.WorkingDirectory = $Repository
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $arguments = @("-C", $Repository, "cat-file", "blob", $Blob)
+
+        if ($null -ne $startInfo.PSObject.Properties['ArgumentList']) {
+            foreach ($argument in $arguments) {
+                $startInfo.ArgumentList.Add($argument)
+            }
+        }
+        else {
+            $startInfo.Arguments = (($arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+        }
+
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $startInfo
+        if (-not $process.Start()) {
+            throw "Git process did not start."
+        }
+
+        $memoryStream = [System.IO.MemoryStream]::new()
+        $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($memoryStream)
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult().Trim()
+
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            Bytes = $memoryStream.ToArray()
+            Output = $stderr
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            ExitCode = -1
+            Bytes = [byte[]]@()
+            Output = $_.Exception.Message
+        }
+    }
+    finally {
+        if ($null -ne $memoryStream) {
+            $memoryStream.Dispose()
+        }
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
+    }
+}
+
+function Test-ByteArrayEqual {
+    param(
+        [Parameter(Mandatory = $true)]
+        [byte[]]$Left,
+
+        [Parameter(Mandatory = $true)]
+        [byte[]]$Right
+    )
+
+    if ($Left.Length -ne $Right.Length) {
+        return $false
+    }
+    for ($index = 0; $index -lt $Left.Length; $index++) {
+        if ($Left[$index] -ne $Right[$index]) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function ConvertTo-CrlfBytes {
+    param(
+        [Parameter(Mandatory = $true)]
+        [byte[]]$Bytes
+    )
+
+    $memoryStream = [System.IO.MemoryStream]::new()
+    try {
+        $previousValue = -1
+        foreach ($value in $Bytes) {
+            if ($value -eq 10 -and $previousValue -ne 13) {
+                $memoryStream.WriteByte(13)
+            }
+            $memoryStream.WriteByte($value)
+            $previousValue = $value
+        }
+        return ,$memoryStream.ToArray()
+    }
+    finally {
+        $memoryStream.Dispose()
+    }
+}
+
 function Format-GitContext {
     param([string]$Output)
 
@@ -197,32 +305,30 @@ function Get-ReviewedHandoffArtifacts {
             throw "Reviewed handoff artifact '$artifact' is missing from the invoking checkout."
         }
 
-        $worktreeDiff = Invoke-GitCommand -Arguments @("-C", $Repository, "diff", "--no-ext-diff", "--quiet", "--", $artifact)
-        if ($worktreeDiff.ExitCode -eq 1) {
-            throw "Reviewed handoff artifact '$artifact' has unstaged changes in the invoking checkout."
-        }
-        if ($worktreeDiff.ExitCode -ne 0) {
-            throw "Git could not inspect unstaged changes for reviewed handoff artifact '$artifact'.$(Format-GitContext $worktreeDiff.Output)"
-        }
-
-        $indexDiff = Invoke-GitCommand -Arguments @("-C", $Repository, "diff", "--cached", "--no-ext-diff", "--quiet", $sourceHead, "--", $artifact)
-        if ($indexDiff.ExitCode -eq 1) {
-            throw "Reviewed handoff artifact '$artifact' has staged changes in the invoking checkout."
-        }
-        if ($indexDiff.ExitCode -ne 0) {
-            throw "Git could not inspect staged changes for reviewed handoff artifact '$artifact'.$(Format-GitContext $indexDiff.Output)"
-        }
-
-        $workingBlobResult = Invoke-GitCommand -Arguments @("-C", $Repository, "hash-object", "--path=$artifact", "--", $artifactPath)
-        $workingBlobIds = @(
-            $workingBlobResult.Stdout -split '\r?\n' |
+        $indexResult = Invoke-GitCommand -Arguments @("-C", $Repository, "ls-files", "--stage", "--", $artifact)
+        $indexEntries = @(
+            $indexResult.Stdout -split '\r?\n' |
                 Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         )
-        if ($workingBlobResult.ExitCode -ne 0 -or $workingBlobIds.Count -ne 1 -or
-            $workingBlobIds[0] -notmatch '^[0-9a-fA-F]+$') {
-            throw "Git could not hash reviewed handoff artifact '$artifact' from the invoking checkout.$(Format-GitContext $workingBlobResult.Output)"
+        if ($indexResult.ExitCode -ne 0 -or $indexEntries.Count -ne 1 -or
+            $indexEntries[0] -notmatch '^[0-9]{6} ([0-9a-fA-F]+) 0\t') {
+            throw "Git could not inspect the index entry for reviewed handoff artifact '$artifact'.$(Format-GitContext $indexResult.Output)"
         }
-        if ($workingBlobIds[0] -cne $artifactBlob) {
+        $indexBlob = $Matches[1]
+        if ($indexBlob -cne $artifactBlob) {
+            throw "Reviewed handoff artifact '$artifact' has staged changes in the invoking checkout."
+        }
+
+        $committedBlobResult = Invoke-GitBlobBytes -Repository $Repository -Blob $artifactBlob
+        if ($committedBlobResult.ExitCode -ne 0) {
+            throw "Git could not read reviewed HEAD blob for handoff artifact '$artifact'.$(Format-GitContext $committedBlobResult.Output)"
+        }
+
+        [byte[]]$committedBytes = $committedBlobResult.Bytes
+        [byte[]]$workingBytes = [System.IO.File]::ReadAllBytes($artifactPath)
+        [byte[]]$crlfBytes = ConvertTo-CrlfBytes -Bytes $committedBytes
+        if (-not (Test-ByteArrayEqual -Left $workingBytes -Right $committedBytes) -and
+            -not (Test-ByteArrayEqual -Left $workingBytes -Right $crlfBytes)) {
             throw "Reviewed handoff artifact '$artifact' working content does not match the invoking checkout HEAD blob."
         }
 
@@ -327,13 +433,28 @@ if ($repoRootResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($repoRootRes
 $repoRoot = [System.IO.Path]::GetFullPath($repoRootResult.Stdout.Trim()).TrimEnd(
     [System.IO.Path]::DirectorySeparatorChar,
     [System.IO.Path]::AltDirectorySeparatorChar)
-Set-Location -LiteralPath $repoRoot
 $pathComparison = if ([System.IO.Path]::DirectorySeparatorChar -eq [char]'\') {
     [System.StringComparison]::OrdinalIgnoreCase
 }
 else {
     [System.StringComparison]::Ordinal
 }
+$gitDirectoryResult = Invoke-GitCommand -Arguments @("-C", $repoRoot, "rev-parse", "--absolute-git-dir")
+$gitCommonDirectoryResult = Invoke-GitCommand -Arguments @("-C", $repoRoot, "rev-parse", "--path-format=absolute", "--git-common-dir")
+if ($gitDirectoryResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($gitDirectoryResult.Stdout) -or
+    $gitCommonDirectoryResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($gitCommonDirectoryResult.Stdout)) {
+    throw "Git could not verify that the helper is running from the main checkout.$(Format-GitContext "$($gitDirectoryResult.Output)`n$($gitCommonDirectoryResult.Output)")"
+}
+$gitDirectory = [System.IO.Path]::GetFullPath($gitDirectoryResult.Stdout.Trim()).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar)
+$gitCommonDirectory = [System.IO.Path]::GetFullPath($gitCommonDirectoryResult.Stdout.Trim()).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar)
+if (-not $gitDirectory.Equals($gitCommonDirectory, $pathComparison)) {
+    throw "Run this helper from the repository's main checkout; linked source worktrees are not allowed."
+}
+Set-Location -LiteralPath $repoRoot
 $expectedHelperPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "scripts/git/New-CodexIssueWorktree.ps1"))
 $invokedHelperPath = [System.IO.Path]::GetFullPath($PSCommandPath)
 if (-not $invokedHelperPath.Equals($expectedHelperPath, $pathComparison)) {
@@ -472,8 +593,12 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     Write-Host "  planned branch: $BranchName (not created yet)"
     Write-Host "  worktree:       $worktreeDir"
     Write-Host ""
-    Write-Host "Claude Code task-scoped initializer allow rule (additive):"
-    Write-Host "  PowerShell($initializerInvocation)"
+    $initializerAllowRule = "PowerShell($initializerInvocation)"
+    Write-Host "Claude Code task-scoped initializer allow rule (additive PowerShell transport):"
+    Write-Host "  `$initializerAllowRule = @'"
+    Write-Host "  $initializerAllowRule"
+    Write-Host "  '@"
+    Write-Host '  # Pass as one argv value: claude ... --allowedTools $initializerAllowRule'
     Write-Host ""
     Write-Host "PowerShell worker handoff (run this entire block unchanged):"
     Write-Host "  $initializerInvocation"

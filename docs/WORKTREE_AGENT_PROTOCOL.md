@@ -38,17 +38,24 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber 123 -Slug s
 
 Keep the branch and status baselines for post-run comparison. They may include intentional tracked
 or untracked coordinator changes; the helper preserves them instead of requiring a clean checkout.
+Run the helper only from the repository's main checkout. It compares the absolute per-worktree Git
+directory with the common Git directory and rejects linked source worktrees before fetch, ref, target
+path, or worktree-registration mutation.
 
 The helper refreshes an explicit remote branch base (default `origin/main`) before resolving it,
 peels annotated tags to one commit, preserves any tracked or untracked source-checkout changes,
-and creates only a detached worktree. The invoking checkout's committed, clean helper, guard, and
-initializer are the reviewed source anchor: the helper binds its own exact repository path and
-refuses staged, unstaged, or missing source artifacts. It also hashes each actual working file
-through Git's path filters and requires the reviewed `HEAD` blob, so index flags such as
-`skip-worktree` cannot hide executed bytes. Every selected base must contain the exact reviewed
-`scripts/worktree_guard.ps1` and `scripts/git/Initialize-CodexIssueWorktree.ps1` blob identities. A
-commit or tag with missing or different handoff code is rejected before the target path or Git
-worktree registration is created:
+and creates only a detached worktree. The helper binds its own exact repository path, then compares
+the raw index blob identities and actual bytes of the helper, guard, and initializer with their
+committed `HEAD` blobs before its intended mutating operations. The byte comparison does not invoke
+Git content filters, accepts only exact bytes or deterministic LF-to-CRLF checkout expansion, and
+therefore still detects changes hidden by index flags such as `skip-worktree`. Missing, staged, or
+different working artifacts fail closed. This is a dirty-artifact hygiene check, not external
+authentication of the helper: PowerShell must begin executing the helper before it can perform its
+own path and byte checks. A same-user process could replace the helper before or during those checks;
+closing that bootstrap boundary would require an independently reviewed, hash-pinned launcher.
+Every selected base must contain the exact reviewed `scripts/worktree_guard.ps1` and
+`scripts/git/Initialize-CodexIssueWorktree.ps1` blob identities. A commit or tag with missing or
+different handoff code is rejected before the target path or Git worktree registration is created:
 
 - worktree: `.worktrees/codex-123-short-slug`
 - detached base: `origin/main`
@@ -71,11 +78,15 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
 ```
 
 Run the helper's entire printed PowerShell block unchanged from the new worktree. It invokes the
-reviewed initializer at its exact absolute path inside the helper-created target. The wrapper runs
-the guard as its first internal action with the helper-selected argv-safe Git executable, verifies
-the exact helper-created worktree and detached base, and only then creates and switches to the
-planned branch. If the block is accidentally run from another checkout, the target initializer
-still runs and its guard rejects that current directory before branch creation:
+target initializer at its exact absolute path; that path's selected-base blob identity was checked
+when the worktree was created. The wrapper runs the guard as its first internal action with the
+helper-selected argv-safe Git executable, verifies the exact helper-created worktree and detached
+base, and only then creates and switches to the planned branch. This is not execution-time byte
+authentication: a same-user process can replace the target initializer or guard after creation and
+before or during the handoff. An external hash-pinned launcher would also be required to close that
+post-creation replacement/TOCTOU boundary. If the block is accidentally run from another checkout,
+the target initializer still runs and its guard rejects that current directory before branch
+creation:
 
 ```powershell
 & '<exact helper-created worktree>\scripts\git\Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
@@ -104,39 +115,54 @@ that rule could match the wrong checkout. The helper prints an exact full-comman
 for each task, including the target, pinned Git, branch, worktree, and head arguments with no
 wildcard; review and add that rule explicitly when the launch surface requires it.
 
-**Headless workers.** Current Claude Code documents that ordinary non-interactive `-p` runs
-disable trust verification, while `--worktree` remains an exception that requires accepted trust.
-Skipping that trust check does not approve unmatched commands. `--allowedTools` adds launch rules;
-it does not replace allows from other enabled settings sources. The command-line
+**Headless workers.** Current Claude Code documents that `claude -p --worktree` skips the trust
+dialog. That does not make an untrusted workspace trusted: project `permissions.allow` and
+`additionalDirectories` are ignored until project trust has been accepted. Skipping the dialog also
+does not approve unmatched commands. `--allowedTools` adds launch rules; in a trusted workspace it
+does not replace allows from other enabled settings sources. The command-line
 `--permission-mode dontAsk` overrides a file-backed `defaultMode` for that session, including
 `bypassPermissions`, but it likewise does not erase merged allow rules. The supported unattended
 posture for this repository is:
 
-1. Use a Claude Code version that supports `--setting-sources` and launch with
+1. Before relying on project settings, permissions, hooks, or environment, accept this workspace's
+   trust in a prior interactive coordinator session. `-p --worktree` is not a trust grant.
+2. Use a Claude Code version that supports `--setting-sources` and launch with
    `--setting-sources project`. This excludes file-backed user and project-local permissions,
    including approvals stored in the main checkout for linked worktrees.
-2. Review the committed `.claude/settings.json` permission and hook rules plus every explicit
+3. Review the committed `.claude/settings.json` permission and hook rules plus every explicit
    launch rule as one effective configuration. Organization-managed settings remain effective and
    are an administrator-owned trust boundary that this flag cannot remove; do not use an
    unattended worker if that boundary is not trusted for the task.
-3. Add only the task-specific launch rules that the worker needs, including the exact additive
+4. Add only the task-specific launch rules that the worker needs, including the exact additive
    full-command initializer rule printed by the helper, then use `--permission-mode dontAsk` so
    calls that would otherwise prompt are denied. This mode does not revoke matching allow rules,
    built-in read-only Bash commands, or applicable hook approvals; those remain part of the
    reviewed trust surface.
 
+For an intentionally untrusted launch, do not rely on project permissions, hooks, additional
+directories, or environment. Pass every required allow rule through CLI argv, set
+`CLAUDE_CODE_USE_POWERSHELL_TOOL=1` in the trusted host environment, and proceed only if the task
+does not require ignored project configuration.
+
 For example:
 
-```text
---setting-sources project --allowedTools "<exact task-scoped initializer rule printed by the helper>" <other reviewed task rules> --permission-mode dontAsk
+```powershell
+$initializerAllowRule = @'
+PowerShell(<exact absolute initializer command and pinned arguments printed by the helper>)
+'@
+claude -p --worktree --setting-sources project --allowedTools $initializerAllowRule <other reviewed task arguments> --permission-mode dontAsk
 ```
 
-The helper handoff itself requires the PowerShell tool shape. Do not present the launch allowlist
-as the sole authorization boundary, and do not present
+The helper handoff itself requires the PowerShell tool shape. The committed project environment
+sets `CLAUDE_CODE_USE_POWERSHELL_TOOL=1` so current Windows Claude Code clients expose that
+progressive tool deterministically in a trusted project. An untrusted launch must set the same
+value in its host environment because it cannot rely on project environment. Do not present the launch allowlist as the sole authorization
+boundary, and do not present
 `acceptEdits`, disabled trust verification, or `--dangerously-skip-permissions` as authorization
-for the wrapper. If the installed CLI cannot exclude user and local setting sources, use an
-interactive reviewed launch instead of claiming the unattended posture; broader bypass requires a
-separately approved disposable isolation boundary.
+for the wrapper. If the installed CLI does not support the PowerShell tool enablement or cannot
+exclude user and local setting sources, use an interactive coordinator launch instead of claiming
+the unattended posture; broader bypass requires a separately approved disposable isolation
+boundary.
 See Claude Code's current [permission and settings-precedence contract](https://code.claude.com/docs/en/permissions#settings-precedence),
 [`--setting-sources` CLI contract](https://code.claude.com/docs/en/cli-usage#cli-flags), and
 [trust-verification exception for `-p`/`--worktree`](https://code.claude.com/docs/en/security).

@@ -1390,8 +1390,14 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Windows `Worktree Helper (Windows PowerShell)` runs
     `powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1`
     as a 26-case harness enforcing detached-first creation, clean source helper/guard/initializer
-    artifacts (including index-hidden byte changes), exact selected-base blob pinning, fail-closed
-    initialization, and permission-contract regressions
+    artifacts (including local clean-filter canaries and index-hidden byte changes), independent
+    guard/initializer selected-base blob pinning, fail-closed initialization, and
+    permission-contract regressions. The helper's self-check is covered as pre-mutation hygiene, not
+    as authentication before PowerShell starts executing it; selected-base OID checks likewise do
+    not authenticate target initializer/guard bytes at handoff execution time. The permission model
+    asserts committed opt-in to Claude Code's progressive Windows PowerShell tool, trusted versus
+    untrusted project settings, main-checkout-only helper invocation, and single-argv transport for
+    exact rules containing Git-valid quote-bearing branches
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`

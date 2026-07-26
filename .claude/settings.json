@@ -1,6 +1,9 @@
 {
   "includeCoAuthoredBy": false,
   "enableAllProjectMcpServers": true,
+  "env": {
+    "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
+  },
   "worktree": {
     "symlinkDirectories": ["node_modules", "frontend/taskdeck-web/node_modules"]
   },

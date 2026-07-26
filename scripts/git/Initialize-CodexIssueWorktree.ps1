@@ -25,19 +25,89 @@ function Exit-WithInitializerError {
     exit $ExitCode
 }
 
+function ConvertTo-NativeArgument {
+    param(
+        [AllowEmptyString()]
+        [string]$Argument
+    )
+
+    if ([string]::IsNullOrEmpty($Argument)) {
+        return '""'
+    }
+    if ($Argument -notmatch '[\s"]') {
+        return $Argument
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashCount = 0
+    foreach ($character in $Argument.ToCharArray()) {
+        if ($character -eq [char]'\') {
+            $backslashCount++
+            continue
+        }
+
+        $escapedBackslashCount = if ($character -eq [char]'"') {
+            ($backslashCount * 2) + 1
+        }
+        else {
+            $backslashCount
+        }
+        for ($index = 0; $index -lt $escapedBackslashCount; $index++) {
+            [void]$builder.Append([char]'\')
+        }
+        [void]$builder.Append($character)
+        $backslashCount = 0
+    }
+
+    for ($index = 0; $index -lt ($backslashCount * 2); $index++) {
+        [void]$builder.Append([char]'\')
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
 function Invoke-InitializerGit {
     param(
         [Parameter(Mandatory = $true)]
         [string[]]$Arguments
     )
 
-    $previousErrorActionPreference = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $global:LASTEXITCODE = $null
+    $process = $null
     try {
-        $output = @(& $script:ResolvedGitExecutable @Arguments 2>&1)
-        $invocationSucceeded = $?
-        $exitCode = $LASTEXITCODE
+        $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $script:ResolvedGitExecutable
+        $startInfo.WorkingDirectory = (Get-Location).Path
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+
+        if ($null -ne $startInfo.PSObject.Properties['ArgumentList']) {
+            foreach ($argument in $Arguments) {
+                $startInfo.ArgumentList.Add($argument)
+            }
+        }
+        else {
+            $startInfo.Arguments = (($Arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+        }
+
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $startInfo
+        if (-not $process.Start()) {
+            throw "Git process did not start."
+        }
+
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+
+        return [pscustomobject]@{
+            InvocationSucceeded = $true
+            ExitCode = $process.ExitCode
+            Output = "$stdout$stderr".Trim()
+        }
     }
     catch {
         return [pscustomobject]@{
@@ -47,13 +117,9 @@ function Invoke-InitializerGit {
         }
     }
     finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-
-    return [pscustomobject]@{
-        InvocationSucceeded = $invocationSucceeded
-        ExitCode = $exitCode
-        Output = (($output | ForEach-Object { $_.ToString() }) -join "`n").Trim()
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
     }
 }
 

@@ -70,17 +70,24 @@ Create Codex issue worktrees from the main checkout:
 powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber 123 -Slug short-slug
 ```
 
+Do not invoke the helper from a linked source worktree. It requires the per-worktree Git directory
+to equal the common Git directory and rejects linked sources before fetch, ref, path, or worktree
+registration mutation.
+
 The helper defaults to the explicit remote base `origin/main`, refreshes a named remote branch
 before resolving it, preserves unrelated source-checkout state, and creates a detached worktree
 under the repository's required exact lowercase `.worktrees/` root. It rejects case variants,
 rooted, traversing, alternate,
 junction-backed, or symlink-backed worktree roots. It prints the planned issue branch but does not
-create it. The invoking checkout's committed, clean helper, guard, and initializer are the reviewed
-source anchor: the helper binds its own exact repository path and missing, staged, or unstaged
-source artifacts fail closed. It directly hashes the filtered working-file content against each
-reviewed `HEAD` blob, so index flags cannot hide different executed bytes. The selected base must
-carry the exact reviewed guard and initializer blob identities. Older or divergent commits/tags are
-rejected before target-path or worktree-registration creation. `-WhatIf` resolves local bases and
+create it. The helper binds its own exact repository path, compares raw index blob identities, and
+compares actual helper/guard/initializer bytes with raw committed `HEAD` blobs without invoking Git
+content filters. It accepts only exact bytes or deterministic LF-to-CRLF checkout expansion, so
+missing, staged, ordinary dirty, and index-hidden different bytes fail closed before the helper's
+intended mutations. This is a self-check after PowerShell has already started the helper, not an
+external authentication boundary; a same-user process can still replace bytes before or during the
+check. An independently reviewed, hash-pinned launcher would be required to close that bootstrap
+gap. The selected base must carry the exact reviewed guard and initializer blob identities. Older or
+divergent commits/tags are rejected before target-path or worktree-registration creation. `-WhatIf` resolves local bases and
 compares their artifacts, while explicit remote bases are checked with `git ls-remote` without
 updating refs. A remote dry run
 proves existence only; actual creation performs its controlled tracking-ref refresh and then
@@ -88,11 +95,16 @@ compares both blobs before target or registration mutation. A missing base fails
 producing a false-green dry run.
 
 Run the complete printed PowerShell handoff unchanged inside the worker worktree. It invokes the
-reviewed initializer by its exact absolute path inside the helper-created target, runs the guard
-first, verifies the exact worktree and detached base, and only then creates and switches to the
-issue branch. The helper also prints the matching task-scoped PowerShell allow rule; add it
-explicitly when the launch surface requires it rather than committing a generic relative rule. The
-rule matches the complete emitted command and all pinned arguments without a wildcard:
+target initializer by its exact absolute path; its selected-base blob identity was checked at
+creation. It then runs the guard first, verifies the exact worktree and detached base, and only then
+creates and switches to the issue branch. These creation-time OID checks do not authenticate target
+bytes at execution: same-user replacement of the initializer or guard after creation and before or
+during handoff remains an explicit TOCTOU residual that requires an external hash-pinned launcher
+to close. The helper also prints the matching task-scoped PowerShell allow rule; add it explicitly
+when the launch surface requires it rather than committing a generic relative rule. It emits the
+rule in a PowerShell single-quoted here-string variable; pass that variable as one `--allowedTools`
+argv value so Git-valid branch names containing quotes cannot alter CLI parsing. The rule matches
+the complete emitted command and all pinned arguments without a wildcard:
 
 ```powershell
 & '<exact helper-created worktree>\scripts\git\Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
@@ -107,8 +119,14 @@ Bash workers must launch a reviewed absolute PowerShell application in the workt
 whole printed block. For headless Claude workers, follow the reviewed effective-permission posture
 in `docs/WORKTREE_AGENT_PROTOCOL.md`: exclude user/local file sources, review committed
 permission/hook configuration and explicit rules together, account for built-in read-only Bash,
-and treat managed policy as an administrator-owned trust boundary. `acceptEdits` alone is not
-command authorization.
+and treat managed policy as an administrator-owned trust boundary. Project settings enable the
+progressive Windows PowerShell tool with `CLAUDE_CODE_USE_POWERSHELL_TOOL=1`; older or unsupported
+clients require an interactive coordinator launch. `claude -p --worktree` skips the trust dialog but
+does not make an untrusted workspace trusted; project allows and additional directories are ignored
+until trust is accepted. Accept trust in a prior interactive coordinator session when relying on
+project settings or hooks. Otherwise pass every required rule through CLI argv, set the PowerShell
+tool flag in the host environment, and do not rely on ignored project configuration. `acceptEdits`
+alone is not command authorization.
 
 Worker prompts must not include absolute paths to the main checkout. The helper-printed absolute
 target initializer path is the deliberate exception: it binds execution to the created worktree.

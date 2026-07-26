@@ -9,13 +9,20 @@ Use this skill when assigned one issue or task in an isolated worktree.
 
 ## First Commands
 
-When the coordinator used `New-CodexIssueWorktree.ps1`, run its complete printed PowerShell
+When the coordinator used `New-CodexIssueWorktree.ps1` from the main checkout (linked-source
+invocation is rejected), run its complete printed PowerShell
 handoff block unchanged. Its exact absolute target `Initialize-CodexIssueWorktree.ps1` wrapper runs
 the pinned-Git guard first, verifies the exact helper-created worktree and detached base, then
 performs `switch -c`; every failure exits before implementation. The printed block
-invokes the wrapper in the already-running PowerShell host. From Bash, launch a reviewed absolute
+invokes the wrapper in the already-running PowerShell host. Creation-time blob checks do not
+authenticate target bytes at execution, so same-user replacement before or during handoff remains
+outside this boundary. From Bash, launch a reviewed absolute
 PowerShell application in the worktree for that block; never resolve a bare `powershell` command
-through PATH. For headless launch authorization, use the reviewed
+through PATH. Pass the helper's single-quoted here-string rule variable as one `--allowedTools`
+argv value. Project settings opt current trusted Windows Claude Code clients into the progressive
+PowerShell tool; accept project trust interactively before relying on settings or hooks. For an
+untrusted launch, supply every allow through CLI argv and the PowerShell opt-in through the host
+environment. Unsupported clients require an interactive coordinator launch. For headless launch authorization, use the reviewed
 effective-permission posture and exact additive full-command task rule printed by the helper,
 including every pinned argument and no wildcard; never use a generic relative initializer rule. The launch allowlist is not the sole boundary, and `acceptEdits` alone
 is insufficient.

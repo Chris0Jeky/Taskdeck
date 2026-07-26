@@ -1206,8 +1206,16 @@ Required workflow: `.github/workflows/ci-required.yml`
 
 - `docs-governance` reusable call: active-doc/agentic governance (Ubuntu) plus the 26-case
   detached-first worktree-helper regression harness (Windows PowerShell), including rejection of
-  dirty, missing, or index-hidden source helper/guard/initializer bytes and selected bases whose
-  guard/initializer blobs do not exactly match the invoking checkout's committed reviewed versions
+  dirty, missing, locally filter-covered, or index-hidden source helper/guard/initializer bytes and
+  selected bases whose guard/initializer blobs do not exactly match the invoking checkout's
+  committed versions. These in-helper checks run before its intended mutations but do not
+  authenticate the helper before PowerShell starts it; an external hash-pinned launcher remains a
+  separate bootstrap trust boundary. The same residual applies after creation: a same-user process
+  can replace the target initializer or guard before handoff execution. Project settings now enable
+  Claude Code's progressive Windows PowerShell tool explicitly; unsupported clients require an
+  interactive coordinator launch. The helper is main-checkout-only and rejects linked-source
+  invocation before mutation. Headless guidance now distinguishes skipped trust dialogs from
+  accepted project trust and transports exact quote-bearing rules as one CLI argv value
 - `backend-architecture` (Ubuntu)
 - `backend-unit` (Ubuntu/Windows)
 - `api-integration` (Ubuntu/Windows)
