@@ -10,15 +10,16 @@ Deliver one issue cleanly from an isolated worktree.
 ## First actions
 
 1. Run `powershell -File scripts/worktree_guard.ps1`.
-2. Read `docs/STATUS.md`.
-3. Read `AGENTS.md`.
-4. Read the assigned issue body and acceptance criteria.
-5. Read the relevant Taskdeck skill:
+2. If the coordinator used `New-CodexIssueWorktree.ps1`, run its printed native-Git `switch -c '<planned branch>'` command only after the guard passes; do not substitute a PATH-first batch shim.
+3. Read `docs/STATUS.md`.
+4. Read `AGENTS.md`.
+5. Read the assigned issue body and acceptance criteria.
+6. Read the relevant Taskdeck skill:
    - backend/API/auth/persistence: `taskdeck-backend-slice`
    - frontend/workspace/UX: `taskdeck-frontend-workspace-slice`
    - capture/inbox/review/proposals: `taskdeck-capture-review-loop`
    - demo/evidence: `taskdeck-demo-regression`
-6. Confirm owned files or module boundaries before editing.
+7. Confirm owned files or module boundaries before editing.
 
 Do not use absolute paths from the main checkout. Derive paths from `$env:WT_PROJECT_DIR` or `git rev-parse --show-toplevel`.
 

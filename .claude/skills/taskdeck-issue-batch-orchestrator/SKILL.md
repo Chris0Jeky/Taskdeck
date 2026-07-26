@@ -38,9 +38,10 @@ For isolated workers:
 1. Use Claude `isolation: "worktree"` or the repo worktree script, depending on runtime.
 2. Do not include absolute main-checkout paths in worker prompts.
 3. Require the first command from `docs/WORKTREE_AGENT_PROTOCOL.md` or `powershell -File scripts/worktree_guard.ps1`.
-4. Assign explicit file/module ownership.
-5. Tell workers they are not alone in the codebase and must not revert others' edits.
-6. Require targeted tests and self-review before handoff.
+4. When the repo helper was used, require its printed native-Git `switch -c '<planned branch>'` command only after the guard passes; do not substitute a PATH-first batch shim.
+5. Assign explicit file/module ownership.
+6. Tell workers they are not alone in the codebase and must not revert others' edits.
+7. Require targeted tests and self-review before handoff.
 
 ## Review And CI
 

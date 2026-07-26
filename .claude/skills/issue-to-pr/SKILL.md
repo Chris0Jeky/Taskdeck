@@ -32,15 +32,23 @@ Use the `taskdeck-repo-onramp` skill mentally:
 - read `docs/STATUS.md` for current constraints
 - identify affected files and layers
 
-### 3. Create a branch
+### 3. Create a detached worktree, guard it, then create the branch
 
-```bash
-git checkout main
-git pull origin main
-git checkout -b issue-<number>/<short-slug>
+From the coordinator checkout, create from the explicit remote base without changing or cleaning
+the coordinator's branch or working tree:
+
+```powershell
+powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
+  -IssueNumber <number> `
+  -Slug <short-slug>
 ```
 
-Branch naming: `issue-<number>/<2-4 word slug>` (e.g., `issue-350/capture-validation`).
+Enter the printed worktree. Its first command must be the guard; only after that passes, run the
+native-Git branch command printed by the helper. Do not substitute a PATH-first batch shim.
+
+Branch naming remains `issue-<number>/<2-4 word slug>` (for example,
+`issue-350/capture-validation`). Continue the implementation there; never switch the coordinator
+checkout merely to obtain a clean tree.
 
 ### 4. Implement
 

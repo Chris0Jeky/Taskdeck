@@ -1,6 +1,6 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-05-05
+Last Updated: 2026-07-26
 
 Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "spin fresh adversarial reviewers", "fix failing CI", or "reconcile docs after a batch".
 
@@ -70,11 +70,17 @@ Create Codex issue worktrees from the main checkout:
 powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber 123 -Slug short-slug
 ```
 
-First command inside every worker worktree:
+The helper defaults to the explicit remote base `origin/main`, preserves unrelated source-checkout
+state, and creates a detached worktree. It prints the planned issue branch but does not create it.
+
+Run the printed handoff in order inside the worker worktree:
 
 ```powershell
 powershell -File scripts/worktree_guard.ps1
+& '<native Git executable printed by the helper>' switch -c 'issue-123/short-slug'
 ```
+
+The guard is the first worktree command. Create the branch only after the guard succeeds.
 
 Worker prompts must not include absolute paths to the main checkout. Use relative paths and tell workers to derive absolute paths from `$env:WT_PROJECT_DIR`.
 
@@ -94,6 +100,9 @@ You are implementing Taskdeck issue #NNN in an isolated Codex worktree.
 
 First command:
 powershell -File scripts/worktree_guard.ps1
+
+Second command, after the guard succeeds:
+<native-Git switch command printed by the helper>
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not revert edits made by others. Keep scope to the issue acceptance criteria.

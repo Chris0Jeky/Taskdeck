@@ -61,13 +61,14 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
 
 For each issue:
 
-1. Create a worktree with `scripts/git/New-CodexIssueWorktree.ps1`.
+1. Create a detached worktree with `scripts/git/New-CodexIssueWorktree.ps1`; preserve source-checkout state and retain its printed planned branch.
 2. In the worker prompt, forbid absolute paths to the main checkout.
 3. Require first command: `powershell -File scripts/worktree_guard.ps1`.
-4. Tell the worker which files or module it owns.
-5. Tell the worker it is not alone in the codebase and must not revert others' edits.
-6. Require small signed-off commits with `git commit -s --no-gpg-sign` when committing.
-7. Require targeted tests before PR.
+4. Require the helper's printed native-Git `switch -c '<planned branch>'` command only after the guard passes; do not substitute a PATH-first batch shim.
+5. Tell the worker which files or module it owns.
+6. Tell the worker it is not alone in the codebase and must not revert others' edits.
+7. Require small signed-off commits with `git commit -s --no-gpg-sign` when committing.
+8. Require targeted tests before PR.
 
 Use `taskdeck-worktree-issue-worker` for implementation workers.
 

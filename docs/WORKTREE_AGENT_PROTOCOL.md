@@ -1,6 +1,6 @@
 # Worktree Agent Protocol
 
-Last Updated: 2026-04-25
+Last Updated: 2026-07-26
 
 Use this protocol when running multiple agents or Codex sessions in parallel. The failure mode this prevents is simple: workers accidentally operate in the main checkout, switch branches under each other, or commit to the wrong branch.
 
@@ -31,10 +31,12 @@ From the main checkout:
 powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber 123 -Slug short-slug
 ```
 
-This creates:
+The helper resolves the explicit base (default `origin/main`), preserves any tracked or untracked
+source-checkout changes, and creates only a detached worktree:
 
 - worktree: `.worktrees/codex-123-short-slug`
-- branch: `issue-123/short-slug`
+- detached base: `origin/main`
+- planned branch: `issue-123/short-slug` (printed, but not created yet)
 
 If you need a custom branch:
 
@@ -43,6 +45,14 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
   -IssueNumber 123 `
   -Slug short-slug `
   -BranchName "feature/custom-branch"
+```
+
+Run the helper's printed commands in order from the new worktree. The guard must be the first
+worktree command; only after it passes may the worker create the printed branch:
+
+```powershell
+powershell -File scripts/worktree_guard.ps1
+& '<native Git executable printed by the helper>' switch -c 'issue-123/short-slug'
 ```
 
 ## Permission Posture In Worktrees
@@ -71,6 +81,10 @@ PowerShell:
 ```powershell
 powershell -File scripts/worktree_guard.ps1
 ```
+
+When the coordinator used `New-CodexIssueWorktree.ps1`, run the helper's printed native-Git
+`switch -c` command immediately after this guard succeeds. Do not substitute a PATH-first batch
+shim, and do not create or advance the branch before the guard.
 
 Bash:
 
