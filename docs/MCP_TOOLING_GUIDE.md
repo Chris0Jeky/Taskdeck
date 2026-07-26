@@ -250,3 +250,72 @@ The shell environment depends on the agent runtime:
 
 PowerShell example:
 - `cmd1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmd2`
+
+### PowerShell and native command composition
+
+Keep command payloads simple enough that PowerShell and the native tool receive the same arguments
+you intended:
+
+- A statement-form `foreach` cannot feed a pipeline directly. Collect its output first, then pipe
+  the collection:
+
+  ```powershell
+  $paths = @('AGENTS.md', 'docs/STATUS.md')
+  $rows = foreach ($path in $paths) {
+      Get-Item -LiteralPath $path
+  }
+  $rows | Format-Table
+  ```
+
+- Treat ripgrep exit code `1` as an expected "no matches" result only when the search is optional;
+  propagate exit codes greater than `1`. Keep optional searches separate from gate evidence, or use
+  all-settled semantics, so one expected non-zero result cannot hide independent outputs. Resolve
+  the executable first, then clear and require a fresh native exit value so a launch failure cannot
+  reuse `$LASTEXITCODE` from an earlier command:
+
+  ```powershell
+  $rg = Get-Command -Name rg -CommandType Application -TotalCount 1 -ErrorAction Stop
+  $LASTEXITCODE = $null
+  $searchResults = & $rg.Source -n 'pattern' docs
+  $searchExit = $LASTEXITCODE
+  if ($null -eq $searchExit) {
+      throw 'rg did not return an exit code.'
+  }
+  switch ($searchExit) {
+      0 { $searchResults }
+      1 { Write-Output 'No matches.' }
+      default { exit $searchExit }
+  }
+  ```
+
+- Do not embed Markdown, literal backticks, or multiline content inside a PowerShell double-quoted
+  `-Command` wrapper. Pass native arguments separately, or keep the value in a single-quoted
+  here-string or a script file.
+- For multiline GitHub bodies, prefer the runtime's typed GitHub MCP/connector and pass the entire
+  value through its `body` or `comment` field. For example, call the Codex connector operation
+  `mcp__codex_apps__github_add_comment_to_issue` with this complete argument object for a PR
+  conversation comment (other runtimes may expose an equivalent typed name):
+
+  ```json
+  {
+    "repo_full_name": "Chris0Jeky/Taskdeck",
+    "pr_number": 123,
+    "comment": "First paragraph.\n\nSecond paragraph."
+  }
+  ```
+
+  If a native fallback is required, use a tool-supported input/body-file mechanism that preserves
+  the value as one input; do not pass multiline text through an interpolated `--body` or `-f`
+  argument.
+- Prefer `gh --json` followed by `ConvertFrom-Json` and PowerShell filtering over an inline `--jq`
+  expression on Windows. Check the native exit code before parsing:
+
+  ```powershell
+  $raw = gh pr view 123 --json headRefOid,mergeStateStatus
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  $pr = $raw | ConvertFrom-Json
+  ```
+
+When a command still fails, classify the real failure through
+`docs/agentic/FAILURE_LEDGER.md` instead of silently retrying a differently quoted form. Promote a
+reproduced pattern through `docs/agentic/GUIDE_UPDATE_PROTOCOL.md` at the cheapest effective layer.
