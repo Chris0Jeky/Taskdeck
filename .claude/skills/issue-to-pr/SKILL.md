@@ -44,9 +44,10 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
 ```
 
 Enter the printed worktree and run the helper's complete printed PowerShell block unchanged. Its
-stable relative `scripts/git/Initialize-CodexIssueWorktree.ps1` wrapper runs the selected-native-Git
-guard first, verifies the exact helper-created worktree and detached base, then performs `switch -c`;
-every failure exits before implementation. From Bash, launch a reviewed absolute PowerShell
+exact absolute target `Initialize-CodexIssueWorktree.ps1` wrapper runs the selected-native-Git guard
+first, verifies the exact helper-created worktree and detached base, then performs `switch -c`;
+every failure exits before implementation. Use the helper's exact additive full-command permission
+rule, including every pinned argument and no wildcard, when launch authorization requires it; never substitute a generic relative rule. From Bash, launch a reviewed absolute PowerShell
 application in the worktree for the whole block; do not resolve bare `powershell`, translate only
 the branch command, or substitute a PATH-first batch shim.
 

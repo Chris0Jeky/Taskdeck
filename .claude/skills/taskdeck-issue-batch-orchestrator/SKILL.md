@@ -37,7 +37,7 @@ For isolated workers:
 
 1. Use Claude `isolation: "worktree"` or the repo worktree script, depending on runtime.
 2. Do not include absolute main-checkout paths in worker prompts.
-3. When the repo helper was used, require its complete printed PowerShell handoff block as the first worker commands. The stable relative `scripts/git/Initialize-CodexIssueWorktree.ps1` wrapper runs the pinned-Git guard first, binds the exact helper-created worktree and detached base, and only then runs `switch -c`.
+3. When the repo helper was used, require its complete printed PowerShell handoff block as the first worker commands. Its exact absolute target `Initialize-CodexIssueWorktree.ps1` wrapper runs the pinned-Git guard first, binds the exact helper-created worktree and detached base, and only then runs `switch -c`. When launch authorization requires a PowerShell rule, use the exact additive full-command rule printed by the helper, including every pinned argument and no wildcard; never a generic relative initializer rule.
 4. From a Bash worker, launch a reviewed absolute PowerShell application in the worktree and run that whole block unchanged; never resolve bare `powershell`. Otherwise use the first guard command from `docs/WORKTREE_AGENT_PROTOCOL.md`; never substitute a PATH-first batch shim.
 5. Assign explicit file/module ownership.
 6. Tell workers they are not alone in the codebase and must not revert others' edits.

@@ -1206,8 +1206,8 @@ Required workflow: `.github/workflows/ci-required.yml`
 
 - `docs-governance` reusable call: active-doc/agentic governance (Ubuntu) plus the 26-case
   detached-first worktree-helper regression harness (Windows PowerShell), including rejection of
-  dirty or missing source handoff scripts and selected bases whose guard/initializer blobs do not
-  exactly match the invoking checkout's committed reviewed versions
+  dirty or missing source helper/guard/initializer scripts and selected bases whose
+  guard/initializer blobs do not exactly match the invoking checkout's committed reviewed versions
 - `backend-architecture` (Ubuntu)
 - `backend-unit` (Ubuntu/Windows)
 - `api-integration` (Ubuntu/Windows)

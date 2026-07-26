@@ -166,13 +166,18 @@ function Get-ReviewedHandoffArtifacts {
         [string]$Repository
     )
 
-    $requiredArtifacts = @(
+    $sourceArtifacts = @(
+        "scripts/git/New-CodexIssueWorktree.ps1",
+        "scripts/worktree_guard.ps1",
+        "scripts/git/Initialize-CodexIssueWorktree.ps1"
+    )
+    $selectedBaseArtifacts = @(
         "scripts/worktree_guard.ps1",
         "scripts/git/Initialize-CodexIssueWorktree.ps1"
     )
     $sourceHead = Resolve-BaseCommit -Repository $Repository -Reference "HEAD" -DisplayName "invoking checkout HEAD"
     $reviewedArtifacts = [ordered]@{}
-    foreach ($artifact in $requiredArtifacts) {
+    foreach ($artifact in $sourceArtifacts) {
         $objectExpression = "${sourceHead}:$artifact"
         $artifactLookupResult = Invoke-GitCommand -Arguments @("-C", $Repository, "rev-parse", "--verify", "--end-of-options", $objectExpression)
         if ($artifactLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($artifactLookupResult.Stdout)) {
@@ -208,7 +213,9 @@ function Get-ReviewedHandoffArtifacts {
             throw "Git could not inspect staged changes for reviewed handoff artifact '$artifact'.$(Format-GitContext $indexDiff.Output)"
         }
 
-        $reviewedArtifacts[$artifact] = $artifactBlob
+        if ($selectedBaseArtifacts -ccontains $artifact) {
+            $reviewedArtifacts[$artifact] = $artifactBlob
+        }
     }
 
     return $reviewedArtifacts
@@ -308,18 +315,23 @@ $repoRoot = [System.IO.Path]::GetFullPath($repoRootResult.Stdout.Trim()).TrimEnd
     [System.IO.Path]::DirectorySeparatorChar,
     [System.IO.Path]::AltDirectorySeparatorChar)
 Set-Location -LiteralPath $repoRoot
-$reviewedHandoffArtifacts = Get-ReviewedHandoffArtifacts -Repository $repoRoot
-
-if ([System.IO.Path]::IsPathRooted($WorktreeRoot)) {
-    throw "Invalid worktree root: '$WorktreeRoot'. Codex issue worktrees must use the repository's .worktrees directory."
-}
-
 $pathComparison = if ([System.IO.Path]::DirectorySeparatorChar -eq [char]'\') {
     [System.StringComparison]::OrdinalIgnoreCase
 }
 else {
     [System.StringComparison]::Ordinal
 }
+$expectedHelperPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "scripts/git/New-CodexIssueWorktree.ps1"))
+$invokedHelperPath = [System.IO.Path]::GetFullPath($PSCommandPath)
+if (-not $invokedHelperPath.Equals($expectedHelperPath, $pathComparison)) {
+    throw "Invoked helper path '$invokedHelperPath' does not match the current repository's reviewed helper '$expectedHelperPath'."
+}
+$reviewedHandoffArtifacts = Get-ReviewedHandoffArtifacts -Repository $repoRoot
+
+if ([System.IO.Path]::IsPathRooted($WorktreeRoot)) {
+    throw "Invalid worktree root: '$WorktreeRoot'. Codex issue worktrees must use the repository's .worktrees directory."
+}
+
 $logicalWorktreeRoot = $WorktreeRoot.TrimEnd(
     [System.IO.Path]::DirectorySeparatorChar,
     [System.IO.Path]::AltDirectorySeparatorChar)
@@ -437,6 +449,9 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     $escapedBranchName = $BranchName.Replace("'", "''")
     $escapedGitExecutable = $gitExecutable.Replace("'", "''")
     $escapedWorktreeDir = $worktreeDir.Replace("'", "''")
+    $initializerPath = [System.IO.Path]::GetFullPath((Join-Path $worktreeDir "scripts/git/Initialize-CodexIssueWorktree.ps1"))
+    $escapedInitializerPath = $initializerPath.Replace("'", "''")
+    $initializerInvocation = "& '$escapedInitializerPath' -GitExecutable '$escapedGitExecutable' -BranchName '$escapedBranchName' -ExpectedWorktree '$escapedWorktreeDir' -ExpectedHead '$baseCommit'"
 
     Write-Host "Created detached Codex issue worktree."
     Write-Host "  issue:          #$IssueNumber"
@@ -444,8 +459,11 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     Write-Host "  planned branch: $BranchName (not created yet)"
     Write-Host "  worktree:       $worktreeDir"
     Write-Host ""
+    Write-Host "Claude Code task-scoped initializer allow rule (additive):"
+    Write-Host "  PowerShell($initializerInvocation)"
+    Write-Host ""
     Write-Host "PowerShell worker handoff (run this entire block unchanged):"
-    Write-Host "  & 'scripts/git/Initialize-CodexIssueWorktree.ps1' -GitExecutable '$escapedGitExecutable' -BranchName '$escapedBranchName' -ExpectedWorktree '$escapedWorktreeDir' -ExpectedHead '$baseCommit'"
+    Write-Host "  $initializerInvocation"
     Write-Host '  $handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE'
     Write-Host '  if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }'
 }

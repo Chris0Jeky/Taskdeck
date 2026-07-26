@@ -222,7 +222,8 @@ function Invoke-Helper {
         [string[]]$Arguments
     )
 
-    $hostArguments = @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $helperPath) + $Arguments
+    $fixtureHelperPath = Join-Path $WorkingDirectory "scripts/git/New-CodexIssueWorktree.ps1"
+    $hostArguments = @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $fixtureHelperPath) + $Arguments
     return Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments $hostArguments -WorkingDirectory $WorkingDirectory
 }
 
@@ -359,10 +360,25 @@ function Get-PrintedHandoffLines {
     )
 }
 
+function Get-PrintedInitializerLaunchRule {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Output
+    )
+
+    $outputLines = @($Output -split '\r?\n')
+    $marker = "Claude Code task-scoped initializer allow rule (additive):"
+    $markerIndex = [Array]::IndexOf($outputLines, $marker)
+    Assert-True ($markerIndex -ge 0) "Helper output omitted the task-scoped initializer allow-rule marker."
+    Assert-True (($markerIndex + 1) -lt $outputLines.Count) "Helper output omitted the task-scoped initializer allow rule."
+
+    return $outputLines[$markerIndex + 1].TrimStart()
+}
+
 try {
     New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-    $fixtureRoot = Join-Path $testRoot "fixture with spaces"
+    $fixtureRoot = Join-Path $testRoot "fixture's path with spaces"
     New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
     $remotePath = Join-Path $fixtureRoot "remote.git"
     $seedPath = Join-Path $fixtureRoot "seed"
@@ -387,8 +403,9 @@ try {
     $seedGitScriptsPath = Join-Path $seedScriptsPath "git"
     New-Item -ItemType Directory -Path $seedGitScriptsPath | Out-Null
     Copy-Item -LiteralPath $initializerPath -Destination (Join-Path $seedGitScriptsPath "Initialize-CodexIssueWorktree.ps1")
-    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1")
-    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Add worktree initializer")
+    Copy-Item -LiteralPath $helperPath -Destination (Join-Path $seedGitScriptsPath "New-CodexIssueWorktree.ps1")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1", "scripts/git/New-CodexIssueWorktree.ps1")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Add worktree helper and initializer")
     $helperArtifactCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("switch", "-c", "modified-handoff-base")
     Add-Content -LiteralPath (Join-Path $seedGitScriptsPath "Initialize-CodexIssueWorktree.ps1") -Value "# Modified fixture initializer." -Encoding Ascii
@@ -505,31 +522,41 @@ try {
         }
 
         if (Test-CaseSelected "handoff-order") {
+            Assert-True ($createdWorktree.Contains("'")) "Exact-command quoting fixture should place the target beneath an apostrophe-containing path."
             $escapedGitExecutable = $gitExecutable.Replace("'", "''")
             $escapedWorktree = $createdWorktree.Replace("'", "''")
+            $escapedInitializer = (Join-Path $createdWorktree "scripts/git/Initialize-CodexIssueWorktree.ps1").Replace("'", "''")
             $expectedHandoffHead = Invoke-Git -WorkingDirectory $createdWorktree -Arguments @("rev-parse", "HEAD")
-            $initializerLine = "& 'scripts/git/Initialize-CodexIssueWorktree.ps1' -GitExecutable '$escapedGitExecutable' -BranchName 'issue-424/dirty-source' -ExpectedWorktree '$escapedWorktree' -ExpectedHead '$expectedHandoffHead'"
+            $initializerLine = "& '$escapedInitializer' -GitExecutable '$escapedGitExecutable' -BranchName 'issue-424/dirty-source' -ExpectedWorktree '$escapedWorktree' -ExpectedHead '$expectedHandoffHead'"
+            $initializerAllowRule = "PowerShell($initializerLine)"
             $handoffCaptureLine = '$handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE'
             $handoffExitLine = 'if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }'
             $handoffLines = @(Get-PrintedHandoffLines -Output $success.Output)
             Assert-Equal $initializerLine $handoffLines[0] "Handoff output omitted the stable initializer command and exact worktree binding."
             Assert-Equal $handoffCaptureLine $handoffLines[1] "Handoff output omitted the initializer status capture."
             Assert-Equal $handoffExitLine $handoffLines[2] "Handoff output omitted the initializer fail-fast gate."
+            Assert-Equal $initializerAllowRule (Get-PrintedInitializerLaunchRule -Output $success.Output) "Helper output omitted the exact target-scoped initializer allow rule."
+            Assert-True ($initializerAllowRule.Contains("''")) "Exact full-command rule should PowerShell-escape the apostrophe-containing target path."
+            Assert-True (-not $initializerAllowRule.Contains(":*)")) "Exact full-command initializer rule must not retain a wildcard suffix."
 
             $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
-            Assert-True ($claudeSettings.permissions.allow -contains "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)") "Claude PowerShell permissions omitted the in-process stable initializer prefix."
+            Assert-True ($claudeSettings.permissions.allow -notcontains "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)") "Claude permissions retained the cross-worktree relative initializer rule."
+            Assert-True ($claudeSettings.permissions.allow -notcontains $initializerAllowRule) "Claude project settings should not commit a task-specific absolute initializer rule."
             Assert-True ($claudeSettings.permissions.allow -notcontains "Bash(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)") "Claude permissions retained the PATH-resolved PowerShell initializer rule."
-            Complete-Test "handoff uses one allowlisted, exact-worktree-bound initializer with a fail-fast gate"
+            Complete-Test "handoff emits one additive exact-target initializer rule and a fail-fast gate"
         }
 
         if (Test-CaseSelected "headless-permission-contract") {
-            $initializerInvocationPrefix = "& 'scripts/git/Initialize-CodexIssueWorktree.ps1'"
+            $escapedInitializer = (Join-Path $createdWorktree "scripts/git/Initialize-CodexIssueWorktree.ps1").Replace("'", "''")
+            $initializerInvocationPrefix = "& '$escapedInitializer'"
             $headlessHandoffLines = @(Get-PrintedHandoffLines -Output $success.Output)
-            Assert-True ($headlessHandoffLines[0].StartsWith($initializerInvocationPrefix, [System.StringComparison]::Ordinal)) "Printed handoff must use the stable relative initializer wrapper."
+            Assert-True ($headlessHandoffLines[0].StartsWith($initializerInvocationPrefix, [System.StringComparison]::Ordinal)) "Printed handoff must use the exact helper-created target initializer."
 
             $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
-            $powerShellInitializerRule = "PowerShell(${initializerInvocationPrefix}:*)"
-            Assert-True ($claudeSettings.permissions.allow -contains $powerShellInitializerRule) "Claude PowerShell permissions omitted the narrow stable initializer rule."
+            $powerShellInitializerRule = "PowerShell($($headlessHandoffLines[0]))"
+            Assert-Equal $powerShellInitializerRule (Get-PrintedInitializerLaunchRule -Output $success.Output) "Helper did not print the task-scoped initializer rule used by the handoff."
+            Assert-True ($claudeSettings.permissions.allow -notcontains $powerShellInitializerRule) "Claude project settings should not commit a task-specific initializer rule."
+            Assert-True ($claudeSettings.permissions.allow -notcontains "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)") "Claude project settings retained the generic relative initializer rule."
 
             $mainCheckoutClaudeDirectory = Join-Path $callerPath ".claude"
             $mainCheckoutLocalSettingsPath = Join-Path $mainCheckoutClaudeDirectory "settings.local.json"
@@ -556,10 +583,12 @@ try {
             Assert-True ($dontAskWithLocalConfiguration.Allow -contains $broadLocalRule) "Command-line dontAsk should not erase a broad local allow while the local source remains enabled."
 
             $taskLaunchRule = "PowerShell(dotnet test backend/Taskdeck.sln -c Release -m:1)"
-            $reviewedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($taskLaunchRule) -CommandLinePermissionMode "dontAsk"
+            $reviewedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($powerShellInitializerRule, $taskLaunchRule) -CommandLinePermissionMode "dontAsk"
             Assert-Equal "dontAsk" $reviewedConfiguration.PermissionMode "The supported project-only posture should use the explicit dontAsk mode."
             Assert-True ($reviewedConfiguration.Allow -notcontains $broadLocalRule) "The supported project-only source posture should exclude the main-checkout local allow."
-            Assert-True ($reviewedConfiguration.Allow -contains $powerShellInitializerRule) "The reviewed effective permissions should include the committed initializer rule."
+            Assert-True ($reviewedConfiguration.Allow -contains $powerShellInitializerRule) "The reviewed effective permissions should include the explicit additive task initializer rule."
+            $alteredInitializerRule = $powerShellInitializerRule.Replace("issue-424/dirty-source", "issue-424/other-branch")
+            Assert-True ($reviewedConfiguration.Allow -notcontains $alteredInitializerRule) "The exact initializer rule must not authorize substituted branch arguments."
             Assert-True ($reviewedConfiguration.Allow -contains $taskLaunchRule) "The reviewed effective permissions should include explicit task launch rules."
 
             foreach ($guidancePath in $worktreeGuidancePaths) {
@@ -567,7 +596,7 @@ try {
                 Assert-Contains $guidance "Initialize-CodexIssueWorktree.ps1" "Detached-first guidance omitted the reviewed initializer wrapper: $guidancePath"
             }
             $protocol = Get-Content -Raw -LiteralPath $worktreeProtocolPath
-            Assert-Contains $protocol '--setting-sources project --allowedTools "PowerShell(& ''scripts/git/Initialize-CodexIssueWorktree.ps1'':*)"' "Headless guidance omitted the project-only source posture and in-process initializer launch rule."
+            Assert-Contains $protocol '--setting-sources project --allowedTools "<exact task-scoped initializer rule printed by the helper>"' "Headless guidance omitted the project-only source posture and exact task initializer launch rule."
             Assert-NormalizedContains $protocol "acceptEdits does not approve arbitrary Git or PowerShell commands" "Headless guidance must not present acceptEdits as sufficient command authorization."
             Assert-NormalizedContains $protocol "Do not present the launch allowlist as the sole authorization boundary" "Headless guidance must describe the complete effective permission boundary."
             Assert-NormalizedContains $protocol "Organization-managed settings remain effective" "Headless guidance must bound residual administrator-owned trust."
@@ -663,8 +692,15 @@ try {
         ) -WorkingDirectory $misleadingCoordinator
         Assert-Equal 1 $standaloneGuard.ExitCode "The guard itself should reject a standalone checkout beneath a .worktrees ancestor."
         Assert-NormalizedContains $standaloneGuard.Output "main checkout or an unrecognized worktree" "Standalone-checkout rejection should come from the linked-layout guard diagnostic."
+        $wrongTreeInitializerCanary = Join-Path $misleadingCoordinator "wrong-tree-initializer-executed.txt"
+        $escapedWrongTreeCanary = $wrongTreeInitializerCanary.Replace("'", "''")
+        Set-Content -LiteralPath (Join-Path $misleadingCoordinator "scripts/git/Initialize-CodexIssueWorktree.ps1") -Encoding Ascii -Value @(
+            "[System.IO.File]::WriteAllText('$escapedWrongTreeCanary', 'EXECUTED')",
+            "exit 99"
+        )
         $misleadingFailure = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $failFastScript) -WorkingDirectory $misleadingCoordinator
-        Assert-Equal 1 $misleadingFailure.ExitCode "A standalone checkout beneath a .worktrees ancestor must fail the linked-worktree guard."
+        Assert-Equal 1 $misleadingFailure.ExitCode "A standalone checkout beneath a .worktrees ancestor must run the target initializer and fail its linked-worktree guard."
+        Assert-True (-not (Test-Path -LiteralPath $wrongTreeInitializerCanary)) "Wrong-checkout initializer code ran instead of the exact helper-created target initializer."
         $misleadingBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-441/fail-fast") -WorkingDirectory $misleadingCoordinator
         Assert-Equal 1 $misleadingBranch.ExitCode "A misleading path marker must not permit branch creation in a standalone checkout."
 
@@ -678,7 +714,7 @@ try {
         Assert-Equal 1 $unexpectedSharedBranch.ExitCode "Wrong-worktree handoff must stop before shared branch creation."
         $failFastSymbolicHead = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("symbolic-ref", "-q", "HEAD") -WorkingDirectory $failFastWorktree
         Assert-Equal 1 $failFastSymbolicHead.ExitCode "The intended worktree should remain detached until its own handoff runs."
-        Complete-Test "guard directly rejects standalone layout and all wrong-context handoffs stop before branch creation"
+        Complete-Test "exact target initializer and guard reject wrong contexts before canary or branch creation"
     }
 
     if (Test-CaseSelected "handoff-missing-executable") {
@@ -699,7 +735,9 @@ try {
         Assert-Equal 1 $missingExecutableBranch.ExitCode "A disappeared Git executable must not create the planned branch."
 
         $missingInitializerLines = @(Get-PrintedHandoffLines -Output $missingExecutableResult.Output)
-        $missingInitializerLines[0] = $missingInitializerLines[0].Replace("scripts/git/Initialize-CodexIssueWorktree.ps1", "scripts/git/missing-initializer.ps1")
+        $escapedInitializerPath = (Join-Path $missingExecutableWorktree "scripts/git/Initialize-CodexIssueWorktree.ps1").Replace("'", "''")
+        $escapedMissingInitializerPath = (Join-Path $missingExecutableWorktree "scripts/git/missing-initializer.ps1").Replace("'", "''")
+        $missingInitializerLines[0] = $missingInitializerLines[0].Replace($escapedInitializerPath, $escapedMissingInitializerPath)
         $missingInitializerScript = Join-Path $fixtureRoot "missing-initializer-handoff.ps1"
         Set-Content -LiteralPath $missingInitializerScript -Value @('$global:LASTEXITCODE = $null') -Encoding Ascii
         Add-Content -LiteralPath $missingInitializerScript -Value $missingInitializerLines -Encoding Ascii
@@ -738,6 +776,10 @@ try {
         Assert-NormalizedContains $baseMismatch.Output "detached HEAD '$initializerHead' does not match the helper-created base '$mismatchedExpectedHead'" "Detached-base mismatch should retain the exact-base diagnostic."
         $baseMismatchRef = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$baseMismatchBranch") -WorkingDirectory $callerPath
         Assert-Equal 1 $baseMismatchRef.ExitCode "Detached-base mismatch must stop before branch creation."
+        $headAfterBaseMismatch = Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("rev-parse", "HEAD")
+        Assert-Equal $initializerHead $headAfterBaseMismatch "Detached-base mismatch should preserve the original detached HEAD OID."
+        $detachedAfterBaseMismatch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("symbolic-ref", "-q", "HEAD") -WorkingDirectory $initializerWorktree
+        Assert-Equal 1 $detachedAfterBaseMismatch.ExitCode "Detached-base mismatch should leave the helper-created worktree detached."
 
         $canaryPath = Join-Path $initializerWorktree "initializer-canary.txt"
         $invalidInitializer = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @(
@@ -930,6 +972,17 @@ try {
 
     if (Test-CaseSelected "base-missing-handoff-artifacts") {
         $registrationsBeforeMissingArtifacts = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $wrongHelperTarget = Join-Path $callerPath ".worktrees/codex-461-wrong-helper-checkout"
+        $wrongHelperPath = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @(
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-File", $helperPath,
+            "-IssueNumber", "461", "-Slug", "wrong-helper-checkout"
+        ) -WorkingDirectory $callerPath
+        Assert-True ($wrongHelperPath.ExitCode -ne 0) "A helper invoked from outside the caller repository should fail closed."
+        Assert-Contains $wrongHelperPath.Output "does not match the current repository's reviewed helper" "Wrong-checkout helper rejection should identify the exact path binding."
+        Assert-True (-not (Test-Path -LiteralPath $wrongHelperTarget)) "Wrong-checkout helper rejection should not leave a target path."
+        $wrongHelperBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-461/wrong-helper-checkout") -WorkingDirectory $callerPath
+        Assert-Equal 1 $wrongHelperBranch.ExitCode "Wrong-checkout helper rejection should not create the planned branch."
+
         $oldCommitTarget = Join-Path $callerPath ".worktrees/codex-453-old-commit-base"
         $oldCommitBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "453", "-Slug", "old-commit-base", "-BaseBranch", $preHelperCommit)
         Assert-True ($oldCommitBase.ExitCode -ne 0) "A commit predating the handoff artifacts should fail closed."
@@ -996,6 +1049,24 @@ try {
         finally {
             [System.IO.File]::WriteAllBytes($callerInitializerPath, $originalInitializerBytes)
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1")
+        }
+
+        $callerHelperPath = Join-Path $callerPath "scripts/git/New-CodexIssueWorktree.ps1"
+        $originalHelperBytes = [System.IO.File]::ReadAllBytes($callerHelperPath)
+        $dirtyHelperMarker = "# Uncommitted helper self-check canary."
+        try {
+            Add-Content -LiteralPath $callerHelperPath -Value $dirtyHelperMarker -Encoding Ascii
+            $dirtyHelperTarget = Join-Path $callerPath ".worktrees/codex-462-dirty-helper-artifact"
+            $dirtyHelper = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "462", "-Slug", "dirty-helper-artifact")
+            Assert-True ($dirtyHelper.ExitCode -ne 0) "A dirty invoking helper should fail its own trust check."
+            Assert-Contains $dirtyHelper.Output "Reviewed handoff artifact 'scripts/git/New-CodexIssueWorktree.ps1' has unstaged changes" "Dirty helper rejection should identify the uncommitted helper itself."
+            Assert-Contains (Get-Content -Raw -LiteralPath $callerHelperPath) $dirtyHelperMarker "Helper self-rejection should preserve the maintainer-owned dirty content."
+            Assert-True (-not (Test-Path -LiteralPath $dirtyHelperTarget)) "Dirty helper rejection should not leave a target path."
+            $dirtyHelperBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-462/dirty-helper-artifact") -WorkingDirectory $callerPath
+            Assert-Equal 1 $dirtyHelperBranch.ExitCode "Dirty helper rejection should not create the planned branch."
+        }
+        finally {
+            [System.IO.File]::WriteAllBytes($callerHelperPath, $originalHelperBytes)
         }
 
         $missingSourceBackup = Join-Path $fixtureRoot "missing-source-initializer.ps1"

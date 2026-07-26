@@ -75,22 +75,25 @@ before resolving it, preserves unrelated source-checkout state, and creates a de
 under the repository's required exact lowercase `.worktrees/` root. It rejects case variants,
 rooted, traversing, alternate,
 junction-backed, or symlink-backed worktree roots. It prints the planned issue branch but does not
-create it. Clean committed blobs for `scripts/worktree_guard.ps1` and
-`scripts/git/Initialize-CodexIssueWorktree.ps1` in the invoking checkout are the reviewed trust
-anchor: missing, staged, or unstaged source artifacts fail closed, and the selected base must carry
-the exact same blob identities. Older or divergent commits/tags are rejected before target-path or
+create it. The invoking checkout's committed, clean helper, guard, and initializer are the reviewed
+source anchor: the helper binds its own exact repository path and missing, staged, or unstaged
+source artifacts fail closed. The selected base must carry the exact reviewed guard and initializer
+blob identities. Older or divergent commits/tags are rejected before target-path or
 worktree-registration creation. `-WhatIf` resolves local bases and compares their artifacts, while
 explicit remote bases are checked with `git ls-remote` without updating refs. A remote dry run
 proves existence only; actual creation performs its controlled tracking-ref refresh and then
 compares both blobs before target or registration mutation. A missing base fails instead of
 producing a false-green dry run.
 
-Run the complete printed PowerShell handoff unchanged inside the worker worktree. It uses the
-stable reviewed initializer wrapper, which runs the guard first, verifies the exact worktree and
-detached base, and only then creates and switches to the issue branch:
+Run the complete printed PowerShell handoff unchanged inside the worker worktree. It invokes the
+reviewed initializer by its exact absolute path inside the helper-created target, runs the guard
+first, verifies the exact worktree and detached base, and only then creates and switches to the
+issue branch. The helper also prints the matching task-scoped PowerShell allow rule; add it
+explicitly when the launch surface requires it rather than committing a generic relative rule. The
+rule matches the complete emitted command and all pinned arguments without a wildcard:
 
 ```powershell
-& 'scripts/git/Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
+& '<exact helper-created worktree>\scripts\git\Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
 $handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE
 if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }
 ```
@@ -105,10 +108,11 @@ permission/hook configuration and explicit rules together, account for built-in 
 and treat managed policy as an administrator-owned trust boundary. `acceptEdits` alone is not
 command authorization.
 
-Worker prompts must not include absolute paths to the main checkout. Use relative paths and tell
-workers to derive absolute paths with the helper-printed native Git executable and
-`rev-parse --show-toplevel`; a child PowerShell guard cannot export `$env:WT_PROJECT_DIR` back to
-its parent shell.
+Worker prompts must not include absolute paths to the main checkout. The helper-printed absolute
+target initializer path is the deliberate exception: it binds execution to the created worktree.
+For all other paths, use relative paths and tell workers to derive absolute paths with the
+helper-printed native Git executable and `rev-parse --show-toplevel`; a child PowerShell guard
+cannot export `$env:WT_PROJECT_DIR` back to its parent shell.
 
 Use unique ports and data paths when multiple worktrees run servers or Playwright:
 
@@ -125,7 +129,7 @@ Use this shape for implementation workers:
 You are implementing Taskdeck issue #NNN in an isolated Codex worktree.
 
 First PowerShell commands (copy the complete block printed by the helper):
-<relative scripts/git/Initialize-CodexIssueWorktree.ps1 command with pinned Git, branch, exact worktree, and detached base>
+<absolute helper-created target Initialize-CodexIssueWorktree.ps1 command with pinned Git, branch, exact worktree, and detached base>
 <capture and fail-fast gate for initializer status and exit code>
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.

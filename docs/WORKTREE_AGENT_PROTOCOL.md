@@ -41,11 +41,12 @@ or untracked coordinator changes; the helper preserves them instead of requiring
 
 The helper refreshes an explicit remote branch base (default `origin/main`) before resolving it,
 peels annotated tags to one commit, preserves any tracked or untracked source-checkout changes,
-and creates only a detached worktree. The invoking checkout's committed, clean
-`scripts/worktree_guard.ps1` and `scripts/git/Initialize-CodexIssueWorktree.ps1` blobs are the
-reviewed trust anchor: the helper refuses staged, unstaged, or missing source artifacts, and every
-selected base must contain those exact blob identities. A commit or tag with missing or different
-handoff code is rejected before the target path or Git worktree registration is created:
+and creates only a detached worktree. The invoking checkout's committed, clean helper, guard, and
+initializer are the reviewed source anchor: the helper binds its own exact repository path and
+refuses staged, unstaged, or missing source artifacts. Every selected base must contain the exact
+reviewed `scripts/worktree_guard.ps1` and `scripts/git/Initialize-CodexIssueWorktree.ps1` blob
+identities. A commit or tag with missing or different handoff code is rejected before the target
+path or Git worktree registration is created:
 
 - worktree: `.worktrees/codex-123-short-slug`
 - detached base: `origin/main`
@@ -67,13 +68,15 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
   -BranchName "feature/custom-branch"
 ```
 
-Run the helper's entire printed PowerShell block unchanged from the new worktree. It invokes one
-stable, reviewed relative initializer wrapper. The wrapper runs the guard as its first internal
-action with the helper-selected argv-safe Git executable, verifies the exact helper-created
-worktree and detached base, and only then creates and switches to the planned branch:
+Run the helper's entire printed PowerShell block unchanged from the new worktree. It invokes the
+reviewed initializer at its exact absolute path inside the helper-created target. The wrapper runs
+the guard as its first internal action with the helper-selected argv-safe Git executable, verifies
+the exact helper-created worktree and detached base, and only then creates and switches to the
+planned branch. If the block is accidentally run from another checkout, the target initializer
+still runs and its guard rejects that current directory before branch creation:
 
 ```powershell
-& 'scripts/git/Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
+& '<exact helper-created worktree>\scripts\git\Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
 $handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE
 if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }
 ```
@@ -94,9 +97,10 @@ merge across enabled settings sources. Physical absence therefore does not mean 
 user allow rule is ineffective. The committed `acceptEdits` default auto-approves in-scope edits
 and common filesystem operations, but acceptEdits does not approve arbitrary Git or PowerShell
 commands and is not sufficient by itself for the detached-first handoff. The committed
-`.claude/settings.json` allowlists the stable in-process
-`Initialize-CodexIssueWorktree.ps1` invocation for the PowerShell tool shape as one rule in the
-effective permission set.
+`.claude/settings.json` deliberately does not allow a generic relative initializer command because
+that rule could match the wrong checkout. The helper prints an exact full-command PowerShell rule
+for each task, including the target, pinned Git, branch, worktree, and head arguments with no
+wildcard; review and add that rule explicitly when the launch surface requires it.
 
 **Headless workers.** Current Claude Code documents that ordinary non-interactive `-p` runs
 disable trust verification, while `--worktree` remains an exception that requires accepted trust.
@@ -113,15 +117,16 @@ posture for this repository is:
    launch rule as one effective configuration. Organization-managed settings remain effective and
    are an administrator-owned trust boundary that this flag cannot remove; do not use an
    unattended worker if that boundary is not trusted for the task.
-3. Add only the task-specific launch rules that the worker needs, including the stable initializer
-   rule, then use `--permission-mode dontAsk` so calls that would otherwise prompt are denied. This
-   mode does not revoke matching allow rules, built-in read-only Bash commands, or applicable hook
-   approvals; those remain part of the reviewed trust surface.
+3. Add only the task-specific launch rules that the worker needs, including the exact additive
+   full-command initializer rule printed by the helper, then use `--permission-mode dontAsk` so
+   calls that would otherwise prompt are denied. This mode does not revoke matching allow rules,
+   built-in read-only Bash commands, or applicable hook approvals; those remain part of the
+   reviewed trust surface.
 
 For example:
 
 ```text
---setting-sources project --allowedTools "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)" <other reviewed task rules> --permission-mode dontAsk
+--setting-sources project --allowedTools "<exact task-scoped initializer rule printed by the helper>" <other reviewed task rules> --permission-mode dontAsk
 ```
 
 The helper handoff itself requires the PowerShell tool shape. Do not present the launch allowlist
@@ -174,7 +179,7 @@ PowerShell process changed the parent environment or location.
 You are implementing Taskdeck issue #NNN in an isolated worktree.
 
 First PowerShell commands (copy the complete block printed by New-CodexIssueWorktree.ps1):
-<relative scripts/git/Initialize-CodexIssueWorktree.ps1 command with pinned Git, branch, exact worktree, and detached base>
+<absolute helper-created target Initialize-CodexIssueWorktree.ps1 command with pinned Git, branch, exact worktree, and detached base>
 <capture and fail-fast gate for initializer status and exit code>
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.

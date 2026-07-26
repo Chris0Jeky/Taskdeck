@@ -24,7 +24,7 @@ This `.claude/` layer contains Claude Code settings and skills for Taskdeck. It 
 
 - Use `docs/WORKTREE_AGENT_PROTOCOL.md` for Claude `isolation: "worktree"` sessions.
 - Do not pass absolute main-checkout paths into worktree worker prompts.
-- For a helper-created detached worktree, the first command is the complete printed `scripts/git/Initialize-CodexIssueWorktree.ps1` handoff. The reviewed relative wrapper runs the pinned-Git guard first, binds the exact worktree and detached base, and switches branches only after those checks pass.
+- For a helper-created detached worktree, the first command is the complete printed `Initialize-CodexIssueWorktree.ps1` handoff. It invokes the reviewed wrapper at the exact absolute helper-created target path, so its pinned-Git guard rejects a wrong current checkout before binding the exact worktree and detached base or switching branches. For headless launch, add the helper's exact full-command PowerShell rule, including all pinned arguments and no wildcard; no generic relative initializer rule is committed.
 - For headless workers, follow the reviewed effective-permission posture in the protocol: exclude user/local file sources, review committed permission/hook configuration and explicit rules together, account for built-in read-only Bash, and treat managed policy as an administrator-owned trust boundary. The launch allowlist is not the sole authorization boundary, and `acceptEdits` alone does not authorize the wrapper. Use the generic guard first only for worktrees that were not created by the detached-first helper.
 - Keep one coordinator responsible for final synthesis, docs updates, and verification claims.
 
