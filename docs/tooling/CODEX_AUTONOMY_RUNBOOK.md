@@ -70,21 +70,31 @@ Create Codex issue worktrees from the main checkout:
 powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber 123 -Slug short-slug
 ```
 
-The helper defaults to the explicit remote base `origin/main`, preserves unrelated source-checkout
-state, and creates a detached worktree under the repository's required `.worktrees/` root. It
-rejects rooted, traversing, or alternate worktree roots. It prints the planned issue branch but
-does not create it.
+The helper defaults to the explicit remote base `origin/main`, refreshes a named remote branch
+before resolving it, preserves unrelated source-checkout state, and creates a detached worktree
+under the repository's required `.worktrees/` root. It rejects rooted, traversing, alternate,
+junction-backed, or symlink-backed worktree roots. It prints the planned issue branch but does not
+create it.
 
-Run the printed handoff in order inside the worker worktree:
+Run the complete printed PowerShell handoff unchanged inside the worker worktree:
 
 ```powershell
-powershell -File scripts/worktree_guard.ps1
+& '<PowerShell host printed by the helper>' -NoLogo -NoProfile -NonInteractive -File scripts/worktree_guard.ps1 -GitExecutable '<native Git executable printed by the helper>'
+$guardSucceeded = $?; $guardExitCode = $LASTEXITCODE
+if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }
 & '<native Git executable printed by the helper>' switch -c 'issue-123/short-slug'
+$switchSucceeded = $?; $switchExitCode = $LASTEXITCODE
+if (-not $switchSucceeded -or $switchExitCode -ne 0) { if ($null -ne $switchExitCode -and $switchExitCode -ne 0) { exit $switchExitCode }; exit 1 }
 ```
 
-The guard is the first worktree command. Create the branch only after the guard succeeds.
+The guard is the first worktree command, uses the helper-selected native Git, and stops the block
+before branch creation if it fails. This handoff is PowerShell-only; Bash workers must launch
+PowerShell in the worktree and run the whole printed block.
 
-Worker prompts must not include absolute paths to the main checkout. Use relative paths and tell workers to derive absolute paths from `$env:WT_PROJECT_DIR`.
+Worker prompts must not include absolute paths to the main checkout. Use relative paths and tell
+workers to derive absolute paths with the helper-printed native Git executable and
+`rev-parse --show-toplevel`; a child PowerShell guard cannot export `$env:WT_PROJECT_DIR` back to
+its parent shell.
 
 Use unique ports and data paths when multiple worktrees run servers or Playwright:
 
@@ -100,11 +110,11 @@ Use this shape for implementation workers:
 ```text
 You are implementing Taskdeck issue #NNN in an isolated Codex worktree.
 
-First command:
-powershell -File scripts/worktree_guard.ps1
-
-Second command, after the guard succeeds:
-<native-Git switch command printed by the helper>
+First PowerShell commands (copy the complete block printed by the helper):
+<pinned-native-Git guard command>
+<capture and fail-fast gate for guard status and exit code>
+<pinned-native-Git switch command>
+<capture and fail-fast gate for switch status and exit code>
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not revert edits made by others. Keep scope to the issue acceptance criteria.

@@ -34,8 +34,8 @@ Use the `taskdeck-repo-onramp` skill mentally:
 
 ### 3. Create a detached worktree, guard it, then create the branch
 
-From the coordinator checkout, create from the explicit remote base without changing or cleaning
-the coordinator's branch or working tree:
+From the coordinator checkout, refresh and create from the explicit remote base without changing
+or cleaning the coordinator's branch or working tree:
 
 ```powershell
 powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
@@ -43,8 +43,10 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
   -Slug <short-slug>
 ```
 
-Enter the printed worktree. Its first command must be the guard; only after that passes, run the
-native-Git branch command printed by the helper. Do not substitute a PATH-first batch shim.
+Enter the printed worktree and run the helper's complete printed PowerShell block unchanged. It
+passes the selected native Git into the guard and exits before branch creation if the guard fails.
+From Bash, launch PowerShell in the worktree for the whole block; do not translate only the branch
+command or substitute a PATH-first batch shim.
 
 Branch naming remains `issue-<number>/<2-4 word slug>` (for example,
 `issue-350/capture-validation`). Continue the implementation there; never switch the coordinator

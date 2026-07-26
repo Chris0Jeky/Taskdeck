@@ -9,8 +9,8 @@ Deliver one issue cleanly from an isolated worktree.
 
 ## First actions
 
-1. Run `powershell -File scripts/worktree_guard.ps1`.
-2. If the coordinator used `New-CodexIssueWorktree.ps1`, run its printed native-Git `switch -c '<planned branch>'` command only after the guard passes; do not substitute a PATH-first batch shim.
+1. If the coordinator used `New-CodexIssueWorktree.ps1`, run its complete printed PowerShell handoff block unchanged; it pins native Git into the guard and stops before `switch -c` if the guard fails. From Bash, launch PowerShell in the worktree for this block.
+2. Otherwise run `powershell -File scripts/worktree_guard.ps1`. Do not substitute a PATH-first batch shim.
 3. Read `docs/STATUS.md`.
 4. Read `AGENTS.md`.
 5. Read the assigned issue body and acceptance criteria.
@@ -21,7 +21,7 @@ Deliver one issue cleanly from an isolated worktree.
    - demo/evidence: `taskdeck-demo-regression`
 7. Confirm owned files or module boundaries before editing.
 
-Do not use absolute paths from the main checkout. Derive paths from `$env:WT_PROJECT_DIR` or `git rev-parse --show-toplevel`.
+Do not use absolute paths from the main checkout. Derive paths with the helper-printed native Git executable and `rev-parse --show-toplevel`; a child PowerShell guard cannot export `$env:WT_PROJECT_DIR` back to its parent shell.
 
 ## Implementation rules
 

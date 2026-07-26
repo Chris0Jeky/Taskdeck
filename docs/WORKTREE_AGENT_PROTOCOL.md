@@ -33,8 +33,9 @@ From the main checkout:
 powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber 123 -Slug short-slug
 ```
 
-The helper resolves the explicit base (default `origin/main`), preserves any tracked or untracked
-source-checkout changes, and creates only a detached worktree:
+The helper refreshes an explicit remote branch base (default `origin/main`) before resolving it,
+peels annotated tags to one commit, preserves any tracked or untracked source-checkout changes,
+and creates only a detached worktree:
 
 - worktree: `.worktrees/codex-123-short-slug`
 - detached base: `origin/main`
@@ -49,13 +50,21 @@ powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
   -BranchName "feature/custom-branch"
 ```
 
-Run the helper's printed commands in order from the new worktree. The guard must be the first
-worktree command; only after it passes may the worker create the printed branch:
+Run the helper's entire printed PowerShell block unchanged from the new worktree. The guard pins
+the same argv-safe native Git executable selected by the helper, and each command is fail-fast:
 
 ```powershell
-powershell -File scripts/worktree_guard.ps1
+& '<PowerShell host printed by the helper>' -NoLogo -NoProfile -NonInteractive -File scripts/worktree_guard.ps1 -GitExecutable '<native Git executable printed by the helper>'
+$guardSucceeded = $?; $guardExitCode = $LASTEXITCODE
+if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }
 & '<native Git executable printed by the helper>' switch -c 'issue-123/short-slug'
+$switchSucceeded = $?; $switchExitCode = $LASTEXITCODE
+if (-not $switchSucceeded -or $switchExitCode -ne 0) { if ($null -ne $switchExitCode -and $switchExitCode -ne 0) { exit $switchExitCode }; exit 1 }
 ```
+
+The helper rejects alternate, traversing, rooted, junction-backed, and symlink-backed worktree
+roots. Its detached-first handoff is PowerShell-only. From a Bash worker, start PowerShell in the
+printed worktree and run the complete block there; do not translate only the branch command.
 
 ## Permission Posture In Worktrees
 
@@ -84,9 +93,9 @@ PowerShell:
 powershell -File scripts/worktree_guard.ps1
 ```
 
-When the coordinator used `New-CodexIssueWorktree.ps1`, run the helper's printed native-Git
-`switch -c` command immediately after this guard succeeds. Do not substitute a PATH-first batch
-shim, and do not create or advance the branch before the guard.
+When the coordinator used `New-CodexIssueWorktree.ps1`, use the helper's complete printed
+PowerShell block instead of this generic command. It pins native Git into the guard and stops on
+both guard and branch-creation failures.
 
 Bash:
 
@@ -94,20 +103,30 @@ Bash:
 source scripts/worktree_guard.sh
 ```
 
-The guard exports:
+The Bash guard remains valid for an already-created worktree that does not need the helper's
+detached-first handoff. For a helper-created worktree, launch PowerShell and run the complete
+printed PowerShell block so its pinned-Git and fail-fast guarantees remain intact.
 
-- PowerShell: `$env:WT_REPO_ROOT`, `$env:WT_PROJECT_DIR`
+The guard sets these values in the process where it runs:
+
+- PowerShell: `$env:WT_REPO_ROOT`, `$env:WT_PROJECT_DIR` (a `powershell -File` child prints them,
+  but cannot export them back to its parent shell)
 - Bash: `$WT_REPO_ROOT`, `$WT_PROJECT_DIR`
 
-Workers must derive absolute paths from those values or from `git rev-parse --show-toplevel`.
+Workers must derive absolute paths from a value available in their current shell or from the
+helper-printed native Git executable with `rev-parse --show-toplevel`; do not assume a child
+PowerShell process changed the parent environment or location.
 
 ## Worker Prompt Template
 
 ```text
 You are implementing Taskdeck issue #NNN in an isolated worktree.
 
-First command:
-powershell -File scripts/worktree_guard.ps1
+First PowerShell commands (copy the complete block printed by New-CodexIssueWorktree.ps1):
+<pinned-native-Git guard command>
+<capture and fail-fast gate for guard status and exit code>
+<pinned-native-Git switch command>
+<capture and fail-fast gate for switch status and exit code>
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not reference or edit the main checkout. Do not revert edits made by others.
