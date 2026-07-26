@@ -21,7 +21,6 @@ if ($null -eq $gitCommand) {
 }
 
 $gitExecutable = $gitCommand.Source
-$powerShellExecutable = (Get-Process -Id $PID).Path
 
 function ConvertTo-NativeArgument {
     param(
@@ -195,7 +194,7 @@ if (-not $requestedWorktreeRoot.Equals($expectedWorktreeRoot, $pathComparison)) 
 }
 Assert-SafeWorktreeRoot -Path $requestedWorktreeRoot
 
-if ($Slug -notmatch "^[a-z0-9][a-z0-9-]{1,60}$") {
+if ($Slug -cnotmatch "^[a-z0-9][a-z0-9-]{1,60}$") {
     throw "Invalid slug: '$Slug'. Use 2-61 lowercase letters, digits, or hyphens, starting with a letter or digit."
 }
 
@@ -240,13 +239,19 @@ if ($remoteSeparatorIndex -gt 0 -and $remoteSeparatorIndex -lt ($BaseBranch.Leng
 if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and create a detached worktree from $BaseBranch")) {
     if ($null -ne $candidateRemote) {
         $remoteRefspec = "+refs/heads/$candidateBranch`:refs/remotes/$candidateRemote/$candidateBranch"
-        $fetchResult = Invoke-GitCommand -Arguments @("fetch", "--no-tags", "--no-recurse-submodules", $candidateRemote, $remoteRefspec)
+        $fetchResult = Invoke-GitCommand -Arguments @("fetch", "--no-tags", "--no-recurse-submodules", "--", $candidateRemote, $remoteRefspec)
         if ($fetchResult.ExitCode -ne 0) {
             throw "Base commit not found: $BaseBranch. Failed to refresh the explicit remote base.$(Format-GitContext $fetchResult.Output)"
         }
     }
 
-    $baseCommitExpression = "${BaseBranch}^{commit}"
+    $baseCommitReference = if ($null -ne $candidateRemote) {
+        "refs/remotes/$candidateRemote/$candidateBranch"
+    }
+    else {
+        $BaseBranch
+    }
+    $baseCommitExpression = "${baseCommitReference}^{commit}"
     $baseLookupResult = Invoke-GitCommand -Arguments @("rev-parse", "--verify", "--end-of-options", $baseCommitExpression)
     if ($baseLookupResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseLookupResult.Stdout)) {
         throw "Base commit not found: $BaseBranch$(Format-GitContext $baseLookupResult.Output)"
@@ -270,7 +275,7 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
 
     $escapedBranchName = $BranchName.Replace("'", "''")
     $escapedGitExecutable = $gitExecutable.Replace("'", "''")
-    $escapedPowerShellExecutable = $powerShellExecutable.Replace("'", "''")
+    $escapedWorktreeDir = $worktreeDir.Replace("'", "''")
 
     Write-Host "Created detached Codex issue worktree."
     Write-Host "  issue:          #$IssueNumber"
@@ -278,11 +283,8 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     Write-Host "  planned branch: $BranchName (not created yet)"
     Write-Host "  worktree:       $worktreeDir"
     Write-Host ""
-    Write-Host "PowerShell-only worker handoff (run this entire block in order):"
-    Write-Host "  & '$escapedPowerShellExecutable' -NoLogo -NoProfile -NonInteractive -File scripts/worktree_guard.ps1 -GitExecutable '$escapedGitExecutable'"
-    Write-Host '  $guardSucceeded = $?; $guardExitCode = $LASTEXITCODE'
-    Write-Host '  if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }'
-    Write-Host "  & '$escapedGitExecutable' switch -c '$escapedBranchName'"
-    Write-Host '  $switchSucceeded = $?; $switchExitCode = $LASTEXITCODE'
-    Write-Host '  if (-not $switchSucceeded -or $switchExitCode -ne 0) { if ($null -ne $switchExitCode -and $switchExitCode -ne 0) { exit $switchExitCode }; exit 1 }'
+    Write-Host "PowerShell worker handoff (run this entire block unchanged):"
+    Write-Host "  powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1 -GitExecutable '$escapedGitExecutable' -BranchName '$escapedBranchName' -ExpectedWorktree '$escapedWorktreeDir' -ExpectedHead '$baseCommit'"
+    Write-Host '  $handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE'
+    Write-Host '  if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }'
 }

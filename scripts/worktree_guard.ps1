@@ -42,6 +42,58 @@ if ($gitExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($topLevel)) {
 }
 
 $topLevel = $topLevel.Trim()
+$layoutOutput = $null
+$layoutInvocationSucceeded = $false
+$layoutExitCode = $null
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$global:LASTEXITCODE = $null
+try {
+    $layoutOutput = @(& $gitCommand.Source rev-parse --git-dir --git-common-dir 2>$null)
+    $layoutInvocationSucceeded = $?
+    $layoutExitCode = $LASTEXITCODE
+}
+catch {
+    Write-Error "ERROR [worktree_guard]: the selected Git executable could not inspect repository layout." -ErrorAction Continue
+    exit 2
+}
+finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+}
+if (-not $layoutInvocationSucceeded -or $layoutExitCode -ne 0 -or $layoutOutput.Count -ne 2) {
+    Write-Error "ERROR [worktree_guard]: repository layout could not be verified." -ErrorAction Continue
+    exit 2
+}
+
+$invocationDirectory = (Get-Location).Path
+function Resolve-GuardGitPath {
+    param([string]$Path)
+
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return [System.IO.Path]::GetFullPath($Path).TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $invocationDirectory $Path)).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+}
+
+$gitDirectory = Resolve-GuardGitPath $layoutOutput[0].Trim()
+$gitCommonDirectory = Resolve-GuardGitPath $layoutOutput[1].Trim()
+$pathComparison = if ([System.IO.Path]::DirectorySeparatorChar -eq [char]'\') {
+    [System.StringComparison]::OrdinalIgnoreCase
+}
+else {
+    [System.StringComparison]::Ordinal
+}
+$linkedWorktreeDirectory = (Join-Path $gitCommonDirectory "worktrees").TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+$isLinkedWorktree = -not $gitDirectory.Equals($gitCommonDirectory, $pathComparison) -and
+    $gitDirectory.StartsWith($linkedWorktreeDirectory, $pathComparison)
+
 $normalized = $topLevel -replace "/", "\"
 $isAllowed = $false
 
@@ -53,7 +105,7 @@ foreach ($marker in $AllowedMarkers) {
     }
 }
 
-if (-not $isAllowed) {
+if (-not $isAllowed -or -not $isLinkedWorktree) {
     Write-Error -ErrorAction Continue @"
 FATAL [worktree_guard]: You are in the main checkout or an unrecognized worktree.
   toplevel: $topLevel

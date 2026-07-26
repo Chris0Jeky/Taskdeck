@@ -6,6 +6,7 @@ param(
         "guard-then-branch",
         "handoff-fail-fast",
         "handoff-missing-executable",
+        "initializer-validation",
         "existing-branch",
         "existing-path",
         "worktree-root-traversal",
@@ -29,6 +30,7 @@ param(
         "guard-then-branch",
         "handoff-fail-fast",
         "handoff-missing-executable",
+        "initializer-validation",
         "existing-branch",
         "existing-path",
         "worktree-root-traversal",
@@ -51,6 +53,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $helperPath = Join-Path $PSScriptRoot "New-CodexIssueWorktree.ps1"
+$initializerPath = Join-Path $PSScriptRoot "Initialize-CodexIssueWorktree.ps1"
+$claudeSettingsPath = Join-Path $PSScriptRoot "../../.claude/settings.json"
 $gitCommand = Get-Command git -CommandType Application -All -ErrorAction SilentlyContinue |
     Where-Object { [System.IO.Path]::GetExtension($_.Source) -notin @('.cmd', '.bat') } |
     Select-Object -First 1
@@ -266,18 +270,15 @@ function Get-PrintedHandoffLines {
     )
 
     $outputLines = @($Output -split '\r?\n')
-    $marker = "PowerShell-only worker handoff (run this entire block in order):"
+    $marker = "PowerShell worker handoff (run this entire block unchanged):"
     $markerIndex = [Array]::IndexOf($outputLines, $marker)
-    Assert-True ($markerIndex -ge 0) "Helper output omitted the PowerShell-only handoff marker."
-    Assert-True (($markerIndex + 6) -lt $outputLines.Count) "Helper output omitted one or more fail-fast handoff commands."
+    Assert-True ($markerIndex -ge 0) "Helper output omitted the PowerShell handoff marker."
+    Assert-True (($markerIndex + 3) -lt $outputLines.Count) "Helper output omitted one or more fail-fast handoff commands."
 
     return @(
         $outputLines[$markerIndex + 1].TrimStart(),
         $outputLines[$markerIndex + 2].TrimStart(),
-        $outputLines[$markerIndex + 3].TrimStart(),
-        $outputLines[$markerIndex + 4].TrimStart(),
-        $outputLines[$markerIndex + 5].TrimStart(),
-        $outputLines[$markerIndex + 6].TrimStart()
+        $outputLines[$markerIndex + 3].TrimStart()
     )
 }
 
@@ -299,7 +300,10 @@ try {
     $seedScriptsPath = Join-Path $seedPath "scripts"
     New-Item -ItemType Directory -Path $seedScriptsPath | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../worktree_guard.ps1") -Destination (Join-Path $seedScriptsPath "worktree_guard.ps1")
-    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitignore", "tracked.txt", "scripts/worktree_guard.ps1")
+    $seedGitScriptsPath = Join-Path $seedScriptsPath "git"
+    New-Item -ItemType Directory -Path $seedGitScriptsPath | Out-Null
+    Copy-Item -LiteralPath $initializerPath -Destination (Join-Path $seedGitScriptsPath "Initialize-CodexIssueWorktree.ps1")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitignore", "tracked.txt", "scripts/worktree_guard.ps1", "scripts/git/Initialize-CodexIssueWorktree.ps1")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Seed fixture")
     Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "advanced" -Encoding Ascii
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "tracked.txt")
@@ -314,22 +318,35 @@ try {
     Assert-Equal "commit" $fixtureBaseType "Fixture origin/main did not peel to a commit."
 
     if (Test-CaseSelected "refresh-remote-base") {
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "origin/main", $fixtureBase)
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("tag", "origin/main", $fixtureBase)
         Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "fresh remote base" -Encoding Ascii
         $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "tracked.txt")
         $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Refresh fixture remote")
         $freshRemoteBase = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
         $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "main")
-        $staleRemoteBase = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "origin/main")
+        $staleRemoteBase = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/origin/main")
         Assert-True ($staleRemoteBase -cne $freshRemoteBase) "Fixture origin/main should be stale before the helper runs."
 
         $refresh = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "439", "-Slug", "fresh-remote")
         Assert-Equal 0 $refresh.ExitCode "Helper should refresh an explicit remote base before creating the worktree.`n$($refresh.Output)"
         $refreshedWorktree = Join-Path $callerPath ".worktrees/codex-439-fresh-remote"
         $refreshedHead = Invoke-Git -WorkingDirectory $refreshedWorktree -Arguments @("rev-parse", "HEAD")
-        $refreshedTrackingRef = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "origin/main")
+        $refreshedTrackingRef = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/origin/main")
+        $shadowBranch = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/heads/origin/main")
+        $shadowTag = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/tags/origin/main")
         Assert-Equal $freshRemoteBase $refreshedHead "Detached worktree should use the newly fetched remote base."
         Assert-Equal $freshRemoteBase $refreshedTrackingRef "Helper should refresh the explicit remote-tracking ref."
-        Complete-Test "explicit remote base is refreshed before worktree creation"
+        Assert-Equal $fixtureBase $shadowBranch "Refreshing a remote base should not rewrite a same-named local branch."
+        Assert-Equal $fixtureBase $shadowTag "Refreshing a remote base should not rewrite a same-named local tag."
+
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "remote.-u.url", $remotePath)
+        $optionRemote = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "445", "-Slug", "option-remote", "-BaseBranch", "-u/main")
+        Assert-Equal 0 $optionRemote.ExitCode "A configured option-looking remote should remain a repository argv after --.`n$($optionRemote.Output)"
+        $optionRemoteWorktree = Join-Path $callerPath ".worktrees/codex-445-option-remote"
+        $optionRemoteHead = Invoke-Git -WorkingDirectory $optionRemoteWorktree -Arguments @("rev-parse", "HEAD")
+        Assert-Equal $freshRemoteBase $optionRemoteHead "Option-looking remote worktree should detach at its fully qualified tracking ref."
+        Complete-Test "remote bases are option-delimited, refreshed, and resolved without local-ref shadowing"
     }
 
     Set-Content -LiteralPath (Join-Path $callerPath "tracked.txt") -Value "maintainer-owned change" -Encoding Ascii
@@ -372,7 +389,7 @@ try {
         if (Test-CaseSelected "success-detached") {
             $symbolicHead = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("symbolic-ref", "-q", "HEAD") -WorkingDirectory $createdWorktree
             Assert-Equal 1 $symbolicHead.ExitCode "New worktree HEAD should be detached."
-            $expectedHead = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "origin/main")
+            $expectedHead = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/origin/main")
             $actualHead = Invoke-Git -WorkingDirectory $createdWorktree -Arguments @("rev-parse", "HEAD")
             Assert-Equal $expectedHead $actualHead "Detached worktree should start at origin/main."
             $uncreatedBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-424/dirty-source") -WorkingDirectory $callerPath
@@ -386,21 +403,20 @@ try {
 
         if (Test-CaseSelected "handoff-order") {
             $escapedGitExecutable = $gitExecutable.Replace("'", "''")
-            $escapedPowerShellExecutable = $powerShellExecutable.Replace("'", "''")
-            $guardLine = "& '$escapedPowerShellExecutable' -NoLogo -NoProfile -NonInteractive -File scripts/worktree_guard.ps1 -GitExecutable '$escapedGitExecutable'"
-            $guardCaptureLine = '$guardSucceeded = $?; $guardExitCode = $LASTEXITCODE'
-            $guardExitLine = 'if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }'
-            $switchLine = "& '$escapedGitExecutable' switch -c 'issue-424/dirty-source'"
-            $switchCaptureLine = '$switchSucceeded = $?; $switchExitCode = $LASTEXITCODE'
-            $switchExitLine = 'if (-not $switchSucceeded -or $switchExitCode -ne 0) { if ($null -ne $switchExitCode -and $switchExitCode -ne 0) { exit $switchExitCode }; exit 1 }'
+            $escapedWorktree = $createdWorktree.Replace("'", "''")
+            $expectedHandoffHead = Invoke-Git -WorkingDirectory $createdWorktree -Arguments @("rev-parse", "HEAD")
+            $initializerLine = "powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1 -GitExecutable '$escapedGitExecutable' -BranchName 'issue-424/dirty-source' -ExpectedWorktree '$escapedWorktree' -ExpectedHead '$expectedHandoffHead'"
+            $handoffCaptureLine = '$handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE'
+            $handoffExitLine = 'if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }'
             $handoffLines = @(Get-PrintedHandoffLines -Output $success.Output)
-            Assert-Equal $guardLine $handoffLines[0] "Handoff output omitted the pinned-Git worktree guard command."
-            Assert-Equal $guardCaptureLine $handoffLines[1] "Handoff output omitted the guard status capture."
-            Assert-Equal $guardExitLine $handoffLines[2] "Handoff output omitted the guard fail-fast gate."
-            Assert-Equal $switchLine $handoffLines[3] "Branch creation must be printed after the guard fail-fast gate."
-            Assert-Equal $switchCaptureLine $handoffLines[4] "Handoff output omitted the branch-command status capture."
-            Assert-Equal $switchExitLine $handoffLines[5] "Handoff output omitted the branch-command fail-fast gate."
-            Complete-Test "handoff pins Git and gates both commands fail-fast"
+            Assert-Equal $initializerLine $handoffLines[0] "Handoff output omitted the stable initializer command and exact worktree binding."
+            Assert-Equal $handoffCaptureLine $handoffLines[1] "Handoff output omitted the initializer status capture."
+            Assert-Equal $handoffExitLine $handoffLines[2] "Handoff output omitted the initializer fail-fast gate."
+
+            $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
+            Assert-True ($claudeSettings.permissions.allow -contains "PowerShell(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)") "Claude PowerShell permissions omitted the stable initializer prefix."
+            Assert-True ($claudeSettings.permissions.allow -contains "Bash(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)") "Claude Bash permissions omitted the stable initializer prefix."
+            Complete-Test "handoff uses one allowlisted, exact-worktree-bound initializer with a fail-fast gate"
         }
 
         if (Test-CaseSelected "guard-then-branch") {
@@ -427,6 +443,8 @@ try {
             $missingGuardExecutable = Join-Path $fixtureRoot "missing-git.exe"
             $missingGuard = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", "scripts/worktree_guard.ps1", "-GitExecutable", $missingGuardExecutable) -WorkingDirectory $createdWorktree
             Assert-Equal 2 $missingGuard.ExitCode "Guard should preserve its advertised setup-failure exit code."
+            Assert-NormalizedContains $missingGuard.Output "no argv-safe Git executable was found" "Missing Git should retain the guard setup diagnostic."
+            Assert-True (-not (($missingGuard.Output -replace '\s+', ' ').Contains("not inside a git repository"))) "Missing Git must not be mislabeled as an ordinary non-repository result."
             $outsideRepoGuard = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", (Join-Path $createdWorktree "scripts/worktree_guard.ps1"), "-GitExecutable", $gitExecutable) -WorkingDirectory $fixtureRoot
             Assert-Equal 2 $outsideRepoGuard.ExitCode "Guard should fail with its advertised repository-check exit code outside Git."
             Assert-NormalizedContains $outsideRepoGuard.Output "not inside a git repository" "Guard should distinguish an ordinary non-repository result from executable launch failure."
@@ -439,13 +457,34 @@ try {
     if (Test-CaseSelected "handoff-fail-fast") {
         $failFast = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "441", "-Slug", "fail-fast")
         Assert-Equal 0 $failFast.ExitCode "Fail-fast fixture worktree creation should succeed.`n$($failFast.Output)"
+        $failFastWorktree = Join-Path $callerPath ".worktrees/codex-441-fail-fast"
         $failFastScript = Join-Path $fixtureRoot "failing-handoff.ps1"
         Set-Content -LiteralPath $failFastScript -Value @(Get-PrintedHandoffLines -Output $failFast.Output) -Encoding Ascii
         $handoffFailure = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $failFastScript) -WorkingDirectory $callerPath
         Assert-Equal 1 $handoffFailure.ExitCode "Guard failure in the coordinator checkout should preserve its exit code."
         $unexpectedBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-441/fail-fast") -WorkingDirectory $callerPath
         Assert-Equal 1 $unexpectedBranch.ExitCode "Guard failure must stop before branch creation in the coordinator checkout."
-        Complete-Test "guard failure stops the printed handoff before branch creation"
+
+        $misleadingParent = Join-Path $fixtureRoot ".worktrees"
+        New-Item -ItemType Directory -Path $misleadingParent -Force | Out-Null
+        $misleadingCoordinator = Join-Path $misleadingParent "standalone-coordinator"
+        $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @("clone", "-b", "main", $remotePath, $misleadingCoordinator)
+        $misleadingFailure = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $failFastScript) -WorkingDirectory $misleadingCoordinator
+        Assert-Equal 1 $misleadingFailure.ExitCode "A standalone checkout beneath a .worktrees ancestor must fail the linked-worktree guard."
+        $misleadingBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-441/fail-fast") -WorkingDirectory $misleadingCoordinator
+        Assert-Equal 1 $misleadingBranch.ExitCode "A misleading path marker must not permit branch creation in a standalone checkout."
+
+        $otherWorktreeResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "443", "-Slug", "other-worktree")
+        Assert-Equal 0 $otherWorktreeResult.ExitCode "Different-worktree fixture creation should succeed.`n$($otherWorktreeResult.Output)"
+        $otherWorktree = Join-Path $callerPath ".worktrees/codex-443-other-worktree"
+        $wrongWorktreeFailure = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $failFastScript) -WorkingDirectory $otherWorktree
+        Assert-Equal 1 $wrongWorktreeFailure.ExitCode "A valid but different linked worktree must reject this helper handoff."
+        Assert-NormalizedContains $wrongWorktreeFailure.Output "does not match the helper-created worktree" "Wrong-worktree failure should explain the exact binding mismatch."
+        $unexpectedSharedBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-441/fail-fast") -WorkingDirectory $callerPath
+        Assert-Equal 1 $unexpectedSharedBranch.ExitCode "Wrong-worktree handoff must stop before shared branch creation."
+        $failFastSymbolicHead = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("symbolic-ref", "-q", "HEAD") -WorkingDirectory $failFastWorktree
+        Assert-Equal 1 $failFastSymbolicHead.ExitCode "The intended worktree should remain detached until its own handoff runs."
+        Complete-Test "main, misleading, and wrong-worktree handoffs all stop before branch creation"
     }
 
     if (Test-CaseSelected "handoff-missing-executable") {
@@ -453,30 +492,80 @@ try {
         Assert-Equal 0 $missingExecutableResult.ExitCode "Missing-executable fixture worktree creation should succeed.`n$($missingExecutableResult.Output)"
         $missingExecutableWorktree = Join-Path $callerPath ".worktrees/codex-442-missing-executable"
         $missingExecutableLines = @(Get-PrintedHandoffLines -Output $missingExecutableResult.Output)
+        $escapedGitExecutable = $gitExecutable.Replace("'", "''")
         $missingExecutablePath = (Join-Path $fixtureRoot "removed-git.exe").Replace("'", "''")
-        $missingExecutableLines[3] = "& '$missingExecutablePath' switch -c 'issue-442/missing-executable'"
+        $missingExecutableLines[0] = $missingExecutableLines[0].Replace($escapedGitExecutable, $missingExecutablePath)
         $missingExecutableScript = Join-Path $fixtureRoot "missing-executable-handoff.ps1"
         Set-Content -LiteralPath $missingExecutableScript -Value $missingExecutableLines -Encoding Ascii
         $missingExecutableHandoff = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $missingExecutableScript) -WorkingDirectory $missingExecutableWorktree
-        Assert-Equal 1 $missingExecutableHandoff.ExitCode "A disappeared Git executable should fail the handoff even when LASTEXITCODE remains zero."
+        Assert-Equal 2 $missingExecutableHandoff.ExitCode "A disappeared Git executable should preserve the initializer setup-failure exit code."
+        Assert-NormalizedContains $missingExecutableHandoff.Output "no argv-safe native Git executable was found" "Missing Git should retain its setup diagnostic."
+        Assert-True (-not (($missingExecutableHandoff.Output -replace '\s+', ' ').Contains("not inside a git repository"))) "Missing Git must not be mislabeled as an ordinary non-repository result."
         $missingExecutableBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-442/missing-executable") -WorkingDirectory $callerPath
         Assert-Equal 1 $missingExecutableBranch.ExitCode "A disappeared Git executable must not create the planned branch."
 
-        $missingHostLines = @(Get-PrintedHandoffLines -Output $missingExecutableResult.Output)
-        $missingHostPath = (Join-Path $fixtureRoot "removed-powershell.exe").Replace("'", "''")
-        $missingHostLines[0] = "& '$missingHostPath' -NoLogo -NoProfile -NonInteractive -File scripts/worktree_guard.ps1 -GitExecutable '$($gitExecutable.Replace("'", "''"))'"
-        $missingHostScript = Join-Path $fixtureRoot "missing-host-handoff.ps1"
-        Set-Content -LiteralPath $missingHostScript -Value @('$global:LASTEXITCODE = $null') -Encoding Ascii
-        Add-Content -LiteralPath $missingHostScript -Value $missingHostLines -Encoding Ascii
-        $missingHostHandoff = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $missingHostScript) -WorkingDirectory $missingExecutableWorktree
-        Assert-Equal 1 $missingHostHandoff.ExitCode "A disappeared PowerShell host should fail closed when LASTEXITCODE is null."
-        $missingHostBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-442/missing-executable") -WorkingDirectory $callerPath
-        Assert-Equal 1 $missingHostBranch.ExitCode "A disappeared PowerShell host must not create the planned branch."
-        Complete-Test "missing Git or PowerShell executables fail the printed handoff closed"
+        $missingInitializerLines = @(Get-PrintedHandoffLines -Output $missingExecutableResult.Output)
+        $missingInitializerLines[0] = $missingInitializerLines[0].Replace("scripts/git/Initialize-CodexIssueWorktree.ps1", "scripts/git/missing-initializer.ps1")
+        $missingInitializerScript = Join-Path $fixtureRoot "missing-initializer-handoff.ps1"
+        Set-Content -LiteralPath $missingInitializerScript -Value @('$global:LASTEXITCODE = $null') -Encoding Ascii
+        Add-Content -LiteralPath $missingInitializerScript -Value $missingInitializerLines -Encoding Ascii
+        $missingInitializerHandoff = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $missingInitializerScript) -WorkingDirectory $missingExecutableWorktree
+        Assert-True ($missingInitializerHandoff.ExitCode -ne 0) "A disappeared initializer script should fail the handoff."
+        $missingInitializerBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-442/missing-executable") -WorkingDirectory $callerPath
+        Assert-Equal 1 $missingInitializerBranch.ExitCode "A disappeared initializer must not create the planned branch."
+        Complete-Test "missing Git or initializer executables fail the printed handoff closed"
+    }
+
+    if (Test-CaseSelected "initializer-validation") {
+        $initializerResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "446", "-Slug", "initializer-validation")
+        Assert-Equal 0 $initializerResult.ExitCode "Initializer-validation fixture worktree creation should succeed.`n$($initializerResult.Output)"
+        $initializerWorktree = Join-Path $callerPath ".worktrees/codex-446-initializer-validation"
+        $initializerHead = Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("rev-parse", "HEAD")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "issue-446/initializer-validation", $initializerHead)
+
+        $collisionScript = Join-Path $fixtureRoot "initializer-branch-collision.ps1"
+        Set-Content -LiteralPath $collisionScript -Value @(Get-PrintedHandoffLines -Output $initializerResult.Output) -Encoding Ascii
+        $collision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $collisionScript) -WorkingDirectory $initializerWorktree
+        Assert-True ($collision.ExitCode -ne 0) "A post-helper branch collision should fail the initializer."
+        Assert-NormalizedContains $collision.Output "git switch -c failed" "Branch collision should retain its switch failure diagnostic."
+        $detachedAfterCollision = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("symbolic-ref", "-q", "HEAD") -WorkingDirectory $initializerWorktree
+        Assert-Equal 1 $detachedAfterCollision.ExitCode "Branch collision should leave the helper-created worktree detached."
+
+        $canaryPath = Join-Path $initializerWorktree "initializer-canary.txt"
+        $invalidInitializer = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @(
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-File", "scripts/git/Initialize-CodexIssueWorktree.ps1",
+            "-GitExecutable", $gitExecutable,
+            "-BranchName", "bad&echo CANARY>initializer-canary.txt",
+            "-ExpectedWorktree", $initializerWorktree,
+            "-ExpectedHead", $initializerHead
+        ) -WorkingDirectory $initializerWorktree
+        Assert-Equal 2 $invalidInitializer.ExitCode "Initializer should reject an invalid branch before switch."
+        Assert-True (-not (Test-Path -LiteralPath $canaryPath)) "Initializer branch metacharacters escaped the native argv boundary."
+
+        $wrongExecutable = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @(
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-File", "scripts/git/Initialize-CodexIssueWorktree.ps1",
+            "-GitExecutable", $powerShellExecutable,
+            "-BranchName", "issue-446/wrong-executable",
+            "-ExpectedWorktree", $initializerWorktree,
+            "-ExpectedHead", $initializerHead
+        ) -WorkingDirectory $initializerWorktree
+        Assert-Equal 2 $wrongExecutable.ExitCode "Initializer should reject a non-Git executable before guard or switch."
+
+        $null = Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("switch", "-c", "manual-attached")
+        $attachedInitializer = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @(
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-File", "scripts/git/Initialize-CodexIssueWorktree.ps1",
+            "-GitExecutable", $gitExecutable,
+            "-BranchName", "issue-446/after-attached",
+            "-ExpectedWorktree", $initializerWorktree,
+            "-ExpectedHead", $initializerHead
+        ) -WorkingDirectory $initializerWorktree
+        Assert-Equal 1 $attachedInitializer.ExitCode "Initializer should reject an already-attached helper worktree."
+        Assert-Equal "manual-attached" (Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("branch", "--show-current")) "Attached-worktree rejection should preserve the current branch."
+        Complete-Test "initializer fails closed on collisions, invalid input, wrong executables, and attached HEAD"
     }
 
     if (Test-CaseSelected "existing-branch") {
-        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "issue-425/existing", "origin/main")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "issue-425/existing", "refs/remotes/origin/main")
         $branchCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "425", "-Slug", "existing")
         Assert-True ($branchCollision.ExitCode -ne 0) "Existing requested branch should fail closed."
         Assert-Contains $branchCollision.Output "Branch already exists: issue-425/existing" "Branch collision diagnostic was not clear."
@@ -531,17 +620,27 @@ try {
     }
 
     if (Test-CaseSelected "invalid-slug") {
-        $invalidSlug = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "427", "-Slug", "Invalid_Slug")
+        $registrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $invalidSlugTarget = Join-Path $callerPath ".worktrees/codex-427-Invalid-Slug"
+        $invalidSlug = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "427", "-Slug", "Invalid-Slug")
         Assert-True ($invalidSlug.ExitCode -ne 0) "Invalid slug should fail closed."
-        Assert-Contains $invalidSlug.Output "Invalid slug: 'Invalid_Slug'." "Invalid slug diagnostic was not clear."
-        Complete-Test "invalid slug fails closed"
+        Assert-Contains $invalidSlug.Output "Invalid slug: 'Invalid-Slug'." "Invalid slug diagnostic was not clear."
+        Assert-True (-not (Test-Path -LiteralPath $invalidSlugTarget)) "Invalid slug should not create a target path."
+        $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        Assert-Equal $registrationsBefore $registrationsAfter "Invalid slug changed Git worktree registrations."
+        Complete-Test "uppercase slug fails closed without target or registration mutation"
     }
 
     if (Test-CaseSelected "invalid-branch") {
+        $registrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $invalidBranchTarget = Join-Path $callerPath ".worktrees/codex-428-invalid-branch"
         $invalidBranch = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "428", "-Slug", "invalid-branch", "-BranchName", "invalid branch")
         Assert-True ($invalidBranch.ExitCode -ne 0) "Invalid branch should fail closed."
         Assert-Contains $invalidBranch.Output "Invalid branch name: invalid branch" "Invalid branch diagnostic was not clear."
-        Complete-Test "invalid branch fails closed"
+        Assert-True (-not (Test-Path -LiteralPath $invalidBranchTarget)) "Invalid branch should not create a target path."
+        $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        Assert-Equal $registrationsBefore $registrationsAfter "Invalid branch changed Git worktree registrations."
+        Complete-Test "invalid branch fails closed without target or registration mutation"
     }
 
     if (Test-CaseSelected "batch-shim-bypass") {
@@ -615,7 +714,7 @@ try {
         $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Advance remote before WhatIf")
         $whatIfRemoteBase = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
         $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "main")
-        $whatIfTrackingBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "origin/main")
+        $whatIfTrackingBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/origin/main")
         Assert-True ($whatIfTrackingBefore -cne $whatIfRemoteBase) "Fixture origin/main should be stale before the WhatIf probe."
 
         $whatIf = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "430", "-Slug", "what-if", "-WhatIf")
@@ -623,14 +722,14 @@ try {
         Assert-True (-not (Test-Path -LiteralPath $whatIfTarget)) "WhatIf must not create the target path."
         $whatIfBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-430/what-if") -WorkingDirectory $callerPath
         Assert-Equal 1 $whatIfBranch.ExitCode "WhatIf must not create the planned branch."
-        $whatIfTrackingAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "origin/main")
+        $whatIfTrackingAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/origin/main")
         Assert-Equal $whatIfTrackingBefore $whatIfTrackingAfter "WhatIf must not refresh the remote-tracking ref."
         Complete-Test "WhatIf performs no worktree, branch, or remote-ref mutation"
     }
 
     if (Test-CaseSelected "git-add-failure") {
         $gitFailureTarget = Join-Path $callerPath ".worktrees/codex-431-git-failure"
-        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "add", "--detach", $gitFailureTarget, "origin/main")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "add", "--detach", $gitFailureTarget, "refs/remotes/origin/main")
         $parkedGitFailureTarget = Join-Path $callerPath ".worktrees/parked-git-failure"
         Move-Item -LiteralPath $gitFailureTarget -Destination $parkedGitFailureTarget
         $gitFailure = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "431", "-Slug", "git-failure")
