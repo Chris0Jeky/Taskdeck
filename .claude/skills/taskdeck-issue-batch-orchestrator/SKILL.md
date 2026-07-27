@@ -31,6 +31,18 @@ Split only by non-overlapping ownership:
 
 Avoid concurrent edits to the same view, store, service, migration chain, project file, or canonical doc unless the coordinator controls merge order.
 
+## Structured Patch Discipline
+
+When editing with structured patches:
+
+- Default each `apply_patch` (or equivalent structured patch operation) to one target file. Use a multi-file operation only for a tightly homogeneous mechanical set where every file has its own independently stable anchor.
+- In prose or Unicode-bearing files, anchor hunks on nearby ASCII-stable headings or lines instead of typography-sensitive exact text.
+- After a context rejection, inspect the live target before retrying, then reduce the retry to the smallest independently anchored hunk.
+- Never repeat the same broad multi-file patch after it is rejected.
+- Record every repeated or unresolved patch rejection in the active orchestrator/run ledger and final handoff, even when work resumes.
+- Keep the record bounded and sanitized: include target(s), a failure class/error summary, a safe reproduction pointer when available, and the working invocation or workaround. Redact secrets, omit full patch payloads, and truncate oversized error context.
+- Then invoke `taskdeck-failure-capture` to classify the failure and escalate it to the repository failure ledger when that skill's criteria apply.
+
 ## Worker Setup
 
 For isolated workers:
@@ -41,6 +53,7 @@ For isolated workers:
 4. Assign explicit file/module ownership.
 5. Tell workers they are not alone in the codebase and must not revert others' edits.
 6. Require targeted tests and self-review before handoff.
+7. Require every file-editing worker prompt to restate the structured patch discipline above.
 
 ## Review And CI
 
