@@ -1,7 +1,8 @@
 # =============================================================================
-# CD Staging Gate — Automated staging deployment verification and production
-# promotion gate. Implements Phase 1-2 of the staged deployment workflow
-# (docs/ops/DEPLOYMENT_WORKFLOW.md) with a manual approval gate for Phase 3.
+# CD Staging Gate — Automated staging deployment verification with a parked
+# production-environment handoff. Implements Phase 1-2 of the staged deployment
+# workflow (docs/ops/DEPLOYMENT_WORKFLOW.md). Environment protection is external
+# repository state and must not be inferred from this workflow definition.
 #
 # Triggers:
 #   - Manual workflow dispatch (for re-runs or pre-release validation)
@@ -54,18 +55,13 @@ jobs:
         id: resolve-tag
         env:
           INPUT_TAG: ${{ inputs.image_tag }}
-          EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [[ -n "$INPUT_TAG" ]]; then
-            TAG="$INPUT_TAG"
-          elif [[ "$EVENT_NAME" == "release" ]]; then
-            TAG="$RELEASE_TAG"
-          else
-            TAG="$(git describe --tags --always)"
+          if [[ ! "$INPUT_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::image_tag must be a valid container tag (1-128 letters, digits, underscores, periods, or hyphens)."
+            exit 1
           fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Resolved image tag: $TAG"
+          printf 'tag=%s\n' "$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved image tag: $INPUT_TAG"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -185,25 +181,26 @@ jobs:
           EOF
 
   # -----------------------------------------------------------------------
-  # Production Promotion Gate (manual approval)
+  # Production Environment Handoff (protection rules are external repository state)
   # -----------------------------------------------------------------------
   promotion-gate:
-    name: "Phase 3: Production Promotion Gate"
+    name: "Phase 3: Production Environment Handoff"
     needs: [build-verification, staging-smoke]
     if: always() && needs.build-verification.result == 'success' && (needs.staging-smoke.result == 'success' || needs.staging-smoke.result == 'skipped')
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Promotion approved
+      - name: Record production environment handoff
         run: |
           cat <<EOF >> "$GITHUB_STEP_SUMMARY"
-          ## Phase 3: Production Promotion Gate -- APPROVED
+          ## Phase 3: Production Environment Handoff -- REACHED
 
           - **Image tag**: \`${{ needs.build-verification.outputs.image_tag }}\`
           - Build verification: passed
           - Staging smoke: ${{ needs.staging-smoke.result }}
-          - Manual approval: granted
-          - **Next step**: Execute Phase 3 (canary deployment) and Phase 4 (promotion) per \`docs/ops/DEPLOYMENT_WORKFLOW.md\`
+          - Environment binding: \`production\`
+          - Approval protection: external repository setting; not asserted by this workflow
+          - **Next step**: Keep the parked deployment path inactive until #1504 is maintainer-resolved
           EOF
-          echo "Production promotion approved for tag: ${{ needs.build-verification.outputs.image_tag }}"
-          echo "Follow the deployment workflow in docs/ops/DEPLOYMENT_WORKFLOW.md for Phases 3-4."
+          echo "Production environment handoff reached for tag: ${{ needs.build-verification.outputs.image_tag }}"
+          echo "This workflow does not assert that environment approval protection is configured."

@@ -140,10 +140,50 @@ async function validateProjectAutomationDocs() {
   }
 }
 
+async function validateParkedStagingGateTriggers() {
+  const workflowPath = '.github/workflows/cd-staging-gate.yml'
+  if (!(await fileExists(workflowPath))) {
+    errors.push(`Missing parked staging workflow: ${workflowPath}`)
+    return
+  }
+
+  const workflowText = await readFile(resolve(workflowPath), 'utf8')
+  const lines = workflowText.split(/\r?\n/)
+  const onIndex = lines.findIndex((line) => line === 'on:')
+  if (onIndex < 0) {
+    errors.push(`${workflowPath} is missing its top-level on block`)
+    return
+  }
+
+  const triggerLines = []
+  for (let index = onIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (line.length > 0 && !/^\s/.test(line)) {
+      break
+    }
+    triggerLines.push(line)
+  }
+
+  const triggerNames = triggerLines
+    .map((line) => line.match(/^ {2}([A-Za-z][\w-]*):\s*$/)?.[1])
+    .filter(Boolean)
+
+  if (triggerNames.length !== 1 || triggerNames[0] !== 'workflow_dispatch') {
+    errors.push(
+      `${workflowPath} is parked and must remain manual-only; expected only workflow_dispatch, found: ${triggerNames.join(', ') || '(none)'}`,
+    )
+  }
+
+  if (workflowText.includes('github.event.release') || workflowText.includes('EVENT_NAME == "release"')) {
+    errors.push(`${workflowPath} retains unreachable release-event handling after becoming manual-only`)
+  }
+}
+
 async function main() {
   await validateIssueTemplates()
   await validateIssueTemplateConfig()
   await validateProjectAutomationDocs()
+  await validateParkedStagingGateTriggers()
 
   if (errors.length > 0) {
     console.error('GitHub operations governance check failed:')

@@ -295,7 +295,7 @@ The `cd-staging-gate.yml` workflow automates Phase 1 and Phase 2 gates:
 - Triggers only on manual dispatch with an explicit image tag
 - Builds and verifies container images
 - Runs the smoke test suite against a CI-hosted staging environment
-- Requires manual approval (GitHub environment protection) before Phase 3 can proceed
+- Binds the final handoff job to `production`, but does **not** itself prove approval protection; the live repository has no protected `production` environment, and #1504 must be maintainer-resolved before reactivation
 - See `.github/workflows/cd-staging-gate.yml` for the workflow definition
 
 ## Ownership and Escalation
