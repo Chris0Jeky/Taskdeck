@@ -81,18 +81,10 @@ EOF
 )"
 ```
 
-### 7. Self-review and post findings
+### 7. Review
 
-After opening the PR, perform a deliberate reviewer-style pass:
-
-1. Read the full PR diff with `gh pr diff <number>`
-2. Check ALL existing PR comments (bot comments, CI output) with `gh pr view <number> --comments`
-3. Review for issues at all severity levels (CRITICAL, HIGH, MEDIUM, LOW)
-4. Post findings as a PR comment (`gh pr comment <number>`)
-5. Fix ALL findings — no "non-blocking" dismissals, no skipping lower priorities
-6. If a finding is real but out of scope, seed a GitHub issue to track it
-7. Post a follow-up comment mapping findings to fix commits
-8. Verify CI is green with `gh pr checks <number>`
+Open the PR ready-for-review, then run the global `review-and-ship` skill (global laws 2 and 11).
+Taskdeck-specific lenses: `taskdeck-pr-review-loop`.
 
 ### 8. Report back
 

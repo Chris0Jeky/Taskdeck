@@ -90,7 +90,7 @@ Every PR needs:
 
 1. Worker self-review after opening the PR.
 2. Coordinator review of PR body, linked issue, test evidence, and docs impact.
-3. Fresh adversarial review for sensitive or risky PRs:
+3. Flag these surfaces so the coordinator can decide whether an extra independent lens is warranted (round count and severity bar: the global `review-and-ship` skill):
    - auth/authz/security
    - migrations/persistence
    - capture/review/proposal execution
