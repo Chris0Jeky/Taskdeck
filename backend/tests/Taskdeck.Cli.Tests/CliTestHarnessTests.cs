@@ -5,6 +5,13 @@ using Xunit;
 
 namespace Taskdeck.Cli.Tests;
 
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class CliProcessLifecycleCollection
+{
+    public const string Name = "CLI process lifecycle";
+}
+
+[Collection(CliProcessLifecycleCollection.Name)]
 public sealed class CliTestHarnessTests
 {
     [Fact]
