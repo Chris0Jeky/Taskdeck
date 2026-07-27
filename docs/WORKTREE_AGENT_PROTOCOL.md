@@ -97,7 +97,9 @@ Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not reference or edit the main checkout. Do not revert edits made by others.
 Keep scope to acceptance criteria. Make small signed-off commits with git commit -s --no-gpg-sign.
 Run targeted tests first. Open a PR with Closes #NNN and test evidence.
-After opening the PR, self-review, post findings or explicit no-finding result, fix findings, and report back.
+After opening the ready PR, hand it to the global review-and-ship pipeline. Use
+taskdeck-pr-review-loop only for Taskdeck-specific lenses and thread settlement; report the
+pipeline evidence and disposition.
 ```
 
 ## Parallel Runtime Isolation

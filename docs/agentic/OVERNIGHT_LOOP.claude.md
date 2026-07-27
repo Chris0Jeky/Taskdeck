@@ -197,6 +197,10 @@ count, severity bar, comment triage, and when to reopen or park all live there â
 them in this manual. Taskdeck's tier row (T3 per `.claude/tier.json`): push free, merge free on
 green CI at the head plus one comment-triage pass and one independent review pass.
 
+Run `review-and-ship` only through its merge-readiness decision in this section; do **not**
+execute its merge action yet. Section 5 owns the actual merge after Taskdeck's complete local
+gate also passes.
+
 What this manual adds: use **`taskdeck-pr-review-loop`** for the Taskdeck lenses, prefer a
 **distinct lens** over a duplicate pass when a second reviewer is warranted, and record the
 round in the findings ledger.

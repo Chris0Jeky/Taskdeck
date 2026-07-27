@@ -216,15 +216,16 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
 
 ## PER-PR GATE SEQUENCE (proven across 20+ merges; run it every time)
 
-worker delivers a ready-for-review PR → run the global `review-and-ship` pipeline → full backend
-suite on the EXACT head (coordinator owns the verdict; delegate the run to a subagent that executes
-it in its OWN foreground turn, or run it inline — never as background Bash; serialize so only ONE
-full suite runs box-wide at a time) → CI green on that head → **feedback check by CONTENT**
-(unresolved review threads AND top-level PR comments AND review-summary bodies posted since the
-final push) → merge when the canonical pipeline and declared tier permit → pull `main` → prune
-worktree+branch (cd out of a worktree before removing it). Reviewer count, finding disposition,
-fix/verification convergence, and any waiting requirement belong only to the canonical pipeline;
-do not add local values here.
+worker delivers a ready-for-review PR → run the global `review-and-ship` pipeline **through its
+merge-readiness decision only; do not execute its merge action yet** → full backend suite on the
+EXACT head (coordinator owns the verdict; delegate the run to a subagent that executes it in its
+OWN foreground turn, or run it inline — never as background Bash; serialize so only ONE full suite
+runs box-wide at a time) → CI green on that head → **feedback check by CONTENT** (unresolved
+review threads AND top-level PR comments AND review-summary bodies posted since the final push) →
+after every preceding Taskdeck-local gate holds, execute the canonical merge action when the
+pipeline and declared authority permit → pull `main` → prune worktree+branch (cd out of a
+worktree before removing it). Reviewer count, finding disposition, fix/verification convergence,
+and any waiting requirement belong only to the canonical pipeline; do not add local values here.
 
 - **Feedback check by content, never by reviewer names**: query `reviewThreads` (count
   `isResolved == false` and READ the bodies), AND sweep top-level PR comments and

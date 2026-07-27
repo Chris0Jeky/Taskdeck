@@ -469,7 +469,9 @@ Execution note:
 4. Run required verification commands.
 5. Update docs (`STATUS`/`IMPLEMENTATION_MASTERPLAN`/test docs) if reality changed.
 6. Open PR with linked issue and risk notes.
-7. Perform a deliberate reviewer-style self-review of the PR diff after opening it; capture findings, fixes, or explicit no-finding conclusion before handoff.
+7. Hand the ready PR to the global `review-and-ship` pipeline. Use `taskdeck-pr-review-loop` only
+   for Taskdeck-specific lenses and thread settlement; record exact-head/base pipeline evidence
+   and satisfy the declared-tier review gate before any merge handoff.
 8. Move project item to `Review`.
 9. After merge, move item to `Done` and post final verification summary.
 

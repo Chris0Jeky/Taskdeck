@@ -35,7 +35,9 @@ Codex cannot reliably configure GitHub repository settings unless you explicitly
 
 Do in GitHub UI:
 - Protect `main`:
-  - require PR reviews (even 1 self-review is fine)
+  - align review protection with the repository's declared tier and canonical `review-and-ship`
+    gate; author self-review is not independent-review evidence, but do not impose an
+    approval-only rule when the declared gate accepts an arrived independent comment review
   - require status checks to pass:
     - docs-governance
     - backend-architecture

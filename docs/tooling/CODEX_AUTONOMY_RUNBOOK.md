@@ -1,12 +1,12 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-27
 
 Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "spin fresh adversarial reviewers", "fix failing CI", or "reconcile docs after a batch".
 
 ## Core Rule
 
-Codex may automate coordination, worktree setup, implementation, testing, PR creation, review, CI recovery, and docs reconciliation. It must not silently defer work, silently skip tests, merge PRs, change repo settings/secrets/protections, or bypass Taskdeck's review-first automation safety.
+Codex may automate coordination, worktree setup, implementation, testing, PR creation, review, CI recovery, docs reconciliation, and merges permitted by the repository's declared authority and the canonical `review-and-ship` gate. It must not silently defer work, silently skip tests, change repo settings/secrets/protections, or bypass Taskdeck's review-first automation safety. An explicit user stop-before-merge boundary remains binding.
 
 Spawned subagents are optional execution machinery, not a default assumption. Use them without asking for extra permission when they are efficient or effective for safely parallelizable work with clear ownership and a coordinator-owned synthesis path. When subagents are unavailable or do not fit the work, use normal local execution, explicit git worktrees, or separate agent sessions as appropriate and state what actually happened.
 
@@ -16,7 +16,8 @@ Use these skills:
 
 - Many issues / batch execution: `taskdeck-issue-batch-orchestrator`
 - One issue in an isolated branch/worktree: `taskdeck-worktree-issue-worker`
-- PR self-review or fresh adversarial review: `taskdeck-pr-review-loop`
+- Canonical PR disposition and convergence: global `review-and-ship`; Taskdeck review lenses and
+  thread settlement: `taskdeck-pr-review-loop`
 - Failing CI, comments, conflicts, stale branches: `taskdeck-ci-conflict-recovery`
 - Backend implementation: `taskdeck-backend-slice`
 - Frontend implementation: `taskdeck-frontend-workspace-slice`
@@ -100,14 +101,18 @@ Do not revert edits made by others. Keep scope to the issue acceptance criteria.
 Make small present-tense signed-off commits with git commit -s --no-gpg-sign. Do not use --no-verify.
 Add tests for behavior changes. Run targeted checks first.
 Open a PR with Closes #NNN, test evidence, docs impact, and risks.
-After opening the PR, perform a self-review, post findings or explicit no-finding result, fix findings, and report back.
+After opening the ready PR, hand it to the global review-and-ship pipeline. Use taskdeck-pr-review-loop
+only for Taskdeck-specific lenses and thread settlement; report the pipeline evidence and disposition.
 ```
 
 ## PR Review Loop
 
-Every PR needs a self-review. Sensitive PRs need a fresh adversarial review.
+Every ready PR goes through the global `review-and-ship` pipeline. The repository's declared tier
+determines whether an arrived independent review at the exact head and base is required; an author
+self-review, review request, or reviewer reaction is not a substitute for that evidence.
 
-Sensitive means:
+The following surfaces are risk flags for choosing a distinct Taskdeck-specific lens. They do not
+replace or narrow the canonical pipeline's tier-derived review requirement:
 
 - auth, session, token, or cross-user policy
 - security, SSRF, secret handling, logging redaction
@@ -118,7 +123,8 @@ Sensitive means:
 - broad route/store/frontend shell behavior
 - flaky or failing CI
 
-Reviewers should post findings as PR comments or a summary comment. A no-finding review must still mention residual risk and test gaps.
+Reviewers post findings or an explicit no-finding result as PR evidence. The coordinator routes
+every finding through the canonical pipeline's dispositions and owns the final synthesis.
 
 ## CI, Comments, And Conflicts
 
@@ -128,14 +134,16 @@ Use:
 powershell -File scripts/github/Inspect-TaskdeckPrs.ps1
 ```
 
-For each PR:
+For each PR, within the canonical `review-and-ship` pipeline:
 
-1. Check CI state and failing logs.
-2. Check normal comments, review threads, bot comments, annotations, and artifacts.
-3. Reproduce the narrow failure locally where practical.
-4. Fix root cause with focused commits.
-5. Push and monitor updated CI.
-6. Comment with the fix and verification.
+1. Read normal comments, review threads, bot comments, review summaries, annotations, and artifacts
+   against the exact head and base.
+2. Check CI state and investigate every failing log; reproduce the narrow failure locally where
+   practical.
+3. Implement only the fix batch selected by the canonical pipeline, using focused signed commits.
+4. Push and monitor updated CI at the new exact head.
+5. Reply to and resolve every settled thread, then post a finding-to-disposition mapping with fix
+   commits, verification, or tracked/declined evidence as applicable.
 
 For conflicts, prefer merge over rebase when reconciliation stalls. Replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`. If it conflicts, preserve both branches' intended behavior, stage the resolution, finish with `git commit -s --no-gpg-sign --no-edit` instead of `git merge --continue`, and re-run tests for both touched areas.
 
@@ -227,7 +235,8 @@ Check all open PRs. Address review comments, bot comments, conflicts, and failin
 ```
 
 ```text
-Spin fresh adversarial reviewers on the security-sensitive PRs and have them comment findings, then fix what they find.
+Spin fresh adversarial reviewers on the security-sensitive PRs, have them comment findings, route
+every finding through the global review-and-ship dispositions, and post settlement evidence.
 ```
 
 ```text
