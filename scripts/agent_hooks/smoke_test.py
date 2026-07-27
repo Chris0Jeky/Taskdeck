@@ -107,10 +107,14 @@ def expect_json_context_exact(
 ) -> None:
     expect_ok(result, label)
     data = json.loads(result.stdout)
-    output = data["hookSpecificOutput"]
-    expected = {"hookEventName": event_name, "additionalContext": expected_context}
-    if output != expected:
-        raise AssertionError(f"{label} context drifted: expected={expected!r}, got={output!r}")
+    expected = {
+        "hookSpecificOutput": {
+            "hookEventName": event_name,
+            "additionalContext": expected_context,
+        }
+    }
+    if data != expected:
+        raise AssertionError(f"{label} payload drifted: expected={expected!r}, got={data!r}")
 
 
 def expect_pretool_deny(command: str, handler: dict[str, Any] | None = None) -> None:

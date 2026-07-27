@@ -56,15 +56,17 @@ cd frontend/taskdeck-web && npm run build && npx vitest --run --reporter=verbose
 
 Report any failures immediately — do not proceed to merge.
 
-## Step 4: Confirm exact-head independent-review evidence
+## Step 4: Confirm exact-head/base declared-review evidence
 
-Use the `headRefOid` and `baseRefOid` from Step 1 and the reviews, review summaries, and comments
-already read in Step 2. Require an **arrived independent review of that exact head and base** which
-posts either findings or an explicit no-finding result. The evidence artifact must record both
-reviewed OIDs (or a stable diff identity derived from both), and the gate must compare them with the
-current values. GitHub's review `commit_id` binds only the head; it is not proof of the reviewed base.
-A review request, acknowledgement/reaction, worker-authored review, or coordinator metadata scan
-does not satisfy Taskdeck's declared T3 gate. Evidence from an older head or an older base is stale.
+Read the repository's current authority and the canonical pipeline result instead of copying its
+tier row here. When that declared gate requires independent review, use the `headRefOid` and
+`baseRefOid` from Step 1 and the reviews, review summaries, and comments already read in Step 2.
+Require an **arrived independent review of that exact head and base** which posts either findings or
+an explicit no-finding result. The evidence artifact must record both reviewed OIDs (or a stable
+diff identity derived from both), and the gate must compare them with the current values. GitHub's
+review `commit_id` binds only the head; it is not proof of the reviewed base. A review request,
+acknowledgement/reaction, worker-authored review, or coordinator metadata scan does not satisfy an
+independent-review requirement. Evidence from an older head or an older base is stale.
 
 Confirm that every finding from that review has a recorded disposition and that all review threads
 are settled. If exact-head independent-review evidence is missing or unsettled, report the PR as
@@ -93,7 +95,7 @@ Output a merge-readiness summary:
 - [ ] Frontend build: PASS/FAIL
 - [ ] Frontend tests: PASS/FAIL
 - [ ] CI checks: GREEN/RED
-- [ ] Independent exact-head/base review: ARRIVED/MISSING (head SHA, base SHA, and evidence URL)
+- [ ] Declared exact-head/base review evidence: SATISFIED/MISSING (head SHA, base SHA, and evidence URL)
 - [ ] Bot comments: ADDRESSED/NONE
 - [ ] Secrets scan: CLEAN
 

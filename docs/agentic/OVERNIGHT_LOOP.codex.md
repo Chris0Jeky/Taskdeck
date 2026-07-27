@@ -177,9 +177,9 @@ before the hard tasks.
 ## 4) REVIEW — run the global pipeline, once
 
 **Doctrine has one home: global laws 2 and 11 and the global `review-and-ship` skill.** Round
-count, severity bar, comment triage, and when to reopen or park all live there — do not restate
-them in this manual. Taskdeck's tier row (T3 per `.claude/tier.json`): push free, merge free on
-green CI at the head plus one comment-triage pass and one independent review pass.
+count, tier gate, severity bar, comment triage, and when to reopen or park all live there — do not
+restate them in this manual. Read Taskdeck's current tier from repository authority and satisfy it
+through the canonical pipeline.
 
 Run `review-and-ship` only through its merge-readiness decision in this section; do **not**
 execute its merge action yet. Section 5 owns the actual merge after Taskdeck's complete local

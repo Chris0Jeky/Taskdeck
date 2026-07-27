@@ -86,8 +86,8 @@ Use `taskdeck-worktree-issue-worker` for implementation workers.
 
 ## Review loop
 
-Every PR follows the global `review-and-ship` pipeline. For Taskdeck's declared T3 gate, obtain the
-required independent review pass before merge; only additional lenses are discretionary.
+Every PR follows the global `review-and-ship` pipeline and must satisfy the repository's current
+declared tier before merge; only lenses beyond that canonical gate are discretionary.
 
 The coordinator also reviews the PR body, linked issue, test evidence, and docs impact. Flag these
 surfaces when deciding whether an additional independent lens is warranted:

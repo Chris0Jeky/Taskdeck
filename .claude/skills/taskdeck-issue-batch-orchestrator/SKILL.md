@@ -57,10 +57,10 @@ For isolated workers:
 
 ## Review And CI
 
-Review rounds, severity bar, and comment triage: the global `review-and-ship` skill (laws 2 and 11).
-For Taskdeck's declared T3 gate, obtain the required independent review pass before merge; only
-additional lenses are discretionary. Flag these surfaces when deciding whether an additional lens
-is warranted:
+Review rounds, tier gate, severity bar, and comment triage: the global `review-and-ship` skill
+(laws 2 and 11). Satisfy the repository's current declared tier before merge; only lenses beyond
+that canonical gate are discretionary. Flag these surfaces when deciding whether an additional
+lens is warranted:
 
 - auth, sessions, tokens, security, secrets, redaction
 - migrations, persistence, deletion, import/export
