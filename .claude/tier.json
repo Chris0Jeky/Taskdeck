@@ -1,7 +1,7 @@
 {
   "tier": 3,
   "name": "workshop",
-  "authority": { "push": "free", "merge": "gated" },
+  "authority": { "push": "free", "merge": "free" },
   "flags": { "sensitive_data": false, "wave_mode": false, "dormant_production": false },
   "model_routing": { "harness_and_review": "top", "slices": "mid", "maintenance": "cheap" },
   "budgets": { "standing_context_tokens": 6000, "session_baseline_tokens": null },

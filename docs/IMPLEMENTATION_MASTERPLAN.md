@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-27
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -10,6 +10,12 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-27, test substrate and Windows API diagnostics)
+
+- **Dockerless Testcontainers gate (`#1518`):** the PostgreSQL collection fixture now evaluates `DockerAvailableCheck` before `PostgreSqlBuilder.Build`, restoring the documented graceful-skip behavior on hosts without Docker. Public-constructor and injected-factory regressions prove the unavailable path cannot construct a container, while a timed-out Docker CLI probe is killed as a process tree and boundedly reaped. The local exact tree finishes with 7 passed / 28 skipped / 0 failed and no surviving `docker info`; at reviewed head `6650370b`, the full serialized backend passed 7,465 tests with 33 intentional skips and hosted Container Integration proved the positive lifecycle with 35 passed / 0 skipped / 0 failed. Four DCO-signed-off commits merged as `ff1ee066`; exact-main Required CI `30257236213` and CodeQL `30257235538` are green.
+- **Post-`#1373` diagnostic successor (`#1512`):** structured, bounded correlation plus outer/last-inspected exception type, explicit truncation, aggregate-branch, and SQLite-code evidence is now available when the concurrent-card assertion fails. Normal middleware logs are metadata-only, the client still receives the generic GP-03 500, and no request/user/credential/exception-message content enters the diagnostic sink. Pre/post exact stress, the five-case historical/current concurrency matrix, and five CI-equivalent API runs stayed green and did not reproduce the original 500; therefore no causal exception, `SQLITE_BUSY` classification, retry, quarantine, or product fix is claimed.
+- **Still open:** retain `#1512` until a real recurrence identifies the cause and the narrow repair passes the full serialized backend suite plus exact-head Windows/Ubuntu CI.
+
 ## Delivery update (2026-07-26, agentic governance)
 
 - **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI without regeneration masking it. Local agentic update workflows use the distinct render-then-test order so hook-appended JSONL can be projected, and the smoke contract pins both sides of that distinction.
@@ -18,6 +24,7 @@ Companion Active Docs:
 ## Delivery update (2026-07-26, security runway)
 
 - **SQLite native security floor (`#1345`):** centrally pin `SQLitePCLRaw.bundle_e_sqlite3` 2.1.12 and make Infrastructure's dependency direct, which moves the matched bundle/core/provider/native family from 2.1.6 to 2.1.12 without enabling global transitive pinning. A runtime regression enforces SQLite >= 3.50.2 (2.1.12 loads 3.53.3); the NuGet vulnerability audit is clean, EF reports no pending model changes after a fresh update, and a self-contained `win-x64` binary reaches `/health/ready` with SQLite loaded.
+- **Project priority completeness (`#1458`, delivered by PR #1488):** the helper now replaces the capped ProjectV2 sample with cursor-complete stable snapshots and fail-closed checks for saturation, identity, nested truncation, source/plan drift, invalid Issue labels, typed references, option drift, partial writes, and stale post-state reporting. External Issue references remain visible but non-authoritative: their labels never rank, external-only PRs derive `Priority V`, and an external closing Issue permits same-repository body fallback. The authentication-free 64-check suite runs in Required CI. All 130 formerly unlabeled Taskdeck Issues were classified and verified; the reviewed Apply then succeeded 141/141. Its built-in audit, two fresh pre-merge audits, and the final post-merge handoff audit each proved 1,472/1,472 items, 12 ignored external references, and zero remaining drift. Issue #1458 and both project items are `Done / Priority I`.
 
 ## Delivery update (2026-07-25, PR-queue clearing wave)
 
@@ -29,10 +36,10 @@ Companion Active Docs:
 - **`#1478` (`#1271`) — dogfooding instrumented**, and the baseline measured: sustained use has **not** started (8 active days, three months stale, most boards fixtures), though the core loop works (**17/20 proposals reached Apply**, counted by `AppliedAt` — a status-based count reads 1/20 because `Dismiss()` overwrites an `Applied` status). Residual accuracy questions → **`#1480`**.
 - **`#1471`, `#1472`, `#1479`** — canonical-doc reconciliation, human-action tracking for `#1457`'s trust gate and the recurring worktree prune, and two record-only check-offs taken on explicit maintainer instruction.
 - **`#1295` closed as superseded** (13/13 bypass failures; targeted floor v1.3.0 vs installed 1.6.5). The overlay is still *needed* — 11 rule-classes are `allow` at every tier including T4 — so the salvage plan and acceptance criteria live on **`#1293`**.
-- **Repo hardening:** force-push and deletion blocked on `main` (otherwise deliberately relaxed); 288 truncation-hidden project-priority mismatches synced (`#1474`).
+- **Repo hardening:** force-push and deletion blocked on `main` (otherwise deliberately relaxed); a 1,444-item snapshot synced 288 truncation-hidden project-priority mismatches (`#1474`), while `#1458` owns the durable complete-audit and remaining data-cleanup gate.
 - **`#1270` backlog triage:** 12 issues closed with dated notes; an adversarial pass bounced **13 of 25** proposed closures, including the `#1123` ship-gate item. `#1270` stays open — two of its own ACs are obsolete against ADR-0044 / REVIVAL_PLAN §6.
 - **Seeded:** `#1470` `#1473` `#1474` `#1475` `#1476` `#1480` `#1482`, plus upstream `agent-harness#56`.
-- **Remaining hold:** `#1457` only — pin refreshed to the installed floor; the interactive `/hooks` trust session and live canaries are maintainer-only.
+- **Remaining T4 hold:** `#1457` only — do not run the published canaries yet. Its current head has red DCO, stale review evidence, and material main-branch drift; the 2026-07-26 audit also found its v1.6.5 pin behind the installed/producer v1.6.12 floor while root/common-directory hook discovery remains unresolved. Repair those prerequisites and regenerate exact-head CI/reviews before the maintainer-only `/hooks` trust and live-canary step.
 
 ## Delivery update (2026-07-23/24, overnight wave)
 
@@ -89,7 +96,7 @@ Overnight correctness + test-reliability wave #2 — **7 PRs merged** (per-PR ga
 
 Overnight substrate + correctness wave — **11 PRs merged** (per-PR gate: independent adversarial review, all-severity findings fixed, required CI green; full backend suite reported 7223 passed / 0 failed / 1 skipped after `#1373`):
 
-- **Test-substrate parity (`#1373`, `#1282`):** a shared `UseTaskdeckSqlite` registration helper in Infrastructure now backs both production DI and the API integration test factory, so SQLite WAL/busy-timeout settings can no longer drift between them. Retires the `test/sqlite-concurrency` failure-ledger flake and underwrites the `#1366` presence-parity result below.
+- **Test-substrate parity (`#1373`, `#1282`):** a shared `UseTaskdeckSqlite` registration helper in Infrastructure now backs both production DI and the API integration test factory, so SQLite WAL/busy-timeout settings can no longer drift between them. It retired the proven registration-parity cause and underwrites the `#1366` presence-parity result below; `#1512` tracks the later same-symptom Windows concurrent-write HTTP-500 recurrence.
 - **REVIVAL-02 Phase-1 ship gate (`#1375`, `#1298`):** the fabricated Paper review undo timeline is removed and reversibility copy becomes factual apply-risk guidance ("Apply considerations") while the confidence label renders "Operation safety"; the side-effect wire shapes are preserved for GP-03 (full contract detail in `docs/STATUS.md`).
 - **Proposal preview/apply alignment (reorder, collision, structure) (`#1374`, `#1370`; seeded `#1376`):** clamped reorder positions now surface in the diff, create-card id collisions fail at validation with a stable `409`, and a shared `ProposalOperationStructureValidator` runs before original-proposal diffs; a parity contract test locks it in.
 - **MCP host-security fail-closed (`#1372`, `#1367`):** the standalone MCP host guard mirrors `HostFilteringMiddleware` exactly — fails closed on separator-only/blank `AllowedHosts`, preserves port-suffixed and whitespace-bearing literals — proven by a new in-process integration test with a mutation.

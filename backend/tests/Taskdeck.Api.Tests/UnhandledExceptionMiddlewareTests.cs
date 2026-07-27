@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Api.Middleware;
-using Taskdeck.Application.Services;
 using Taskdeck.Tests.Support;
 using Xunit;
 
@@ -35,7 +34,7 @@ public class UnhandledExceptionMiddlewareTests
     }
 
     [Fact]
-    public async Task InvokeAsync_ShouldRedactSensitiveDetails_WhenCanceledRequestIsLogged()
+    public async Task InvokeAsync_ShouldLogOnlyMetadata_WhenCanceledRequestIsLogged()
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -51,7 +50,7 @@ public class UnhandledExceptionMiddlewareTests
         context.TraceIdentifier = "req-cancel-redaction";
 
         RequestDelegate next = _ => throw new OperationCanceledException(
-            "Authorization: Bearer cancel-secret {\"text\":\"capture secret\"} token=cancel-token",
+            "ordinary board title and arbitrary user content",
             cts.Token);
         var middleware = new UnhandledExceptionMiddleware(next, logger);
 
@@ -62,14 +61,13 @@ public class UnhandledExceptionMiddlewareTests
         entry.Exception.Should().BeNull();
         entry.Message.Should().Contain("Request was canceled while processing POST /api/capture/items");
         entry.Message.Should().Contain("req-cancel-redaction");
-        entry.Message.Should().Contain($"Authorization: Bearer {SensitiveDataRedactor.RedactedValue}");
-        entry.Message.Should().NotContain("cancel-secret");
-        entry.Message.Should().NotContain("capture secret");
-        entry.Message.Should().NotContain("cancel-token");
+        entry.Message.Should().Contain(nameof(OperationCanceledException));
+        entry.Message.Should().NotContain("ordinary board title");
+        entry.Message.Should().NotContain("arbitrary user content");
     }
 
     [Fact]
-    public async Task InvokeAsync_ShouldRedactSensitiveDetails_WhenLoggingUnhandledExceptions()
+    public async Task InvokeAsync_ShouldLogOnlyMetadata_WhenLoggingUnhandledExceptions()
     {
         var logger = new InMemoryLogger<UnhandledExceptionMiddleware>();
         var context = new DefaultHttpContext();
@@ -79,7 +77,7 @@ public class UnhandledExceptionMiddlewareTests
         context.TraceIdentifier = "req-redaction";
 
         RequestDelegate next = _ => throw new InvalidOperationException(
-            "Authorization: Bearer super-secret {\"text\":\"capture secret\"} token=queue-secret");
+            "ordinary board title and arbitrary user content");
         var middleware = new UnhandledExceptionMiddleware(next, logger);
 
         await middleware.InvokeAsync(context);
@@ -89,9 +87,9 @@ public class UnhandledExceptionMiddlewareTests
         entry.Exception.Should().BeNull();
         entry.Message.Should().Contain("Unhandled exception while processing POST /api/capture/items");
         entry.Message.Should().Contain("req-redaction");
-        entry.Message.Should().Contain($"Authorization: Bearer {SensitiveDataRedactor.RedactedValue}");
-        entry.Message.Should().NotContain("super-secret");
-        entry.Message.Should().NotContain("capture secret");
-        entry.Message.Should().NotContain("queue-secret");
+        entry.Message.Should().Contain(nameof(InvalidOperationException));
+        entry.Message.Should().Contain("ClassificationTruncated: False");
+        entry.Message.Should().NotContain("ordinary board title");
+        entry.Message.Should().NotContain("arbitrary user content");
     }
 }

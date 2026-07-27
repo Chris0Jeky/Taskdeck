@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
@@ -7,6 +8,8 @@ namespace Taskdeck.Api.Middleware;
 public sealed class UnhandledExceptionMiddleware
 {
     private const string GenericUnexpectedErrorMessage = "An unexpected error occurred.";
+    private const int MaxExceptionClassificationDepth = 8;
+    private const int MaxExceptionTypeLength = 128;
 
     private readonly RequestDelegate _next;
     private readonly ILogger<UnhandledExceptionMiddleware> _logger;
@@ -27,23 +30,31 @@ public sealed class UnhandledExceptionMiddleware
         }
         catch (OperationCanceledException ex) when (context.RequestAborted.IsCancellationRequested)
         {
-            var exceptionSummary = SensitiveDataRedactor.SummarizeException(ex);
             _logger.LogInformation(
-                "Request was canceled while processing {Method} {Path} (CorrelationId: {CorrelationId}). {ExceptionSummary}",
+                "Request was canceled while processing {Method} {Path} (CorrelationId: {CorrelationId}; " +
+                "ExceptionType: {ExceptionType}).",
                 context.Request.Method,
                 context.Request.Path,
                 context.TraceIdentifier,
-                exceptionSummary);
+                BoundTypeName(ex.GetType()));
         }
         catch (Exception ex)
         {
-            var exceptionSummary = SensitiveDataRedactor.SummarizeException(ex);
+            var classification = ClassifyException(ex);
             _logger.LogError(
-                "Unhandled exception while processing {Method} {Path} (CorrelationId: {CorrelationId}). {ExceptionSummary}",
+                "Unhandled exception while processing {Method} {Path} (CorrelationId: {CorrelationId}). " +
+                "ExceptionType: {ExceptionType}; LastInspectedExceptionType: {LastInspectedExceptionType}; " +
+                "ClassificationTruncated: {ClassificationTruncated}; " +
+                "SqliteErrorCode: {SqliteErrorCode}; " +
+                "SqliteExtendedErrorCode: {SqliteExtendedErrorCode}.",
                 context.Request.Method,
                 context.Request.Path,
                 context.TraceIdentifier,
-                exceptionSummary);
+                classification.ExceptionType,
+                classification.LastInspectedExceptionType,
+                classification.ClassificationTruncated,
+                classification.SqliteErrorCode,
+                classification.SqliteExtendedErrorCode);
 
             if (context.Response.HasStarted)
             {
@@ -57,4 +68,74 @@ public sealed class UnhandledExceptionMiddleware
                 GenericUnexpectedErrorMessage));
         }
     }
+
+    private static ExceptionClassification ClassifyException(Exception exception)
+    {
+        var lastInspectedException = exception;
+        int? sqliteErrorCode = null;
+        int? sqliteExtendedErrorCode = null;
+        var classificationTruncated = false;
+        var pending = new Queue<Exception>();
+        var scheduled = new HashSet<Exception>(ReferenceEqualityComparer.Instance)
+        {
+            exception
+        };
+        pending.Enqueue(exception);
+
+        while (pending.TryDequeue(out var current))
+        {
+            lastInspectedException = current;
+            if (sqliteErrorCode is null && current is SqliteException sqliteException)
+            {
+                sqliteErrorCode = sqliteException.SqliteErrorCode;
+                sqliteExtendedErrorCode = sqliteException.SqliteExtendedErrorCode;
+            }
+
+            IReadOnlyList<Exception> innerExceptions = current switch
+            {
+                AggregateException aggregateException => aggregateException.InnerExceptions,
+                { InnerException: { } innerException } => [innerException],
+                _ => []
+            };
+
+            foreach (var candidate in innerExceptions)
+            {
+                if (scheduled.Contains(candidate))
+                {
+                    continue;
+                }
+
+                if (scheduled.Count >= MaxExceptionClassificationDepth)
+                {
+                    classificationTruncated = true;
+                    continue;
+                }
+
+                scheduled.Add(candidate);
+                pending.Enqueue(candidate);
+            }
+        }
+
+        return new ExceptionClassification(
+            BoundTypeName(exception.GetType()),
+            BoundTypeName(lastInspectedException.GetType()),
+            classificationTruncated,
+            sqliteErrorCode,
+            sqliteExtendedErrorCode);
+    }
+
+    private static string BoundTypeName(Type exceptionType)
+    {
+        var name = exceptionType.Name;
+        return name.Length <= MaxExceptionTypeLength
+            ? name
+            : name[..MaxExceptionTypeLength];
+    }
+
+    private sealed record ExceptionClassification(
+        string ExceptionType,
+        string LastInspectedExceptionType,
+        bool ClassificationTruncated,
+        int? SqliteErrorCode,
+        int? SqliteExtendedErrorCode);
 }

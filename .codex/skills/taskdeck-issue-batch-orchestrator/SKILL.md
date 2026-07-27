@@ -57,6 +57,18 @@ Split only when file ownership or concerns do not overlap. Good splits:
 
 Avoid parallel workers on the same view, store, service, migration chain, project file, or canonical doc unless the coordinator plans the merge order.
 
+## Structured patch discipline
+
+When editing with structured patches:
+
+- Default each `apply_patch` (or equivalent structured patch operation) to one target file. Use a multi-file operation only for a tightly homogeneous mechanical set where every file has its own independently stable anchor.
+- In prose or Unicode-bearing files, anchor hunks on nearby ASCII-stable headings or lines instead of typography-sensitive exact text.
+- After a context rejection, inspect the live target before retrying, then reduce the retry to the smallest independently anchored hunk.
+- Never repeat the same broad multi-file patch after it is rejected.
+- Record every repeated or unresolved patch rejection in the active orchestrator/run ledger and final handoff, even when work resumes.
+- Keep the record bounded and sanitized: include target(s), a failure class/error summary, a safe reproduction pointer when available, and the working invocation or workaround. Redact secrets, omit full patch payloads, and truncate oversized error context.
+- Then invoke `taskdeck-failure-capture` to classify the failure and escalate it to the repository failure ledger when that skill's criteria apply.
+
 ## Worker setup
 
 For each issue:
@@ -69,6 +81,7 @@ For each issue:
 6. Tell the worker it is not alone in the codebase and must not revert others' edits.
 7. Require small signed-off commits with `git commit -s --no-gpg-sign` when committing.
 8. Require targeted tests before PR.
+9. Require every file-editing worker prompt to restate the structured patch discipline above.
 
 Use `taskdeck-worktree-issue-worker` for implementation workers.
 
