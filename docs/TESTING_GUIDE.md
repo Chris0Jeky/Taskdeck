@@ -29,6 +29,18 @@ Verification note:
 - prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
 - growth since last recertification: backend +278 passing tests, frontend +462 passing tests
 
+## GEN-09 Prompt/Output Containment Candidate (`#1323`)
+
+The Proposed `llm-triage.v2` tranche is covered at the provider, byte-budget, prompt, parser/schema, service-fallback, hostile-fixture, and API golden-path seams. Its deterministic fixtures prove the bounded candidate path, not live-model resistance to prompt injection.
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResponseReaderTests|FullyQualifiedName~LlmCaptureTriagePromptTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageOutputContractTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~UntrustedArtefactFixtureContractTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests"
+dotnet test backend/Taskdeck.sln -c Release -m:1
+```
+
+Verified on the staged head: Application 218/218, API 4/4, full backend 7,533 passed / 5 skipped. Keep `docs/security/UNTRUSTED_ARTEFACT_THREAT_MODEL.md` beside the test result: it records the still-open live-model, preview-XSS, consent/egress, image/OCR, and PDF decompressed-byte/object-count/single-parse-memory boundaries. ADR-0045's amendment remains Proposed until the maintainer ratifies it.
+
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
 Tracker `#972` seeds the next review-first AI verification program. Delivered items are marked; remaining items are planned work until their implementation issues land:

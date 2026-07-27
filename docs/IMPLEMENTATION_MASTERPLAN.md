@@ -10,6 +10,11 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Staged delivery update (2026-07-27, GEN-09 prompt containment)
+
+- **Prompt/output-containment tranche (`#1323`, Proposed):** stage `llm-triage.v2` behind the existing review-first capture-triage lane. It adds collision-resistant untrusted-data framing, one strict bounded `tasks[{title,evidence}]` response vocabulary, ordinal verbatim-evidence grounding, unsafe control/bidi title rejection, 1 MiB strict-UTF-8 provider response ceilings, and provider-adapter preservation of raw custom-prompt output. Genuine empty verdicts remain terminal; an empty verdict that contradicts a conservative human-task signal takes the review-visible deterministic fallback. Historical v1 provenance remains compatible. Six hostile source/response fixtures exercise the effective candidate path; focused Application 218/218, API 4/4, and full backend 7,533 passed / 5 skipped.
+- **Decision/scope boundary:** the ADR-0045 amendment is Proposed pending maintainer ratification and does not rewrite its Accepted v1 decision. This tranche covers the prompt/output-containment portion only and references rather than closes `#1323`: live-model behavior, preview XSS, consent/egress, image/OCR, and broader artefact-resource acceptance remain separately owned. Existing PDF time/page/character/concurrency controls are documented honestly; decompressed-byte/object-count/single-parse-memory containment remains open under ADR-0048 / `#1379`.
+
 ## Delivery update (2026-07-26, agentic governance)
 
 - **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI without regeneration masking it. Local agentic update workflows use the distinct render-then-test order so hook-appended JSONL can be projected, and the smoke contract pins both sides of that distinction.
