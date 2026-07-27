@@ -4,9 +4,10 @@
 
 **Date:** 2026-07-11
 
-**Amended:** 2026-07-27 (`#1323`, prompt/output containment v2)
-
 **Deciders:** Repository maintainers
+
+**Proposed amendment:** `#1323`, prompt/output containment v2 (2026-07-27; pending
+maintainer ratification)
 
 ## Context
 
@@ -54,14 +55,10 @@ Constraints discovered in the shipped seam:
    `ILlmCaptureTriageExtractor` only for transcript sources; the extractor runs the guardrail chain
    the chat surface established — kill switch (`LlmSurface.CaptureTriage`, previously declared but
    unused), passive provider health (mock/unavailable ⇒ skip), per-user quota, `CompleteAsync` with
-   a purpose-built JSON prompt, degraded-result rejection, and final contract validation. The
-   `#1323` amendment replaces the original lenient parser with `llm-triage.v2`: capture text is
-   framed inside a fresh random untrusted-data boundary; model output must be one raw JSON root
-   `tasks` array whose objects contain only `title` and `evidence`; prose, fences, duplicate or
-   unknown fields, non-objects, duplicate titles, and over-limit values are rejected; every
-   evidence value must be an exact ordinal substring of the original source. **Any** failure of
-   that chain degrades to the deterministic extractor in-process; LLM unavailability never fails
-   the capture item.
+   a purpose-built JSON prompt, degraded-result rejection, lenient parse (brace matching, fence
+   tolerance), sanitization to the v1 caps, and final contract validation. **Any** failure of that
+   chain degrades to the deterministic extractor in-process; LLM unavailability never fails the
+   capture item.
 
 4. **One deliberate non-fallback: the empty verdict.** When the LLM successfully returns
    `{"tasks":[]}`, that is an extraction result, not a failure — degrading to the deterministic
@@ -73,10 +70,9 @@ Constraints discovered in the shipped seam:
    review showed Failed inflates the needs-triage gauge and loops on re-triage.)*
 
 5. **Provenance names the engine that ran, including "unknown".** LLM success records the real
-   provider/model and the prompt version that actually ran. New extractions use `llm-triage.v2`;
-   `llm-triage.v1` remains accepted only for historical stored envelopes. The versioned output
-   envelope is built server-side — the model is never trusted with contract constants — and exact
-   source grounding lets REVIVAL-09 recover evidence spans by ordinal substring search.
+   provider/model and prompt version `llm-triage.v1` (a new versioned constant beside `triage.v1`;
+   the output envelope is built server-side — the model is never trusted with contract constants,
+   and evidence must be a verbatim transcript quote so REVIVAL-09 can recover spans by substring).
    Deterministic runs keep `deterministic-extractor`/`capture-triage-v1`. When an existing proposal
    is reused and its author is unknowable (crash between proposal commit and payload stamp, either
    engine possible), the recorded value is `unknown` — never a guessed engine.
@@ -126,6 +122,36 @@ Constraints discovered in the shipped seam:
   and fabricates no confidence values).
 - New configuration section `CaptureTriageLlm` (`Enabled`, `MaxOutputTokens`, `Temperature`),
   documented in `docs/platform/CONFIGURATION_REFERENCE.md`.
+
+## Proposed #1323 amendment — prompt/output containment v2
+
+**Status:** Proposed; pending maintainer ratification. This section does not alter the Accepted
+2026-07-11 decision above unless the maintainers explicitly ratify it.
+
+The candidate implementation replaces the accepted decision's lenient model-response parsing for
+new transcript extractions with these narrower controls:
+
+- stamp new successful or genuine-empty verdicts as `llm-triage.v2`, while continuing to accept
+  historical `llm-triage.v1` envelopes for stored-provenance compatibility;
+- frame the capture inside a per-request random untrusted-data boundary and require a single raw
+  JSON `tasks` object, with no prose, fences, duplicate/unknown fields, provider operation/tool
+  vocabulary, or values beyond the contract bounds;
+- require every evidence value to be an exact ordinal substring of the original capture and reject
+  titles with leading/trailing whitespace, control/newline characters, or bidi controls/isolates;
+- preserve custom-system-prompt provider output verbatim for this strict parser; the legacy
+  instruction-extraction parser remains available only to the providers' default chat mode;
+- cap each decoded provider response stream at 1 MiB before string/JSON materialization and count
+  task/property arrays incrementally, failing closed immediately after a limit is exceeded;
+- preserve the original five-argument constructor and five-value deconstruction contract of
+  `LlmCaptureTriageExtraction`; prompt provenance is a non-positional init property;
+- retain the Accepted decision's terminal empty verdict for ordinary non-actionable discussion,
+  but treat an empty response that contradicts a conservative human commitment, assignment, or
+  structured-task signal as invalid output so the existing deterministic proposal path leaves a
+  review-visible result instead of silently terminalizing the capture.
+
+The fixed hostile fixtures and deterministic provider responses are regression rails for framing,
+containment, grounding, and fallback. They are not evidence that every live model resists every
+prompt injection.
 
 ## References
 
