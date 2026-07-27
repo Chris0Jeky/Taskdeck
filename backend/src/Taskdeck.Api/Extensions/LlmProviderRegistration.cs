@@ -235,25 +235,6 @@ public static class LlmProviderRegistration
         return services;
     }
 
-    internal static SocketsHttpHandler CreateProtectedSocketsHttpHandler(
-        bool allowLocalhostEndpoints,
-        bool disableSystemProxy = false)
-    {
-        return new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            // The compatible client opts out of system proxies because an arbitrary
-            // configured origin must be the endpoint validated by ConnectCallback.
-            // Existing fixed-origin providers retain their established proxy behavior.
-            UseProxy = !disableSystemProxy,
-            ConnectCallback = (context, cancellationToken) =>
-                OutboundWebhookConnectCallback.ConnectAsync(
-                    context,
-                    allowLocalhostEndpoints,
-                    cancellationToken)
-        };
-    }
-
     private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(
         IServiceProvider services,
         LlmProviderSettings settings,

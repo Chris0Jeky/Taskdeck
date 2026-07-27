@@ -54,27 +54,7 @@ public class LlmProviderRegistrationTests
     }
 
     [Fact]
-    public void ProtectedSocketHandlers_ScopeDirectConnectionsToCompatibleClient()
-    {
-        using var existingProviderHandler = LlmProviderRegistration.CreateProtectedSocketsHttpHandler(false);
-        using var compatibleHandler = LlmProviderRegistration.CreateProtectedSocketsHttpHandler(
-            false,
-            disableSystemProxy: true);
-        using var webhookHandler = WorkerRegistration.CreateProtectedWebhookHandler(false);
-
-        existingProviderHandler.UseProxy.Should().BeTrue(
-            "OpenAI, Gemini, and Ollama retain their established system-proxy behavior");
-        compatibleHandler.UseProxy.Should().BeFalse(
-            "the arbitrary compatible origin must be validated directly");
-        existingProviderHandler.AllowAutoRedirect.Should().BeFalse();
-        compatibleHandler.AllowAutoRedirect.Should().BeFalse();
-        webhookHandler.UseProxy.Should().BeTrue(
-            "webhook proxy behavior is outside the compatible-provider change");
-        webhookHandler.AllowAutoRedirect.Should().BeFalse();
-    }
-
-    [Fact]
-    public void RegisteredPipelines_DisableProxyOnlyForCompatibleProvider()
+    public void RegisteredPipelines_KeepCompatibleProviderInsideProtectedDirectEgressBoundary()
     {
         var services = BuildCompatibleServices();
         using var provider = services.BuildServiceProvider();
@@ -85,10 +65,12 @@ public class LlmProviderRegistrationTests
         using var gemini = factory.CreateHandler(nameof(GeminiLlmProvider));
         using var ollama = factory.CreateHandler(nameof(OllamaLlmProvider));
 
-        EnumeratePipeline(openAi).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeTrue();
+        EnumeratePipeline(openAi).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
         EnumeratePipeline(compatible).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
-        EnumeratePipeline(gemini).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeTrue();
-        EnumeratePipeline(ollama).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeTrue();
+        EnumeratePipeline(gemini).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
+        EnumeratePipeline(ollama).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
+        ProxySafeHttpHandlerTestHarness.AssertProxySafeOriginHandler(compatible);
+        EnumeratePipeline(compatible).Should().Contain(item => item is EgressEnvelopeHandler);
 
         var workerServices = new ServiceCollection();
         workerServices.AddLogging();
@@ -98,7 +80,7 @@ public class LlmProviderRegistrationTests
         using var workerProvider = workerServices.BuildServiceProvider();
         using var webhook = workerProvider.GetRequiredService<IHttpMessageHandlerFactory>()
             .CreateHandler("OutboundWebhookDelivery");
-        EnumeratePipeline(webhook).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeTrue();
+        EnumeratePipeline(webhook).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
     }
 
     [Theory]
