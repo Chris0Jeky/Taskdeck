@@ -657,7 +657,7 @@ dotnet stryker --config-file ../../stryker-config.json --output ../../StrykerOut
 cd frontend/taskdeck-web && npm run mutation:test
 ```
 
-CI: `mutation-testing.yml` runs weekly (Sunday 04:00 UTC) + manual dispatch. The backend job has a finite 360-minute ceiling for the full Domain mutation set and fails if no report artifact exists. Mutation score remains non-blocking. Policy at `docs/testing/MUTATION_TESTING_POLICY.md`.
+CI: `mutation-testing.yml` runs weekly (Sunday 04:00 UTC) + manual dispatch. The backend job has a finite 180-minute ceiling for the full Domain mutation set and fails if no report artifact exists. Mutation score remains non-blocking. Policy at `docs/testing/MUTATION_TESTING_POLICY.md`.
 
 ### Container Integration Tests (TST-06, `#91`/`#804`)
 
@@ -830,7 +830,7 @@ npm run mutation:test
 
 ### CI
 
-Weekly workflow (Sunday 04:00 UTC) + manual dispatch via `.github/workflows/mutation-testing.yml`. The backend job has a 360-minute ceiling and missing backend reports fail artifact upload.
+Weekly workflow (Sunday 04:00 UTC) + manual dispatch via `.github/workflows/mutation-testing.yml`. The backend job has a 180-minute ceiling and missing backend reports fail artifact upload.
 
 ### Policy and triage
 

@@ -155,7 +155,7 @@ function Test-MutationWorkflowContract {
 
     $backendBlock = $normalizedWorkflow.Substring($backendStart, $frontendStart - $backendStart)
     $requiredLines = [ordered]@{
-        'finite timeout' = '    timeout-minutes: 360'
+        'finite timeout' = '    timeout-minutes: 180'
         'pinned tool install' = '        run: dotnet tool install --global dotnet-stryker --version 4.16.0'
         'configuration self-test' = '        run: ./scripts/ci/Test-StrykerConfig.ps1 -SelfTest'
     }
@@ -271,7 +271,7 @@ function Invoke-StrykerConfigSelfTest {
         }
 
         $workflowVariants = @(
-            @('timeout', '    timeout-minutes: 360', '    timeout-minutes: 60', 'finite timeout'),
+            @('timeout', '    timeout-minutes: 180', '    timeout-minutes: 60', 'finite timeout'),
             @('tool version', '        run: dotnet tool install --global dotnet-stryker --version 4.16.0', '        run: dotnet tool install --global dotnet-stryker --version 4.17.0', 'pinned tool install'),
             @('preflight mode', '        run: ./scripts/ci/Test-StrykerConfig.ps1 -SelfTest', '        run: ./scripts/ci/Test-StrykerConfig.ps1', 'configuration self-test'),
             @('working-directory', '        working-directory: backend/tests/Taskdeck.Domain.Tests', '        working-directory: backend', 'test-project Stryker step'),

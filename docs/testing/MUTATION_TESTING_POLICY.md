@@ -85,7 +85,7 @@ The mutation testing workflow runs:
 - **On demand**: via `workflow_dispatch` from the Actions tab
 
 Reports are uploaded as GitHub Actions artifacts with 30-day retention.
-The backend job has a finite 360-minute ceiling for the full Domain mutation set, and artifact upload fails when no report was produced.
+The backend job has a finite 180-minute ceiling for the full Domain mutation set, and artifact upload fails when no report was produced.
 
 ## Interpreting Reports
 

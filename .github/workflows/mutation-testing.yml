@@ -35,7 +35,7 @@ jobs:
     name: Backend Mutation (Stryker.NET)
     if: ${{ !inputs.frontend_only }}
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@v7
