@@ -71,6 +71,12 @@ public class LlmProviderRegistrationTests
         EnumeratePipeline(ollama).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
         ProxySafeHttpHandlerTestHarness.AssertProxySafeOriginHandler(compatible);
         EnumeratePipeline(compatible).Should().Contain(item => item is EgressEnvelopeHandler);
+        EnumeratePipeline(compatible).Select(item => item.GetType().Name).Should().ContainInOrder(
+            "PolicyHttpMessageHandler",
+            nameof(ProtectedOutboundTelemetryHandler),
+            nameof(EgressEnvelopeHandler),
+            "LlmDispatchTrackingHandler",
+            nameof(SocketsHttpHandler));
 
         var workerServices = new ServiceCollection();
         workerServices.AddLogging();
@@ -96,27 +102,41 @@ public class LlmProviderRegistrationTests
         using var handler = provider.GetRequiredService<IHttpMessageHandlerFactory>()
             .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
         var egressHandler = EnumeratePipeline(handler).OfType<EgressEnvelopeHandler>().Single();
-        var redirectHandler = new RedirectStubHandler(statusCode, "https://api.groq.com/second-hop");
+        const string sensitiveMarker = "must-not-appear-in-egress-audit";
+        var redirectHandler = new RedirectStubHandler(
+            statusCode,
+            $"https://api.groq.com/second-hop?marker={sensitiveMarker}");
         egressHandler.InnerHandler = redirectHandler;
         using var invoker = new HttpMessageInvoker(handler);
 
-        var act = () => invoker.SendAsync(
-            new HttpRequestMessage(HttpMethod.Get, "https://api.groq.com/openai/v1/chat/completions"),
-            CancellationToken.None);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"https://api.groq.com/openai/v1/chat/completions?marker={sensitiveMarker}");
+        ProtectedOutboundTelemetryHandler.PrepareForSend(request);
+        var act = () => invoker.SendAsync(request, CancellationToken.None);
 
         var exception = await act.Should().ThrowAsync<EgressViolationException>();
         exception.Which.Violation.ViolationType.Should().Be(Taskdeck.Domain.Agents.EgressViolationType.RedirectNotAllowed);
+        exception.Which.Violation.RequestUri.Should().Be("https://api.groq.com");
+        exception.Which.ToString().Should().NotContain(sensitiveMarker);
+        request.RequestUri!.Host.Should().Be("protected-outbound.invalid",
+            "the protected request must be remasked even when the egress boundary throws");
         redirectHandler.InvocationCount.Should().Be(1, "the compatible pipeline must never dispatch a redirected request");
     }
 
     [Theory]
     [InlineData(nameof(OpenAiLlmProvider))]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName)]
     [InlineData(nameof(GeminiLlmProvider))]
     [InlineData(nameof(OllamaLlmProvider))]
     public void AddLlmProviders_ShouldDisableProxyAndRetainOriginGuards_OnFactoryPipeline(
         string clientName)
     {
-        using var serviceProvider = BuildServiceProvider("Production");
+        using var serviceProvider = BuildServiceProvider(
+            "Production",
+            clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName
+                ? "OpenAiCompatible"
+                : "Mock");
 
         var pipeline = serviceProvider
             .GetRequiredService<IHttpMessageHandlerFactory>()
@@ -129,6 +149,9 @@ public class LlmProviderRegistrationTests
     [InlineData(nameof(OpenAiLlmProvider), "http://127.0.0.1/protected")]
     [InlineData(nameof(OpenAiLlmProvider), "http://10.0.0.1/protected")]
     [InlineData(nameof(OpenAiLlmProvider), "http://169.254.169.254/protected")]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName, "http://127.0.0.1/protected")]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName, "http://10.0.0.1/protected")]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName, "http://169.254.169.254/protected")]
     [InlineData(nameof(GeminiLlmProvider), "http://127.0.0.1/protected")]
     [InlineData(nameof(GeminiLlmProvider), "http://10.0.0.1/protected")]
     [InlineData(nameof(GeminiLlmProvider), "http://169.254.169.254/protected")]
@@ -139,24 +162,35 @@ public class LlmProviderRegistrationTests
         string clientName,
         string blockedOrigin)
     {
-        using var serviceProvider = BuildServiceProvider("Production");
+        using var serviceProvider = BuildServiceProvider(
+            "Production",
+            clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName
+                ? "OpenAiCompatible"
+                : "Mock");
         var pipeline = serviceProvider
             .GetRequiredService<IHttpMessageHandlerFactory>()
             .CreateHandler(clientName);
 
         await ProxySafeHttpHandlerTestHarness.AssertBlockedOriginIgnoresProxyAsync(
             pipeline,
-            blockedOrigin);
+            blockedOrigin,
+            expectStructuredEgressViolation:
+                clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName);
     }
 
     [Theory]
     [InlineData(nameof(OpenAiLlmProvider))]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName)]
     [InlineData(nameof(GeminiLlmProvider))]
     [InlineData(nameof(OllamaLlmProvider))]
     public async Task AddLlmProviders_ShouldReachAllowedDirectOriginWithoutConsultingHostileProxy(
         string clientName)
     {
-        using var serviceProvider = BuildServiceProvider("Development");
+        using var serviceProvider = BuildServiceProvider(
+            "Development",
+            clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName
+                ? "OpenAiCompatible"
+                : "Mock");
         var pipeline = serviceProvider
             .GetRequiredService<IHttpMessageHandlerFactory>()
             .CreateHandler(clientName);
@@ -165,12 +199,13 @@ public class LlmProviderRegistrationTests
     }
 
     [Theory]
-    [InlineData("OpenAi", typeof(OpenAiLlmProvider))]
-    [InlineData("Gemini", typeof(GeminiLlmProvider))]
-    [InlineData("Ollama", typeof(OllamaLlmProvider))]
+    [InlineData("OpenAi", nameof(OpenAiLlmProvider))]
+    [InlineData("OpenAiCompatible", "OpenAiCompatibleLlmProvider")]
+    [InlineData("Gemini", nameof(GeminiLlmProvider))]
+    [InlineData("Ollama", nameof(OllamaLlmProvider))]
     public async Task AddLlmProviders_ShouldApplyResolvedLocalhostPolicyToConcreteProvider(
         string providerName,
-        Type expectedProviderType)
+        string expectedProviderType)
     {
         using var serviceProvider = BuildServiceProvider("Development", providerName);
         using var scope = serviceProvider.CreateScope();
@@ -183,7 +218,7 @@ public class LlmProviderRegistrationTests
         runtimePolicy.AllowOllamaLocalhost.Should().BeTrue();
         runtimePolicy.ProtectOutboundTelemetry.Should().BeTrue(
             "registered provider clients must mask destinations before HttpClient diagnostics run");
-        provider.Should().BeOfType(expectedProviderType);
+        provider.GetType().Name.Should().Be(expectedProviderType);
         health.IsAvailable.Should().BeTrue(
             "the selected concrete provider must reuse the same localhost policy as selection and connect-time validation");
     }
@@ -191,6 +226,8 @@ public class LlmProviderRegistrationTests
     [Theory]
     [InlineData("OpenAi", false, "/v1/chat/completions")]
     [InlineData("OpenAi", true, "/v1/chat/completions")]
+    [InlineData("OpenAiCompatible", false, "/openai/v1/chat/completions")]
+    [InlineData("OpenAiCompatible", true, "/openai/v1/chat/completions")]
     [InlineData("Gemini", false, "/v1beta/models/test-gemini-model:generateContent")]
     [InlineData("Gemini", true, "/v1beta/models/test-gemini-model:generateContent")]
     [InlineData("Ollama", false, "/api/chat")]
@@ -206,6 +243,7 @@ public class LlmProviderRegistrationTests
         var providerBaseUrl = providerName switch
         {
             "OpenAi" => $"{origin}/v1",
+            "OpenAiCompatible" => $"{origin}/openai/v1",
             "Gemini" => $"{origin}/v1beta",
             _ => origin
         };
@@ -235,6 +273,40 @@ public class LlmProviderRegistrationTests
         rawRequest.Should().StartWith($"POST {expectedPath} HTTP/1.1",
             "the concrete provider must dispatch through its registered protected HttpClient");
         AssertProviderRequestBody(requestBody, providerName, probe);
+    }
+
+    [Fact]
+    public async Task AddLlmProviders_CompatibleStreamUsesRegisteredLoopbackPipelineIncrementally()
+    {
+        const string sse =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}]}\n\n" +
+            "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}]}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":7}}\n\n" +
+            "data: [DONE]\n\n";
+        await using var server = new SingleRequestLoopbackServer(
+            responseBody: sse,
+            responseContentType: "text/event-stream");
+        using var serviceProvider = BuildServiceProvider(
+            "Development",
+            "OpenAiCompatible",
+            providerBaseUrl: $"http://localhost:{server.Port}/openai/v1");
+        using var scope = serviceProvider.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ILlmProvider>();
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var item in provider.StreamAsync(new ChatCompletionRequest(
+                           [new ChatCompletionMessage("User", "stream loopback")],
+                           SystemPrompt: string.Empty)))
+        {
+            events.Add(item);
+        }
+
+        events.Select(item => item.Token).Should().Equal("Hel", "lo", string.Empty);
+        events[^1].TokensUsed.Should().Be(7);
+        (await server.ReceivedRequest).Should().StartWith(
+            "POST /openai/v1/chat/completions HTTP/1.1");
+        using var payload = JsonDocument.Parse(await server.ReceivedBody);
+        payload.RootElement.GetProperty("stream").GetBoolean().Should().BeTrue();
     }
 
     [Fact]
@@ -269,23 +341,71 @@ public class LlmProviderRegistrationTests
 
     [Theory]
     [InlineData(nameof(OpenAiLlmProvider))]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName)]
     [InlineData(nameof(GeminiLlmProvider))]
     [InlineData(nameof(OllamaLlmProvider))]
     public async Task AddLlmProviders_ShouldSuppressProtectedRequestLogging(string clientName)
     {
         var loggerProvider = new RecordingHttpLoggerProvider();
-        using var serviceProvider = BuildServiceProvider("Production", loggerProvider: loggerProvider);
+        using var serviceProvider = BuildServiceProvider(
+            "Production",
+            clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName
+                ? "OpenAiCompatible"
+                : "Mock",
+            loggerProvider: loggerProvider);
         var pipeline = serviceProvider
             .GetRequiredService<IHttpMessageHandlerFactory>()
             .CreateHandler(clientName);
 
         await ProxySafeHttpHandlerTestHarness.AssertBlockedOriginIgnoresProxyAsync(
             pipeline,
-            "http://127.0.0.1/protected");
+            "http://127.0.0.1/protected",
+            expectStructuredEgressViolation:
+                clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName);
 
         loggerProvider.Messages.Should().NotContain(
             message => message.Contains(ProxySafeHttpHandlerTestHarness.SensitiveMarker, StringComparison.Ordinal),
             "protected query/header/body markers must not reach default IHttpClientFactory logs");
+    }
+
+    [Fact]
+    public async Task CompatibleRegisteredPolicy_Http501StillReachesBufferedFallbackAtThresholdOne()
+    {
+        var services = BuildCompatibleServices(failureThreshold: 1);
+        using var serviceProvider = services.BuildServiceProvider();
+        var pipeline = serviceProvider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        var dispatchHandler = EnumeratePipeline(pipeline)
+            .OfType<DelegatingHandler>()
+            .Single(handler => handler.GetType().Name == "LlmDispatchTrackingHandler");
+        var transport = new SequentialResponseHandler(
+            new HttpResponseMessage(HttpStatusCode.NotImplemented),
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"choices":[{"message":{"content":"fallback reply"},"finish_reason":"stop"}],"usage":{"total_tokens":9}}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            });
+        dispatchHandler.InnerHandler = transport;
+        using var scope = serviceProvider.CreateScope();
+        var compatibleProvider = scope.ServiceProvider.GetRequiredService<ILlmProvider>();
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var item in compatibleProvider.StreamAsync(new ChatCompletionRequest(
+                           [new ChatCompletionMessage("User", "fallback")],
+                           SystemPrompt: string.Empty)))
+        {
+            events.Add(item);
+        }
+
+        events.Should().ContainSingle();
+        events[0].Token.Should().Be("fallback reply");
+        events[0].IsDegraded.Should().BeTrue();
+        events[0].Error.Should().BeNull();
+        transport.InvocationCount.Should().Be(2);
+        serviceProvider.GetRequiredService<CircuitBreakerStateTracker>()
+            .Get("OpenAICompatible")?.State.Should().NotBe(CircuitState.Open);
     }
 
     [Theory]
@@ -349,6 +469,13 @@ public class LlmProviderRegistrationTests
                     ? providerBaseUrl
                     : "http://localhost:12345",
                 ["Llm:OpenAi:Model"] = "test-openai-model",
+                ["Llm:OpenAiCompatible:ApiKey"] = "test-compatible-key",
+                ["Llm:OpenAiCompatible:BaseUrl"] = providerName == "OpenAiCompatible" && providerBaseUrl is not null
+                    ? providerBaseUrl
+                    : environmentName == "Production"
+                        ? "https://api.groq.com/openai/v1"
+                        : "http://localhost:12345/openai/v1",
+                ["Llm:OpenAiCompatible:Model"] = "test-compatible-model",
                 ["Llm:Gemini:ApiKey"] = "test-gemini-key",
                 ["Llm:Gemini:BaseUrl"] = providerName == "Gemini" && providerBaseUrl is not null
                     ? providerBaseUrl
@@ -368,6 +495,10 @@ public class LlmProviderRegistrationTests
     private static string BuildProviderResponse(string providerName) => providerName switch
     {
         "OpenAi" =>
+            """
+            {"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"total_tokens":1}}
+            """,
+        "OpenAiCompatible" =>
             """
             {"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"total_tokens":1}}
             """,
@@ -396,6 +527,13 @@ public class LlmProviderRegistrationTests
         {
             case "OpenAi":
                 root.GetProperty("model").GetString().Should().Be("test-openai-model");
+                root.GetProperty("stream").GetBoolean().Should().BeFalse();
+                root.GetProperty("max_tokens").GetInt32().Should().Be(expectedMaxTokens);
+                root.GetProperty("temperature").GetDouble().Should().BeApproximately(expectedTemperature, 0.000001);
+                root.GetProperty("messages")[0].GetProperty("content").GetString().Should().Be(expectedContent);
+                break;
+            case "OpenAiCompatible":
+                root.GetProperty("model").GetString().Should().Be("test-compatible-model");
                 root.GetProperty("stream").GetBoolean().Should().BeFalse();
                 root.GetProperty("max_tokens").GetInt32().Should().Be(expectedMaxTokens);
                 root.GetProperty("temperature").GetDouble().Should().BeApproximately(expectedTemperature, 0.000001);
@@ -435,7 +573,7 @@ public class LlmProviderRegistrationTests
         public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    private static ServiceCollection BuildCompatibleServices()
+    private static ServiceCollection BuildCompatibleServices(int failureThreshold = 5)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -447,7 +585,9 @@ public class LlmProviderRegistrationTests
                 ["Llm:Provider"] = "OpenAICompatible",
                 ["Llm:OpenAiCompatible:ApiKey"] = "test-compatible-key",
                 ["Llm:OpenAiCompatible:BaseUrl"] = "https://api.groq.com/openai/v1",
-                ["Llm:OpenAiCompatible:Model"] = "llama-3.1-8b-instant"
+                ["Llm:OpenAiCompatible:Model"] = "llama-3.1-8b-instant",
+                ["CircuitBreaker:FailureThreshold"] = failureThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["CircuitBreaker:BreakDurationSeconds"] = "60"
             })
             .Build();
         services.AddLlmProviders(configuration);
@@ -466,6 +606,21 @@ public class LlmProviderRegistrationTests
             var response = new HttpResponseMessage(statusCode);
             response.Headers.Location = new Uri(location);
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class SequentialResponseHandler(params HttpResponseMessage[] responses) : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _responses = new(responses);
+
+        public int InvocationCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            InvocationCount++;
+            return Task.FromResult(_responses.Dequeue());
         }
     }
 

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Polly;
@@ -80,7 +81,7 @@ public static class LlmProviderRegistration
             circuitBreakerTracker, "Gemini", circuitBreakerSettings);
         var ollamaCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "Ollama", circuitBreakerSettings);
-        var openAiCompatibleCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
+        var openAiCompatibleCircuitBreakerPolicy = BuildOpenAiCompatibleCircuitBreakerPolicy(
             circuitBreakerTracker, "OpenAICompatible", circuitBreakerSettings);
 
         // Determine once at startup whether localhost LLM endpoints are permitted.
@@ -144,14 +145,15 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
+        .AddPolicyHandler(openAiCompatibleCircuitBreakerPolicy)
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>()
         .AddHttpMessageHandler(sp => new EgressEnvelopeHandler(
             sp.GetRequiredService<IEgressRegistry>(),
             sp.GetRequiredService<ILogger<EgressEnvelopeHandler>>(),
             nameof(OpenAiCompatibleLlmProvider),
             followRedirects: false))
-        .AddPolicyHandler(openAiCompatibleCircuitBreakerPolicy)
-        .RemoveAllLoggers()
-        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
+        .AddHttpMessageHandler(_ => new LlmDispatchTrackingHandler());
         services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
@@ -225,7 +227,7 @@ public static class LlmProviderRegistration
                     settings,
                     circuitBreakerTracker,
                     circuitBreakerSettings,
-                    localhostPolicy.AllowGeneralProviderLocalhost),
+                    localhostPolicy),
                 LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
                 LlmProviderKind.Ollama => sp.GetRequiredService<OllamaLlmProvider>(),
                 _ => sp.GetRequiredService<MockLlmProvider>()
@@ -240,19 +242,19 @@ public static class LlmProviderRegistration
         LlmProviderSettings settings,
         CircuitBreakerStateTracker circuitBreakerTracker,
         CircuitBreakerSettings circuitBreakerSettings,
-        bool allowLocalhostEndpoints)
+        LlmProviderRuntimePolicy runtimePolicy)
     {
         RegisterOpenAiCompatibleEgress(
             services.GetRequiredService<IEgressRegistry>(),
             settings,
-            allowLocalhostEndpoints);
+            runtimePolicy.AllowGeneralProviderLocalhost);
         return new OpenAiCompatibleLlmProvider(
             services.GetRequiredService<IHttpClientFactory>().CreateClient(OpenAiCompatibleHttpClientName),
             settings,
             services.GetRequiredService<ILogger<OpenAiCompatibleLlmProvider>>(),
             circuitBreakerTracker,
             circuitBreakerSettings,
-            allowLocalhostEndpoints);
+            runtimePolicy);
     }
 
     private static IEgressRegistry GetOrCreateEgressRegistry(IServiceCollection services)
@@ -327,6 +329,34 @@ public static class LlmProviderRegistration
                 {
                     tracker.RecordState(circuitName, CircuitState.HalfOpen);
                 });
+    }
+
+    /// <summary>
+    /// Builds the compatible-provider policy. HTTP 501 is intentionally excluded:
+    /// the provider recognizes it as an SSE capability rejection and performs a
+    /// buffered retry, which must remain reachable even at a threshold of one.
+    /// </summary>
+    internal static IAsyncPolicy<HttpResponseMessage> BuildOpenAiCompatibleCircuitBreakerPolicy(
+        CircuitBreakerStateTracker tracker,
+        string circuitName,
+        CircuitBreakerSettings settings)
+    {
+        return Policy<HttpResponseMessage>
+            .Handle<HttpRequestException>()
+            .OrResult(response =>
+                response.StatusCode == HttpStatusCode.RequestTimeout ||
+                ((int)response.StatusCode >= 500 &&
+                 response.StatusCode != HttpStatusCode.NotImplemented))
+            .CircuitBreakerAsync(
+                handledEventsAllowedBeforeBreaking: settings.FailureThreshold,
+                durationOfBreak: TimeSpan.FromSeconds(settings.BreakDurationSeconds),
+                onBreak: (outcome, breakDuration) =>
+                {
+                    var reason = outcome.Exception?.Message ?? $"HTTP {(int)(outcome.Result?.StatusCode ?? 0)}";
+                    tracker.RecordState(circuitName, CircuitState.Open, reason);
+                },
+                onReset: () => tracker.RecordState(circuitName, CircuitState.Closed),
+                onHalfOpen: () => tracker.RecordState(circuitName, CircuitState.HalfOpen));
     }
 
     /// <summary>

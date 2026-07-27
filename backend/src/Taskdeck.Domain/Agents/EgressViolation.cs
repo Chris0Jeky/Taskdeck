@@ -11,7 +11,7 @@ public sealed class EgressViolation
     /// <summary>The host that was attempted but is not in the egress envelope.</summary>
     public string AttemptedHost { get; }
 
-    /// <summary>The original request URI that triggered the violation.</summary>
+    /// <summary>The sanitized audit origin for the request that triggered the violation.</summary>
     public string RequestUri { get; }
 
     /// <summary>Category of the violation.</summary>

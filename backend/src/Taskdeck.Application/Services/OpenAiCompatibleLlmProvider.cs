@@ -26,12 +26,13 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
     private readonly CircuitBreakerStateTracker? _circuitBreakerTracker;
     private readonly CircuitBreakerSettings? _circuitBreakerSettings;
     private readonly bool _allowLocalhostEndpoints;
+    private readonly bool _protectOutboundTelemetry;
 
     internal OpenAiCompatibleLlmProvider(
         HttpClient httpClient,
         LlmProviderSettings settings,
         ILogger<OpenAiCompatibleLlmProvider> logger)
-        : this(httpClient, settings, logger, null, null, false)
+        : this(httpClient, settings, logger, null, null, null)
     {
     }
 
@@ -41,14 +42,15 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         ILogger<OpenAiCompatibleLlmProvider> logger,
         CircuitBreakerStateTracker? circuitBreakerTracker,
         CircuitBreakerSettings? circuitBreakerSettings,
-        bool allowLocalhostEndpoints)
+        LlmProviderRuntimePolicy? runtimePolicy)
     {
         _httpClient = httpClient;
         _settings = settings;
         _logger = logger;
         _circuitBreakerTracker = circuitBreakerTracker;
         _circuitBreakerSettings = circuitBreakerSettings;
-        _allowLocalhostEndpoints = allowLocalhostEndpoints;
+        _allowLocalhostEndpoints = runtimePolicy?.AllowGeneralProviderLocalhost ?? false;
+        _protectOutboundTelemetry = runtimePolicy?.ProtectOutboundTelemetry ?? false;
     }
 
     public Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default) =>
@@ -59,6 +61,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         CancellationToken ct,
         bool participateInCircuit)
     {
+        request.DispatchContext.Observe(ProviderName, GetConfiguredModelOrDefault());
         var userMessage = GetLastUserMessage(request);
         if (!TryValidateSettings(out var validationError))
         {
@@ -168,6 +171,10 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         {
             throw;
         }
+        catch (EgressViolationException)
+        {
+            throw;
+        }
         catch (OperationCanceledException)
         {
             _logger.LogWarning("OpenAI-compatible completion exceeded its configured response deadline.");
@@ -244,6 +251,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         ChatCompletionRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        request.DispatchContext.Observe(ProviderName, GetConfiguredModelOrDefault());
         if (!TryValidateSettings(out var validationError))
         {
             yield return TerminalError(
@@ -276,6 +284,10 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                     moved = await enumerator.MoveNextAsync();
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (EgressViolationException)
                 {
                     throw;
                 }
@@ -359,12 +371,14 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         // contract. Use this same effective request for a rejected-stream fallback.
         var streamingRequest = request.SystemPrompt is null ? request with { SystemPrompt = string.Empty } : request;
         using var message = CreateRequestMessage(streamingRequest, stream: true, includeResponseFormat: false);
+        PrepareForDispatch(message, streamingRequest.DispatchContext);
         using var response = await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct);
 
         if (!response.IsSuccessStatusCode)
         {
             if (IsStreamingRejection(response.StatusCode))
             {
+                response.Dispose();
                 await foreach (var fallback in EmitBufferedFallbackAsync(streamingRequest, ct))
                     yield return fallback;
                 yield break;
@@ -405,13 +419,14 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var reader = new StreamReader(
-            stream,
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
-            detectEncodingFromByteOrderMarks: true,
-            bufferSize: 4096,
-            leaveOpen: false);
-        var lineReader = new BoundedSseLineReader(reader);
+        if (response.Content.Headers.ContentLength is long contentLength &&
+            contentLength > compatible.MaxResponseBytes)
+        {
+            throw new LlmProviderResponseLimitException(
+                "Content-Length exceeded the aggregate SSE response byte budget");
+        }
+
+        var lineReader = new BoundedUtf8SseLineReader(stream);
         var eventData = new StringBuilder();
         var eventBytes = 0;
         var responseBytes = 0;
@@ -424,7 +439,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
             if (line.Text is null)
                 break;
 
-            responseBytes = checked(responseBytes + line.Utf8Bytes + line.DelimiterUtf8Bytes);
+            responseBytes = checked(responseBytes + line.WireBytes);
             if (responseBytes > compatible.MaxResponseBytes)
                 throw new LlmProviderResponseLimitException("aggregate SSE response byte budget exceeded");
 
@@ -558,7 +573,15 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         CancellationToken ct)
     {
         using var message = CreateRequestMessage(request, stream: false, includeResponseFormat);
+        PrepareForDispatch(message, request.DispatchContext);
         return await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct);
+    }
+
+    private void PrepareForDispatch(HttpRequestMessage message, LlmDispatchContext dispatchContext)
+    {
+        LlmDispatchTrackingHandler.Attach(message, dispatchContext);
+        if (_protectOutboundTelemetry)
+            ProtectedOutboundTelemetryHandler.PrepareForSend(message);
     }
 
     private bool TryValidateSettings(out string error)
@@ -633,24 +656,31 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                 return new SseEventParseResult(Error: "OpenAI-compatible SSE stream reported an upstream error.");
 
             int? tokensUsed = null;
+            var hasUsageMetadata = false;
             if (root.TryGetProperty("usage", out var usage))
             {
-                if (usage.ValueKind != JsonValueKind.Null &&
-                    (usage.ValueKind != JsonValueKind.Object ||
-                     !usage.TryGetProperty("total_tokens", out var total) ||
-                     total.ValueKind != JsonValueKind.Number ||
-                     !total.TryGetInt32(out var parsedTokens) || parsedTokens < 0))
+                if (usage.ValueKind == JsonValueKind.Object)
+                {
+                    if (!usage.TryGetProperty("total_tokens", out var total) ||
+                        total.ValueKind != JsonValueKind.Number ||
+                        !total.TryGetInt32(out var parsedTokens) || parsedTokens < 0)
+                    {
+                        return new SseEventParseResult(Error: "OpenAI-compatible SSE usage metadata was malformed.");
+                    }
+
+                    hasUsageMetadata = true;
+                    tokensUsed = parsedTokens > 0 ? parsedTokens : null;
+                }
+                else if (usage.ValueKind != JsonValueKind.Null)
                 {
                     return new SseEventParseResult(Error: "OpenAI-compatible SSE usage metadata was malformed.");
                 }
-                if (usage.ValueKind == JsonValueKind.Object)
-                    tokensUsed = usage.GetProperty("total_tokens").GetInt32();
             }
 
             if (!root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array)
                 return new SseEventParseResult(Error: "OpenAI-compatible SSE event did not contain a choices array.");
             if (choices.GetArrayLength() == 0)
-                return tokensUsed is not null
+                return hasUsageMetadata
                     ? new SseEventParseResult(TokensUsed: tokensUsed)
                     : new SseEventParseResult(Error: "OpenAI-compatible SSE event contained no choices or usage.");
 
@@ -706,12 +736,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                 return false;
             var choice = choices[0];
             if (!choice.TryGetProperty("message", out var message) ||
-                message.ValueKind != JsonValueKind.Object ||
-                !message.TryGetProperty("content", out var contentElement) ||
-                contentElement.ValueKind != JsonValueKind.String)
-                return false;
-            content = contentElement.GetString() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(content))
+                message.ValueKind != JsonValueKind.Object)
                 return false;
 
             if (choice.TryGetProperty("finish_reason", out var finish))
@@ -722,6 +747,34 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                     return false;
             }
 
+            var hasSanitizedRefusal = false;
+            if (message.TryGetProperty("refusal", out var refusal))
+            {
+                if (refusal.ValueKind == JsonValueKind.String)
+                    hasSanitizedRefusal = !string.IsNullOrWhiteSpace(refusal.GetString());
+                else if (refusal.ValueKind != JsonValueKind.Null)
+                    return false;
+            }
+
+            if (!message.TryGetProperty("content", out var contentElement))
+                return false;
+
+            if (contentElement.ValueKind == JsonValueKind.String)
+                content = contentElement.GetString() ?? string.Empty;
+            else if (contentElement.ValueKind != JsonValueKind.Null)
+                return false;
+
+            var isContentFilter = string.Equals(
+                finishReason,
+                "content_filter",
+                StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(content) && !isContentFilter && !hasSanitizedRefusal)
+                return false;
+            if (hasSanitizedRefusal && !isContentFilter)
+                finishReason = "refusal";
+            if (isContentFilter || hasSanitizedRefusal)
+                content = string.Empty;
+
             if (root.TryGetProperty("usage", out var usage))
             {
                 if (usage.ValueKind != JsonValueKind.Object ||
@@ -729,7 +782,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                     total.ValueKind != JsonValueKind.Number ||
                     !total.TryGetInt32(out var parsedTokens) || parsedTokens < 0)
                     return false;
-                tokensUsed = parsedTokens;
+                tokensUsed = parsedTokens > 0 ? parsedTokens : null;
             }
             return true;
         }
@@ -827,8 +880,11 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
     private void RecordProviderSuccess(CircuitRequestLease lease) =>
         _circuitBreakerTracker?.RecordProviderSuccess(CircuitName, lease);
 
-    private void AbandonProviderRequest(CircuitRequestLease lease) =>
-        _circuitBreakerTracker?.AbandonProviderRequest(CircuitName, lease);
+    private void AbandonProviderRequest(CircuitRequestLease lease)
+    {
+        if (_circuitBreakerTracker is not null && _circuitBreakerSettings is not null)
+            _circuitBreakerTracker.AbandonProviderRequest(CircuitName, _circuitBreakerSettings, lease);
+    }
 
     private static bool IsProviderFailure(LlmTokenEvent terminal) =>
         terminal.Error is not null || terminal.CountsAsProviderFailure;
@@ -841,6 +897,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         {
             "length" => "Response was truncated because the upstream token limit was reached.",
             "content_filter" => "Response was stopped by the upstream content filter.",
+            "refusal" => "The upstream provider refused this request.",
             "tool_calls" => "Response ended with unsupported upstream tool calls.",
             "function_call" => "Response ended with an unsupported upstream function call.",
             null or "" => null,
@@ -914,61 +971,140 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         int? TokensUsed = null,
         string? Error = null);
 
-    private sealed record BoundedLine(string? Text, int Utf8Bytes, int DelimiterUtf8Bytes);
+    private sealed record BoundedLine(string? Text, int WireBytes);
 
-    private sealed class BoundedSseLineReader(StreamReader reader)
+    /// <summary>
+    /// Reads SSE lines from their original bytes so response and line limits are
+    /// enforced on the wire representation, not reconstructed UTF-16 characters.
+    /// Only strict UTF-8 is accepted; one initial UTF-8 BOM is tolerated and
+    /// counted toward the aggregate response budget.
+    /// </summary>
+    private sealed class BoundedUtf8SseLineReader(Stream stream)
     {
-        private readonly char[] _one = new char[1];
-        private char? _pending;
+        private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+        private readonly byte[] _buffer = new byte[4096];
+        private readonly Queue<byte> _initialBytes = new();
+        private int _bufferOffset;
+        private int _bufferCount;
+        private int? _pendingByte;
+        private bool _initialized;
+        private int _initialBomBytes;
 
         public async Task<BoundedLine> ReadLineAsync(int maxBytes, CancellationToken ct)
         {
-            var line = new StringBuilder();
-            var bytes = 0;
+            await InitializeAsync(ct);
+
+            using var line = new MemoryStream(Math.Min(maxBytes, 4096));
+            var prefixBytes = _initialBomBytes;
+            _initialBomBytes = 0;
+
             while (true)
             {
-                var next = await ReadCharacterAsync(ct);
+                var next = await ReadByteAsync(ct);
                 if (next is null)
-                    return line.Length == 0
-                        ? new BoundedLine(null, 0, 0)
-                        : new BoundedLine(line.ToString(), bytes, 0);
-
-                if (next == '\n')
-                    return new BoundedLine(line.ToString(), bytes, 1);
-
-                if (next == '\r')
                 {
-                    var afterCarriageReturn = await ReadCharacterAsync(ct);
+                    if (line.Length == 0 && prefixBytes == 0)
+                        return new BoundedLine(null, 0);
+
+                    return new BoundedLine(Decode(line), checked(prefixBytes + (int)line.Length));
+                }
+
+                if (next == (byte)'\n')
+                {
+                    return new BoundedLine(
+                        Decode(line),
+                        checked(prefixBytes + (int)line.Length + 1));
+                }
+
+                if (next == (byte)'\r')
+                {
                     var delimiterBytes = 1;
-                    if (afterCarriageReturn == '\n')
+                    var afterCarriageReturn = await ReadByteAsync(ct);
+                    if (afterCarriageReturn == (byte)'\n')
                     {
                         delimiterBytes = 2;
                     }
                     else if (afterCarriageReturn is not null)
                     {
-                        _pending = afterCarriageReturn;
+                        _pendingByte = afterCarriageReturn;
                     }
 
-                    return new BoundedLine(line.ToString(), bytes, delimiterBytes);
+                    return new BoundedLine(
+                        Decode(line),
+                        checked(prefixBytes + (int)line.Length + delimiterBytes));
                 }
 
-                bytes = checked(bytes + Encoding.UTF8.GetByteCount([next.Value]));
-                if (bytes > maxBytes)
+                if (line.Length >= maxBytes)
                     throw new LlmProviderResponseLimitException("single SSE line byte budget exceeded");
-                line.Append(next.Value);
+                line.WriteByte((byte)next);
             }
         }
 
-        private async ValueTask<char?> ReadCharacterAsync(CancellationToken ct)
+        private async Task InitializeAsync(CancellationToken ct)
         {
-            if (_pending is { } pending)
+            if (_initialized)
+                return;
+            _initialized = true;
+
+            var first = await ReadRawByteAsync(ct);
+            if (first is null)
+                return;
+            if (first != 0xEF)
             {
-                _pending = null;
-                return pending;
+                _initialBytes.Enqueue((byte)first);
+                return;
             }
 
-            var read = await reader.ReadAsync(_one.AsMemory(), ct);
-            return read == 0 ? null : _one[0];
+            var second = await ReadRawByteAsync(ct);
+            var third = await ReadRawByteAsync(ct);
+            if (second == 0xBB && third == 0xBF)
+            {
+                _initialBomBytes = 3;
+                return;
+            }
+
+            _initialBytes.Enqueue((byte)first);
+            if (second is not null)
+                _initialBytes.Enqueue((byte)second);
+            if (third is not null)
+                _initialBytes.Enqueue((byte)third);
+        }
+
+        private async ValueTask<int?> ReadByteAsync(CancellationToken ct)
+        {
+            if (_pendingByte is { } pending)
+            {
+                _pendingByte = null;
+                return pending;
+            }
+            if (_initialBytes.Count > 0)
+                return _initialBytes.Dequeue();
+            return await ReadRawByteAsync(ct);
+        }
+
+        private async ValueTask<int?> ReadRawByteAsync(CancellationToken ct)
+        {
+            if (_bufferOffset >= _bufferCount)
+            {
+                _bufferCount = await stream.ReadAsync(_buffer.AsMemory(), ct);
+                _bufferOffset = 0;
+                if (_bufferCount == 0)
+                    return null;
+            }
+
+            return _buffer[_bufferOffset++];
+        }
+
+        private static string Decode(MemoryStream line)
+        {
+            try
+            {
+                return StrictUtf8.GetString(line.GetBuffer(), 0, checked((int)line.Length));
+            }
+            catch (DecoderFallbackException ex)
+            {
+                throw new IOException("OpenAI-compatible SSE response was not valid UTF-8.", ex);
+            }
         }
     }
 

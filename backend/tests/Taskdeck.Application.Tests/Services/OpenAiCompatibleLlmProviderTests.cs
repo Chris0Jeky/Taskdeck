@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
+using Taskdeck.Domain.Agents;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -162,6 +163,35 @@ public class OpenAiCompatibleLlmProviderTests
     }
 
     [Fact]
+    public async Task CompleteAsync_NonEmptyResponseWithZeroUsage_TreatsUsageAsUnknown()
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+            JsonResponse("""{"choices":[{"message":{"content":"short reply"},"finish_reason":"stop"}],"usage":{"total_tokens":0}}""")), BuildSettings());
+
+        var result = await provider.CompleteAsync(Request());
+
+        result.Content.Should().Be("short reply");
+        result.TokensUsed.Should().Be(0);
+        result.HasAuthoritativeTokenUsage.Should().BeFalse();
+        result.ShouldSettleQuotaReservation.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamAsync_ZeroUsageChunk_IsValidAndLeavesTerminalUsageUnknown()
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ => SseResponse(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":0}}\n\n" +
+            "data: [DONE]\n\n")), BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Select(item => item.Token).Should().Equal("hello", string.Empty);
+        events[^1].Error.Should().BeNull();
+        events[^1].TokensUsed.Should().BeNull();
+    }
+
+    [Fact]
     public async Task StreamAsync_NonSseResponseWithoutUsage_LeavesUsageUnknown()
     {
         var provider = CreateProvider(new StubHttpMessageHandler(_ =>
@@ -292,6 +322,47 @@ public class OpenAiCompatibleLlmProviderTests
     }
 
     [Theory]
+    [InlineData("""{"choices":[{"message":{"content":null},"finish_reason":"content_filter"}],"usage":{"total_tokens":4}}""", "content filter")]
+    [InlineData("""{"choices":[{"message":{"content":null,"refusal":"sensitive vendor refusal detail"},"finish_reason":"stop"}],"usage":{"total_tokens":4}}""", "refused")]
+    public async Task CompleteAsync_NullContentFilterOrRefusal_IsSanitizedSuccess(
+        string responseBody,
+        string expectedReason)
+    {
+        var dispatches = 0;
+        var tracker = new CircuitBreakerStateTracker();
+        var circuitSettings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 60 };
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+        {
+            dispatches++;
+            return JsonResponse(responseBody);
+        }), BuildSettings(), tracker, circuitSettings);
+
+        var first = await provider.CompleteAsync(Request());
+        var second = await provider.CompleteAsync(Request());
+
+        first.Content.Should().BeEmpty();
+        first.IsDegraded.Should().BeTrue();
+        first.DegradedReason.Should().Contain(expectedReason);
+        first.DegradedReason.Should().NotContain("sensitive vendor refusal detail");
+        first.CountsAsProviderFailure.Should().BeFalse();
+        second.IsDegraded.Should().BeTrue();
+        dispatches.Should().Be(2, "a sanitized refusal/filter outcome must not open the companion circuit");
+        tracker.Get("OpenAICompatible")?.State.Should().NotBe(CircuitState.Open);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_NullContentWithOrdinaryStop_RemainsProtocolFailure()
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+            JsonResponse("""{"choices":[{"message":{"content":null},"finish_reason":"stop"}],"usage":{"total_tokens":4}}""")), BuildSettings());
+
+        var result = await provider.CompleteAsync(Request());
+
+        result.IsDegraded.Should().BeTrue();
+        result.ProviderFailureKind.Should().Be(LlmProviderFailureKind.Protocol);
+    }
+
+    [Theory]
     [InlineData("{\"choices\":[1]}")]
     [InlineData("{\"choices\":[{\"delta\":\"bad\",\"finish_reason\":null}]}")]
     [InlineData("{\"choices\":[{\"delta\":{\"content\":1},\"finish_reason\":null}]}")]
@@ -406,6 +477,91 @@ public class OpenAiCompatibleLlmProviderTests
 
         events[^1].IsComplete.Should().BeTrue();
         events[^1].Error.Should().Contain("safety limit");
+    }
+
+    [Theory]
+    [InlineData("utf16")]
+    [InlineData("utf32")]
+    public async Task StreamAsync_NonUtf8BomPayload_IsRejected(string encodingName)
+    {
+        const string sse = "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\n\n" +
+            "data: [DONE]\n\n";
+        var encoding = encodingName == "utf16"
+            ? Encoding.Unicode
+            : new UTF32Encoding(bigEndian: false, byteOrderMark: true, throwOnInvalidCharacters: true);
+        var bytes = encoding.GetPreamble().Concat(encoding.GetBytes(sse)).ToArray();
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => SseBytesResponse(bytes)),
+            BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].Error.Should().Contain("response body failed");
+    }
+
+    [Fact]
+    public async Task StreamAsync_EmojiAtExactRawUtf8LineLimit_IsAccepted()
+    {
+        var content = new string('x', 220) + "😀";
+        var line = $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"{content}\"}},\"finish_reason\":\"stop\"}}]}}";
+        var lineBytes = Encoding.UTF8.GetByteCount(line);
+        lineBytes.Should().BeGreaterThanOrEqualTo(256);
+        var settings = BuildSettings();
+        settings.OpenAiCompatible.MaxSseLineBytes = lineBytes;
+        settings.OpenAiCompatible.MaxSseEventBytes = Math.Max(512, lineBytes);
+        var provider = CreateProvider(new StubHttpMessageHandler(_ => SseResponse(
+            line + "\n\n" +
+            "data: [DONE]\n\n")), settings);
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events[0].Token.Should().Be(content);
+        events[^1].Error.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StreamAsync_InitialUtf8Bom_IsAcceptedAndCounted()
+    {
+        var sse = "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\n\n" +
+            "data: [DONE]\n\n";
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sse)).ToArray();
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => SseBytesResponse(bytes)),
+            BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Select(item => item.Token).Should().Equal("hello", string.Empty);
+        events[^1].Error.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CompleteAsync_EgressViolation_IsRethrownUnchanged()
+    {
+        var expected = CreateEgressViolationException();
+        var provider = CreateProvider(
+            new StubHttpMessageHandler((_, _) => Task.FromException<HttpResponseMessage>(expected)),
+            BuildSettings());
+
+        var act = () => provider.CompleteAsync(Request());
+
+        var thrown = await act.Should().ThrowAsync<EgressViolationException>();
+        thrown.Which.Should().BeSameAs(expected);
+    }
+
+    [Fact]
+    public async Task StreamAsync_EgressViolation_IsRethrownUnchanged()
+    {
+        var expected = CreateEgressViolationException();
+        var provider = CreateProvider(
+            new StubHttpMessageHandler((_, _) => Task.FromException<HttpResponseMessage>(expected)),
+            BuildSettings());
+
+        var act = () => CollectAsync(provider.StreamAsync(Request()));
+
+        var thrown = await act.Should().ThrowAsync<EgressViolationException>();
+        thrown.Which.Should().BeSameAs(expected);
     }
 
     [Fact]
@@ -539,7 +695,7 @@ public class OpenAiCompatibleLlmProviderTests
     }
 
     [Fact]
-    public async Task StreamAsync_DisposingHalfOpenProbe_ReleasesLeaseForNextProbe()
+    public async Task StreamAsync_DisposingHalfOpenProbe_ReopensForConfiguredCooldown()
     {
         var dispatches = 0;
         var tracker = new CircuitBreakerStateTracker();
@@ -563,6 +719,10 @@ public class OpenAiCompatibleLlmProviderTests
         enumerator.Current.Token.Should().Be("probe");
         await enumerator.DisposeAsync();
 
+        var rejectedDuringCooldown = await CollectAsync(provider.StreamAsync(Request()));
+        rejectedDuringCooldown[^1].Error.Should().Contain("circuit is open");
+        dispatches.Should().Be(2);
+        await Task.Delay(TimeSpan.FromMilliseconds(1100));
         var recovered = await CollectAsync(provider.StreamAsync(Request()));
 
         recovered[^1].Error.Should().BeNull();
@@ -571,7 +731,7 @@ public class OpenAiCompatibleLlmProviderTests
     }
 
     [Fact]
-    public async Task StreamAsync_CancellingHalfOpenProbe_ReleasesLeaseForNextProbe()
+    public async Task StreamAsync_CancellingHalfOpenProbe_ReopensForConfiguredCooldown()
     {
         var dispatches = 0;
         var tracker = new CircuitBreakerStateTracker();
@@ -595,6 +755,10 @@ public class OpenAiCompatibleLlmProviderTests
             CollectAsync(provider.StreamAsync(Request(), cancellation.Token));
         await cancelled.Should().ThrowAsync<OperationCanceledException>();
 
+        var rejectedDuringCooldown = await CollectAsync(provider.StreamAsync(Request()));
+        rejectedDuringCooldown[^1].Error.Should().Contain("circuit is open");
+        dispatches.Should().Be(2);
+        await Task.Delay(TimeSpan.FromMilliseconds(1100));
         var recovered = await CollectAsync(provider.StreamAsync(Request()));
 
         recovered[^1].Error.Should().BeNull();
@@ -697,7 +861,9 @@ public class OpenAiCompatibleLlmProviderTests
             NullLogger<OpenAiCompatibleLlmProvider>.Instance,
             tracker,
             circuitSettings,
-            allowLocalhostEndpoints);
+            new LlmProviderRuntimePolicy(
+                AllowGeneralProviderLocalhost: allowLocalhostEndpoints,
+                AllowOllamaLocalhost: allowLocalhostEndpoints));
 
     private static ChatCompletionRequest Request(LlmRequestAttribution? attribution = null) =>
         new([new ChatCompletionMessage("user", "hello")], Attribution: attribution);
@@ -724,6 +890,16 @@ public class OpenAiCompatibleLlmProviderTests
         response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
         return response;
     }
+
+    private static HttpResponseMessage SseBytesResponse(byte[] bytes) =>
+        SseStreamResponse(new MemoryStream(bytes, writable: false));
+
+    private static EgressViolationException CreateEgressViolationException() => new(
+        new EgressViolation(
+            "blocked.example",
+            "https://blocked.example/",
+            EgressViolationType.UnknownHost,
+            "blocked"));
 
     private static HttpResponseMessage JsonStreamResponse(Stream stream)
     {

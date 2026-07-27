@@ -31,7 +31,16 @@ public record ChatCompletionRequest(
     LlmRequestAttribution? Attribution = null,
     string? SystemPrompt = null,
     string? BoardContext = null
-);
+)
+{
+    /// <summary>
+    /// Per-request transport participation state. Providers that support the
+    /// dispatch boundary observe this context before validation and mark it only
+    /// when the request reaches the innermost HTTP transport handler.
+    /// </summary>
+    [JsonIgnore]
+    internal LlmDispatchContext DispatchContext { get; init; } = new();
+}
 
 public record ChatCompletionMessage(string Role, string Content);
 
@@ -119,6 +128,60 @@ internal enum LlmProviderFailureKind
     Protocol = 3,
     Timeout = 4,
     ResponseLimit = 5
+}
+
+internal enum LlmDispatchPhase
+{
+    Unobserved = 0,
+    ObservedPreDispatch = 1,
+    Dispatched = 2
+}
+
+internal readonly record struct LlmDispatchSnapshot(
+    LlmDispatchPhase Phase,
+    string? Provider,
+    string? Model);
+
+/// <summary>
+/// Monotonic request-scoped state shared by the quota owner and HTTP pipeline.
+/// A lock keeps provider/model identity and the phase visible as one snapshot.
+/// </summary>
+internal sealed class LlmDispatchContext
+{
+    private readonly object _gate = new();
+    private LlmDispatchPhase _phase;
+    private string? _provider;
+    private string? _model;
+
+    public void Observe(string provider, string model)
+    {
+        lock (_gate)
+        {
+            if (_phase != LlmDispatchPhase.Unobserved)
+                return;
+
+            _provider = provider;
+            _model = model;
+            _phase = LlmDispatchPhase.ObservedPreDispatch;
+        }
+    }
+
+    public void MarkDispatched()
+    {
+        lock (_gate)
+        {
+            if (_phase == LlmDispatchPhase.ObservedPreDispatch)
+                _phase = LlmDispatchPhase.Dispatched;
+        }
+    }
+
+    public LlmDispatchSnapshot ReadSnapshot()
+    {
+        lock (_gate)
+        {
+            return new LlmDispatchSnapshot(_phase, _provider, _model);
+        }
+    }
 }
 
 public record LlmHealthStatus(

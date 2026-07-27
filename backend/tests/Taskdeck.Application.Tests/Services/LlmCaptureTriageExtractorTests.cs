@@ -299,6 +299,71 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_CancelledAfterDispatch_CommitsReservationEstimate()
+    {
+        _quotaMock
+            .Setup(q => q.ReserveAsync(_userId, LlmSurface.CaptureTriage, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QuotaReservationDto(
+                true, null, _reservationId, 100_000, 60, EstimatedTokens: 2000));
+        _providerMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+                request.DispatchContext.MarkDispatched();
+                return Task.FromException<LlmCompletionResult>(new OperationCanceledException());
+            });
+        var extractor = BuildExtractor();
+
+        await FluentActions
+            .Awaiting(() => extractor.ExtractAsync(_userId, _boardId, TranscriptPayload()))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        _quotaMock.Verify(q => q.CommitReservationAsync(
+            _reservationId,
+            _userId,
+            LlmSurface.CaptureTriage,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+        _quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ObservedPreDispatchResult_ReleasesReservation()
+    {
+        _providerMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+                return new LlmCompletionResult(
+                    "configuration rejected",
+                    0,
+                    IsActionable: false,
+                    Provider: "OpenAICompatible",
+                    Model: "vendor/model",
+                    IsDegraded: true)
+                {
+                    HasAuthoritativeTokenUsage = false,
+                    ShouldSettleQuotaReservation = true
+                };
+            });
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderDegraded);
+        _quotaMock.Verify(q => q.ReleaseReservationAsync(_reservationId, CancellationToken.None), Times.Once);
+        _quotaMock.Verify(q => q.CommitReservationAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<LlmSurface>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldReturnInvalidOutput_WhenContentIsUnparseable()
     {
         SetupCompletion("I could not find any structured tasks, sorry!");
