@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Polly;
 using Polly.Extensions.Http;
 using Taskdeck.Api.Workers;
@@ -81,6 +82,9 @@ public static class LlmProviderRegistration
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
         var localhostPolicy = ResolveLocalhostPolicy(services, configuration);
+        services.AddSingleton(localhostPolicy);
+        services.TryAddTransient<ProtectedOutboundTelemetryHandler>();
+        services.TryAddSingleton<ProtectedOutboundMeterFactory>();
 
         services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
         {
@@ -88,7 +92,7 @@ public static class LlmProviderRegistration
             var timeoutSeconds = settings.OpenAi?.TimeoutSeconds > 0 ? settings.OpenAi.TimeoutSeconds : 30;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         })
-        .ConfigurePrimaryHttpMessageHandler(_ =>
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
             // SSRF protection: DNS-level check prevents connections to private/internal IPs
             // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
@@ -97,6 +101,9 @@ public static class LlmProviderRegistration
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                UseProxy = false,
+                ActivityHeadersPropagator = null,
+                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
@@ -104,14 +111,16 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
-        .AddPolicyHandler(openAiCircuitBreakerPolicy);
+        .AddPolicyHandler(openAiCircuitBreakerPolicy)
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
         services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
             var timeoutSeconds = settings.Gemini?.TimeoutSeconds > 0 ? settings.Gemini.TimeoutSeconds : 30;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         })
-        .ConfigurePrimaryHttpMessageHandler(_ =>
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
             // SSRF protection: DNS-level check prevents connections to private/internal IPs
             // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
@@ -119,6 +128,9 @@ public static class LlmProviderRegistration
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                UseProxy = false,
+                ActivityHeadersPropagator = null,
+                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
@@ -126,18 +138,23 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
-        .AddPolicyHandler(geminiCircuitBreakerPolicy);
+        .AddPolicyHandler(geminiCircuitBreakerPolicy)
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
         services.AddHttpClient<OllamaLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
             var timeoutSeconds = settings.Ollama?.TimeoutSeconds > 0 ? settings.Ollama.TimeoutSeconds : 120;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         })
-        .ConfigurePrimaryHttpMessageHandler(_ =>
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                UseProxy = false,
+                ActivityHeadersPropagator = null,
+                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
@@ -145,7 +162,9 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
-        .AddPolicyHandler(ollamaCircuitBreakerPolicy);
+        .AddPolicyHandler(ollamaCircuitBreakerPolicy)
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
 
         services.AddScoped<MockLlmProvider>();
         services.AddScoped<ILlmProvider>(sp =>
@@ -216,14 +235,15 @@ public static class LlmProviderRegistration
     /// development-like environments when AllowLiveProvidersInDevelopment is enabled,
     /// enabling developers to use local LLM gateways (Ollama, LM Studio, etc.).
     /// </summary>
-    internal static LlmProviderLocalhostPolicy ResolveLocalhostPolicy(
+    internal static LlmProviderRuntimePolicy ResolveLocalhostPolicy(
         IServiceCollection services,
         IConfiguration configuration)
     {
         var allowGeneralProviderLocalhost = IsLocalhostLlmAllowed(services, configuration);
-        return new LlmProviderLocalhostPolicy(
+        return new LlmProviderRuntimePolicy(
             AllowGeneralProviderLocalhost: allowGeneralProviderLocalhost,
-            AllowOllamaLocalhost: IsOllamaLocalhostLlmAllowed(configuration, allowGeneralProviderLocalhost));
+            AllowOllamaLocalhost: IsOllamaLocalhostLlmAllowed(configuration, allowGeneralProviderLocalhost),
+            ProtectOutboundTelemetry: true);
     }
 
     private static bool IsLocalhostLlmAllowed(
@@ -260,7 +280,3 @@ public static class LlmProviderRegistration
                allowGeneralProviderLocalhost;
     }
 }
-
-internal readonly record struct LlmProviderLocalhostPolicy(
-    bool AllowGeneralProviderLocalhost,
-    bool AllowOllamaLocalhost);
