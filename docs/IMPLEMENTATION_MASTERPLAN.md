@@ -10,6 +10,10 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-27, release workflow truth)
+
+- **Manual-only parked staging gate (`#1228`):** `.github/workflows/cd-staging-gate.yml` no longer subscribes to `release: published`; its required-input `workflow_dispatch` path, jobs, permissions, and manual `production` environment approval remain available for deliberate operator runs. Active beta release lanes (`release-desktop.yml`, `ci-release.yml`, and `release-security.yml`) are unchanged, so publishing a release cannot accidentally strand a staging run on a nonexistent environment.
+
 ## Delivery update (2026-07-26, agentic governance)
 
 - **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI without regeneration masking it. Local agentic update workflows use the distinct render-then-test order so hook-appended JSONL can be projected, and the smoke contract pins both sides of that distinction.
