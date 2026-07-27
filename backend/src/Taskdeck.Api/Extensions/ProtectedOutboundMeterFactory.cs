@@ -2,34 +2,6 @@ using System.Diagnostics.Metrics;
 
 namespace Taskdeck.Api.Extensions;
 
-internal sealed class ProtectedOutboundTelemetryHandler : DelegatingHandler
-{
-    private static readonly HttpRequestOptionsKey<bool> SuppressTelemetryKey =
-        new("Taskdeck.SuppressProtectedOutboundTelemetry");
-
-    internal static bool ShouldSuppressTelemetry(HttpRequestMessage request) =>
-        request.Options.TryGetValue(SuppressTelemetryKey, out var suppress) && suppress;
-
-    protected override HttpResponseMessage Send(
-        HttpRequestMessage request,
-        CancellationToken cancellationToken)
-    {
-        MarkProtected(request);
-        return base.Send(request, cancellationToken);
-    }
-
-    protected override Task<HttpResponseMessage> SendAsync(
-        HttpRequestMessage request,
-        CancellationToken cancellationToken)
-    {
-        MarkProtected(request);
-        return base.SendAsync(request, cancellationToken);
-    }
-
-    private static void MarkProtected(HttpRequestMessage request) =>
-        request.Options.Set(SuppressTelemetryKey, true);
-}
-
 /// <summary>
 /// Creates an isolated meter scope for protected outbound HTTP clients. Taskdeck's
 /// configured OpenTelemetry provider drops instruments from this scope; the meters

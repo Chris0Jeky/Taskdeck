@@ -40,7 +40,7 @@ public static class SentryRegistration
             options.TracesSampleRate = sentrySettings.TracesSampleRate;
 
             // Protected LLM and webhook clients own their telemetry boundary. Sentry's global
-            // IHttpClientFactory filter would otherwise add independent propagation, URL
+            // client-factory filter would otherwise add independent propagation, URL
             // breadcrumbs, and failed-request capture outside those clients' redaction controls.
             options.DisableSentryHttpMessageHandler = true;
 

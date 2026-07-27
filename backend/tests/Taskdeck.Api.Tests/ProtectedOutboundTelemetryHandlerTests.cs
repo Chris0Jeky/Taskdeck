@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.Tracing;
 using System.Globalization;
 using System.Net;
 using FluentAssertions;
@@ -66,7 +67,9 @@ public class ProtectedOutboundTelemetryHandlerTests
         using var protectedClient = clientFactory.CreateClient(nameof(OpenAiLlmProvider));
 
         using var controlResponse = await controlClient.GetAsync(controlServer.BuildUri(controlPath));
-        using var protectedResponse = await protectedClient.GetAsync(protectedServer.BuildUri(protectedPath));
+        using var protectedMessage = new HttpRequestMessage(HttpMethod.Get, protectedServer.BuildUri(protectedPath));
+        ProtectedOutboundTelemetryHandler.PrepareForSend(protectedMessage);
+        using var protectedResponse = await protectedClient.SendAsync(protectedMessage);
         var controlRequest = await controlServer.ReceivedRequest;
         var protectedRequest = await protectedServer.ReceivedRequest;
 
@@ -107,8 +110,11 @@ public class ProtectedOutboundTelemetryHandlerTests
 
         using var controlResponse = await controlClient.GetAsync(
             controlServer.BuildUri($"/metrics-control-{correlation}"));
-        using var protectedResponse = await protectedClient.GetAsync(
+        using var protectedMessage = new HttpRequestMessage(
+            HttpMethod.Get,
             protectedServer.BuildUri($"/metrics-protected-{correlation}"));
+        ProtectedOutboundTelemetryHandler.PrepareForSend(protectedMessage);
+        using var protectedResponse = await protectedClient.SendAsync(protectedMessage);
         await controlServer.ReceivedRequest;
         await protectedServer.ReceivedRequest;
 
@@ -122,6 +128,46 @@ public class ProtectedOutboundTelemetryHandlerTests
         exporter.Snapshots.Should().NotContain(
             snapshot => snapshot.HasServerPort(protectedServer.Port),
             "protected server.address/server.port dimensions must not reach Taskdeck's configured OpenTelemetry exporter");
+    }
+
+    [Fact]
+    public async Task RegisteredProtectedClient_ShouldMaskSystemNetHttpEventsAndPreserveWireUri()
+    {
+        using var eventListener = new RecordingHttpEventListener();
+        using var serviceProvider = BuildServiceProvider();
+        var clientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+
+        var controlMarker = $"event-control-{Guid.NewGuid():N}";
+        var protectedMarker = $"event-protected-{Guid.NewGuid():N}";
+        var controlPathAndQuery = $"/control?marker={controlMarker}";
+        var protectedPathAndQuery = $"/protected?marker={protectedMarker}";
+        await using var controlServer = new SingleRequestLoopbackServer(HttpStatusCode.NoContent);
+        await using var protectedServer = new SingleRequestLoopbackServer(HttpStatusCode.NoContent);
+        using var controlClient = clientFactory.CreateClient(ControlClientName);
+        using var protectedClient = clientFactory.CreateClient(nameof(OpenAiLlmProvider));
+
+        using var controlResponse = await controlClient.GetAsync(controlServer.BuildUri(controlPathAndQuery));
+        using var protectedRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            protectedServer.BuildUri(protectedPathAndQuery));
+        ProtectedOutboundTelemetryHandler.PrepareForSend(protectedRequest);
+        using var protectedResponse = await protectedClient.SendAsync(protectedRequest);
+        var controlWireRequest = await controlServer.ReceivedRequest;
+        var protectedWireRequest = await protectedServer.ReceivedRequest;
+
+        controlResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        protectedResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        controlWireRequest.Should().Contain($"GET {controlPathAndQuery} HTTP/1.1");
+        protectedWireRequest.Should().Contain($"GET {protectedPathAndQuery} HTTP/1.1",
+            "the transport handler must restore the true destination before connecting");
+        eventListener.Payloads.Should().Contain(
+            payload => payload.Contains(controlMarker, StringComparison.Ordinal),
+            "the plain factory client must prove System.Net.Http EventSource capture is active");
+        eventListener.Payloads.Should().NotContain(
+            payload => payload.Contains(protectedMarker, StringComparison.Ordinal),
+            "the protected path and query must be masked before HttpClient emits RequestStart");
+        protectedRequest.RequestUri!.AbsoluteUri.Should().NotContain(protectedMarker,
+            "the request must be remasked after the permitted transport completes");
     }
 
     [Fact]
@@ -199,7 +245,11 @@ public class ProtectedOutboundTelemetryHandlerTests
                 {
                     await using var server = new SingleRequestLoopbackServer(statusCode);
                     using var client = clientFactory.CreateClient(clientName);
-                    using var response = await client.GetAsync(server.BuildUri($"/protected?marker={marker}"));
+                    using var request = new HttpRequestMessage(
+                        HttpMethod.Get,
+                        server.BuildUri($"/protected?marker={marker}"));
+                    ProtectedOutboundTelemetryHandler.PrepareForSend(request);
+                    using var response = await client.SendAsync(request);
                     var rawRequest = await server.ReceivedRequest;
 
                     response.StatusCode.Should().Be(statusCode);
@@ -330,6 +380,44 @@ public class ProtectedOutboundTelemetryHandlerTests
         (breadcrumb.Data?.Any(pair =>
             pair.Key.Contains(marker, StringComparison.Ordinal) ||
             pair.Value?.ToString()?.Contains(marker, StringComparison.Ordinal) == true) ?? false);
+
+    private sealed class RecordingHttpEventListener : EventListener
+    {
+        private ConcurrentQueue<string>? _payloads;
+
+        internal RecordingHttpEventListener()
+        {
+            _payloads = new ConcurrentQueue<string>();
+        }
+
+        internal IReadOnlyCollection<string> Payloads => _payloads?.ToArray() ?? [];
+
+        protected override void OnEventSourceCreated(EventSource eventSource)
+        {
+            if (string.Equals(eventSource.Name, "System.Net.Http", StringComparison.Ordinal))
+            {
+                EnableEvents(eventSource, EventLevel.Verbose, EventKeywords.All);
+            }
+        }
+
+        protected override void OnEventWritten(EventWrittenEventArgs eventData)
+        {
+            var payloads = _payloads;
+            if (payloads is null ||
+                !string.Equals(eventData.EventSource.Name, "System.Net.Http", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var values = eventData.Payload is null
+                ? string.Empty
+                : string.Join(
+                    "|",
+                    eventData.Payload.Select(value =>
+                        Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty));
+            payloads.Enqueue($"{eventData.EventName}|{values}");
+        }
+    }
 
     private sealed class RecordingSentryTransport : ITransport
     {

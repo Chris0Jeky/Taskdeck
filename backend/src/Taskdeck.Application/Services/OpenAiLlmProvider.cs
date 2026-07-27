@@ -47,6 +47,7 @@ public class OpenAiLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildRequestPayload(request));
 
+            ProtectedOutboundTelemetryHandler.PrepareForSend(message);
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
@@ -163,6 +164,7 @@ public class OpenAiLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildToolCallingPayload(request, tools, previousToolResults));
 
+            ProtectedOutboundTelemetryHandler.PrepareForSend(message);
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 

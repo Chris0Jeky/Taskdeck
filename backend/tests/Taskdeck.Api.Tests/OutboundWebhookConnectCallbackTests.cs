@@ -12,6 +12,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.Services;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -312,6 +313,7 @@ internal static class ProxySafeHttpHandlerTestHarness
             $"{blockedOrigin}?marker={SensitiveMarker}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", SensitiveMarker);
         request.Content = new StringContent(SensitiveMarker);
+        ProtectedOutboundTelemetryHandler.PrepareForSend(request);
 
         var exception = await Assert.ThrowsAsync<HttpRequestException>(
             () => invoker.SendAsync(request, cancellationSource.Token));
@@ -319,6 +321,8 @@ internal static class ProxySafeHttpHandlerTestHarness
         exception.Message.Should().Contain(new Uri(blockedOrigin).Host);
         exception.Message.Should().Contain("is not allowed");
         exception.Message.Should().NotContain(SensitiveMarker);
+        request.RequestUri!.AbsoluteUri.Should().NotContain(SensitiveMarker,
+            "blocked requests must be remasked after connect-time rejection");
         hostileProxy.InvocationCount.Should().Be(0,
             "UseProxy=false must keep the proxy from seeing the origin or protected request content");
     }
@@ -336,11 +340,14 @@ internal static class ProxySafeHttpHandlerTestHarness
 
         using var invoker = new HttpMessageInvoker(pipeline, disposeHandler: false);
         using var request = new HttpRequestMessage(HttpMethod.Get, server.BuildUri(requestPath));
+        ProtectedOutboundTelemetryHandler.PrepareForSend(request);
         using var response = await invoker.SendAsync(request, cancellationSource.Token);
         var receivedRequest = await server.ReceivedRequest;
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         receivedRequest.Should().Contain($"GET {requestPath} HTTP/1.1");
+        request.RequestUri!.AbsolutePath.Should().NotBe(requestPath,
+            "successful requests must be remasked after direct delivery");
         hostileProxy.InvocationCount.Should().Be(0,
             "UseProxy=false must send an allowed request directly to its configured origin");
     }

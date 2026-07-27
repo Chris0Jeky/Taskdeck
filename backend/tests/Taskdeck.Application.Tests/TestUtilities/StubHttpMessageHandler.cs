@@ -1,23 +1,29 @@
 using System.Net.Http;
+using Taskdeck.Application.Services;
 
 namespace Taskdeck.Application.Tests.TestUtilities;
 
-internal sealed class StubHttpMessageHandler : HttpMessageHandler
+internal sealed class StubHttpMessageHandler : DelegatingHandler
 {
-    private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _responseFactory;
-
     public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+        : this((request, _) => Task.FromResult(responseFactory(request)))
     {
-        _responseFactory = (request, _) => Task.FromResult(responseFactory(request));
     }
 
     public StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responseFactory)
     {
-        _responseFactory = responseFactory;
+        InnerHandler = new ProtectedOutboundTelemetryHandler
+        {
+            InnerHandler = new CallbackHandler(responseFactory)
+        };
     }
 
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    private sealed class CallbackHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responseFactory) : HttpMessageHandler
     {
-        return await _responseFactory(request, cancellationToken);
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            responseFactory(request, cancellationToken);
     }
 }

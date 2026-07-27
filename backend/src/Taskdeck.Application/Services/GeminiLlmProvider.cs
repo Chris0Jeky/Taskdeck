@@ -76,6 +76,7 @@ public class GeminiLlmProvider : ILlmProvider
                     generationConfig
                 });
 
+            ProtectedOutboundTelemetryHandler.PrepareForSend(message);
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
@@ -191,6 +192,7 @@ public class GeminiLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(httpMessage, request.Attribution);
             httpMessage.Content = JsonContent.Create(BuildToolCallingPayload(request, tools, previousToolResults));
 
+            ProtectedOutboundTelemetryHandler.PrepareForSend(httpMessage);
             using var response = await _httpClient.SendAsync(httpMessage, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
