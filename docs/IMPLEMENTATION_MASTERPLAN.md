@@ -12,7 +12,7 @@ Companion Active Docs:
 
 ## Staged runway repair (2026-07-27, maintainer-held)
 
-- **Workflow Lint bootstrap (`#1510`):** replace the Docker Actionlint action, whose pre-checkout Docker Hub manifest fetch timed out in two exact-code CI Extended runs, with a fail-closed direct bootstrap. Pin and checksum Actionlint 1.7.12 plus the Pyflakes 3.4.0 wheel, retain runner ShellCheck through an explicit path, install Pyflakes offline, bound downloads and the job, and log the exact checkout/tool/workflow inventory before verbose linting. Seven focused contract checks and two independent design reviews are complete locally. Exact-head hosted Ubuntu proof is still required; the workflow change is T4-class and must remain unmerged until the maintainer accepts it.
+- **Workflow Lint bootstrap (`#1510`):** replace the Docker Actionlint action, whose pre-checkout Docker Hub manifest fetch timed out in two exact-code CI Extended runs, with a fail-closed direct bootstrap. Pin and checksum Actionlint 1.7.12 plus the Pyflakes 3.4.0 wheel, retain runner ShellCheck through an explicit path, install Pyflakes offline, bound downloads and the job, and log the exact checkout/tool/workflow inventory before verbose linting. Seven focused contract checks and two independent design reviews are complete locally. Exact-head-associated hosted Ubuntu proof is green with both checksums, 7/7 contract checks, and zero errors across 32 workflows without a Docker build. The workflow change remains T4-class and unshipped until maintainer merge plus fresh post-merge proof.
 
 ## Delivery update (2026-07-26, agentic governance)
 
