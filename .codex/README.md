@@ -47,7 +47,7 @@ This `.codex/` layer is the Codex-facing control plane for Taskdeck. It routes a
 
 ## Best Tool Baseline
 
-- Use `.codex/config.toml` MCP servers first for docs, GitHub, browser, Docker, OpenAPI, and runtime inspection tasks.
+- Use `.codex/config.toml` MCP servers first for docs, GitHub, browser, and runtime inspection tasks. The Docker MCP gateway comes from user scope (`[mcp_servers.MCP_DOCKER]` in `~/.codex/config.toml`), never from this repo — see `docs/tooling/MCP_OPERATIONS_RUNBOOK.md`.
 - Use native `rg` for repository search; do not use ripgrep MCP on Windows unless it has been revalidated.
 - Use Codex-native patching for file edits and configured agents/worktrees only when runtime policy allows clean ownership splits.
 

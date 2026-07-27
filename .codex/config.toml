@@ -8,7 +8,10 @@ sandbox_mode = "workspace-write"
 multi_agent = true
 
 [agents]
-max_threads = 10
+# Each thread starts its own MCP stack. 10 threads x this stack measured ~21 gateway
+# processes in one session (agent-harness#87) — keep the cap inside the right-sized
+# fan-out range (<=3-5; <=8-12 only for a genuine sweep).
+max_threads = 4
 max_depth = 2
 job_max_runtime_seconds = 8000
 
@@ -66,11 +69,8 @@ args = ["-y", "chrome-devtools-mcp@latest"]
 startup_timeout_sec = 30
 tool_timeout_sec = 180
 
-[mcp_servers.docker]
-command = "docker"
-args = ["mcp", "gateway", "run", "--servers", "docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform", "--transport", "stdio"]
-startup_timeout_sec = 60
-tool_timeout_sec = 240
+# The Docker MCP gateway is declared ONCE, at user scope (global MCP_DOCKER). Re-declaring it
+# here started a second gateway process per session — do not add it back (agent-harness#87).
 
 [mcp_servers.github]
 url = "https://api.githubcopilot.com/mcp/"
