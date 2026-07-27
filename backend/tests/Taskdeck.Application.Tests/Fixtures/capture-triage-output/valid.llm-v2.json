@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "promptVersion": "llm-triage.v2",
+  "tasks": [
+    {
+      "title": "Send the revised budget to finance",
+      "evidence": "I'll send the revised budget over to finance by Friday"
+    },
+    {
+      "title": "Schedule the follow-up review meeting",
+      "evidence": "let's get the follow-up review on the calendar next week"
+    }
+  ]
+}

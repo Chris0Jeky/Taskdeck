@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/capture-triage-output.llm-v2.schema.json",
+  "title": "Taskdeck Capture Triage Output llm-v2",
+  "description": "Server-authored output of the strict LLM capture-triage path. The model response is limited to the tasks member; Taskdeck adds this versioned envelope after raw-JSON containment and ordinal source-evidence grounding.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "promptVersion",
+    "tasks"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "promptVersion": {
+      "type": "string",
+      "const": "llm-triage.v2"
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "evidence"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          }
+        }
+      }
+    }
+  }
+}

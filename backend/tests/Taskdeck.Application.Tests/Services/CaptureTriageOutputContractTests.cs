@@ -82,6 +82,19 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
+    public void ParseAndValidate_ShouldPass_ForLlmV2GoldenFixture()
+    {
+        var json = ReadFixture("valid.llm-v2.json");
+
+        var result = CaptureTriageOutputContract.ParseAndValidate(json);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Version.Should().Be(CaptureTriageOutputContract.SchemaVersion);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        result.Value.Tasks.Should().HaveCount(2);
+    }
+
+    [Fact]
     public void Validate_ShouldPass_WhenPromptVersionIsLlmV1()
     {
         var output = new CaptureTriageOutputV1(
@@ -96,11 +109,25 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
+    public void Validate_ShouldPass_WhenPromptVersionIsLlmV2()
+    {
+        var output = new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
+            new[] { new CaptureTriageTaskV1("Follow up with QA", "I will follow up with QA tomorrow") });
+
+        var result = CaptureTriageOutputContract.Validate(output);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+    }
+
+    [Fact]
     public void Validate_ShouldFail_WhenPromptVersionIsUnknown()
     {
         var output = new CaptureTriageOutputV1(
             CaptureTriageOutputContract.SchemaVersion,
-            "llm-triage.v2",
+            "llm-triage.v3",
             new[] { new CaptureTriageTaskV1("Follow up with QA", "I will follow up with QA tomorrow") });
 
         var result = CaptureTriageOutputContract.Validate(output);
@@ -110,6 +137,7 @@ public class CaptureTriageOutputContractTests
         result.ErrorMessage.Should().Contain("prompt version");
         result.ErrorMessage.Should().Contain(CaptureTriageOutputContract.PromptVersionV1);
         result.ErrorMessage.Should().Contain(CaptureTriageOutputContract.PromptVersionLlmV1);
+        result.ErrorMessage.Should().Contain(CaptureTriageOutputContract.PromptVersionLlmV2);
     }
 
     [Fact]
@@ -143,6 +171,23 @@ public class CaptureTriageOutputContractTests
         File.Exists(schemaPath).Should().BeTrue();
         var schema = File.ReadAllText(schemaPath);
         schema.Should().Contain("\"const\": \"llm-triage.v1\"");
+        schema.Should().Contain("\"additionalProperties\": false");
+    }
+
+    [Fact]
+    public void LlmV2TriageSchemaFile_ShouldDeclarePromptVersionAndStrictness()
+    {
+        var schemaPath = Path.Combine(
+            FindRepositoryRoot(),
+            "backend",
+            "src",
+            "Taskdeck.Application",
+            "Schemas",
+            "capture-triage-output.llm-v2.schema.json");
+
+        File.Exists(schemaPath).Should().BeTrue();
+        var schema = File.ReadAllText(schemaPath);
+        schema.Should().Contain("\"const\": \"llm-triage.v2\"");
         schema.Should().Contain("\"additionalProperties\": false");
     }
 

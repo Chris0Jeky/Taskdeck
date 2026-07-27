@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Enums;
@@ -8,7 +7,7 @@ namespace Taskdeck.Application.Services;
 /// <summary>
 /// LLM-backed transcript task extraction (REVIVAL-08 M1). Runs the guardrail chain the chat surface
 /// established (kill switch → provider health → quota → completion → usage recording), then parses
-/// and sanitizes the completion into a contract-valid <see cref="CaptureTriageOutputV1"/>.
+/// and strictly contains the completion into a contract-valid <see cref="CaptureTriageOutputV1"/>.
 /// Every failure mode is returned as an outcome, never thrown, so <see cref="CaptureTriageService"/>
 /// can degrade to the deterministic extractor. Provider/model are reported only on success (#1273).
 /// </summary>
@@ -86,7 +85,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         }
 
         var request = new ChatCompletionRequest(
-            Messages: [new ChatCompletionMessage("user", payload.Text)],
+            Messages: [new ChatCompletionMessage("user", LlmCaptureTriagePrompt.BuildUserMessage(payload.Text))],
             MaxTokens: _settings.MaxOutputTokens,
             Temperature: _settings.Temperature,
             Attribution: new LlmRequestAttribution(
@@ -94,8 +93,9 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 LlmRequestAttributionMapper.ResolveCorrelationIdFromActivity(),
                 LlmRequestSourceSurface.Capture,
                 boardId),
-            // A non-null SystemPrompt opts out of the providers' chat instruction-extraction mode;
-            // the prompt itself demands raw JSON and TryParseTasks tolerates fenced output.
+            // A non-null SystemPrompt opts out of the providers' chat instruction-extraction mode.
+            // The prompt frames capture text as untrusted data and TryParseTasks accepts only the
+            // exact raw-JSON response vocabulary.
             SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt);
 
         LlmCompletionResult result;
@@ -202,21 +202,27 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             return new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.EmptyExtraction,
                 Provider: result.Provider,
-                Model: result.Model);
+                Model: result.Model,
+                PromptVersion: LlmCaptureTriagePrompt.PromptVersion);
         }
 
-        var sanitized = SanitizeTasks(rawTasks);
-        if (sanitized.Count == 0)
+        var ungroundedEvidenceCount = rawTasks.Count(task =>
+            !payload.Text.Contains(task.Evidence, StringComparison.Ordinal));
+        if (ungroundedEvidenceCount > 0)
         {
-            // The model returned entries but none survived sanitization — treat as malformed
-            // output (fallback), not as a deliberate empty verdict.
+            // Every evidence value must be an exact ordinal substring of the original source.
+            // Ungrounded output is malformed and takes the deterministic fallback path.
+            _logger?.LogWarning(
+                "LLM transcript triage returned {UngroundedEvidenceCount} ungrounded evidence value(s) for user {UserId}; using deterministic fallback",
+                ungroundedEvidenceCount,
+                userId);
             return new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.InvalidOutput);
         }
 
         var output = new CaptureTriageOutputV1(
             CaptureTriageOutputContract.SchemaVersion,
-            CaptureTriageOutputContract.PromptVersionLlmV1,
-            sanitized);
+            LlmCaptureTriagePrompt.PromptVersion,
+            rawTasks);
 
         var validation = CaptureTriageOutputContract.Validate(output);
         if (!validation.IsSuccess)
@@ -232,46 +238,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             LlmCaptureTriageOutcome.Succeeded,
             validation.Value,
             result.Provider,
-            result.Model);
-    }
-
-    /// <summary>
-    /// Enforces the v1 contract caps on model output instead of rejecting near-valid responses:
-    /// whitespace-normalized titles truncated to the title cap, evidence trimmed to the evidence cap
-    /// (a truncated verbatim quote is still a verbatim prefix, so span recovery stays possible),
-    /// duplicate titles dropped (mirroring the deterministic extractor's dedupe), capped at MaxTasks.
-    /// </summary>
-    private static List<CaptureTriageTaskV1> SanitizeTasks(IReadOnlyList<CaptureTriageTaskV1> rawTasks)
-    {
-        var sanitized = new List<CaptureTriageTaskV1>();
-        var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var task in rawTasks)
-        {
-            var title = Regex.Replace(task.Title.Trim(), @"\s+", " ");
-            if (title.Length > CaptureTriageOutputContract.MaxTaskTitleLength)
-            {
-                title = title[..CaptureTriageOutputContract.MaxTaskTitleLength].TrimEnd();
-            }
-
-            var evidence = task.Evidence.Trim();
-            if (evidence.Length > CaptureTriageOutputContract.MaxTaskEvidenceLength)
-            {
-                evidence = evidence[..CaptureTriageOutputContract.MaxTaskEvidenceLength].TrimEnd();
-            }
-
-            if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(evidence) || !seenTitles.Add(title))
-            {
-                continue;
-            }
-
-            sanitized.Add(new CaptureTriageTaskV1(title, evidence));
-            if (sanitized.Count >= CaptureTriageOutputContract.MaxTasks)
-            {
-                break;
-            }
-        }
-
-        return sanitized;
+            result.Model,
+            PromptVersion: LlmCaptureTriagePrompt.PromptVersion);
     }
 }

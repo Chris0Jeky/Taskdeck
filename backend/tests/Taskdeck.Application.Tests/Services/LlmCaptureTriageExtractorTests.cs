@@ -58,7 +58,7 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldReturnSanitizedContractValidOutput_WhenCompletionIsValidJson()
+    public async Task ExtractAsync_ShouldReturnGroundedV2Output_WhenCompletionIsExactJson()
     {
         SetupCompletion("""{"tasks":[{"title":"Send the report","evidence":"Alice: I'll send the report by Friday."}]}""");
         var extractor = BuildExtractor();
@@ -70,14 +70,15 @@ public class LlmCaptureTriageExtractorTests
         result.Provider.Should().Be("OpenAI");
         result.Model.Should().Be("gpt-4o-mini");
         result.Output.Should().NotBeNull();
-        result.Output!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
+        result.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        result.Output!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
         result.Output.Version.Should().Be(CaptureTriageOutputContract.SchemaVersion);
         result.Output.Tasks.Should().ContainSingle()
             .Which.Title.Should().Be("Send the report");
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldTolerateCodeFencesAndExtraJsonFields()
+    public async Task ExtractAsync_ShouldRejectCodeFencesAndExtraJsonFields()
     {
         SetupCompletion("""
             Here is the extraction you asked for:
@@ -92,13 +93,12 @@ public class LlmCaptureTriageExtractorTests
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
 
-        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
-        result.Output!.Tasks.Should().HaveCount(2);
-        result.Output.Tasks[1].Title.Should().Be("Book the venue");
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldTruncateOverlongTitlesAndEvidence_InsteadOfRejecting()
+    public async Task ExtractAsync_ShouldRejectOverlongTitlesAndEvidence()
     {
         var longTitle = new string('t', 400);
         var longEvidence = new string('e', 600);
@@ -107,13 +107,12 @@ public class LlmCaptureTriageExtractorTests
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
 
-        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
-        result.Output!.Tasks[0].Title.Length.Should().Be(CaptureTriageOutputContract.MaxTaskTitleLength);
-        result.Output.Tasks[0].Evidence.Length.Should().Be(CaptureTriageOutputContract.MaxTaskEvidenceLength);
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldDedupeTitlesAndCapAtMaxTasks()
+    public async Task ExtractAsync_ShouldRejectDuplicateTitlesAndOverLimitTaskCount()
     {
         var tasks = string.Join(",", Enumerable.Range(0, 30).Select(i =>
             $$"""{"title":"Task {{i % 25}}","evidence":"evidence {{i}}"}"""));
@@ -122,9 +121,8 @@ public class LlmCaptureTriageExtractorTests
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
 
-        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
-        result.Output!.Tasks.Should().HaveCount(CaptureTriageOutputContract.MaxTasks);
-        result.Output.Tasks.Select(t => t.Title).Should().OnlyHaveUniqueItems();
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
     }
 
     [Fact]
@@ -285,11 +283,12 @@ public class LlmCaptureTriageExtractorTests
         // "triaged, nothing to propose" outcome carries honest provenance (#1273).
         result.Provider.Should().Be("OpenAI");
         result.Model.Should().Be("gpt-4o-mini");
+        result.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
         result.Output.Should().BeNull();
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldReturnInvalidOutput_WhenAllEntriesFailSanitization()
+    public async Task ExtractAsync_ShouldReturnInvalidOutput_WhenTaskEntriesAreNotExact()
     {
         SetupCompletion("""{"tasks":[{"title":"   ","evidence":"x"},{"title":"ok","evidence":"  "}]}""");
         var extractor = BuildExtractor();
@@ -298,6 +297,18 @@ public class LlmCaptureTriageExtractorTests
 
         // Entries were returned but none survived — malformed output (fallback), not an empty verdict.
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldRejectEvidenceThatIsNotAnOrdinalSourceSubstring()
+    {
+        SetupCompletion("""{"tasks":[{"title":"Send the report","evidence":"alice: I'll send the report by Friday."}]}""");
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
     }
 
     [Fact]
@@ -324,7 +335,12 @@ public class LlmCaptureTriageExtractorTests
         sent!.SystemPrompt.Should().Be(LlmCaptureTriagePrompt.SystemPrompt);
         sent.MaxTokens.Should().Be(1234);
         sent.Temperature.Should().Be(0.5);
-        sent.Messages.Should().ContainSingle().Which.Content.Should().Be("the transcript body");
+        var userMessage = sent.Messages.Should().ContainSingle().Which.Content;
+        userMessage.Should().NotBe("the transcript body");
+        userMessage.Should().Contain("\nthe transcript body\n");
+        var boundaryLines = userMessage.Split('\n');
+        boundaryLines[0].Should().MatchRegex("^BEGIN_TASKDECK_UNTRUSTED_CAPTURE_[0-9A-F]{32}$");
+        boundaryLines[^1].Should().Be("END_" + boundaryLines[0]["BEGIN_".Length..]);
         sent.Attribution.Should().NotBeNull();
         sent.Attribution!.UserId.Should().Be(_userId);
         sent.Attribution.BoardId.Should().Be(_boardId);
@@ -334,7 +350,7 @@ public class LlmCaptureTriageExtractorTests
     [Fact]
     public async Task ExtractAsync_ShouldWorkWithoutOptionalGuardrailServices()
     {
-        SetupCompletion("""{"tasks":[{"title":"T","evidence":"E"}]}""");
+        SetupCompletion("""{"tasks":[{"title":"Send the report","evidence":"I'll send the report by Friday."}]}""");
         var extractor = new LlmCaptureTriageExtractor(_providerMock.Object, _settings);
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());

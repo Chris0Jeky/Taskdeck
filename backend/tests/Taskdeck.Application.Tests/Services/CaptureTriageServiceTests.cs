@@ -715,13 +715,14 @@ public class CaptureTriageServiceTests
     {
         var output = new CaptureTriageOutputV1(
             CaptureTriageOutputContract.SchemaVersion,
-            CaptureTriageOutputContract.PromptVersionLlmV1,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
             tasks.Select(t => new CaptureTriageTaskV1(t.Title, t.Evidence)).ToList());
         return new LlmCaptureTriageExtraction(
             LlmCaptureTriageOutcome.Succeeded,
             output,
             Provider: "OpenAI",
-            Model: "gpt-4o-mini");
+            Model: "gpt-4o-mini",
+            PromptVersion: CaptureTriageOutputContract.PromptVersionLlmV2);
     }
 
     [Fact]
@@ -747,7 +748,7 @@ public class CaptureTriageServiceTests
         result.Value.OperationCount.Should().Be(2);
         result.Value.Provider.Should().Be("OpenAI");
         result.Value.Model.Should().Be("gpt-4o-mini");
-        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
         createdProposal.Should().NotBeNull();
         createdProposal!.Operations.Should().HaveCount(2);
         createdProposal.Operations![0].Parameters.Should().Contain("Send the quarterly report");
@@ -782,6 +783,58 @@ public class CaptureTriageServiceTests
         result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
         result.Value.Model.Should().Be(CaptureTriageService.TriageModelName);
         result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
+    }
+
+    [Theory]
+    [InlineData("response-extra-field.json", "TASKDECK_INJECTION_CANARY_RESPONSE_EXTRA_5D7A")]
+    [InlineData("response-vocabulary-escape.json", "TASKDECK_INJECTION_CANARY_RESPONSE_VOCAB_9E31")]
+    [InlineData("response-malformed.txt", "TASKDECK_INJECTION_CANARY_RESPONSE_BROKEN_19F0")]
+    public async Task CreateProposalFromCaptureAsync_HostileResponseFixture_ShouldUseDeterministicFallback(
+        string fixtureName,
+        string canary)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        var providerMock = new Mock<ILlmProvider>();
+        providerMock
+            .Setup(provider => provider.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "FixtureProvider", Model: "fixture-model"));
+        providerMock
+            .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult(
+                ReadUntrustedArtefactFixture(fixtureName),
+                TokensUsed: 1,
+                IsActionable: false,
+                Provider: "FixtureProvider",
+                Model: "fixture-model"));
+
+        var extractor = new LlmCaptureTriageExtractor(providerMock.Object, new LlmCaptureTriageSettings());
+        var service = new CaptureTriageService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            extractor);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Preserve deterministic fallback"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        result.Value.Model.Should().Be(CaptureTriageService.TriageModelName);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().ContainSingle();
+        createdProposal.Operations![0].ActionType.Should().Be("create");
+        createdProposal.Operations[0].TargetType.Should().Be("card");
+        createdProposal.Operations[0].Parameters.Should().Contain("Preserve deterministic fallback");
+        createdProposal.Operations[0].Parameters.Should().NotContain(canary);
     }
 
     [Fact]
@@ -823,7 +876,8 @@ public class CaptureTriageServiceTests
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.EmptyExtraction,
                 Provider: "OpenAI",
-                Model: "gpt-4o-mini"));
+                Model: "gpt-4o-mini",
+                PromptVersion: CaptureTriageOutputContract.PromptVersionLlmV2));
         var service = BuildServiceWithExtractor(extractorMock);
 
         var result = await service.CreateProposalFromCaptureAsync(
@@ -841,7 +895,7 @@ public class CaptureTriageServiceTests
         result.Value.OperationCount.Should().Be(0);
         result.Value.Provider.Should().Be("OpenAI");
         result.Value.Model.Should().Be("gpt-4o-mini");
-        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -1020,5 +1074,29 @@ public class CaptureTriageServiceTests
             null,
             Guid.NewGuid().ToString(),
             new List<ProposalOperationDto>());
+    }
+
+    private static string ReadUntrustedArtefactFixture(string fixtureName)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var solutionPath = Path.Combine(directory.FullName, "backend", "Taskdeck.sln");
+            if (File.Exists(solutionPath))
+            {
+                return File.ReadAllText(Path.Combine(
+                    directory.FullName,
+                    "backend",
+                    "tests",
+                    "Taskdeck.Application.Tests",
+                    "Fixtures",
+                    "untrusted-artefacts",
+                    fixtureName));
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate repository root from test runtime directory.");
     }
 }

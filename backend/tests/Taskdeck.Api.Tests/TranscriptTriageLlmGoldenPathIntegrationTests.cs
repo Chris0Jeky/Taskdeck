@@ -107,7 +107,7 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         // Provenance names the REAL provider/model from the completion result, not the extractor.
         triaged.Provenance.Provider.Should().Be(StubProviderName);
         triaged.Provenance.Model.Should().Be(StubModelName);
-        triaged.Provenance.PromptVersion.Should().Be("llm-triage.v1");
+        triaged.Provenance.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
         var proposalId = triaged.Provenance.ProposalId!.Value;
 
         // The extractor sent the transcript text under the triage system prompt with capture attribution.
@@ -115,7 +115,12 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         var llmRequest = providerStub.LastRequest;
         llmRequest.Should().NotBeNull();
         llmRequest!.SystemPrompt.Should().Be(LlmCaptureTriagePrompt.SystemPrompt);
-        llmRequest.Messages.Should().ContainSingle(message => message.Content == TranscriptText);
+        var userMessage = llmRequest.Messages.Should().ContainSingle().Which.Content;
+        userMessage.Should().NotBe(TranscriptText);
+        userMessage.Should().Contain($"\n{TranscriptText}\n");
+        var boundaryLines = userMessage.Split('\n');
+        boundaryLines[0].Should().MatchRegex("^BEGIN_TASKDECK_UNTRUSTED_CAPTURE_[0-9A-F]{32}$");
+        boundaryLines[^1].Should().Be("END_" + boundaryLines[0]["BEGIN_".Length..]);
         llmRequest.Attribution.Should().NotBeNull();
         llmRequest.Attribution!.UserId.Should().Be(user.UserId);
         llmRequest.Attribution.SourceSurface.Should().Be(LlmRequestSourceSurface.Capture);
@@ -168,7 +173,7 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         converted.Provenance.ConvertedAt.Should().NotBeNull();
         converted.Provenance.Provider.Should().Be(StubProviderName);
         converted.Provenance.Model.Should().Be(StubModelName);
-        converted.Provenance.PromptVersion.Should().Be("llm-triage.v1");
+        converted.Provenance.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
 
         // Exactly one LLM call for the whole pipeline (no retries, no re-extraction on conversion).
         providerStub.CompletionCallCount.Should().Be(1);

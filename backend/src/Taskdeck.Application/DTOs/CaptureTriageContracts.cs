@@ -26,11 +26,19 @@ public static class CaptureTriageOutputContract
     /// </summary>
     public const string PromptVersionLlmV1 = "llm-triage.v1";
 
+    /// <summary>
+    /// Prompt version for collision-resistant untrusted-data framing, exact raw-JSON containment,
+    /// and ordinal evidence grounding (#1323). Historical llm-v1 envelopes remain readable.
+    /// Schema file: capture-triage-output.llm-v2.schema.json.
+    /// </summary>
+    public const string PromptVersionLlmV2 = "llm-triage.v2";
+
     public const int MaxTasks = 20;
     public const int MaxTaskTitleLength = 180;
     public const int MaxTaskEvidenceLength = 280;
 
-    private static readonly string[] KnownPromptVersions = [PromptVersionV1, PromptVersionLlmV1];
+    private static readonly string[] KnownPromptVersions =
+        [PromptVersionV1, PromptVersionLlmV1, PromptVersionLlmV2];
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

@@ -1,6 +1,10 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Moq;
+using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Enums;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -148,6 +152,71 @@ public class UntrustedArtefactFixtureContractTests
             {
                 content.Should().Contain(requiredContent);
             }
+        }
+    }
+
+    [Theory]
+    [InlineData(
+        "hostile-transcript.txt",
+        "{\"tasks\":[{\"title\":\"Send the approved budget to Finance\",\"evidence\":\"I will send the approved budget to Finance by Friday.\"}]}",
+        LlmCaptureTriageOutcome.Succeeded)]
+    [InlineData(
+        "hostile-pdf-text.txt",
+        "{\"tasks\":[]}",
+        LlmCaptureTriageOutcome.EmptyExtraction)]
+    [InlineData(
+        "hostile-image-text.txt",
+        "{\"tasks\":[{\"title\":\"Schedule the accessibility review\",\"evidence\":\"Jordan will schedule the accessibility review on Tuesday.\"}]}",
+        LlmCaptureTriageOutcome.Succeeded)]
+    public async Task SourceFixture_ShouldFlowThroughEffectiveFramedExtractorPath(
+        string fixtureName,
+        string completion,
+        LlmCaptureTriageOutcome expectedOutcome)
+    {
+        var source = ReadBoundedUtf8(fixtureName);
+        ChatCompletionRequest? capturedRequest = null;
+        var provider = new Mock<ILlmProvider>();
+        provider
+            .Setup(item => item.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "FixtureProvider", Model: "fixture-model"));
+        provider
+            .Setup(item => item.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ChatCompletionRequest, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new LlmCompletionResult(
+                completion,
+                TokensUsed: 1,
+                IsActionable: false,
+                Provider: "FixtureProvider",
+                Model: "fixture-model"));
+        var extractor = new LlmCaptureTriageExtractor(provider.Object, new LlmCaptureTriageSettings());
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.TranscriptPaste,
+            source);
+
+        var result = await extractor.ExtractAsync(Guid.NewGuid(), Guid.NewGuid(), payload);
+
+        result.Outcome.Should().Be(expectedOutcome);
+        result.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.SystemPrompt.Should().Be(LlmCaptureTriagePrompt.SystemPrompt);
+        var framedContent = capturedRequest.Messages.Should().ContainSingle().Which.Content;
+        framedContent.Should().Contain($"\n{source}\n");
+        framedContent.Should().NotBe(source);
+
+        if (result.Succeeded)
+        {
+            result.Output!.Tasks.Should().OnlyContain(task =>
+                source.Contains(task.Evidence, StringComparison.Ordinal));
+            result.Output.Tasks.Should().OnlyContain(task =>
+                !task.Title.Contains("ignore previous instructions", StringComparison.OrdinalIgnoreCase) &&
+                !task.Title.Contains("tool call", StringComparison.OrdinalIgnoreCase) &&
+                !task.Title.Contains("delete board", StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            result.Outcome.Should().Be(LlmCaptureTriageOutcome.EmptyExtraction);
+            result.Output.Should().BeNull();
         }
     }
 

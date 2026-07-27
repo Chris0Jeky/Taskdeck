@@ -184,7 +184,8 @@ public class CaptureTriageService : ICaptureTriageService
                     Guid.NewGuid(),
                     ProposalId: null,
                     OperationCount: 0,
-                    CaptureTriageOutputContract.PromptVersionLlmV1,
+                    CaptureRequestContract.SanitizeProvenanceMetadata(
+                        extraction.PromptVersion, CaptureRequestContract.MaxPromptVersionLength),
                     CaptureRequestContract.SanitizeProvenanceMetadata(
                         extraction.Provider, CaptureRequestContract.MaxProviderLength),
                     CaptureRequestContract.SanitizeProvenanceMetadata(

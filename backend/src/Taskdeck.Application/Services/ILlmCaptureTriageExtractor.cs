@@ -55,8 +55,8 @@ public enum LlmCaptureTriageOutcome
 /// <summary>
 /// Result of the LLM extraction leg. <see cref="Output"/> is populated only when
 /// <see cref="Outcome"/> is <see cref="LlmCaptureTriageOutcome.Succeeded"/>.
-/// <see cref="Provider"/>/<see cref="Model"/> are populated only when the LLM actually produced a
-/// verdict — <see cref="LlmCaptureTriageOutcome.Succeeded"/> or
+/// <see cref="Provider"/>/<see cref="Model"/>/<see cref="PromptVersion"/> are populated only when
+/// the LLM actually produced a verdict — <see cref="LlmCaptureTriageOutcome.Succeeded"/> or
 /// <see cref="LlmCaptureTriageOutcome.EmptyExtraction"/>; recording them for any other outcome
 /// would be false provenance (#1273).
 /// </summary>
@@ -65,7 +65,8 @@ public sealed record LlmCaptureTriageExtraction(
     CaptureTriageOutputV1? Output = null,
     string? Provider = null,
     string? Model = null,
-    string? Detail = null)
+    string? Detail = null,
+    string? PromptVersion = null)
 {
     public bool Succeeded => Outcome == LlmCaptureTriageOutcome.Succeeded;
 }
