@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-27
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -83,6 +83,7 @@ py -3 -B scripts/agent_hooks/render_failure_ledger.py; if ($LASTEXITCODE -ne 0) 
 py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-docs-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-golden-principles.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+node --test scripts\check-github-ops-governance.test.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
@@ -103,6 +104,7 @@ python3 -B scripts/agent_hooks/render_failure_ledger.py
 python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 node scripts/check-docs-governance.mjs
 node scripts/check-golden-principles.mjs
+node --test scripts/check-github-ops-governance.test.mjs
 node scripts/check-github-ops-governance.mjs
 ```
 

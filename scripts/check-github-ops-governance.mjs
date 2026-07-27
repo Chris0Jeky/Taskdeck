@@ -7,6 +7,21 @@ import { fileURLToPath } from 'node:url'
 
 const errors = []
 
+const expectedParkedStagingGateOnBlock = [
+  'on:',
+  '  workflow_dispatch:',
+  '    inputs:',
+  '      image_tag:',
+  '        description: "Container image tag to deploy (e.g., v0.2.0)"',
+  '        required: true',
+  '        type: string',
+  '      skip_smoke:',
+  '        description: "Skip smoke tests (emergency only)"',
+  '        required: false',
+  '        type: boolean',
+  '        default: false',
+].join('\n')
+
 const requiredIssueTemplateFiles = [
   '.github/ISSUE_TEMPLATE/bug_report.md',
   '.github/ISSUE_TEMPLATE/feature.md',
@@ -141,160 +156,36 @@ async function validateProjectAutomationDocs() {
   }
 }
 
-export function inspectParkedStagingGateTriggers(workflowText) {
-  const lines = workflowText.split(/\r?\n/)
-  const onIndex = lines.findIndex((line) => line === 'on:')
-  if (onIndex < 0) {
-    return { onBlockFound: false, triggerNames: [], unsupportedEntries: [] }
-  }
-
-  const triggerNames = []
-  const unsupportedEntries = []
-  for (let index = onIndex + 1; index < lines.length; index += 1) {
-    const line = lines[index]
-    if (line.length > 0 && !/^\s/.test(line)) {
-      break
-    }
-
-    // This governance contract deliberately requires two-space event keys. Any
-    // unfamiliar entry at that level fails closed instead of being ignored.
-    const eventEntry = line.match(/^ {2}(?!\s)(.*)$/)?.[1]
-    if (!eventEntry || eventEntry.startsWith('#')) {
-      continue
-    }
-
-    const eventMatch = eventEntry.match(
-      /^(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([A-Za-z][\w-]*))\s*:(?:\s*.*)?$/,
-    )
-    if (!eventMatch) {
-      unsupportedEntries.push(eventEntry)
-      continue
-    }
-
-    triggerNames.push(eventMatch[1] ?? eventMatch[2] ?? eventMatch[3])
-  }
-
-  return { onBlockFound: true, triggerNames, unsupportedEntries }
-}
-
 export function retainsReleaseEventHandling(workflowText) {
-  return /github\.event(?:_name|\.release)\b/.test(workflowText) || /\bEVENT_NAME\b/.test(workflowText)
+  const normalizedReferences = workflowText.toLowerCase().replace(/[^a-z0-9_]+/g, '.')
+  return normalizedReferences.includes('event_name') || normalizedReferences.includes('github.event.release')
 }
 
-function parseMappingEntryAtIndent(line, indent) {
-  const content = line.match(new RegExp(`^ {${indent}}(?!\\s)(.*)$`))?.[1]
-  if (!content || content.startsWith('#')) {
-    return null
+export function hasExactParkedStagingGateOnBlock(workflowText) {
+  const normalized = workflowText.replace(/\r\n/g, '\n')
+  const onMatches = [...normalized.matchAll(/^on:[ \t]*$/gm)]
+  if (onMatches.length !== 1) {
+    return false
   }
 
-  const match = content.match(
-    /^(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([A-Za-z][\w-]*))\s*:\s*(.*)$/,
-  )
-  if (!match) {
-    return null
+  const permissionsMatch = [...normalized.matchAll(/^permissions:[ \t]*$/gm)]
+    .find((match) => match.index > onMatches[0].index)
+  if (!permissionsMatch) {
+    return false
   }
 
-  return { key: match[1] ?? match[2] ?? match[3], value: match[4] }
-}
-
-function findDirectChild(lines, parentIndex, parentIndent, childIndent, key) {
-  for (let index = parentIndex + 1; index < lines.length; index += 1) {
-    const line = lines[index]
-    const trimmed = line.trim()
-    if (trimmed.length === 0 || trimmed.startsWith('#')) {
-      continue
-    }
-
-    const indentation = line.match(/^ */)?.[0].length ?? 0
-    if (indentation <= parentIndent) {
-      break
-    }
-
-    const entry = parseMappingEntryAtIndent(line, childIndent)
-    if (entry?.key === key) {
-      return { index, entry }
-    }
-  }
-
-  return null
-}
-
-function normalizeYamlScalar(value) {
-  const withoutComment = value.replace(/\s+#.*$/, '').trim()
-  const quoted = withoutComment.match(/^(?:"([^"]*)"|'([^']*)')$/)
-  return quoted ? (quoted[1] ?? quoted[2]) : withoutComment
-}
-
-export function inspectWorkflowDispatchImageTagInput(workflowText) {
-  const lines = workflowText.split(/\r?\n/)
-  const onIndex = lines.findIndex((line) => line === 'on:')
-  if (onIndex < 0) {
-    return { imageTagFound: false, requiredValues: [], typeValues: [] }
-  }
-
-  const workflowDispatch = findDirectChild(lines, onIndex, 0, 2, 'workflow_dispatch')
-  const inputs = workflowDispatch
-    ? findDirectChild(lines, workflowDispatch.index, 2, 4, 'inputs')
-    : null
-  const imageTag = inputs ? findDirectChild(lines, inputs.index, 4, 6, 'image_tag') : null
-  if (!imageTag) {
-    return { imageTagFound: false, requiredValues: [], typeValues: [] }
-  }
-
-  const requiredValues = []
-  const typeValues = []
-  for (let index = imageTag.index + 1; index < lines.length; index += 1) {
-    const line = lines[index]
-    const trimmed = line.trim()
-    if (trimmed.length === 0 || trimmed.startsWith('#')) {
-      continue
-    }
-
-    const indentation = line.match(/^ */)?.[0].length ?? 0
-    if (indentation <= 6) {
-      break
-    }
-
-    const entry = parseMappingEntryAtIndent(line, 8)
-    if (entry?.key === 'required') {
-      requiredValues.push(normalizeYamlScalar(entry.value))
-    } else if (entry?.key === 'type') {
-      typeValues.push(normalizeYamlScalar(entry.value))
-    }
-  }
-
-  return { imageTagFound: true, requiredValues, typeValues }
+  const actualBlock = normalized
+    .slice(onMatches[0].index, permissionsMatch.index)
+    .trimEnd()
+  return actualBlock === expectedParkedStagingGateOnBlock
 }
 
 export function validateParkedStagingGateWorkflow(workflowText, workflowPath = '.github/workflows/cd-staging-gate.yml') {
   const workflowErrors = []
-  const inspection = inspectParkedStagingGateTriggers(workflowText)
-  if (!inspection.onBlockFound) {
-    return [`${workflowPath} is missing its top-level on block`]
-  }
-
-  if (inspection.unsupportedEntries.length > 0) {
+  if (!hasExactParkedStagingGateOnBlock(workflowText)) {
     workflowErrors.push(
-      `${workflowPath} has unsupported top-level trigger entries: ${inspection.unsupportedEntries.join(', ')}`,
+      `${workflowPath} must retain the exact reviewed manual-only workflow_dispatch/input block`,
     )
-  }
-
-  if (inspection.triggerNames.length !== 1 || inspection.triggerNames[0] !== 'workflow_dispatch') {
-    workflowErrors.push(
-      `${workflowPath} is parked and must remain manual-only; expected only workflow_dispatch, found: ${inspection.triggerNames.join(', ') || '(none)'}`,
-    )
-  }
-
-  const imageTagInput = inspectWorkflowDispatchImageTagInput(workflowText)
-  if (!imageTagInput.imageTagFound) {
-    workflowErrors.push(`${workflowPath} must define workflow_dispatch.inputs.image_tag`)
-  } else {
-    if (imageTagInput.requiredValues.length !== 1 || imageTagInput.requiredValues[0] !== 'true') {
-      workflowErrors.push(`${workflowPath} workflow_dispatch.inputs.image_tag must set required: true exactly once`)
-    }
-    if (imageTagInput.typeValues.length !== 1 || imageTagInput.typeValues[0] !== 'string') {
-      workflowErrors.push(`${workflowPath} workflow_dispatch.inputs.image_tag must set type: string exactly once`)
-    }
   }
 
   if (retainsReleaseEventHandling(workflowText)) {
