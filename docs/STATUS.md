@@ -1225,7 +1225,7 @@ Result:
 
 Required workflow: `.github/workflows/ci-required.yml`
 
-- `docs-governance` reusable call: active-doc/agentic governance (Ubuntu) plus the 26-case
+- `docs-governance` reusable call: active-doc/agentic governance (Ubuntu) plus the 28-case
   detached-first worktree-helper regression harness (Windows PowerShell), including rejection of
   dirty, missing, locally filter-covered, or index-hidden source helper/guard/initializer bytes and
   selected bases whose guard/initializer blobs do not exactly match the invoking checkout's

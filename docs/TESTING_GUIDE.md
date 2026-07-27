@@ -1530,7 +1530,7 @@ Required workflow: `.github/workflows/ci-required.yml`
     Principles, and GitHub-operations invariants
   - Windows `Worktree Helper (Windows PowerShell)` runs
     `powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1`
-    as a 26-case harness enforcing detached-first creation, clean source helper/guard/initializer
+    as a 28-case harness enforcing detached-first creation, clean source helper/guard/initializer
     artifacts (including local clean-filter canaries and index-hidden byte changes), independent
     guard/initializer selected-base blob pinning, fail-closed initialization, and
     permission-contract regressions. The helper's self-check is covered as pre-mutation hygiene, not
