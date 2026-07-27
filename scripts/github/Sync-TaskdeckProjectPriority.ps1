@@ -989,6 +989,38 @@ function Invoke-SelfTest {
         )
     } -MessagePattern "issue-multiple-priority-labels"
 
+    $diagnosticOrderState = [pscustomobject]@{ providerCalls = 0 }
+    $diagnosticOrderItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "unreadable-reference-pr" `
+            -ContentType "PullRequest" `
+            -Number 103 `
+            -Priority "Priority V" `
+            -Body "Refs owner/other#999"),
+        (New-SelfTestItem `
+            -Id "invalid-project-issue-missing" `
+            -Number 101 `
+            -Priority "Priority V" `
+            -Labels @()),
+        (New-SelfTestItem `
+            -Id "invalid-project-issue-multiple" `
+            -Number 102 `
+            -Priority "Priority II" `
+            -Labels @("Priority I", "Priority II"))
+    )
+    $checks += Assert-SelfTestThrows -Action {
+        New-PriorityAuditState `
+            -Items $diagnosticOrderItems `
+            -CanonicalRepository $canonicalRepository `
+            -ReferenceProvider {
+                $diagnosticOrderState.providerCalls++
+                throw "reference resolution must not precede project Issue validation"
+            }
+    } -MessagePattern "2 issue item\(s\).*#101.*issue-missing-priority-label.*#102.*issue-multiple-priority-labels"
+    $checks += Assert-SelfTest `
+        -Condition ($diagnosticOrderState.providerCalls -eq 0) `
+        -Message "all same-repository project Issue label defects must aggregate before PR reference resolution"
+
     $strictFallbackItems = Get-NormalizedSelfTestItems -RawItems @(
         (New-SelfTestItem `
             -Id "strict-fallback-pr" `
@@ -1096,38 +1128,45 @@ function Invoke-SelfTest {
             $multipleAudit.updates[0].reason -ceq "pr-body-reference") `
         -Message "every Issue in a comma-and body clause must contribute to derived Priority"
 
-    $lateCrossRepoProviderState = [pscustomobject]@{ calls = 0 }
-    $lateCrossRepoItems = Get-NormalizedSelfTestItems -RawItems @(
+    $mixedRepositoryProviderState = [pscustomobject]@{ calls = 0 }
+    $mixedRepositoryItems = Get-NormalizedSelfTestItems -RawItems @(
         (New-SelfTestItem `
-            -Id "late-cross-repo-pr" `
+            -Id "mixed-repository-pr" `
             -ContentType "PullRequest" `
             -Priority "Priority V" `
             -Body "Refs #41, owner/other#42")
     )
-    $checks += Assert-SelfTestThrows -Action {
-        New-PriorityAuditState -Items $lateCrossRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
+    $mixedRepositoryAudit = New-PriorityAuditState `
+        -Items $mixedRepositoryItems `
+        -CanonicalRepository $canonicalRepository `
+        -ReferenceProvider {
             param($repositoryName, $issueNumber)
-            $lateCrossRepoProviderState.calls++
-            New-SelfTestReferenceTarget `
-                -RepositoryName $repositoryName `
-                -Number $issueNumber `
-                -Labels @("Priority I")
+            $mixedRepositoryProviderState.calls++
+            $labels = if ($repositoryName -ceq $canonicalRepository) { @("Priority II") } else { @("Priority I") }
+            New-SelfTestReferenceTarget -RepositoryName $repositoryName -Number $issueNumber -Labels $labels
         }
-    } -MessagePattern "Cross-repository Issue reference.*is disabled"
     $checks += Assert-SelfTest `
-        -Condition ($lateCrossRepoProviderState.calls -eq 2) `
-        -Message "a later cross-repository reference in one clause must reach fail-closed validation"
+        -Condition ($mixedRepositoryProviderState.calls -eq 2 -and
+            $mixedRepositoryAudit.updates[0].expectedPriority -ceq "Priority II" -and
+            $mixedRepositoryAudit.updates[0].reason -ceq "pr-body-reference" -and
+            $mixedRepositoryAudit.ignoredIssueReferences.Count -eq 1 -and
+            $mixedRepositoryAudit.ignoredIssueReferences[0].repository -ceq "owner/other" -and
+            $mixedRepositoryAudit.ignoredIssueReferences[0].number -eq 42 -and
+            $mixedRepositoryAudit.audit[0].references -match "owner/other#42:Issue:ignored") `
+        -Message "mixed same- and cross-repository references must rank only the canonical Issue and retain ignored external identity"
 
     $crossRepoProviderState = [pscustomobject]@{ calls = 0 }
     $crossRepoItems = Get-NormalizedSelfTestItems -RawItems @(
         (New-SelfTestItem `
             -Id "cross-repo-pr" `
             -ContentType "PullRequest" `
-            -Priority "Priority V" `
+            -Priority "Priority I" `
             -Body "Refs: owner/other#42")
     )
-    $checks += Assert-SelfTestThrows -Action {
-        New-PriorityAuditState -Items $crossRepoItems -CanonicalRepository $canonicalRepository -ReferenceProvider {
+    $crossRepoAudit = New-PriorityAuditState `
+        -Items $crossRepoItems `
+        -CanonicalRepository $canonicalRepository `
+        -ReferenceProvider {
             param($repositoryName, $issueNumber)
             $crossRepoProviderState.calls++
             New-SelfTestReferenceTarget `
@@ -1135,13 +1174,37 @@ function Invoke-SelfTest {
                 -Number $issueNumber `
                 -Labels @("Priority I")
         }
-    } -MessagePattern "Cross-repository Issue reference.*is disabled"
     $checks += Assert-SelfTest `
-        -Condition ($crossRepoProviderState.calls -eq 1) `
-        -Message "cross-repository body references must be typed before Issue-only policy rejection"
+        -Condition ($crossRepoProviderState.calls -eq 1 -and
+            $crossRepoAudit.updates.Count -eq 1 -and
+            $crossRepoAudit.updates[0].expectedPriority -ceq "Priority V" -and
+            $crossRepoAudit.updates[0].reason -ceq "pr-no-derived-issue-fallback" -and
+            $crossRepoAudit.ignoredIssueReferences.Count -eq 1) `
+        -Message "an external-only Issue reference must remain visible but produce canonical Priority V"
+
+    $crossRepoCorrectItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "cross-repo-correct-pr" `
+            -ContentType "PullRequest" `
+            -Priority "Priority V" `
+            -Body "Refs: owner/other#42")
+    )
+    $crossRepoCorrectAudit = New-PriorityAuditState `
+        -Items $crossRepoCorrectItems `
+        -CanonicalRepository $canonicalRepository `
+        -ReferenceProvider {
+            param($repositoryName, $issueNumber)
+            New-SelfTestReferenceTarget -RepositoryName $repositoryName -Number $issueNumber -Labels @("Priority I")
+        }
+    $checks += Assert-SelfTest `
+        -Condition ($crossRepoCorrectAudit.updates.Count -eq 0 -and
+            $crossRepoCorrectAudit.audit[0].expectedPriority -ceq "Priority V" -and
+            $crossRepoCorrectAudit.audit[0].ignoredIssueReferenceCount -eq 1 -and
+            $crossRepoCorrectAudit.audit[0].ignoredIssueReferences -ceq "body:owner/other#42") `
+        -Message "a correctly assigned external-only PR must retain ignored identity even when no update is needed"
 
     $crossRepoPullRequestAudit = New-PriorityAuditState `
-        -Items $crossRepoItems `
+        -Items $crossRepoCorrectItems `
         -CanonicalRepository $canonicalRepository `
         -ReferenceProvider {
             param($repositoryName, $issueNumber)
@@ -1154,6 +1217,7 @@ function Invoke-SelfTest {
     $checks += Assert-SelfTest `
         -Condition ($crossRepoPullRequestAudit.updates.Count -eq 0 -and
             $crossRepoPullRequestAudit.audit[0].expectedPriority -ceq "Priority V" -and
+            $crossRepoPullRequestAudit.ignoredIssueReferences.Count -eq 0 -and
             $crossRepoPullRequestAudit.audit[0].references -match ":PullRequest$") `
         -Message "validated cross-repository PullRequest references must remain ignorable"
 
@@ -1166,14 +1230,68 @@ function Invoke-SelfTest {
             -Id "cross-repo-closing-pr" `
             -ContentType "PullRequest" `
             -Priority "Priority V" `
+            -Body "Refs #43" `
             -ClosingIssues @($crossRepoClosingIssue))
     )
-    $checks += Assert-SelfTestThrows -Action {
-        New-PriorityAuditState `
-            -Items $crossRepoClosingItems `
-            -CanonicalRepository $canonicalRepository `
-            -ReferenceProvider { throw "Unexpected provider call" }
-    } -MessagePattern "Cross-repository Issue reference.*is disabled"
+    $crossRepoClosingProviderState = [pscustomobject]@{ calls = 0; number = 0 }
+    $crossRepoClosingAudit = New-PriorityAuditState `
+        -Items $crossRepoClosingItems `
+        -CanonicalRepository $canonicalRepository `
+        -ReferenceProvider {
+            param($repositoryName, $issueNumber)
+            $crossRepoClosingProviderState.calls++
+            $crossRepoClosingProviderState.number = $issueNumber
+            New-SelfTestReferenceTarget -RepositoryName $repositoryName -Number $issueNumber -Labels @("Priority III")
+        }
+    $checks += Assert-SelfTest `
+        -Condition ($crossRepoClosingProviderState.calls -eq 1 -and
+            $crossRepoClosingProviderState.number -eq 43 -and
+            $crossRepoClosingAudit.updates[0].expectedPriority -ceq "Priority III" -and
+            $crossRepoClosingAudit.updates[0].reason -ceq "pr-body-reference" -and
+            $crossRepoClosingAudit.ignoredIssueReferences.Count -eq 1 -and
+            $crossRepoClosingAudit.ignoredIssueReferences[0].source -ceq "closing") `
+        -Message "external closing Issues must stay visible while allowing canonical body-reference fallback"
+
+    $externalOnlyClosingIssue = New-SelfTestClosingIssue `
+        -RepositoryName "owner/other" `
+        -Number 44 `
+        -Labels @("Priority I")
+    $externalOnlyClosingIncorrectItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "external-only-closing-incorrect" `
+            -ContentType "PullRequest" `
+            -Number 104 `
+            -Priority "Priority I" `
+            -ClosingIssues @($externalOnlyClosingIssue))
+    )
+    $externalOnlyClosingIncorrectAudit = New-PriorityAuditState `
+        -Items $externalOnlyClosingIncorrectItems `
+        -CanonicalRepository $canonicalRepository `
+        -ReferenceProvider { throw "external closing Issue must not require a provider" }
+    $checks += Assert-SelfTest `
+        -Condition ($externalOnlyClosingIncorrectAudit.updates.Count -eq 1 -and
+            $externalOnlyClosingIncorrectAudit.updates[0].expectedPriority -ceq "Priority V" -and
+            $externalOnlyClosingIncorrectAudit.ignoredIssueReferences.Count -eq 1 -and
+            $externalOnlyClosingIncorrectAudit.ignoredIssueReferences[0].key -ceq "owner/other#44") `
+        -Message "an incorrect external-only closing Issue PR must fall back to Priority V without trusting external labels"
+
+    $externalOnlyClosingCorrectItems = Get-NormalizedSelfTestItems -RawItems @(
+        (New-SelfTestItem `
+            -Id "external-only-closing-correct" `
+            -ContentType "PullRequest" `
+            -Number 105 `
+            -Priority "Priority V" `
+            -ClosingIssues @($externalOnlyClosingIssue))
+    )
+    $externalOnlyClosingCorrectAudit = New-PriorityAuditState `
+        -Items $externalOnlyClosingCorrectItems `
+        -CanonicalRepository $canonicalRepository `
+        -ReferenceProvider { throw "external closing Issue must not require a provider" }
+    $checks += Assert-SelfTest `
+        -Condition ($externalOnlyClosingCorrectAudit.updates.Count -eq 0 -and
+            $externalOnlyClosingCorrectAudit.audit[0].expectedPriority -ceq "Priority V" -and
+            $externalOnlyClosingCorrectAudit.ignoredIssueReferences.Count -eq 1) `
+        -Message "a correct external-only closing Issue PR must remain visible without a synthetic update"
 
     $crossRepoProjectIssueItems = Get-NormalizedSelfTestItems -RawItems @(
         (New-SelfTestItem `
@@ -1188,7 +1306,7 @@ function Invoke-SelfTest {
             -Items $crossRepoProjectIssueItems `
             -CanonicalRepository $canonicalRepository `
             -ReferenceProvider { throw "Unexpected provider call" }
-    } -MessagePattern "Cross-repository Issue reference.*is disabled"
+    } -MessagePattern "Cross-repository project content.*is disabled"
 
     $crossRepoProjectPullRequestItems = Get-NormalizedSelfTestItems -RawItems @(
         (New-SelfTestItem `
@@ -1343,6 +1461,98 @@ function Invoke-SelfTest {
     $checks += Assert-SelfTest `
         -Condition ($sourceGuardState.providerCalls -eq 1 -and $sourceGuardState.writes -eq 0) `
         -Message "source drift must abort before item-edit"
+
+    $ignoredFingerprintInitialSnapshot = Get-SelfTestSnapshot -Pages @{
+        "<start>" = New-SelfTestResponse `
+            -TotalCount 1 `
+            -Nodes @((New-SelfTestItem `
+                -Id "ignored-fingerprint-pr" `
+                -ContentType "PullRequest" `
+                -Number 106 `
+                -Priority "Priority I" `
+                -Body "Refs owner/other#42")) `
+            -HasNextPage $false `
+            -EndCursor $null
+    }
+    $ignoredFingerprintCurrentSnapshot = Get-SelfTestSnapshot -Pages @{
+        "<start>" = New-SelfTestResponse `
+            -TotalCount 1 `
+            -Nodes @((New-SelfTestItem `
+                -Id "ignored-fingerprint-pr" `
+                -ContentType "PullRequest" `
+                -Number 106 `
+                -Priority "Priority I" `
+                -Body "Refs owner/other#43")) `
+            -HasNextPage $false `
+            -EndCursor $null
+    }
+    $ignoredFingerprintInitialAudit = New-PriorityAuditState `
+        -Items $ignoredFingerprintInitialSnapshot.items `
+        -CanonicalRepository $canonicalRepository `
+        -ReferenceProvider {
+            param($repositoryName, $issueNumber)
+            New-SelfTestReferenceTarget -RepositoryName $repositoryName -Number $issueNumber -Labels @("Priority I")
+        }
+    $ignoredFingerprintCurrentAudit = New-PriorityAuditState `
+        -Items $ignoredFingerprintCurrentSnapshot.items `
+        -CanonicalRepository $canonicalRepository `
+        -ReferenceProvider {
+            param($repositoryName, $issueNumber)
+            New-SelfTestReferenceTarget -RepositoryName $repositoryName -Number $issueNumber -Labels @("Priority I")
+        }
+    $checks += Assert-SelfTest `
+        -Condition (-not [string]::Equals(
+                $ignoredFingerprintInitialAudit.sourceFingerprint,
+                $ignoredFingerprintCurrentAudit.sourceFingerprint,
+                [System.StringComparison]::Ordinal) -and
+            [string]::Equals(
+                $ignoredFingerprintInitialAudit.planFingerprint,
+                $ignoredFingerprintCurrentAudit.planFingerprint,
+                [System.StringComparison]::Ordinal) -and
+            $ignoredFingerprintInitialAudit.ignoredIssueReferences[0].key -ceq "owner/other#42" -and
+            $ignoredFingerprintCurrentAudit.ignoredIssueReferences[0].key -ceq "owner/other#43") `
+        -Message "ignored external Issue identity drift must change source evidence without changing the update plan"
+    $ignoredFingerprintInitialState = New-PriorityExecutionState `
+        -Snapshot $ignoredFingerprintInitialSnapshot `
+        -AuditState $ignoredFingerprintInitialAudit `
+        -PriorityFieldId $priorityFieldId `
+        -StatusFieldId $statusFieldId `
+        -OptionMap $testOptionMap
+    $ignoredFingerprintCurrentState = New-PriorityExecutionState `
+        -Snapshot $ignoredFingerprintCurrentSnapshot `
+        -AuditState $ignoredFingerprintCurrentAudit `
+        -PriorityFieldId $priorityFieldId `
+        -StatusFieldId $statusFieldId `
+        -OptionMap $testOptionMap
+    $ignoredFingerprintReport = New-PriorityReportState `
+        -InitialState $ignoredFingerprintInitialState `
+        -ApplyOutcome $null
+    $checks += Assert-SelfTest `
+        -Condition ($ignoredFingerprintReport.ignoredIssueReferences.Count -eq 1 -and
+            $ignoredFingerprintReport.ignoredIssueReferences[0].itemId -ceq "ignored-fingerprint-pr" -and
+            $ignoredFingerprintReport.ignoredIssueReferences[0].pullRequestRepository -ceq $canonicalRepository -and
+            $ignoredFingerprintReport.ignoredIssueReferences[0].pullRequestNumber -eq 106 -and
+            $ignoredFingerprintReport.ignoredIssueReferences[0].source -ceq "body" -and
+            $ignoredFingerprintReport.ignoredIssueReferences[0].repository -ceq "owner/other" -and
+            $ignoredFingerprintReport.ignoredIssueReferences[0].number -eq 42 -and
+            $ignoredFingerprintReport.ignoredIssueReferences[0].key -ceq "owner/other#42") `
+        -Message "report output state must retain the exact ignored external Issue occurrence"
+    $ignoredFingerprintGuardState = [pscustomobject]@{ currentChecks = 0; writes = 0 }
+    $checks += Assert-SelfTestThrows -Action {
+        Invoke-PriorityUpdatePlan `
+            -InitialState $ignoredFingerprintInitialState `
+            -OptionMap $testOptionMap `
+            -CurrentStateProvider {
+                $ignoredFingerprintGuardState.currentChecks++
+                $ignoredFingerprintCurrentState
+            } `
+            -ItemWriter {
+                $ignoredFingerprintGuardState.writes++
+            }
+    } -MessagePattern "derivation/write plan drifted"
+    $checks += Assert-SelfTest `
+        -Condition ($ignoredFingerprintGuardState.currentChecks -eq 1 -and $ignoredFingerprintGuardState.writes -eq 0) `
+        -Message "ignored external Issue drift must abort Apply before the first write"
 
     $missingOptionMap = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
     $missingOptionMap.Add("Priority I", "option-i")
@@ -1598,9 +1808,12 @@ function Get-BodyIssueReferences {
 
 function Get-PullRequestIssueReferences {
     param(
-        [object]$Content
+        [object]$Content,
+        [Parameter(Mandatory = $true)]
+        [string]$CanonicalRepository
     )
 
+    $canonicalRepositoryKey = Get-RepositoryKey -RepositoryName $CanonicalRepository
     $closingReferences = @($Content.closingIssues | ForEach-Object {
         $key = Get-IssueReferenceKey -RepositoryName $_.repository -Number $_.number
         [pscustomobject]@{
@@ -1610,12 +1823,22 @@ function Get-PullRequestIssueReferences {
             key = $key
         }
     })
-    if ($closingReferences.Count -gt 0) {
-        $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-        return @($closingReferences | Where-Object { $seen.Add($_.key) })
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $distinctClosingReferences = @($closingReferences | Where-Object { $seen.Add($_.key) })
+    $hasCanonicalClosingIssue = @($distinctClosingReferences | Where-Object {
+        [string]::Equals(
+            (Get-RepositoryKey -RepositoryName ([string]$_.repository)),
+            $canonicalRepositoryKey,
+            [System.StringComparison]::Ordinal)
+    }).Count -gt 0
+    if ($hasCanonicalClosingIssue) {
+        return $distinctClosingReferences
     }
 
-    @(Get-BodyIssueReferences -Body $Content.body -DefaultRepository $Content.repository)
+    $bodyReferences = @(Get-BodyIssueReferences -Body $Content.body -DefaultRepository $Content.repository)
+    $additionalBodyReferences = @($bodyReferences | Where-Object { $seen.Add($_.key) })
+    @($distinctClosingReferences + $additionalBodyReferences)
 }
 
 function Get-LabelSignature {
@@ -1664,18 +1887,15 @@ function New-IssueLabelCache {
             continue
         }
         if ($item.content.type -eq "Issue") {
-            Assert-CanonicalIssueReference `
-                -RepositoryName $item.content.repository `
-                -Number $item.content.number `
-                -CanonicalRepository $CanonicalRepository
             Add-IssueLabelsToCache -Cache $cache -RepositoryName $item.content.repository -Number $item.content.number -Labels $item.labels
         } elseif ($item.content.type -eq "PullRequest") {
             foreach ($closingIssue in @($item.content.closingIssues)) {
-                Assert-CanonicalIssueReference `
-                    -RepositoryName $closingIssue.repository `
-                    -Number $closingIssue.number `
-                    -CanonicalRepository $CanonicalRepository
-                Add-IssueLabelsToCache -Cache $cache -RepositoryName $closingIssue.repository -Number $closingIssue.number -Labels $closingIssue.labels
+                if ([string]::Equals(
+                        (Get-RepositoryKey -RepositoryName ([string]$closingIssue.repository)),
+                        (Get-RepositoryKey -RepositoryName $CanonicalRepository),
+                        [System.StringComparison]::Ordinal)) {
+                    Add-IssueLabelsToCache -Cache $cache -RepositoryName $closingIssue.repository -Number $closingIssue.number -Labels $closingIssue.labels
+                }
             }
         }
     }
@@ -1690,6 +1910,21 @@ function Resolve-PriorityReferenceTarget {
         [string]$CanonicalRepository,
         [scriptblock]$ReferenceProvider
     )
+
+    $canonicalRepositoryKey = Get-RepositoryKey -RepositoryName $CanonicalRepository
+    $referenceRepositoryKey = Get-RepositoryKey -RepositoryName ([string]$Reference.repository)
+    $isCanonicalReference = [string]::Equals(
+        $referenceRepositoryKey,
+        $canonicalRepositoryKey,
+        [System.StringComparison]::Ordinal)
+
+    if (-not $isCanonicalReference -and $Reference.source -ceq "closing") {
+        return [pscustomobject]@{
+            type = "Issue"
+            priority = $null
+            ignoredIssue = $true
+        }
+    }
 
     if ($IssueLabelCache.ContainsKey($Reference.key)) {
         Assert-CanonicalIssueReference `
@@ -1734,6 +1969,15 @@ function Resolve-PriorityReferenceTarget {
             return [pscustomobject]@{
                 type = "PullRequest"
                 priority = $null
+                ignoredIssue = $false
+            }
+        }
+
+        if (-not $isCanonicalReference) {
+            return [pscustomobject]@{
+                type = "Issue"
+                priority = $null
+                ignoredIssue = $true
             }
         }
 
@@ -1760,13 +2004,15 @@ function Resolve-PriorityReferenceTarget {
     [pscustomobject]@{
         type = "Issue"
         priority = [string]$priorityLabels[0]
+        ignoredIssue = $false
     }
 }
 
 function Get-PriorityAuditFingerprints {
     param(
         [object[]]$AuditItems,
-        [object]$IssueLabelCache
+        [object]$IssueLabelCache,
+        [object[]]$IgnoredIssueReferences
     )
 
     $auditById = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
@@ -1781,6 +2027,8 @@ function Get-PriorityAuditFingerprints {
             expectedPriority = [string]$item.expectedPriority
             reason = [string]$item.reason
             references = [string]$item.references
+            ignoredIssueReferenceCount = [int]$item.ignoredIssueReferenceCount
+            ignoredIssueReferences = [string]$item.ignoredIssueReferences
             needsUpdate = [bool]$item.needsUpdate
         })
     }
@@ -1793,6 +2041,23 @@ function Get-PriorityAuditFingerprints {
     $orderedSources = @($issueKeys | ForEach-Object {
         [pscustomobject]@{ key = $_; labels = $IssueLabelCache[$_].labelSignature }
     })
+
+    $ignoredByIdentity = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
+    foreach ($ignored in @($IgnoredIssueReferences)) {
+        $identity = "$([string]$ignored.itemId)$([char]31)$([string]$ignored.source)$([char]31)$([string]$ignored.key)"
+        $ignoredByIdentity.Add($identity, [pscustomobject]@{
+            itemId = [string]$ignored.itemId
+            pullRequestRepository = [string]$ignored.pullRequestRepository
+            pullRequestNumber = [int]$ignored.pullRequestNumber
+            source = [string]$ignored.source
+            repository = [string]$ignored.repository
+            number = [int]$ignored.number
+            key = [string]$ignored.key
+        })
+    }
+    [string[]]$ignoredIdentities = @($ignoredByIdentity.Keys)
+    [Array]::Sort($ignoredIdentities, [System.StringComparer]::Ordinal)
+    $orderedIgnored = @($ignoredIdentities | ForEach-Object { $ignoredByIdentity[$_] })
 
     $updatesById = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
     foreach ($item in @($AuditItems | Where-Object { $_.needsUpdate })) {
@@ -1807,7 +2072,11 @@ function Get-PriorityAuditFingerprints {
     $orderedPlan = @($updateIds | ForEach-Object { $updatesById[$_] })
 
     [pscustomobject]@{
-        source = ([pscustomobject]@{ audit = $orderedAudit; issueLabels = $orderedSources } | ConvertTo-Json -Compress -Depth 8)
+        source = ([pscustomobject]@{
+            audit = $orderedAudit
+            issueLabels = $orderedSources
+            ignoredIssueReferences = $orderedIgnored
+        } | ConvertTo-Json -Compress -Depth 8)
         plan = ($orderedPlan | ConvertTo-Json -Compress -Depth 5)
     }
 }
@@ -1821,8 +2090,7 @@ function New-PriorityAuditState {
     )
 
     $canonicalRepositoryKey = Get-RepositoryKey -RepositoryName $CanonicalRepository
-    $issueLabelCache = New-IssueLabelCache -Items $Items -CanonicalRepository $CanonicalRepository
-    $audit = @(foreach ($item in $Items) {
+    foreach ($item in $Items) {
         $content = $item.content
         if ($null -eq $content) {
             continue
@@ -1833,6 +2101,40 @@ function New-PriorityAuditState {
                 $canonicalRepositoryKey,
                 [System.StringComparison]::Ordinal)) {
             throw "Cross-repository project content '$($content.repository)#$($content.number)' is disabled; canonical repository is '$CanonicalRepository'."
+        }
+    }
+
+    $projectIssueAudit = @(foreach ($item in $Items) {
+        $content = $item.content
+        if ($null -eq $content -or $content.type -cne "Issue") {
+            continue
+        }
+
+        $priorityLabels = @(Get-PriorityLabels -Labels $item.labels)
+        $expectedPriority = if ($priorityLabels.Count -eq 1) { [string]$priorityLabels[0] } else { $null }
+        $reason = if ($priorityLabels.Count -eq 0) {
+            "issue-missing-priority-label"
+        } elseif ($priorityLabels.Count -gt 1) {
+            "issue-multiple-priority-labels"
+        } else {
+            "issue-label"
+        }
+        [pscustomobject]@{
+            contentType = "Issue"
+            number = $content.number
+            expectedPriority = $expectedPriority
+            actualPriority = [string]$item.priority
+            reason = $reason
+        }
+    })
+    Assert-AuditableIssuePriorities -AuditItems $projectIssueAudit
+
+    $issueLabelCache = New-IssueLabelCache -Items $Items -CanonicalRepository $CanonicalRepository
+    $ignoredIssueReferences = [System.Collections.Generic.List[object]]::new()
+    $audit = @(foreach ($item in $Items) {
+        $content = $item.content
+        if ($null -eq $content) {
+            continue
         }
 
         $expectedPriority = $null
@@ -1851,7 +2153,7 @@ function New-PriorityAuditState {
                 $reason = "issue-multiple-priority-labels"
             }
         } elseif ($content.type -eq "PullRequest") {
-            $references = @(Get-PullRequestIssueReferences -Content $content)
+            $references = @(Get-PullRequestIssueReferences -Content $content -CanonicalRepository $CanonicalRepository)
             if ($references.Count -gt 0) {
                 $referenceTargets = @($references | ForEach-Object {
                     Resolve-PriorityReferenceTarget `
@@ -1860,10 +2162,29 @@ function New-PriorityAuditState {
                         -CanonicalRepository $CanonicalRepository `
                         -ReferenceProvider $ReferenceProvider
                 })
-                $referencedPriorities = @($referenceTargets | Where-Object { $_.type -ceq "Issue" } | ForEach-Object { $_.priority })
+                for ($referenceIndex = 0; $referenceIndex -lt $references.Count; $referenceIndex++) {
+                    if ([bool]$referenceTargets[$referenceIndex].ignoredIssue) {
+                        $ignoredIssueReferences.Add([pscustomobject]@{
+                            itemId = [string]$item.id
+                            pullRequestRepository = [string]$content.repository
+                            pullRequestNumber = [int]$content.number
+                            source = [string]$references[$referenceIndex].source
+                            repository = [string]$references[$referenceIndex].repository
+                            number = [int]$references[$referenceIndex].number
+                            key = [string]$references[$referenceIndex].key
+                        }) | Out-Null
+                    }
+                }
+                $authoritativeReferenceIndexes = @(for ($referenceIndex = 0; $referenceIndex -lt $references.Count; $referenceIndex++) {
+                    if ($referenceTargets[$referenceIndex].type -ceq "Issue" -and
+                        -not [bool]$referenceTargets[$referenceIndex].ignoredIssue) {
+                        $referenceIndex
+                    }
+                })
+                $referencedPriorities = @($authoritativeReferenceIndexes | ForEach-Object { $referenceTargets[$_].priority })
                 if ($referencedPriorities.Count -gt 0) {
                     $expectedPriority = [string](@($referencedPriorities | Sort-Object { $priorityRank[$_] })[0])
-                    $reason = if ($references[0].source -eq "closing") { "pr-closing-issue" } else { "pr-body-reference" }
+                    $reason = if ($references[$authoritativeReferenceIndexes[0]].source -eq "closing") { "pr-closing-issue" } else { "pr-body-reference" }
                 } else {
                     $expectedPriority = "Priority V"
                     $reason = "pr-no-derived-issue-fallback"
@@ -1880,8 +2201,12 @@ function New-PriorityAuditState {
         $needsUpdate = -not [string]::IsNullOrWhiteSpace($expectedPriority) -and
             -not [string]::Equals($actualPriority, $expectedPriority, [System.StringComparison]::Ordinal)
         $referenceText = @(for ($referenceIndex = 0; $referenceIndex -lt $references.Count; $referenceIndex++) {
-            "$($references[$referenceIndex].source):$($references[$referenceIndex].repository)#$($references[$referenceIndex].number):$($referenceTargets[$referenceIndex].type)"
+            $authority = if ([bool]$referenceTargets[$referenceIndex].ignoredIssue) { ":ignored" } else { "" }
+            "$($references[$referenceIndex].source):$($references[$referenceIndex].repository)#$($references[$referenceIndex].number):$($referenceTargets[$referenceIndex].type)$authority"
         }) -join ", "
+        $itemIgnoredIssueReferences = @($ignoredIssueReferences | Where-Object {
+            [string]::Equals([string]$_.itemId, [string]$item.id, [System.StringComparison]::Ordinal)
+        })
 
         [pscustomobject]@{
             itemId = $item.id
@@ -1895,15 +2220,21 @@ function New-PriorityAuditState {
             expectedPriority = $expectedPriority
             reason = $reason
             references = $referenceText
+            ignoredIssueReferenceCount = $itemIgnoredIssueReferences.Count
+            ignoredIssueReferences = @($itemIgnoredIssueReferences | ForEach-Object { "$($_.source):$($_.repository)#$($_.number)" }) -join ", "
             needsUpdate = $needsUpdate
         }
     })
 
-    Assert-AuditableIssuePriorities -AuditItems $audit
-    $fingerprints = Get-PriorityAuditFingerprints -AuditItems $audit -IssueLabelCache $issueLabelCache
+    $ignoredIssueReferenceArray = $ignoredIssueReferences.ToArray()
+    $fingerprints = Get-PriorityAuditFingerprints `
+        -AuditItems $audit `
+        -IssueLabelCache $issueLabelCache `
+        -IgnoredIssueReferences $ignoredIssueReferenceArray
     [pscustomobject]@{
         audit = $audit
         updates = @($audit | Where-Object { $_.needsUpdate })
+        ignoredIssueReferences = $ignoredIssueReferenceArray
         sourceFingerprint = $fingerprints.source
         planFingerprint = $fingerprints.plan
     }
@@ -1975,6 +2306,7 @@ function New-PriorityExecutionState {
         guardFingerprint = $guard
         audit = $AuditState.audit
         updates = $AuditState.updates
+        ignoredIssueReferences = @($AuditState.ignoredIssueReferences)
         snapshot = $Snapshot
     }
 }
@@ -2107,6 +2439,7 @@ function New-PriorityReportState {
         snapshot = $currentState.snapshot
         audit = @($currentState.audit)
         updates = @($currentState.updates)
+        ignoredIssueReferences = @($currentState.ignoredIssueReferences)
         plannedItems = $plannedItems
         plannedCount = $plannedItems.Count
         attemptedCount = $attemptedCount
@@ -2249,6 +2582,7 @@ $snapshot = $reportState.snapshot
 $items = @($snapshot.items)
 $audit = @($reportState.audit)
 $updates = @($reportState.updates)
+$ignoredIssueReferences = @($reportState.ignoredIssueReferences)
 
 if ($Json) {
     [pscustomobject]@{
@@ -2262,6 +2596,8 @@ if ($Json) {
         pages = $snapshot.pageCount
         projectUpdatedAt = $snapshot.projectUpdatedAt
         limit = $Limit
+        ignoredIssueReferenceCount = $ignoredIssueReferences.Count
+        ignoredIssueReferences = $ignoredIssueReferences
         needsUpdate = $updates.Count
         planned = $reportState.plannedCount
         writerAttempts = $reportState.attemptedCount
@@ -2278,6 +2614,7 @@ Write-Host ""
 Write-Host "Project: $($project.title) (#$ProjectNumber)"
 Write-Host "Items scanned: $($items.Count)"
 Write-Host "Completeness: COMPLETE ($($items.Count)/$($snapshot.totalCount) items across $($snapshot.pageCount) pages; project updatedAt $($snapshot.projectUpdatedAt))"
+Write-Host "Ignored cross-repository Issue references: $($ignoredIssueReferences.Count)"
 Write-Host "Items needing priority sync: $($updates.Count)"
 if ($Apply) {
     Write-Host "Initial updates planned: $($reportState.plannedCount)"
@@ -2286,6 +2623,13 @@ if ($Apply) {
     Write-Host "Post-Apply complete audit: VERIFIED"
 }
 Write-Host ""
+
+foreach ($ignoredReference in $ignoredIssueReferences) {
+    Write-Host "- Ignored $($ignoredReference.source) reference $($ignoredReference.repository)#$($ignoredReference.number) from PullRequest $($ignoredReference.pullRequestRepository)#$($ignoredReference.pullRequestNumber) (non-authoritative)"
+}
+if ($ignoredIssueReferences.Count -gt 0) {
+    Write-Host ""
+}
 
 if ($updates.Count -eq 0) {
     Write-Host "Complete audit confirmed all issue/PR items have the expected Priority field value."
