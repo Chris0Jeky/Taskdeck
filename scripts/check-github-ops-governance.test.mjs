@@ -81,6 +81,13 @@ test('recognizes stale release-event branches despite shell quoting variations',
   assert.equal(retainsReleaseEventHandling('tag: ${{ inputs.image_tag }}'), false)
 })
 
+test('accepts event-name diagnostics and non-release conditions', () => {
+  assert.equal(retainsReleaseEventHandling("if: github.event_name == 'workflow_dispatch'"), false)
+  assert.equal(retainsReleaseEventHandling('run: echo "${{ github.event_name }}"'), false)
+  assert.equal(retainsReleaseEventHandling("if: github['event_name'] != ''"), false)
+  assert.equal(retainsReleaseEventHandling('run: echo "$GITHUB_EVENT_NAME"'), false)
+})
+
 test('detects a non-required image_tag input', () => {
   const workflow = `on:
   workflow_dispatch:

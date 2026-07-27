@@ -145,8 +145,24 @@ async function validateProjectAutomationDocs() {
 }
 
 export function retainsReleaseEventHandling(workflowText) {
-  const normalizedReferences = workflowText.toLowerCase().replace(/[^a-z0-9_]+/g, '.')
-  return normalizedReferences.includes('event_name') || normalizedReferences.includes('github.event.release')
+  const normalizedContextReferences = workflowText
+    .toLowerCase()
+    .replace(/\[\s*['"]([a-z0-9_]+)['"]\s*\]/g, '.$1')
+    .replace(/\s*\.\s*/g, '.')
+
+  if (/\bgithub\.event\.release\b/.test(normalizedContextReferences)) {
+    return true
+  }
+
+  const eventNameReference = String.raw`(?:github\s*(?:\.\s*event_name|\[\s*['"]event_name['"]\s*\])|["']?\$(?:\{(?:github_)?event_name\}|(?:github_)?event_name)["']?|["']?\$env:(?:github_)?event_name["']?|%(?:github_)?event_name%)`
+  const releaseLiteral = String.raw`(?:['"]release['"]|\brelease\b)`
+  const comparisonOperator = String.raw`(?:={1,3}|!=|-eq|-ne)`
+  const releaseComparison = new RegExp(
+    `(?:${eventNameReference})\\s*${comparisonOperator}\\s*${releaseLiteral}|${releaseLiteral}\\s*${comparisonOperator}\\s*(?:${eventNameReference})`,
+    'i',
+  )
+
+  return releaseComparison.test(workflowText)
 }
 
 export function hasExpectedParkedStagingGateWorkflow(workflowText) {
