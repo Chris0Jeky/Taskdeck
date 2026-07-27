@@ -38,7 +38,7 @@ try {
 
     $stderrPath = [IO.Path]::GetTempFileName()
     try {
-        $output = @(& $launcher -3 -B $core @AdapterArguments 2> $stderrPath)
+        $output = @(& $launcher -3 -I -B $core @AdapterArguments 2> $stderrPath)
         $code = $LASTEXITCODE
         $stderr = [IO.File]::ReadAllText($stderrPath)
     }

@@ -181,6 +181,11 @@ if (Test-Path Env:GIT_CONFIG_GLOBAL) {
 $Producer = (& git -C $HarnessRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($Producer -ne $ExpectedProducer) { throw "Reviewed agent-harness identity changed: $Producer" }
+$ReviewedProducerPaths = @("harness.py", "templates/hooks/dispatch.py", "templates/hooks/smoke_test.py")
+& git -C $HarnessRoot diff --quiet -- $ReviewedProducerPaths
+if ($LASTEXITCODE -ne 0) { throw "Reviewed producer files have unstaged changes" }
+& git -C $HarnessRoot diff --cached --quiet -- $ReviewedProducerPaths
+if ($LASTEXITCODE -ne 0) { throw "Reviewed producer files have staged changes" }
 
 $ActualPin = (& py -3 -B -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); t=p.read_text(encoding='utf-8').replace(chr(13)+chr(10),chr(10)).replace(chr(13),chr(10)); print(hashlib.sha256(t.encode('utf-8')).hexdigest())" "$HarnessRoot\templates\hooks\dispatch.py").Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -207,6 +212,8 @@ Get-Content -Raw .codex\hooks.json | ConvertFrom-Json -ErrorAction Stop | Out-Nu
 
 `doctor` must report one canonical root handler, one candidate, one current
 audit-marker handler, a clean adapter contract, and no activation blocker.
+The producer identity check also requires the exact `harness.py`, dispatcher,
+and smoke paths to match their committed blobs before either program executes.
 The broader harness audit may remain red on separately tracked instruction-budget
 or stale-path hygiene; the block records those issues but still fails on invalid
 output, an unproven reality check, or a declared-vs-real mismatch. The adapter suite

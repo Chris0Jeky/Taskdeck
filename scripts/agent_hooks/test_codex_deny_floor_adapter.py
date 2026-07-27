@@ -143,6 +143,29 @@ class CodexDenyFloorAdapterTests(unittest.TestCase):
             json.dumps({"tool_name": "Bash", "tool_input": []}),
             json.dumps({"tool_name": "Bash", "tool_input": {"command": ""}}),
             json.dumps({"tool_name": "Bash", "tool_input": {"command": 42}}),
+            json.dumps(
+                {
+                    "hook_event_name": "PostToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "git status"},
+                    "cwd": str(ROOT),
+                }
+            ),
+            json.dumps(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "git status"},
+                }
+            ),
+            json.dumps(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "git status"},
+                    "cwd": "relative/path",
+                }
+            ),
         )
         for raw in malformed:
             with self.subTest(raw=raw), self.assertRaises(adapter.AdapterFailure):
@@ -161,6 +184,25 @@ class CodexDenyFloorAdapterTests(unittest.TestCase):
             with self.assertRaisesRegex(adapter.AdapterFailure, "identity differs"):
                 adapter.invoke_dispatcher(
                     payload(), dispatcher, expected_hash="0" * 64, timeout_seconds=1.0
+                )
+
+    def test_dispatcher_replacement_during_execution_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            dispatcher, digest = self.make_dispatcher(Path(directory), "pass")
+
+            def replacing_runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                dispatcher.write_text(
+                    f'FLOOR_VERSION = "{adapter.EXPECTED_FLOOR_VERSION}"\n# replaced\n',
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess([], 0, "", "")
+
+            with self.assertRaisesRegex(adapter.AdapterFailure, "identity differs"):
+                adapter.invoke_dispatcher(
+                    payload(),
+                    dispatcher,
+                    expected_hash=digest,
+                    runner=replacing_runner,
                 )
 
     def test_empty_success_is_the_only_allow_shape(self) -> None:
@@ -184,7 +226,12 @@ class CodexDenyFloorAdapterTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertNotIn("2>$null", windows_launcher)
+        self.assertIn("-3 -I -B", windows_launcher)
         self.assertIn("Windows bridge wrote unexpected diagnostic output", windows_launcher)
+        posix_launcher = (ROOT / ".codex" / "invoke_deny_floor.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"$python" -I -B', posix_launcher)
 
     def test_valid_deny_is_attributed_and_unknown_fields_are_preserved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -269,6 +316,12 @@ class CodexDenyFloorAdapterTests(unittest.TestCase):
         environment["HOME"] = "C:\\foreign\\runtime-home"
         environment["GH_HOST"] = "hostile.enterprise.invalid"
         environment.pop("GIT_CONFIG_GLOBAL", None)
+        hostile_pythonpath = tempfile.TemporaryDirectory()
+        self.addCleanup(hostile_pythonpath.cleanup)
+        Path(hostile_pythonpath.name, "json.py").write_text(
+            "raise RuntimeError('hostile PYTHONPATH was imported')\n", encoding="utf-8"
+        )
+        environment["PYTHONPATH"] = hostile_pythonpath.name
 
         if os.name == "nt":
             system_root = os.environ.get("SystemRoot", r"C:\Windows")

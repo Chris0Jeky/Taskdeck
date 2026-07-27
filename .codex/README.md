@@ -62,7 +62,7 @@ the repository agreements.
 
 The `expected=<sha256>` value in `hooks.json` remains the producer contract's
 audit-only marker. Taskdeck's bridge separately verifies the installed
-dispatcher's LF-normalized SHA-256 and `FLOOR_VERSION` before execution, then
+dispatcher's LF-normalized SHA-256 and `FLOOR_VERSION` before and after execution, then
 adds `[Taskdeck Codex deny-floor adapter]` to every dispatcher denial. It finds
 the operating-system account home without trusting inherited `HOME`, so the
 POSIX path still resolves when this repo's Windows-focused environment settings

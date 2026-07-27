@@ -20,4 +20,4 @@ core="$adapter_dir/deny_floor_adapter.py"
 python=$(command -v python3 2>/dev/null) || deny
 [ -n "$python" ] || deny
 
-exec "$python" -B "$core" "$@"
+exec "$python" -I -B "$core" "$@"

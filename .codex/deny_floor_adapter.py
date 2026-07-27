@@ -114,15 +114,17 @@ def validate_bash_payload(raw_payload: str) -> None:
 
     if not isinstance(payload, dict) or payload.get("tool_name") != "Bash":
         raise AdapterFailure("the matched hook did not receive a Bash payload object")
+    if payload.get("hook_event_name") != "PreToolUse":
+        raise AdapterFailure("the Bash hook payload had an unknown hook event")
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         raise AdapterFailure("the Bash hook payload had no tool_input object")
     command = tool_input.get("command")
     if not isinstance(command, str) or not command.strip():
         raise AdapterFailure("the Bash hook payload had no non-empty command")
-    cwd = payload.get("cwd", "")
-    if not isinstance(cwd, str):
-        raise AdapterFailure("the Bash hook payload had a non-string cwd")
+    cwd = payload.get("cwd")
+    if not isinstance(cwd, str) or not cwd.strip() or not Path(cwd).is_absolute():
+        raise AdapterFailure("the Bash hook payload had no absolute cwd")
 
 
 def validate_dispatcher_identity(
@@ -136,10 +138,11 @@ def validate_dispatcher_identity(
     if not dispatcher.is_file():
         raise AdapterFailure("the shared dispatcher is missing")
     try:
-        actual_hash = normalized_text_sha256(dispatcher)
         text = dispatcher.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise AdapterFailure("the shared dispatcher could not be read as UTF-8") from exc
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    actual_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
     if actual_hash != expected_hash:
         raise AdapterFailure(
             "the shared dispatcher identity differs from the reviewed 1.6.18 pin"
@@ -205,6 +208,7 @@ def invoke_dispatcher(
         result = runner(
             [
                 executable,
+                "-I",
                 "-B",
                 str(dispatcher),
                 "--event",
@@ -223,6 +227,13 @@ def invoke_dispatcher(
         raise AdapterFailure("the shared dispatcher timed out") from exc
     except OSError as exc:
         raise AdapterFailure("the shared dispatcher process could not start") from exc
+    # A global-floor deployment can replace this path while the child is
+    # running. Revalidate before any empty stdout is accepted as allow.
+    validate_dispatcher_identity(
+        dispatcher,
+        expected_hash=expected_hash,
+        expected_version=expected_version,
+    )
     if result.returncode != 0:
         raise AdapterFailure("the shared dispatcher process failed")
     if result.stderr != "":
