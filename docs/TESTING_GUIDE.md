@@ -108,6 +108,10 @@ node --test scripts/check-github-ops-governance.test.mjs
 node scripts/check-github-ops-governance.mjs
 ```
 
+The staging-gate governance regression pins the complete parked workflow after normalizing line
+endings. Any intentional edit to that workflow requires a reviewed digest and fixture update plus
+Actionlint; substring checks are not treated as proof of effective YAML semantics.
+
 The native-Windows hook smoke test executes the configured `.claude/settings.json` command handlers with `CLAUDE_PROJECT_DIR` set, including PowerShell-hosted handlers, representative dangerous Bash-command denials, missing-launcher and missing-policy fail-closed probes, failure-ledger redaction, and pre-commit no-op behavior. Its payloads identify the `Bash` tool; it does not prove native PowerShell-tool interception. That T4 policy gap is tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497).
 
 When MCP availability itself is part of the change, also run the active runtime's MCP listing/auth command if available. Do not claim remote MCP connectivity unless the current session actually verified it.

@@ -2,25 +2,13 @@
 
 import { access, readFile } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const errors = []
 
-const expectedParkedStagingGateOnBlock = [
-  'on:',
-  '  workflow_dispatch:',
-  '    inputs:',
-  '      image_tag:',
-  '        description: "Container image tag to deploy (e.g., v0.2.0)"',
-  '        required: true',
-  '        type: string',
-  '      skip_smoke:',
-  '        description: "Skip smoke tests (emergency only)"',
-  '        required: false',
-  '        type: boolean',
-  '        default: false',
-].join('\n')
+const expectedParkedStagingGateSha256 = '3b38f6eec8cc5e1b5ef486697bb4d746db97a5ce05baa8d96a3663de503dc110'
 
 const requiredIssueTemplateFiles = [
   '.github/ISSUE_TEMPLATE/bug_report.md',
@@ -161,30 +149,17 @@ export function retainsReleaseEventHandling(workflowText) {
   return normalizedReferences.includes('event_name') || normalizedReferences.includes('github.event.release')
 }
 
-export function hasExactParkedStagingGateOnBlock(workflowText) {
+export function hasExpectedParkedStagingGateWorkflow(workflowText) {
   const normalized = workflowText.replace(/\r\n/g, '\n')
-  const onMatches = [...normalized.matchAll(/^on:[ \t]*$/gm)]
-  if (onMatches.length !== 1) {
-    return false
-  }
-
-  const permissionsMatch = [...normalized.matchAll(/^permissions:[ \t]*$/gm)]
-    .find((match) => match.index > onMatches[0].index)
-  if (!permissionsMatch) {
-    return false
-  }
-
-  const actualBlock = normalized
-    .slice(onMatches[0].index, permissionsMatch.index)
-    .trimEnd()
-  return actualBlock === expectedParkedStagingGateOnBlock
+  const actualSha256 = createHash('sha256').update(normalized, 'utf8').digest('hex')
+  return actualSha256 === expectedParkedStagingGateSha256
 }
 
 export function validateParkedStagingGateWorkflow(workflowText, workflowPath = '.github/workflows/cd-staging-gate.yml') {
   const workflowErrors = []
-  if (!hasExactParkedStagingGateOnBlock(workflowText)) {
+  if (!hasExpectedParkedStagingGateWorkflow(workflowText)) {
     workflowErrors.push(
-      `${workflowPath} must retain the exact reviewed manual-only workflow_dispatch/input block`,
+      `${workflowPath} must match the complete reviewed parked-workflow digest`,
     )
   }
 

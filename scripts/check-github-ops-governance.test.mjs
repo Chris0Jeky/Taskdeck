@@ -1,32 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
-  hasExactParkedStagingGateOnBlock,
+  hasExpectedParkedStagingGateWorkflow,
   retainsReleaseEventHandling,
   validateParkedStagingGateWorkflow,
 } from './check-github-ops-governance.mjs'
 
-const canonicalWorkflow = `name: gate
-on:
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Container image tag to deploy (e.g., v0.2.0)"
-        required: true
-        type: string
-      skip_smoke:
-        description: "Skip smoke tests (emergency only)"
-        required: false
-        type: boolean
-        default: false
-permissions:
-  contents: read
-jobs: {}
-`
+const canonicalWorkflow = readFileSync(
+  new URL('../.github/workflows/cd-staging-gate.yml', import.meta.url),
+  'utf8',
+)
 
-test('accepts the exact reviewed manual-only workflow_dispatch block', () => {
-  assert.equal(hasExactParkedStagingGateOnBlock(canonicalWorkflow), true)
+test('accepts the complete reviewed parked workflow', () => {
+  assert.equal(hasExpectedParkedStagingGateWorkflow(canonicalWorkflow), true)
+  assert.equal(
+    hasExpectedParkedStagingGateWorkflow(canonicalWorkflow.replace(/\r?\n/g, '\r\n')),
+    true,
+  )
   assert.deepEqual(validateParkedStagingGateWorkflow(canonicalWorkflow), [])
 })
 
@@ -40,8 +32,8 @@ test('rejects an inline flow-style release trigger', () => {
   release: { types: [published] }
 jobs: {}
 `
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
 
 test('rejects a quoted release trigger', () => {
@@ -51,8 +43,8 @@ test('rejects a quoted release trigger', () => {
 jobs: {}
 `
 
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
 
 test('rejects a comment-suffixed release trigger', () => {
@@ -63,8 +55,8 @@ test('rejects a comment-suffixed release trigger', () => {
 jobs: {}
 `
 
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
 
 test('rejects an unfamiliar indentation-two trigger entry', () => {
@@ -74,8 +66,8 @@ test('rejects an unfamiliar indentation-two trigger entry', () => {
 jobs: {}
 `
 
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
 
 test('recognizes stale release-event branches despite shell quoting variations', () => {
@@ -98,8 +90,8 @@ test('detects a non-required image_tag input', () => {
         type: string
 jobs: {}
 `
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
 
 test('detects a non-string image_tag input', () => {
@@ -111,8 +103,8 @@ test('detects a non-string image_tag input', () => {
         type: boolean
 jobs: {}
 `
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
 
 test('rejects a defaulted image_tag input', () => {
@@ -125,8 +117,8 @@ test('rejects a defaulted image_tag input', () => {
         default: latest
 jobs: {}
 `
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
 
 test('rejects an event after a column-zero comment inside the on mapping', () => {
@@ -135,18 +127,18 @@ test('rejects an event after a column-zero comment inside the on mapping', () =>
     '\n# A column-zero comment does not end the YAML mapping.\n  release:\n    types: [published]\npermissions:',
   )
 
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
 
 test('rejects multiline scalar text that forges apparent image_tag properties', () => {
   const workflow = canonicalWorkflow.replace(
-    '        description: "Container image tag to deploy (e.g., v0.2.0)"\n        required: true\n        type: string',
+    '        description: "Container image tag to deploy (e.g., v0.2.0)"',
     '        description: |\n          required: true\n          type: string',
   )
 
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
 
 test('rejects escaped YAML property keys that decode to a different input contract', () => {
@@ -154,6 +146,18 @@ test('rejects escaped YAML property keys that decode to a different input contra
     .replace('        required: true', '        "requ\\u0069red": false')
     .replace('        type: string', '        "t\\u0079pe": boolean')
 
-  assert.equal(hasExactParkedStagingGateOnBlock(workflow), false)
-  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /exact reviewed/)
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
+})
+
+test('rejects hiding the reviewed bytes inside a scalar before an effective release trigger', () => {
+  const workflow = canonicalWorkflow
+    .replace('name: CD Staging Gate', "name: '")
+    .replace(
+      '\npermissions:',
+      `\npermissions:\n  contents: read\n'\n"on":\n  workflow_dispatch:\n    inputs:\n      image_tag:\n        required: true\n        type: string\n      skip_smoke:\n        required: false\n        type: boolean\n        default: false\n  release: { types: [published] }\npermissions:`,
+    )
+
+  assert.equal(hasExpectedParkedStagingGateWorkflow(workflow), false)
+  assert.match(validateParkedStagingGateWorkflow(workflow).join('\n'), /reviewed parked-workflow digest/)
 })
