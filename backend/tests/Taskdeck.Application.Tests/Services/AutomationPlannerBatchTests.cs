@@ -121,7 +121,7 @@ public class AutomationPlannerBatchTests
         result.IsSuccess.Should().BeTrue();
         _proposalServiceMock.Verify(
             s => s.CreateProposalAsync(
-                It.Is<CreateProposalDto>(dto => dto.Operations.Count == 1),
+                It.Is<CreateProposalDto>(dto => dto.Operations != null && dto.Operations.Count == 1),
                 default),
             Times.Once);
     }
@@ -498,7 +498,7 @@ public class AutomationPlannerBatchTests
 
         result.IsSuccess.Should().BeTrue();
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(
-            It.Is<CreateProposalDto>(dto => dto.Operations.Count == 3),
+            It.Is<CreateProposalDto>(dto => dto.Operations != null && dto.Operations.Count == 3),
             default), Times.Once);
     }
 
