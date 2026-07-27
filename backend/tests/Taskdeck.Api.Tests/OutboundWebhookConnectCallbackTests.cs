@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Workers;
 using Xunit;
@@ -70,6 +72,24 @@ public class OutboundWebhookConnectCallbackTests
             .CreateHandler(OutboundWebhookClientName);
 
         await ProxySafeHttpHandlerTestHarness.AssertDirectOriginIgnoresProxyAsync(pipeline);
+    }
+
+    [Fact]
+    public async Task AddTaskdeckWorkers_ShouldSuppressProtectedRequestLogging()
+    {
+        var loggerProvider = new RecordingHttpLoggerProvider();
+        using var serviceProvider = BuildWebhookServiceProvider("Production", loggerProvider);
+        var pipeline = serviceProvider
+            .GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(OutboundWebhookClientName);
+
+        await ProxySafeHttpHandlerTestHarness.AssertBlockedOriginIgnoresProxyAsync(
+            pipeline,
+            "http://127.0.0.1/protected");
+
+        loggerProvider.Messages.Should().NotContain(
+            message => message.Contains(ProxySafeHttpHandlerTestHarness.SensitiveMarker, StringComparison.Ordinal),
+            "protected webhook query/header/body markers must not reach default IHttpClientFactory logs");
     }
 
     // -----------------------------------------------------------------------
@@ -211,10 +231,19 @@ public class OutboundWebhookConnectCallbackTests
     // Builder helper
     // -----------------------------------------------------------------------
 
-    private static ServiceProvider BuildWebhookServiceProvider(string environmentName)
+    private static ServiceProvider BuildWebhookServiceProvider(
+        string environmentName,
+        ILoggerProvider? loggerProvider = null)
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(builder =>
+        {
+            builder.SetMinimumLevel(LogLevel.Trace);
+            if (loggerProvider is not null)
+            {
+                builder.AddProvider(loggerProvider);
+            }
+        });
         var configuration = new ConfigurationBuilder().Build();
         services.AddTaskdeckWorkers(
             configuration,
@@ -249,7 +278,7 @@ public class OutboundWebhookConnectCallbackTests
 
 internal static class ProxySafeHttpHandlerTestHarness
 {
-    private const string SensitiveMarker = "must-not-reach-a-proxy";
+    internal const string SensitiveMarker = "must-not-reach-a-proxy";
 
     internal static void AssertProxySafeOriginHandler(HttpMessageHandler pipeline)
     {
@@ -261,6 +290,10 @@ internal static class ProxySafeHttpHandlerTestHarness
             "redirects must not move a validated request to an unvalidated origin");
         primaryHandler.ConnectCallback.Should().NotBeNull(
             "the configured origin must retain DNS and IP validation at connect time");
+        primaryHandler.ActivityHeadersPropagator.Should().BeNull(
+            "protected destinations must not receive ambient distributed-trace headers");
+        primaryHandler.MeterFactory.Should().BeOfType<ProtectedOutboundMeterFactory>(
+            "protected HTTP metrics must use the scope Taskdeck excludes from its configured exporters");
     }
 
     internal static async Task AssertBlockedOriginIgnoresProxyAsync(
@@ -297,45 +330,19 @@ internal static class ProxySafeHttpHandlerTestHarness
         var hostileProxy = new ThrowingWebProxy();
         primaryHandler.Proxy = hostileProxy;
 
-        var listener = new TcpListener(IPAddress.Loopback, 0);
+        var requestPath = $"/direct-origin-{Guid.NewGuid():N}";
+        await using var server = new SingleRequestLoopbackServer(HttpStatusCode.NoContent);
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        Task<string>? serverTask = null;
-        try
-        {
-            listener.Start();
-            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            serverTask = ReceiveSingleRequestAsync(listener, cancellationSource.Token);
 
-            using var invoker = new HttpMessageInvoker(pipeline, disposeHandler: false);
-            using var request = new HttpRequestMessage(
-                HttpMethod.Get,
-                $"http://localhost:{port}/direct-origin");
-            using var response = await invoker.SendAsync(request, cancellationSource.Token);
-            var receivedRequest = await serverTask;
+        using var invoker = new HttpMessageInvoker(pipeline, disposeHandler: false);
+        using var request = new HttpRequestMessage(HttpMethod.Get, server.BuildUri(requestPath));
+        using var response = await invoker.SendAsync(request, cancellationSource.Token);
+        var receivedRequest = await server.ReceivedRequest;
 
-            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-            receivedRequest.Should().Contain("GET /direct-origin HTTP/1.1");
-            hostileProxy.InvocationCount.Should().Be(0,
-                "UseProxy=false must send an allowed request directly to its configured origin");
-        }
-        finally
-        {
-            cancellationSource.Cancel();
-            listener.Stop();
-            if (serverTask is { IsCompleted: false })
-            {
-                try
-                {
-                    await serverTask;
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (SocketException)
-                {
-                }
-            }
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        receivedRequest.Should().Contain($"GET {requestPath} HTTP/1.1");
+        hostileProxy.InvocationCount.Should().Be(0,
+            "UseProxy=false must send an allowed request directly to its configured origin");
     }
 
     private static SocketsHttpHandler GetPrimaryHandler(HttpMessageHandler pipeline)
@@ -349,38 +356,6 @@ internal static class ProxySafeHttpHandlerTestHarness
 
         current.Should().BeOfType<SocketsHttpHandler>();
         return (SocketsHttpHandler)current;
-    }
-
-    private static async Task<string> ReceiveSingleRequestAsync(
-        TcpListener listener,
-        CancellationToken cancellationToken)
-    {
-        using var client = await listener.AcceptTcpClientAsync(cancellationToken);
-        using var stream = client.GetStream();
-        using var received = new MemoryStream();
-        var buffer = new byte[1024];
-
-        while (received.Length < 16 * 1024)
-        {
-            var count = await stream.ReadAsync(buffer, cancellationToken);
-            if (count == 0)
-            {
-                break;
-            }
-
-            received.Write(buffer, 0, count);
-            var requestText = Encoding.ASCII.GetString(received.GetBuffer(), 0, (int)received.Length);
-            if (requestText.Contains("\r\n\r\n", StringComparison.Ordinal))
-            {
-                var response = Encoding.ASCII.GetBytes(
-                    "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
-                await stream.WriteAsync(response, cancellationToken);
-                await stream.FlushAsync(cancellationToken);
-                return requestText;
-            }
-        }
-
-        throw new InvalidOperationException("Direct-origin canary did not receive a complete HTTP request.");
     }
 
     private sealed class ThrowingWebProxy : IWebProxy
@@ -403,6 +378,376 @@ internal static class ProxySafeHttpHandlerTestHarness
         {
             Interlocked.Increment(ref _invocationCount);
             throw new InvalidOperationException("The hostile proxy must not be consulted.");
+        }
+    }
+}
+
+internal sealed class SingleRequestLoopbackServer : IAsyncDisposable
+{
+    private const int MaximumRequestBytes = 64 * 1024;
+    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private readonly CancellationTokenSource _cancellationSource = new(TimeSpan.FromSeconds(10));
+    private readonly Task<CapturedRequest> _capturedRequest;
+
+    internal SingleRequestLoopbackServer(
+        HttpStatusCode responseStatus = HttpStatusCode.OK,
+        string responseBody = "")
+    {
+        _listener.Start();
+        Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+        _capturedRequest = ReceiveSingleRequestAsync(
+            responseStatus,
+            responseBody,
+            _cancellationSource.Token);
+        ReceivedRequest = SelectRawRequestAsync(_capturedRequest);
+        ReceivedBody = SelectBodyAsync(_capturedRequest);
+    }
+
+    internal int Port { get; }
+
+    internal Task<string> ReceivedRequest { get; }
+
+    internal Task<string> ReceivedBody { get; }
+
+    internal Uri BuildUri(string path)
+    {
+        var normalizedPath = path.StartsWith('/') ? path : $"/{path}";
+        return new Uri($"http://localhost:{Port}{normalizedPath}");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cancellationSource.Cancel();
+        _listener.Stop();
+
+        if (!_capturedRequest.IsCompleted)
+        {
+            try
+            {
+                await _capturedRequest;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (SocketException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        _cancellationSource.Dispose();
+    }
+
+    private async Task<CapturedRequest> ReceiveSingleRequestAsync(
+        HttpStatusCode responseStatus,
+        string responseBody,
+        CancellationToken cancellationToken)
+    {
+        using var client = await _listener.AcceptTcpClientAsync(cancellationToken);
+        using var stream = client.GetStream();
+        using var received = new MemoryStream();
+        var buffer = new byte[2048];
+        var bodyStart = -1;
+        int? contentLength = null;
+        var isChunked = false;
+
+        while (received.Length < MaximumRequestBytes)
+        {
+            var count = await stream.ReadAsync(buffer, cancellationToken);
+            if (count == 0)
+            {
+                break;
+            }
+
+            received.Write(buffer, 0, count);
+            var requestBytes = received.GetBuffer();
+            var requestLength = checked((int)received.Length);
+            if (bodyStart < 0)
+            {
+                var requestText = Encoding.ASCII.GetString(requestBytes, 0, requestLength);
+                var headerEnd = requestText.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                if (headerEnd < 0)
+                {
+                    continue;
+                }
+
+                var headers = requestText[..headerEnd];
+                bodyStart = headerEnd + 4;
+                contentLength = ParseContentLength(headers);
+                isChunked = HasChunkedTransferEncoding(headers);
+            }
+
+            if (TryCaptureRequest(
+                    requestBytes,
+                    requestLength,
+                    bodyStart,
+                    contentLength,
+                    isChunked,
+                    out var capturedRequest))
+            {
+                await WriteResponseAsync(stream, responseStatus, responseBody, cancellationToken);
+                return capturedRequest;
+            }
+        }
+
+        throw new InvalidOperationException("Loopback canary did not receive a complete HTTP request.");
+    }
+
+    private static int? ParseContentLength(string headers)
+    {
+        foreach (var line in headers.Split("\r\n", StringSplitOptions.None))
+        {
+            const string prefix = "Content-Length:";
+            if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!int.TryParse(
+                    line[prefix.Length..].Trim(),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var contentLength) ||
+                contentLength < 0 ||
+                contentLength > MaximumRequestBytes)
+            {
+                throw new InvalidOperationException("Loopback request Content-Length is invalid.");
+            }
+
+            return contentLength;
+        }
+
+        return null;
+    }
+
+    private static bool HasChunkedTransferEncoding(string headers)
+    {
+        foreach (var line in headers.Split("\r\n", StringSplitOptions.None))
+        {
+            const string prefix = "Transfer-Encoding:";
+            if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                line[prefix.Length..]
+                    .Split(',')
+                    .Any(value => string.Equals(value.Trim(), "chunked", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryCaptureRequest(
+        byte[] requestBytes,
+        int requestLength,
+        int bodyStart,
+        int? contentLength,
+        bool isChunked,
+        out CapturedRequest capturedRequest)
+    {
+        if (isChunked)
+        {
+            return TryCaptureChunkedRequest(
+                requestBytes,
+                requestLength,
+                bodyStart,
+                out capturedRequest);
+        }
+
+        var bodyLength = contentLength ?? 0;
+        var messageLength = bodyStart + bodyLength;
+        if (requestLength < messageLength)
+        {
+            capturedRequest = default!;
+            return false;
+        }
+
+        capturedRequest = new CapturedRequest(
+            Encoding.UTF8.GetString(requestBytes, 0, messageLength),
+            Encoding.UTF8.GetString(requestBytes, bodyStart, bodyLength));
+        return true;
+    }
+
+    private static bool TryCaptureChunkedRequest(
+        byte[] requestBytes,
+        int requestLength,
+        int bodyStart,
+        out CapturedRequest capturedRequest)
+    {
+        using var decodedBody = new MemoryStream();
+        var cursor = bodyStart;
+
+        while (true)
+        {
+            var chunkSizeLineEnd = IndexOfCrlf(requestBytes, cursor, requestLength);
+            if (chunkSizeLineEnd < 0)
+            {
+                capturedRequest = default!;
+                return false;
+            }
+
+            var chunkSizeLine = Encoding.ASCII.GetString(
+                requestBytes,
+                cursor,
+                chunkSizeLineEnd - cursor);
+            var extensionStart = chunkSizeLine.IndexOf(';');
+            var chunkSizeText = (extensionStart >= 0
+                    ? chunkSizeLine[..extensionStart]
+                    : chunkSizeLine)
+                .Trim();
+            if (!int.TryParse(
+                    chunkSizeText,
+                    NumberStyles.HexNumber,
+                    CultureInfo.InvariantCulture,
+                    out var chunkSize) ||
+                chunkSize < 0 ||
+                chunkSize > MaximumRequestBytes)
+            {
+                throw new InvalidOperationException("Loopback request contains an invalid chunk size.");
+            }
+
+            cursor = chunkSizeLineEnd + 2;
+            if (chunkSize == 0)
+            {
+                var messageLength = FindChunkedMessageEnd(requestBytes, cursor, requestLength);
+                if (messageLength < 0)
+                {
+                    capturedRequest = default!;
+                    return false;
+                }
+
+                capturedRequest = new CapturedRequest(
+                    Encoding.UTF8.GetString(requestBytes, 0, messageLength),
+                    Encoding.UTF8.GetString(decodedBody.GetBuffer(), 0, checked((int)decodedBody.Length)));
+                return true;
+            }
+
+            if (requestLength < cursor + chunkSize + 2)
+            {
+                capturedRequest = default!;
+                return false;
+            }
+
+            decodedBody.Write(requestBytes, cursor, chunkSize);
+            cursor += chunkSize;
+            if (requestBytes[cursor] != '\r' || requestBytes[cursor + 1] != '\n')
+            {
+                throw new InvalidOperationException("Loopback request chunk is missing its terminator.");
+            }
+
+            cursor += 2;
+        }
+    }
+
+    private static int FindChunkedMessageEnd(byte[] requestBytes, int trailerStart, int requestLength)
+    {
+        if (requestLength < trailerStart + 2)
+        {
+            return -1;
+        }
+
+        if (requestBytes[trailerStart] == '\r' && requestBytes[trailerStart + 1] == '\n')
+        {
+            return trailerStart + 2;
+        }
+
+        for (var index = trailerStart; index + 3 < requestLength; index++)
+        {
+            if (requestBytes[index] == '\r' &&
+                requestBytes[index + 1] == '\n' &&
+                requestBytes[index + 2] == '\r' &&
+                requestBytes[index + 3] == '\n')
+            {
+                return index + 4;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int IndexOfCrlf(byte[] requestBytes, int start, int requestLength)
+    {
+        for (var index = start; index + 1 < requestLength; index++)
+        {
+            if (requestBytes[index] == '\r' && requestBytes[index + 1] == '\n')
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static async Task WriteResponseAsync(
+        NetworkStream stream,
+        HttpStatusCode status,
+        string body,
+        CancellationToken cancellationToken)
+    {
+        var bodyBytes = Encoding.UTF8.GetBytes(body);
+        var reason = status switch
+        {
+            HttpStatusCode.NoContent => "No Content",
+            HttpStatusCode.OK => "OK",
+            _ => status.ToString()
+        };
+        var responseHeaders = Encoding.ASCII.GetBytes(
+            $"HTTP/1.1 {(int)status} {reason}\r\n" +
+            $"Content-Length: {bodyBytes.Length}\r\n" +
+            "Content-Type: application/json\r\n" +
+            "Connection: close\r\n\r\n");
+
+        await stream.WriteAsync(responseHeaders, cancellationToken);
+        if (bodyBytes.Length > 0)
+        {
+            await stream.WriteAsync(bodyBytes, cancellationToken);
+        }
+
+        await stream.FlushAsync(cancellationToken);
+    }
+
+    private static async Task<string> SelectRawRequestAsync(Task<CapturedRequest> request) =>
+        (await request).RawRequest;
+
+    private static async Task<string> SelectBodyAsync(Task<CapturedRequest> request) =>
+        (await request).Body;
+
+    private sealed record CapturedRequest(string RawRequest, string Body);
+}
+
+internal sealed class RecordingHttpLoggerProvider : ILoggerProvider
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _messages = new();
+
+    public IReadOnlyCollection<string> Messages => _messages.ToArray();
+
+    public ILogger CreateLogger(string categoryName) => new RecordingLogger(_messages);
+
+    public void Dispose()
+    {
+    }
+
+    private sealed class RecordingLogger(
+        System.Collections.Concurrent.ConcurrentQueue<string> messages) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            messages.Enqueue(formatter(state, exception));
+            if (exception is not null)
+            {
+                messages.Enqueue(exception.ToString());
+            }
         }
     }
 }

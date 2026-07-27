@@ -10,15 +10,19 @@ public class OllamaLlmProvider : ILlmProvider
     private readonly HttpClient _httpClient;
     private readonly LlmProviderSettings _settings;
     private readonly ILogger<OllamaLlmProvider> _logger;
+    private readonly bool _allowLocalhostEndpoints;
 
     public OllamaLlmProvider(
         HttpClient httpClient,
         LlmProviderSettings settings,
-        ILogger<OllamaLlmProvider> logger)
+        ILogger<OllamaLlmProvider> logger,
+        LlmProviderRuntimePolicy? runtimePolicy = null)
     {
         _httpClient = httpClient;
         _settings = settings;
         _logger = logger;
+        _allowLocalhostEndpoints = runtimePolicy?.AllowOllamaLocalhost ??
+            _settings.Ollama?.AllowLocalhostEndpoints ?? false;
     }
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
@@ -27,7 +31,10 @@ public class OllamaLlmProvider : ILlmProvider
             .LastOrDefault(m => string.Equals(m.Role, "User", StringComparison.OrdinalIgnoreCase))
             ?.Content ?? string.Empty;
 
-        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var validationError, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? false))
+        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             _logger.LogWarning("Ollama provider configuration invalid: {Error}", validationError);
             return BuildFallbackResult(lastUserMessage, "Local provider configuration is invalid.", GetConfiguredModelOrDefault());
@@ -141,7 +148,10 @@ public class OllamaLlmProvider : ILlmProvider
 
     public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
     {
-        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var error, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? false))
+        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(
+                _settings,
+                out var error,
+                _allowLocalhostEndpoints))
         {
             return Task.FromResult(new LlmHealthStatus(false, "Ollama", error, GetConfiguredModelOrDefault()));
         }
@@ -153,7 +163,10 @@ public class OllamaLlmProvider : ILlmProvider
     {
         var model = GetConfiguredModelOrDefault();
 
-        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var validationError, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? false))
+        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             return new LlmHealthStatus(false, "Ollama", validationError, model, IsProbed: true);
         }

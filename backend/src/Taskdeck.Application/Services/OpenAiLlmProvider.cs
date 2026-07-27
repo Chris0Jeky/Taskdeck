@@ -11,15 +11,18 @@ public class OpenAiLlmProvider : ILlmProvider
     private readonly HttpClient _httpClient;
     private readonly LlmProviderSettings _settings;
     private readonly ILogger<OpenAiLlmProvider> _logger;
+    private readonly bool _allowLocalhostEndpoints;
 
     public OpenAiLlmProvider(
         HttpClient httpClient,
         LlmProviderSettings settings,
-        ILogger<OpenAiLlmProvider> logger)
+        ILogger<OpenAiLlmProvider> logger,
+        LlmProviderRuntimePolicy? runtimePolicy = null)
     {
         _httpClient = httpClient;
         _settings = settings;
         _logger = logger;
+        _allowLocalhostEndpoints = runtimePolicy?.AllowGeneralProviderLocalhost ?? false;
     }
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
@@ -28,7 +31,10 @@ public class OpenAiLlmProvider : ILlmProvider
             .LastOrDefault(m => string.Equals(m.Role, "User", StringComparison.OrdinalIgnoreCase))
             ?.Content ?? string.Empty;
 
-        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(_settings, out var validationError))
+        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             _logger.LogWarning("OpenAI provider configuration invalid: {Error}", validationError);
             return BuildFallbackResult(lastUserMessage, "Live provider configuration is invalid.", GetConfiguredModelOrDefault());
@@ -137,7 +143,10 @@ public class OpenAiLlmProvider : ILlmProvider
         IReadOnlyList<ToolCallResult>? previousToolResults = null,
         CancellationToken ct = default)
     {
-        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(_settings, out var validationError))
+        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             _logger.LogWarning("OpenAI provider configuration invalid for tool call: {Error}", validationError);
             return new LlmToolCompletionResult(
@@ -410,7 +419,10 @@ public class OpenAiLlmProvider : ILlmProvider
 
     public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
     {
-        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(_settings, out var error))
+        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(
+                _settings,
+                out var error,
+                _allowLocalhostEndpoints))
         {
             return Task.FromResult(new LlmHealthStatus(false, "OpenAI", error, GetConfiguredModelOrDefault()));
         }
@@ -422,7 +434,10 @@ public class OpenAiLlmProvider : ILlmProvider
     {
         var model = GetConfiguredModelOrDefault();
 
-        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(_settings, out var validationError))
+        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             return new LlmHealthStatus(false, "OpenAI", validationError, model, IsProbed: true);
         }
