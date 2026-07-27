@@ -31,15 +31,15 @@ Verification note:
 
 ## GEN-09 Prompt/Output Containment Candidate (`#1323`)
 
-The Proposed `llm-triage.v2` tranche is covered at the provider, byte-budget, prompt, parser/schema, service-fallback, hostile-fixture, and API golden-path seams. Its deterministic fixtures prove the bounded transcript-triage candidate path, not live-model resistance to prompt injection. PDF/image source cases replay extracted-text fixture strings as transcript input; they do not run real artefact routing, PDF parsing, image/OCR, or a live provider.
+The Proposed `llm-triage.v2` tranche is covered at the provider, total-deadline/byte-budget, explicit response-mode, production-provider ChatService compatibility, prompt, parser/schema, service-fallback, hostile-fixture, and API golden-path seams. Its deterministic fixtures prove the bounded transcript-triage candidate path, not live-model resistance to prompt injection. The conservative empty-verdict rail recognizes a finite task-signal vocabulary; unrecognized task phrasing remains a false-empty residual. PDF/image source cases replay extracted-text fixture strings as transcript input; they do not run real artefact routing, PDF parsing, image/OCR, or a live provider.
 
 ```powershell
-dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResponseReaderTests|FullyQualifiedName~LlmCaptureTriagePromptTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageOutputContractTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~UntrustedArtefactFixtureContractTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderResponseReaderTests|FullyQualifiedName~LlmProviderResponseDeadlineTests|FullyQualifiedName~ChatServiceProductionProviderRegressionTests|FullyQualifiedName~LlmCaptureTriagePromptTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageOutputContractTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~UntrustedArtefactFixtureContractTests"
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests"
 dotnet test backend/Taskdeck.sln -c Release -m:1
 ```
 
-Verified on the staged head: Application 218/218, API 4/4, full backend 7,533 passed / 5 skipped. Keep `docs/security/UNTRUSTED_ARTEFACT_THREAT_MODEL.md` beside the test result: it records the still-open live-model, preview-XSS, consent/egress, image/OCR, and PDF decompressed-byte/object-count/single-parse-memory boundaries. ADR-0045's amendment remains Proposed until the maintainer ratifies it.
+Verified on the staged head: affected lane 271/271, full Application 3,660/3,660, API golden path 4/4, and full backend 7,573 passed / 5 skipped / 0 failed. Keep `docs/security/UNTRUSTED_ARTEFACT_THREAT_MODEL.md` beside the test result: it records the finite-vocabulary false-empty residual and the still-open live-model, preview-XSS, consent/egress, image/OCR, and PDF decompressed-byte/object-count/single-parse-memory boundaries. ADR-0045's amendment remains Proposed until the maintainer ratifies it.
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
