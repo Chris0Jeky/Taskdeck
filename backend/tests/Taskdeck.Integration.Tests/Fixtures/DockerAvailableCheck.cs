@@ -10,6 +10,8 @@ namespace Taskdeck.Integration.Tests.Fixtures;
 /// </summary>
 public static class DockerAvailableCheck
 {
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ReapTimeout = TimeSpan.FromSeconds(2);
     private static readonly Lazy<bool> IsAvailableLazy = new(CheckDocker);
 
     /// <summary>
@@ -43,15 +45,75 @@ public static class DockerAvailableCheck
                 }
             };
 
-            process.Start();
-            var exited = process.WaitForExit(TimeSpan.FromSeconds(10));
-            // If the process didn't exit within the timeout, ExitCode
-            // would throw — treat timeout as "Docker unavailable".
-            return exited && process.ExitCode == 0;
+            return CheckDocker(
+                startProcess: () => process.Start(),
+                waitForExit: process.WaitForExit,
+                getExitCode: () => process.ExitCode,
+                killProcessTree: () => process.Kill(entireProcessTree: true),
+                probeTimeout: ProbeTimeout,
+                reapTimeout: ReapTimeout);
         }
         catch
         {
             return false;
+        }
+    }
+
+    internal static bool CheckDocker(
+        Action startProcess,
+        Func<TimeSpan, bool> waitForExit,
+        Func<int> getExitCode,
+        Action killProcessTree,
+        TimeSpan probeTimeout,
+        TimeSpan reapTimeout)
+    {
+        var started = false;
+        var exited = false;
+
+        try
+        {
+            startProcess();
+            started = true;
+            exited = waitForExit(probeTimeout);
+
+            // ExitCode throws while the process is still running. A timeout is always
+            // unavailable and is cleaned up in finally before this method returns.
+            return exited && getExitCode() == 0;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (started && !exited)
+            {
+                TerminateAndReap(killProcessTree, waitForExit, reapTimeout);
+            }
+        }
+    }
+
+    private static void TerminateAndReap(
+        Action killProcessTree,
+        Func<TimeSpan, bool> waitForExit,
+        TimeSpan reapTimeout)
+    {
+        try
+        {
+            killProcessTree();
+        }
+        catch
+        {
+            // The probe may exit between the timed wait and Kill. Availability remains false.
+        }
+
+        try
+        {
+            _ = waitForExit(reapTimeout);
+        }
+        catch
+        {
+            // Cleanup is best-effort and must never turn unavailable Docker into a test failure.
         }
     }
 }
