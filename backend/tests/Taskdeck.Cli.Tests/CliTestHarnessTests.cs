@@ -30,10 +30,12 @@ public sealed class CliTestHarnessTests
     [Fact]
     public async Task RunAsync_WhenSixChildrenReachDeadline_ReapsEveryChild()
     {
+        using var launchGate = new SemaphoreSlim(initialCount: 2, maxCount: 2);
         var harnesses = Enumerable.Range(0, 6)
             .Select(index => new CliTestHarness(
                 $"cli-timeout-{index}",
-                processTimeout: TimeSpan.FromMilliseconds(500)))
+                processTimeout: TimeSpan.FromSeconds(1),
+                processLaunchSemaphore: launchGate))
             .ToArray();
         var migrationLocks = harnesses
             .Select(harness => new FileStream(
@@ -45,7 +47,15 @@ public sealed class CliTestHarnessTests
 
         try
         {
-            var failures = await Task.WhenAll(harnesses.Select(CaptureFailureAsync));
+            var failuresTask = Task.WhenAll(harnesses.Select(CaptureFailureAsync));
+
+            var overlapObserved = await WaitForLiveProcessCountAsync(
+                harnesses,
+                requiredCount: 2,
+                timeout: TimeSpan.FromSeconds(1));
+            overlapObserved.Should().BeTrue("the fixed two-slot gate must exercise overlapping CLI roots");
+
+            var failures = await failuresTask;
 
             failures.Should().OnlyContain(failure => failure is TimeoutException);
             foreach (var harness in harnesses)
@@ -65,6 +75,58 @@ public sealed class CliTestHarnessTests
             {
                 await harness.DisposeAsync();
             }
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_WithSingleSlotGate_StartsNextChildOnlyAfterFirstIsReaped()
+    {
+        using var launchGate = new SemaphoreSlim(initialCount: 1, maxCount: 1);
+        await using var firstHarness = new CliTestHarness(
+            "cli-single-slot-first",
+            processTimeout: TimeSpan.FromMilliseconds(500),
+            processLaunchSemaphore: launchGate);
+        await using var secondHarness = new CliTestHarness(
+            "cli-single-slot-second",
+            processTimeout: TimeSpan.FromMilliseconds(500),
+            processLaunchSemaphore: launchGate);
+        await using var firstMigrationLock = CreateMigrationLock(firstHarness);
+        await using var secondMigrationLock = CreateMigrationLock(secondHarness);
+
+        var firstFailureTask = CaptureFailureAsync(firstHarness);
+        (await WaitForLiveProcessCountAsync(
+            new[] { firstHarness },
+            requiredCount: 1,
+            timeout: TimeSpan.FromSeconds(1))).Should().BeTrue();
+
+        var secondFailureTask = CaptureFailureAsync(secondHarness);
+        await Task.Delay(100);
+        secondHarness.LastStartedProcessId.Should().BeNull(
+            "the single launch slot stays owned until the first root is reaped");
+
+        (await firstFailureTask).Should().BeOfType<TimeoutException>();
+        (await WaitForLiveProcessCountAsync(
+            new[] { secondHarness },
+            requiredCount: 1,
+            timeout: TimeSpan.FromSeconds(1))).Should().BeTrue();
+        (await secondFailureTask).Should().BeOfType<TimeoutException>();
+
+        ProcessHasExited(firstHarness.LastStartedProcessId!.Value).Should().BeTrue();
+        ProcessHasExited(secondHarness.LastStartedProcessId!.Value).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Constructor_WhenTimeoutIsNotPositive_RejectsBeforeCreatingTemporaryDirectory()
+    {
+        foreach (var timeout in new[] { TimeSpan.Zero, TimeSpan.FromMilliseconds(-1) })
+        {
+            var prefix = $"cli-invalid-timeout-{Guid.NewGuid():N}";
+
+            Action action = () => _ = new CliTestHarness(prefix, processTimeout: timeout);
+
+            action.Should().Throw<ArgumentOutOfRangeException>()
+                .WithParameterName("processTimeout");
+            Directory.EnumerateDirectories(Path.GetTempPath(), $"{prefix}-*").Should().BeEmpty();
         }
     }
 
@@ -156,6 +218,38 @@ public sealed class CliTestHarnessTests
         {
             return exception;
         }
+    }
+
+    private static FileStream CreateMigrationLock(CliTestHarness harness) =>
+        new(
+            $"{harness.DatabasePath}.migrate.lock",
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.None);
+
+    private static async Task<bool> WaitForLiveProcessCountAsync(
+        IEnumerable<CliTestHarness> harnesses,
+        int requiredCount,
+        TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            var liveCount = harnesses
+                .Select(harness => harness.LastStartedProcessId)
+                .Where(processId => processId.HasValue)
+                .Select(processId => processId!.Value)
+                .Distinct()
+                .Count(processId => !ProcessHasExited(processId));
+            if (liveCount >= requiredCount)
+            {
+                return true;
+            }
+
+            await Task.Delay(10);
+        }
+
+        return false;
     }
 
     private static bool ProcessHasExited(int processId)

@@ -14,7 +14,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TerminationPollInterval = TimeSpan.FromMilliseconds(50);
-    private static readonly SemaphoreSlim ProcessLaunchSemaphore = new(
+    private static readonly SemaphoreSlim DefaultProcessLaunchSemaphore = new(
         initialCount: Math.Clamp(Environment.ProcessorCount / 2, 1, 4),
         maxCount: Math.Clamp(Environment.ProcessorCount / 2, 1, 4));
 
@@ -23,6 +23,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
     private readonly string _connectionString;
     private readonly bool _provisionEncryptionKey;
     private readonly TimeSpan _processTimeout;
+    private readonly SemaphoreSlim _processLaunchSemaphore;
 
     /// <param name="provisionEncryptionKey">
     /// When true (default) the harness injects a test connector encryption key via
@@ -33,8 +34,15 @@ internal sealed class CliTestHarness : IAsyncDisposable
     public CliTestHarness(
         string dbPrefix = "taskdeck-cli-tests",
         bool provisionEncryptionKey = true,
-        TimeSpan? processTimeout = null)
+        TimeSpan? processTimeout = null,
+        SemaphoreSlim? processLaunchSemaphore = null)
     {
+        _processTimeout = processTimeout ?? ProcessTimeout;
+        if (_processTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(processTimeout));
+        }
+
         // Each harness gets its own data directory so the SQLite file -- and any
         // appsettings.local.json written by the CLI's first-run bootstrap -- are
         // isolated from other tests and cleaned up on dispose.
@@ -43,11 +51,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         _databasePath = Path.Combine(_dataDirectory, "taskdeck.db");
         _connectionString = $"Data Source={_databasePath}";
         _provisionEncryptionKey = provisionEncryptionKey;
-        _processTimeout = processTimeout ?? ProcessTimeout;
-        if (_processTimeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(processTimeout));
-        }
+        _processLaunchSemaphore = processLaunchSemaphore ?? DefaultProcessLaunchSemaphore;
     }
 
     /// <summary>
@@ -85,7 +89,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         string arguments,
         IReadOnlyDictionary<string, string?>? extraEnvironment = null)
     {
-        await ProcessLaunchSemaphore.WaitAsync();
+        await _processLaunchSemaphore.WaitAsync();
         try
         {
             var cliDllPath = ResolveCliDllPath();
@@ -175,7 +179,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         }
         finally
         {
-            ProcessLaunchSemaphore.Release();
+            _processLaunchSemaphore.Release();
         }
     }
 
