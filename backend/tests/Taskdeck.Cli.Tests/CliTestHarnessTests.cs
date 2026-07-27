@@ -30,12 +30,12 @@ public sealed class CliTestHarnessTests
     [Fact]
     public async Task RunAsync_WhenSixChildrenReachDeadline_ReapsEveryChild()
     {
-        using var launchGate = new SemaphoreSlim(initialCount: 2, maxCount: 2);
+        using var launchGate = new CliProcessLaunchGate(capacity: 2);
         var harnesses = Enumerable.Range(0, 6)
             .Select(index => new CliTestHarness(
                 $"cli-timeout-{index}",
                 processTimeout: TimeSpan.FromSeconds(1),
-                processLaunchSemaphore: launchGate))
+                processLaunchGate: launchGate))
             .ToArray();
         var migrationLocks = harnesses
             .Select(harness => new FileStream(
@@ -81,38 +81,101 @@ public sealed class CliTestHarnessTests
     [Fact]
     public async Task RunAsync_WithSingleSlotGate_StartsNextChildOnlyAfterFirstIsReaped()
     {
-        using var launchGate = new SemaphoreSlim(initialCount: 1, maxCount: 1);
+        using var launchGate = new CliProcessLaunchGate(capacity: 1);
+        using var firstCancellation = new CancellationTokenSource();
+        using var secondCancellation = new CancellationTokenSource();
         await using var firstHarness = new CliTestHarness(
             "cli-single-slot-first",
-            processTimeout: TimeSpan.FromMilliseconds(500),
-            processLaunchSemaphore: launchGate);
+            processLaunchGate: launchGate,
+            processCancellationToken: firstCancellation.Token);
         await using var secondHarness = new CliTestHarness(
             "cli-single-slot-second",
-            processTimeout: TimeSpan.FromMilliseconds(500),
-            processLaunchSemaphore: launchGate);
+            processLaunchGate: launchGate,
+            processCancellationToken: secondCancellation.Token);
         await using var firstMigrationLock = CreateMigrationLock(firstHarness);
         await using var secondMigrationLock = CreateMigrationLock(secondHarness);
 
-        var firstFailureTask = CaptureFailureAsync(firstHarness);
-        (await WaitForLiveProcessCountAsync(
-            new[] { firstHarness },
-            requiredCount: 1,
-            timeout: TimeSpan.FromSeconds(1))).Should().BeTrue();
+        Task<Exception?>? firstFailureTask = null;
+        Task<Exception?>? secondFailureTask = null;
+        try
+        {
+            firstFailureTask = CaptureFailureAsync(firstHarness);
+            (await WaitForLiveProcessCountAsync(
+                new[] { firstHarness },
+                requiredCount: 1,
+                timeout: TimeSpan.FromSeconds(1))).Should().BeTrue();
 
-        var secondFailureTask = CaptureFailureAsync(secondHarness);
-        await Task.Delay(100);
-        secondHarness.LastStartedProcessId.Should().BeNull(
-            "the single launch slot stays owned until the first root is reaped");
+            secondFailureTask = CaptureFailureAsync(secondHarness);
+            launchGate.WaitingCount.Should().Be(1,
+                "the second invocation must be explicitly waiting for the occupied slot");
+            secondHarness.LastStartedProcessId.Should().BeNull();
 
-        (await firstFailureTask).Should().BeOfType<TimeoutException>();
-        (await WaitForLiveProcessCountAsync(
-            new[] { secondHarness },
-            requiredCount: 1,
-            timeout: TimeSpan.FromSeconds(1))).Should().BeTrue();
-        (await secondFailureTask).Should().BeOfType<TimeoutException>();
+            firstCancellation.Cancel();
+            (await firstFailureTask).Should().BeOfType<TimeoutException>();
+            ProcessHasExited(firstHarness.LastStartedProcessId!.Value).Should().BeTrue();
 
-        ProcessHasExited(firstHarness.LastStartedProcessId!.Value).Should().BeTrue();
-        ProcessHasExited(secondHarness.LastStartedProcessId!.Value).Should().BeTrue();
+            (await WaitForLiveProcessCountAsync(
+                new[] { secondHarness },
+                requiredCount: 1,
+                timeout: TimeSpan.FromSeconds(1))).Should().BeTrue();
+            secondCancellation.Cancel();
+            (await secondFailureTask).Should().BeOfType<TimeoutException>();
+            ProcessHasExited(secondHarness.LastStartedProcessId!.Value).Should().BeTrue();
+        }
+        finally
+        {
+            firstCancellation.Cancel();
+            secondCancellation.Cancel();
+            await SettleAsync(firstFailureTask, secondFailureTask);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenCleanupCannotProveReap_PoisonsGateAndRejectsQueuedLaunch()
+    {
+        using var launchGate = new CliProcessLaunchGate(capacity: 1);
+        using var firstCancellation = new CancellationTokenSource();
+        await using var firstHarness = new CliTestHarness(
+            "cli-poisoned-gate-first",
+            processLaunchGate: launchGate,
+            processCancellationToken: firstCancellation.Token,
+            terminateAndReapAsync: ReapThenReportCleanupFailureAsync);
+        await using var secondHarness = new CliTestHarness(
+            "cli-poisoned-gate-second",
+            processLaunchGate: launchGate);
+        await using var firstMigrationLock = CreateMigrationLock(firstHarness);
+
+        Task<Exception?>? firstFailureTask = null;
+        Task<Exception?>? secondFailureTask = null;
+        try
+        {
+            firstFailureTask = CaptureFailureAsync(firstHarness);
+            (await WaitForLiveProcessCountAsync(
+                new[] { firstHarness },
+                requiredCount: 1,
+                timeout: TimeSpan.FromSeconds(1))).Should().BeTrue();
+
+            secondFailureTask = CaptureFailureAsync(secondHarness);
+            launchGate.WaitingCount.Should().Be(1);
+
+            firstCancellation.Cancel();
+            var failures = await Task.WhenAll(firstFailureTask, secondFailureTask);
+
+            failures[0].Should().BeOfType<TimeoutException>()
+                .Which.Message.Should().Contain("cleanup could not prove");
+            failures[1].Should().BeOfType<InvalidOperationException>()
+                .Which.Message.Should().Contain("launch gate is poisoned");
+            launchGate.IsPoisoned.Should().BeTrue();
+            launchGate.CurrentCount.Should().Be(0,
+                "cleanup failure must retain the acquired capacity");
+            secondHarness.LastStartedProcessId.Should().BeNull();
+            ProcessHasExited(firstHarness.LastStartedProcessId!.Value).Should().BeTrue();
+        }
+        finally
+        {
+            firstCancellation.Cancel();
+            await SettleAsync(firstFailureTask, secondFailureTask);
+        }
     }
 
     [Fact]
@@ -217,6 +280,22 @@ public sealed class CliTestHarnessTests
         catch (Exception exception)
         {
             return exception;
+        }
+    }
+
+    private static async Task ReapThenReportCleanupFailureAsync(Process process)
+    {
+        process.Kill(entireProcessTree: true);
+        await process.WaitForExitAsync();
+        throw new TimeoutException(
+            $"Synthetic cleanup could not prove that tracked PID {process.Id} exited.");
+    }
+
+    private static async Task SettleAsync(params Task<Exception?>?[] tasks)
+    {
+        foreach (var task in tasks.Where(task => task is not null))
+        {
+            await task!;
         }
     }
 

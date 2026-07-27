@@ -14,16 +14,18 @@ internal sealed class CliTestHarness : IAsyncDisposable
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TerminationPollInterval = TimeSpan.FromMilliseconds(50);
-    private static readonly SemaphoreSlim DefaultProcessLaunchSemaphore = new(
-        initialCount: Math.Clamp(Environment.ProcessorCount / 2, 1, 4),
-        maxCount: Math.Clamp(Environment.ProcessorCount / 2, 1, 4));
+    private static readonly int DefaultProcessLaunchLimit = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+    private static readonly CliProcessLaunchGate DefaultProcessLaunchGate = new(DefaultProcessLaunchLimit);
 
     private readonly string _dataDirectory;
     private readonly string _databasePath;
     private readonly string _connectionString;
     private readonly bool _provisionEncryptionKey;
     private readonly TimeSpan _processTimeout;
-    private readonly SemaphoreSlim _processLaunchSemaphore;
+    private readonly CliProcessLaunchGate _processLaunchGate;
+    private readonly CancellationToken _processCancellationToken;
+    private readonly Func<Process, Task> _terminateAndReapAsync;
+    private int _lastStartedProcessId;
 
     /// <param name="provisionEncryptionKey">
     /// When true (default) the harness injects a test connector encryption key via
@@ -35,7 +37,9 @@ internal sealed class CliTestHarness : IAsyncDisposable
         string dbPrefix = "taskdeck-cli-tests",
         bool provisionEncryptionKey = true,
         TimeSpan? processTimeout = null,
-        SemaphoreSlim? processLaunchSemaphore = null)
+        CliProcessLaunchGate? processLaunchGate = null,
+        CancellationToken processCancellationToken = default,
+        Func<Process, Task>? terminateAndReapAsync = null)
     {
         _processTimeout = processTimeout ?? ProcessTimeout;
         if (_processTimeout <= TimeSpan.Zero)
@@ -51,7 +55,9 @@ internal sealed class CliTestHarness : IAsyncDisposable
         _databasePath = Path.Combine(_dataDirectory, "taskdeck.db");
         _connectionString = $"Data Source={_databasePath}";
         _provisionEncryptionKey = provisionEncryptionKey;
-        _processLaunchSemaphore = processLaunchSemaphore ?? DefaultProcessLaunchSemaphore;
+        _processLaunchGate = processLaunchGate ?? DefaultProcessLaunchGate;
+        _processCancellationToken = processCancellationToken;
+        _terminateAndReapAsync = terminateAndReapAsync ?? TerminateAndReapAsync;
     }
 
     /// <summary>
@@ -61,7 +67,14 @@ internal sealed class CliTestHarness : IAsyncDisposable
     /// </summary>
     public string DataDirectory => _dataDirectory;
     public string DatabasePath => _databasePath;
-    internal int? LastStartedProcessId { get; private set; }
+    internal int? LastStartedProcessId
+    {
+        get
+        {
+            var processId = Volatile.Read(ref _lastStartedProcessId);
+            return processId == 0 ? null : processId;
+        }
+    }
 
     public async Task<(Guid BoardId, Guid ColumnId)> CreateBoardAndColumnAsync(
         string boardName = "TestBoard",
@@ -89,7 +102,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         string arguments,
         IReadOnlyDictionary<string, string?>? extraEnvironment = null)
     {
-        await _processLaunchSemaphore.WaitAsync();
+        await _processLaunchGate.WaitAsync();
         try
         {
             var cliDllPath = ResolveCliDllPath();
@@ -138,10 +151,13 @@ internal sealed class CliTestHarness : IAsyncDisposable
             }
 
             using var process = new Process { StartInfo = startInfo };
-            using var cts = new CancellationTokenSource(_processTimeout);
+            using var timeoutCts = new CancellationTokenSource(_processTimeout);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+                timeoutCts.Token,
+                _processCancellationToken);
 
             process.Start();
-            LastStartedProcessId = process.Id;
+            Volatile.Write(ref _lastStartedProcessId, process.Id);
 
             var standardOutputTask = process.StandardOutput.ReadToEndAsync(cts.Token);
             var standardErrorTask = process.StandardError.ReadToEndAsync(cts.Token);
@@ -156,10 +172,11 @@ internal sealed class CliTestHarness : IAsyncDisposable
             {
                 try
                 {
-                    await TerminateAndReapAsync(process);
+                    await _terminateAndReapAsync(process);
                 }
                 catch (TimeoutException cleanupFailure)
                 {
+                    _processLaunchGate.Poison(cleanupFailure);
                     throw new TimeoutException(
                         $"CLI process did not exit within {_processTimeout.TotalSeconds}s and cleanup " +
                         $"could not prove that every tracked process exited. Args: {arguments}. " +
@@ -179,7 +196,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         }
         finally
         {
-            _processLaunchSemaphore.Release();
+            _processLaunchGate.Release();
         }
     }
 
@@ -339,6 +356,93 @@ internal sealed class CliTestHarness : IAsyncDisposable
         throw new FileNotFoundException(
             $"Taskdeck.Cli.dll was not found in the test execution directory ({AppContext.BaseDirectory}). " +
             "Ensure the CLI project is referenced and built.");
+    }
+}
+
+/// <summary>
+/// Bounds CLI subprocess concurrency and fails closed after cleanup cannot prove
+/// that a child exited. Poisoning wakes queued callers and prevents every future
+/// acquisition instead of admitting more work beside an unreaped process.
+/// </summary>
+internal sealed class CliProcessLaunchGate : IDisposable
+{
+    private readonly SemaphoreSlim _semaphore;
+    private readonly CancellationTokenSource _poisonCancellation = new();
+    private Exception? _poisonReason;
+    private int _waitingCount;
+
+    public CliProcessLaunchGate(int capacity)
+    {
+        if (capacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacity));
+        }
+
+        _semaphore = new SemaphoreSlim(capacity, capacity);
+    }
+
+    internal int CurrentCount => _semaphore.CurrentCount;
+    internal int WaitingCount => Volatile.Read(ref _waitingCount);
+    internal bool IsPoisoned => Volatile.Read(ref _poisonReason) is not null;
+
+    internal async Task WaitAsync()
+    {
+        ThrowIfPoisoned();
+        Interlocked.Increment(ref _waitingCount);
+        try
+        {
+            try
+            {
+                await _semaphore.WaitAsync(_poisonCancellation.Token);
+            }
+            catch (OperationCanceledException) when (IsPoisoned)
+            {
+                ThrowIfPoisoned();
+                throw;
+            }
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _waitingCount);
+        }
+
+        // Poison can race with a successful semaphore acquisition. Recheck before
+        // the caller is allowed to launch a child.
+        ThrowIfPoisoned();
+    }
+
+    internal void Release()
+    {
+        if (!IsPoisoned)
+        {
+            _semaphore.Release();
+        }
+    }
+
+    internal void Poison(Exception reason)
+    {
+        ArgumentNullException.ThrowIfNull(reason);
+        if (Interlocked.CompareExchange(ref _poisonReason, reason, null) is null)
+        {
+            _poisonCancellation.Cancel();
+        }
+    }
+
+    public void Dispose()
+    {
+        _poisonCancellation.Dispose();
+        _semaphore.Dispose();
+    }
+
+    private void ThrowIfPoisoned()
+    {
+        var reason = Volatile.Read(ref _poisonReason);
+        if (reason is not null)
+        {
+            throw new InvalidOperationException(
+                "CLI process launch gate is poisoned because a prior child could not be reaped.",
+                reason);
+        }
     }
 }
 
