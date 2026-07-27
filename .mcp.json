@@ -19,10 +19,6 @@
     "chromeDevTools": {
       "command": "cmd",
       "args": ["/c", "npx", "-y", "chrome-devtools-mcp@latest"]
-    },
-    "docker": {
-      "command": "docker",
-      "args": ["mcp", "gateway", "run", "--servers", "docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform", "--transport", "stdio"]
     }
   }
 }
