@@ -12,6 +12,7 @@ public class OpenAiLlmProvider : ILlmProvider
     private readonly LlmProviderSettings _settings;
     private readonly ILogger<OpenAiLlmProvider> _logger;
     private readonly bool _allowLocalhostEndpoints;
+    private readonly bool _protectOutboundTelemetry;
 
     public OpenAiLlmProvider(
         HttpClient httpClient,
@@ -23,6 +24,7 @@ public class OpenAiLlmProvider : ILlmProvider
         _settings = settings;
         _logger = logger;
         _allowLocalhostEndpoints = runtimePolicy?.AllowGeneralProviderLocalhost ?? false;
+        _protectOutboundTelemetry = runtimePolicy?.ProtectOutboundTelemetry ?? false;
     }
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
@@ -47,7 +49,10 @@ public class OpenAiLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildRequestPayload(request));
 
-            ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            if (_protectOutboundTelemetry)
+            {
+                ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            }
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
@@ -164,7 +169,10 @@ public class OpenAiLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildToolCallingPayload(request, tools, previousToolResults));
 
-            ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            if (_protectOutboundTelemetry)
+            {
+                ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            }
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 

@@ -11,6 +11,7 @@ public class OllamaLlmProvider : ILlmProvider
     private readonly LlmProviderSettings _settings;
     private readonly ILogger<OllamaLlmProvider> _logger;
     private readonly bool _allowLocalhostEndpoints;
+    private readonly bool _protectOutboundTelemetry;
 
     public OllamaLlmProvider(
         HttpClient httpClient,
@@ -23,6 +24,7 @@ public class OllamaLlmProvider : ILlmProvider
         _logger = logger;
         _allowLocalhostEndpoints = runtimePolicy?.AllowOllamaLocalhost ??
             _settings.Ollama?.AllowLocalhostEndpoints ?? false;
+        _protectOutboundTelemetry = runtimePolicy?.ProtectOutboundTelemetry ?? false;
     }
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
@@ -46,7 +48,10 @@ public class OllamaLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildRequestPayload(request));
 
-            ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            if (_protectOutboundTelemetry)
+            {
+                ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            }
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 

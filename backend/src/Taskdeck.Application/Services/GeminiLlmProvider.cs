@@ -11,6 +11,7 @@ public class GeminiLlmProvider : ILlmProvider
     private readonly LlmProviderSettings _settings;
     private readonly ILogger<GeminiLlmProvider> _logger;
     private readonly bool _allowLocalhostEndpoints;
+    private readonly bool _protectOutboundTelemetry;
 
     public GeminiLlmProvider(
         HttpClient httpClient,
@@ -22,6 +23,7 @@ public class GeminiLlmProvider : ILlmProvider
         _settings = settings;
         _logger = logger;
         _allowLocalhostEndpoints = runtimePolicy?.AllowGeneralProviderLocalhost ?? false;
+        _protectOutboundTelemetry = runtimePolicy?.ProtectOutboundTelemetry ?? false;
     }
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
@@ -76,7 +78,10 @@ public class GeminiLlmProvider : ILlmProvider
                     generationConfig
                 });
 
-            ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            if (_protectOutboundTelemetry)
+            {
+                ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            }
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
@@ -192,7 +197,10 @@ public class GeminiLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(httpMessage, request.Attribution);
             httpMessage.Content = JsonContent.Create(BuildToolCallingPayload(request, tools, previousToolResults));
 
-            ProtectedOutboundTelemetryHandler.PrepareForSend(httpMessage);
+            if (_protectOutboundTelemetry)
+            {
+                ProtectedOutboundTelemetryHandler.PrepareForSend(httpMessage);
+            }
             using var response = await _httpClient.SendAsync(httpMessage, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 

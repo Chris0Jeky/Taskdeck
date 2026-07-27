@@ -22,7 +22,8 @@ public sealed class LlmProviderSettings
 
 public sealed record LlmProviderRuntimePolicy(
     bool AllowGeneralProviderLocalhost,
-    bool AllowOllamaLocalhost);
+    bool AllowOllamaLocalhost,
+    bool ProtectOutboundTelemetry = false);
 
 public sealed class OpenAiProviderSettings
 {

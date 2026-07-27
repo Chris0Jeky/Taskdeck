@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
 using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Extensions;
@@ -38,11 +40,6 @@ public static class SentryRegistration
             options.Dsn = sentrySettings.Dsn;
             options.Environment = sentrySettings.Environment;
             options.TracesSampleRate = sentrySettings.TracesSampleRate;
-
-            // Protected LLM and webhook clients own their telemetry boundary. Sentry's global
-            // client-factory filter would otherwise add independent propagation, URL
-            // breadcrumbs, and failed-request capture outside those clients' redaction controls.
-            options.DisableSentryHttpMessageHandler = true;
 
             // Hard privacy guardrail: never send PII regardless of config.
             // This prevents usernames, emails, IP addresses, and request
@@ -112,6 +109,11 @@ public static class SentryRegistration
                 return breadcrumb;
             });
         });
+
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IHttpMessageHandlerBuilderFilter,
+                ProtectedOutboundSentryHttpMessageHandlerFilter>());
 
         return builder;
     }

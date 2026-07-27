@@ -242,7 +242,8 @@ public static class LlmProviderRegistration
         var allowGeneralProviderLocalhost = IsLocalhostLlmAllowed(services, configuration);
         return new LlmProviderRuntimePolicy(
             AllowGeneralProviderLocalhost: allowGeneralProviderLocalhost,
-            AllowOllamaLocalhost: IsOllamaLocalhostLlmAllowed(configuration, allowGeneralProviderLocalhost));
+            AllowOllamaLocalhost: IsOllamaLocalhostLlmAllowed(configuration, allowGeneralProviderLocalhost),
+            ProtectOutboundTelemetry: true);
     }
 
     private static bool IsLocalhostLlmAllowed(

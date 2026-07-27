@@ -85,6 +85,8 @@ public class LlmProviderRegistrationTests
 
         runtimePolicy.AllowGeneralProviderLocalhost.Should().BeTrue();
         runtimePolicy.AllowOllamaLocalhost.Should().BeTrue();
+        runtimePolicy.ProtectOutboundTelemetry.Should().BeTrue(
+            "registered provider clients must mask destinations before HttpClient diagnostics run");
         provider.Should().BeOfType(expectedProviderType);
         health.IsAvailable.Should().BeTrue(
             "the selected concrete provider must reuse the same localhost policy as selection and connect-time validation");

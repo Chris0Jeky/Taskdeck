@@ -20,6 +20,7 @@ using Sentry.Protocol.Envelopes;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Services;
+using Taskdeck.Infrastructure.Connectors;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -171,7 +172,48 @@ public class ProtectedOutboundTelemetryHandlerTests
     }
 
     [Fact]
-    public async Task EnabledSentry_ShouldNotDecorateOrObserveAnyProtectedClient()
+    public async Task RegisteredProvider_ShouldPrepareBeforeSystemNetHttpEventsAndReachConfiguredOrigin()
+    {
+        using var eventListener = new RecordingHttpEventListener();
+        var controlMarker = $"provider-control-{Guid.NewGuid():N}";
+        var protectedMarker = $"provider-protected-{Guid.NewGuid():N}";
+        var protectedBasePath = $"/{protectedMarker}/v1";
+        await using var controlServer = new SingleRequestLoopbackServer(HttpStatusCode.NoContent);
+        await using var protectedServer = new SingleRequestLoopbackServer(
+            responseBody:
+            """
+            {"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"total_tokens":1}}
+            """);
+        using var serviceProvider = BuildServiceProvider(
+            openAiBaseUrl: protectedServer.BuildUri(protectedBasePath).AbsoluteUri);
+        using var scope = serviceProvider.CreateScope();
+        using var controlClient = serviceProvider
+            .GetRequiredService<IHttpClientFactory>()
+            .CreateClient(ControlClientName);
+        var provider = scope.ServiceProvider.GetRequiredService<OpenAiLlmProvider>();
+
+        using var controlResponse = await controlClient.GetAsync(
+            controlServer.BuildUri($"/control?marker={controlMarker}"));
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "registered provider")],
+            SystemPrompt: string.Empty));
+        var protectedWireRequest = await protectedServer.ReceivedRequest;
+
+        controlResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        result.IsDegraded.Should().BeFalse();
+        protectedWireRequest.Should().StartWith(
+            $"POST {protectedBasePath}/chat/completions HTTP/1.1",
+            "the protected handler must restore the configured origin only inside the registered transport chain");
+        eventListener.Payloads.Should().Contain(
+            payload => payload.Contains(controlMarker, StringComparison.Ordinal),
+            "the control request must prove System.Net.Http EventSource capture is active");
+        eventListener.Payloads.Should().NotContain(
+            payload => payload.Contains(protectedMarker, StringComparison.Ordinal),
+            "the provider itself must prepare the request before HttpClient emits RequestStart");
+    }
+
+    [Fact]
+    public async Task EnabledSentry_ShouldExcludeOnlyProtectedClients()
     {
         var sentryTransport = new RecordingSentryTransport();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -201,6 +243,8 @@ public class ProtectedOutboundTelemetryHandlerTests
             options => options.Transport = sentryTransport);
         builder.Services.AddLlmProviders(builder.Configuration);
         builder.Services.AddTaskdeckWorkers(builder.Configuration, builder.Environment);
+        builder.Services.AddHttpClient<GitHubConnectorProvider>()
+            .ConfigurePrimaryHttpMessageHandler(BuildControlPrimaryHandler);
 
         await using var app = builder.Build();
         IHub? hub = null;
@@ -221,9 +265,10 @@ public class ProtectedOutboundTelemetryHandlerTests
                 "OutboundWebhookDelivery"
             };
             var marker = $"sentry-protected-{Guid.NewGuid():N}";
+            var controlMarker = $"sentry-control-{Guid.NewGuid():N}";
 
-            sentryOptions.DisableSentryHttpMessageHandler.Should().BeTrue(
-                "Taskdeck must prevent Sentry's global factory filter from bypassing protected-client telemetry controls");
+            sentryOptions.DisableSentryHttpMessageHandler.Should().BeFalse(
+                "unrelated named and typed clients must retain Sentry's normal outgoing-request instrumentation");
             sentryOptions.Transport.Should().BeSameAs(
                 sentryTransport,
                 "the regression must flush Sentry envelopes without DNS, proxy, or network access");
@@ -231,6 +276,25 @@ public class ProtectedOutboundTelemetryHandlerTests
             using var sentryScope = hub.PushScope();
             transaction = hub.StartTransaction("protected-outbound-test", "http.client");
             hub.ConfigureScope(scope => scope.Transaction = transaction);
+
+            var controlHandlerTypes = EnumerateHandlerChain(
+                    handlerFactory.CreateHandler(nameof(GitHubConnectorProvider)))
+                .Select(handler => handler.GetType())
+                .ToArray();
+            controlHandlerTypes.Should().Contain(
+                type => typeof(SentryHttpMessageHandler).IsAssignableFrom(type),
+                "the real nonprotected GitHub typed-client name must retain Sentry instrumentation");
+
+            await using (var controlServer = new SingleRequestLoopbackServer(HttpStatusCode.NoContent))
+            using (var controlClient = clientFactory.CreateClient(nameof(GitHubConnectorProvider)))
+            using (var controlResponse = await controlClient.GetAsync(
+                       controlServer.BuildUri($"/control?marker={controlMarker}")))
+            {
+                var rawControlRequest = await controlServer.ReceivedRequest;
+                controlResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+                HasHeader(rawControlRequest, "sentry-trace").Should().BeTrue(
+                    "the nonprotected GitHub client must retain Sentry trace propagation");
+            }
 
             foreach (var clientName in protectedClientNames)
             {
@@ -288,7 +352,9 @@ public class ProtectedOutboundTelemetryHandlerTests
             "finishing the sampled transaction must flush it through the in-memory transport");
     }
 
-    private static ServiceProvider BuildServiceProvider(BaseExporter<Metric>? metricExporter = null)
+    private static ServiceProvider BuildServiceProvider(
+        BaseExporter<Metric>? metricExporter = null,
+        string? openAiBaseUrl = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -300,7 +366,7 @@ public class ProtectedOutboundTelemetryHandlerTests
                 ["Llm:AllowLiveProvidersInDevelopment"] = "true",
                 ["Llm:Provider"] = "OpenAi",
                 ["Llm:OpenAi:ApiKey"] = "test-openai-key",
-                ["Llm:OpenAi:BaseUrl"] = "http://localhost:12345",
+                ["Llm:OpenAi:BaseUrl"] = openAiBaseUrl ?? "http://localhost:12345",
                 ["Llm:OpenAi:Model"] = "test-openai-model",
                 ["Llm:Ollama:AllowLocalhostEndpoints"] = "true"
             })
