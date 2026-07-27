@@ -35,7 +35,9 @@ PATH = "C:\\Users\\jekyt\\source\\Taskdeck\\.runtime-codex\\bin;C:\\Users\\Publi
 HOME = 'C:\Users\jekyt\source\Taskdeck\.runtime-codex\home'
 DOTNET_CLI_HOME = 'C:\Users\jekyt\source\Taskdeck\.runtime-codex\dotnet-home'
 NUGET_PACKAGES = 'C:\Users\jekyt\source\Taskdeck\.runtime-codex\nuget\packages'
-GIT_CONFIG_GLOBAL = 'C:\Users\jekyt\source\Taskdeck\.runtime-codex\home\.gitconfig'
+# HOME already selects .runtime-codex/home/.gitconfig. Do not also export
+# GIT_CONFIG_GLOBAL: the shared deny floor correctly treats that override as
+# opaque Git execution context and would block the safe activation control.
 
 [mcp_servers.openaiDeveloperDocs]
 url = "https://developers.openai.com/mcp"

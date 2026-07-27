@@ -180,8 +180,8 @@ def test_failure_ledger_command_order() -> None:
         expect_text_order(path, renderer, synchronization_test, label)
 
     ci_workflow = (ROOT / ".github" / "workflows" / "reusable-docs-governance.yml").read_text(encoding="utf-8")
-    if 'run: python -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"' not in ci_workflow:
-        raise AssertionError("Required Docs Governance lost its failure-ledger synchronization test")
+    if 'run: python -m unittest discover -s scripts/agent_hooks -p "test_*.py"' not in ci_workflow:
+        raise AssertionError("Required Docs Governance lost its complete agent-hook contract suite")
     if "scripts/agent_hooks/render_failure_ledger.py" in ci_workflow:
         raise AssertionError("Required Docs Governance must not render before validating the checked-in projection")
 

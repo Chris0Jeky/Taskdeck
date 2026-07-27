@@ -51,3 +51,30 @@ This `.codex/` layer is the Codex-facing control plane for Taskdeck. It routes a
 - Use native `rg` for repository search; do not use ripgrep MCP on Windows unless it has been revalidated.
 - Use Codex-native patching for file edits and configured agents/worktrees only when runtime policy allows clean ownership splits.
 
+## Pinned Bash Deny Floor
+
+Taskdeck owns one project `PreToolUse` handler in `hooks.json`. It matches only
+`Bash` and routes through the repo-owned `invoke_deny_floor.sh` /
+`invoke_deny_floor.ps1` launchers to the shared dispatcher installed from
+reviewed `agent-harness` floor 1.6.18. This is a command tripwire, not whole-tool
+containment; native tool/API writes remain governed by their own permissions and
+the repository agreements.
+
+The `expected=<sha256>` value in `hooks.json` remains the producer contract's
+audit-only marker. Taskdeck's bridge separately verifies the installed
+dispatcher's LF-normalized SHA-256 and `FLOOR_VERSION` before execution, then
+adds `[Taskdeck Codex deny-floor adapter]` to every dispatcher denial. It finds
+the operating-system account home without trusting inherited `HOME`, so the
+POSIX path still resolves when this repo's Windows-focused environment settings
+are present. The redundant `GIT_CONFIG_GLOBAL` export is intentionally absent:
+`HOME` already selects the same `.runtime-codex/home/.gitconfig`, while the
+extra selector is correctly treated by the shared floor as opaque Git execution
+context and would block the safe activation control.
+
+Codex maps a linked worktree's hook source to the normal checkout that owns the
+common Git directory. Therefore a worktree-only copy is not activation proof.
+Review and trust the exact definition in a fresh normal checkout (or a fresh
+standalone clone of the exact PR head) via `/hooks`; then run the allowed control
+and handler-attributed non-writing deny canary documented in
+`docs/TESTING_GUIDE.md`. Never edit trust state or use a bypass flag.
+

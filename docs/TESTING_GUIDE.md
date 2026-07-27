@@ -158,6 +158,69 @@ node scripts/check-github-ops-governance.mjs
 
 The native-Windows hook smoke test executes the configured `.claude/settings.json` command handlers with `CLAUDE_PROJECT_DIR` set, including PowerShell-hosted handlers, representative dangerous Bash-command denials, missing-launcher and missing-policy fail-closed probes, failure-ledger redaction, and pre-commit no-op behavior. Its payloads identify the `Bash` tool; it does not prove native PowerShell-tool interception. That T4 policy gap is tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497).
 
+### Codex pinned deny-floor adapter (`#1456`, T4)
+
+The Taskdeck Codex adapter is a Bash-command tripwire backed by the reviewed
+agent-harness producer. The producer commit, installed dispatcher, audit marker,
+and smoke program are one contract; do not substitute the installed smoke copy
+for the reviewed producer program. Run this block from the root of the exact
+Taskdeck head being verified. Every external command is checked immediately so
+a later green command cannot overwrite an earlier failure:
+
+```powershell
+$ErrorActionPreference = "Stop"
+$HarnessRoot = "C:\Users\jekyt\source\agent-harness"
+$TaskdeckRoot = (& git rev-parse --show-toplevel).Trim()
+$ExpectedProducer = "7dbeb8253fe8c3465bf6c45fe9c5622436c96958"
+$ExpectedPin = "4da65bb4d1fc84409db8fe6846a5b2961c408f2278d963485bf2fa886e4bf1a3"
+
+if (Test-Path Env:GIT_CONFIG_GLOBAL) {
+    throw "This process inherited the retired GIT_CONFIG_GLOBAL selector; start a fresh session at the exact head"
+}
+
+$Producer = (& git -C $HarnessRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($Producer -ne $ExpectedProducer) { throw "Reviewed agent-harness identity changed: $Producer" }
+
+$ActualPin = (& py -3 -B -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); t=p.read_text(encoding='utf-8').replace(chr(13)+chr(10),chr(10)).replace(chr(13),chr(10)); print(hashlib.sha256(t.encode('utf-8')).hexdigest())" "$HarnessRoot\templates\hooks\dispatch.py").Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($ActualPin -ne $ExpectedPin) { throw "Reviewed dispatcher identity changed: $ActualPin" }
+
+& py -3 -B "$HarnessRoot\harness.py" doctor --repo $TaskdeckRoot
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& py -3 -B "$HarnessRoot\harness.py" audit --json $TaskdeckRoot
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& py -3 -B "$HarnessRoot\templates\hooks\smoke_test.py"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_*.py"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Get-Content -Raw .codex\hooks.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
+```
+
+`doctor` must report one canonical root handler, one candidate, and one current
+audit-marker handler. `audit` must contain no adapter finding. The adapter suite
+covers hostile inherited `HOME` and `GH_HOST`, a stripped `PATH`, exact runtime
+identity, malformed/unknown payload or dispatcher results, and the real current
+platform command. The producer smoke total is self-counting; record its emitted
+total rather than copying an older count into this guide.
+
+Static checks and Claude-hook evidence do not prove Codex activation. The final
+gate belongs to the maintainer in a completely fresh Codex session rooted at a
+normal checkout or standalone clone whose `HEAD` is the exact reviewed PR head
+(not this repo's linked `.worktrees/` checkout):
+
+1. Run `/hooks`, inspect the source path, and trust exactly one
+   `PreToolUse` / `Bash` Taskdeck handler.
+2. Run `git status --short --branch`; it must execute normally.
+3. Run the non-writing canary
+   `git push --force --dry-run origin HEAD:refs/heads/codex-hook-canary`.
+   It must stop before Git executes and its reason must begin
+   `[Taskdeck Codex deny-floor adapter] [floor 1.6.18 (2026-07-27)]`.
+
+If `/hooks` names a different source, shows zero or multiple active handlers, or
+the canary lacks that exact handler attribution, stop. Do not hand-edit trust,
+repeat an un-attributed canary, or treat static/hash/CI evidence as activation.
+
 When MCP availability itself is part of the change, also run the active runtime's MCP listing/auth command if available. Do not claim remote MCP connectivity unless the current session actually verified it.
 
 When `.claude/settings.json` changes outside the agentic smoke path, also parse it with PowerShell:
