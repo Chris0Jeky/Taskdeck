@@ -4,7 +4,6 @@
 # (docs/ops/DEPLOYMENT_WORKFLOW.md) with a manual approval gate for Phase 3.
 #
 # Triggers:
-#   - Release published (automatic)
 #   - Manual workflow dispatch (for re-runs or pre-release validation)
 #
 # ADR: ADR-0028 (Staged Deployment — Blue/Green with Canary Verification)
@@ -25,9 +24,6 @@ on:
         required: false
         type: boolean
         default: false
-  release:
-    types:
-      - published
 
 permissions:
   contents: read
