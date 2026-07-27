@@ -57,6 +57,16 @@ Split only when file ownership or concerns do not overlap. Good splits:
 
 Avoid parallel workers on the same view, store, service, migration chain, project file, or canonical doc unless the coordinator plans the merge order.
 
+## Structured patch discipline
+
+When editing with structured patches:
+
+- Default each `apply_patch` (or equivalent structured patch operation) to one target file. Use a multi-file operation only for a tightly homogeneous mechanical set where every file has its own independently stable anchor.
+- In prose or Unicode-bearing files, anchor hunks on nearby ASCII-stable headings or lines instead of typography-sensitive exact text.
+- After a context rejection, inspect the live target before retrying, then reduce the retry to the smallest independently anchored hunk.
+- Never repeat the same broad multi-file patch after it is rejected.
+- Route repeated or unresolved patch failures through `taskdeck-failure-capture` so the failure and safe workaround remain visible.
+
 ## Worker setup
 
 For each issue:
