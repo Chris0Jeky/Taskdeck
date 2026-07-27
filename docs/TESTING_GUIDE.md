@@ -188,8 +188,16 @@ if ($ActualPin -ne $ExpectedPin) { throw "Reviewed dispatcher identity changed: 
 
 & py -3 -B "$HarnessRoot\harness.py" doctor --repo $TaskdeckRoot
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& py -3 -B "$HarnessRoot\harness.py" audit --json $TaskdeckRoot
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$AuditJson = (& py -3 -B "$HarnessRoot\harness.py" audit --json $TaskdeckRoot) -join [Environment]::NewLine
+$AuditExit = $LASTEXITCODE
+if ($AuditExit -notin 0, 1) { exit $AuditExit }
+$Audit = $AuditJson | ConvertFrom-Json -ErrorAction Stop
+if ($Audit.unproven -ne 0) { throw "Harness audit left $($Audit.unproven) reality check(s) unproven" }
+$BadReality = @($Audit.reality | Where-Object { $_.status -ne "ok" })
+if ($BadReality.Count -ne 0) { throw "Harness audit found a declared-vs-real mismatch" }
+if ($AuditExit -ne 0) {
+    Write-Warning ("Unrelated repository-hygiene findings remain: " + ($Audit.issues -join "; "))
+}
 & py -3 -B "$HarnessRoot\templates\hooks\smoke_test.py"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_*.py"
@@ -197,8 +205,11 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Get-Content -Raw .codex\hooks.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
 ```
 
-`doctor` must report one canonical root handler, one candidate, and one current
-audit-marker handler. `audit` must contain no adapter finding. The adapter suite
+`doctor` must report one canonical root handler, one candidate, one current
+audit-marker handler, a clean adapter contract, and no activation blocker.
+The broader harness audit may remain red on separately tracked instruction-budget
+or stale-path hygiene; the block records those issues but still fails on invalid
+output, an unproven reality check, or a declared-vs-real mismatch. The adapter suite
 covers hostile inherited `HOME` and `GH_HOST`, a stripped `PATH`, exact runtime
 identity, malformed/unknown payload or dispatcher results, and the real current
 platform command. The producer smoke total is self-counting; record its emitted
