@@ -163,18 +163,17 @@ jobs:
       # win-x64 (windows-latest) and linux-x64 (ubuntu-latest) are native.
       #
       # shell: bash so one script covers Windows + Linux + macOS (bash ships on
-      # the Windows runner). curl + openssl are available on all three runners.
+      # the Windows runner). curl + Node + SHA-256 tooling are available on all three runners.
       #
-      # Secrets: a downloaded desktop exe runs with ASPNETCORE_ENVIRONMENT unset,
-      # which defaults to Production. First-run auto-generates the JWT secret, but
-      # in Production the connector encryption key is NOT auto-generated and
-      # FirstRunBootstrapper.ValidateProductionSecrets hard-fails without it. We
-      # therefore pass throwaway Jwt__SecretKey and Connectors__EncryptionKey env
-      # vars (generated with openssl; the connector key must base64-decode to
-      # exactly 32 bytes per AesCredentialEncryptionService). Supplying the JWT
-      # secret also stops first-run from writing appsettings.local.json into the
-      # publish dir, and the DB is pointed at a temp dir, so nothing pollutes the
-      # archive built in the next step.
+      # This is deliberately a zero-secret/config desktop launch. GitHub's ambient
+      # headless markers are removed for the child process, and LOCALAPPDATA/HOME/
+      # XDG_DATA_HOME are isolated. The first launch creates durable config + DB;
+      # the publish output is then relocated and relaunched against the same app-data
+      # root. Stable config digest + DB path prove continuity across the move, while
+      # both executable directories initially remain free of appsettings.local.json.
+      # A final phase stages that same config as a legacy executable-local source,
+      # removes only the isolated durable copy, and proves migration preserves its
+      # exact bytes, connector key, DB path, and retained source.
       - name: Smoke test published executable
         if: matrix.rid != 'osx-x64'  # cross-arch on the arm64 macOS runner — not launchable there
         shell: bash
@@ -183,7 +182,54 @@ jobs:
 
           PORT=5099
           URL="http://127.0.0.1:${PORT}"
-          PUBLISH_DIR="publish/${{ matrix.rid }}"
+
+          canonicalize_db_path() {
+            local raw_path="$1"
+            local resolved
+            resolved="$(node -e 'process.stdout.write(require("path").resolve(process.argv[1]));' "$raw_path")"
+            if [ "${RUNNER_OS}" = "Windows" ]; then
+              cygpath -u -a "$resolved"
+            else
+              printf '%s' "$resolved"
+            fi
+          }
+
+          assert_sqlite_database() {
+            local db_path="$1"
+            local phase="$2"
+            case "$db_path" in
+              "${SMOKE_PROFILE_DIR}"/*) ;;
+              *)
+                echo "::error::${phase} database resolved outside the isolated smoke profile: ${db_path}"
+                exit 1
+                ;;
+            esac
+            if [ ! -s "$db_path" ]; then
+              echo "::error::${phase} database is missing or empty: ${db_path}"
+              exit 1
+            fi
+            local sqlite_header
+            sqlite_header="$(od -An -tx1 -N16 "$db_path" | tr -d '[:space:]')"
+            if [ "$sqlite_header" != "53514c69746520666f726d6174203300" ]; then
+              echo "::error::${phase} database does not have a SQLite 3 header: ${db_path}"
+              exit 1
+            fi
+          }
+
+          assert_publish_dirs_clean() {
+            local publish_dir
+            local stray
+            for publish_dir in "$@"; do
+              stray="$(find "$publish_dir" -type f -name 'taskdeck.db*' -print)"
+              if [ -n "$stray" ]; then
+                echo "::error::Published executable directory contains database files: ${publish_dir}"
+                printf '%s\n' "$stray"
+                exit 1
+              fi
+            done
+          }
+
+          PUBLISH_DIR="$(canonicalize_db_path "$(pwd)/publish/${{ matrix.rid }}")"
 
           # The published assembly name is Taskdeck.Api (no AssemblyName override);
           # the apphost gets a .exe suffix on Windows only.
@@ -200,36 +246,75 @@ jobs:
           fi
           chmod +x "$EXE" 2>/dev/null || true
 
-          # Isolated temp data dir so no SQLite file lands in the publish output.
+          # Isolated app-data/profile roots. The launched process has GitHub's CI
+          # markers removed, so Production follows the real desktop policy.
           SMOKE_DATA_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t taskdeck-smoke)"
-          # .NET needs a native path for the connection string on Windows; the
-          # MSYS path from mktemp (/tmp/...) is meaningless to the Win32 process.
+          mkdir -p "${SMOKE_DATA_DIR}/profile/localappdata" "${SMOKE_DATA_DIR}/profile/home" "${SMOKE_DATA_DIR}/profile/xdg-data"
+          SMOKE_PROFILE_DIR="$(canonicalize_db_path "${SMOKE_DATA_DIR}/profile")"
           if [ "${RUNNER_OS}" = "Windows" ]; then
-            DB_DIR="$(cygpath -w "${SMOKE_DATA_DIR}")"
+            APP_LOCALAPPDATA="$(cygpath -w "${SMOKE_PROFILE_DIR}/localappdata")"
+            APP_HOME="$(cygpath -w "${SMOKE_PROFILE_DIR}/home")"
+            APP_XDG_DATA_HOME="$(cygpath -w "${SMOKE_PROFILE_DIR}/xdg-data")"
           else
-            DB_DIR="${SMOKE_DATA_DIR}"
+            APP_LOCALAPPDATA="${SMOKE_PROFILE_DIR}/localappdata"
+            APP_HOME="${SMOKE_PROFILE_DIR}/home"
+            APP_XDG_DATA_HOME="${SMOKE_PROFILE_DIR}/xdg-data"
           fi
 
-          # Throwaway secrets (never reused, discarded with the temp dir).
-          SMOKE_JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
-          SMOKE_CONNECTOR_KEY="$(openssl rand -base64 32 | tr -d '\n')"
-
           APP_PID=""
-          LOG="${SMOKE_DATA_DIR}/app.log"
-          cleanup() {
-            if [ -n "${APP_PID}" ]; then
-              kill "${APP_PID}" 2>/dev/null || true
+          wait_for_app_exit() {
+            local pid="$1"
+            for _ in {1..40}; do
+              if [ "${RUNNER_OS}" = "Windows" ]; then
+                if ! tasklist //FI "IMAGENAME eq Taskdeck.Api.exe" //NH 2>/dev/null \
+                    | grep -qi 'Taskdeck.Api.exe'; then
+                  return 0
+                fi
+              elif ! kill -0 "${pid}" 2>/dev/null; then
+                return 0
+              fi
+              sleep 0.25
+            done
+            return 1
+          }
+
+          stop_app() {
+            if [ -z "${APP_PID}" ]; then
+              return 0
             fi
+
+            local pid="${APP_PID}"
+            kill "${pid}" 2>/dev/null || true
             if [ "${RUNNER_OS}" = "Windows" ]; then
-              # MSYS->Win32 PID mapping can miss; make sure the apphost is gone.
-              taskkill //F //IM Taskdeck.Api.exe 2>/dev/null || true
+              # MSYS->Win32 PID mapping can miss; request termination by apphost name too.
+              taskkill //IM Taskdeck.Api.exe 2>/dev/null || true
             fi
+
+            if ! wait_for_app_exit "${pid}"; then
+              if [ "${RUNNER_OS}" = "Windows" ]; then
+                taskkill //F //IM Taskdeck.Api.exe 2>/dev/null || true
+              else
+                kill -9 "${pid}" 2>/dev/null || true
+              fi
+              if ! wait_for_app_exit "${pid}"; then
+                echo "::error::Taskdeck process ${pid} did not exit after forced termination"
+                return 1
+              fi
+            fi
+
+            # The bounded checks proved the process exited; this wait only reaps the completed child.
+            wait "${pid}" 2>/dev/null || true
+            APP_PID=""
+          }
+          cleanup() {
+            stop_app
             rm -rf "${SMOKE_DATA_DIR}" 2>/dev/null || true
           }
           trap cleanup EXIT
 
           EXE_NAME="$(basename "$EXE")"
-          echo "Launching ${EXE_NAME} (cwd=${PUBLISH_DIR}) on ${URL} (data dir: ${SMOKE_DATA_DIR})"
+          LOG="${SMOKE_DATA_DIR}/app-first.log"
+          echo "Launching ${EXE_NAME} (cwd=${PUBLISH_DIR}) on ${URL} with isolated app data"
           # Run with the publish dir as the working directory so ASP.NET Core resolves the
           # content root there and serves wwwroot/index.html + appsettings.json — exactly as
           # an end user runs the extracted exe (the content root defaults to the CWD, not the
@@ -238,12 +323,15 @@ jobs:
           # the real process PID for a clean kill.
           (
             cd "$PUBLISH_DIR"
-            ASPNETCORE_URLS="${URL}" \
-            ConnectionStrings__DefaultConnection="Data Source=${DB_DIR}/taskdeck-smoke.db" \
-            Jwt__SecretKey="${SMOKE_JWT_SECRET}" \
-            Connectors__EncryptionKey="${SMOKE_CONNECTOR_KEY}" \
-            FirstRun__AutoOpenBrowser="false" \
-            exec "./${EXE_NAME}"
+            exec env -u CI -u TF_BUILD -u GITHUB_ACTIONS -u TASKDECK_HEADLESS \
+              ASPNETCORE_ENVIRONMENT="Production" \
+              DOTNET_ENVIRONMENT="Production" \
+              ASPNETCORE_URLS="${URL}" \
+              LOCALAPPDATA="${APP_LOCALAPPDATA}" \
+              HOME="${APP_HOME}" \
+              XDG_DATA_HOME="${APP_XDG_DATA_HOME}" \
+              FirstRun__AutoOpenBrowser="false" \
+              "./${EXE_NAME}"
           ) > "$LOG" 2>&1 &
           APP_PID=$!
           echo "Started PID ${APP_PID}"
@@ -290,6 +378,203 @@ jobs:
             echo "--- app log (tail) ---"; tail -n 60 "$LOG" || true
             exit 1
           fi
+
+          LOCAL_CONFIG_COUNT="$(find "$SMOKE_PROFILE_DIR" -type f -name appsettings.local.json | wc -l | tr -d '[:space:]')"
+          if [ "$LOCAL_CONFIG_COUNT" -ne 1 ]; then
+            echo "::error::Expected one durable appsettings.local.json under the isolated profile; found ${LOCAL_CONFIG_COUNT}"
+            find "$SMOKE_PROFILE_DIR" -maxdepth 6 -type f -print || true
+            tail -n 60 "$LOG" || true
+            exit 1
+          fi
+          DURABLE_CONFIG="$(find "$SMOKE_PROFILE_DIR" -type f -name appsettings.local.json -print | head -n 1)"
+          if command -v sha256sum >/dev/null 2>&1; then
+            CONFIG_DIGEST_ONE="$(sha256sum "$DURABLE_CONFIG" | awk '{print $1}')"
+          else
+            CONFIG_DIGEST_ONE="$(shasum -a 256 "$DURABLE_CONFIG" | awk '{print $1}')"
+          fi
+          DB_PATH_ONE="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const s=c?.ConnectionStrings?.DefaultConnection??"";if(!s.startsWith("Data Source="))process.exit(2);process.stdout.write(s.slice("Data Source=".length));' "$DURABLE_CONFIG")"
+          DB_PATH_ONE="$(canonicalize_db_path "$DB_PATH_ONE")"
+          CONNECTOR_KEY_ONE="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const k=c?.Connectors?.EncryptionKey??"";if(!k)process.exit(2);process.stdout.write(k);' "$DURABLE_CONFIG")"
+          echo "First launch durable config digest: ${CONFIG_DIGEST_ONE}"
+          echo "First launch resolved DB path: ${DB_PATH_ONE}"
+          assert_sqlite_database "$DB_PATH_ONE" "First launch"
+          assert_publish_dirs_clean "$PUBLISH_DIR"
+          if [ -e "${PUBLISH_DIR}/appsettings.local.json" ]; then
+            echo "::error::First launch wrote executable-local appsettings.local.json"
+            exit 1
+          fi
+
+          stop_app
+
+          RELOCATED_DIR="${SMOKE_DATA_DIR}/relocated-publish"
+          mkdir -p "$RELOCATED_DIR"
+          cp -R "${PUBLISH_DIR}/." "$RELOCATED_DIR/"
+          EXE="${RELOCATED_DIR}/${EXE_NAME}"
+          chmod +x "$EXE" 2>/dev/null || true
+
+          LOG="${SMOKE_DATA_DIR}/app-relocated.log"
+          echo "Relaunching ${EXE_NAME} from ${RELOCATED_DIR} against the same isolated app data"
+          (
+            cd "$RELOCATED_DIR"
+            exec env -u CI -u TF_BUILD -u GITHUB_ACTIONS -u TASKDECK_HEADLESS \
+              ASPNETCORE_ENVIRONMENT="Production" \
+              DOTNET_ENVIRONMENT="Production" \
+              ASPNETCORE_URLS="${URL}" \
+              LOCALAPPDATA="${APP_LOCALAPPDATA}" \
+              HOME="${APP_HOME}" \
+              XDG_DATA_HOME="${APP_XDG_DATA_HOME}" \
+              FirstRun__AutoOpenBrowser="false" \
+              "./${EXE_NAME}"
+          ) > "$LOG" 2>&1 &
+          APP_PID=$!
+
+          READY=0
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null --max-time 5 "${URL}/health/ready"; then
+              READY=1
+              echo "Relocated health/ready returned success after ~${i}s"
+              break
+            fi
+            if [ "${RUNNER_OS}" != "Windows" ] && ! kill -0 "${APP_PID}" 2>/dev/null; then
+              echo "::error::Relocated Taskdeck process exited before /health/ready became ready"
+              tail -n 60 "$LOG" || true
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ "${READY}" -ne 1 ]; then
+            echo "::error::Relocated /health/ready did not return success within 60s"
+            tail -n 60 "$LOG" || true
+            exit 1
+          fi
+
+          ROOT_BODY="${SMOKE_DATA_DIR}/root-relocated.html"
+          ROOT_CODE="$(curl -s -o "$ROOT_BODY" -w '%{http_code}' --max-time 10 "${URL}/" || echo 000)"
+          if [ "$ROOT_CODE" != "200" ] || ! grep -qiE '<div id="app"|<!doctype html' "$ROOT_BODY"; then
+            echo "::error::Relocated GET / did not serve the SPA index.html (HTTP ${ROOT_CODE})"
+            tail -n 60 "$LOG" || true
+            exit 1
+          fi
+
+          if command -v sha256sum >/dev/null 2>&1; then
+            CONFIG_DIGEST_TWO="$(sha256sum "$DURABLE_CONFIG" | awk '{print $1}')"
+          else
+            CONFIG_DIGEST_TWO="$(shasum -a 256 "$DURABLE_CONFIG" | awk '{print $1}')"
+          fi
+          DB_PATH_TWO="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const s=c?.ConnectionStrings?.DefaultConnection??"";if(!s.startsWith("Data Source="))process.exit(2);process.stdout.write(s.slice("Data Source=".length));' "$DURABLE_CONFIG")"
+          DB_PATH_TWO="$(canonicalize_db_path "$DB_PATH_TWO")"
+          echo "Relocated launch durable config digest: ${CONFIG_DIGEST_TWO}"
+          echo "Relocated launch resolved DB path: ${DB_PATH_TWO}"
+          assert_sqlite_database "$DB_PATH_TWO" "Relocated launch"
+          assert_publish_dirs_clean "$PUBLISH_DIR" "$RELOCATED_DIR"
+          if [ "$CONFIG_DIGEST_ONE" != "$CONFIG_DIGEST_TWO" ]; then
+            echo "::error::Durable config changed after relocating the published executable"
+            exit 1
+          fi
+          if [ "$DB_PATH_ONE" != "$DB_PATH_TWO" ]; then
+            echo "::error::Resolved database path changed after relocating the published executable"
+            exit 1
+          fi
+          if [ -e "${RELOCATED_DIR}/appsettings.local.json" ]; then
+            echo "::error::Relocated launch wrote executable-local appsettings.local.json"
+            exit 1
+          fi
+          echo "Zero-config relocation smoke passed for ${{ matrix.rid }}"
+
+          stop_app
+
+          # Exercise the actual upgrade path using the first launch's generated config and database.
+          # The durable file is inside the isolated profile; guard that exact scope before removing it.
+          LEGACY_CONFIG="${RELOCATED_DIR}/appsettings.local.json"
+          cp "$DURABLE_CONFIG" "$LEGACY_CONFIG"
+          case "$DURABLE_CONFIG" in
+            "${SMOKE_PROFILE_DIR}"/*) ;;
+            *)
+              echo "::error::Refusing to remove durable config outside the isolated smoke profile"
+              exit 1
+              ;;
+          esac
+          rm -f "$DURABLE_CONFIG"
+          if [ -e "$DURABLE_CONFIG" ] || [ ! -f "$LEGACY_CONFIG" ]; then
+            echo "::error::Could not stage the isolated executable-local migration source"
+            exit 1
+          fi
+
+          LOG="${SMOKE_DATA_DIR}/app-migration.log"
+          echo "Relaunching ${EXE_NAME} to migrate the staged executable-local config"
+          (
+            cd "$RELOCATED_DIR"
+            exec env -u CI -u TF_BUILD -u GITHUB_ACTIONS -u TASKDECK_HEADLESS \
+              ASPNETCORE_ENVIRONMENT="Production" \
+              DOTNET_ENVIRONMENT="Production" \
+              ASPNETCORE_URLS="${URL}" \
+              LOCALAPPDATA="${APP_LOCALAPPDATA}" \
+              HOME="${APP_HOME}" \
+              XDG_DATA_HOME="${APP_XDG_DATA_HOME}" \
+              FirstRun__AutoOpenBrowser="false" \
+              "./${EXE_NAME}"
+          ) > "$LOG" 2>&1 &
+          APP_PID=$!
+
+          READY=0
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null --max-time 5 "${URL}/health/ready"; then
+              READY=1
+              echo "Migrated health/ready returned success after ~${i}s"
+              break
+            fi
+            if [ "${RUNNER_OS}" != "Windows" ] && ! kill -0 "${APP_PID}" 2>/dev/null; then
+              echo "::error::Migrated Taskdeck process exited before /health/ready became ready"
+              tail -n 60 "$LOG" || true
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ "${READY}" -ne 1 ]; then
+            echo "::error::Migrated /health/ready did not return success within 60s"
+            tail -n 60 "$LOG" || true
+            exit 1
+          fi
+
+          LOCAL_CONFIG_COUNT="$(find "$SMOKE_PROFILE_DIR" -type f -name appsettings.local.json | wc -l | tr -d '[:space:]')"
+          if [ "$LOCAL_CONFIG_COUNT" -ne 1 ]; then
+            echo "::error::Migration did not recreate exactly one durable local config; found ${LOCAL_CONFIG_COUNT}"
+            exit 1
+          fi
+          DURABLE_CONFIG_THREE="$(find "$SMOKE_PROFILE_DIR" -type f -name appsettings.local.json -print | head -n 1)"
+          if [ "$DURABLE_CONFIG_THREE" != "$DURABLE_CONFIG" ]; then
+            echo "::error::Migration recreated the durable config at an unexpected path"
+            exit 1
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            CONFIG_DIGEST_THREE="$(sha256sum "$DURABLE_CONFIG_THREE" | awk '{print $1}')"
+            LEGACY_DIGEST="$(sha256sum "$LEGACY_CONFIG" | awk '{print $1}')"
+          else
+            CONFIG_DIGEST_THREE="$(shasum -a 256 "$DURABLE_CONFIG_THREE" | awk '{print $1}')"
+            LEGACY_DIGEST="$(shasum -a 256 "$LEGACY_CONFIG" | awk '{print $1}')"
+          fi
+          DB_PATH_THREE="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const s=c?.ConnectionStrings?.DefaultConnection??"";if(!s.startsWith("Data Source="))process.exit(2);process.stdout.write(s.slice("Data Source=".length));' "$DURABLE_CONFIG_THREE")"
+          DB_PATH_THREE="$(canonicalize_db_path "$DB_PATH_THREE")"
+          CONNECTOR_KEY_THREE="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const k=c?.Connectors?.EncryptionKey??"";if(!k)process.exit(2);process.stdout.write(k);' "$DURABLE_CONFIG_THREE")"
+          assert_sqlite_database "$DB_PATH_THREE" "Migration launch"
+          assert_publish_dirs_clean "$PUBLISH_DIR" "$RELOCATED_DIR"
+          if [ "$CONFIG_DIGEST_ONE" != "$CONFIG_DIGEST_THREE" ] || [ "$LEGACY_DIGEST" != "$CONFIG_DIGEST_ONE" ]; then
+            echo "::error::Migration did not preserve the exact generated local-config bytes"
+            exit 1
+          fi
+          if [ "$CONNECTOR_KEY_ONE" != "$CONNECTOR_KEY_THREE" ]; then
+            echo "::error::Migration changed the generated connector encryption key"
+            exit 1
+          fi
+          if [ "$DB_PATH_ONE" != "$DB_PATH_THREE" ]; then
+            echo "::error::Migration changed the resolved database path"
+            exit 1
+          fi
+          if [ ! -f "$LEGACY_CONFIG" ]; then
+            echo "::error::Legacy executable-local config was not retained after migration"
+            exit 1
+          fi
+          echo "Executable-local migration smoke passed for ${{ matrix.rid }}"
 
       # A bare workflow_dispatch (no tag input, run from a branch) is the REHEARSAL path:
       # it must build, smoke-test and package without publishing anything. Previously the
