@@ -30,7 +30,7 @@ Selection is deterministic through `LlmProviderSelectionPolicy`:
 - unknown provider values also fall back deterministically to `Mock`
 - selected provider config must pass validation (`ApiKey`, `BaseUrl`, `Model`, `TimeoutSeconds`)
 - `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected; the selection policy falls back to Mock when validation fails
-- `HttpClient`s for OpenAI, OpenAICompatible, and Gemini use `OutboundWebhookConnectCallback` for DNS-level SSRF protection (defense against DNS rebinding where a hostname resolves to a private IP at connect time) and set `AllowAutoRedirect = false` to prevent redirect-based bypass
+- `HttpClient`s for OpenAI, OpenAICompatible, and Gemini use `OutboundWebhookConnectCallback` for DNS-level SSRF protection (defense against DNS rebinding where a hostname resolves to a private IP at connect time) and set `AllowAutoRedirect = false`; OpenAICompatible additionally rejects every observed 3xx response in its egress handler rather than following an allowlisted redirect
 
 If any live-provider condition fails, runtime degrades safely to `Mock`.
 
@@ -127,13 +127,32 @@ Set the common safety gates and provider name:
 - `Llm__AllowLiveProvidersInDevelopment=true` (only for development-like environments)
 - `Llm__Provider=OpenAICompatible`
 
-The endpoint must be public HTTP(S) and pass the same URL and DNS-level SSRF
-checks as OpenAI. Keep keys in a secret store; never commit them. Compatible
+Production and other non-development endpoints must be public HTTPS and pass
+the same URL and DNS-level SSRF checks as OpenAI. Plain HTTP is accepted only
+for loopback development endpoints when both the development environment and
+`AllowLiveProvidersInDevelopment` gate permit it. Keep keys in a secret store;
+never commit them. Compatible
 gateways may require optional non-secret headers such as `HTTP-Referer` or
 `X-Title`; use `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>` for those.
 Authorization, proxy, hop-by-hop, cookie, host-routing, forwarding, and
 `x-taskdeck-*` headers are reserved and cannot be overridden. The base URL may
 contain a path but not user information, a query, or a fragment.
+
+The complete environment-variable surface is:
+
+- required: `Llm__OpenAiCompatible__ApiKey`,
+  `Llm__OpenAiCompatible__BaseUrl`, and `Llm__OpenAiCompatible__Model`
+- response controls: `Llm__OpenAiCompatible__TimeoutSeconds`,
+  `Llm__OpenAiCompatible__MaxResponseBytes`,
+  `Llm__OpenAiCompatible__MaxSseLineBytes`, and
+  `Llm__OpenAiCompatible__MaxSseEventBytes`
+- optional gateway headers:
+  `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>`; for example,
+  `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` and
+  `Llm__OpenAiCompatible__ExtraHeaders__X-Title`
+
+Compatible requests fail closed on every HTTP redirect, including redirects
+back to the configured host. Configure the final API base URL directly.
 
 ### OpenRouter
 

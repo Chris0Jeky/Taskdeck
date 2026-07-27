@@ -114,13 +114,17 @@ public static class LlmProviderRegistration
         })
         .ConfigurePrimaryHttpMessageHandler(_ =>
         {
-            // Keep the same DNS-level SSRF defense and redirect posture as OpenAI.
-            return CreateProtectedSocketsHttpHandler(localhostPolicy.AllowGeneralProviderLocalhost);
+            // An arbitrary compatible origin is validated directly; do not allow a
+            // system proxy to replace that destination under ConnectCallback.
+            return CreateProtectedSocketsHttpHandler(
+                localhostPolicy.AllowGeneralProviderLocalhost,
+                disableSystemProxy: true);
         })
         .AddHttpMessageHandler(sp => new EgressEnvelopeHandler(
             sp.GetRequiredService<IEgressRegistry>(),
             sp.GetRequiredService<ILogger<EgressEnvelopeHandler>>(),
-            nameof(OpenAiCompatibleLlmProvider)))
+            nameof(OpenAiCompatibleLlmProvider),
+            followRedirects: false))
         .AddPolicyHandler(openAiCompatibleCircuitBreakerPolicy);
         services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
         {
@@ -179,15 +183,17 @@ public static class LlmProviderRegistration
         return services;
     }
 
-    internal static SocketsHttpHandler CreateProtectedSocketsHttpHandler(bool allowLocalhostEndpoints)
+    internal static SocketsHttpHandler CreateProtectedSocketsHttpHandler(
+        bool allowLocalhostEndpoints,
+        bool disableSystemProxy = false)
     {
         return new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
-            // A configured system proxy changes ConnectCallback's destination to the
-            // proxy and can tunnel to an unvalidated target. Protected clients must
-            // connect directly so the DNS-level callback validates the real origin.
-            UseProxy = false,
+            // The compatible client opts out of system proxies because an arbitrary
+            // configured origin must be the endpoint validated by ConnectCallback.
+            // Existing fixed-origin providers retain their established proxy behavior.
+            UseProxy = !disableSystemProxy,
             ConnectCallback = (context, cancellationToken) =>
                 OutboundWebhookConnectCallback.ConnectAsync(
                     context,

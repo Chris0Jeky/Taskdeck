@@ -223,7 +223,7 @@ default and the only one that ships enabled. See
 | `Llm:OpenAi:Model` | `string` | `gpt-4o-mini` | Model identifier sent in chat requests. | No |
 | `Llm:OpenAi:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the OpenAI provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateOpenAiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
 | `Llm:OpenAiCompatible:ApiKey` | `string` | `""` | API key for the configured OpenAI-compatible endpoint. Store as a secret. | Only for `Llm:Provider = OpenAiCompatible` |
-| `Llm:OpenAiCompatible:BaseUrl` | `string` | `""` | Required OpenAI Chat Completions-compatible base URL, such as `https://openrouter.ai/api/v1`, `https://api.groq.com/openai/v1`, or `https://api.deepseek.com/v1`. It may contain a path but not user information, a query, or a fragment, and passes HTTP(S), private-network, metadata-host, egress-envelope, and DNS connection-time SSRF controls. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:BaseUrl` | `string` | `""` | Required OpenAI Chat Completions-compatible base URL, such as `https://openrouter.ai/api/v1`, `https://api.groq.com/openai/v1`, or `https://api.deepseek.com/v1`. Production/non-development endpoints must use public HTTPS; plain HTTP is accepted only for gated loopback development. The URL may contain a path but not user information, a query, or a fragment, and passes private-network, metadata-host, egress-envelope, and DNS connection-time SSRF controls. | Only for `Llm:Provider = OpenAiCompatible` |
 | `Llm:OpenAiCompatible:Model` | `string` | `""` | Required model identifier supplied by the compatible vendor. | Only for `Llm:Provider = OpenAiCompatible` |
 | `Llm:OpenAiCompatible:TimeoutSeconds` | `int` | `30` | Full compatible-provider response deadline, including response-body/SSE reads after headers. Valid range: 1--300; invalid values select Mock. | No |
 | `Llm:OpenAiCompatible:MaxResponseBytes` | `int` | `1048576` | Maximum UTF-8 bytes accepted from a buffered response or aggregate SSE response. Valid range: 1024--4194304. | No |
@@ -725,6 +725,15 @@ Examples:
 | `Jwt:SecretKey` | `Jwt__SecretKey` |
 | `Auth:Registration:Mode` | `Auth__Registration__Mode` |
 | `Llm:OpenAi:ApiKey` | `Llm__OpenAi__ApiKey` |
+| `Llm:OpenAiCompatible:ApiKey` | `Llm__OpenAiCompatible__ApiKey` |
+| `Llm:OpenAiCompatible:BaseUrl` | `Llm__OpenAiCompatible__BaseUrl` |
+| `Llm:OpenAiCompatible:Model` | `Llm__OpenAiCompatible__Model` |
+| `Llm:OpenAiCompatible:TimeoutSeconds` | `Llm__OpenAiCompatible__TimeoutSeconds` |
+| `Llm:OpenAiCompatible:MaxResponseBytes` | `Llm__OpenAiCompatible__MaxResponseBytes` |
+| `Llm:OpenAiCompatible:MaxSseLineBytes` | `Llm__OpenAiCompatible__MaxSseLineBytes` |
+| `Llm:OpenAiCompatible:MaxSseEventBytes` | `Llm__OpenAiCompatible__MaxSseEventBytes` |
+| `Llm:OpenAiCompatible:ExtraHeaders:HTTP-Referer` | `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` |
+| `Llm:OpenAiCompatible:ExtraHeaders:X-Title` | `Llm__OpenAiCompatible__ExtraHeaders__X-Title` |
 | `Workers:RetryBackoffSeconds:0` | `Workers__RetryBackoffSeconds__0` |
 | `RateLimiting:AuthPerIp:PermitLimit` | `RateLimiting__AuthPerIp__PermitLimit` |
 | `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `RateLimiting__McpAuthenticationPerIp__PermitLimit` |
@@ -748,6 +757,15 @@ container as standard ASP.NET Core environment variables.
 | `TASKDECK_LLM_ENABLE_LIVE_PROVIDERS` | `Llm__EnableLiveProviders` | `false` | No |
 | `TASKDECK_LLM_PROVIDER` | `Llm__Provider` | `Mock` | No |
 | `TASKDECK_LLM_OPENAI_API_KEY` | `Llm__OpenAi__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=OpenAi` |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_API_KEY` | `Llm__OpenAiCompatible__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=OpenAICompatible`; keep in a secret store |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_BASE_URL` | `Llm__OpenAiCompatible__BaseUrl` | `""` | Required public HTTPS base URL in the Production compose profile |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MODEL` | `Llm__OpenAiCompatible__Model` | `""` | Required compatible model identifier |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_TIMEOUT_SECONDS` | `Llm__OpenAiCompatible__TimeoutSeconds` | `30` | Full response deadline, including body/SSE reads |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_RESPONSE_BYTES` | `Llm__OpenAiCompatible__MaxResponseBytes` | `1048576` | Buffered or aggregate SSE response budget |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_SSE_LINE_BYTES` | `Llm__OpenAiCompatible__MaxSseLineBytes` | `65536` | Per-line SSE budget |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_SSE_EVENT_BYTES` | `Llm__OpenAiCompatible__MaxSseEventBytes` | `131072` | Per-event SSE budget |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_HTTP_REFERER` | `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` | `""` | Optional non-secret OpenRouter attribution header |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_X_TITLE` | `Llm__OpenAiCompatible__ExtraHeaders__X-Title` | `""` | Optional non-secret OpenRouter application title |
 | `TASKDECK_LLM_GEMINI_API_KEY` | `Llm__Gemini__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=Gemini` |
 | `TASKDECK_PROXY_PORT` | Host port mapped to the nginx reverse proxy | `8080` | No |
 | `TASKDECK_VITE_API_BASE_URL` | Build-time `VITE_API_BASE_URL` for the web image | `/api` | No |

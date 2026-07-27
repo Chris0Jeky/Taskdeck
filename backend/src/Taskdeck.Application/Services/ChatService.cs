@@ -139,6 +139,7 @@ public class ChatService : IChatService
         string? quotaBilledProvider = null;
         string? quotaBilledModel = null;
         var quotaBilledTokens = 0;
+        var quotaEstimatedTokens = 0;
         try
         {
             if (string.IsNullOrWhiteSpace(dto.Content))
@@ -192,6 +193,7 @@ public class ChatService : IChatService
                 if (!reservation.Allowed)
                     return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, reservation.DeniedReason ?? "LLM quota exceeded");
                 quotaReservationId = reservation.ReservationId;
+                quotaEstimatedTokens = reservation.EstimatedTokens;
             }
 
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
@@ -379,28 +381,33 @@ public class ChatService : IChatService
                             SystemPrompt: clarificationPrompt);
                         llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
 
-                        // Finalize the quota reservation with the actual token count. The provider
-                        // reports a combined TokensUsed total without an input/output split. Record
-                        // the full total as input tokens and 0 for output until providers surface
-                        // separate counts.
-                        if (_quotaService != null && quotaReservationId is Guid singleResId && llmResult.TokensUsed > 0)
+                        // Finalize with authoritative combined usage when present. If the provider
+                        // omitted usage, commit the reservation estimate so a short output cannot
+                        // undercharge a large input. Record the chosen total as input tokens and 0
+                        // for output until providers surface a reliable split.
+                        var quotaTokens = llmResult.HasAuthoritativeTokenUsage
+                            ? llmResult.TokensUsed
+                            : llmResult.ShouldSettleQuotaReservation
+                                ? quotaEstimatedTokens
+                                : 0;
+                        if (_quotaService != null && quotaReservationId is Guid singleResId && quotaTokens > 0)
                         {
                             // CancellationToken.None (M1, #1427 review): see the tool-result commit above.
                             quotaBilledProvider = llmResult.Provider;
                             quotaBilledModel = llmResult.Model;
-                            quotaBilledTokens = llmResult.TokensUsed;
+                            quotaBilledTokens = quotaTokens;
                             await _quotaService.CommitReservationAsync(
                                 singleResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 llmResult.Provider, llmResult.Model,
-                                llmResult.TokensUsed, 0,
+                                quotaTokens, 0,
                                 CancellationToken.None);
                             quotaCommitted = true;
                         }
                     }
 
                     assistantContent = llmResult.Content;
-                    tokenUsage = llmResult.TokensUsed;
+                    tokenUsage = llmResult.HasAuthoritativeTokenUsage ? llmResult.TokensUsed : null;
                     degradedReason = llmResult.DegradedReason;
 
                     if (llmResult.IsDegraded)
@@ -608,6 +615,7 @@ public class ChatService : IChatService
         string? model = null;
         var streamIsDegraded = false;
         string? streamDegradedReason = null;
+        var persistEmptyDegradedTerminal = false;
         // True once the provider has delivered at least one non-error event: the LLM call was made and
         // tokens flowed, so the reservation is billable even if the final usage event never arrives.
         var providerStreamed = false;
@@ -666,6 +674,8 @@ public class ChatService : IChatService
                 {
                     streamIsDegraded = true;
                     streamDegradedReason = token.DegradedReason ?? "Provider returned a degraded stream.";
+                    if (token.IsComplete && token.Error is null)
+                        persistEmptyDegradedTerminal = true;
                 }
                 if (!string.IsNullOrWhiteSpace(token.Error))
                 {
@@ -679,6 +689,8 @@ public class ChatService : IChatService
             // Persist the streamed assistant message with token usage so the streaming
             // path is consistent with the non-streaming SendMessageAsync path.
             var streamedContent = contentBuilder.ToString();
+            if (streamedContent.Length == 0 && persistEmptyDegradedTerminal)
+                streamedContent = "The provider ended the response without returning text.";
             if (!string.IsNullOrEmpty(streamedContent))
             {
                 var assistantMessage = new ChatMessage(

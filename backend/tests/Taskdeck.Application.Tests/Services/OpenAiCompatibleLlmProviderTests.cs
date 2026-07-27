@@ -103,6 +103,27 @@ public class OpenAiCompatibleLlmProviderTests
     }
 
     [Fact]
+    public async Task StreamAsync_WhenEndpointRejectsStreamingAndUsageIsAbsent_LeavesUsageUnknown()
+    {
+        var dispatches = 0;
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+        {
+            dispatches++;
+            return dispatches == 1
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest)
+                : JsonResponse("""{"choices":[{"message":{"content":"short reply"},"finish_reason":"stop"}]}""");
+        }), BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].Token.Should().Be("short reply");
+        events[0].TokensUsed.Should().BeNull();
+        events[0].IsDegraded.Should().BeTrue();
+        dispatches.Should().Be(2);
+    }
+
+    [Fact]
     public async Task CompleteAsync_WhenResponseFormatIsRejected_RetriesWithPromptOnlyJson()
     {
         var requestBodies = new List<string>();
@@ -124,6 +145,34 @@ public class OpenAiCompatibleLlmProviderTests
         using var fallbackPayload = JsonDocument.Parse(requestBodies[1]);
         initialPayload.RootElement.TryGetProperty("response_format", out _).Should().BeTrue();
         fallbackPayload.RootElement.TryGetProperty("response_format", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CompleteAsync_UsageAbsent_PreservesUnknownUsage()
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+            JsonResponse("""{"choices":[{"message":{"content":"short reply"},"finish_reason":"stop"}]}""")), BuildSettings());
+
+        var result = await provider.CompleteAsync(Request());
+
+        result.Content.Should().Be("short reply");
+        result.TokensUsed.Should().Be(0);
+        result.HasAuthoritativeTokenUsage.Should().BeFalse();
+        result.ShouldSettleQuotaReservation.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamAsync_NonSseResponseWithoutUsage_LeavesUsageUnknown()
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+            JsonResponse("""{"choices":[{"message":{"content":"short reply"},"finish_reason":"stop"}]}""")), BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].Token.Should().Be("short reply");
+        events[0].TokensUsed.Should().BeNull();
+        events[0].IsDegraded.Should().BeTrue();
     }
 
     [Fact]
@@ -173,6 +222,22 @@ public class OpenAiCompatibleLlmProviderTests
             "the quota layer must settle the reservation estimate when upstream usage is absent");
     }
 
+    [Fact]
+    public async Task StreamAsync_ParsesCarriageReturnOnlySseFraming()
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ => SseResponse(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\r\r" +
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":11}}\r\r" +
+            "data: [DONE]\r\r")), BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Select(item => item.Token).Should().Equal("hello", string.Empty);
+        events[^1].IsComplete.Should().BeTrue();
+        events[^1].TokensUsed.Should().Be(11);
+        events[^1].Error.Should().BeNull();
+    }
+
     [Theory]
     [InlineData("length", "token limit")]
     [InlineData("content_filter", "content filter")]
@@ -181,17 +246,49 @@ public class OpenAiCompatibleLlmProviderTests
     [InlineData("vendor_reason", "non-standard")]
     public async Task StreamAsync_NonStopFinishReason_IsTerminalDegraded(string finishReason, string expectedReason)
     {
-        var provider = CreateProvider(new StubHttpMessageHandler(_ => SseResponse(
-            $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"partial\"}},\"finish_reason\":\"{finishReason}\"}}]}}\n\n" +
-            "data: {\"choices\":[],\"usage\":{\"total_tokens\":5}}\n\n" +
-            "data: [DONE]\n\n")), BuildSettings());
+        var dispatches = 0;
+        var tracker = new CircuitBreakerStateTracker();
+        var circuitSettings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 60 };
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+        {
+            dispatches++;
+            return SseResponse(
+                $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"partial\"}},\"finish_reason\":\"{finishReason}\"}}]}}\n\n" +
+                "data: {\"choices\":[],\"usage\":{\"total_tokens\":5}}\n\n" +
+                "data: [DONE]\n\n");
+        }), BuildSettings(), tracker, circuitSettings);
 
         var events = await CollectAsync(provider.StreamAsync(Request()));
+        var second = await CollectAsync(provider.StreamAsync(Request()));
 
         events[^1].IsComplete.Should().BeTrue();
         events[^1].IsDegraded.Should().BeTrue();
         events[^1].DegradedReason.Should().Contain(expectedReason);
         events[^1].TokensUsed.Should().Be(5);
+        second[^1].Error.Should().BeNull();
+        dispatches.Should().Be(2, "normal upstream finish reasons must not open the companion circuit");
+        tracker.Get("OpenAICompatible")?.State.Should().NotBe(CircuitState.Open);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ContentFilterFinish_DoesNotCountAsCircuitFailure()
+    {
+        var dispatches = 0;
+        var tracker = new CircuitBreakerStateTracker();
+        var circuitSettings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 60 };
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+        {
+            dispatches++;
+            return JsonResponse("""{"choices":[{"message":{"content":"partial"},"finish_reason":"content_filter"}],"usage":{"total_tokens":4}}""");
+        }), BuildSettings(), tracker, circuitSettings);
+
+        var first = await provider.CompleteAsync(Request());
+        var second = await provider.CompleteAsync(Request());
+
+        first.IsDegraded.Should().BeTrue();
+        second.IsDegraded.Should().BeTrue();
+        dispatches.Should().Be(2);
+        tracker.Get("OpenAICompatible")?.State.Should().NotBe(CircuitState.Open);
     }
 
     [Theory]
@@ -225,6 +322,7 @@ public class OpenAiCompatibleLlmProviderTests
         events.Should().ContainSingle();
         events[0].IsComplete.Should().BeTrue();
         events[0].Error.Should().Contain("transport failed");
+        events[0].ProviderFailureKind.Should().Be(LlmProviderFailureKind.Transport);
     }
 
     [Fact]
@@ -237,7 +335,8 @@ public class OpenAiCompatibleLlmProviderTests
         var events = await CollectAsync(provider.StreamAsync(Request()));
 
         events.Should().ContainSingle();
-        events[0].Error.Should().Contain("transport failed");
+        events[0].Error.Should().Contain("response body failed");
+        events[0].ProviderFailureKind.Should().Be(LlmProviderFailureKind.ResponseBody);
     }
 
     [Fact]
@@ -254,6 +353,7 @@ public class OpenAiCompatibleLlmProviderTests
         events.Should().ContainSingle();
         events[0].IsComplete.Should().BeTrue();
         events[0].Error.Should().Contain("timed out");
+        events[0].ProviderFailureKind.Should().Be(LlmProviderFailureKind.Timeout);
     }
 
     [Fact]
@@ -367,6 +467,141 @@ public class OpenAiCompatibleLlmProviderTests
         tracker.Get("OpenAICompatible")!.State.Should().Be(CircuitState.Open);
     }
 
+    [Theory]
+    [InlineData("malformed", (int)LlmProviderFailureKind.Protocol)]
+    [InlineData("body-io", (int)LlmProviderFailureKind.ResponseBody)]
+    [InlineData("oversized", (int)LlmProviderFailureKind.ResponseLimit)]
+    [InlineData("stalled", (int)LlmProviderFailureKind.Timeout)]
+    public async Task CompleteAsync_PostHeaderFailuresOpenCompanionCircuit(
+        string failureMode,
+        int expectedFailureKind)
+    {
+        var settings = BuildSettings();
+        settings.OpenAiCompatible.TimeoutSeconds = 1;
+        settings.OpenAiCompatible.MaxResponseBytes = 1024;
+        settings.OpenAiCompatible.MaxSseEventBytes = 512;
+        var tracker = new CircuitBreakerStateTracker();
+        var circuitSettings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 60 };
+        var dispatches = 0;
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+        {
+            dispatches++;
+            return failureMode switch
+            {
+                "malformed" => JsonResponse("{}"),
+                "body-io" => JsonStreamResponse(new ThrowingReadStream()),
+                "oversized" => JsonResponse(new string('x', 1025)),
+                "stalled" => JsonStreamResponse(new BlockingReadStream()),
+                _ => throw new InvalidOperationException("Unknown test mode")
+            };
+        }), settings, tracker, circuitSettings);
+
+        var first = await provider.CompleteAsync(Request());
+        var second = await provider.CompleteAsync(Request());
+
+        first.IsDegraded.Should().BeTrue();
+        first.ProviderFailureKind.Should().Be((LlmProviderFailureKind)expectedFailureKind);
+        first.CountsAsProviderFailure.Should().BeTrue();
+        second.DegradedReason.Should().Contain("circuit is open");
+        dispatches.Should().Be(1);
+        tracker.Get("OpenAICompatible")!.State.Should().Be(CircuitState.Open);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_SuccessResetsConsecutiveBodyFailures()
+    {
+        var responses = new Queue<HttpResponseMessage>(
+        [
+            JsonResponse("{}"),
+            JsonResponse("""{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}"""),
+            JsonResponse("{}"),
+            JsonResponse("""{"choices":[{"message":{"content":"ok again"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}""")
+        ]);
+        var tracker = new CircuitBreakerStateTracker();
+        var circuitSettings = new CircuitBreakerSettings { FailureThreshold = 2, BreakDurationSeconds = 60 };
+        var dispatches = 0;
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+        {
+            dispatches++;
+            return responses.Dequeue();
+        }), BuildSettings(), tracker, circuitSettings);
+
+        var results = new List<LlmCompletionResult>();
+        for (var i = 0; i < 4; i++)
+            results.Add(await provider.CompleteAsync(Request()));
+
+        results[0].IsDegraded.Should().BeTrue();
+        results[1].IsDegraded.Should().BeFalse();
+        results[2].IsDegraded.Should().BeTrue();
+        results[3].IsDegraded.Should().BeFalse();
+        dispatches.Should().Be(4, "each success resets the prior consecutive body failure");
+        tracker.Get("OpenAICompatible")!.State.Should().Be(CircuitState.Closed);
+    }
+
+    [Fact]
+    public async Task StreamAsync_DisposingHalfOpenProbe_ReleasesLeaseForNextProbe()
+    {
+        var dispatches = 0;
+        var tracker = new CircuitBreakerStateTracker();
+        var circuitSettings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 1 };
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+        {
+            dispatches++;
+            return dispatches switch
+            {
+                1 => SseResponse("data: not-json\n\n"),
+                2 => SseResponse("data: {\"choices\":[{\"delta\":{\"content\":\"probe\"},\"finish_reason\":null}]}\n\n"),
+                _ => SuccessfulSseResponse("recovered")
+            };
+        }), BuildSettings(), tracker, circuitSettings);
+
+        await CollectAsync(provider.StreamAsync(Request()));
+        await Task.Delay(TimeSpan.FromMilliseconds(1100));
+
+        var enumerator = provider.StreamAsync(Request()).GetAsyncEnumerator();
+        (await enumerator.MoveNextAsync()).Should().BeTrue();
+        enumerator.Current.Token.Should().Be("probe");
+        await enumerator.DisposeAsync();
+
+        var recovered = await CollectAsync(provider.StreamAsync(Request()));
+
+        recovered[^1].Error.Should().BeNull();
+        dispatches.Should().Be(3);
+        tracker.Get("OpenAICompatible")!.State.Should().Be(CircuitState.Closed);
+    }
+
+    [Fact]
+    public async Task StreamAsync_CancellingHalfOpenProbe_ReleasesLeaseForNextProbe()
+    {
+        var dispatches = 0;
+        var tracker = new CircuitBreakerStateTracker();
+        var circuitSettings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 1 };
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+        {
+            dispatches++;
+            return dispatches switch
+            {
+                1 => SseResponse("data: not-json\n\n"),
+                2 => SseStreamResponse(new BlockingReadStream()),
+                _ => SuccessfulSseResponse("recovered")
+            };
+        }), BuildSettings(), tracker, circuitSettings);
+
+        await CollectAsync(provider.StreamAsync(Request()));
+        await Task.Delay(TimeSpan.FromMilliseconds(1100));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        Func<Task<List<LlmTokenEvent>>> cancelled = () =>
+            CollectAsync(provider.StreamAsync(Request(), cancellation.Token));
+        await cancelled.Should().ThrowAsync<OperationCanceledException>();
+
+        var recovered = await CollectAsync(provider.StreamAsync(Request()));
+
+        recovered[^1].Error.Should().BeNull();
+        dispatches.Should().Be(3);
+        tracker.Get("OpenAICompatible")!.State.Should().Be(CircuitState.Closed);
+    }
+
     [Fact]
     public async Task ProbeAsync_ProviderTimeout_ReturnsUnavailableInsteadOfThrowing()
     {
@@ -433,19 +668,21 @@ public class OpenAiCompatibleLlmProviderTests
     }
 
     [Fact]
-    public void LlmTokenEvent_PreservesSixParameterConstructorAndPascalCaseWireShape()
+    public void LlmTokenEvent_PreservesSixParameterConstructorAndCompatibleWireShape()
     {
         typeof(LlmTokenEvent).GetConstructors()
             .Should().ContainSingle(constructor => constructor.GetParameters().Length == 6);
-        var json = JsonSerializer.Serialize(new LlmTokenEvent("", true)
+        var normalJson = JsonSerializer.Serialize(new LlmTokenEvent("token", false, Provider: "OpenAI", Model: "model"));
+        var degradedJson = JsonSerializer.Serialize(new LlmTokenEvent("", true, TokensUsed: 4, Provider: "OpenAICompatible", Model: "vendor/model")
         {
             IsDegraded = true,
             DegradedReason = "reason"
         });
 
-        json.Should().Contain("\"IsDegraded\":true");
-        json.Should().Contain("\"DegradedReason\":\"reason\"");
-        json.Should().NotContain("\"isDegraded\"");
+        normalJson.Should().Be(
+            "{\"Token\":\"token\",\"IsComplete\":false,\"Error\":null,\"TokensUsed\":null,\"Provider\":\"OpenAI\",\"Model\":\"model\"}");
+        degradedJson.Should().Be(
+            "{\"Token\":\"\",\"IsComplete\":true,\"Error\":null,\"TokensUsed\":4,\"Provider\":\"OpenAICompatible\",\"Model\":\"vendor/model\",\"IsDegraded\":true,\"DegradedReason\":\"reason\"}");
     }
 
     private static OpenAiCompatibleLlmProvider CreateProvider(
@@ -487,6 +724,21 @@ public class OpenAiCompatibleLlmProviderTests
         response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
         return response;
     }
+
+    private static HttpResponseMessage JsonStreamResponse(Stream stream)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(stream)
+        };
+        response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        return response;
+    }
+
+    private static HttpResponseMessage SuccessfulSseResponse(string content) => SseResponse(
+        $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"{content}\"}},\"finish_reason\":\"stop\"}}]}}\n\n" +
+        "data: {\"choices\":[],\"usage\":{\"total_tokens\":3}}\n\n" +
+        "data: [DONE]\n\n");
 
     private static HttpResponseMessage JsonResponse(string body) => new(HttpStatusCode.OK)
     {

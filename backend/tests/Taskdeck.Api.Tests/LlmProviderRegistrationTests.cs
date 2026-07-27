@@ -1,3 +1,4 @@
+using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -33,14 +34,17 @@ public class LlmProviderRegistrationTests
         services.AddLlmProviders(configuration);
         using var provider = services.BuildServiceProvider();
 
-        provider.GetRequiredService<Taskdeck.Application.Services.ILlmProvider>()
-            .Should().BeOfType<Taskdeck.Application.Services.OpenAiCompatibleLlmProvider>();
-        provider.GetService<OpenAiCompatibleLlmProvider>().Should().BeNull(
+        provider.GetRequiredService<ILlmProvider>().GetType().FullName
+            .Should().Be("Taskdeck.Application.Services.OpenAiCompatibleLlmProvider");
+        var compatibleType = typeof(ILlmProvider).Assembly.GetType(
+            "Taskdeck.Application.Services.OpenAiCompatibleLlmProvider",
+            throwOnError: true)!;
+        provider.GetService(compatibleType).Should().BeNull(
             "the selector, not a directly resolvable concrete transport, owns the live-provider decision");
         provider.GetRequiredService<IEgressRegistry>().GetAllEntries()
             .Should().ContainSingle(entry =>
                 entry.Host == "api.groq.com" &&
-                entry.ToolOrAgentName == nameof(OpenAiCompatibleLlmProvider));
+                entry.ToolOrAgentName == "OpenAiCompatibleLlmProvider");
         var handler = provider.GetRequiredService<IHttpMessageHandlerFactory>()
             .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
         EnumeratePipeline(handler).Should().Contain(item => item is EgressEnvelopeHandler,
@@ -48,15 +52,77 @@ public class LlmProviderRegistrationTests
     }
 
     [Fact]
-    public void ProtectedSocketHandlers_DisableSystemProxyBypass()
+    public void ProtectedSocketHandlers_ScopeDirectConnectionsToCompatibleClient()
     {
-        using var llmHandler = LlmProviderRegistration.CreateProtectedSocketsHttpHandler(false);
+        using var existingProviderHandler = LlmProviderRegistration.CreateProtectedSocketsHttpHandler(false);
+        using var compatibleHandler = LlmProviderRegistration.CreateProtectedSocketsHttpHandler(
+            false,
+            disableSystemProxy: true);
         using var webhookHandler = WorkerRegistration.CreateProtectedWebhookHandler(false);
 
-        llmHandler.UseProxy.Should().BeFalse();
-        llmHandler.AllowAutoRedirect.Should().BeFalse();
-        webhookHandler.UseProxy.Should().BeFalse();
+        existingProviderHandler.UseProxy.Should().BeTrue(
+            "OpenAI, Gemini, and Ollama retain their established system-proxy behavior");
+        compatibleHandler.UseProxy.Should().BeFalse(
+            "the arbitrary compatible origin must be validated directly");
+        existingProviderHandler.AllowAutoRedirect.Should().BeFalse();
+        compatibleHandler.AllowAutoRedirect.Should().BeFalse();
+        webhookHandler.UseProxy.Should().BeTrue(
+            "webhook proxy behavior is outside the compatible-provider change");
         webhookHandler.AllowAutoRedirect.Should().BeFalse();
+    }
+
+    [Fact]
+    public void RegisteredPipelines_DisableProxyOnlyForCompatibleProvider()
+    {
+        var services = BuildCompatibleServices();
+        using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<IHttpMessageHandlerFactory>();
+
+        using var openAi = factory.CreateHandler(nameof(OpenAiLlmProvider));
+        using var compatible = factory.CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        using var gemini = factory.CreateHandler(nameof(GeminiLlmProvider));
+        using var ollama = factory.CreateHandler(nameof(OllamaLlmProvider));
+
+        EnumeratePipeline(openAi).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeTrue();
+        EnumeratePipeline(compatible).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
+        EnumeratePipeline(gemini).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeTrue();
+        EnumeratePipeline(ollama).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeTrue();
+
+        var workerServices = new ServiceCollection();
+        workerServices.AddLogging();
+        workerServices.AddTaskdeckWorkers(
+            new ConfigurationBuilder().Build(),
+            new TestWebHostEnvironment("Production"));
+        using var workerProvider = workerServices.BuildServiceProvider();
+        using var webhook = workerProvider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler("OutboundWebhookDelivery");
+        EnumeratePipeline(webhook).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.MovedPermanently)]
+    [InlineData(HttpStatusCode.Found)]
+    [InlineData(HttpStatusCode.SeeOther)]
+    [InlineData(HttpStatusCode.TemporaryRedirect)]
+    [InlineData(HttpStatusCode.PermanentRedirect)]
+    public async Task CompatibleClientPipeline_RefusesEveryRedirectWithoutFollowing(HttpStatusCode statusCode)
+    {
+        var services = BuildCompatibleServices();
+        using var provider = services.BuildServiceProvider();
+        using var handler = provider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        var egressHandler = EnumeratePipeline(handler).OfType<EgressEnvelopeHandler>().Single();
+        var redirectHandler = new RedirectStubHandler(statusCode, "https://api.groq.com/second-hop");
+        egressHandler.InnerHandler = redirectHandler;
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var act = () => invoker.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, "https://api.groq.com/openai/v1/chat/completions"),
+            CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<EgressViolationException>();
+        exception.Which.Violation.ViolationType.Should().Be(Taskdeck.Domain.Agents.EgressViolationType.RedirectNotAllowed);
+        redirectHandler.InvocationCount.Should().Be(1, "the compatible pipeline must never dispatch a redirected request");
     }
 
     [Theory]
@@ -101,6 +167,40 @@ public class LlmProviderRegistrationTests
         public string EnvironmentName { get; set; } = environmentName;
         public string WebRootPath { get; set; } = string.Empty;
         public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private static ServiceCollection BuildCompatibleServices()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Production"));
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:EnableLiveProviders"] = "true",
+                ["Llm:Provider"] = "OpenAICompatible",
+                ["Llm:OpenAiCompatible:ApiKey"] = "test-compatible-key",
+                ["Llm:OpenAiCompatible:BaseUrl"] = "https://api.groq.com/openai/v1",
+                ["Llm:OpenAiCompatible:Model"] = "llama-3.1-8b-instant"
+            })
+            .Build();
+        services.AddLlmProviders(configuration);
+        return services;
+    }
+
+    private sealed class RedirectStubHandler(HttpStatusCode statusCode, string location) : HttpMessageHandler
+    {
+        public int InvocationCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            InvocationCount++;
+            var response = new HttpResponseMessage(statusCode);
+            response.Headers.Location = new Uri(location);
+            return Task.FromResult(response);
+        }
     }
 
     private static IEnumerable<HttpMessageHandler> EnumeratePipeline(HttpMessageHandler root)

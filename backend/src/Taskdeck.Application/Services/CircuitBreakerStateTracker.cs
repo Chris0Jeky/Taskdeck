@@ -10,7 +10,7 @@ namespace Taskdeck.Application.Services;
 public sealed class CircuitBreakerStateTracker
 {
     private readonly ConcurrentDictionary<string, CircuitBreakerSnapshot> _states = new();
-    private readonly ConcurrentDictionary<string, StreamingFailureState> _streamingFailures = new();
+    private readonly ConcurrentDictionary<string, ProviderFailureState> _providerFailures = new();
 
     /// <summary>
     /// Records a circuit state transition. Called by the Polly <c>onBreak</c>,
@@ -48,27 +48,31 @@ public sealed class CircuitBreakerStateTracker
     /// failures when callers use ResponseHeadersRead, so providers report those
     /// failures explicitly through this companion gate.
     /// </summary>
-    public bool TryEnterStreamingRequest(
+    internal bool TryEnterProviderRequest(
         string circuitName,
         CircuitBreakerSettings settings,
+        out CircuitRequestLease lease,
         out string? error)
     {
         while (true)
         {
-            if (!_streamingFailures.TryGetValue(circuitName, out var state))
+            if (!_providerFailures.TryGetValue(circuitName, out var state))
             {
+                lease = default;
                 error = null;
                 return true;
             }
 
-            if (state.HalfOpenProbeInFlight)
+            if (state.HalfOpenProbeId is not null)
             {
-                error = $"{circuitName} streaming circuit is half-open and its probe is already in progress.";
+                lease = default;
+                error = $"{circuitName} provider circuit is half-open and its probe is already in progress.";
                 return false;
             }
 
             if (state.OpenUntilUtc is null)
             {
+                lease = default;
                 error = null;
                 return true;
             }
@@ -76,57 +80,134 @@ public sealed class CircuitBreakerStateTracker
             var now = DateTimeOffset.UtcNow;
             if (state.OpenUntilUtc > now)
             {
-                error = $"{circuitName} streaming circuit is open after repeated response-body failures.";
+                lease = default;
+                error = $"{circuitName} provider circuit is open after repeated transport, body, or protocol failures.";
                 return false;
             }
 
-            var halfOpen = new StreamingFailureState(
+            var probeId = Guid.NewGuid();
+            var halfOpen = new ProviderFailureState(
                 Math.Max(0, settings.FailureThreshold - 1),
                 null,
-                HalfOpenProbeInFlight: true);
-            if (_streamingFailures.TryUpdate(circuitName, halfOpen, state))
+                probeId);
+            if (_providerFailures.TryUpdate(circuitName, halfOpen, state))
             {
                 RecordState(circuitName, CircuitState.HalfOpen);
+                lease = new CircuitRequestLease(probeId);
                 error = null;
                 return true;
             }
         }
     }
 
-    public void RecordStreamingFailure(
+    internal void RecordProviderFailure(
         string circuitName,
         CircuitBreakerSettings settings,
-        string reason)
+        string reason,
+        CircuitRequestLease lease)
     {
         var now = DateTimeOffset.UtcNow;
-        var next = _streamingFailures.AddOrUpdate(
-            circuitName,
-            _ => new StreamingFailureState(1, null, HalfOpenProbeInFlight: false),
-            (_, existing) => existing.OpenUntilUtc is not null && existing.OpenUntilUtc > now
-                ? existing
-                : new StreamingFailureState(existing.ConsecutiveFailures + 1, null, HalfOpenProbeInFlight: false));
+        while (true)
+        {
+            if (!_providerFailures.TryGetValue(circuitName, out var existing))
+            {
+                if (lease.IsHalfOpenProbe)
+                    return;
 
-        if (next.ConsecutiveFailures < settings.FailureThreshold && next.OpenUntilUtc is null)
+                var initial = new ProviderFailureState(1, null, null);
+                if (!_providerFailures.TryAdd(circuitName, initial))
+                    continue;
+                existing = initial;
+            }
+            else
+            {
+                // Ignore stale completions from requests that pre-date a half-open probe,
+                // and ignore outcomes from a superseded probe lease.
+                if (existing.HalfOpenProbeId is not null &&
+                    existing.HalfOpenProbeId != lease.HalfOpenProbeId)
+                    return;
+                if (lease.HalfOpenProbeId is not null &&
+                    existing.HalfOpenProbeId != lease.HalfOpenProbeId)
+                    return;
+                if (existing.OpenUntilUtc is not null && existing.OpenUntilUtc > now &&
+                    lease.HalfOpenProbeId is null)
+                    return;
+
+                var failureCount = lease.IsHalfOpenProbe
+                    ? settings.FailureThreshold
+                    : existing.ConsecutiveFailures + 1;
+                var next = new ProviderFailureState(failureCount, null, null);
+                if (!_providerFailures.TryUpdate(circuitName, next, existing))
+                    continue;
+                existing = next;
+            }
+
+            if (existing.ConsecutiveFailures < settings.FailureThreshold)
+                return;
+
+            var opened = new ProviderFailureState(
+                existing.ConsecutiveFailures,
+                now.AddSeconds(settings.BreakDurationSeconds),
+                null);
+            if (_providerFailures.TryUpdate(circuitName, opened, existing))
+            {
+                RecordState(circuitName, CircuitState.Open, reason);
+                return;
+            }
+        }
+    }
+
+    internal void RecordProviderSuccess(string circuitName, CircuitRequestLease lease)
+    {
+        while (_providerFailures.TryGetValue(circuitName, out var existing))
+        {
+            if (lease.HalfOpenProbeId is not null && existing.HalfOpenProbeId != lease.HalfOpenProbeId)
+                return;
+            if (lease.HalfOpenProbeId is null && existing.HalfOpenProbeId is not null)
+                return;
+            if (((ICollection<KeyValuePair<string, ProviderFailureState>>)_providerFailures).Remove(
+                    new KeyValuePair<string, ProviderFailureState>(circuitName, existing)))
+            {
+                RecordState(circuitName, CircuitState.Closed);
+                return;
+            }
+        }
+    }
+
+    internal void AbandonProviderRequest(string circuitName, CircuitRequestLease lease)
+    {
+        if (!lease.IsHalfOpenProbe)
             return;
 
-        var opened = new StreamingFailureState(
-            next.ConsecutiveFailures,
-            now.AddSeconds(settings.BreakDurationSeconds),
-            HalfOpenProbeInFlight: false);
-        _streamingFailures[circuitName] = opened;
-        RecordState(circuitName, CircuitState.Open, reason);
+        while (_providerFailures.TryGetValue(circuitName, out var existing))
+        {
+            if (existing.HalfOpenProbeId != lease.HalfOpenProbeId)
+                return;
+
+            // Release the exclusive probe immediately while retaining the open posture.
+            // The next caller can acquire a fresh half-open lease without waiting through
+            // another break duration after cancellation or iterator disposal.
+            var released = new ProviderFailureState(
+                existing.ConsecutiveFailures,
+                DateTimeOffset.UtcNow,
+                null);
+            if (_providerFailures.TryUpdate(circuitName, released, existing))
+            {
+                RecordState(circuitName, CircuitState.Open, "Half-open provider probe was abandoned.");
+                return;
+            }
+        }
     }
 
-    public void RecordStreamingSuccess(string circuitName)
-    {
-        if (_streamingFailures.TryRemove(circuitName, out _))
-            RecordState(circuitName, CircuitState.Closed);
-    }
-
-    private sealed record StreamingFailureState(
+    private sealed record ProviderFailureState(
         int ConsecutiveFailures,
         DateTimeOffset? OpenUntilUtc,
-        bool HalfOpenProbeInFlight);
+        Guid? HalfOpenProbeId);
+}
+
+internal readonly record struct CircuitRequestLease(Guid? HalfOpenProbeId)
+{
+    public bool IsHalfOpenProbe => HalfOpenProbeId is not null;
 }
 
 public enum CircuitState
