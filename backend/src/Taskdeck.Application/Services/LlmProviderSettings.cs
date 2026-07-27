@@ -20,6 +20,11 @@ public sealed class LlmProviderSettings
     public OllamaProviderSettings Ollama { get; set; } = new();
 }
 
+public sealed record LlmProviderRuntimePolicy(
+    bool AllowGeneralProviderLocalhost,
+    bool AllowOllamaLocalhost,
+    bool ProtectOutboundTelemetry = false);
+
 public sealed class OpenAiProviderSettings
 {
     /// <summary>
