@@ -110,7 +110,31 @@ node scripts/check-github-ops-governance.mjs
 
 The staging-gate governance regression pins the complete parked workflow after normalizing line
 endings. Any intentional edit to that workflow requires a reviewed digest and fixture update plus
-Actionlint; substring checks are not treated as proof of effective YAML semantics.
+Actionlint; substring checks are not treated as proof of effective YAML semantics. Its 19-test Node
+suite includes six `prepare-staging-compose-inputs` contracts: exact required-variable inventory,
+cryptographic byte counts, mask-before-environment ordering, and fail-closed missing/unexpected-input
+behavior. A hosted workflow rehearsal is still required before calling the manual path runnable.
+
+For a local check against the real Compose contract, prove both the positive configuration and the
+missing-connector-key negative path. These are explicitly non-production test values:
+
+```powershell
+$env:TASKDECK_JWT_SECRET='non-production-compose-test-secret'
+$env:TASKDECK_CONNECTORS_ENCRYPTION_KEY='MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA='
+docker compose -f deploy/docker-compose.yml --profile baseline config *> $null
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Remove-Item Env:TASKDECK_CONNECTORS_ENCRYPTION_KEY -ErrorAction SilentlyContinue
+$composeOutput = docker compose -f deploy/docker-compose.yml --profile baseline config 2>&1
+$composeExit = $LASTEXITCODE
+if ($composeExit -eq 0) { Write-Error 'Compose unexpectedly accepted a missing connector key'; exit 1 }
+if (($composeOutput | Out-String) -notmatch 'TASKDECK_CONNECTORS_ENCRYPTION_KEY') {
+  $composeOutput
+  Write-Error 'Compose failed for an unexpected reason'
+  exit 1
+}
+Remove-Item Env:TASKDECK_JWT_SECRET -ErrorAction SilentlyContinue
+```
 
 The native-Windows hook smoke test executes the configured `.claude/settings.json` command handlers with `CLAUDE_PROJECT_DIR` set, including PowerShell-hosted handlers, representative dangerous Bash-command denials, missing-launcher and missing-policy fail-closed probes, failure-ledger redaction, and pre-commit no-op behavior. Its payloads identify the `Bash` tool; it does not prove native PowerShell-tool interception. That T4 policy gap is tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497).
 

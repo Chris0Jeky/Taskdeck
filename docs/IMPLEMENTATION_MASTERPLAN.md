@@ -10,9 +10,9 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Delivery update (2026-07-27, release workflow truth)
+## Staged delivery update (2026-07-27, parked staging rehearsal)
 
-- **Manual-only parked staging gate (`#1228`):** `.github/workflows/cd-staging-gate.yml` no longer subscribes to `release: published`; its required-input `workflow_dispatch` path, jobs, permissions, and `production` environment binding remain available for deliberate operator runs. The repository does not currently configure that environment or required reviewers, so the workflow no longer calls the binding an approval gate; maintainer-owned activation protection is tracked in `#1504`. Active beta release lanes (`release-desktop.yml`, `ci-release.yml`, and `release-security.yml`) are unchanged, so publishing a release cannot start this parked staging path.
+- **Manual-only parked staging gate (`#1228`, stacked `#1506` candidate):** `.github/workflows/cd-staging-gate.yml` no longer subscribes to `release: published`, so active beta release lanes (`release-desktop.yml`, `ci-release.yml`, and `release-security.yml`) cannot start it. The stacked child makes its deliberate `workflow_dispatch` path self-contained with per-job cryptographic JWT and connector inputs, an exact fail-closed Compose required-variable inventory, and both configuration/smoke phases. It removes the unprotected `production` environment binding and ends at a summary-only parked handoff that creates no deployment. Local Node/governance 19/19 and real Compose positive/missing-key-negative probes pass; local Actionlint, hosted exact-head CI, and a real dispatch rehearsal remain unverified. Both the parent and child remain unmerged, and `#1504` activation/environment protection is maintainer-owned.
 
 ## Delivery update (2026-07-26, agentic governance)
 
