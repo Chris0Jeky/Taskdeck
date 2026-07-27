@@ -57,7 +57,7 @@ For isolated workers:
 
 ## Review And CI
 
-Every PR needs self-review. Sensitive PRs need fresh adversarial review:
+Review rounds, severity bar, and comment triage: the global `review-and-ship` skill (laws 2 and 11). Flag these surfaces so the coordinator can decide whether an extra independent lens is warranted:
 
 - auth, sessions, tokens, security, secrets, redaction
 - migrations, persistence, deletion, import/export

@@ -174,22 +174,20 @@ before the hard tasks.
 
 ---
 
-## 4) REVIEW — two independent adversarial passes per PR
+## 4) REVIEW — run the global pipeline, once
 
-- Two reviewers that **do not share context or conclusions**; each tries to *refute* the change
-  and to find bugs, security holes, edge cases, regressions, and missed requirements. Prefer
-  **distinct lenses** (correctness vs. security vs. test-coverage vs. does-it-actually-repro)
-  over duplicate passes. For high-stakes changes, use a 3-vote majority to kill plausible-but-
-  wrong findings.
-- **Existing/open PRs:** read and address **ALL** prior comments and review threads first —
-  human and bot (`@codex`, Gemini, Copilot). Request a fresh `@codex review` on the exact head
-  after your fixes; note that every push triggers a new round, so batch fixes rather than
-  chasing round-by-round on a large PR.
-- **Address EVERY finding of EVERY severity** — no "non-blocking" hand-waving. Fix it, or (if
-  genuinely out of scope) seed a concrete follow-up issue and link it. Record each finding +
-  resolution in the findings ledger. **Post findings on the PR and post fix-evidence** mapping
-  finding → commit → verification.
-- Re-review after any non-trivial fix.
+**Doctrine has one home: global laws 2 and 11 and the global `review-and-ship` skill.** Round
+count, severity bar, comment triage, and when to reopen or park all live there — do not restate
+them in this manual. Taskdeck's tier row (T3 per `.claude/tier.json`): push free, merge free on
+green CI at the head plus one comment-triage pass and one independent review pass.
+
+What this manual adds:
+
+- Use `taskdeck-pr-review-loop` for the Taskdeck lenses; prefer a **distinct lens** over a
+  duplicate pass when a second reviewer is warranted.
+- Request the `@codex` review on the exact head at ready-for-review and once more after the
+  final fix round; batch fixes rather than chasing round-by-round.
+- Record each finding and its resolution in the findings ledger.
 
 ---
 
@@ -202,10 +200,9 @@ before the hard tasks.
    without proof (rerun; if it passes on identical code it's flaky → **track it as an issue and
    move on**, don't silently ignore). Because CI Extended (`ci-nightly.yml`) has had systemic
    `startup_failure` modes before, confirm the failure is understood, not just "red".
-3. Both adversarial reviews resolved; all human + bot threads addressed.
-4. The PR has **aged** enough for automation/reviewers to weigh in — don't merge seconds after
-   opening.
-5. No unresolved blockers; backward compatibility preserved; canonical docs synced if reality
+3. The review round owed by law 2 has run; every human + bot thread triaged once. There is no
+   aging requirement — waiting for bots to weigh in is not a gate.
+4. No unresolved blockers; backward compatibility preserved; canonical docs synced if reality
    changed (`STATUS.md` for current state, `MASTERPLAN` for delivery history — via docs gate).
 
 Then merge in **dependency-safe order** (base-first in a stack; never delete a stacked base;

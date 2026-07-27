@@ -96,9 +96,6 @@ Output a merge-readiness summary:
 ## Rules
 
 - Do NOT merge the PR — only validate and report readiness
-- Fix ALL self-review issues found at every severity (commit + push) — no "non-blocking" dismissals
 - If CI is red, attempt to fix — only report "blocked" if the fix is non-trivial
-- Always check and address ALL PR comments (human reviews, bot comments, previous review threads)
-- Address every unaddressed comment: fix, invalidate with evidence, or seed a GitHub issue
-- Out-of-scope findings must be seeded as GitHub issues, never silently dropped
-- Post findings as a PR comment unless the user explicitly says otherwise
+- Finding severity, comment triage, and how many review rounds are owed: the global
+  `review-and-ship` skill and global laws 2 and 11. This skill only runs the local checks.
