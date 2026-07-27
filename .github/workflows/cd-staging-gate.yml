@@ -17,11 +17,11 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Container image tag to deploy (e.g., v0.2.0)"
+        description: "Container image tag to build and verify (e.g., v0.2.0)"
         required: true
         type: string
       skip_smoke:
-        description: "Skip smoke tests (emergency only)"
+        description: "Skip the local Compose smoke phase (diagnostic reruns only)"
         required: false
         type: boolean
         default: false

@@ -51,6 +51,7 @@ export async function prepareStagingComposeInputs({
   githubEnvPath = process.env.GITHUB_ENV,
   randomBytesSource = randomBytes,
   emitMaskCommand = defaultEmitMaskCommand,
+  appendEnvironmentFile = appendFile,
 } = {}) {
   if (!githubEnvPath) {
     throw new Error('GITHUB_ENV must identify the GitHub Actions job environment file')
@@ -70,7 +71,7 @@ export async function prepareStagingComposeInputs({
   const environmentLines = Object.entries(values)
     .map(([name, value]) => `${name}=${value}`)
     .join('\n')
-  await appendFile(resolve(githubEnvPath), `${environmentLines}\n`, 'utf8')
+  await appendEnvironmentFile(resolve(githubEnvPath), `${environmentLines}\n`, 'utf8')
 
   return { requiredVariables }
 }

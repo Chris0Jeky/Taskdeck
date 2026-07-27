@@ -134,7 +134,7 @@ test('rejects an event after a column-zero comment inside the on mapping', () =>
 
 test('rejects multiline scalar text that forges apparent image_tag properties', () => {
   const workflow = canonicalWorkflow.replace(
-    '        description: "Container image tag to deploy (e.g., v0.2.0)"',
+    '        description: "Container image tag to build and verify (e.g., v0.2.0)"',
     '        description: |\n          required: true\n          type: string',
   )
 

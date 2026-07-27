@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -58,6 +58,7 @@ test('masks cryptographic job inputs before appending them to GITHUB_ENV', async
   const { composePath, githubEnvPath } = await createTemporaryFiles(t)
   const requestedByteCounts = []
   const maskCommands = []
+  const sideEffects = []
 
   const result = await prepareStagingComposeInputs({
     composePath,
@@ -68,6 +69,11 @@ test('masks cryptographic job inputs before appending them to GITHUB_ENV', async
     },
     emitMaskCommand(command) {
       maskCommands.push(command)
+      sideEffects.push('mask')
+    },
+    async appendEnvironmentFile(...args) {
+      sideEffects.push('append-environment')
+      await appendFile(...args)
     },
   })
 
@@ -78,6 +84,7 @@ test('masks cryptographic job inputs before appending them to GITHUB_ENV', async
     `::add-mask::${expectedJwtSecret}\n`,
     `::add-mask::${expectedConnectorKey}\n`,
   ])
+  assert.deepEqual(sideEffects, ['mask', 'mask', 'append-environment'])
   assert.equal(
     await readFile(githubEnvPath, 'utf8'),
     `TASKDECK_JWT_SECRET=${expectedJwtSecret}\n` +
