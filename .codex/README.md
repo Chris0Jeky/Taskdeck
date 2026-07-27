@@ -43,7 +43,7 @@ This `.codex/` layer is the Codex-facing control plane for Taskdeck. It routes a
 6. Run targeted checks first, then broaden based on blast radius.
 7. Record unresolved failures or workarounds through the failure protocol.
 8. Update canonical docs only when shipped reality, roadmap sequencing, testing expectations, or operator workflow changed.
-9. Open a PR by default for issue-scoped implementation, then perform self-review before handoff. Follow the Review Policy in `AGENTS.md`: post findings as a PR comment, fix everything at every severity, check and address all existing comments, and seed issues for out-of-scope findings.
+9. Open a ready-for-review PR by default for issue-scoped implementation, then run the review pipeline per the `AGENTS.md` Review Policy pointer.
 
 ## Best Tool Baseline
 

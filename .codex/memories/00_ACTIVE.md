@@ -41,7 +41,7 @@ For Claude Code, read `docs/STATUS.md` first, then use `.claude/README.md` and `
 
 ## Review Policy
 
-Every review (self-review, adversarial, subagent) must: post findings on the PR as a comment, fix everything at every severity, check and address ALL existing PR comments (human, bot, previous reviews), and seed GitHub issues for out-of-scope findings. No "non-blocking" dismissals. See `AGENTS.md` Review Policy for full rules.
+See the pointer in `AGENTS.md` — review doctrine lives in the global laws (`~/.claude/CLAUDE.md` laws 2 and 11) and the `review-and-ship` skill, not in this layer.
 
 ## Agent Coordination Rules
 

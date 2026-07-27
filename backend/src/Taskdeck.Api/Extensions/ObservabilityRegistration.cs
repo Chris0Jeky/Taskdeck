@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -31,7 +32,10 @@ public static class ObservabilityRegistration
                     // sanitized logging path runs, so keep automatic exception recording off.
                     options.RecordException = false;
                 })
-                .AddHttpClientInstrumentation()
+                .AddHttpClientInstrumentation(options =>
+                {
+                    options.FilterHttpRequestMessage = ShouldExportHttpRequest;
+                })
                 .AddSource(TaskdeckTelemetry.ActivitySourceName)
                 .AddSource(TaskdeckTelemetry.McpActivitySourceName);
 
@@ -56,6 +60,7 @@ public static class ObservabilityRegistration
             metrics
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
+                .AddView(ConfigureProtectedOutboundMetric)
                 .AddMeter(TaskdeckTelemetry.MeterName)
                 .AddMeter(TaskdeckTelemetry.McpMeterName);
 
@@ -82,4 +87,12 @@ public static class ObservabilityRegistration
 
         return services;
     }
+
+    internal static bool ShouldExportHttpRequest(HttpRequestMessage request) =>
+        !ProtectedOutboundTelemetryHandler.ShouldSuppressTelemetry(request);
+
+    internal static MetricStreamConfiguration? ConfigureProtectedOutboundMetric(Instrument instrument) =>
+        instrument.Meter.Scope is ProtectedOutboundMeterFactory
+            ? MetricStreamConfiguration.Drop
+            : null;
 }

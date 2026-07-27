@@ -190,17 +190,16 @@ which is genuinely mechanical, and how the lanes are shaped.**
 
 ---
 
-## 4) REVIEW — two independent adversarial passes per PR
+## 4) REVIEW — run the global pipeline, once
 
-Run the **`adversarial-review`** / **`taskdeck-pr-review-loop`** skills. Two reviewers that
-**don't share context/conclusions**, each trying to *refute* the change (bugs, security, edge
-cases, regressions, missed requirements); prefer **distinct lenses** (correctness / security /
-test-coverage / does-it-repro) over duplicate passes; 3-vote majority for high-stakes findings.
-For open PRs, address **ALL** prior human + bot threads (`@codex`, Gemini, Copilot) first; batch
-fixes (every push = a fresh bot round). **Fix EVERY finding of EVERY severity** — no
-"non-blocking" dismissals; out-of-scope → seed a tracked issue and link it. **Post findings on
-the PR + post fix-evidence** (finding → commit → verification). Re-review after non-trivial
-fixes. Record everything in the findings ledger.
+**Doctrine has one home: global laws 2 and 11 and the global `review-and-ship` skill.** Round
+count, severity bar, comment triage, and when to reopen or park all live there — do not restate
+them in this manual. Taskdeck's tier row (T3 per `.claude/tier.json`): push free, merge free on
+green CI at the head plus one comment-triage pass and one independent review pass.
+
+What this manual adds: use **`taskdeck-pr-review-loop`** for the Taskdeck lenses, prefer a
+**distinct lens** over a duplicate pass when a second reviewer is warranted, and record the
+round in the findings ledger.
 
 ---
 
@@ -212,15 +211,13 @@ Use **`pre-merge-gate`** + **`verification-closeout`**. Gate:
    behavior via `/verify` when there's a runtime surface, not just green tests).
 2. **CI green on the exact head.** Investigate *every* red; never dismiss as flaky without proof
    (rerun; passes on identical code ⇒ flaky ⇒ **track as an issue and move on**, don't ignore).
-3. Both adversarial reviews resolved; all human + bot feedback addressed — **verified by
-   CONTENT**: query `reviewThreads` (require `isResolved == false` count of 0 and READ any
-   late arrivals) AND sweep top-level PR comments and review-summary bodies posted since the
-   final push — findings land in all three places, not just inline threads. Never gate on
-   reviewer names or review-event presence; a "review" with no findings looks identical to one
-   carrying P2s until read. Applies to docs-only PRs too.
-4. PR **aged** enough for automation to weigh in (30–60 min from the FINAL push; every push
-   restarts the clock) — don't merge seconds after opening.
-5. No unresolved blockers; back-compat preserved; canonical docs synced if reality changed
+3. The review round owed by law 2 has run and every comment is triaged once — **verified by
+   CONTENT**: read unresolved threads AND top-level PR comments AND review-summary bodies posted
+   since the final push; findings land in all three places, not just inline threads. Never gate
+   on reviewer names or review-event presence; a "review" with no findings looks identical to
+   one carrying P2s until read. Applies to docs-only PRs too. There is no aging requirement —
+   waiting for bots to weigh in is not a gate.
+4. No unresolved blockers; back-compat preserved; canonical docs synced if reality changed
    (**`docs-sweep`** / **`taskdeck-verification-doc-sync`**).
 
 Merge in **dependency-safe order** (base-first; never delete a stacked base; pull `main`; after

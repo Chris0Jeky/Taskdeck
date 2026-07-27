@@ -29,7 +29,7 @@ This `.claude/` layer contains Claude Code settings and skills for Taskdeck. It 
 
 ## Review Policy
 
-Every review (self-review, adversarial, subagent) must follow `AGENTS.md` Review Policy: post findings on the PR, fix everything at every severity, check and address ALL existing PR comments (human, bot, previous reviews), and seed GitHub issues for out-of-scope findings. No "non-blocking" dismissals. Tech debt from reviews must be zero.
+See the pointer in `AGENTS.md` — review doctrine lives in the global laws (`~/.claude/CLAUDE.md` laws 2 and 11) and the `review-and-ship` skill, not in this layer.
 
 ## Failure And Question Protocols
 

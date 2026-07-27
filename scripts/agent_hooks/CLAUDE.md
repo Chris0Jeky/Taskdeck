@@ -6,7 +6,7 @@ Deterministic Claude Code guardrails wired from `.claude/settings.json`. Stdlib-
   restore --worktree, force-push, sudo, chmod -R 777, remote-pipe-to-shell, `npm publish`,
   `dotnet ef database drop`, `DROP TABLE/DATABASE`, secret-file mutation. Hard-denies
   unconditionally — deliberately stricter than the tier baseline (`.claude/tier.json` notes).
-- `post_tool_use.py` — reminders only (frontend typecheck nudge, PR-create adversarial-review
+- `post_tool_use.py` — reminders only (frontend typecheck nudge, PR-create review-pipeline
   nudge). Never denies.
 - `post_tool_failure.py` — appends redacted failures to `docs/agentic/failure_ledger.jsonl`.
   Never weaken the `SECRET_RE` redaction (smoke_test asserts no leaked secrets).
