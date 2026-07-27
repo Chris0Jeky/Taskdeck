@@ -35,11 +35,12 @@ Run only what your change touches. Timings measured 2026-07-27 on this box (warm
 | Backend, cross-layer | `dotnet test backend/Taskdeck.sln -c Release -m:1` | minutes — last resort |
 | Backend, one class | add `--filter "FullyQualifiedName~MyTestClass"` | — |
 | One frontend spec | `cd frontend/taskdeck-web; npx vitest --run --maxWorkers=2 <path/to.spec.ts>` | ~5s |
-| Frontend, broad | `npm run typecheck; npm run build; npx vitest --run --maxWorkers=2` | slow; bare `vitest --run` **OOMs on this box** |
+| Frontend, broad | `cd frontend/taskdeck-web; npm run typecheck; npm run build; npx vitest --run --maxWorkers=2` | slow; bare `vitest --run` **OOMs on this box** |
 | E2E | `cd frontend/taskdeck-web; npx playwright test tests/e2e/<file>.spec.ts --reporter=line` | needs a running stack |
 
-`ci-required.yml` is the sole merge gate. PRs touching `.github/workflows/`, `deploy/`, `scripts/`,
-or `*.csproj` also trigger CI Extended — it must be green before merging those.
+`ci-required.yml` is the sole merge gate. PRs touching `.github/workflows/`, `backend/`, `frontend/`,
+`deploy/`, `scripts/`, or `*.csproj` also trigger CI Extended — an optional, non-blocking lane (several
+jobs are label-gated). Read its results, but it does not gate the merge.
 
 ## Run it
 
