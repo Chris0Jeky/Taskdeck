@@ -74,9 +74,10 @@ Docs governance, golden-principles governance, GitHub-operations governance, and
 
 The full serialized backend passed at pre-documentation head `dad8d22a` with **7,539 passed,
 5 intentional skips, and 0 failed** (Domain 1,636; Application 3,577; API 2,171 + 4 skips;
-CLI 100; Architecture 20 + 1 skip; Integration 35). The only subsequent local change is this
-verification-document correction. Required CI, CodeQL, and final exact-current-head publication
-evidence remain required before merge.
+CLI 100; Architecture 20 + 1 skip; Integration 35). The only subsequent issue-scope change is
+this verification-document correction; the current-main merge adds the separately reviewed
+`#1522` frontend/docs slice and leaves the backend subtree identical. Required CI, CodeQL, and
+final exact-current-head publication evidence remain required before merge.
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
