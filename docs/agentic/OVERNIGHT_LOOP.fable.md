@@ -136,10 +136,10 @@ and take the actual model and effort for each rung from the skill.
 ### Reviewer lane — read-only, distinct lenses, never the cheap rung
 - Use the `reviewer` subagent type (Read/Grep/Glob only — structurally cannot "fix" anything), at
   the model and effort the canonical skill assigns to **review**: review is judgment work, so the
-  cheap rung is not eligible and the skill — not this file — sets the effort. Two independent
-  passes per PR with **distinct lenses** (correctness / security / test-coverage /
-  does-it-reproduce), per base §4; 3-vote adversarial verify for high-stakes findings. You
-  adjudicate; the implementing worker fixes; the ops agent posts the PR comments you finalize.
+  cheap rung is not eligible and the skill — not this file — sets the effort. Round count is set
+  by base §4 (global laws 2 and 11), not here; where a pass is owed, prefer a **distinct lens**
+  (correctness / security / test-coverage / does-it-reproduce) over a duplicate. You adjudicate;
+  the implementing worker fixes; the ops agent posts the PR comments you finalize.
 
 ## ORCHESTRATION PATTERNS
 
@@ -199,8 +199,8 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
   lenient, so a misreported red has no other backstop). A packet that fails its spot-check
   is re-verified in full. Everything decision-bearing is verified in full, never sampled
   — in particular:
-  reviewer packets (every returned finding read and adjudicated individually per base §4
-  and the repo Review Policy, at every severity); settlement packets (the coordinator
+  reviewer packets (every returned finding read and adjudicated individually per base §4,
+  which defers to global laws 2 and 11 for the severity bar); settlement packets (the coordinator
   verifies each settled thread carries its reply and its finding→commit fix-evidence
   mapping, not just the unresolved count — a thread resolved without evidence is unsettled);
   and the merge gate (the full base §5 feedback-by-content sweep — unresolved threads AND
