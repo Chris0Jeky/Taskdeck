@@ -220,6 +220,18 @@ bool VerifySignature(string rawBody, string timestamp, string signatureHeader, s
 - Dead-letter: after exhausting retries, the delivery is moved to dead-letter state for manual inspection.
 - Localhost endpoints: HTTP is only allowed for localhost endpoints when explicitly configured; all other endpoints must use HTTPS.
 
+### Direct-only transport boundary
+
+The `OutboundWebhookDelivery` primary client sets `UseProxy = false`, so it
+ignores ambient/system proxy settings and keeps the configured subscription
+origin as the host inspected by `OutboundWebhookConnectCallback`. Existing
+strict localhost opt-ins and automatic-redirect blocking are unchanged.
+
+Proxy-aware outbound webhook delivery is not supported. Deployments that can
+reach webhook recipients only through a corporate proxy fail closed. This path
+uses its dedicated connect callback rather than `EgressEnvelopeHandler`; this
+change does not broaden redirect or audit behavior.
+
 ## Security considerations
 
 - Always verify the `X-Taskdeck-Webhook-Signature` header before processing payloads.

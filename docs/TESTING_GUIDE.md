@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-27
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -28,6 +28,26 @@ Verification note:
 - bulk merge wave (2026-05-16): security fixes (3 PRs), test coverage (2), RFAI features (5), PAPER frontend (2), dependency updates (3)
 - prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
 - growth since last recertification: backend +278 passing tests, frontend +462 passing tests
+
+## Proxy-Safe Direct Egress Checkpoint (`#1513`)
+
+Local issue-branch verification on 2026-07-27 covers the direct-only primary
+clients for OpenAI, Gemini, Ollama, and outbound webhook delivery:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~LlmProviderRegistrationTests|FullyQualifiedName~OutboundWebhookConnectCallbackTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests"
+```
+
+Result: **47 passed, 0 failed, 0 skipped**. The tests resolve the real
+`IHttpMessageHandlerFactory` pipelines, assert `UseProxy = false`,
+`AllowAutoRedirect = false`, and the existing `ConnectCallback`; exercise a
+hostile configured proxy against blocked loopback, private, and link-local
+origins without exposing protected content; and prove permitted direct
+`localhost` delivery without consulting the proxy. `git diff --check` also
+passes.
+
+This evidence does not prove the full backend suite, Required CI, CodeQL, or
+exact-head independent review. Those gates remain required before merge.
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 

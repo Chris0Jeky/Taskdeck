@@ -2,6 +2,10 @@
 
 Last Updated: 2026-07-27
 
+Proxy-safe direct egress implementation checkpoint (2026-07-27, `#1513`):
+- **The OpenAI, Gemini, Ollama, and outbound-webhook primary clients now ignore ambient/system proxy settings.** Each `SocketsHttpHandler` sets `UseProxy = false`, so the configured origin remains the `OutboundWebhookConnectCallback` target instead of allowing a proxy endpoint to become the validated peer. Existing strict localhost opt-ins and automatic-redirect blocking are unchanged. Proxy-aware outbound support does not exist, so corporate proxy-only deployments fail closed. These clients are not wired through `EgressEnvelopeHandler`, and this slice does not broaden redirect or audit behavior.
+- **Evidence is local and targeted, not a shipped/merge-ready claim:** the affected API test filter passes 47/47 with real `IHttpMessageHandlerFactory` pipeline checks, hostile-proxy loopback/private/link-local canaries, and direct-origin success; `git diff --check` passes. Full backend verification, Required CI, CodeQL, and exact-head independent reviews remain outstanding.
+
 Required Docs Governance hardening (2026-07-26, `#1492`):
 - **Required CI now enforces failure-ledger projection synchronization.** The reusable Docs Governance job pins Python 3.12 and runs the existing `failure_ledger.jsonl` ↔ `FAILURE_LEDGER.md` synchronization unittest before its governance checks, so a stale checked-in projection fails without any renderer masking it. Local agentic update workflows intentionally render first and then test so a valid hook-appended JSONL entry can be projected; the smoke contract keeps that distinction from drifting.
 

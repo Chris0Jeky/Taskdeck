@@ -1,6 +1,6 @@
 # LLM Provider Runtime and Demo Setup Guide
 
-Last Updated: 2026-04-22
+Last Updated: 2026-07-27
 Scope: Provider runtime setup for chat/capture automation and safe local demo operation.
 
 ## Purpose
@@ -15,6 +15,7 @@ Backend provider runtime now supports:
 - `Mock` provider (default)
 - `OpenAI` provider (config-gated)
 - `Gemini` provider (config-gated)
+- `Ollama` provider (config-gated)
 - managed-key attribution baseline for provider-bound chat/capture requests (`#236`):
   - server-derived actor/scope attribution is attached to `ChatCompletionRequest`
   - provider adapters receive standardized attribution headers (`x-taskdeck-*`)
@@ -23,24 +24,30 @@ Backend provider runtime now supports:
 
 Selection is deterministic through `LlmProviderSelectionPolicy`:
 
-- to use live providers (`OpenAI`/`Gemini`), live providers must be enabled (`EnableLiveProviders=true`)
+- to use live providers (`OpenAI`/`Gemini`/`Ollama`), live providers must be enabled (`EnableLiveProviders=true`)
 - to use live providers in development-like environments, explicit live mode is required (`AllowLiveProvidersInDevelopment=true`)
-- provider mode may be explicitly set to `Mock`, `OpenAI`, or `Gemini`; this guide's config example intentionally uses `Mock` as the safe default
+- provider mode may be explicitly set to `Mock`, `OpenAI`, `Gemini`, or `Ollama`; this guide's config example intentionally uses `Mock` as the safe default
 - unknown provider values also fall back deterministically to `Mock`
-- selected provider config must pass validation (`ApiKey`, `BaseUrl`, `Model`, `TimeoutSeconds`)
+- selected provider config must pass provider-specific validation (`BaseUrl`, `Model`, `TimeoutSeconds`, and an API key where required)
 - `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected; the selection policy falls back to Mock when validation fails
-- `HttpClient`s for OpenAI and Gemini use `OutboundWebhookConnectCallback` for DNS-level SSRF protection (defense against DNS rebinding where a hostname resolves to a private IP at connect time) and set `AllowAutoRedirect = false` to prevent redirect-based bypass
+- the OpenAI, Gemini, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
+
+These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. This is a dedicated connect-callback boundary, not `EgressEnvelopeHandler` enforcement, and it does not change the existing redirect or audit posture.
 
 If any live-provider condition fails, runtime degrades safely to `Mock`.
 
 ### Development-mode localhost bypass (Ollama / LM Studio)
 
-To support local LLM workflows (Ollama, LM Studio, LocalAI, etc.), the SSRF
-validator allows `localhost`/`127.0.0.1` `BaseUrl` values **only** when
+To support local LLM workflows (Ollama, LM Studio, LocalAI, etc.), the effective
+connect-time exception is scoped to the exact `localhost` hostname **only** when
 both of the following are true:
 
 - the environment is `Development` (or a development-like host name)
 - `Llm:AllowLiveProvidersInDevelopment = true` is set explicitly
+
+Ollama additionally requires `Llm:Ollama:AllowLocalhostEndpoints = true`.
+Literal loopback and other private/link-local addresses remain blocked by the
+connect callback; use the exact `localhost` hostname for an opted-in local provider.
 
 Under this bypass, HTTPS is also not required for `localhost` endpoints.
 This exception is intentionally narrow: Staging/Production deployments can

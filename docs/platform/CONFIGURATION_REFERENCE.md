@@ -208,16 +208,16 @@ Bound to `MfaPolicySettings`. Registered in `SettingsRegistration.cs`.
 
 ### `Llm`
 
-Bound to `LlmProviderSettings` (nested: `OpenAi`, `Gemini`). Registered in
+Bound to `LlmProviderSettings` (nested: `OpenAi`, `Gemini`, `Ollama`). Registered in
 `LlmProviderRegistration.AddLlmProviders`. The Mock provider is always the
 default and the only one that ships enabled. See
 `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md` for end-to-end provider setup.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, Gemini) only run when this is true. | No |
+| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, Gemini, Ollama) only run when this is true. | No |
 | `Llm:AllowLiveProvidersInDevelopment` | `bool` | `false` | Safety gate — live providers refuse to run in the `Development` environment unless this is also true. | No |
-| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, or `Gemini`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
+| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `Gemini`, or `Ollama`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
 | `Llm:OpenAi:ApiKey` | `string` | `""` | OpenAI API key. Required to use the OpenAI provider. Store as a secret. | Only for `Llm:Provider = OpenAi` |
 | `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Override for compatible gateways. | No |
 | `Llm:OpenAi:Model` | `string` | `gpt-4o-mini` | Model identifier sent in chat requests. | No |
@@ -226,6 +226,15 @@ default and the only one that ships enabled. See
 | `Llm:Gemini:BaseUrl` | `string` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API base URL. | No |
 | `Llm:Gemini:Model` | `string` | `gemini-2.5-flash` | Model identifier. | No |
 | `Llm:Gemini:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the Gemini provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateGeminiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
+
+**Outbound transport boundary:** the OpenAI, Gemini, and Ollama primary clients
+set `UseProxy = false`. They ignore ambient/system proxy settings so the
+configured provider origin remains the target inspected by
+`OutboundWebhookConnectCallback`. The existing development-localhost opt-ins
+remain unchanged. There is no proxy-aware provider setting: corporate
+proxy-only deployments fail closed. This path does not use
+`EgressEnvelopeHandler`, and its existing no-auto-redirect and audit behavior is
+unchanged.
 
 ### `LlmToolCalling`
 
@@ -324,6 +333,14 @@ webhook testing works without extra config
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `OutboundWebhooks:Security:AllowLocalhostEndpoints` | `bool` | `false` in non-Development; `true` in Development when unset | When false, the outbound webhook HTTP handler refuses to connect to localhost/loopback targets. Defense against SSRF from user-supplied URLs. | No |
+
+The `OutboundWebhookDelivery` primary client is direct-only and sets
+`UseProxy = false`, so ambient/system proxy settings cannot move connect-time
+DNS/IP validation away from the subscription endpoint. Its existing localhost
+policy remains unchanged. There is no proxy-aware webhook setting; deployments
+that require a corporate proxy for outbound delivery fail closed. This client
+continues to use `OutboundWebhookConnectCallback`, not
+`EgressEnvelopeHandler`, with automatic redirects still disabled.
 
 ## CORS and HTTP
 

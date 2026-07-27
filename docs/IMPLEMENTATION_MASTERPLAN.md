@@ -10,6 +10,11 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Active delivery checkpoint (2026-07-27, proxy-safe direct egress)
+
+- **`#1513` local implementation:** the OpenAI, Gemini, Ollama, and outbound-webhook primary handlers now set `UseProxy = false`, keeping the configured origin as the `OutboundWebhookConnectCallback` validation target even when ambient/system proxy settings exist. Existing strict localhost opt-ins and automatic-redirect blocking remain unchanged. No proxy-aware outbound mode exists; corporate proxy-only deployments fail closed. This is the existing dedicated connect-callback path, not `EgressEnvelopeHandler` enforcement, and it does not expand redirect or audit behavior.
+- **Current evidence boundary:** 47/47 targeted API tests pass across the real `IHttpMessageHandlerFactory` pipelines, blocked loopback/private/link-local canaries with a hostile proxy, and permitted direct-origin success; `git diff --check` passes. Full backend verification, Required CI, CodeQL, exact-head independent reviews, and merge remain outstanding, so this is not yet a shipped delivery entry.
+
 ## Delivery update (2026-07-26, agentic governance)
 
 - **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI without regeneration masking it. Local agentic update workflows use the distinct render-then-test order so hook-appended JSONL can be projected, and the smoke contract pins both sides of that distinction.
