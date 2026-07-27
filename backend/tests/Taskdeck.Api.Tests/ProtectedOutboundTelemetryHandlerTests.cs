@@ -21,6 +21,13 @@ using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class SentryGlobalStateCollection
+{
+    public const string Name = "Sentry global state";
+}
+
+[Collection(SentryGlobalStateCollection.Name)]
 public class ProtectedOutboundTelemetryHandlerTests
 {
     private const string ControlClientName = "ProtectedOutboundTelemetryControl";
@@ -145,29 +152,32 @@ public class ProtectedOutboundTelemetryHandlerTests
         builder.Services.AddTaskdeckWorkers(builder.Configuration, builder.Environment);
 
         await using var app = builder.Build();
-        var sentryOptions = app.Services
-            .GetRequiredService<IOptions<SentryAspNetCoreOptions>>()
-            .Value;
-        var handlerFactory = app.Services.GetRequiredService<IHttpMessageHandlerFactory>();
-        var clientFactory = app.Services.GetRequiredService<IHttpClientFactory>();
-        var hub = app.Services.GetRequiredService<IHub>();
-        var protectedClientNames = new[]
-        {
-            nameof(OpenAiLlmProvider),
-            nameof(GeminiLlmProvider),
-            nameof(OllamaLlmProvider),
-            "OutboundWebhookDelivery"
-        };
-        var marker = $"sentry-protected-{Guid.NewGuid():N}";
-
-        sentryOptions.DisableSentryHttpMessageHandler.Should().BeTrue(
-            "Taskdeck must prevent Sentry's global factory filter from bypassing protected-client telemetry controls");
-
-        using var sentryScope = hub.PushScope();
-        var transaction = hub.StartTransaction("protected-outbound-test", "http.client");
-        hub.ConfigureScope(scope => scope.Transaction = transaction);
+        IHub? hub = null;
+        ITransactionTracer? transaction = null;
         try
         {
+            var sentryOptions = app.Services
+                .GetRequiredService<IOptions<SentryAspNetCoreOptions>>()
+                .Value;
+            var handlerFactory = app.Services.GetRequiredService<IHttpMessageHandlerFactory>();
+            var clientFactory = app.Services.GetRequiredService<IHttpClientFactory>();
+            hub = app.Services.GetRequiredService<IHub>();
+            var protectedClientNames = new[]
+            {
+                nameof(OpenAiLlmProvider),
+                nameof(GeminiLlmProvider),
+                nameof(OllamaLlmProvider),
+                "OutboundWebhookDelivery"
+            };
+            var marker = $"sentry-protected-{Guid.NewGuid():N}";
+
+            sentryOptions.DisableSentryHttpMessageHandler.Should().BeTrue(
+                "Taskdeck must prevent Sentry's global factory filter from bypassing protected-client telemetry controls");
+
+            using var sentryScope = hub.PushScope();
+            transaction = hub.StartTransaction("protected-outbound-test", "http.client");
+            hub.ConfigureScope(scope => scope.Transaction = transaction);
+
             foreach (var clientName in protectedClientNames)
             {
                 var handlerTypes = EnumerateHandlerChain(handlerFactory.CreateHandler(clientName))
@@ -200,8 +210,19 @@ public class ProtectedOutboundTelemetryHandlerTests
         }
         finally
         {
-            transaction.Finish();
-            hub.ConfigureScope(scope => scope.Transaction = null);
+            try
+            {
+                transaction?.Finish();
+                hub?.ConfigureScope(scope => scope.Transaction = null);
+            }
+            finally
+            {
+                // Resolving IHub installs process-global Sentry state. This test does not start
+                // the host, so ApplicationStopped cannot close it for subsequent API tests.
+                SentrySdk.Close();
+                SentrySdk.IsEnabled.Should().BeFalse(
+                    "the enabled-Sentry regression must not leak its global hub into later API tests");
+            }
         }
     }
 
