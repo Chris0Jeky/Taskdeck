@@ -408,7 +408,7 @@ def test_configured_commands(settings: dict[str, object]) -> None:
         run_handler(pr_reminder, {"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "gh pr create --fill"}}),
         "pr reminder",
         "PostToolUse",
-        "/adversarial-review",
+        "review-and-ship",
     )
 
     session_start = hooks["SessionStart"][0]["hooks"][0]  # type: ignore[index]
