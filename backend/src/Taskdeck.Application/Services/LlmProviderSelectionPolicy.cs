@@ -255,6 +255,12 @@ public static class LlmProviderSelectionPolicy
             return false;
         }
 
+        if (compatible.ExtraHeaders is null)
+        {
+            error = "ExtraHeaders must be a header map when configured.";
+            return false;
+        }
+
         foreach (var (name, value) in compatible.ExtraHeaders)
         {
             if (string.IsNullOrWhiteSpace(name) || string.Equals(name, "Authorization", StringComparison.OrdinalIgnoreCase))
@@ -266,6 +272,20 @@ public static class LlmProviderSelectionPolicy
             if (value is null || value.Contains('\r') || value.Contains('\n'))
             {
                 error = "ExtraHeaders values must not contain line breaks.";
+                return false;
+            }
+
+            // Use the framework's request-header parser so malformed and
+            // content-only/restricted names select the deterministic Mock
+            // provider instead of throwing when the client constructs a request.
+            using var headerProbe = new HttpRequestMessage();
+            try
+            {
+                headerProbe.Headers.Add(name, value);
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
+            {
+                error = $"ExtraHeaders contains an invalid or restricted request header '{name}'.";
                 return false;
             }
         }
