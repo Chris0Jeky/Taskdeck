@@ -51,16 +51,19 @@ function captureLauncher(page: Page) {
 
 test('@mobile board navigation and column visibility on small screen', async ({ page }) => {
   const boardName = `Mobile Board ${Date.now()}`
-  const columnName = `Mobile Col ${Date.now()}`
+  const columnName = boardName
 
   await createBoard(page, boardName)
-  await addColumn(page, columnName)
+  const columnLane = await addColumn(page, columnName)
 
-  // Board heading should be visible on mobile
-  await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
+  // The board and column deliberately share a name to prove heading assertions stay scoped.
+  const boardHeading = page.getByRole('heading', { level: 1, name: boardName, exact: true })
+  await expect(boardHeading).toHaveCount(1)
+  await expect(boardHeading).toBeVisible()
 
   // Column heading should be visible and not clipped outside viewport
-  const columnHeading = page.getByRole('heading', { name: columnName, exact: true })
+  const columnHeading = columnLane.getByRole('heading', { name: columnName, exact: true })
+  await expect(columnHeading).toHaveCount(1)
   await expect(columnHeading).toBeVisible()
 
   // The viewport should be small (confirming mobile project is active)
@@ -78,12 +81,18 @@ test('@mobile card editing modal should fit within mobile viewport', async ({ pa
   const cardTitle = `Mobile Edit Card ${Date.now()}`
 
   await createBoard(page, boardName)
-  await addColumn(page, columnName)
+  const columnLane = await addColumn(page, columnName)
   await addCard(page, columnName, cardTitle)
 
-  // Click the card title area to avoid the drag-handle intercepting the tap.
-  const card = page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
-  await card.getByRole('heading', { name: cardTitle, exact: true }).click()
+  // Require one lane and one card before clicking the title area.
+  await expect(columnLane).toHaveCount(1)
+  const card = columnLane.locator('[data-card-id]').filter({
+    has: page.getByRole('heading', { name: cardTitle, exact: true }),
+  })
+  await expect(card).toHaveCount(1)
+  const cardHeading = card.getByRole('heading', { name: cardTitle, exact: true })
+  await expect(cardHeading).toHaveCount(1)
+  await cardHeading.click()
 
   const editHeading = page.getByRole('heading', { name: 'Edit Card', exact: true })
   await expect(editHeading).toBeVisible()
@@ -141,17 +150,11 @@ test('@mobile board columns stack vertically without horizontal overflow', async
   const secondColumn = `Doing ${Date.now()}`
 
   await createBoard(page, boardName)
-  await addColumn(page, firstColumn)
-  await addColumn(page, secondColumn)
+  const firstLane = await addColumn(page, firstColumn)
+  const secondLane = await addColumn(page, secondColumn)
 
-  const firstLane = page
-    .locator('[data-column-id]')
-    .filter({ has: page.getByRole('heading', { name: firstColumn, exact: true }) })
-    .first()
-  const secondLane = page
-    .locator('[data-column-id]')
-    .filter({ has: page.getByRole('heading', { name: secondColumn, exact: true }) })
-    .first()
+  await expect(firstLane).toHaveCount(1)
+  await expect(secondLane).toHaveCount(1)
 
   const firstBox = await firstLane.boundingBox()
   const secondBox = await secondLane.boundingBox()
