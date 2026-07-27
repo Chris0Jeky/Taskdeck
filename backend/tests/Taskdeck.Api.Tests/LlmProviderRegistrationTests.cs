@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Http;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.Services;
 using Xunit;
@@ -36,6 +37,28 @@ public class LlmProviderRegistrationTests
 
         provider.GetRequiredService<Taskdeck.Application.Services.ILlmProvider>()
             .Should().BeOfType<Taskdeck.Application.Services.OpenAiCompatibleLlmProvider>();
+        provider.GetService<OpenAiCompatibleLlmProvider>().Should().BeNull(
+            "the selector, not a directly resolvable concrete transport, owns the live-provider decision");
+        provider.GetRequiredService<IEgressRegistry>().GetAllEntries()
+            .Should().ContainSingle(entry =>
+                entry.Host == "api.groq.com" &&
+                entry.ToolOrAgentName == nameof(OpenAiCompatibleLlmProvider));
+        var handler = provider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        EnumeratePipeline(handler).Should().Contain(item => item is EgressEnvelopeHandler,
+            "the configured disclosure entry must also be enforced on the compatible client");
+    }
+
+    [Fact]
+    public void ProtectedSocketHandlers_DisableSystemProxyBypass()
+    {
+        using var llmHandler = LlmProviderRegistration.CreateProtectedSocketsHttpHandler(false);
+        using var webhookHandler = WorkerRegistration.CreateProtectedWebhookHandler(false);
+
+        llmHandler.UseProxy.Should().BeFalse();
+        llmHandler.AllowAutoRedirect.Should().BeFalse();
+        webhookHandler.UseProxy.Should().BeFalse();
+        webhookHandler.AllowAutoRedirect.Should().BeFalse();
     }
 
     [Theory]
@@ -364,4 +387,9 @@ public class LlmProviderRegistrationTests
         public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
     }
 
+    private static IEnumerable<HttpMessageHandler> EnumeratePipeline(HttpMessageHandler root)
+    {
+        for (var current = root; current is not null; current = (current as DelegatingHandler)?.InnerHandler)
+            yield return current;
+    }
 }

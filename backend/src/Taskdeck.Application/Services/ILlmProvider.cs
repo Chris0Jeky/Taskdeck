@@ -71,9 +71,14 @@ public record LlmTokenEvent(
     string? Error = null,
     int? TokensUsed = null,
     string? Provider = null,
-    string? Model = null,
-    bool IsDegraded = false,
-    string? DegradedReason = null);
+    string? Model = null)
+{
+    // Keep these out of the positional constructor. LlmTokenEvent is part of the
+    // public Application contract, so extending its existing constructor would
+    // break already-compiled consumers even though in-tree source still builds.
+    public bool IsDegraded { get; init; }
+    public string? DegradedReason { get; init; }
+}
 
 public record LlmHealthStatus(
     bool IsAvailable,

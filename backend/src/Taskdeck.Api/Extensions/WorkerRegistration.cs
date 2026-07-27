@@ -63,4 +63,5 @@ public static class WorkerRegistration
 
         return services;
     }
+
 }

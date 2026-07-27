@@ -11,6 +11,8 @@ namespace Taskdeck.Api.Extensions;
 
 public static class LlmProviderRegistration
 {
+    internal const string OpenAiCompatibleHttpClientName = "OpenAiCompatibleLlmProvider";
+
     public static IServiceCollection AddLlmProviders(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -87,6 +89,11 @@ public static class LlmProviderRegistration
         services.AddSingleton(localhostPolicy);
         services.TryAddTransient<ProtectedOutboundTelemetryHandler>();
         services.TryAddSingleton<ProtectedOutboundMeterFactory>();
+        var egressRegistry = GetOrCreateEgressRegistry(services);
+        RegisterOpenAiCompatibleEgress(
+            egressRegistry,
+            llmProviderSettings,
+            localhostPolicy.AllowGeneralProviderLocalhost);
 
         services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
         {
@@ -116,7 +123,7 @@ public static class LlmProviderRegistration
         .AddPolicyHandler(openAiCircuitBreakerPolicy)
         .RemoveAllLoggers()
         .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
-        services.AddHttpClient<OpenAiCompatibleLlmProvider>((sp, client) =>
+        services.AddHttpClient(OpenAiCompatibleHttpClientName, (sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
             var timeoutSeconds = settings.OpenAiCompatible?.TimeoutSeconds > 0 ? settings.OpenAiCompatible.TimeoutSeconds : 30;
@@ -137,6 +144,10 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
+        .AddHttpMessageHandler(sp => new EgressEnvelopeHandler(
+            sp.GetRequiredService<IEgressRegistry>(),
+            sp.GetRequiredService<ILogger<EgressEnvelopeHandler>>(),
+            nameof(OpenAiCompatibleLlmProvider)))
         .AddPolicyHandler(openAiCompatibleCircuitBreakerPolicy)
         .RemoveAllLoggers()
         .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
@@ -208,7 +219,12 @@ public static class LlmProviderRegistration
             return decision.ProviderKind switch
             {
                 LlmProviderKind.OpenAi => sp.GetRequiredService<OpenAiLlmProvider>(),
-                LlmProviderKind.OpenAiCompatible => sp.GetRequiredService<OpenAiCompatibleLlmProvider>(),
+                LlmProviderKind.OpenAiCompatible => CreateOpenAiCompatibleProvider(
+                    sp,
+                    settings,
+                    circuitBreakerTracker,
+                    circuitBreakerSettings,
+                    localhostPolicy.AllowGeneralProviderLocalhost),
                 LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
                 LlmProviderKind.Ollama => sp.GetRequiredService<OllamaLlmProvider>(),
                 _ => sp.GetRequiredService<MockLlmProvider>()
@@ -216,6 +232,79 @@ public static class LlmProviderRegistration
         });
 
         return services;
+    }
+
+    internal static SocketsHttpHandler CreateProtectedSocketsHttpHandler(bool allowLocalhostEndpoints)
+    {
+        return new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            // A configured system proxy changes ConnectCallback's destination to the
+            // proxy and can tunnel to an unvalidated target. Protected clients must
+            // connect directly so the DNS-level callback validates the real origin.
+            UseProxy = false,
+            ConnectCallback = (context, cancellationToken) =>
+                OutboundWebhookConnectCallback.ConnectAsync(
+                    context,
+                    allowLocalhostEndpoints,
+                    cancellationToken)
+        };
+    }
+
+    private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(
+        IServiceProvider services,
+        LlmProviderSettings settings,
+        CircuitBreakerStateTracker circuitBreakerTracker,
+        CircuitBreakerSettings circuitBreakerSettings,
+        bool allowLocalhostEndpoints)
+    {
+        RegisterOpenAiCompatibleEgress(
+            services.GetRequiredService<IEgressRegistry>(),
+            settings,
+            allowLocalhostEndpoints);
+        return new OpenAiCompatibleLlmProvider(
+            services.GetRequiredService<IHttpClientFactory>().CreateClient(OpenAiCompatibleHttpClientName),
+            settings,
+            services.GetRequiredService<ILogger<OpenAiCompatibleLlmProvider>>(),
+            circuitBreakerTracker,
+            circuitBreakerSettings,
+            allowLocalhostEndpoints);
+    }
+
+    private static IEgressRegistry GetOrCreateEgressRegistry(IServiceCollection services)
+    {
+        var existing = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IEgressRegistry));
+        if (existing?.ImplementationInstance is IEgressRegistry registry)
+            return registry;
+
+        var created = new EgressRegistry();
+        if (existing is null)
+            services.AddSingleton<IEgressRegistry>(created);
+        return created;
+    }
+
+    internal static void RegisterOpenAiCompatibleEgress(
+        IEgressRegistry registry,
+        LlmProviderSettings settings,
+        bool allowLocalhostEndpoints)
+    {
+        if (!LlmProviderSelectionPolicy.TryValidateOpenAiCompatibleSettings(
+                settings,
+                out _,
+                allowLocalhostEndpoints) ||
+            !Uri.TryCreate(settings.OpenAiCompatible.BaseUrl, UriKind.Absolute, out var endpoint))
+            return;
+
+        if (registry.GetAllEntries().Any(entry =>
+                string.Equals(entry.Host.TrimEnd('.'), endpoint.Host.TrimEnd('.'), StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(entry.ToolOrAgentName, nameof(OpenAiCompatibleLlmProvider), StringComparison.Ordinal)))
+            return;
+
+        registry.Register(new EgressEntry(
+            endpoint.Host,
+            "LLM prompt with board context and user input",
+            nameof(OpenAiCompatibleLlmProvider),
+            EgressDataClassification.UserContent));
     }
 
     /// <summary>
