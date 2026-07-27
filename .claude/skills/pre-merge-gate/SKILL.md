@@ -24,14 +24,15 @@ If mergeable is "CONFLICTING", stop and report — do not auto-resolve.
 
 Read ALL comments on the PR:
 ```bash
-gh api repos/{owner}/{repo}/pulls/{number}/comments
-gh api repos/{owner}/{repo}/pulls/{number}/reviews
-gh api repos/{owner}/{repo}/issues/{number}/comments
+gh api --paginate repos/{owner}/{repo}/pulls/{number}/comments
+gh api --paginate repos/{owner}/{repo}/pulls/{number}/reviews
+gh api --paginate repos/{owner}/{repo}/issues/{number}/comments
 gh pr view $ARGUMENTS --comments
 ```
 
 Also query the PR's GraphQL `reviewThreads` connection (or the equivalent GitHub MCP review-thread
-read) because REST comment lists do not expose `isResolved`.
+read) through its final cursor because REST comment lists do not expose `isResolved` and a partial
+connection is not evidence that all threads are settled.
 
 Check for unaddressed findings from any source:
 - Human review comments not yet resolved
@@ -57,11 +58,13 @@ Report any failures immediately — do not proceed to merge.
 
 ## Step 4: Confirm exact-head independent-review evidence
 
-Use the `headRefOid` from Step 1 and the reviews, review summaries, and comments already read in
-Step 2. Require an **arrived independent review of that exact head** which posts either findings or
-an explicit no-finding result. A review request, acknowledgement/reaction, worker-authored review, or
-coordinator metadata scan does not satisfy Taskdeck's declared T3 gate. Evidence from an older head
-or an older base is stale.
+Use the `headRefOid` and `baseRefOid` from Step 1 and the reviews, review summaries, and comments
+already read in Step 2. Require an **arrived independent review of that exact head and base** which
+posts either findings or an explicit no-finding result. The evidence artifact must record both
+reviewed OIDs (or a stable diff identity derived from both), and the gate must compare them with the
+current values. GitHub's review `commit_id` binds only the head; it is not proof of the reviewed base.
+A review request, acknowledgement/reaction, worker-authored review, or coordinator metadata scan
+does not satisfy Taskdeck's declared T3 gate. Evidence from an older head or an older base is stale.
 
 Confirm that every finding from that review has a recorded disposition and that all review threads
 are settled. If exact-head independent-review evidence is missing or unsettled, report the PR as
@@ -90,7 +93,7 @@ Output a merge-readiness summary:
 - [ ] Frontend build: PASS/FAIL
 - [ ] Frontend tests: PASS/FAIL
 - [ ] CI checks: GREEN/RED
-- [ ] Independent exact-head review: ARRIVED/MISSING (head SHA and evidence URL)
+- [ ] Independent exact-head/base review: ARRIVED/MISSING (head SHA, base SHA, and evidence URL)
 - [ ] Bot comments: ADDRESSED/NONE
 - [ ] Secrets scan: CLEAN
 

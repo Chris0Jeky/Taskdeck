@@ -189,8 +189,6 @@ What this manual adds:
 
 - Use `taskdeck-pr-review-loop` for the Taskdeck lenses; prefer a **distinct lens** over a
   duplicate pass when a second reviewer is warranted.
-- Request the `@codex` review on the exact head at ready-for-review and once more after the
-  final fix round; batch fixes rather than chasing round-by-round.
 - Record each finding and its resolution in the findings ledger.
 
 ---
