@@ -86,22 +86,21 @@ Use `taskdeck-worktree-issue-worker` for implementation workers.
 
 ## Review loop
 
-Every PR needs:
+Every PR follows the global `review-and-ship` pipeline. For Taskdeck's declared T3 gate, obtain the
+required independent review pass before merge; only additional lenses are discretionary.
 
-1. Worker self-review after opening the PR.
-2. Coordinator review of PR body, linked issue, test evidence, and docs impact.
-3. Flag these surfaces so the coordinator can decide whether an extra independent lens is warranted (round count and severity bar: the global `review-and-ship` skill):
-   - auth/authz/security
-   - migrations/persistence
-   - capture/review/proposal execution
-   - CI/workflows/project automation
-   - broad frontend flow changes
-   - flaky or failing tests
-4. Posted review findings or explicit no-finding comment.
-5. Fix commits for findings.
-6. Re-review after fixes.
+The coordinator also reviews the PR body, linked issue, test evidence, and docs impact. Flag these
+surfaces when deciding whether an additional independent lens is warranted:
 
-Use `taskdeck-pr-review-loop` for review workers.
+- auth/authz/security
+- migrations/persistence
+- capture/review/proposal execution
+- CI/workflows/project automation
+- broad frontend flow changes
+- flaky or failing tests
+
+Use `taskdeck-pr-review-loop` for Taskdeck-specific lenses. Finding disposition, verification after
+changes, and convergence remain owned by the global pipeline.
 
 ## CI and comments
 

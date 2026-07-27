@@ -87,7 +87,8 @@ and take the actual model and effort for each rung from the skill.
 - Wave planning and task selection; architecture and ADR drafting; security-posture judgment;
   EF migration-snapshot merges; race/concurrency analysis; genuinely ambiguous multi-file
   debugging **after** a cheaper agent has gathered the evidence and failed to crack it.
-- Adjudicating review findings: every CRITICAL/HIGH, and any conflict between reviewers.
+- Adjudicating review findings under the global `review-and-ship` pipeline, including conflicts
+  between reviewer lenses.
 - **Final synthesis, the verification verdict, and every merge decision.** These are never
   delegated — branch protection is lenient, so you are the only real gate (base §5).
 - Keep your turns lean: don't bulk-read what a subagent can summarize; don't sit through long
@@ -167,11 +168,11 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
   your finalized text. Required orientation and gate reads are never delegated to save
   tokens: the coordinator still reads the source-of-truth docs (base §1 — STATUS,
   OUTSTANDING_TASKS, the handoff) and every gate input itself.
-- **Gate-marshals per lane (implementation rung):** one worker owns a PR's whole
-  fix→verify→settle cycle end-to-end — "verify" meaning the worker's TARGETED runs; full-suite
-  verdicts stay with the ops lane + coordinator per BUDGET & CADENCE — continued via
-  `SendMessage` round after round, never respawned per round, so context (the PR's history,
-  reviewers' phrasing, prior verdicts) is paid for once. Thread settlement (reply + `resolveReviewThread` + report
+- **Gate-marshals per lane (implementation rung):** one worker owns a PR's targeted verification
+  and settlement mechanics throughout the global `review-and-ship` pipeline; full-suite verdicts
+  stay with the ops lane + coordinator per BUDGET & CADENCE. Continue with the same worker via
+  `SendMessage` so context (the PR's history, reviewers' phrasing, prior verdicts) is paid for
+  once. Thread settlement (reply + `resolveReviewThread` + report
   `unresolved == 0`) is owned by exactly ONE lane per PR — default the gate-marshal; the
   coordinator may reassign a PR's settlement to the ops agent in that packet explicitly
   (e.g. the marshal is retired), but never lets both act on the same PR's threads. (Honest
@@ -215,26 +216,26 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
 
 ## PER-PR GATE SEQUENCE (proven across 20+ merges; run it every time)
 
-worker round → 2 read-only reviewers (distinct lenses) → coordinator adjudication → ONE
-batched fix push to the same worker → full backend suite on the EXACT head (coordinator owns
-the verdict; delegate the run to a subagent that executes it in its OWN foreground turn, or
-run it inline — never as background Bash; serialize so only ONE full suite runs box-wide at a
-time) → CI green on that head →
-30–60 min bot window from the FINAL push → **feedback check by CONTENT** (unresolved review
-threads AND top-level PR comments AND review-summary bodies posted since the final push) →
-merge → pull `main` → prune worktree+branch (cd out of a worktree before removing it).
+worker delivers a ready-for-review PR → run the global `review-and-ship` pipeline → full backend
+suite on the EXACT head (coordinator owns the verdict; delegate the run to a subagent that executes
+it in its OWN foreground turn, or run it inline — never as background Bash; serialize so only ONE
+full suite runs box-wide at a time) → CI green on that head → **feedback check by CONTENT**
+(unresolved review threads AND top-level PR comments AND review-summary bodies posted since the
+final push) → merge when the canonical pipeline and declared tier permit → pull `main` → prune
+worktree+branch (cd out of a worktree before removing it). Reviewer count, finding disposition,
+fix/verification convergence, and any waiting requirement belong only to the canonical pipeline;
+do not add local values here.
 
 - **Feedback check by content, never by reviewer names**: query `reviewThreads` (count
   `isResolved == false` and READ the bodies), AND sweep top-level PR comments and
   review-summary bodies since the final push — bots put findings in all three places, and a
-  "review" entry with no findings looks identical to one with two P2s until you read it. This applies to docs-only PRs too (a docs sweep has been merged
+  "review" entry with no findings looks identical to one carrying findings until you read it. This applies to docs-only PRs too (a docs sweep has been merged
   over two valid unresolved P2s before; the fix cost a follow-up PR).
-- **Review-loop discipline**: batch fixes into ONE push per round; every worker — or the PR's
-  designated settlement lane, when FRUGALITY MODE has reassigned it — replies AND
-  resolves threads via GraphQL `resolveReviewThread` and reports `unresolved == 0`; new bot
-  findings on a final head are reported to the coordinator, never cycled unilaterally. When
-  bot rounds keep finding new interleavings in one seam, issue ONE structural redesign
-  directive with a hard timebox ("further findings → report and hand off").
+- **Review execution**: the global `review-and-ship` skill owns review/fix decisions and
+  convergence. Every worker — or the PR's designated settlement lane, when FRUGALITY MODE has
+  reassigned it — replies AND resolves threads via GraphQL `resolveReviewThread` and reports
+  `unresolved == 0`; new bot findings on a final head are reported to the coordinator for
+  canonical triage, never cycled unilaterally.
 - **Merge order**: when a wide (many-file / frontend-touching) PR and narrow PRs approach the
   gate together, land the wide one first.
 - **Generated files**: `docs/agentic/FAILURE_LEDGER.md` is rendered from `failure_ledger.jsonl`

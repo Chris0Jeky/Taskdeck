@@ -32,12 +32,12 @@ Do not spend review energy on unrelated style unless it creates risk.
 
 ## Sensitive-surface flag
 
-Flag these surfaces in the review so the coordinator can decide whether the change warrants the
-extra independent lens its tier allows:
+Flag these surfaces so the coordinator can decide whether an additional independent lens beyond
+the tier-required pass is warranted:
 
 - security/auth/session/token behavior
 - migrations or data deletion/retention
-- MCP or external agent write surfaces
+- MCP or external-agent write surfaces
 - capture/review/proposal execution
 - GitHub workflows/project automation
 - broad frontend route or state flow

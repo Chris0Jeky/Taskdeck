@@ -52,12 +52,15 @@ For isolated workers:
 3. Require the first command from `docs/WORKTREE_AGENT_PROTOCOL.md` or `powershell -File scripts/worktree_guard.ps1`.
 4. Assign explicit file/module ownership.
 5. Tell workers they are not alone in the codebase and must not revert others' edits.
-6. Require targeted tests and self-review before handoff.
+6. Require targeted tests and handoff to the global `review-and-ship` pipeline.
 7. Require every file-editing worker prompt to restate the structured patch discipline above.
 
 ## Review And CI
 
-Review rounds, severity bar, and comment triage: the global `review-and-ship` skill (laws 2 and 11). Flag these surfaces so the coordinator can decide whether an extra independent lens is warranted:
+Review rounds, severity bar, and comment triage: the global `review-and-ship` skill (laws 2 and 11).
+For Taskdeck's declared T3 gate, obtain the required independent review pass before merge; only
+additional lenses are discretionary. Flag these surfaces when deciding whether an additional lens
+is warranted:
 
 - auth, sessions, tokens, security, secrets, redaction
 - migrations, persistence, deletion, import/export

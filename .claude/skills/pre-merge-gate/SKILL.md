@@ -1,6 +1,6 @@
 ---
 name: pre-merge-gate
-description: "Final validation gate before merging a PR: tests, lint, type-check, build, self-review, CI green check. Use before merging."
+description: "Final validation gate before merging a PR: tests, lint, type-check, build, review evidence, and CI green check. Use before merging."
 user-invocable: true
 ---
 
@@ -36,7 +36,8 @@ Check for unaddressed findings from any source:
 - CI bot failure messages
 - Previous adversarial review comments not yet resolved
 
-If actionable comments exist, fix them before proceeding.
+If any comment lacks a recorded disposition from the global `review-and-ship` pipeline, report the
+PR as blocked and stop. This gate does not create a separate finding-disposition or fix loop.
 
 ## Step 3: Run local checks
 
@@ -50,7 +51,7 @@ cd frontend/taskdeck-web && npm run build && npx vitest --run --reporter=verbose
 
 Report any failures immediately — do not proceed to merge.
 
-## Step 4: Self-review
+## Step 4: Confirm review evidence
 
 Read the full diff (`gh pr diff $ARGUMENTS`) and check for:
 
@@ -64,7 +65,8 @@ Read the full diff (`gh pr diff $ARGUMENTS`) and check for:
 - HTTP semantics violations (wrong status codes)
 - Unused `using` statements or dead code
 
-If any issues found, fix them, commit, and push before proceeding.
+If this scan finds an untriaged issue, report the PR as blocked and return it to the global
+`review-and-ship` pipeline. Do not start a second review pipeline from this gate.
 
 ## Step 5: CI status
 
@@ -86,7 +88,7 @@ Output a merge-readiness summary:
 - [ ] Frontend build: PASS/FAIL
 - [ ] Frontend tests: PASS/FAIL
 - [ ] CI checks: GREEN/RED
-- [ ] Self-review: CLEAN/ISSUES FIXED
+- [ ] Review evidence: PRESENT/MISSING
 - [ ] Bot comments: ADDRESSED/NONE
 - [ ] Secrets scan: CLEAN
 

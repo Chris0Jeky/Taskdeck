@@ -83,8 +83,9 @@ EOF
 
 ### 7. Review
 
-Open the PR ready-for-review, then run the global `review-and-ship` skill (global laws 2 and 11).
-Taskdeck-specific lenses: `taskdeck-pr-review-loop`.
+Open the PR ready-for-review, then apply the global `review-and-ship` skill (global laws 2 and 11)
+through merge readiness only. Do not execute its merge action: this skill's output contract is an
+open, unmerged PR for human review. Taskdeck-specific lenses: `taskdeck-pr-review-loop`.
 
 ### 8. Report back
 
@@ -96,4 +97,4 @@ Provide the PR URL and the handoff summary from `taskdeck-verification-doc-sync`
 - do not skip tests
 - if the issue is ambiguous, ask the user before implementing
 - if the issue is too large for one PR, propose a split and implement the first slice
-- always self-review and post findings on the PR before reporting done
+- complete the review-only handoff in step 7 before reporting done
