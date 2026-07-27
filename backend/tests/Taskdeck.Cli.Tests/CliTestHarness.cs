@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using FluentAssertions;
 
@@ -25,6 +26,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
     private readonly CliProcessLaunchGate _processLaunchGate;
     private readonly CancellationToken _processCancellationToken;
     private readonly Func<Process, Task> _terminateAndReapAsync;
+    private readonly Func<Process, CancellationToken, Task<string>> _readStandardOutputAsync;
     private readonly TaskCompletionSource<int>? _processStartedSignal;
     private int _lastStartedProcessId;
 
@@ -41,6 +43,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         CliProcessLaunchGate? processLaunchGate = null,
         CancellationToken processCancellationToken = default,
         Func<Process, Task>? terminateAndReapAsync = null,
+        Func<Process, CancellationToken, Task<string>>? readStandardOutputAsync = null,
         TaskCompletionSource<int>? processStartedSignal = null)
     {
         _processTimeout = processTimeout ?? ProcessTimeout;
@@ -60,6 +63,8 @@ internal sealed class CliTestHarness : IAsyncDisposable
         _processLaunchGate = processLaunchGate ?? DefaultProcessLaunchGate;
         _processCancellationToken = processCancellationToken;
         _terminateAndReapAsync = terminateAndReapAsync ?? TerminateAndReapAsync;
+        _readStandardOutputAsync = readStandardOutputAsync ??
+            (static (process, cancellationToken) => process.StandardOutput.ReadToEndAsync(cancellationToken));
         _processStartedSignal = processStartedSignal;
     }
 
@@ -159,20 +164,29 @@ internal sealed class CliTestHarness : IAsyncDisposable
                 timeoutCts.Token,
                 _processCancellationToken);
 
-            process.Start();
-            Volatile.Write(ref _lastStartedProcessId, process.Id);
-            _processStartedSignal?.TrySetResult(process.Id);
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("The CLI process could not be started.");
+            }
 
-            var standardOutputTask = process.StandardOutput.ReadToEndAsync(cts.Token);
-            var standardErrorTask = process.StandardError.ReadToEndAsync(cts.Token);
             try
             {
+                Volatile.Write(ref _lastStartedProcessId, process.Id);
+                _processStartedSignal?.TrySetResult(process.Id);
+
+                var standardOutputTask = _readStandardOutputAsync(process, cts.Token);
+                var standardErrorTask = process.StandardError.ReadToEndAsync(cts.Token);
                 await Task.WhenAll(
                     standardOutputTask,
                     standardErrorTask,
                     process.WaitForExitAsync(cts.Token));
+
+                return new CliCommandResult(
+                    process.ExitCode,
+                    standardOutputTask.Result.Trim(),
+                    standardErrorTask.Result.Trim());
             }
-            catch (OperationCanceledException timeoutCancellation)
+            catch (Exception executionFailure)
             {
                 try
                 {
@@ -181,27 +195,32 @@ internal sealed class CliTestHarness : IAsyncDisposable
                 catch (Exception cleanupFailure)
                 {
                     _processLaunchGate.Poison(cleanupFailure);
-                    if (cleanupFailure is TimeoutException)
+                    if (executionFailure is OperationCanceledException && cleanupFailure is TimeoutException)
                     {
                         throw new TimeoutException(
                             $"CLI process did not exit within {_processTimeout.TotalSeconds}s and cleanup " +
                             $"could not prove that every tracked process exited. Args: {arguments}. " +
                             cleanupFailure.Message,
-                            new AggregateException(timeoutCancellation, cleanupFailure));
+                            new AggregateException(executionFailure, cleanupFailure));
                     }
 
-                    throw;
+                    throw new AggregateException(
+                        $"CLI process failed after launch and cleanup also failed. Args: {arguments}. " +
+                        cleanupFailure.Message,
+                        executionFailure,
+                        cleanupFailure);
                 }
 
-                throw new TimeoutException(
-                    $"CLI process did not exit within {_processTimeout.TotalSeconds}s. Args: {arguments}",
-                    timeoutCancellation);
-            }
+                if (executionFailure is OperationCanceledException timeoutCancellation)
+                {
+                    throw new TimeoutException(
+                        $"CLI process did not exit within {_processTimeout.TotalSeconds}s. Args: {arguments}",
+                        timeoutCancellation);
+                }
 
-            return new CliCommandResult(
-                process.ExitCode,
-                standardOutputTask.Result.Trim(),
-                standardErrorTask.Result.Trim());
+                ExceptionDispatchInfo.Capture(executionFailure).Throw();
+                throw new UnreachableException();
+            }
         }
         finally
         {

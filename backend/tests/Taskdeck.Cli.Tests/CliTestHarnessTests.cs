@@ -187,6 +187,88 @@ public sealed class CliTestHarnessTests
         }
     }
 
+    [Fact]
+    public async Task RunAsync_WhenOutputDrainFails_ReapsBeforeReleasingSlotAndPreservesFailure()
+    {
+        using var launchGate = new CliProcessLaunchGate(capacity: 1);
+        using var firstCancellation = new CancellationTokenSource();
+        using var secondCancellation = new CancellationTokenSource();
+        var firstStartedSignal = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStartedSignal = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failOutputDrain = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cleanupEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowCleanup = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var drainFailure = new IOException("Synthetic standard-output drain failure.");
+
+        async Task<string> FailOutputDrainAsync(Process _, CancellationToken __)
+        {
+            await failOutputDrain.Task;
+            throw drainFailure;
+        }
+
+        async Task ReapAfterBarrierAsync(Process process)
+        {
+            cleanupEntered.TrySetResult(true);
+            await allowCleanup.Task;
+            await ReapProcessAsync(process);
+        }
+
+        await using var firstHarness = new CliTestHarness(
+            "cli-drain-failure-first",
+            processLaunchGate: launchGate,
+            processCancellationToken: firstCancellation.Token,
+            terminateAndReapAsync: ReapAfterBarrierAsync,
+            readStandardOutputAsync: FailOutputDrainAsync,
+            processStartedSignal: firstStartedSignal);
+        await using var secondHarness = new CliTestHarness(
+            "cli-drain-failure-second",
+            processLaunchGate: launchGate,
+            processCancellationToken: secondCancellation.Token,
+            processStartedSignal: secondStartedSignal);
+        await using var firstMigrationLock = CreateMigrationLock(firstHarness);
+        await using var secondMigrationLock = CreateMigrationLock(secondHarness);
+
+        Task<Exception?>? firstFailureTask = null;
+        Task<Exception?>? secondFailureTask = null;
+        try
+        {
+            firstFailureTask = CaptureFailureAsync(firstHarness);
+            var firstProcessId = await firstStartedSignal.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            ProcessHasExited(firstProcessId).Should().BeFalse();
+
+            secondFailureTask = CaptureFailureAsync(secondHarness);
+            launchGate.WaitingCount.Should().Be(1);
+            secondStartedSignal.Task.IsCompleted.Should().BeFalse();
+
+            failOutputDrain.TrySetResult(true);
+            firstCancellation.Cancel();
+            await cleanupEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            launchGate.WaitingCount.Should().Be(1,
+                "a post-start failure must retain its slot until cleanup proves reap");
+            secondStartedSignal.Task.IsCompleted.Should().BeFalse();
+            ProcessHasExited(firstProcessId).Should().BeFalse();
+
+            allowCleanup.TrySetResult(true);
+            (await firstFailureTask).Should().BeSameAs(drainFailure,
+                "successful cleanup must preserve the original post-start failure");
+            ProcessHasExited(firstProcessId).Should().BeTrue();
+
+            var secondProcessId = await secondStartedSignal.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            ProcessHasExited(secondProcessId).Should().BeFalse();
+            secondCancellation.Cancel();
+            (await secondFailureTask).Should().BeOfType<TimeoutException>();
+            ProcessHasExited(secondProcessId).Should().BeTrue();
+        }
+        finally
+        {
+            failOutputDrain.TrySetResult(true);
+            allowCleanup.TrySetResult(true);
+            firstCancellation.Cancel();
+            secondCancellation.Cancel();
+            await SettleAsync(firstFailureTask, secondFailureTask);
+        }
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -233,7 +315,10 @@ public sealed class CliTestHarnessTests
             }
             else
             {
-                failures[0].Should().BeSameAs(cleanupFailure);
+                var aggregateFailure = failures[0].Should().BeOfType<AggregateException>().Which;
+                aggregateFailure.InnerExceptions.Should().HaveCount(2);
+                aggregateFailure.InnerExceptions[0].Should().BeAssignableTo<OperationCanceledException>();
+                aggregateFailure.InnerExceptions[1].Should().BeSameAs(cleanupFailure);
             }
 
             failures[1].Should().BeOfType<InvalidOperationException>()
