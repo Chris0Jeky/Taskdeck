@@ -14,6 +14,18 @@ const canonicalWorkflow = readFileSync(
   'utf8',
 )
 
+function workflowJobSection(startMarker, endMarker) {
+  const start = canonicalWorkflow.indexOf(startMarker)
+  const end = canonicalWorkflow.indexOf(endMarker, start + startMarker.length)
+  assert.notEqual(start, -1, `missing workflow marker: ${startMarker}`)
+  assert.notEqual(end, -1, `missing workflow marker: ${endMarker}`)
+  return canonicalWorkflow.slice(start, end)
+}
+
+function workflowStepNames(jobSection) {
+  return [...jobSection.matchAll(/^      - name: (.+)$/gm)].map((match) => match[1])
+}
+
 test('accepts the complete reviewed parked workflow', () => {
   assert.equal(hasExpectedParkedStagingGateWorkflow(canonicalWorkflow), true)
   assert.equal(
@@ -21,6 +33,33 @@ test('accepts the complete reviewed parked workflow', () => {
     true,
   )
   assert.deepEqual(validateParkedStagingGateWorkflow(canonicalWorkflow), [])
+})
+
+test('prepares ephemeral inputs immediately before each first Compose invocation', () => {
+  const buildSteps = workflowStepNames(
+    workflowJobSection('  build-verification:', '  staging-smoke:'),
+  )
+  const smokeSection = workflowJobSection('  staging-smoke:', '  parked-handoff:')
+  const smokeSteps = workflowStepNames(smokeSection)
+
+  assert.deepEqual(buildSteps.slice(-4, -1), [
+    'Build container images',
+    'Prepare ephemeral Compose inputs',
+    'Verify compose configuration',
+  ])
+  assert.deepEqual(smokeSteps.slice(1, 4), [
+    'Build container images',
+    'Prepare ephemeral Compose inputs',
+    'Start stack',
+  ])
+  assert.match(
+    smokeSection,
+    /if: \$\{\{ failure\(\) && steps\.compose-inputs\.outcome == 'success' \}\}/,
+  )
+  assert.match(
+    smokeSection,
+    /if: \$\{\{ always\(\) && steps\.compose-inputs\.outcome == 'success' \}\}/,
+  )
 })
 
 test('rejects an inline flow-style release trigger', () => {

@@ -110,10 +110,19 @@ node scripts/check-github-ops-governance.mjs
 
 The staging-gate governance regression pins the complete parked workflow after normalizing line
 endings. Any intentional edit to that workflow requires a reviewed digest and fixture update plus
-Actionlint; substring checks are not treated as proof of effective YAML semantics. Its 19-test Node
-suite includes six `prepare-staging-compose-inputs` contracts: exact required-variable inventory,
-cryptographic byte counts, mask-before-environment ordering, and fail-closed missing/unexpected-input
-behavior. A hosted workflow rehearsal is still required before calling the manual path runnable.
+Actionlint; substring checks are not treated as proof of effective YAML semantics. Its 26-test Node
+suite includes 12 `prepare-staging-compose-inputs` contracts and 14 workflow/governance contracts.
+The helper invokes Docker Compose's effective `config --variables --format json` parser, rejects
+command/JSON/schema/key-name/boolean drift before generating secrets, proves comments and `$${...}`
+literals are inert with a real minimal Compose file, and preserves mask-before-environment ordering.
+The workflow regression keeps each preparation step immediately before its first Compose consumer.
+
+Manual run [30242044922](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30242044922)
+passed build verification, real S1-S9 smoke plus cleanup, and the parked handoff at exact unmerged
+head `81cfbcea88d13c22d20549412e8d5685677af4e6`; logs masked both generated inputs and the summary
+reported environment `none` and deployment `no`. Subsequent parser/order review fixes change the
+candidate bytes, so rerun the workflow and Required CI on their exact published head. The stacked
+non-default base did not generate CodeQL; re-run it after retargeting before maintainer merge.
 
 For a local check against the real Compose contract, prove both the positive configuration and the
 missing-connector-key negative path. These are explicitly non-production test values:

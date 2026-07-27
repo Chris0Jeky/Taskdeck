@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 const errors = []
 
-const expectedParkedStagingGateSha256 = 'bdcfcf9fb133690339c80eb6d9fc4b11a8b4c8bd898f5c129ba2666305e3084e'
+const expectedParkedStagingGateSha256 = 'e3d1987cd7ffdab2d9f7bafe6ddc7d750be7b6eb421684dd973bef58e820248a'
 
 const requiredIssueTemplateFiles = [
   '.github/ISSUE_TEMPLATE/bug_report.md',
