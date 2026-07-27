@@ -78,6 +78,8 @@ public static class LlmProviderRegistration
             circuitBreakerTracker, "Gemini", circuitBreakerSettings);
         var ollamaCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "Ollama", circuitBreakerSettings);
+        var openAiCompatibleCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
+            circuitBreakerTracker, "OpenAICompatible", circuitBreakerSettings);
 
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
@@ -112,6 +114,30 @@ public static class LlmProviderRegistration
             };
         })
         .AddPolicyHandler(openAiCircuitBreakerPolicy)
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
+        services.AddHttpClient<OpenAiCompatibleLlmProvider>((sp, client) =>
+        {
+            var settings = sp.GetRequiredService<LlmProviderSettings>();
+            var timeoutSeconds = settings.OpenAiCompatible?.TimeoutSeconds > 0 ? settings.OpenAiCompatible.TimeoutSeconds : 30;
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        })
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+        {
+            return new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false,
+                ActivityHeadersPropagator = null,
+                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
+                ConnectCallback = (context, cancellationToken) =>
+                    OutboundWebhookConnectCallback.ConnectAsync(
+                        context,
+                        allowLocalhostEndpoints: localhostPolicy.AllowGeneralProviderLocalhost,
+                        cancellationToken)
+            };
+        })
+        .AddPolicyHandler(openAiCompatibleCircuitBreakerPolicy)
         .RemoveAllLoggers()
         .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
         services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
@@ -182,6 +208,7 @@ public static class LlmProviderRegistration
             return decision.ProviderKind switch
             {
                 LlmProviderKind.OpenAi => sp.GetRequiredService<OpenAiLlmProvider>(),
+                LlmProviderKind.OpenAiCompatible => sp.GetRequiredService<OpenAiCompatibleLlmProvider>(),
                 LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
                 LlmProviderKind.Ollama => sp.GetRequiredService<OllamaLlmProvider>(),
                 _ => sp.GetRequiredService<MockLlmProvider>()

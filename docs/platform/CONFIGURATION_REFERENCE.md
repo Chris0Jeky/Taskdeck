@@ -208,20 +208,25 @@ Bound to `MfaPolicySettings`. Registered in `SettingsRegistration.cs`.
 
 ### `Llm`
 
-Bound to `LlmProviderSettings` (nested: `OpenAi`, `Gemini`, `Ollama`). Registered in
+Bound to `LlmProviderSettings` (nested: `OpenAi`, `OpenAiCompatible`, `Gemini`, `Ollama`). Registered in
 `LlmProviderRegistration.AddLlmProviders`. The Mock provider is always the
 default and the only one that ships enabled. See
 `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md` for end-to-end provider setup.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, Gemini, Ollama) only run when this is true. | No |
+| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, OpenAICompatible, Gemini, Ollama) only run when this is true. | No |
 | `Llm:AllowLiveProvidersInDevelopment` | `bool` | `false` | Safety gate — live providers refuse to run in the `Development` environment unless this is also true. | No |
-| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `Gemini`, or `Ollama`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
+| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `OpenAiCompatible`, `Gemini`, or `Ollama`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
 | `Llm:OpenAi:ApiKey` | `string` | `""` | OpenAI API key. Required to use the OpenAI provider. Store as a secret. | Only for `Llm:Provider = OpenAi` |
 | `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Override for compatible gateways. | No |
 | `Llm:OpenAi:Model` | `string` | `gpt-4o-mini` | Model identifier sent in chat requests. | No |
 | `Llm:OpenAi:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the OpenAI provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateOpenAiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
+| `Llm:OpenAiCompatible:ApiKey` | `string` | `""` | API key for the configured OpenAI-compatible endpoint. Store as a secret. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:BaseUrl` | `string` | `""` | Required OpenAI Chat Completions-compatible base URL, such as `https://openrouter.ai/api/v1`, `https://api.groq.com/openai/v1`, or `https://api.deepseek.com/v1`. It passes the same HTTP(S), private-network, metadata-host, and DNS connection-time SSRF controls as OpenAI. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:Model` | `string` | `""` | Required model identifier supplied by the compatible vendor. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` for the compatible provider. Must be `> 0`; invalid values select Mock. | No |
+| `Llm:OpenAiCompatible:ExtraHeaders:<HeaderName>` | `object` (map) | `{}` | Optional non-secret gateway headers, for example `HTTP-Referer` and `X-Title` for OpenRouter. `Authorization` cannot be set here because Taskdeck derives it from `ApiKey`; values with line breaks are rejected. | No |
 | `Llm:Gemini:ApiKey` | `string` | `""` | Gemini API key. Required to use the Gemini provider. Store as a secret. | Only for `Llm:Provider = Gemini` |
 | `Llm:Gemini:BaseUrl` | `string` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API base URL. | No |
 | `Llm:Gemini:Model` | `string` | `gemini-2.5-flash` | Model identifier. | No |

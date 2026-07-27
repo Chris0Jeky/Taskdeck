@@ -6,7 +6,7 @@ Scope: Provider runtime setup for chat/capture automation and safe local demo op
 ## Purpose
 
 Taskdeck keeps application services provider-agnostic through `ILlmProvider`, while retaining a safe default posture.
-This guide defines what is now shipped and how to run OpenAI/Gemini/Ollama demos without code changes.
+This guide defines what is now shipped and how to run configured LLM demos without code changes.
 
 ## Current Shipped State
 
@@ -14,6 +14,7 @@ Backend provider runtime now supports:
 
 - `Mock` provider (default)
 - `OpenAI` provider (config-gated)
+- `OpenAICompatible` provider (config-gated; OpenRouter, Groq, and DeepSeek-compatible chat endpoints)
 - `Gemini` provider (config-gated)
 - `Ollama` provider (config-gated)
 - managed-key attribution baseline for provider-bound chat/capture requests (`#236`):
@@ -24,13 +25,13 @@ Backend provider runtime now supports:
 
 Selection is deterministic through `LlmProviderSelectionPolicy`:
 
-- to use live providers (`OpenAI`/`Gemini`/`Ollama`), live providers must be enabled (`EnableLiveProviders=true`)
+- to use live providers (`OpenAI`, `OpenAICompatible`, `Gemini`, or `Ollama`), live providers must be enabled (`EnableLiveProviders=true`)
 - to use live providers in development-like environments, explicit live mode is required (`AllowLiveProvidersInDevelopment=true`)
-- provider mode may be explicitly set to `Mock`, `OpenAI`, `Gemini`, or `Ollama`; this guide's config example intentionally uses `Mock` as the safe default
+- provider mode may be explicitly set to `Mock`, `OpenAI`, `OpenAICompatible`, `Gemini`, or `Ollama`; this guide's config example intentionally uses `Mock` as the safe default
 - unknown provider values also fall back deterministically to `Mock`
 - selected provider config must pass provider-specific validation (`BaseUrl`, `Model`, `TimeoutSeconds`, and an API key where required)
 - `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected; the selection policy falls back to Mock when validation fails
-- the OpenAI, Gemini, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
+- the OpenAI, OpenAICompatible, Gemini, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
 
 These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. This is a dedicated connect-callback boundary, not `EgressEnvelopeHandler` enforcement, and it does not change the existing redirect or audit posture. Registered protected clients mask their configured URI immediately before send, then an inner handler restores it for transport; this keeps path/query data out of outer .NET HTTP EventSource payloads. Public caller-owned provider clients do not opt into masking. Protected registrations remove default `IHttpClientFactory` request loggers, disable distributed-trace header propagation, and use a private metric scope that Taskdeck's configured OpenTelemetry pipeline drops alongside marked HTTP activities. Enabled Sentry removes its outbound handler from these protected client pipelines only, so it cannot add separate `sentry-trace`/baggage headers or capture protected URLs and 5xx responses; unrelated clients retain instrumentation and server-side Sentry tracking remains active. Independently installed process-global `ActivityListener`/`MeterListener` and transport-stage host/IP observation remain outside the guarantee.
 
@@ -68,6 +69,13 @@ in Development.
       "BaseUrl": "https://api.openai.com/v1",
       "Model": "gpt-4o-mini",
       "TimeoutSeconds": 30
+    },
+    "OpenAiCompatible": {
+      "ApiKey": "",
+      "BaseUrl": "",
+      "Model": "",
+      "TimeoutSeconds": 30,
+      "ExtraHeaders": {}
     },
     "Gemini": {
       "ApiKey": "",
@@ -133,6 +141,59 @@ Optional:
 The Ollama localhost exception is effective only in Development/Test/Testing and
 only for the exact `localhost` hostname. Production, literal loopback addresses,
 and other private/link-local origins remain blocked.
+
+## OpenAI-Compatible Providers (OpenRouter, Groq, DeepSeek)
+
+`OpenAICompatible` is the named provider for public HTTPS endpoints using the
+OpenAI Chat Completions wire format. It is distinct from `OpenAI`: OpenAI keeps
+its `api.openai.com` defaults, while compatible endpoints require an explicit
+base URL and model. The provider sends real upstream SSE requests (`stream:true`)
+for chat streams and forwards delta events as they arrive.
+
+Set the common safety gates and provider name:
+
+- `Llm__EnableLiveProviders=true`
+- `Llm__AllowLiveProvidersInDevelopment=true` (only for development-like environments)
+- `Llm__Provider=OpenAICompatible`
+
+The endpoint must be public HTTP(S) and pass the same URL and DNS-level SSRF
+checks as OpenAI. Keep keys in a secret store; never commit them. Compatible
+gateways may require optional non-secret headers such as `HTTP-Referer` or
+`X-Title`; use `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>` for those.
+`Authorization` is reserved for the configured API key and cannot be overridden.
+
+### OpenRouter
+
+```powershell
+$env:Llm__OpenAiCompatible__ApiKey = '<openrouter_key>'
+$env:Llm__OpenAiCompatible__BaseUrl = 'https://openrouter.ai/api/v1'
+$env:Llm__OpenAiCompatible__Model = 'openai/gpt-4o-mini'
+Set-Item -Path 'Env:Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer' -Value 'https://your-app.example'
+Set-Item -Path 'Env:Llm__OpenAiCompatible__ExtraHeaders__X-Title' -Value 'Taskdeck'
+```
+
+### Groq
+
+```powershell
+$env:Llm__OpenAiCompatible__ApiKey = '<groq_key>'
+$env:Llm__OpenAiCompatible__BaseUrl = 'https://api.groq.com/openai/v1'
+$env:Llm__OpenAiCompatible__Model = 'llama-3.1-8b-instant'
+```
+
+### DeepSeek
+
+```powershell
+$env:Llm__OpenAiCompatible__ApiKey = '<deepseek_key>'
+$env:Llm__OpenAiCompatible__BaseUrl = 'https://api.deepseek.com/v1'
+$env:Llm__OpenAiCompatible__Model = 'deepseek-chat'
+```
+
+If a gateway rejects SSE, Taskdeck retries as a normal completion and emits one
+final event with explicit `isDegraded`/`degradedReason` metadata rather than
+pretending the buffered response was incremental. Some compatible gateways also
+reject `response_format: { type: json_object }`; non-streaming extraction retries
+without that field while retaining the JSON-only instruction prompt and robust
+response parsing.
 
 ## Playwright Demo Auto-Enable
 
@@ -200,9 +261,10 @@ This is intentionally separate from the broader demo tooling so an operator can 
 
 ## Test Coverage Expectations (Implemented)
 
-- selection-policy unit coverage for `Mock`/`OpenAI`/`Gemini` and invalid-config fallback
+- selection-policy unit coverage for `Mock`/`OpenAI`/`OpenAICompatible`/`Gemini` and invalid-config fallback
 - provider adapter unit coverage:
   - OpenAI: success/failure + metadata checks
+  - OpenAICompatible: true SSE delta parsing, malformed/mid-stream error, cancellation, and explicit buffered-fallback metadata
   - Gemini: success/failure/invalid-response/invalid-config/cancellation + health + attribution header mapping
 - API integration coverage:
   - capture triage provenance includes provider/model
