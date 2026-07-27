@@ -95,22 +95,28 @@ compares the target guard and initializer bytes with the reviewed raw blobs befo
 compares their artifacts, while explicit remote bases are checked with `git ls-remote` without
 updating refs. A remote dry run
 proves existence only; actual creation performs its controlled tracking-ref refresh and then
-compares both blobs before target or registration mutation. A missing base fails instead of
+compares both blobs before target or registration mutation. An occupied final target fails before
+normal or `-WhatIf` execution can refresh a ref or enter `ShouldProcess`; the later atomic
+reservation still closes creation races. A missing base fails instead of
 producing a false-green dry run.
 
 Run the complete printed PowerShell handoff unchanged inside the worker worktree. Its first command
 is the target guard itself at its exact absolute path, then the bounded initializer verifies the exact
 worktree and detached base before creating and switching to the issue branch. A late switch collision
-removes the unused detached worktree before returning the failure. The creation-time target-byte
+removes the unused detached worktree through its verified common Git directory before returning the
+failure, including separate-Git-dir layouts. A target-byte failure may neutralize only verified
+handoff-artifact dirtiness in that expected detached worktree before a plain, never-forced removal;
+unexpected dirt fails closed. The creation-time target-byte
 check does not authenticate a same-user replacement after the handoff was emitted; an external
-hash-pinned launcher is still required to close that residual. The helper also prints the matching task-scoped PowerShell allow rule; add it explicitly
-when the launch surface requires it rather than committing a generic relative rule. It emits the
-rule in a directly pasteable PowerShell single-quoted here-string variable; pass that variable as
-one `--allowedTools` argv value. Branch names must also be Windows-path compatible: the helper
+hash-pinned launcher is still required to close that residual. The helper also prints matching
+task-scoped guard and initializer PowerShell allow rules; add both when the launch surface requires
+them rather than committing generic relative rules. It emits the rules in directly pasteable
+PowerShell single-quoted here-string variables and an ordered array; pass that array as two
+`--allowedTools` argv values. Branch names must also be Windows-path compatible: the helper
 rejects invalid/reserved components, overlong directory or `.lock` names, and existing
 ancestor/descendant branch namespaces before mutation even when Git's platform-neutral syntax or
-exact lookup accepts them. The rule matches the complete emitted command and all pinned arguments
-without a wildcard:
+exact lookup accepts them. Each rule matches one complete emitted command and all applicable pinned
+arguments without a wildcard:
 
 ```powershell
 & '<exact helper-created worktree>\scripts\worktree_guard.ps1' -GitExecutable '<native Git executable printed by the helper>'
@@ -131,7 +137,7 @@ review committed permission/hook configuration and explicit rules together, acco
 read-only Bash, and treat managed policy as an administrator-owned trust boundary. The repository neither enables
 the progressive Windows PowerShell tool nor grants PowerShell commands project-wide. Set
 `CLAUDE_CODE_USE_POWERSHELL_TOOL=1` only in the trusted host environment for the task-scoped
-initializer launch, then restore its prior process value after `claude -p` returns; PowerShell is
+guard and initializer launch, then restore its prior process value after `claude -p` returns; PowerShell is
 unsandboxed on Windows and Taskdeck's command hooks are Bash-only, so keep all other commands on Git
 Bash. Older or unsupported clients require an interactive coordinator launch. Non-interactive `-p` does not make
 an untrusted workspace trusted; project allows and additional directories remain ignored until

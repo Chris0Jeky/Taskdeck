@@ -71,7 +71,9 @@ With `-WhatIf`, the helper resolves local bases and queries explicit remote base
 target, branch, worktree registration, or ref update. Local dry runs also compare the exact
 reviewed handoff blobs. An explicit remote dry run can only prove that the remote branch exists
 without fetching it; an actual creation performs the controlled tracking-ref refresh, then compares
-both blobs before any target or registration mutation.
+both blobs before any target or registration mutation. An occupied final target fails before either
+the normal or `-WhatIf` path can refresh a ref or enter `ShouldProcess`; the later atomic reservation
+still closes creation races.
 
 If you need a custom branch:
 
@@ -94,7 +96,12 @@ target guard itself as the first worktree command with the helper-selected argv-
 then invokes the bounded initializer at its exact absolute path. The initializer rechecks the exact
 helper-created worktree and detached base, then creates and switches to the planned branch. If a
 late branch collision makes that switch fail, the initializer removes its unused detached worktree
-registration before returning the failure. The creation-time target byte comparison is not ongoing
+registration before returning the failure, including repositories whose common Git directory is
+stored separately from the main checkout. If target-byte verification discovers dirtiness limited
+to exact reviewed handoff artifacts at the expected detached commit, cleanup temporarily marks only
+those verified per-worktree index entries `skip-worktree`, performs a plain (never forced) worktree
+removal, and restores the flags if removal fails. Any other tracked, untracked, or ignored dirt is
+left intact and cleanup fails closed. The creation-time target byte comparison is not ongoing
 execution-time authentication: a same-user process can still replace the target guard or initializer
 after the helper emitted this block. An external hash-pinned launcher would be required to close that
 post-emission TOCTOU boundary. If the block is accidentally run from another checkout, the target
@@ -126,9 +133,10 @@ user allow rule is ineffective. The committed `acceptEdits` default auto-approve
 and common filesystem operations, but acceptEdits does not approve arbitrary Git or PowerShell
 commands and is not sufficient by itself for the detached-first handoff. The committed
 `.claude/settings.json` deliberately does not allow a generic relative initializer command because
-that rule could match the wrong checkout. The helper prints an exact full-command PowerShell rule
-for each task, including the target, pinned Git, branch, worktree, and head arguments with no
-wildcard; review and add that rule explicitly when the launch surface requires it.
+that rule could match the wrong checkout. The helper prints two exact full-command PowerShell rules
+for each task: one for the mandatory guard and one for the initializer. They include the target,
+pinned Git, branch, worktree, and head arguments as applicable, with no wildcard; review and add
+both rules explicitly when the launch surface requires them.
 
 **Headless workers.** Current Claude Code documents that non-interactive `claude -p` does not show
 the trust dialog. That does not make an untrusted workspace trusted: project `permissions.allow` and
@@ -148,8 +156,8 @@ posture for this repository is:
    launch rule as one effective configuration. Organization-managed settings remain effective and
    are an administrator-owned trust boundary that this flag cannot remove; do not use an
    unattended worker if that boundary is not trusted for the task.
-4. Add only the task-specific launch rules that the worker needs, including the exact additive
-   full-command initializer rule printed by the helper. Keep all other command execution on the
+4. Add only the task-specific launch rules that the worker needs, including both exact additive
+   full-command guard and initializer rules printed by the helper. Keep all other command execution on the
    repository's Git Bash surface, then use `--permission-mode dontAsk` so
    calls that would otherwise prompt are denied. This mode does not revoke matching allow rules,
    built-in read-only Bash commands, or applicable hook approvals; those remain part of the
@@ -166,10 +174,14 @@ Set-Location -LiteralPath '<exact helper-created worktree>'
 $previousPowerShellToolValue = [Environment]::GetEnvironmentVariable('CLAUDE_CODE_USE_POWERSHELL_TOOL', [EnvironmentVariableTarget]::Process)
 try {
     $env:CLAUDE_CODE_USE_POWERSHELL_TOOL = '1'
+    $guardAllowRule = @'
+PowerShell(<exact absolute guard command and pinned Git argument printed by the helper>)
+'@
     $initializerAllowRule = @'
 PowerShell(<exact absolute initializer command and pinned arguments printed by the helper>)
 '@
-    claude -p --setting-sources project --allowedTools $initializerAllowRule <other reviewed task arguments> --permission-mode dontAsk
+    $handoffAllowRules = @($guardAllowRule, $initializerAllowRule)
+    claude -p --setting-sources project --allowedTools $handoffAllowRules --permission-mode dontAsk <reviewed task prompt>
 } finally {
     if ($null -eq $previousPowerShellToolValue) {
         Remove-Item Env:CLAUDE_CODE_USE_POWERSHELL_TOOL -ErrorAction SilentlyContinue
@@ -186,7 +198,7 @@ that tool or grant PowerShell commands project-wide. Enable it only in the trust
 for this task-scoped launch, and restore its prior process value after `claude -p` returns.
 When enabled, PowerShell becomes Claude Code's primary shell; on Windows it is not sandboxed, and
 Taskdeck's command deny/failure/pre-commit hooks are currently Bash-only. Therefore the unattended
-posture permits only the exact initializer PowerShell rule; keep other command execution on Git Bash
+posture permits only the exact guard and initializer PowerShell rules; keep other command execution on Git Bash
 until PowerShell hook parity is separately reviewed. Do not present the launch allowlist as the sole
 authorization boundary, and do not present
 `acceptEdits`, disabled trust verification, or `--dangerously-skip-permissions` as authorization

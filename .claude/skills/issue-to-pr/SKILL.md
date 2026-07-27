@@ -48,8 +48,8 @@ first command invokes the exact absolute target `worktree_guard.ps1` with select
 bounded exact-target `Initialize-CodexIssueWorktree.ps1` follows on success, verifies the detached
 base, then performs `switch -c`. A late collision removes the unused detached worktree before
 failing. The helper validates target guard/initializer bytes against reviewed raw blobs before
-emission, but same-user replacement after emission remains a residual. Use the helper's exact additive full-command permission
-rule, including every pinned argument and no wildcard, when launch authorization requires it; never substitute a generic relative rule. From Bash, launch a reviewed absolute PowerShell
+emission, but same-user replacement after emission remains a residual. Use both exact additive full-command permission
+rules printed by the helper (guard plus initializer), including every applicable pinned argument and no wildcard, when launch authorization requires them; never substitute a generic relative rule. From Bash, launch a reviewed absolute PowerShell
 application in the worktree for the whole block; do not resolve bare `powershell`, translate only
 the branch command, or substitute a PATH-first batch shim.
 

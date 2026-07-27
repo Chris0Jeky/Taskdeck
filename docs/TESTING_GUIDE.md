@@ -1537,10 +1537,12 @@ Required workflow: `.github/workflows/ci-required.yml`
     as authentication before PowerShell starts executing it; selected-base OID checks likewise do
     not authenticate target initializer/guard bytes at handoff execution time. The permission model
     asserts no project-wide opt-in to Claude Code's unsandboxed Windows PowerShell tool, trusted
-    versus untrusted project settings, main-checkout-only helper invocation, exact-target launch
-    without a second Claude worktree, restored host opt-in, directly pasteable here-string syntax,
-    real PowerShell 5.1 single-argv transport, and pre-mutation rejection of invalid, overlong, or
-    namespace-colliding Windows branch refs
+    versus untrusted project settings, main-checkout-only helper invocation, two exact target-bound
+    guard/initializer launch rules without a second Claude worktree, restored host opt-in, directly
+    pasteable here-string syntax, real PowerShell 5.1 two-argv transport, occupied-target rejection
+    before normal or dry-run ref mutation, bounded dirty-artifact cleanup without force,
+    separate-Git-dir late-collision removal, case-variant remote refresh, and pre-mutation rejection
+    of invalid, overlong, or namespace-colliding Windows branch refs
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`
