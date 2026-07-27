@@ -10,6 +10,11 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-26, agentic governance)
+
+- **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI without regeneration masking it. Local agentic update workflows use the distinct render-then-test order so hook-appended JSONL can be projected, and the smoke contract pins both sides of that distinction.
+- **Cross-platform agent-hook launchers (`#1487`):** native-Windows handlers and PowerShell-scoped agent-utility commands use the verified `py -3 -B` launcher instead of the unusable Microsoft Store aliases, while POSIX Bash guidance keeps `python3 -B`. The smoke harness uses its active `sys.executable -B` for child scripts, rejects drift in the exact configured-handler inventory and the five-utilities-plus-renderer-test permission surface, and proves that missing PreToolUse launchers or policies fail closed with exit 2. The smoke payloads identify `Bash`; native PowerShell-tool deny coverage is separate T4 work tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497). No interpreter install, PATH mutation, resolver wrapper, or product-runtime change is added.
+
 ## Delivery update (2026-07-26, security runway)
 
 - **SQLite native security floor (`#1345`):** centrally pin `SQLitePCLRaw.bundle_e_sqlite3` 2.1.12 and make Infrastructure's dependency direct, which moves the matched bundle/core/provider/native family from 2.1.6 to 2.1.12 without enabling global transitive pinning. A runtime regression enforces SQLite >= 3.50.2 (2.1.12 loads 3.53.3); the NuGet vulnerability audit is clean, EF reports no pending model changes after a fresh update, and a self-contained `win-x64` binary reaches `/health/ready` with SQLite loaded.
