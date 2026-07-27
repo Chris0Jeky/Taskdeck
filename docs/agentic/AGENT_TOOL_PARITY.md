@@ -35,7 +35,7 @@ Both agents must preserve:
 | UI reproduction | Playwright MCP | Playwright MCP from `.mcp.json` | local Playwright CLI |
 | Browser protocol debugging | Chrome DevTools MCP | Chrome DevTools MCP from `.mcp.json` | Playwright traces/screenshots |
 | GitHub issues/PRs | GitHub MCP or `scripts/github/*` | GitHub MCP from `.mcp.json` or `gh` | `gh` CLI with explicit notes |
-| Containers/OpenAPI/SQLite docs | Docker MCP gateway | Docker MCP gateway from `.mcp.json` | `docker`/repo scripts |
+| Containers/SQLite docs | Docker MCP gateway (user scope) | Docker MCP gateway (user scope) | `docker`/repo scripts |
 | High-autonomy issue work | Codex skills, configured agents/worktrees when runtime policy allows | Claude skills, hooks, worktree sessions | local coordinator flow |
 | Guardrails | system policy, `AGENTS.md`, `.codex/config.toml`, worktree guards | `.claude/settings.json`, hooks, skills, worktree guards | stop and ask for safety blockers |
 | Agent utility Python | `py -3 -B` on native Windows; `python3 -B` on POSIX | same platform launchers; smoke children use the active `sys.executable -B` | stop loudly if the platform launcher is unavailable |
@@ -61,14 +61,17 @@ Both agents must preserve:
 Codex MCP configuration lives in `.codex/config.toml`.
 Claude project MCP configuration lives in `.mcp.json`.
 
-Shared baseline servers:
+Shared project baseline servers:
 
 - `openaiDeveloperDocs`
 - `github`
 - `context7`
 - `playwright`
 - `chromeDevTools`
-- `docker` gateway with `docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform`
+
+The Docker MCP gateway is not a project server: it is declared once at user scope (`MCP_DOCKER` in
+`~/.claude.json` and `~/.codex/config.toml`) serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`.
+Re-declaring it in `.mcp.json` or `.codex/config.toml` starts a second gateway per session (agent-harness#87).
 
 Known intentional difference:
 
