@@ -10,7 +10,7 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-05-16)
+## Last Cross-Stack Verified Baseline (2026-05-16)
 
 - Backend: **6,614 passing** (0 failed, 6 skipped; 6,620 total) -- verified 2026-05-16 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` after bulk merge of PRs `#1055`–`#1074`
   - Domain: 1,626 passed
@@ -34,9 +34,9 @@ Verification note:
 The focused regression lane covers provider selection and invalid-header fallback; registered-client proxy/redirect behavior; true LF/CRLF/CR SSE parsing and minimal wire shape; response/body/line/event limits; unknown-usage quota settlement; conversational fallback; persisted empty/partial degradation; circuit success/failure classification and abandoned half-open probes; sanitized egress logging; factory-only construction; deployment-surface consistency; and the outbound-HTTP inventory invariants:
 
 ```powershell
-dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~OpenAiCompatible|FullyQualifiedName~ChatServiceTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~EgressEnvelopeHandlerTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests"
-dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~LlmProviderRegistrationTests|FullyQualifiedName~CircuitBreakerTests"
-dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release --no-restore
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiCompatible|FullyQualifiedName~ChatServiceTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~EgressEnvelopeHandlerTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmProviderRegistrationTests|FullyQualifiedName~CircuitBreakerTests"
+dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release -m:1
 ```
 
 The documented lane passed twice on 2026-07-27: 277 passed, 0 failed, 1 existing skip (Application 218, API 37, Architecture 22 passed/1 skipped). The final local `dotnet test backend/Taskdeck.sln -c Release -m:1` also passed 7,570 with 5 skips and no failures. These deterministic tests do not substitute for `#1306`'s opt-in acceptance check against a maintainer-selected compatible endpoint: record the vendor/model, successful completion, and visible multi-event stream without recording the key.
