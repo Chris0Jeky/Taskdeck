@@ -22,5 +22,24 @@ the FLOOR-consolidation issue; don't assume this file is the only gate and don't
 regex sets drift further apart. Changes to either floor are T4-class work.
 
 ## Verify
-`python scripts/agent_hooks/smoke_test.py`
+Native Windows-hosted configured-handler smoke (Bash payloads):
+`py -3 -B scripts/agent_hooks/smoke_test.py`
+
+POSIX direct renderer checks:
+```sh
+set -e
+python3 -B scripts/agent_hooks/render_failure_ledger.py
+python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
+```
+
+Local update workflows render first so a hook-appended JSONL entry can be projected, then test
+synchronization. Required CI never renders and deliberately tests the checked-in projection first.
+
+The smoke harness launches child Python scripts through its active `sys.executable` with `-B`,
+while the Windows-only commands in `.claude/settings.json` use the verified `py -3 -B` launcher.
+The full configured-handler smoke is native-Windows-only because those handlers declare
+`shell: powershell`, but its policy payloads identify the `Bash` tool. It proves Bash-command
+handling through PowerShell-hosted handlers, not native PowerShell-tool interception; the latter
+is T4 work tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497). Do not claim the
+smoke as POSIX or native-PowerShell policy proof unless those contracts are redesigned.
 Seam map: `autodoc/AGENT_INDEX.md`
