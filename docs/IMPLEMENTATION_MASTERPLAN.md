@@ -12,7 +12,7 @@ Companion Active Docs:
 
 ## Delivery update (2026-07-27, Windows API diagnostics)
 
-- **Post-`#1373` diagnostic successor (`#1512`):** structured, bounded correlation plus outer/root exception and SQLite-code evidence is now available when the concurrent-card assertion fails, while the client still receives the generic GP-03 500 and no request/user/credential content enters the diagnostic sink. Pre/post exact stress, the five-case historical/current concurrency matrix, and five CI-equivalent API runs stayed green and did not reproduce the original 500; therefore no causal exception, `SQLITE_BUSY` classification, retry, quarantine, or product fix is claimed.
+- **Post-`#1373` diagnostic successor (`#1512`):** structured, bounded correlation plus outer/last-inspected exception type, explicit truncation, aggregate-branch, and SQLite-code evidence is now available when the concurrent-card assertion fails. Normal middleware logs are metadata-only, the client still receives the generic GP-03 500, and no request/user/credential/exception-message content enters the diagnostic sink. Pre/post exact stress, the five-case historical/current concurrency matrix, and five CI-equivalent API runs stayed green and did not reproduce the original 500; therefore no causal exception, `SQLITE_BUSY` classification, retry, quarantine, or product fix is claimed.
 - **Still open:** retain `#1512` until a real recurrence identifies the cause and the narrow repair passes the full serialized backend suite plus exact-head Windows/Ubuntu CI.
 
 ## Delivery update (2026-07-26, agentic governance)

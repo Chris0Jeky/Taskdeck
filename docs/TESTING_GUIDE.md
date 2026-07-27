@@ -1020,8 +1020,10 @@ dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Test
 The concurrent-card regression remains strict: every response must be `201 Created`. A non-201
 response is a failure, never a retry, quarantine, or accepted result. When it fails, the test-only
 diagnostic may report only bounded request/response correlation IDs, HTTP status, API error code,
-outer/root exception type, and SQLite primary/extended numeric codes; it must not include bodies,
-credentials, user content, exception messages, or exception objects. Run each repetition in a fresh
+outer/last-inspected exception type, an explicit classification-truncated flag, and SQLite
+primary/extended numeric codes; it must not include bodies, credentials, user content, exception
+messages, exception summaries, or exception objects. The bounded graph walk covers aggregate branches
+without presenting a capped wrapper as the root. Run each repetition in a fresh
 `dotnet test` process so host/database state is not reused. A green repetition proves only that the
 failure did not occur; it is not root-cause evidence.
 

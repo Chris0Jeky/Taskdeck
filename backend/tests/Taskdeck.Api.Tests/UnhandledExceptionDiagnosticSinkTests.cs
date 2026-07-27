@@ -11,21 +11,23 @@ public class UnhandledExceptionDiagnosticSinkTests
     {
         var sink = new UnhandledExceptionDiagnosticSink(capacity: 2);
 
-        sink.Record("first", "InvalidOperationException", "InvalidOperationException", null, null);
-        sink.Record(new string('a', 150), "unsafe\nsecret", "SqliteException", 5, 517);
-        sink.Record("third", "DbUpdateException", "SqliteException", 6, 262);
+        sink.Record("first", "InvalidOperationException", "InvalidOperationException", false, null, null);
+        sink.Record(new string('a', 150), "unsafe\nsecret", "SqliteException", true, 5, 517);
+        sink.Record("third", "DbUpdateException", "SqliteException", false, 6, 262);
 
         sink.Snapshot().Should().Equal(
             new UnhandledExceptionDiagnostic(
                 new string('a', UnhandledExceptionDiagnosticSink.MaxCorrelationIdLength),
                 "UnknownException",
                 "SqliteException",
+                true,
                 5,
                 517),
             new UnhandledExceptionDiagnostic(
                 "third",
                 "DbUpdateException",
                 "SqliteException",
+                false,
                 6,
                 262));
     }
@@ -35,8 +37,8 @@ public class UnhandledExceptionDiagnosticSinkTests
     {
         const string sensitiveContent = "board title and bearer secret";
         var sink = new UnhandledExceptionDiagnosticSink();
-        sink.Record("unrelated", "ArgumentException", "ArgumentException", null, null);
-        sink.Record("matched", "DbUpdateException", "SqliteException", 5, 517);
+        sink.Record("unrelated", "ArgumentException", "ArgumentException", false, null, null);
+        sink.Record("matched", "DbUpdateException", "SqliteException", true, 5, 517);
 
         var failures = Enumerable.Range(0, 30)
             .Select(index => new ConcurrentHttpResponseDiagnostic(
@@ -55,7 +57,7 @@ public class UnhandledExceptionDiagnosticSinkTests
             $"requestId={new string('a', UnhandledExceptionDiagnosticSink.MaxCorrelationIdLength)}");
         formatted.Should().Contain(
             "responseId=matched,errorCode=unreadable," +
-            "middleware=DbUpdateException->SqliteException/sqlite=5/extended=517");
+            "middleware=DbUpdateException->SqliteException/truncated=true/sqlite=5/extended=517");
         formatted.Should().NotContain("ArgumentException");
         formatted.Should().NotContain(sensitiveContent);
         formatted.Should().HaveLength(UnhandledExceptionDiagnosticFormatter.MaxFormattedLength);

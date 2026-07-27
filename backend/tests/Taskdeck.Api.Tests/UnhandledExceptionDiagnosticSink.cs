@@ -8,7 +8,8 @@ namespace Taskdeck.Api.Tests;
 internal sealed record UnhandledExceptionDiagnostic(
     string CorrelationId,
     string ExceptionType,
-    string RootExceptionType,
+    string LastInspectedExceptionType,
+    bool ClassificationTruncated,
     int? SqliteErrorCode,
     int? SqliteExtendedErrorCode);
 
@@ -37,14 +38,16 @@ internal sealed class UnhandledExceptionDiagnosticSink
     public void Record(
         string? correlationId,
         string? exceptionType,
-        string? rootExceptionType,
+        string? lastInspectedExceptionType,
+        bool classificationTruncated,
         int? sqliteErrorCode,
         int? sqliteExtendedErrorCode)
     {
         _entries.Enqueue(new UnhandledExceptionDiagnostic(
             DiagnosticToken.Normalize(correlationId, MaxCorrelationIdLength, "unknown-correlation"),
             DiagnosticToken.Normalize(exceptionType, MaxExceptionTypeLength, "UnknownException"),
-            DiagnosticToken.Normalize(rootExceptionType, MaxExceptionTypeLength, "UnknownException"),
+            DiagnosticToken.Normalize(lastInspectedExceptionType, MaxExceptionTypeLength, "UnknownException"),
+            classificationTruncated,
             sqliteErrorCode,
             sqliteExtendedErrorCode));
 
@@ -102,7 +105,8 @@ internal static class UnhandledExceptionDiagnosticFormatter
             var classification = middleware is null
                 ? "none"
                 : $"{DiagnosticToken.Normalize(middleware.ExceptionType, UnhandledExceptionDiagnosticSink.MaxExceptionTypeLength, "UnknownException")}" +
-                  $"->{DiagnosticToken.Normalize(middleware.RootExceptionType, UnhandledExceptionDiagnosticSink.MaxExceptionTypeLength, "UnknownException")}" +
+                  $"->{DiagnosticToken.Normalize(middleware.LastInspectedExceptionType, UnhandledExceptionDiagnosticSink.MaxExceptionTypeLength, "UnknownException")}" +
+                  $"/truncated={middleware.ClassificationTruncated.ToString().ToLowerInvariant()}" +
                   $"/sqlite={middleware.SqliteErrorCode?.ToString() ?? "none"}" +
                   $"/extended={middleware.SqliteExtendedErrorCode?.ToString() ?? "none"}";
 
@@ -190,7 +194,8 @@ internal sealed class UnhandledExceptionDiagnosticLoggerProvider : ILoggerProvid
 
             string? correlationId = null;
             string? exceptionType = null;
-            string? rootExceptionType = null;
+            string? lastInspectedExceptionType = null;
+            var classificationTruncated = false;
             int? sqliteErrorCode = null;
             int? sqliteExtendedErrorCode = null;
 
@@ -204,8 +209,11 @@ internal sealed class UnhandledExceptionDiagnosticLoggerProvider : ILoggerProvid
                     case "ExceptionType":
                         exceptionType = property.Value as string;
                         break;
-                    case "RootExceptionType":
-                        rootExceptionType = property.Value as string;
+                    case "LastInspectedExceptionType":
+                        lastInspectedExceptionType = property.Value as string;
+                        break;
+                    case "ClassificationTruncated" when property.Value is bool value:
+                        classificationTruncated = value;
                         break;
                     case "SqliteErrorCode":
                         sqliteErrorCode = property.Value as int?;
@@ -219,7 +227,8 @@ internal sealed class UnhandledExceptionDiagnosticLoggerProvider : ILoggerProvid
             _sink.Record(
                 correlationId,
                 exceptionType,
-                rootExceptionType,
+                lastInspectedExceptionType,
+                classificationTruncated,
                 sqliteErrorCode,
                 sqliteExtendedErrorCode);
         }
