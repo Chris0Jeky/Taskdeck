@@ -3,13 +3,17 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using Sentry;
+using Sentry.AspNetCore;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Services;
@@ -111,6 +115,96 @@ public class ProtectedOutboundTelemetryHandlerTests
             "protected server.address/server.port dimensions must not reach Taskdeck's configured OpenTelemetry exporter");
     }
 
+    [Fact]
+    public async Task EnabledSentry_ShouldNotDecorateOrObserveAnyProtectedClient()
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            ApplicationName = typeof(SentryRegistration).Assembly.GetName().Name,
+            EnvironmentName = "Testing"
+        });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Llm:EnableLiveProviders"] = "true",
+            ["Llm:AllowLiveProvidersInDevelopment"] = "true",
+            ["Llm:Provider"] = "OpenAi",
+            ["Llm:OpenAi:ApiKey"] = "test-openai-key",
+            ["Llm:OpenAi:BaseUrl"] = "http://localhost:12345",
+            ["Llm:OpenAi:Model"] = "test-openai-model",
+            ["Llm:Ollama:AllowLocalhostEndpoints"] = "true",
+            ["OutboundWebhooks:Security:AllowLocalhostEndpoints"] = "true"
+        });
+        builder.AddTaskdeckSentry(new SentrySettings
+        {
+            Enabled = true,
+            Dsn = "https://public@example.invalid/1",
+            Environment = "testing",
+            TracesSampleRate = 1.0
+        });
+        builder.Services.AddLlmProviders(builder.Configuration);
+        builder.Services.AddTaskdeckWorkers(builder.Configuration, builder.Environment);
+
+        await using var app = builder.Build();
+        var sentryOptions = app.Services
+            .GetRequiredService<IOptions<SentryAspNetCoreOptions>>()
+            .Value;
+        var handlerFactory = app.Services.GetRequiredService<IHttpMessageHandlerFactory>();
+        var clientFactory = app.Services.GetRequiredService<IHttpClientFactory>();
+        var hub = app.Services.GetRequiredService<IHub>();
+        var protectedClientNames = new[]
+        {
+            nameof(OpenAiLlmProvider),
+            nameof(GeminiLlmProvider),
+            nameof(OllamaLlmProvider),
+            "OutboundWebhookDelivery"
+        };
+        var marker = $"sentry-protected-{Guid.NewGuid():N}";
+
+        sentryOptions.DisableSentryHttpMessageHandler.Should().BeTrue(
+            "Taskdeck must prevent Sentry's global factory filter from bypassing protected-client telemetry controls");
+
+        using var sentryScope = hub.PushScope();
+        var transaction = hub.StartTransaction("protected-outbound-test", "http.client");
+        hub.ConfigureScope(scope => scope.Transaction = transaction);
+        try
+        {
+            foreach (var clientName in protectedClientNames)
+            {
+                var handlerTypes = EnumerateHandlerChain(handlerFactory.CreateHandler(clientName))
+                    .Select(handler => handler.GetType())
+                    .ToArray();
+                handlerTypes.Should().NotContain(
+                    type => typeof(SentryHttpMessageHandler).IsAssignableFrom(type),
+                    $"Sentry must not observe URLs, failures, or headers from protected client {clientName}");
+
+                foreach (var statusCode in new[] { HttpStatusCode.NoContent, HttpStatusCode.InternalServerError })
+                {
+                    await using var server = new SingleRequestLoopbackServer(statusCode);
+                    using var client = clientFactory.CreateClient(clientName);
+                    using var response = await client.GetAsync(server.BuildUri($"/protected?marker={marker}"));
+                    var rawRequest = await server.ReceivedRequest;
+
+                    response.StatusCode.Should().Be(statusCode);
+                    HasHeader(rawRequest, "sentry-trace").Should().BeFalse(
+                        $"Sentry trace context must not leave protected client {clientName}");
+                    HasHeader(rawRequest, "baggage").Should().BeFalse(
+                        $"Sentry baggage must not leave protected client {clientName}");
+                }
+            }
+
+            IReadOnlyCollection<Breadcrumb> breadcrumbs = Array.Empty<Breadcrumb>();
+            hub.ConfigureScope(scope => breadcrumbs = scope.Breadcrumbs.ToArray());
+            breadcrumbs.Should().NotContain(
+                breadcrumb => BreadcrumbContains(breadcrumb, marker),
+                "successful and failed protected requests must not create Sentry URL breadcrumbs");
+        }
+        finally
+        {
+            transaction.Finish();
+            hub.ConfigureScope(scope => scope.Transaction = null);
+        }
+    }
+
     private static ServiceProvider BuildServiceProvider(BaseExporter<Metric>? metricExporter = null)
     {
         var services = new ServiceCollection();
@@ -189,6 +283,20 @@ public class ProtectedOutboundTelemetryHandlerTests
                        string.Equals(member[(delimiter + 1)..].Trim(), value, StringComparison.Ordinal);
             });
     }
+
+    private static IEnumerable<HttpMessageHandler> EnumerateHandlerChain(HttpMessageHandler handler)
+    {
+        for (var current = handler; current is not null; current = (current as DelegatingHandler)?.InnerHandler)
+        {
+            yield return current;
+        }
+    }
+
+    private static bool BreadcrumbContains(Breadcrumb breadcrumb, string marker) =>
+        (breadcrumb.Message?.Contains(marker, StringComparison.Ordinal) ?? false) ||
+        (breadcrumb.Data?.Any(pair =>
+            pair.Key.Contains(marker, StringComparison.Ordinal) ||
+            pair.Value?.ToString()?.Contains(marker, StringComparison.Ordinal) == true) ?? false);
 
     private sealed class RecordingActivityExporter : BaseExporter<Activity>
     {

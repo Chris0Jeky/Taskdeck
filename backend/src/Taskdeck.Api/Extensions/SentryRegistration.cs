@@ -39,6 +39,11 @@ public static class SentryRegistration
             options.Environment = sentrySettings.Environment;
             options.TracesSampleRate = sentrySettings.TracesSampleRate;
 
+            // Protected LLM and webhook clients own their telemetry boundary. Sentry's global
+            // IHttpClientFactory filter would otherwise add independent propagation, URL
+            // breadcrumbs, and failed-request capture outside those clients' redaction controls.
+            options.DisableSentryHttpMessageHandler = true;
+
             // Hard privacy guardrail: never send PII regardless of config.
             // This prevents usernames, emails, IP addresses, and request
             // bodies from being included in Sentry events.

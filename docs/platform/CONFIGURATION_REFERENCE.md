@@ -533,6 +533,11 @@ Bound to `ObservabilitySettings`. Consumed by `AddTaskdeckObservability`.
 Bound to `SentrySettings`. Consumed by `AddTaskdeckSentry`. Defaults mean
 Sentry is fully off until explicitly opted in.
 
+When enabled, Taskdeck keeps Sentry's server-side exception tracking but disables
+Sentry's automatic outbound `IHttpClientFactory` handler. Protected LLM and webhook
+clients therefore do not acquire Sentry trace/baggage propagation, URL breadcrumbs,
+or failed-request capture outside their dedicated telemetry boundary.
+
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `Sentry:Enabled` | `bool` | `false` | Master switch. | No |
