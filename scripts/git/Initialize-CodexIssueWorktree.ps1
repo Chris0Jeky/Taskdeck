@@ -134,22 +134,25 @@ function Schedule-FailedInitializerWorktreeRemoval {
         [string]::IsNullOrWhiteSpace($commonGitDirectory.Output)) {
         Exit-WithInitializerError "git switch -c failed and the unused helper-created worktree could not be scheduled for removal because Git could not resolve the common directory." 2
     }
-    $repoRoot = Split-Path -Parent $commonGitDirectory.Output.Trim()
+    $resolvedCommonGitDirectory = [System.IO.Path]::GetFullPath($commonGitDirectory.Output.Trim())
+    if (-not (Test-Path -LiteralPath $resolvedCommonGitDirectory -PathType Container)) {
+        Exit-WithInitializerError "git switch -c failed and the unused helper-created worktree could not be scheduled for removal because the common Git directory is not an inspectable directory." 2
+    }
 
     $escapedGit = $script:ResolvedGitExecutable.Replace("'", "''")
-    $escapedRepo = $repoRoot.Replace("'", "''")
+    $escapedCommonGitDirectory = $resolvedCommonGitDirectory.Replace("'", "''")
     $escapedWorktree = $Worktree.Replace("'", "''")
     $cleanupScript = @"
 `$parentProcessId = $PID
 while (`$null -ne (Get-Process -Id `$parentProcessId -ErrorAction SilentlyContinue)) {
     Start-Sleep -Milliseconds 100
 }
-& '$escapedGit' -C '$escapedRepo' worktree remove '$escapedWorktree'
+& '$escapedGit' '--git-dir=$escapedCommonGitDirectory' worktree remove '$escapedWorktree'
 exit `$LASTEXITCODE
 "@
     $encodedCleanupScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cleanupScript))
     try {
-        Start-Process -FilePath (Get-Process -Id $PID).Path -WorkingDirectory $repoRoot -WindowStyle Hidden -ArgumentList @(
+        Start-Process -FilePath (Get-Process -Id $PID).Path -WorkingDirectory $resolvedCommonGitDirectory -WindowStyle Hidden -ArgumentList @(
             "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", $encodedCleanupScript
         ) | Out-Null
     }

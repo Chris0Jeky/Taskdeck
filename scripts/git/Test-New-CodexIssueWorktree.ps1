@@ -388,22 +388,28 @@ function Get-PrintedHandoffLines {
     )
 }
 
-function Get-PrintedInitializerLaunchRule {
+function Get-PrintedHandoffLaunchRules {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Output
     )
 
     $outputLines = @($Output -split '\r?\n')
-    $marker = "Claude Code task-scoped initializer allow rule (additive PowerShell transport):"
+    $marker = "Claude Code task-scoped handoff allow rules (additive PowerShell transport):"
     $markerIndex = [Array]::IndexOf($outputLines, $marker)
-    Assert-True ($markerIndex -ge 0) "Helper output omitted the task-scoped initializer allow-rule marker."
-    Assert-True (($markerIndex + 4) -lt $outputLines.Count) "Helper output omitted the task-scoped initializer allow-rule transport."
-    Assert-Equal "`$initializerAllowRule = @'" $outputLines[$markerIndex + 1] "Helper output omitted a directly pasteable single-quoted here-string opener."
-    Assert-Equal "'@" $outputLines[$markerIndex + 3] "Helper output omitted a column-one single-quoted here-string terminator."
-    Assert-Equal '# Pass as one argv value: claude ... --allowedTools $initializerAllowRule' $outputLines[$markerIndex + 4] "Helper output did not pass the rule variable as one CLI argv value."
+    Assert-True ($markerIndex -ge 0) "Helper output omitted the task-scoped handoff allow-rule marker."
+    Assert-True (($markerIndex + 8) -lt $outputLines.Count) "Helper output omitted one or more task-scoped handoff allow rules."
+    Assert-Equal "`$guardAllowRule = @'" $outputLines[$markerIndex + 1] "Helper output omitted the guard-rule single-quoted here-string opener."
+    Assert-Equal "'@" $outputLines[$markerIndex + 3] "Helper output omitted the guard-rule here-string terminator."
+    Assert-Equal "`$initializerAllowRule = @'" $outputLines[$markerIndex + 4] "Helper output omitted the initializer-rule single-quoted here-string opener."
+    Assert-Equal "'@" $outputLines[$markerIndex + 6] "Helper output omitted the initializer-rule here-string terminator."
+    Assert-Equal '$handoffAllowRules = @($guardAllowRule, $initializerAllowRule)' $outputLines[$markerIndex + 7] "Helper output omitted the two-rule argv array."
+    Assert-Equal '# Pass as two argv values: claude ... --allowedTools $handoffAllowRules --permission-mode dontAsk <reviewed task prompt>' $outputLines[$markerIndex + 8] "Helper output did not pass both rules as bounded CLI argv values."
 
-    return $outputLines[$markerIndex + 2]
+    return [pscustomobject]@{
+        Guard = $outputLines[$markerIndex + 2]
+        Initializer = $outputLines[$markerIndex + 5]
+    }
 }
 
 try {
@@ -505,7 +511,41 @@ try {
         $slashRemoteTrackingRef = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/team/origin/main")
         Assert-Equal $freshRemoteBase $slashRemoteHead "Slash-containing remote worktree should detach at the freshly fetched commit."
         Assert-Equal $freshRemoteBase $slashRemoteTrackingRef "Slash-containing remote should refresh its fully qualified tracking ref."
-        Complete-Test "complete remote names are option-delimited, refreshed, and resolved without local-ref shadowing"
+
+        Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "case-variant remote refresh" -Encoding Ascii
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "tracked.txt")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Advance case-variant remote fixture")
+        $caseVariantRemoteBase = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "main")
+        $caseVariantTrackingBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/origin/main")
+        Assert-True ($caseVariantTrackingBefore -cne $caseVariantRemoteBase) "Fixture origin/main should be stale before the case-variant remote probe."
+
+        $caseVariantRemote = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "494", "-Slug", "case-variant-remote", "-BaseBranch", "Origin/main")
+        Assert-Equal 0 $caseVariantRemote.ExitCode "Windows should canonicalize a configured remote's case before refresh instead of resolving a stale loose ref.`n$($caseVariantRemote.Output)"
+        $caseVariantWorktree = Join-Path $callerPath ".worktrees/codex-494-case-variant-remote"
+        $caseVariantHead = Invoke-Git -WorkingDirectory $caseVariantWorktree -Arguments @("rev-parse", "HEAD")
+        $caseVariantTrackingAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/origin/main")
+        Assert-Equal $caseVariantRemoteBase $caseVariantHead "Case-variant remote shorthand selected a stale fallback instead of the refreshed remote commit."
+        Assert-Equal $caseVariantRemoteBase $caseVariantTrackingAfter "Case-variant remote shorthand did not refresh the canonical tracking ref."
+
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "add", "ORIGIN", $remotePath)
+        try {
+            $ambiguousRemoteTarget = Join-Path $callerPath ".worktrees/codex-497-ambiguous-remote-case"
+            $ambiguousRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            $ambiguousRefsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+            $ambiguousRemote = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "497", "-Slug", "ambiguous-remote-case", "-BaseBranch", "OrIgIn/main")
+            Assert-True ($ambiguousRemote.ExitCode -ne 0) "A mixed-case prefix matching two configured remotes must fail closed."
+            Assert-NormalizedContains $ambiguousRemote.Output "Base branch remote prefix is ambiguous by case: OrIgIn/main" "Ambiguous remote-case rejection did not identify the unsafe prefix."
+            Assert-True (-not (Test-Path -LiteralPath $ambiguousRemoteTarget)) "Ambiguous remote-case rejection created a worktree target."
+            $ambiguousRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            $ambiguousRefsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+            Assert-Equal $ambiguousRegistrationsBefore $ambiguousRegistrationsAfter "Ambiguous remote-case rejection changed worktree registrations."
+            Assert-Equal $ambiguousRefsBefore $ambiguousRefsAfter "Ambiguous remote-case rejection changed Git refs."
+        }
+        finally {
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "remove", "ORIGIN")
+        }
+        Complete-Test "complete remote names are case-canonicalized, option-delimited, refreshed, and resolved without local-ref shadowing"
     }
 
     if (Test-CaseSelected "remote-default-head") {
@@ -592,6 +632,7 @@ try {
             $expectedHandoffHead = Invoke-Git -WorkingDirectory $createdWorktree -Arguments @("rev-parse", "HEAD")
             $guardLine = "& '$escapedGuard' -GitExecutable '$escapedGitExecutable'"
             $initializerLine = "& '$escapedInitializer' -GitExecutable '$escapedGitExecutable' -BranchName 'issue-424/dirty-source' -ExpectedWorktree '$escapedWorktree' -ExpectedHead '$expectedHandoffHead'"
+            $guardAllowRule = "PowerShell($guardLine)"
             $initializerAllowRule = "PowerShell($initializerLine)"
             $guardCaptureLine = '$guardSucceeded = $?; $guardExitCode = $LASTEXITCODE'
             $guardExitLine = 'if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }'
@@ -604,15 +645,20 @@ try {
             Assert-Equal $initializerLine $handoffLines[3] "Handoff output omitted the bounded initializer command and exact worktree binding."
             Assert-Equal $initializerCaptureLine $handoffLines[4] "Handoff output omitted the initializer status capture."
             Assert-Equal $initializerExitLine $handoffLines[5] "Handoff output omitted the initializer fail-fast gate."
-            Assert-Equal $initializerAllowRule (Get-PrintedInitializerLaunchRule -Output $success.Output) "Helper output omitted the exact target-scoped initializer allow rule."
+            $handoffLaunchRules = Get-PrintedHandoffLaunchRules -Output $success.Output
+            Assert-Equal $guardAllowRule $handoffLaunchRules.Guard "Helper output omitted the exact target-scoped guard allow rule."
+            Assert-Equal $initializerAllowRule $handoffLaunchRules.Initializer "Helper output omitted the exact target-scoped initializer allow rule."
+            Assert-True ($guardAllowRule.Contains("''")) "Exact guard rule should PowerShell-escape the apostrophe-containing target path."
             Assert-True ($initializerAllowRule.Contains("''")) "Exact full-command rule should PowerShell-escape the apostrophe-containing target path."
+            Assert-True (-not $guardAllowRule.Contains(":*)")) "Exact full-command guard rule must not retain a wildcard suffix."
             Assert-True (-not $initializerAllowRule.Contains(":*)")) "Exact full-command initializer rule must not retain a wildcard suffix."
 
             $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
             Assert-True ($claudeSettings.permissions.allow -notcontains "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)") "Claude permissions retained the cross-worktree relative initializer rule."
+            Assert-True ($claudeSettings.permissions.allow -notcontains $guardAllowRule) "Claude project settings should not commit a task-specific absolute guard rule."
             Assert-True ($claudeSettings.permissions.allow -notcontains $initializerAllowRule) "Claude project settings should not commit a task-specific absolute initializer rule."
             Assert-True ($claudeSettings.permissions.allow -notcontains "Bash(powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Initialize-CodexIssueWorktree.ps1:*)") "Claude permissions retained the PATH-resolved PowerShell initializer rule."
-            Complete-Test "handoff emits one additive exact-target initializer rule and a fail-fast gate"
+            Complete-Test "handoff emits additive exact-target guard and initializer rules with fail-fast gates"
         }
 
         if (Test-CaseSelected "headless-permission-contract") {
@@ -622,8 +668,12 @@ try {
             Assert-True ($headlessHandoffLines[3].StartsWith($initializerInvocationPrefix, [System.StringComparison]::Ordinal)) "Printed handoff must run the exact helper-created target initializer after the direct guard."
 
             $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
+            $powerShellGuardRule = "PowerShell($($headlessHandoffLines[0]))"
             $powerShellInitializerRule = "PowerShell($($headlessHandoffLines[3]))"
-            Assert-Equal $powerShellInitializerRule (Get-PrintedInitializerLaunchRule -Output $success.Output) "Helper did not print the task-scoped initializer rule used by the handoff."
+            $printedHandoffRules = Get-PrintedHandoffLaunchRules -Output $success.Output
+            Assert-Equal $powerShellGuardRule $printedHandoffRules.Guard "Helper did not print the task-scoped guard rule used by the handoff."
+            Assert-Equal $powerShellInitializerRule $printedHandoffRules.Initializer "Helper did not print the task-scoped initializer rule used by the handoff."
+            Assert-True ($claudeSettings.permissions.allow -notcontains $powerShellGuardRule) "Claude project settings should not commit a task-specific guard rule."
             Assert-True ($claudeSettings.permissions.allow -notcontains $powerShellInitializerRule) "Claude project settings should not commit a task-specific initializer rule."
             Assert-True ($claudeSettings.permissions.allow -notcontains "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)") "Claude project settings retained the generic relative initializer rule."
 
@@ -652,10 +702,13 @@ try {
             Assert-True ($dontAskWithLocalConfiguration.Allow -contains $broadLocalRule) "Command-line dontAsk should not erase a broad local allow while the local source remains enabled."
 
             $taskLaunchRule = "Bash(dotnet test backend/Taskdeck.sln -c Release -m:1)"
-            $reviewedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($powerShellInitializerRule, $taskLaunchRule) -CommandLinePermissionMode "dontAsk"
+            $reviewedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($powerShellGuardRule, $powerShellInitializerRule, $taskLaunchRule) -CommandLinePermissionMode "dontAsk"
             Assert-Equal "dontAsk" $reviewedConfiguration.PermissionMode "The supported project-only posture should use the explicit dontAsk mode."
             Assert-True ($reviewedConfiguration.Allow -notcontains $broadLocalRule) "The supported project-only source posture should exclude the main-checkout local allow."
+            Assert-True ($reviewedConfiguration.Allow -contains $powerShellGuardRule) "The reviewed effective permissions should include the explicit additive task guard rule."
             Assert-True ($reviewedConfiguration.Allow -contains $powerShellInitializerRule) "The reviewed effective permissions should include the explicit additive task initializer rule."
+            $alteredGuardRule = $powerShellGuardRule.Replace("worktree_guard.ps1", "other_guard.ps1")
+            Assert-True ($reviewedConfiguration.Allow -notcontains $alteredGuardRule) "The exact guard rule must not authorize a substituted guard path."
             $alteredInitializerRule = $powerShellInitializerRule.Replace("issue-424/dirty-source", "issue-424/other-branch")
             Assert-True ($reviewedConfiguration.Allow -notcontains $alteredInitializerRule) "The exact initializer rule must not authorize substituted branch arguments."
             Assert-True ($reviewedConfiguration.Allow -contains $taskLaunchRule) "The reviewed effective permissions should include explicit task launch rules."
@@ -674,15 +727,16 @@ try {
                 Assert-True ($committedPowerShellRules -contains $expectedHookLauncherRule) "Project settings omitted or replaced a reviewed hook-launcher PowerShell command: $expectedHookLauncherRule"
             }
             $effectivePowerShellRules = @($reviewedConfiguration.Allow | Where-Object { $_.StartsWith('PowerShell(', [System.StringComparison]::Ordinal) })
-            Assert-Equal ($expectedHookLauncherPowerShellRules.Count + 1) $effectivePowerShellRules.Count "The supported headless posture should add only the exact initializer PowerShell rule to reviewed hook launchers."
+            Assert-Equal ($expectedHookLauncherPowerShellRules.Count + 2) $effectivePowerShellRules.Count "The supported headless posture should add only the exact guard and initializer PowerShell rules to reviewed hook launchers."
+            Assert-True ($effectivePowerShellRules -contains $powerShellGuardRule) "The supported headless posture should permit the exact guard PowerShell rule."
             Assert-True ($effectivePowerShellRules -contains $powerShellInitializerRule) "The supported headless posture should permit the exact initializer PowerShell rule."
 
-            $untrustedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($powerShellInitializerRule, $taskLaunchRule) -CommandLinePermissionMode "dontAsk" -WorkspaceTrusted $false
+            $untrustedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($powerShellGuardRule, $powerShellInitializerRule, $taskLaunchRule) -CommandLinePermissionMode "dontAsk" -WorkspaceTrusted $false
+            Assert-True ($untrustedConfiguration.Allow -contains $powerShellGuardRule) "An untrusted workspace should retain the exact guard rule supplied through CLI argv."
             Assert-True ($untrustedConfiguration.Allow -contains $powerShellInitializerRule) "An untrusted workspace should retain the exact initializer rule supplied through CLI argv."
             Assert-True ($untrustedConfiguration.Allow -contains $taskLaunchRule) "An untrusted workspace should retain other explicitly supplied CLI rules."
             $untrustedPowerShellRules = @($untrustedConfiguration.Allow | Where-Object { $_.StartsWith('PowerShell(', [System.StringComparison]::Ordinal) })
-            Assert-Equal 1 $untrustedPowerShellRules.Count "An untrusted workspace should retain only the exact CLI-supplied PowerShell rule."
-            Assert-Equal $powerShellInitializerRule $untrustedPowerShellRules[0] "An untrusted workspace changed the exact CLI-supplied PowerShell boundary."
+            Assert-Equal 2 $untrustedPowerShellRules.Count "An untrusted workspace should retain only the two exact CLI-supplied PowerShell rules."
             Assert-True (-not $untrustedConfiguration.Environment.ContainsKey("CLAUDE_CODE_USE_POWERSHELL_TOOL")) "An untrusted workspace should not rely on the project environment for PowerShell tool enablement."
 
             $projectTrustFixturePath = Join-Path $fixtureRoot "project-trust-settings.json"
@@ -699,7 +753,7 @@ try {
                 Assert-Contains $guidance "Initialize-CodexIssueWorktree.ps1" "Detached-first guidance omitted the reviewed initializer wrapper: $guidancePath"
             }
             $protocol = Get-Content -Raw -LiteralPath $worktreeProtocolPath
-            Assert-Contains $protocol 'claude -p --setting-sources project --allowedTools $initializerAllowRule' "Headless guidance omitted the exact-target project-only launch and task initializer rule."
+            Assert-Contains $protocol 'claude -p --setting-sources project --allowedTools $handoffAllowRules --permission-mode dontAsk' "Headless guidance omitted the exact-target project-only launch and both task handoff rules."
             Assert-True (-not $protocol.Contains('claude -p --worktree')) "Headless guidance would create a second Claude worktree instead of staying in the helper-created target."
             Assert-Contains $protocol "Set-Location -LiteralPath '<exact helper-created worktree>'" "Headless guidance did not bind the Claude process cwd to the helper-created target."
             Assert-NormalizedContains $protocol "acceptEdits does not approve arbitrary Git or PowerShell commands" "Headless guidance must not present acceptEdits as sufficient command authorization."
@@ -715,7 +769,9 @@ try {
             Assert-NormalizedContains $protocol "command deny/failure/pre-commit hooks are currently Bash-only" "Headless guidance omitted the repository hook-coverage boundary."
             Assert-NormalizedContains $protocol "does not make an untrusted workspace trusted" "Headless guidance must not treat -p as accepted project trust."
             Assert-NormalizedContains $protocol "Pass every required allow rule through CLI argv" "Headless guidance omitted the untrusted-workspace CLI-only posture."
-            Assert-Contains $protocol '$initializerAllowRule = @''' "Headless guidance omitted quote-safe allow-rule transport."
+            Assert-Contains $protocol '$guardAllowRule = @''' "Headless guidance omitted quote-safe guard-rule transport."
+            Assert-Contains $protocol '$initializerAllowRule = @''' "Headless guidance omitted quote-safe initializer-rule transport."
+            Assert-Contains $protocol '$handoffAllowRules = @($guardAllowRule, $initializerAllowRule)' "Headless guidance omitted the two-rule argv array."
             Assert-Contains $protocol "--permission-mode dontAsk" "Headless guidance omitted the non-prompting permission mode for reviewed effective permissions."
             Assert-Contains $protocol '$coordinatorBranchBaseline' "Post-run guidance omitted the pre-creation coordinator branch baseline."
             Assert-Contains $protocol '$coordinatorStatusBaseline' "Post-run guidance omitted the pre-creation coordinator status baseline."
@@ -724,7 +780,7 @@ try {
             $headlessExampleEnd = $protocol.IndexOf('```', $headlessExampleStart, [System.StringComparison]::Ordinal)
             Assert-True ($headlessExampleStart -ge 0 -and $headlessExampleEnd -gt $headlessExampleStart) "Headless guidance omitted its executable PowerShell example."
             $headlessExampleScript = $protocol.Substring($headlessExampleStart, $headlessExampleEnd - $headlessExampleStart)
-            $documentedLaunchLine = 'claude -p --setting-sources project --allowedTools $initializerAllowRule <other reviewed task arguments> --permission-mode dontAsk'
+            $documentedLaunchLine = 'claude -p --setting-sources project --allowedTools $handoffAllowRules --permission-mode dontAsk <reviewed task prompt>'
             $launchProbeLine = '$script:observedHeadlessPowerShellToolValue = $env:CLAUDE_CODE_USE_POWERSHELL_TOOL; throw ''Taskdeck headless launch canary'''
             $escapedHeadlessWorktree = $createdWorktree.Replace("'", "''")
             $headlessExampleScript = $headlessExampleScript.Replace("'<exact helper-created worktree>'", "'$escapedHeadlessWorktree'").Replace($documentedLaunchLine, $launchProbeLine)
@@ -827,15 +883,15 @@ try {
             $metacharCreatedBranch = Invoke-Git -WorkingDirectory $powerShellHostWorktree -Arguments @("branch", "--show-current")
             Assert-Equal $metacharBranch $metacharCreatedBranch "Initializer did not create the intended metacharacter branch through native argv."
 
-            $metacharInitializerRule = Get-PrintedInitializerLaunchRule -Output $powerShellHostResult.Output
+            $metacharHandoffRules = Get-PrintedHandoffLaunchRules -Output $powerShellHostResult.Output
             $metacharOutputLines = @($powerShellHostResult.Output -split '\r?\n')
-            $metacharRuleMarkerIndex = [Array]::IndexOf($metacharOutputLines, "Claude Code task-scoped initializer allow rule (additive PowerShell transport):")
-            $ruleCapturePath = Join-Path $fixtureRoot "initializer-rule-argv.txt"
+            $metacharRuleMarkerIndex = [Array]::IndexOf($metacharOutputLines, "Claude Code task-scoped handoff allow rules (additive PowerShell transport):")
+            $ruleCapturePath = Join-Path $fixtureRoot "handoff-rule-argv.txt"
             $escapedRuleCapturePath = $ruleCapturePath.Replace("'", "''")
-            $ruleCaptureScript = Join-Path $fixtureRoot "initializer-rule-capture.ps1"
+            $ruleCaptureScript = Join-Path $fixtureRoot "handoff-rule-capture.ps1"
             Set-Content -LiteralPath $ruleCaptureScript -Encoding Ascii -Value @(
-                'if ($args.Count -ne 2 -or $args[0] -cne ''--allowedTools'') { exit 91 }',
-                "[System.IO.File]::WriteAllText('$escapedRuleCapturePath', `$args[1])"
+                'if ($args.Count -ne 3 -or $args[0] -cne ''--allowedTools'') { exit 91 }',
+                "[System.IO.File]::WriteAllText('$escapedRuleCapturePath', `$args[1] + [Environment]::NewLine + `$args[2])"
             )
             $escapedPowerShellExecutable = $powerShellExecutable.Replace("'", "''")
             $escapedRuleCaptureScript = $ruleCaptureScript.Replace("'", "''")
@@ -844,12 +900,17 @@ try {
                 $metacharOutputLines[$metacharRuleMarkerIndex + 1],
                 $metacharOutputLines[$metacharRuleMarkerIndex + 2],
                 $metacharOutputLines[$metacharRuleMarkerIndex + 3],
-                "& '$escapedPowerShellExecutable' -NoLogo -NoProfile -NonInteractive -File '$escapedRuleCaptureScript' --allowedTools `$initializerAllowRule",
+                $metacharOutputLines[$metacharRuleMarkerIndex + 4],
+                $metacharOutputLines[$metacharRuleMarkerIndex + 5],
+                $metacharOutputLines[$metacharRuleMarkerIndex + 6],
+                $metacharOutputLines[$metacharRuleMarkerIndex + 7],
+                "& '$escapedPowerShellExecutable' -NoLogo -NoProfile -NonInteractive -File '$escapedRuleCaptureScript' --allowedTools `$handoffAllowRules",
                 'exit $LASTEXITCODE'
             )
             $ruleTransport = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $ruleTransportScript) -WorkingDirectory $fixtureRoot
-            Assert-Equal 0 $ruleTransport.ExitCode "Exact emitted here-string should parse and cross a real PowerShell 5.1 native boundary as one argv value.`n$($ruleTransport.Output)"
-            Assert-Equal $metacharInitializerRule ([System.IO.File]::ReadAllText($ruleCapturePath)) "Native argv transport changed the exact initializer rule."
+            Assert-Equal 0 $ruleTransport.ExitCode "Exact emitted here-strings should parse and cross a real PowerShell 5.1 native boundary as two argv values.`n$($ruleTransport.Output)"
+            $expectedCapturedRules = $metacharHandoffRules.Guard + [Environment]::NewLine + $metacharHandoffRules.Initializer
+            Assert-Equal $expectedCapturedRules ([System.IO.File]::ReadAllText($ruleCapturePath)) "Native argv transport changed one or both exact handoff rules."
 
             $quotedBranch = 'issue-469/quoted"rule'
             $quoteRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
@@ -963,6 +1024,32 @@ try {
         $registrationsAfterCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-True (-not $registrationsAfterCollision.Contains($initializerWorktree)) "Late branch collision must remove the worktree registration."
 
+        $separateGitDirectory = Join-Path $fixtureRoot "separate common git directory"
+        $separateGitCaller = Join-Path $fixtureRoot "separate git caller"
+        $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @(
+            "clone", "--separate-git-dir", $separateGitDirectory, "-b", "main", $remotePath, $separateGitCaller
+        )
+        $separateHelperResult = Invoke-Helper -WorkingDirectory $separateGitCaller -Arguments @("-IssueNumber", "495", "-Slug", "separate-git-cleanup")
+        Assert-Equal 0 $separateHelperResult.ExitCode "Separate-Git-dir cleanup fixture creation should succeed.`n$($separateHelperResult.Output)"
+        $separateWorktree = Join-Path $separateGitCaller ".worktrees/codex-495-separate-git-cleanup"
+        $separateHead = Invoke-Git -WorkingDirectory $separateWorktree -Arguments @("rev-parse", "HEAD")
+        $null = Invoke-Git -WorkingDirectory $separateGitCaller -Arguments @("branch", "issue-495/separate-git-cleanup", $separateHead)
+        $separateRegistrationsBefore = Invoke-Git -WorkingDirectory $separateGitCaller -Arguments @("worktree", "list", "--porcelain")
+        $normalizedSeparateWorktree = $separateWorktree.Replace('\', '/')
+        Assert-True $separateRegistrationsBefore.Replace('\', '/').Contains($normalizedSeparateWorktree) "Separate-Git-dir fixture did not register the helper-created worktree."
+        $separateCollisionScript = Join-Path $fixtureRoot "separate-git-branch-collision.ps1"
+        Set-Content -LiteralPath $separateCollisionScript -Value @(Get-PrintedHandoffLines -Output $separateHelperResult.Output) -Encoding Ascii
+        $separateCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $separateCollisionScript) -WorkingDirectory $separateWorktree
+        Assert-True ($separateCollision.ExitCode -ne 0) "A separate-Git-dir post-helper branch collision should fail the initializer."
+        Assert-NormalizedContains $separateCollision.Output "removal of the unused helper-created worktree was scheduled" "Separate-Git-dir collision should report cleanup scheduling."
+        for ($attempt = 0; $attempt -lt 100 -and (Test-Path -LiteralPath $separateWorktree); $attempt++) {
+            Start-Sleep -Milliseconds 100
+        }
+        Assert-True (-not (Test-Path -LiteralPath $separateWorktree)) "Separate-Git-dir late collision must remove the helper-created worktree path."
+        $separateRegistrationsAfter = Invoke-Git -WorkingDirectory $separateGitCaller -Arguments @("worktree", "list", "--porcelain")
+        Assert-True (-not $separateRegistrationsAfter.Replace('\', '/').Contains($normalizedSeparateWorktree)) "Separate-Git-dir late collision must remove the worktree registration."
+        Assert-True (Test-Path -LiteralPath $separateGitDirectory -PathType Container) "Separate-Git-dir cleanup removed the repository's common Git directory."
+
         $initializerResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "490", "-Slug", "initializer-validation-continued")
         Assert-Equal 0 $initializerResult.ExitCode "Post-collision initializer fixture worktree creation should succeed.`n$($initializerResult.Output)"
         $initializerWorktree = Join-Path $callerPath ".worktrees/codex-490-initializer-validation-continued"
@@ -1016,7 +1103,7 @@ try {
         ) -WorkingDirectory $initializerWorktree
         Assert-Equal 1 $attachedInitializer.ExitCode "Initializer should reject an already-attached helper worktree."
         Assert-Equal "manual-attached" (Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("branch", "--show-current")) "Attached-worktree rejection should preserve the current branch."
-        Complete-Test "initializer fails closed on collisions, detached-base mismatch, invalid input, wrong executables, and attached HEAD"
+        Complete-Test "initializer cleans conventional and separate-Git-dir collisions and fails closed on invalid detached state or input"
     }
 
     if (Test-CaseSelected "existing-branch") {
@@ -1047,10 +1134,32 @@ try {
     if (Test-CaseSelected "existing-path") {
         $pathCollisionTarget = Join-Path $callerPath ".worktrees/codex-426-path-collision"
         New-Item -ItemType Directory -Force -Path $pathCollisionTarget | Out-Null
-        $pathCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "426", "-Slug", "path-collision")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("switch", "-c", "occupied-preflight-base")
+        Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "occupied preflight remote" -Encoding Ascii
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "tracked.txt")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Advance occupied-target fixture")
+        $occupiedRemoteBase = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
+        $occupiedStaleBase = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD^")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "HEAD:refs/heads/occupied-preflight")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("switch", "main")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("update-ref", "refs/remotes/origin/occupied-preflight", $occupiedStaleBase)
+        Assert-True ($occupiedRemoteBase -cne $occupiedStaleBase) "Occupied-target fixture should start with a stale tracking ref."
+
+        $registrationsBeforePathCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $refsBeforePathCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+        $pathCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "426", "-Slug", "path-collision", "-BaseBranch", "origin/occupied-preflight")
         Assert-True ($pathCollision.ExitCode -ne 0) "Existing target path should fail closed."
         Assert-NormalizedContains $pathCollision.Output "Worktree path already exists:" "Path collision diagnostic was not clear."
-        Complete-Test "existing target path fails closed"
+        $pathCollisionWhatIf = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "426", "-Slug", "path-collision", "-BaseBranch", "origin/occupied-preflight", "-WhatIf")
+        Assert-True ($pathCollisionWhatIf.ExitCode -ne 0) "WhatIf must reject an occupied target instead of reporting success."
+        Assert-NormalizedContains $pathCollisionWhatIf.Output "Worktree path already exists:" "WhatIf path-collision diagnostic was not clear."
+        $registrationsAfterPathCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $refsAfterPathCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+        Assert-Equal $registrationsBeforePathCollision $registrationsAfterPathCollision "Normal or WhatIf occupied-target rejection changed worktree registrations."
+        Assert-Equal $refsBeforePathCollision $refsAfterPathCollision "Normal or WhatIf occupied-target rejection changed Git refs."
+        $occupiedTrackingAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "refs/remotes/origin/occupied-preflight")
+        Assert-Equal $occupiedStaleBase $occupiedTrackingAfter "Occupied-target rejection refreshed the remote-tracking ref before failing."
+        Complete-Test "existing target path fails before normal or WhatIf ref and registration mutation"
     }
 
     if (Test-CaseSelected "worktree-root-traversal") {
@@ -1183,7 +1292,7 @@ try {
         $metacharBase = "origin/main&echo TASKDECK_CANARY>git-shim-canary.txt"
         $metacharResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "433", "-Slug", "metachar-base", "-BaseBranch", $metacharBase)
         Assert-True ($metacharResult.ExitCode -ne 0) "Metacharacter base should fail closed."
-        Assert-NormalizedContains $metacharResult.Output "Base commit not found:" "Metacharacter base diagnostic was not clear."
+        Assert-NormalizedContains $metacharResult.Output "Invalid remote branch in base:" "Metacharacter base diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $canaryPath)) "Git shim metacharacters escaped the native argument boundary."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-433-metachar-base"))) "Metacharacter base should not create a worktree."
         Complete-Test "metacharacter base cannot escape the native Git argument boundary"
@@ -1446,22 +1555,81 @@ try {
         $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "HEAD:refs/heads/target-smudge")
         $registrationsBeforeTargetSmudge = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         $targetSmudgeTarget = Join-Path $callerPath ".worktrees/codex-473-target-smudge"
-        $targetSmudgeGuardBlob = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "HEAD:scripts/worktree_guard.ps1")
-        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "filter.taskdeck-target-smudge.clean", "git cat-file blob $targetSmudgeGuardBlob")
+        $cleanupTracePath = Join-Path $fixtureRoot "target-smudge-cleanup-trace.json"
+        $previousTrace2Event = [Environment]::GetEnvironmentVariable("GIT_TRACE2_EVENT", [EnvironmentVariableTarget]::Process)
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "filter.taskdeck-target-smudge.clean", "git hash-object --stdin")
         $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "filter.taskdeck-target-smudge.smudge", "git hash-object --stdin")
         try {
+            [Environment]::SetEnvironmentVariable("GIT_TRACE2_EVENT", $cleanupTracePath, [EnvironmentVariableTarget]::Process)
             $targetSmudge = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "473", "-Slug", "target-smudge", "-BaseBranch", "origin/target-smudge")
             Assert-True ($targetSmudge.ExitCode -ne 0) "A smudged target guard should fail before the helper emits worker commands."
             Assert-NormalizedContains $targetSmudge.Output "Helper-created worktree handoff artifact 'scripts/worktree_guard.ps1' does not match the reviewed raw blob" "Target smudge rejection should name the reviewed raw-blob mismatch."
-            Assert-True (-not (Test-Path -LiteralPath $targetSmudgeTarget)) "Target smudge rejection must remove the helper-created worktree path."
+            Assert-True (-not (Test-Path -LiteralPath $targetSmudgeTarget)) "Target smudge rejection must remove the helper-created worktree path.`n$($targetSmudge.Output)"
             $registrationsAfterTargetSmudge = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
             Assert-Equal $registrationsBeforeTargetSmudge $registrationsAfterTargetSmudge "Target smudge rejection must remove the helper-created worktree registration."
+
+            $cleanupTraceEvents = @(
+                Get-Content -LiteralPath $cleanupTracePath |
+                    ForEach-Object { $_ | ConvertFrom-Json }
+            )
+            $cleanupRemoveEvents = @(
+                $cleanupTraceEvents | Where-Object {
+                    $traceArguments = @($_.argv)
+                    $worktreeArgumentIndex = [Array]::IndexOf($traceArguments, "worktree")
+                    $worktreeArgumentIndex -ge 0 -and
+                        $worktreeArgumentIndex -eq ($traceArguments.Count - 3) -and
+                        $traceArguments[$worktreeArgumentIndex + 1] -ceq "remove" -and
+                        $traceArguments[$worktreeArgumentIndex + 2] -ceq $targetSmudgeTarget
+                }
+            )
+            Assert-Equal 1 $cleanupRemoveEvents.Count "Target-smudge cleanup did not issue exactly one plain worktree removal with the expected target."
+            Assert-True (@($cleanupRemoveEvents[0].argv) -notcontains "-f" -and @($cleanupRemoveEvents[0].argv) -notcontains "--force") "Target-smudge cleanup must never pass -f or --force to git worktree remove."
         }
         finally {
+            [Environment]::SetEnvironmentVariable("GIT_TRACE2_EVENT", $previousTrace2Event, [EnvironmentVariableTarget]::Process)
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "filter.taskdeck-target-smudge.clean")
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "filter.taskdeck-target-smudge.smudge")
         }
-        Complete-Test "target handoff artifacts are raw-blob verified and cleaned after a smudge replacement"
+
+        Set-Content -LiteralPath (Join-Path $seedPath ".gitattributes") -Encoding Ascii -Value "scripts/worktree_guard.ps1 filter=taskdeck-target-smudge-unexpected"
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitattributes")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Add unexpected smudge dirt fixture")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "HEAD:refs/heads/target-smudge-unexpected")
+        $unexpectedFilterScript = Join-Path $testRoot "unexpected-smudge-filter.ps1"
+        Set-Content -LiteralPath $unexpectedFilterScript -Encoding Ascii -Value @(
+            '$inputStream = [Console]::OpenStandardInput()',
+            '$memory = [System.IO.MemoryStream]::new()',
+            '$inputStream.CopyTo($memory)',
+            '[System.IO.File]::WriteAllText((Join-Path (Get-Location) ''unexpected-cleanup.txt''), ''unexpected'')',
+            '$output = [Text.Encoding]::ASCII.GetBytes(''SMUDGED'')',
+            '$outputStream = [Console]::OpenStandardOutput()',
+            '$outputStream.Write($output, 0, $output.Length)'
+        )
+        $filterPowerShell = $powerShellExecutable.Replace('\', '/')
+        $filterScriptArgument = $unexpectedFilterScript.Replace('\', '/')
+        $unexpectedFilterCommand = "`"$filterPowerShell`" -NoLogo -NoProfile -NonInteractive -File `"$filterScriptArgument`""
+        $unexpectedTarget = Join-Path $callerPath ".worktrees/codex-496-target-smudge-unexpected"
+        $unexpectedRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "filter.taskdeck-target-smudge-unexpected.clean", $unexpectedFilterCommand)
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "filter.taskdeck-target-smudge-unexpected.smudge", $unexpectedFilterCommand)
+        try {
+            $unexpectedSmudge = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "496", "-Slug", "target-smudge-unexpected", "-BaseBranch", "origin/target-smudge-unexpected")
+            Assert-True ($unexpectedSmudge.ExitCode -ne 0) "Unexpected target dirt should fail handoff verification and cleanup."
+            Assert-NormalizedContains $unexpectedSmudge.Output "with unexpected dirt: ?? unexpected-cleanup.txt" "Unexpected target dirt should be named by the fail-closed cleanup diagnostic."
+            Assert-True (Test-Path -LiteralPath $unexpectedTarget -PathType Container) "Fail-closed cleanup must preserve a helper-created worktree containing unexpected dirt."
+            Assert-True (Test-Path -LiteralPath (Join-Path $unexpectedTarget "unexpected-cleanup.txt") -PathType Leaf) "Unexpected-dirt fixture did not create its untracked cleanup canary."
+            $unexpectedRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            Assert-True ($unexpectedRegistrationsAfter -cne $unexpectedRegistrationsBefore) "Fail-closed unexpected-dirt cleanup should preserve the worktree registration."
+
+            Remove-Item -LiteralPath (Join-Path $unexpectedTarget "unexpected-cleanup.txt") -Force
+            $null = Invoke-Git -WorkingDirectory $unexpectedTarget -Arguments @("update-index", "--skip-worktree", "--", "scripts/worktree_guard.ps1")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "remove", $unexpectedTarget)
+        }
+        finally {
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "filter.taskdeck-target-smudge-unexpected.clean")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "filter.taskdeck-target-smudge-unexpected.smudge")
+        }
+        Complete-Test "dirty handoff artifacts are narrowly neutralized without force while unexpected dirt fails closed"
     }
 
     if (Test-CaseSelected "fully-qualified-ref") {

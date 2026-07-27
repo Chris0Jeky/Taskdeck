@@ -97,13 +97,15 @@ function Invoke-GitCommand {
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
         $process.WaitForExit()
-        $stdout = $stdoutTask.GetAwaiter().GetResult().Trim()
+        $rawStdout = $stdoutTask.GetAwaiter().GetResult()
+        $stdout = $rawStdout.Trim()
         $stderr = $stderrTask.GetAwaiter().GetResult().Trim()
         $output = (@($stdout, $stderr) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
 
         return [pscustomobject]@{
             ExitCode = $process.ExitCode
             Stdout = $stdout
+            RawStdout = $rawStdout
             Stderr = $stderr
             Output = $output
         }
@@ -112,6 +114,7 @@ function Invoke-GitCommand {
         return [pscustomobject]@{
             ExitCode = -1
             Stdout = ""
+            RawStdout = ""
             Stderr = $_.Exception.Message
             Output = $_.Exception.Message
         }
@@ -434,6 +437,25 @@ function Reserve-WorktreeTarget {
     }
 }
 
+function Assert-WorktreeTargetAvailable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree
+    )
+
+    try {
+        $null = Get-Item -LiteralPath $Worktree -Force -ErrorAction Stop
+    }
+    catch [System.Management.Automation.ItemNotFoundException] {
+        return
+    }
+    catch {
+        throw "Worktree path could not be inspected: $Worktree. $($_.Exception.Message)"
+    }
+
+    throw "Worktree path already exists: $Worktree"
+}
+
 function Remove-EmptyReservedWorktreeTarget {
     param(
         [Parameter(Mandatory = $true)]
@@ -454,15 +476,143 @@ function Remove-EmptyReservedWorktreeTarget {
     Remove-Item -LiteralPath $Worktree -Force -ErrorAction Stop
 }
 
-function Remove-HelperCreatedWorktree {
+function Get-WorktreeStatusLines {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Worktree
     )
 
-    $removeResult = Invoke-GitCommand -Arguments @("worktree", "remove", $Worktree)
-    if ($removeResult.ExitCode -ne 0) {
-        throw "Could not remove helper-created worktree '$Worktree' after handoff verification failed (exit code $($removeResult.ExitCode)).$(Format-GitContext $removeResult.Output)"
+    $statusResult = Invoke-GitCommand -Arguments @(
+        "-C", $Worktree, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching"
+    )
+    if ($statusResult.ExitCode -ne 0) {
+        throw "Could not inspect helper-created worktree '$Worktree' before cleanup.$(Format-GitContext $statusResult.Output)"
+    }
+
+    return @(
+        $statusResult.RawStdout -split '\r?\n' |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+}
+
+function Assert-HelperCreatedWorktreeIdentity {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedHead
+    )
+
+    $pathComparison = if ([System.IO.Path]::DirectorySeparatorChar -eq [char]'\') {
+        [System.StringComparison]::OrdinalIgnoreCase
+    }
+    else {
+        [System.StringComparison]::Ordinal
+    }
+    $expectedWorktreePath = [System.IO.Path]::GetFullPath($Worktree).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+    $topLevelResult = Invoke-GitCommand -Arguments @("-C", $Worktree, "rev-parse", "--show-toplevel")
+    $headResult = Invoke-GitCommand -Arguments @("-C", $Worktree, "rev-parse", "--verify", "HEAD")
+    $gitDirectoryResult = Invoke-GitCommand -Arguments @("-C", $Worktree, "rev-parse", "--absolute-git-dir")
+    $commonDirectoryResult = Invoke-GitCommand -Arguments @("-C", $Worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    $symbolicHeadResult = Invoke-GitCommand -Arguments @("-C", $Worktree, "symbolic-ref", "--quiet", "HEAD")
+
+    if ($topLevelResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($topLevelResult.Stdout) -or
+        $headResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($headResult.Stdout) -or
+        $gitDirectoryResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($gitDirectoryResult.Stdout) -or
+        $commonDirectoryResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($commonDirectoryResult.Stdout) -or
+        $symbolicHeadResult.ExitCode -ne 1) {
+        throw "Refusing to clean up '$Worktree' because its helper-created detached-worktree identity could not be verified."
+    }
+
+    $actualTopLevel = [System.IO.Path]::GetFullPath($topLevelResult.Stdout.Trim()).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+    $actualGitDirectory = [System.IO.Path]::GetFullPath($gitDirectoryResult.Stdout.Trim()).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+    $actualCommonDirectory = [System.IO.Path]::GetFullPath($commonDirectoryResult.Stdout.Trim()).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+    if (-not $actualTopLevel.Equals($expectedWorktreePath, $pathComparison) -or
+        -not $headResult.Stdout.Trim().Equals($ExpectedHead, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $actualGitDirectory.Equals($actualCommonDirectory, $pathComparison)) {
+        throw "Refusing to clean up '$Worktree' because it is not the expected helper-created detached worktree at '$ExpectedHead'."
+    }
+}
+
+function Remove-HelperCreatedWorktree {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedHead,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$ReviewedArtifacts
+    )
+
+    Assert-HelperCreatedWorktreeIdentity -Worktree $Worktree -ExpectedHead $ExpectedHead
+    $statusLines = @(Get-WorktreeStatusLines -Worktree $Worktree)
+    $neutralizedArtifacts = @()
+    foreach ($statusLine in $statusLines) {
+        if ($statusLine.Length -lt 4) {
+            throw "Refusing to remove helper-created worktree '$Worktree' with unrecognized dirt: $statusLine"
+        }
+
+        $statusCode = $statusLine.Substring(0, 2)
+        $statusPath = $statusLine.Substring(3)
+        if ($statusCode -notin @(" M", " D") -or -not $ReviewedArtifacts.Contains($statusPath)) {
+            throw "Refusing to remove helper-created worktree '$Worktree' with unexpected dirt: $statusLine"
+        }
+
+        $indexResult = Invoke-GitCommand -Arguments @("-C", $Worktree, "ls-files", "--stage", "--", $statusPath)
+        $indexEntries = @(
+            $indexResult.Stdout -split '\r?\n' |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+        if ($indexResult.ExitCode -ne 0 -or $indexEntries.Count -ne 1 -or
+            $indexEntries[0] -notmatch '^[0-9]{6} ([0-9a-fA-F]+) 0\t' -or
+            $Matches[1] -cne [string]$ReviewedArtifacts[$statusPath]) {
+            throw "Refusing to neutralize unverified handoff-artifact dirtiness in '$Worktree': $statusPath"
+        }
+        $neutralizedArtifacts += $statusPath
+    }
+
+    $skipWorktreeApplied = $false
+    try {
+        if ($neutralizedArtifacts.Count -gt 0) {
+            $skipArguments = @("-C", $Worktree, "update-index", "--skip-worktree", "--") + $neutralizedArtifacts
+            $skipResult = Invoke-GitCommand -Arguments $skipArguments
+            if ($skipResult.ExitCode -ne 0) {
+                throw "Could not neutralize verified handoff-artifact dirtiness in '$Worktree'.$(Format-GitContext $skipResult.Output)"
+            }
+            $skipWorktreeApplied = $true
+
+            $remainingStatus = @(Get-WorktreeStatusLines -Worktree $Worktree)
+            if ($remainingStatus.Count -ne 0) {
+                throw "Refusing to remove helper-created worktree '$Worktree' because dirt remained after bounded handoff-artifact neutralization: $($remainingStatus -join '; ')"
+            }
+        }
+
+        $removeResult = Invoke-GitCommand -Arguments @("worktree", "remove", $Worktree)
+        if ($removeResult.ExitCode -ne 0) {
+            throw "Could not remove helper-created worktree '$Worktree' after handoff verification failed (exit code $($removeResult.ExitCode)).$(Format-GitContext $removeResult.Output)"
+        }
+    }
+    catch {
+        $cleanupFailure = $_
+        if ($skipWorktreeApplied -and (Test-Path -LiteralPath $Worktree -PathType Container)) {
+            $restoreArguments = @("-C", $Worktree, "update-index", "--no-skip-worktree", "--") + $neutralizedArtifacts
+            $restoreResult = Invoke-GitCommand -Arguments $restoreArguments
+            if ($restoreResult.ExitCode -ne 0) {
+                throw "$($cleanupFailure.Exception.Message) The bounded skip-worktree flags also could not be restored.$(Format-GitContext $restoreResult.Output)"
+            }
+        }
+        throw $cleanupFailure
     }
 }
 
@@ -637,6 +787,7 @@ if ($BranchName.IndexOfAny($windowsInvalidRefCharacters) -ge 0 -or $hasWindowsIn
 }
 
 $worktreeDir = Join-Path $requestedWorktreeRoot "codex-$IssueNumber-$Slug"
+Assert-WorktreeTargetAvailable -Worktree $worktreeDir
 $branchLookupResult = Invoke-GitCommand -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$BranchName")
 if ($branchLookupResult.ExitCode -eq 0) {
     throw "Branch already exists: $BranchName"
@@ -674,25 +825,46 @@ $configuredRemotes = @(
         Sort-Object { $_.Length } -Descending
 )
 if (-not $BaseBranch.StartsWith("refs/", [System.StringComparison]::Ordinal)) {
-    foreach ($remoteNameCandidate in $configuredRemotes) {
-        $remotePrefix = "$remoteNameCandidate/"
-        if (-not $BaseBranch.StartsWith($remotePrefix, [System.StringComparison]::Ordinal) -or
-            $BaseBranch.Length -le $remotePrefix.Length) {
-            continue
+    $remotePrefixMatches = @(
+        foreach ($remoteNameCandidate in $configuredRemotes) {
+            $remotePrefix = "$remoteNameCandidate/"
+            if ($BaseBranch.Length -gt $remotePrefix.Length -and
+                $BaseBranch.StartsWith($remotePrefix, $pathComparison)) {
+                [pscustomobject]@{
+                    Remote = $remoteNameCandidate
+                    Prefix = $remotePrefix
+                    ExactCase = $BaseBranch.StartsWith($remotePrefix, [System.StringComparison]::Ordinal)
+                }
+            }
+        }
+    )
+    if ($remotePrefixMatches.Count -gt 0) {
+        $longestPrefixLength = $remotePrefixMatches[0].Prefix.Length
+        $longestMatches = @($remotePrefixMatches | Where-Object { $_.Prefix.Length -eq $longestPrefixLength })
+        $exactCaseMatches = @($longestMatches | Where-Object { $_.ExactCase })
+        if ($exactCaseMatches.Count -eq 1) {
+            $selectedRemoteMatch = $exactCaseMatches[0]
+        }
+        elseif ($exactCaseMatches.Count -eq 0 -and $longestMatches.Count -eq 1) {
+            $selectedRemoteMatch = $longestMatches[0]
+        }
+        else {
+            throw "Base branch remote prefix is ambiguous by case: $BaseBranch"
         }
 
-        $remoteBranchCandidate = $BaseBranch.Substring($remotePrefix.Length)
+        $candidateRemote = $selectedRemoteMatch.Remote
+        $remoteBranchCandidate = $BaseBranch.Substring($selectedRemoteMatch.Prefix.Length)
         if ($remoteBranchCandidate -ceq "HEAD") {
-            $candidateRemote = $remoteNameCandidate
             $candidateBranch = Resolve-RemoteDefaultBranchWithoutFetch -Remote $candidateRemote -DisplayName $BaseBranch
-            break
         }
-        $remoteBranchValidation = Invoke-GitCommand -Arguments @("check-ref-format", "--branch", $remoteBranchCandidate)
-        if ($remoteBranchValidation.ExitCode -eq 0 -and
-            $remoteBranchValidation.Stdout.Trim() -ceq $remoteBranchCandidate) {
-            $candidateRemote = $remoteNameCandidate
+        else {
+            $remoteBranchValidation = Invoke-GitCommand -Arguments @("check-ref-format", "--branch", $remoteBranchCandidate)
+            if ($remoteBranchValidation.ExitCode -ne 0 -or
+                [string]::IsNullOrWhiteSpace($remoteBranchValidation.Stdout) -or
+                $remoteBranchValidation.Stdout.Trim() -cne $remoteBranchCandidate) {
+                throw "Invalid remote branch in base: $BaseBranch$(Format-GitContext $remoteBranchValidation.Output)"
+            }
             $candidateBranch = $remoteBranchCandidate
-            break
         }
     }
 }
@@ -745,7 +917,7 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
         $creationFailure = $_
         if ($worktreeAdded) {
             try {
-                Remove-HelperCreatedWorktree -Worktree $worktreeDir
+                Remove-HelperCreatedWorktree -Worktree $worktreeDir -ExpectedHead $baseCommit -ReviewedArtifacts $reviewedHandoffArtifacts
             }
             catch {
                 throw "$($creationFailure.Exception.Message) Cleanup also failed: $($_.Exception.Message)"
@@ -760,6 +932,9 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     $initializerPath = [System.IO.Path]::GetFullPath((Join-Path $worktreeDir "scripts/git/Initialize-CodexIssueWorktree.ps1"))
     $escapedInitializerPath = $initializerPath.Replace("'", "''")
     $initializerInvocation = "& '$escapedInitializerPath' -GitExecutable '$escapedGitExecutable' -BranchName '$escapedBranchName' -ExpectedWorktree '$escapedWorktreeDir' -ExpectedHead '$baseCommit'"
+    $guardPath = [System.IO.Path]::GetFullPath((Join-Path $worktreeDir "scripts/worktree_guard.ps1"))
+    $escapedGuardPath = $guardPath.Replace("'", "''")
+    $guardInvocation = "& '$escapedGuardPath' -GitExecutable '$escapedGitExecutable'"
 
     Write-Host "Created detached Codex issue worktree."
     Write-Host "  issue:          #$IssueNumber"
@@ -767,17 +942,19 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     Write-Host "  planned branch: $BranchName (not created yet)"
     Write-Host "  worktree:       $worktreeDir"
     Write-Host ""
+    $guardAllowRule = "PowerShell($guardInvocation)"
     $initializerAllowRule = "PowerShell($initializerInvocation)"
-    Write-Host "Claude Code task-scoped initializer allow rule (additive PowerShell transport):"
+    Write-Host "Claude Code task-scoped handoff allow rules (additive PowerShell transport):"
+    Write-Host "`$guardAllowRule = @'"
+    Write-Host $guardAllowRule
+    Write-Host "'@"
     Write-Host "`$initializerAllowRule = @'"
     Write-Host $initializerAllowRule
     Write-Host "'@"
-    Write-Host '# Pass as one argv value: claude ... --allowedTools $initializerAllowRule'
+    Write-Host '$handoffAllowRules = @($guardAllowRule, $initializerAllowRule)'
+    Write-Host '# Pass as two argv values: claude ... --allowedTools $handoffAllowRules --permission-mode dontAsk <reviewed task prompt>'
     Write-Host ""
     Write-Host "PowerShell worker handoff (run this entire block unchanged):"
-    $guardPath = [System.IO.Path]::GetFullPath((Join-Path $worktreeDir "scripts/worktree_guard.ps1"))
-    $escapedGuardPath = $guardPath.Replace("'", "''")
-    $guardInvocation = "& '$escapedGuardPath' -GitExecutable '$escapedGitExecutable'"
     Write-Host "  $guardInvocation"
     Write-Host '  $guardSucceeded = $?; $guardExitCode = $LASTEXITCODE'
     Write-Host '  if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }'
