@@ -58,26 +58,55 @@ if ($code -ne 0) { exit $code }
 
 ## Agentic Operating Layer Smoke Checks
 
-For docs/skill/hook-only agentic changes, use targeted checks rather than the full product suite unless product runtime files changed:
+For docs/skill/hook-only agentic changes, use targeted checks rather than the full product suite unless product runtime files changed. These local update-and-verify sequences render the failure ledger before testing synchronization so a valid hook-appended JSONL entry can become visible. Required CI deliberately does not render and keeps its test-before-governance order, so an unprojected JSONL change fails instead of being masked. On Windows PowerShell, use the verified Python launcher and compile hook sources in memory so verification does not leave `__pycache__` output:
 
 ```powershell
-Get-Content -Raw .mcp.json | ConvertFrom-Json | Out-Null
-Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-question-batch
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-failure-capture
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .codex\skills\taskdeck-interface-map
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-question-batch
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-failure-capture
-python $env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py .claude\skills\taskdeck-interface-map
-Get-ChildItem scripts\agent_hooks -Filter *.py | ForEach-Object { python -m py_compile $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
-python scripts\agent_hooks\smoke_test.py
-py -3 -B -m unittest discover -s scripts\agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-python scripts\agent_hooks\render_failure_ledger.py
-node scripts\check-docs-governance.mjs
-node scripts\check-golden-principles.mjs
+$ErrorActionPreference = "Stop"
+try {
+    Get-Command py -ErrorAction Stop | Out-Null
+    Get-Command node -ErrorAction Stop | Out-Null
+    Get-Content -Raw .mcp.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
+    Get-Content -Raw .claude\settings.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
+} catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+}
+py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .codex\skills\taskdeck-question-batch; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .codex\skills\taskdeck-failure-capture; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .codex\skills\taskdeck-interface-map; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .claude\skills\taskdeck-question-batch; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .claude\skills\taskdeck-failure-capture; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .claude\skills\taskdeck-interface-map; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Get-ChildItem scripts\agent_hooks -Filter *.py | ForEach-Object { py -3 -B -c "import pathlib, sys; source = pathlib.Path(sys.argv[1]); compile(source.read_text(encoding='utf-8'), str(source), 'exec')" $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+py -3 -B scripts/agent_hooks/smoke_test.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+py -3 -B scripts/agent_hooks/render_failure_ledger.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+node scripts\check-docs-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+node scripts\check-golden-principles.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
-The hook smoke test executes the configured `.claude/settings.json` command handlers with `CLAUDE_PROJECT_DIR` set, including Windows PowerShell hook commands, representative dangerous-command denials, failure-ledger redaction, and pre-commit no-op behavior.
+On POSIX, use `python3 -B` for direct utilities and fail fast. Do not run the full configured-handler smoke there: `.claude/settings.json` declares those handlers with `shell: powershell`, so `smoke_test.py` is native-Windows-host proof until that shell contract is redesigned.
+
+```sh
+set -eu
+python3 -B -m json.tool .mcp.json >/dev/null
+python3 -B -m json.tool .claude/settings.json >/dev/null
+python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .codex/skills/taskdeck-question-batch
+python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .codex/skills/taskdeck-failure-capture
+python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .codex/skills/taskdeck-interface-map
+python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .claude/skills/taskdeck-question-batch
+python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .claude/skills/taskdeck-failure-capture
+python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .claude/skills/taskdeck-interface-map
+for file in scripts/agent_hooks/*.py; do python3 -B -c 'import pathlib, sys; source = pathlib.Path(sys.argv[1]); compile(source.read_text(encoding="utf-8"), str(source), "exec")' "$file" || exit $?; done
+python3 -B scripts/agent_hooks/render_failure_ledger.py
+python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+node scripts/check-github-ops-governance.mjs
+```
+
+The native-Windows hook smoke test executes the configured `.claude/settings.json` command handlers with `CLAUDE_PROJECT_DIR` set, including PowerShell-hosted handlers, representative dangerous Bash-command denials, missing-launcher and missing-policy fail-closed probes, failure-ledger redaction, and pre-commit no-op behavior. Its payloads identify the `Bash` tool; it does not prove native PowerShell-tool interception. That T4 policy gap is tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497).
 
 When MCP availability itself is part of the change, also run the active runtime's MCP listing/auth command if available. Do not claim remote MCP connectivity unless the current session actually verified it.
 
