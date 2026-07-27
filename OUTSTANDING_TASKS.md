@@ -88,6 +88,7 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 
 ## E. Revival overnight deferrals (added 2026-07-13)
 
+- [ ] **#1504 — protect the production environment before staging-gate reactivation.** Configure required reviewers in repository settings, prove the protection with a manual rehearsal, and only then reconsider automatic promotion. This is maintainer-only; the parked workflow does not assert that external protection exists.
 - [ ] **#1173** — Apply and verify the required branch-protection settings in GitHub. This is repository-settings work and remains maintainer-only.
 - [ ] **#1303** — Push the `v0.1.0` release tag only after the maintainer accepts the release deck and its pipeline evidence. Agents may repair the pipeline but must not push the tag.
 - [ ] **#1482 — Taskdeck name, pre-commercial legal residuals.** *(Supersedes the old "#1299 trademark check" line: #1299 shipped with PR #1337 on 2026-07-25 and its AC4 search + cost + recommendation are recorded on the issue.)* What remains is genuinely legal and none of it blocks the free beta: an **attorney registrability opinion** for Classes 9/42 asking about *descriptiveness* (not just conflict), a read on **TASKADE** (live, incontestable US Cl. 42 mark covering task management), the UKIPO/EUIPO coverage gaps (UKIPO hard-blocked automated access, so all GB data is indirect), perishable namespace reservations, and the **keep-or-rename decision before `v0.1.0` (#1303)** — renaming is nearly free pre-tag and expensive after.

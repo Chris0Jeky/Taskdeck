@@ -3,6 +3,7 @@
 import { access, readFile } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const errors = []
 
@@ -140,6 +141,169 @@ async function validateProjectAutomationDocs() {
   }
 }
 
+export function inspectParkedStagingGateTriggers(workflowText) {
+  const lines = workflowText.split(/\r?\n/)
+  const onIndex = lines.findIndex((line) => line === 'on:')
+  if (onIndex < 0) {
+    return { onBlockFound: false, triggerNames: [], unsupportedEntries: [] }
+  }
+
+  const triggerNames = []
+  const unsupportedEntries = []
+  for (let index = onIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (line.length > 0 && !/^\s/.test(line)) {
+      break
+    }
+
+    // This governance contract deliberately requires two-space event keys. Any
+    // unfamiliar entry at that level fails closed instead of being ignored.
+    const eventEntry = line.match(/^ {2}(?!\s)(.*)$/)?.[1]
+    if (!eventEntry || eventEntry.startsWith('#')) {
+      continue
+    }
+
+    const eventMatch = eventEntry.match(
+      /^(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([A-Za-z][\w-]*))\s*:(?:\s*.*)?$/,
+    )
+    if (!eventMatch) {
+      unsupportedEntries.push(eventEntry)
+      continue
+    }
+
+    triggerNames.push(eventMatch[1] ?? eventMatch[2] ?? eventMatch[3])
+  }
+
+  return { onBlockFound: true, triggerNames, unsupportedEntries }
+}
+
+export function retainsReleaseEventHandling(workflowText) {
+  return /github\.event(?:_name|\.release)\b/.test(workflowText) || /\bEVENT_NAME\b/.test(workflowText)
+}
+
+function parseMappingEntryAtIndent(line, indent) {
+  const content = line.match(new RegExp(`^ {${indent}}(?!\\s)(.*)$`))?.[1]
+  if (!content || content.startsWith('#')) {
+    return null
+  }
+
+  const match = content.match(
+    /^(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([A-Za-z][\w-]*))\s*:\s*(.*)$/,
+  )
+  if (!match) {
+    return null
+  }
+
+  return { key: match[1] ?? match[2] ?? match[3], value: match[4] }
+}
+
+function findDirectChild(lines, parentIndex, parentIndent, childIndent, key) {
+  for (let index = parentIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    const trimmed = line.trim()
+    if (trimmed.length === 0 || trimmed.startsWith('#')) {
+      continue
+    }
+
+    const indentation = line.match(/^ */)?.[0].length ?? 0
+    if (indentation <= parentIndent) {
+      break
+    }
+
+    const entry = parseMappingEntryAtIndent(line, childIndent)
+    if (entry?.key === key) {
+      return { index, entry }
+    }
+  }
+
+  return null
+}
+
+function normalizeYamlScalar(value) {
+  const withoutComment = value.replace(/\s+#.*$/, '').trim()
+  const quoted = withoutComment.match(/^(?:"([^"]*)"|'([^']*)')$/)
+  return quoted ? (quoted[1] ?? quoted[2]) : withoutComment
+}
+
+export function inspectWorkflowDispatchImageTagInput(workflowText) {
+  const lines = workflowText.split(/\r?\n/)
+  const onIndex = lines.findIndex((line) => line === 'on:')
+  if (onIndex < 0) {
+    return { imageTagFound: false, requiredValues: [], typeValues: [] }
+  }
+
+  const workflowDispatch = findDirectChild(lines, onIndex, 0, 2, 'workflow_dispatch')
+  const inputs = workflowDispatch
+    ? findDirectChild(lines, workflowDispatch.index, 2, 4, 'inputs')
+    : null
+  const imageTag = inputs ? findDirectChild(lines, inputs.index, 4, 6, 'image_tag') : null
+  if (!imageTag) {
+    return { imageTagFound: false, requiredValues: [], typeValues: [] }
+  }
+
+  const requiredValues = []
+  const typeValues = []
+  for (let index = imageTag.index + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    const trimmed = line.trim()
+    if (trimmed.length === 0 || trimmed.startsWith('#')) {
+      continue
+    }
+
+    const indentation = line.match(/^ */)?.[0].length ?? 0
+    if (indentation <= 6) {
+      break
+    }
+
+    const entry = parseMappingEntryAtIndent(line, 8)
+    if (entry?.key === 'required') {
+      requiredValues.push(normalizeYamlScalar(entry.value))
+    } else if (entry?.key === 'type') {
+      typeValues.push(normalizeYamlScalar(entry.value))
+    }
+  }
+
+  return { imageTagFound: true, requiredValues, typeValues }
+}
+
+export function validateParkedStagingGateWorkflow(workflowText, workflowPath = '.github/workflows/cd-staging-gate.yml') {
+  const workflowErrors = []
+  const inspection = inspectParkedStagingGateTriggers(workflowText)
+  if (!inspection.onBlockFound) {
+    return [`${workflowPath} is missing its top-level on block`]
+  }
+
+  if (inspection.unsupportedEntries.length > 0) {
+    workflowErrors.push(
+      `${workflowPath} has unsupported top-level trigger entries: ${inspection.unsupportedEntries.join(', ')}`,
+    )
+  }
+
+  if (inspection.triggerNames.length !== 1 || inspection.triggerNames[0] !== 'workflow_dispatch') {
+    workflowErrors.push(
+      `${workflowPath} is parked and must remain manual-only; expected only workflow_dispatch, found: ${inspection.triggerNames.join(', ') || '(none)'}`,
+    )
+  }
+
+  const imageTagInput = inspectWorkflowDispatchImageTagInput(workflowText)
+  if (!imageTagInput.imageTagFound) {
+    workflowErrors.push(`${workflowPath} must define workflow_dispatch.inputs.image_tag`)
+  } else {
+    if (imageTagInput.requiredValues.length !== 1 || imageTagInput.requiredValues[0] !== 'true') {
+      workflowErrors.push(`${workflowPath} workflow_dispatch.inputs.image_tag must set required: true exactly once`)
+    }
+    if (imageTagInput.typeValues.length !== 1 || imageTagInput.typeValues[0] !== 'string') {
+      workflowErrors.push(`${workflowPath} workflow_dispatch.inputs.image_tag must set type: string exactly once`)
+    }
+  }
+
+  if (retainsReleaseEventHandling(workflowText)) {
+    workflowErrors.push(`${workflowPath} retains unreachable release-event handling after becoming manual-only`)
+  }
+
+  return workflowErrors
+}
+
 async function validateParkedStagingGateTriggers() {
   const workflowPath = '.github/workflows/cd-staging-gate.yml'
   if (!(await fileExists(workflowPath))) {
@@ -148,35 +312,7 @@ async function validateParkedStagingGateTriggers() {
   }
 
   const workflowText = await readFile(resolve(workflowPath), 'utf8')
-  const lines = workflowText.split(/\r?\n/)
-  const onIndex = lines.findIndex((line) => line === 'on:')
-  if (onIndex < 0) {
-    errors.push(`${workflowPath} is missing its top-level on block`)
-    return
-  }
-
-  const triggerLines = []
-  for (let index = onIndex + 1; index < lines.length; index += 1) {
-    const line = lines[index]
-    if (line.length > 0 && !/^\s/.test(line)) {
-      break
-    }
-    triggerLines.push(line)
-  }
-
-  const triggerNames = triggerLines
-    .map((line) => line.match(/^ {2}([A-Za-z][\w-]*):\s*$/)?.[1])
-    .filter(Boolean)
-
-  if (triggerNames.length !== 1 || triggerNames[0] !== 'workflow_dispatch') {
-    errors.push(
-      `${workflowPath} is parked and must remain manual-only; expected only workflow_dispatch, found: ${triggerNames.join(', ') || '(none)'}`,
-    )
-  }
-
-  if (workflowText.includes('github.event.release') || workflowText.includes('EVENT_NAME == "release"')) {
-    errors.push(`${workflowPath} retains unreachable release-event handling after becoming manual-only`)
-  }
+  errors.push(...validateParkedStagingGateWorkflow(workflowText, workflowPath))
 }
 
 async function main() {
@@ -196,7 +332,9 @@ async function main() {
   console.log('GitHub operations governance check passed.')
 }
 
-main().catch((error) => {
-  console.error('GitHub operations governance check crashed:', error)
-  process.exit(1)
-})
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error('GitHub operations governance check crashed:', error)
+    process.exit(1)
+  })
+}
