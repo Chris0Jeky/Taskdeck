@@ -659,6 +659,8 @@ cd frontend/taskdeck-web && npm run mutation:test
 
 CI: `mutation-testing.yml` runs weekly (Sunday 04:00 UTC) + manual dispatch. The backend job has a finite 180-minute ceiling for the full Domain mutation set and fails if no report artifact exists. Mutation score remains non-blocking. Policy at `docs/testing/MUTATION_TESTING_POLICY.md`.
 
+Verified baseline: backend-only run [30236307062](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30236307062) on exact workflow head `307add004fbe142321a6ec11be21fab708824d5d` completed in 192 seconds. Stryker created 3,682 mutants; 2,351 were killed, 576 survived, 2 timed out, and 753 were skipped, for a 70.75% score. The uploaded two-file `stryker-net-report` artifact is 874,386 bytes (SHA-256 `0e8a9a41b8cd484b6c267bd914c57cda0ffa973f59d8989e89038157605f21c8`).
+
 ### Container Integration Tests (TST-06, `#91`/`#804`)
 
 New `Taskdeck.Integration.Tests` project using `Testcontainers.PostgreSql` for ephemeral database isolation. Each test method gets a fresh PostgreSQL database. Requires Docker.

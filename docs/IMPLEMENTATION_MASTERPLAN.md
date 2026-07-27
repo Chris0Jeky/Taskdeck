@@ -10,6 +10,10 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-27, mutation-testing runway)
+
+- **Bounded backend mutation evidence (`#1500`, PR `#1503`, maintainer-held):** repaired the Domain Stryker.NET lane by pinning 4.16.0, validating its config/workflow contract with an 18-check preflight, running from the single Domain test-project context, capping the job at 180 minutes, and failing artifact upload when no report exists. Backend-only run [30236307062](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30236307062) on exact workflow head `307add004fbe142321a6ec11be21fab708824d5d` completed in 192 seconds over 3,682 mutants (2,351 killed, 576 survived, 2 timed out, 753 skipped), for a 70.75% baseline. Its two-file `stryker-net-report` artifact is 874,386 bytes with SHA-256 `0e8a9a41b8cd484b6c267bd914c57cda0ffa973f59d8989e89038157605f21c8`. The score is calibration evidence, not a merge gate; expansion/ratcheting remains deferred until the existing 3-4-run policy baseline exists.
+
 ## Delivery update (2026-07-26, agentic governance)
 
 - **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI without regeneration masking it. Local agentic update workflows use the distinct render-then-test order so hook-appended JSONL can be projected, and the smoke contract pins both sides of that distinction.

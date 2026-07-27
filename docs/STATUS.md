@@ -2,6 +2,9 @@
 
 Last Updated: 2026-07-27
 
+Backend mutation-testing runway repair (2026-07-27, `#1500`):
+- **The scheduled Domain mutation lane now reaches a bounded, artifact-backed result instead of failing before execution.** Stryker.NET is pinned to 4.16.0; an 18-check PowerShell preflight rejects obsolete schema keys, wrong solution/test context, workflow timeout drift, and non-failing artifact uploads; and the workflow runs from `Taskdeck.Domain.Tests` with a 180-minute ceiling. Backend-only run [30236307062](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30236307062) on exact workflow head `307add004fbe142321a6ec11be21fab708824d5d` completed in 192 seconds: 3,682 mutants created, 2,351 killed, 576 survived, 2 timed out, 753 skipped, score 70.75%. The non-empty two-file `stryker-net-report` artifact is 874,386 bytes (SHA-256 `0e8a9a41b8cd484b6c267bd914c57cda0ffa973f59d8989e89038157605f21c8`). The score remains a non-blocking calibration signal; PR `#1503` and merge remain maintainer-held because the workflow changes operational CI posture.
+
 Required Docs Governance hardening (2026-07-26, `#1492`):
 - **Required CI now enforces failure-ledger projection synchronization.** The reusable Docs Governance job pins Python 3.12 and runs the existing `failure_ledger.jsonl` ↔ `FAILURE_LEDGER.md` synchronization unittest before its governance checks, so a stale checked-in projection fails without any renderer masking it. Local agentic update workflows intentionally render first and then test so a valid hook-appended JSONL entry can be projected; the smoke contract keeps that distinction from drifting.
 

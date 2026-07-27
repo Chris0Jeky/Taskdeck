@@ -87,6 +87,8 @@ The mutation testing workflow runs:
 Reports are uploaded as GitHub Actions artifacts with 30-day retention.
 The backend job has a finite 180-minute ceiling for the full Domain mutation set, and artifact upload fails when no report was produced.
 
+The first repaired backend-only baseline, [run 30236307062](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30236307062) on exact workflow head `307add004fbe142321a6ec11be21fab708824d5d`, completed in 192 seconds. It created 3,682 mutants: 2,351 killed, 576 survived, 2 timed out, and 753 skipped, for a 70.75% score. The non-empty two-file report artifact is 874,386 bytes (SHA-256 `0e8a9a41b8cd484b6c267bd914c57cda0ffa973f59d8989e89038157605f21c8`). Keep the 0% break threshold until the policy's 3-4-run calibration window exists.
+
 ## Interpreting Reports
 
 ### Mutant statuses
