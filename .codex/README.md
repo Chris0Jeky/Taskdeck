@@ -56,7 +56,7 @@ This `.codex/` layer is the Codex-facing control plane for Taskdeck. It routes a
 Taskdeck owns one project `PreToolUse` handler in `hooks.json`. It matches only
 `Bash` and routes through the repo-owned `invoke_deny_floor.sh` /
 `invoke_deny_floor.ps1` launchers to the shared dispatcher installed from
-reviewed `agent-harness` floor 1.6.18. This is a command tripwire, not whole-tool
+reviewed `agent-harness` floor 1.6.19. This is a command tripwire, not whole-tool
 containment; native tool/API writes remain governed by their own permissions and
 the repository agreements.
 

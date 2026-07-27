@@ -7,8 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "expected=4da65bb4d1fc84409db8fe6846a5b2961c408f2278d963485bf2fa886e4bf1a3; dispatcher=$HOME/.claude/hooks/dispatch.py; wrapper=.codex/invoke_deny_floor.sh; /bin/sh \"$wrapper\" --dispatcher-suffix .claude/hooks/dispatch.py --event pre --runtime codex",
-            "commandWindows": "$expected='4da65bb4d1fc84409db8fe6846a5b2961c408f2278d963485bf2fa886e4bf1a3'; $dispatcher=$env:USERPROFILE+'/.claude/hooks/dispatch.py'; $wrapper='.codex/invoke_deny_floor.ps1'; & $wrapper --dispatcher-suffix .claude/hooks/dispatch.py --event pre --runtime codex",
+            "command": "expected=524fed5ae6630313f4a000a6e9a8c7deb7b1a7a6d424913d8b12c4536b79a97b; dispatcher=$HOME/.claude/hooks/dispatch.py; wrapper=.codex/invoke_deny_floor.sh; /bin/sh \"$wrapper\" --dispatcher-suffix .claude/hooks/dispatch.py --event pre --runtime codex",
+            "commandWindows": "$expected='524fed5ae6630313f4a000a6e9a8c7deb7b1a7a6d424913d8b12c4536b79a97b'; $dispatcher=$env:USERPROFILE+'/.claude/hooks/dispatch.py'; $wrapper='.codex/invoke_deny_floor.ps1'; & $wrapper --dispatcher-suffix .claude/hooks/dispatch.py --event pre --runtime codex",
             "timeout": 5,
             "statusMessage": "Taskdeck: checking pinned irreversible-command policy"
           }

@@ -22,9 +22,9 @@ from typing import Callable, Mapping, Sequence
 
 
 EXPECTED_DISPATCHER_SHA256 = (
-    "4da65bb4d1fc84409db8fe6846a5b2961c408f2278d963485bf2fa886e4bf1a3"
+    "524fed5ae6630313f4a000a6e9a8c7deb7b1a7a6d424913d8b12c4536b79a97b"
 )
-EXPECTED_FLOOR_VERSION = "1.6.18 (2026-07-27)"
+EXPECTED_FLOOR_VERSION = "1.6.19 (2026-07-27)"
 DISPATCHER_SUFFIX = ".claude/hooks/dispatch.py"
 ATTRIBUTION = "[Taskdeck Codex deny-floor adapter]"
 DISPATCH_TIMEOUT_SECONDS = 3.5
@@ -145,13 +145,15 @@ def validate_dispatcher_identity(
     actual_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
     if actual_hash != expected_hash:
         raise AdapterFailure(
-            "the shared dispatcher identity differs from the reviewed 1.6.18 pin"
+            f"the shared dispatcher identity differs from the reviewed {expected_version} pin"
         )
     version_match = re.search(
         r'^FLOOR_VERSION\s*=\s*"([^"]*)"', text, flags=re.MULTILINE
     )
     if version_match is None or version_match.group(1) != expected_version:
-        raise AdapterFailure("the shared dispatcher version differs from the reviewed 1.6.18 pin")
+        raise AdapterFailure(
+            f"the shared dispatcher version differs from the reviewed {expected_version} pin"
+        )
 
 
 def attribute_dispatcher_output(stdout: str) -> str | None:

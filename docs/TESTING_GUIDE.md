@@ -171,8 +171,8 @@ a later green command cannot overwrite an earlier failure:
 $ErrorActionPreference = "Stop"
 $HarnessRoot = "C:\Users\jekyt\source\agent-harness"
 $TaskdeckRoot = (& git rev-parse --show-toplevel).Trim()
-$ExpectedProducer = "643adde2f2a77608be6639ce5d9fee2d33635e79"
-$ExpectedPin = "4da65bb4d1fc84409db8fe6846a5b2961c408f2278d963485bf2fa886e4bf1a3"
+$ExpectedProducer = "c056a77d22ecdcdfb2389c4c83487eb54061f5aa"
+$ExpectedPin = "524fed5ae6630313f4a000a6e9a8c7deb7b1a7a6d424913d8b12c4536b79a97b"
 
 if (Test-Path Env:GIT_CONFIG_GLOBAL) {
     throw "This process inherited the retired GIT_CONFIG_GLOBAL selector; start a fresh session at the exact head"
@@ -233,7 +233,7 @@ normal checkout or standalone clone whose `HEAD` is the exact reviewed PR head
 3. Run the non-writing canary
    `git push --force --dry-run origin HEAD:refs/heads/codex-hook-canary`.
    It must stop before Git executes and its reason must begin
-   `[Taskdeck Codex deny-floor adapter] [floor 1.6.18 (2026-07-27)]`.
+   `[Taskdeck Codex deny-floor adapter] [floor 1.6.19 (2026-07-27)]`.
 
 If `/hooks` names a different source, shows zero or multiple active handlers, or
 the canary lacks that exact handler attribution, stop. Do not hand-edit trust,

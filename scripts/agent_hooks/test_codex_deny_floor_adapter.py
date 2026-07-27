@@ -332,7 +332,9 @@ class CodexDenyFloorAdapterTests(unittest.TestCase):
                 dispatcher = adapter.dispatcher_path(adapter.DISPATCHER_SUFFIX)
                 adapter.validate_dispatcher_identity(dispatcher)
             except adapter.AdapterFailure as exc:
-                self.skipTest(f"current installed 1.6.18 dispatcher unavailable: {exc}")
+                self.fail(
+                    f"current installed {adapter.EXPECTED_FLOOR_VERSION} dispatcher unavailable: {exc}"
+                )
             environment["PATH"] = str(ROOT / "intentionally-missing-path")
             command = handler["commandWindows"]
             allow = subprocess.run(
@@ -362,7 +364,7 @@ class CodexDenyFloorAdapterTests(unittest.TestCase):
             self.assertEqual(deny.returncode, 0, deny.stderr)
             reason = deny_reason(deny.stdout)
             self.assertTrue(reason.startswith(adapter.ATTRIBUTION), reason)
-            self.assertIn("[floor 1.6.18 (2026-07-27)]", reason)
+            self.assertIn(f"[floor {adapter.EXPECTED_FLOOR_VERSION}]", reason)
         else:
             # Hosted POSIX runners do not install the user's shared floor. The
             # exact adapter must still start with a stripped inherited PATH,
