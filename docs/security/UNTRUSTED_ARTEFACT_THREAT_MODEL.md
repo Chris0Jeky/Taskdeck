@@ -1,10 +1,10 @@
 # Untrusted Artefact Threat Model
 
-Last Updated: 2026-07-13
+Last Updated: 2026-07-27
 
 Owner: Taskdeck maintainers
 
-Status: scoped control plan; runtime prompt rails and artefact extraction are not yet shipped
+Status: scoped control plan; shared capture-triage prompt rails are implemented, while remaining artefact, UI, and consent gates stay separately owned
 
 Related work: REVIVAL-00 `#1311`, transcript triage `#1304` / PR `#1312`, GEN-01 `#1315`, GEN-02 `#1316`, GEN-03 `#1317`, GEN-04 `#1318`, GEN-05 `#1319` / PR `#1339`, GEN-06 `#1320`, GEN-09 `#1323`
 
@@ -14,7 +14,7 @@ This document is the content-ingestion submodel for the REVIVAL-00 beta threat m
 
 The honest posture is layered mitigation, not a claim that prompt injection can be solved. Human review is a real security boundary, but it must not be the only boundary once extracted artefact text enters an LLM prompt.
 
-This slice adds the model and reusable canary fixtures only. It does **not** change PR `#1312` prompt/parser code, wire an extractor, serve an artefact, change consent copy, or claim the injection suite is green. Those gates remain owned by the dependency matrix below.
+The shared capture-triage extractor now uses `llm-triage.v2`: collision-resistant untrusted-data framing, exact raw-JSON response containment, and ordinal evidence grounding. The six canary fixtures exercise that effective path with deterministic provider responses. This is a bounded regression rail, not evidence that every model resists every injection. It does **not** serve an artefact, change consent copy, complete preview-XSS work, or make PDF/image extraction end to end; those gates remain owned by the dependency matrix below.
 
 ## Assets and trust boundaries
 
@@ -55,8 +55,8 @@ Attacker capability assumed: the attacker can choose every byte of an uploaded o
 
 | Threat scenario | Existing control as of 2026-07-13 | Required new control and owner | Accepted residual risk after controls |
 | --- | --- | --- | --- |
-| Embedded prompt instructions such as “ignore previous instructions,” system-role mimicry, or fake policy text | Review-first proposal approval and deterministic fallback exist. The LLM transcript lane is still an open PR and therefore not a shipped control. | PR `#1312` follow-up: delimit untrusted data, state that content is never instructions, run the canaries in this PR, and preserve provider/prompt provenance. GEN-04 `#1318` must not merge before these rails. | Models can still follow novel injection patterns or extract a malicious sentence as a plausible task. Human review and operation containment remain mandatory. |
-| Tool/operation-vocabulary mimicry embedded in text (`delete board`, JSON, XML, fake tool calls) | Board mutation is proposal-first and the executor has a finite apply-time registry. The shipped permission pass rechecks the proposal board and card `TargetId`, but it does **not** yet bind every effective `cardId`, `boardId`, or `columnId` carried in operation parameters; GEN-05 `#1319` / PR `#1339` owns that open repair. | Strict LLM output validation must reject extra fields, tool-call envelopes, operation payloads, and vocabulary escapes before proposal creation. GEN-05 `#1319` / PR `#1339` must bind effective parameter targets to the authorized proposal scope before that layer is counted as complete. Fixtures `response-extra-field.json` and `response-vocabulary-escape.json` are future regression inputs. | A malicious phrase may appear as inert task title/evidence. It must never become executable vocabulary without a separately validated proposal operation, and apply-time authorization remains mandatory even after strict output containment. |
+| Embedded prompt instructions such as “ignore previous instructions,” system-role mimicry, or fake policy text | Review-first proposal approval and deterministic fallback exist. The shared `llm-triage.v2` path frames source text inside a fresh random boundary and states that all enclosed content is data, never instructions. | Keep the three hostile-source canaries bound to the effective extractor and preserve provider/prompt provenance as later artefact kinds enter the same path. GEN-04 `#1318` must not bypass these rails. | Models can still follow novel injection patterns or extract a malicious sentence as a plausible task. Human review and operation containment remain mandatory. |
+| Tool/operation-vocabulary mimicry embedded in text (`delete board`, JSON, XML, fake tool calls) | Board mutation is proposal-first and the executor has a finite apply-time registry. `llm-triage.v2` accepts one root `tasks` array whose task objects contain only `title` and `evidence`; prose, fences, duplicates, unknown fields, non-objects, over-limit values, and operation/tool envelopes take deterministic fallback. | Keep the response canaries bound to the service fallback path. GEN-05 `#1319` / PR `#1339` must continue binding effective parameter targets to authorized proposal scope. | A malicious phrase may appear as inert task title/evidence. It must never become executable vocabulary without a separately validated proposal operation, and apply-time authorization remains mandatory even after strict output containment. |
 | Indirect injection asking the model to reveal system prompts, other captures, secrets, or connector data | Provider requests are purpose-scoped; telemetry/log redaction policies prohibit secret content. | Prompt discipline must forbid disclosure and provide only the current bounded artefact text. Provider adapters must not attach tools or unrelated workspace context to extraction calls. | The provider necessarily receives the consented content. Provider-side retention and compromise remain third-party risks disclosed to the user. |
 | Decompression bomb, oversized image, extreme pixel dimensions, PDF page/object bomb, or huge extracted text | Text-oriented validators cap current text paths; API rate limiting exists. Those controls do not validate arbitrary binary containers. | GEN-01 `#1315`: streaming byte cap/quota and magic-byte allowlist. GEN-02 `#1316`: page, decoded-pixel, extracted-character, memory, and wall-clock budgets with cancellation. | A payload inside every individual limit can still consume meaningful local CPU or provider quota. Conservative defaults and observable cancellation are required. |
 | Malformed, truncated, encrypted, cyclic, or polyglot container exploiting a parser | Unhandled failures are expected to fail the request/job rather than write board state. | Isolate extraction behind `IArtefactTextExtractor`; catch typed parser failures, cap recursion/object traversal, keep libraries patched, and record a safe failed-extraction status without raw payload logs. | Third-party parser vulnerabilities remain possible. Dependency scanning and prompt-free sandbox/process isolation may be needed if real incidents justify it. |
@@ -82,7 +82,9 @@ Before GEN-04 routes artefact text through the LLM lane, the effective implement
 - malformed, extra-field, or non-task output records an honest extraction failure and invokes the deterministic fallback;
 - an explicit empty task array is distinguishable from parse/validation failure.
 
-PR `#1312` currently owns the shared prompt/parser seam. This document intentionally does not edit that file from a competing branch. The canary manifest records the expected future verdicts; until a follow-up binds those fixtures to the effective parser/extractor, output containment for the LLM lane is an **open gate**, not verified behavior.
+The shared `llm-triage.v2` path enforces these requirements before it constructs the server-authored versioned envelope. The three hostile-source fixtures run through its framed request and return deterministic honest-task or empty fixtures; the three hostile-response fixtures run through the real extractor and service and prove deterministic proposal fallback. Historical `llm-triage.v1` envelopes remain accepted for stored provenance compatibility, but new extractor verdicts are stamped `llm-triage.v2`.
+
+These tests prove Taskdeck's framing, parser, grounding, and fallback behavior for fixed inputs. They do not execute a live provider and must not be described as universal model resistance.
 
 ## Resource budgets required before extraction ships
 
@@ -110,7 +112,7 @@ Fixtures live under `backend/tests/Taskdeck.Application.Tests/Fixtures/untrusted
 - `response-malformed.txt`: non-JSON model output.
 - `manifest.json`: stable IDs, source kinds, allowed verdicts, forbidden outcomes, and expected fallback classifications.
 
-The fixture-contract unit test independently pins each case ID, file, canary, source kind, allowed verdict, forbidden outcome, and hostile semantic signal. It also proves the manifest and fixture directory agree exactly, every referenced payload is bounded strict UTF-8, and JSON is parseable only where the manifest declares the exact `json` format. It does **not** claim an LLM resisted the fixtures. The prompt/extractor follow-up must execute each source fixture and assert either honest extraction grounded in the legitimate text or an empty verdict; every response fixture must take the deterministic fallback path.
+The fixture-contract tests independently pin each case ID, file, canary, source kind, allowed verdict, forbidden outcome, and hostile semantic signal. They prove the manifest and fixture directory agree exactly, every referenced payload is bounded strict UTF-8, and JSON is parseable only where the manifest declares the exact `json` format. They also bind each source fixture to the framed extractor path with a deterministic honest-task or empty completion, and bind each response fixture through the strict extractor to deterministic service fallback. They do **not** run a live model or prove that an LLM resisted the fixture text.
 
 ## Delivery gates and ownership
 
@@ -119,16 +121,16 @@ The fixture-contract unit test independently pins each case ID, file, canary, so
 | Upload authz, streaming caps/quota, signature validation, safe content disposition | GEN-01 `#1315` | Cross-user, cap, signature-mismatch, download-header, export/delete tests |
 | Local extraction budgets and typed failures | GEN-02 `#1316` | Page/char/pixel/time/cancellation tests against hostile fixtures |
 | Consent and provider egress | GEN-03 `#1317` | Copy review plus off/on/revoke and no-egress-without-consent tests |
-| Prompt rails and strict output containment | PR `#1312` follow-up, no later than GEN-04 `#1318` | Hostile transcript/PDF/image fixture suite plus malformed/extra-field fallback tests |
+| Prompt rails and strict output containment | `#1323` shared `llm-triage.v2` path; GEN-04 `#1318` must reuse it | Hostile transcript/PDF/image source fixtures plus malformed/extra-field/vocabulary service-fallback tests |
 | Apply-time effective-target authorization | GEN-05 `#1319` / PR `#1339` | Cross-board tests proving every parameter `cardId`, `boardId`, and `columnId` is bound to the proposal's authorized scope before execution |
 | Safe file-name/text/link rendering | GEN-06 `#1320` | Component tests proving escaping, inert URLs, and no unsafe HTML path |
 | Overall beta posture and accepted residuals | REVIVAL-00 `#1311` | Link this submodel, confirm owners/gates, and record any accepted exception explicitly |
 
-## Verification for this documentation-and-fixture slice
+## Verification for the prompt-rail slice
 
-- `dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~UntrustedArtefactFixtureContractTests"`
+- `dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~LlmCaptureTriagePromptTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageOutputContractTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~UntrustedArtefactFixtureContractTests"`
+- `dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests"`
 - `node scripts/check-docs-governance.mjs`
-- verify the new relative links in `SECURITY.md` and `docs/security/README.md` resolve to this file
 - `git diff --check`
 
-Not verified in this slice: model behavior, PR `#1312` parser strictness, apply-time effective-target authorization from `#1319` / PR `#1339`, PDF/image extraction, content endpoint headers, UI escaping, resource enforcement, consent flow, or end-to-end artefact triage.
+Not verified by this slice: live-model behavior, end-to-end PDF/image extraction, content endpoint headers, UI escaping, resource enforcement, consent flow, or complete artefact triage. Those remain the owned gates above. Prompt framing and strict output containment reduce risk; they do not solve prompt injection.

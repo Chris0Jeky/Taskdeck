@@ -4,6 +4,8 @@
 
 **Date:** 2026-07-11
 
+**Amended:** 2026-07-27 (`#1323`, prompt/output containment v2)
+
 **Deciders:** Repository maintainers
 
 ## Context
@@ -52,10 +54,14 @@ Constraints discovered in the shipped seam:
    `ILlmCaptureTriageExtractor` only for transcript sources; the extractor runs the guardrail chain
    the chat surface established — kill switch (`LlmSurface.CaptureTriage`, previously declared but
    unused), passive provider health (mock/unavailable ⇒ skip), per-user quota, `CompleteAsync` with
-   a purpose-built JSON prompt, degraded-result rejection, lenient parse (brace matching, fence
-   tolerance), sanitization to the v1 caps, and final contract validation. **Any** failure of that
-   chain degrades to the deterministic extractor in-process; LLM unavailability never fails the
-   capture item.
+   a purpose-built JSON prompt, degraded-result rejection, and final contract validation. The
+   `#1323` amendment replaces the original lenient parser with `llm-triage.v2`: capture text is
+   framed inside a fresh random untrusted-data boundary; model output must be one raw JSON root
+   `tasks` array whose objects contain only `title` and `evidence`; prose, fences, duplicate or
+   unknown fields, non-objects, duplicate titles, and over-limit values are rejected; every
+   evidence value must be an exact ordinal substring of the original source. **Any** failure of
+   that chain degrades to the deterministic extractor in-process; LLM unavailability never fails
+   the capture item.
 
 4. **One deliberate non-fallback: the empty verdict.** When the LLM successfully returns
    `{"tasks":[]}`, that is an extraction result, not a failure — degrading to the deterministic
@@ -67,9 +73,10 @@ Constraints discovered in the shipped seam:
    review showed Failed inflates the needs-triage gauge and loops on re-triage.)*
 
 5. **Provenance names the engine that ran, including "unknown".** LLM success records the real
-   provider/model and prompt version `llm-triage.v1` (a new versioned constant beside `triage.v1`;
-   the output envelope is built server-side — the model is never trusted with contract constants,
-   and evidence must be a verbatim transcript quote so REVIVAL-09 can recover spans by substring).
+   provider/model and the prompt version that actually ran. New extractions use `llm-triage.v2`;
+   `llm-triage.v1` remains accepted only for historical stored envelopes. The versioned output
+   envelope is built server-side — the model is never trusted with contract constants — and exact
+   source grounding lets REVIVAL-09 recover evidence spans by ordinal substring search.
    Deterministic runs keep `deterministic-extractor`/`capture-triage-v1`. When an existing proposal
    is reused and its author is unknowable (crash between proposal commit and payload stamp, either
    engine possible), the recorded value is `unknown` — never a guessed engine.
