@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using FluentAssertions;
 using Xunit;
@@ -65,6 +66,83 @@ public sealed class CliTestHarnessTests
                 await harness.DisposeAsync();
             }
         }
+    }
+
+    [Fact]
+    public async Task TerminateAndReapAsync_WhenTrackedProcessesExitSlowly_WaitsForRootAndDescendant()
+    {
+        var liveProcessIds = new HashSet<int> { 101, 202 };
+        var elapsed = TimeSpan.Zero;
+        var delayCount = 0;
+
+        await CliTestHarness.TerminateAndReapAsync(
+            trackedProcessIds: liveProcessIds.ToArray(),
+            killProcessTree: () => { },
+            killRootProcess: () => throw new InvalidOperationException("Root fallback must not run."),
+            isProcessRunning: liveProcessIds.Contains,
+            getElapsed: () => elapsed,
+            delayAsync: delay =>
+            {
+                delayCount++;
+                elapsed += delay;
+                liveProcessIds.Remove(delayCount == 1 ? 101 : 202);
+                return Task.CompletedTask;
+            },
+            terminationTimeout: TimeSpan.FromSeconds(1),
+            pollInterval: TimeSpan.FromMilliseconds(100));
+
+        delayCount.Should().Be(2);
+        liveProcessIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TerminateAndReapAsync_WhenTreeKillFails_UsesRootFallbackAndWaitsForEveryTrackedPid()
+    {
+        var liveProcessIds = new HashSet<int> { 301, 302 };
+        var elapsed = TimeSpan.Zero;
+        var rootKillCount = 0;
+
+        await CliTestHarness.TerminateAndReapAsync(
+            trackedProcessIds: liveProcessIds.ToArray(),
+            killProcessTree: () => throw new Win32Exception(5, "Synthetic tree-kill denial."),
+            killRootProcess: () => rootKillCount++,
+            isProcessRunning: liveProcessIds.Contains,
+            getElapsed: () => elapsed,
+            delayAsync: delay =>
+            {
+                elapsed += delay;
+                liveProcessIds.Clear();
+                return Task.CompletedTask;
+            },
+            terminationTimeout: TimeSpan.FromSeconds(1),
+            pollInterval: TimeSpan.FromMilliseconds(100));
+
+        rootKillCount.Should().Be(1);
+        liveProcessIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TerminateAndReapAsync_WhenTrackedProcessesRemain_FailsWithExactPidEvidence()
+    {
+        var elapsed = TimeSpan.Zero;
+
+        Func<Task> action = () => CliTestHarness.TerminateAndReapAsync(
+            trackedProcessIds: new[] { 402, 401 },
+            killProcessTree: () => throw new Win32Exception(5, "Synthetic tree-kill denial."),
+            killRootProcess: () => throw new InvalidOperationException("Synthetic root-kill race."),
+            isProcessRunning: _ => true,
+            getElapsed: () => elapsed,
+            delayAsync: delay =>
+            {
+                elapsed += delay;
+                return Task.CompletedTask;
+            },
+            terminationTimeout: TimeSpan.FromMilliseconds(200),
+            pollInterval: TimeSpan.FromMilliseconds(100));
+
+        var failure = await action.Should().ThrowAsync<TimeoutException>();
+        failure.Which.Message.Should().Contain("401, 402");
+        failure.Which.InnerException.Should().BeOfType<AggregateException>();
     }
 
     private static async Task<Exception?> CaptureFailureAsync(CliTestHarness harness)

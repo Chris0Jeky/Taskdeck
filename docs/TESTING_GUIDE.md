@@ -16,7 +16,7 @@ Companion Active Docs:
   - Domain: 1,626 passed
   - Application: 3,185 passed
   - API integration: 1,685 passed (0 failed, 2 skipped; 1,687 total)
-  - CLI contract: 82 passed
+  - CLI contract (**newer than this dated aggregate**): 105 passed / 0 skipped / 0 failed on Windows at `#1533`; hosted exact-head Windows recertification remains required
   - Architecture boundaries: 0 failed, **1 skipped** (only INV-09/DataFlowRegistry; INV-10/11/12 un-skipped with real assertions in #1126) — exact pass/total pending CI recertification (#1138)
   - Integration project (**newer than this dated aggregate**): 35 tests at #1518 — 28 PostgreSQL-backed cases plus 7 Docker-independent fixture/native checks. Dockerless evidence is 7 passed / 28 skipped; positive PostgreSQL evidence requires all 28 container cases to execute.
 - Frontend unit: **3,267 passing** -- verified 2026-05-16 post-bulk-merge (CI)
@@ -500,7 +500,7 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Options
 
 ### CLI Tests Restored (TST-58, `#853`/`#906`)
 
-CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite totalled approximately **78 tests across 10 files** at time of this wave (see [Current Verified Totals](#current-verified-totals-2026-04-25) for latest count of 82):
+CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite totalled approximately **78 tests across 10 files** at time of this wave; its newer exact local count is **105 tests** at `#1533`:
 
 | File | Tests |
 |------|-------|
@@ -515,11 +515,17 @@ CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes an
 | `CliJsonContractTests.cs` | 4 |
 | `CommandDispatcherTests.cs` | 3 |
 
-Harness improvements: `AppContext.BaseDirectory` dll lookup replaces the fragile repo-tree walk, 30-second process timeout via `CancellationTokenSource` prevents hang, `[Collection("Console Tests")]` on `ConsoleOutputTests` for `Console.Out` thread safety when xUnit runs classes in parallel, and `InternalsVisibleTo` on `Taskdeck.Cli` lets `Cli.Tests` unit-test internal types directly.
+Harness improvements: `AppContext.BaseDirectory` dll lookup replaces the fragile repo-tree walk; every child receives an isolated harness working directory; active subprocess launches are capped at half the available processors (minimum 1, maximum 4); stdout, stderr, and exit are awaited concurrently; and the unchanged 30-second process deadline kills the tree, falls back to a direct root kill when tree termination reports an expected platform error, and polls every explicitly tracked PID for up to five seconds before returning. A cleanup failure is fail-closed with exact live-PID evidence. `[Collection("Console Tests")]` on `ConsoleOutputTests` preserves `Console.Out` thread safety when xUnit runs classes in parallel, and `InternalsVisibleTo` on `Taskdeck.Cli` lets `Cli.Tests` unit-test internal types directly.
 
 Run:
 ```bash
 dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj -c Release
+```
+
+The deterministic timeout/reap contract can be run separately:
+
+```bash
+dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj -c Release --filter "FullyQualifiedName~CliTestHarnessTests"
 ```
 
 ### CI Stabilisation Tests

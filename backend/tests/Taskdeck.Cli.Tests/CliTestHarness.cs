@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
@@ -12,6 +13,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
 {
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan TerminationPollInterval = TimeSpan.FromMilliseconds(50);
     private static readonly SemaphoreSlim ProcessLaunchSemaphore = new(
         initialCount: Math.Clamp(Environment.ProcessorCount / 2, 1, 4),
         maxCount: Math.Clamp(Environment.ProcessorCount / 2, 1, 4));
@@ -146,11 +148,24 @@ internal sealed class CliTestHarness : IAsyncDisposable
                     standardErrorTask,
                     process.WaitForExitAsync(cts.Token));
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException timeoutCancellation)
             {
-                await TerminateAndReapAsync(process);
+                try
+                {
+                    await TerminateAndReapAsync(process);
+                }
+                catch (TimeoutException cleanupFailure)
+                {
+                    throw new TimeoutException(
+                        $"CLI process did not exit within {_processTimeout.TotalSeconds}s and cleanup " +
+                        $"could not prove that every tracked process exited. Args: {arguments}. " +
+                        cleanupFailure.Message,
+                        new AggregateException(timeoutCancellation, cleanupFailure));
+                }
+
                 throw new TimeoutException(
-                    $"CLI process did not exit within {_processTimeout.TotalSeconds}s. Args: {arguments}");
+                    $"CLI process did not exit within {_processTimeout.TotalSeconds}s. Args: {arguments}",
+                    timeoutCancellation);
             }
 
             return new CliCommandResult(
@@ -166,29 +181,133 @@ internal sealed class CliTestHarness : IAsyncDisposable
 
     private static async Task TerminateAndReapAsync(Process process)
     {
+        // Taskdeck.Cli executes in the directly launched dotnet process and does not
+        // spawn child processes. CreateNoWindow also removes the Windows conhost lane
+        // seen in the failing hosted runs. Each concurrent harness root is therefore
+        // tracked independently; Kill(true) remains defense-in-depth for an unexpected
+        // descendant, while the direct-root fallback guarantees that a tree-kill error
+        // cannot skip termination of the process this harness owns.
+        var trackedProcessIds = new[] { process.Id };
+        var stopwatch = Stopwatch.StartNew();
+
+        await TerminateAndReapAsync(
+            trackedProcessIds,
+            killProcessTree: () => process.Kill(entireProcessTree: true),
+            killRootProcess: process.Kill,
+            isProcessRunning: IsProcessRunning,
+            getElapsed: () => stopwatch.Elapsed,
+            delayAsync: Task.Delay,
+            terminationTimeout: TerminationTimeout,
+            pollInterval: TerminationPollInterval);
+    }
+
+    internal static async Task TerminateAndReapAsync(
+        IReadOnlyCollection<int> trackedProcessIds,
+        Action killProcessTree,
+        Action killRootProcess,
+        Func<int, bool> isProcessRunning,
+        Func<TimeSpan> getElapsed,
+        Func<TimeSpan, Task> delayAsync,
+        TimeSpan terminationTimeout,
+        TimeSpan pollInterval)
+    {
+        ArgumentNullException.ThrowIfNull(trackedProcessIds);
+        ArgumentNullException.ThrowIfNull(killProcessTree);
+        ArgumentNullException.ThrowIfNull(killRootProcess);
+        ArgumentNullException.ThrowIfNull(isProcessRunning);
+        ArgumentNullException.ThrowIfNull(getElapsed);
+        ArgumentNullException.ThrowIfNull(delayAsync);
+
+        var processIds = trackedProcessIds.Distinct().Order().ToArray();
+        if (processIds.Length == 0 || processIds.Any(processId => processId <= 0))
+        {
+            throw new ArgumentException("Tracked process IDs must contain only positive values.", nameof(trackedProcessIds));
+        }
+
+        if (terminationTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(terminationTimeout));
+        }
+
+        if (pollInterval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pollInterval));
+        }
+
+        Exception? treeKillFailure = null;
         try
         {
-            if (!process.HasExited)
+            killProcessTree();
+        }
+        catch (Exception exception) when (IsExpectedTerminationException(exception))
+        {
+            treeKillFailure = exception;
+        }
+
+        Exception? rootKillFailure = null;
+        if (treeKillFailure is not null)
+        {
+            try
             {
-                process.Kill(entireProcessTree: true);
+                killRootProcess();
             }
+            catch (Exception exception) when (IsExpectedTerminationException(exception))
+            {
+                rootKillFailure = exception;
+            }
+        }
+
+        while (true)
+        {
+            var liveProcessIds = processIds.Where(isProcessRunning).ToArray();
+            if (liveProcessIds.Length == 0)
+            {
+                return;
+            }
+
+            var remaining = terminationTimeout - getElapsed();
+            if (remaining <= TimeSpan.Zero)
+            {
+                var failures = new[] { treeKillFailure, rootKillFailure }
+                    .Where(failure => failure is not null)
+                    .Cast<Exception>()
+                    .ToArray();
+                var innerException = failures.Length switch
+                {
+                    0 => null,
+                    1 => failures[0],
+                    _ => new AggregateException(failures)
+                };
+
+                throw new TimeoutException(
+                    $"Process cleanup did not reap tracked PID(s) " +
+                    $"{string.Join(", ", liveProcessIds)} within {terminationTimeout.TotalSeconds}s.",
+                    innerException);
+            }
+
+            await delayAsync(remaining < pollInterval ? remaining : pollInterval);
+        }
+    }
+
+    private static bool IsProcessRunning(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
         catch (InvalidOperationException)
         {
-            // The child exited between the cancellation check and Kill.
-        }
-
-        using var terminationCts = new CancellationTokenSource(TerminationTimeout);
-        try
-        {
-            await process.WaitForExitAsync(terminationCts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Preserve the original timeout while bounding cleanup; the runner will still
-            // report a child that refuses to die rather than silently extending the deadline.
+            return false;
         }
     }
+
+    private static bool IsExpectedTerminationException(Exception exception) =>
+        exception is InvalidOperationException or Win32Exception or NotSupportedException or AggregateException;
 
     public ValueTask DisposeAsync()
     {
