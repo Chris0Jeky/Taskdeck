@@ -10,7 +10,7 @@ either in this file.
 
 1. `autodoc/AGENT_INDEX.md` — seam map, low-context orientation.
 2. `CLAUDE.md` — repo facts, architecture, proving checks.
-3. `docs/STATUS.md` — shipped reality, section-read only. Precedence: `docs/STATUS.md` > this file > subfolder `AGENTS.md`.
+3. `docs/STATUS.md` — shipped reality, section-read only. Precedence: `docs/STATUS.md` > subfolder `AGENTS.md` (nearest file to the one you edit wins) > this file.
 4. `OUTSTANDING_TASKS.md` — the human-action file; surface its open `[ ]` items in every summary/handoff.
 5. Codex routing: `.codex/README.md` and `.codex/memories/00_ACTIVE.md`. Claude routing: `.claude/README.md`.
 
