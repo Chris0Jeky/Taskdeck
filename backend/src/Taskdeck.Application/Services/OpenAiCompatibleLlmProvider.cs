@@ -36,7 +36,7 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
     {
         var userMessage = GetLastUserMessage(request);
-        if (!LlmProviderSelectionPolicy.TryValidateOpenAiCompatibleSettings(_settings, out var validationError))
+        if (!TryValidateSettings(out var validationError))
         {
             _logger.LogWarning("OpenAI-compatible provider configuration invalid: {Error}", validationError);
             return BuildFallbackResult(userMessage, "Live provider configuration is invalid.");
@@ -110,7 +110,7 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         ChatCompletionRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        if (!LlmProviderSelectionPolicy.TryValidateOpenAiCompatibleSettings(_settings, out var validationError))
+        if (!TryValidateSettings(out var validationError))
         {
             yield return new LlmTokenEvent(string.Empty, true, Error: $"Live provider configuration is invalid: {validationError}",
                 Provider: ProviderName, Model: GetConfiguredModelOrDefault());
@@ -260,7 +260,7 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
 
     public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
     {
-        var isValid = LlmProviderSelectionPolicy.TryValidateOpenAiCompatibleSettings(_settings, out var error);
+        var isValid = TryValidateSettings(out var error);
         return Task.FromResult(new LlmHealthStatus(isValid, ProviderName, isValid ? null : error, GetConfiguredModelOrDefault()));
     }
 
@@ -293,6 +293,15 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         using var message = CreateRequestMessage(request, stream, includeResponseFormat);
         return await _httpClient.SendAsync(message, ct);
     }
+
+    private bool TryValidateSettings(out string error) =>
+        LlmProviderSelectionPolicy.TryValidateOpenAiCompatibleSettings(
+            _settings,
+            out error,
+            // The selected provider can use the narrow development localhost
+            // exception already granted by the selection policy. In production,
+            // selection and the DNS-level ConnectCallback still reject it.
+            allowLocalhostEndpoints: _settings.AllowLiveProvidersInDevelopment);
 
     private HttpRequestMessage CreateRequestMessage(ChatCompletionRequest request, bool stream, bool includeResponseFormat)
     {

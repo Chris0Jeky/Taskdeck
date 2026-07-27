@@ -133,6 +133,24 @@ public class OpenAiCompatibleLlmProviderTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Fact]
+    public async Task CompleteAsync_AllowsTheDevelopmentLocalhostEndpointSelectedByPolicy()
+    {
+        var settings = BuildSettings();
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.OpenAiCompatible.BaseUrl = "http://localhost:11434/v1";
+        var selection = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+        selection.ProviderKind.Should().Be(LlmProviderKind.OpenAiCompatible);
+
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+            JsonResponse("""{"choices":[{"message":{"content":"local response"}}],"usage":{"total_tokens":3}}""")), settings);
+
+        var result = await provider.CompleteAsync(Request());
+
+        result.IsDegraded.Should().BeFalse();
+        result.Content.Should().Be("local response");
+    }
+
     private static OpenAiCompatibleLlmProvider CreateProvider(HttpMessageHandler handler, LlmProviderSettings settings) =>
         new(new HttpClient(handler), settings, NullLogger<OpenAiCompatibleLlmProvider>.Instance);
 
