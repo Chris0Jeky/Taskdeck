@@ -112,11 +112,11 @@ The first repaired backend-only baseline, [run 30236307062](https://github.com/C
 
 When mutation testing reveals surviving mutants:
 
-1. **File an issue** with the label `test-hardening` and link to the mutation report artifact
+1. **File an issue** with the existing `testing` and `hardening` labels and link to the mutation report artifact
 2. **Categorize** surviving mutants by triage priority (see above)
 3. **Bundle fixes**: Group related assertion improvements into a single PR per module rather than one PR per mutant
 4. **Do not chase 100%**: Some surviving mutants are acceptable (e.g., log messages, cosmetic formatting). Document intentional exclusions:
-   - **Backend (Stryker.NET 4.16.0)**: Use `ignore-mutations` or `ignore-methods` in `backend/stryker-config.json`; the preflight deliberately rejects the obsolete `excluded-mutations` and `ignored-methods` spellings
+   - **Backend (Stryker.NET 4.16.0)**: Add Stryker patterns as non-empty string entries in the `ignore-mutations` or `ignore-methods` arrays in `backend/stryker-config.json`; the preflight accepts empty arrays and non-empty string entries while rejecting scalar/invalid entries and the obsolete `excluded-mutations` and `ignored-methods` spellings
    - **Frontend (Stryker JS)**: Adjust `mutate` glob patterns in `stryker.config.mjs` or use inline `// Stryker disable` comments in source files
 
 ## Scope Expansion Roadmap

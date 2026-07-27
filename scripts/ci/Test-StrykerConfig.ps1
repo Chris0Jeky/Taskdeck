@@ -80,14 +80,17 @@ function Test-StrykerConfig {
         throw "Stryker configuration '$resolvedPath' must preserve thresholds high=80, low=60, break=0."
     }
 
-    foreach ($requiredEmptyKey in @('ignore-methods', 'ignore-mutations')) {
-        $property = $strykerConfig.PSObject.Properties[$requiredEmptyKey]
+    foreach ($exclusionKey in @('ignore-methods', 'ignore-mutations')) {
+        $property = $strykerConfig.PSObject.Properties[$exclusionKey]
         if ($null -eq $property -or $property.Value -isnot [System.Array]) {
-            throw "Stryker configuration '$resolvedPath' must contain '$requiredEmptyKey' as an array."
+            throw "Stryker configuration '$resolvedPath' must contain '$exclusionKey' as an array."
         }
 
-        if ($property.Value.Count -ne 0) {
-            throw "Stryker configuration '$resolvedPath' must preserve the empty '$requiredEmptyKey' list."
+        for ($entryIndex = 0; $entryIndex -lt $property.Value.Count; $entryIndex++) {
+            $entry = $property.Value[$entryIndex]
+            if ($entry -isnot [string] -or [string]::IsNullOrWhiteSpace($entry)) {
+                throw "Stryker configuration '$resolvedPath' entry $entryIndex in '$exclusionKey' must be a non-empty string."
+            }
         }
     }
 }
@@ -249,13 +252,30 @@ function Invoke-StrykerConfigSelfTest {
         Test-StrykerConfig -Path $validConfigPath
         Test-MutationWorkflowContract -Path $validWorkflowPath
 
+        $validExclusionVariants = @(
+            @('ignore-methods', '    "ignore-methods": [],', '    "ignore-methods": ["ToString", "Console.Write*"],'),
+            @('ignore-mutations', '    "ignore-mutations": []', '    "ignore-mutations": ["string", "logical"]')
+        )
+
+        for ($validIndex = 0; $validIndex -lt $validExclusionVariants.Count; $validIndex++) {
+            $validVariant = $validExclusionVariants[$validIndex]
+            $validVariantPath = Join-Path $temporaryDirectory "valid-$validIndex.json"
+            Write-TextVariant -Source $ConfigPath -Destination $validVariantPath -Expected $validVariant[1] -Replacement $validVariant[2]
+            Test-StrykerConfig -Path $validVariantPath
+        }
+
         $configVariants = @(
             @('obsolete ignored-methods key', '    "ignore-methods": [],', '    "ignored-methods": [],', "uses obsolete 'ignored-methods'"),
             @('obsolete excluded-mutations key', '    "ignore-mutations": []', '    "excluded-mutations": []', "uses obsolete 'excluded-mutations'"),
             @('solution context', '    "project": "Taskdeck.Domain.csproj",', (@('    "project": "Taskdeck.Domain.csproj",', '    "solution": "Taskdeck.sln",') -join "`n"), "must omit 'solution'"),
             @('test-project selector', '    "project": "Taskdeck.Domain.csproj",', (@('    "project": "Taskdeck.Domain.csproj",', '    "test-projects": ["tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj"],') -join "`n"), "must omit 'test-projects'"),
             @('wrong mutation target', '    "project": "Taskdeck.Domain.csproj",', '    "project": "Taskdeck.Application.csproj",', "must target project 'Taskdeck.Domain.csproj'"),
-            @('changed empty ignore semantics', '    "ignore-mutations": []', '    "ignore-mutations": ["string"]', "must preserve the empty 'ignore-mutations' list"),
+            @('ignore-methods scalar', '    "ignore-methods": [],', '    "ignore-methods": "ToString",', "must contain 'ignore-methods' as an array"),
+            @('ignore-mutations scalar', '    "ignore-mutations": []', '    "ignore-mutations": "string"', "must contain 'ignore-mutations' as an array"),
+            @('ignore-methods null entry', '    "ignore-methods": [],', '    "ignore-methods": [null],', "entry 0 in 'ignore-methods' must be a non-empty string"),
+            @('ignore-mutations non-string entry', '    "ignore-mutations": []', '    "ignore-mutations": [42]', "entry 0 in 'ignore-mutations' must be a non-empty string"),
+            @('ignore-methods empty entry', '    "ignore-methods": [],', '    "ignore-methods": [""],', "entry 0 in 'ignore-methods' must be a non-empty string"),
+            @('ignore-mutations whitespace entry', '    "ignore-mutations": []', '    "ignore-mutations": ["   "]', "entry 0 in 'ignore-mutations' must be a non-empty string"),
             @('changed mutation level', '    "mutation-level": "Standard",', '    "mutation-level": "Advanced",', "must preserve mutation-level 'Standard'"),
             @('missing JSON reporter', '      "json",', '      "dashboard",', 'must preserve html, json, progress, and cleartext reporters'),
             @('changed score threshold', '      "break": 0', '      "break": 60', 'must preserve thresholds high=80, low=60, break=0')
@@ -288,8 +308,9 @@ function Invoke-StrykerConfigSelfTest {
             }
         }
 
+        $validContractCount = 2 + $validExclusionVariants.Count
         $rejectedFixtureCount = $configVariants.Count + $workflowVariants.Count
-        Write-Host "Stryker preflight self-test passed: $($rejectedFixtureCount + 2) checks (2 valid contracts; $rejectedFixtureCount rejected drift fixtures)."
+        Write-Host "Stryker preflight self-test passed: $($validContractCount + $rejectedFixtureCount) checks ($validContractCount valid contracts; $rejectedFixtureCount rejected drift fixtures)."
     } finally {
         if (Test-Path -LiteralPath $temporaryDirectory) {
             Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force
