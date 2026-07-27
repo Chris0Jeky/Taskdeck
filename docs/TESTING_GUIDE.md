@@ -60,18 +60,23 @@ provider clients retain their configured URI, request body, and authentication. 
 not cover independently installed Activity/Meter listeners or transport-stage host/IP observation.
 
 ```powershell
-dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests|FullyQualifiedName~LlmProviderConstructorCompatibilityTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests"
 ```
 
 The six provider-dispatch cases passed five consecutive repetitions, and the registered EventSource
 and scoped-Sentry boundary pair passed three fresh-process repetitions. The provider and
-selection-policy compatibility filter (`OpenAiLlmProviderTests`, `GeminiLlmProviderTests`,
+selection-policy compatibility subset (`OpenAiLlmProviderTests`, `GeminiLlmProviderTests`,
 `OllamaLlmProviderTests`, `LlmProviderResilienceTests`, and `LlmProviderSelectionPolicyTests`)
-passed **151 / 0 failed / 0 skipped**. Docs governance, golden-principles governance,
-GitHub-operations governance, and `git diff --check` passed on the same working tree.
+passed **151 / 0 failed / 0 skipped**; the constructor-compatibility and remasking classes add
+**7 / 0 failed / 0 skipped**, so the documented Application filter proves **158 / 0 / 0**.
+Docs governance, golden-principles governance, GitHub-operations governance, and
+`git diff --check` passed on the same working tree.
 
-Full serialized backend verification, Required CI, CodeQL, and final exact-current-head independent review
-remain required before merge.
+The full serialized backend passed at pre-documentation head `dad8d22a` with **7,539 passed,
+5 intentional skips, and 0 failed** (Domain 1,636; Application 3,577; API 2,171 + 4 skips;
+CLI 100; Architecture 20 + 1 skip; Integration 35). The only subsequent local change is this
+verification-document correction. Required CI, CodeQL, and final exact-current-head publication
+evidence remain required before merge.
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
