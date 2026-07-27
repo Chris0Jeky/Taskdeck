@@ -21,13 +21,27 @@ export async function createBoard(page: Page, boardName: string) {
 
 export async function addColumn(page: Page, columnName: string) {
   await page.getByRole('button', { name: '+ Add Column' }).click()
-  await page.getByPlaceholder('Column name').fill(columnName)
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-  const columnHeading = page.getByRole('heading', { name: columnName, exact: true })
-  const columnLane = page.locator('[data-column-id]').filter({ has: columnHeading })
-  await expect(columnHeading).toHaveCount(1)
+  const columnNameInput = page.getByPlaceholder('Column name')
+  await columnNameInput.fill(columnName)
+  const createColumnResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && /\/api\/boards\/[a-f0-9-]+\/columns(?:\?.*)?$/i.test(response.url()))
+  const [createColumnResponse] = await Promise.all([
+    createColumnResponsePromise,
+    page.getByRole('button', { name: 'Create', exact: true }).click(),
+  ])
+  expect(createColumnResponse.ok()).toBe(true)
+  await expect(columnNameInput).toBeHidden()
+
+  const columnLane = page.locator('[data-column-id]').filter({
+    has: page.getByRole('heading', { name: columnName, exact: true }),
+  })
   await expect(columnLane).toHaveCount(1)
   await expect(columnLane).toBeVisible()
+  const columnHeading = columnLane.getByRole('heading', { name: columnName, exact: true })
+  await expect(columnHeading).toHaveCount(1)
+  await expect(columnHeading).toBeVisible()
+  return columnLane
 }
 
 export function columnByName(page: Page, columnName: string) {

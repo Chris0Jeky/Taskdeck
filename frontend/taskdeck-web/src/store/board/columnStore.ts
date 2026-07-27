@@ -16,15 +16,13 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
 
       if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
         // A realtime refresh can install the new column before this request resolves.
-        // Reconcile by stable id so the local mutation remains idempotent.
-        const existingIndex = state.currentBoard.value.columns.findIndex(
+        // Preserve that fresher object and only append when the stable id is absent.
+        const alreadyPresent = state.currentBoard.value.columns.some(
           (existingColumn) => existingColumn.id === newColumn.id,
         )
 
-        if (existingIndex === -1) {
+        if (!alreadyPresent) {
           state.currentBoard.value.columns.push(newColumn)
-        } else {
-          state.currentBoard.value.columns[existingIndex] = newColumn
         }
       }
 

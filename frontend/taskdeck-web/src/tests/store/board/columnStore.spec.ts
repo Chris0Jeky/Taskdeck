@@ -66,11 +66,28 @@ describe('columnStore', () => {
       expect(state.loading.value).toBe(false)
     })
 
-    it('reconciles the API response when a realtime refresh installs the column first', async () => {
-      const newCol = { id: 'col-3', name: 'In Progress' }
-      let resolveCreate!: (column: typeof newCol) => void
+    it('preserves a fresher realtime column when the API response resolves later', async () => {
+      const apiColumn = {
+        id: 'col-3',
+        boardId: 'board-1',
+        name: 'In Progress',
+        position: 2,
+        wipLimit: null,
+        cardCount: 0,
+        createdAt: '2026-07-27T10:00:00Z',
+        updatedAt: '2026-07-27T10:00:00Z',
+      }
+      const realtimeColumn = {
+        ...apiColumn,
+        name: 'In Progress (realtime)',
+        position: 4,
+        wipLimit: 3,
+        cardCount: 2,
+        updatedAt: '2026-07-27T10:00:01Z',
+      }
+      let resolveCreate!: (column: typeof apiColumn) => void
       mockColumnsApi.createColumn.mockReturnValueOnce(
-        new Promise<typeof newCol>((resolve) => {
+        new Promise<typeof apiColumn>((resolve) => {
           resolveCreate = resolve
         }),
       )
@@ -82,18 +99,22 @@ describe('columnStore', () => {
       expect(state.loading.value).toBe(true)
       expect(state.error.value).toBeNull()
 
-      state.currentBoard.value!.columns.push({ ...newCol })
-      resolveCreate(newCol)
+      state.currentBoard.value!.columns.push(realtimeColumn)
+      const installedRealtimeColumn = state.currentBoard.value!.columns[2]
+      resolveCreate(apiColumn)
 
-      await expect(createPromise).resolves.toEqual(newCol)
-      expect(
-        state.currentBoard.value!.columns.filter((existingColumn) => existingColumn.id === newCol.id),
-      ).toHaveLength(1)
-      expect(
-        state.currentBoard.value!.columns.filter(
-          (existingColumn) => existingColumn.name === newCol.name,
-        ),
-      ).toHaveLength(1)
+      await expect(createPromise).resolves.toEqual(apiColumn)
+      const matchingColumns = state.currentBoard.value!.columns.filter(
+        (existingColumn) => existingColumn.id === apiColumn.id,
+      )
+      expect(matchingColumns).toHaveLength(1)
+      const preservedColumn = matchingColumns[0] as typeof realtimeColumn
+      expect(preservedColumn).toBe(installedRealtimeColumn)
+      expect(preservedColumn.name).toBe(realtimeColumn.name)
+      expect(preservedColumn.position).toBe(realtimeColumn.position)
+      expect(preservedColumn.wipLimit).toBe(realtimeColumn.wipLimit)
+      expect(preservedColumn.cardCount).toBe(realtimeColumn.cardCount)
+      expect(preservedColumn.updatedAt).toBe(realtimeColumn.updatedAt)
       expect(state.currentBoard.value!.columns).toHaveLength(3)
       expect(helpers.toast.success).toHaveBeenCalledOnce()
       expect(helpers.toast.success).toHaveBeenCalledWith(
