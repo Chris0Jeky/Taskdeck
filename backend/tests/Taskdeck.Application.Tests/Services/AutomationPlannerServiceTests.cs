@@ -718,7 +718,7 @@ public class AutomationPlannerServiceTests
     }
 
     [Fact]
-    public async Task ParseInstruction_ShouldReturnFailure_WhenPermissionValidationFails()
+    public async Task ParseInstruction_ShouldNotCreateProposal_WhenPermissionValidationFails()
     {
         // Arrange
         var userId = Guid.NewGuid();
@@ -763,6 +763,15 @@ public class AutomationPlannerServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be("No access");
+        _policyEngineMock.Verify(e => e.ValidatePermissionsAsync(
+            userId,
+            boardId,
+            It.IsAny<IEnumerable<ProposalOperationDto>>(),
+            default), Times.Once);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default),
+            Times.Never);
     }
 
     #endregion

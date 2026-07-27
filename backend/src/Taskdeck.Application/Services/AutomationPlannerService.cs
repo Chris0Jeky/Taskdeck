@@ -443,16 +443,16 @@ public class AutomationPlannerService : IAutomationPlannerService
                 operations
             );
 
-            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
-            if (!result.IsSuccess)
-                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
-
-            // Validate permissions
+            // Validate permissions before persisting the proposal.
             var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, cancellationToken);
             if (!permissionResult.IsSuccess)
             {
                 return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
             }
+
+            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
+            if (!result.IsSuccess)
+                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
 
             return Result.Success(result.Value);
         }
@@ -566,13 +566,13 @@ public class AutomationPlannerService : IAutomationPlannerService
                 allOperations
             );
 
-            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
-            if (!result.IsSuccess)
-                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
-
             var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, cancellationToken);
             if (!permissionResult.IsSuccess)
                 return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+
+            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
+            if (!result.IsSuccess)
+                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
 
             return Result.Success(result.Value);
         }

@@ -132,6 +132,38 @@ public class AutomationPlannerBatchTests
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldNotCreateProposal_WhenPermissionValidationFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        SetupMocksForSuccess(userId, boardId);
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(
+                userId,
+                boardId,
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                default))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "No access"));
+
+        var result = await _service.ParseBatchInstructionAsync(
+            new List<string> { "create card 'Test'" },
+            userId,
+            boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be("No access");
+        _policyEngineMock.Verify(e => e.ValidatePermissionsAsync(
+            userId,
+            boardId,
+            It.IsAny<IEnumerable<ProposalOperationDto>>(),
+            default), Times.Once);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default),
+            Times.Never);
+    }
+
     #endregion
 
     #region ParseBatchInstructionAsync - Batch Card Creation
