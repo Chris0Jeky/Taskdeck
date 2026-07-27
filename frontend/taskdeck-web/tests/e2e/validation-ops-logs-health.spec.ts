@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, API_ORIGIN, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { assertOk } from './support/httpAsserts'
+import { selectOpsTemplate } from './support/opsConsole'
 
 let auth: AuthResult
 
@@ -24,8 +25,7 @@ test.describe('Ops Console — CLI Runner', () => {
   test('should execute health.check and show output', async ({ page }) => {
     await page.goto('/workspace/ops/cli')
 
-    const templateInput = page.getByRole('combobox', { name: 'Command template' })
-    await templateInput.fill('health.check')
+    await selectOpsTemplate(page, 'health.check')
     await page.getByRole('button', { name: 'Run Template' }).click()
 
     await expect(page.getByText('Health check: OK')).toBeVisible()
@@ -37,8 +37,7 @@ test.describe('Ops Console — CLI Runner', () => {
   test('should show error for invalid parameters', async ({ page }) => {
     await page.goto('/workspace/ops/cli')
 
-    const templateInput = page.getByRole('combobox', { name: 'Command template' })
-    await templateInput.fill('health.check')
+    await selectOpsTemplate(page, 'health.check')
 
     // Fill invalid parameters
     await page.locator('#cli-parameters').fill('{"unexpected": "value"}')

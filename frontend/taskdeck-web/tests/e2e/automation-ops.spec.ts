@@ -5,6 +5,7 @@ import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './suppo
 import { expectDialog } from './support/dialogs'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { assertOk } from './support/httpAsserts'
+import { selectOpsTemplate } from './support/opsConsole'
 import { pollUntil } from './support/polling'
 
 interface ChatMessageDto {
@@ -79,8 +80,7 @@ test('ops cli should run health.check template', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'Ops Console' })).toBeVisible()
 
-  const templateInput = page.getByRole('combobox', { name: 'Command template' })
-  await templateInput.fill('health.check')
+  await selectOpsTemplate(page, 'health.check')
   await page.getByRole('button', { name: 'Run Template' }).click()
 
   await expect(page.getByText('Health check: OK')).toBeVisible()
