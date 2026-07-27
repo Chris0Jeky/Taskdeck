@@ -66,5 +66,8 @@ public enum EgressViolationType
     RedirectToUnknownHost = 1,
 
     /// <summary>The host resolved to a private/internal IP range.</summary>
-    PrivateNetworkAttempt = 2
+    PrivateNetworkAttempt = 2,
+
+    /// <summary>The client policy refuses redirects even when the target host is allowed.</summary>
+    RedirectNotAllowed = 3
 }

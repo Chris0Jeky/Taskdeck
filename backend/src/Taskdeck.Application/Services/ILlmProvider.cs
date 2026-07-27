@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Taskdeck.Application.Services;
 
@@ -63,7 +64,28 @@ public record LlmCompletionResult(
     string? DegradedReason = null,
     List<string>? Instructions = null,
     bool IsClarificationRequest = false
-);
+)
+{
+    /// <summary>
+    /// True only when <see cref="TokensUsed"/> came from authoritative upstream
+    /// usage metadata. A false value tells quota consumers to settle the reserved
+    /// estimate instead of treating a local output-only estimate as total usage.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasAuthoritativeTokenUsage { get; init; } = true;
+
+    // Internal billing/circuit metadata must not become part of the API wire shape.
+    // Providers set this false when selection/configuration rejected a request before
+    // any upstream dispatch, so quota callers can release rather than charge.
+    [JsonIgnore]
+    internal bool ShouldSettleQuotaReservation { get; init; } = true;
+
+    [JsonIgnore]
+    internal LlmProviderFailureKind ProviderFailureKind { get; init; }
+
+    [JsonIgnore]
+    internal bool CountsAsProviderFailure => ProviderFailureKind != LlmProviderFailureKind.None;
+}
 
 public record LlmTokenEvent(
     string Token,
@@ -76,8 +98,27 @@ public record LlmTokenEvent(
     // Keep these out of the positional constructor. LlmTokenEvent is part of the
     // public Application contract, so extending its existing constructor would
     // break already-compiled consumers even though in-tree source still builds.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool IsDegraded { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? DegradedReason { get; init; }
+
+    [JsonIgnore]
+    internal LlmProviderFailureKind ProviderFailureKind { get; init; }
+
+    [JsonIgnore]
+    internal bool CountsAsProviderFailure => ProviderFailureKind != LlmProviderFailureKind.None;
+}
+
+internal enum LlmProviderFailureKind
+{
+    None = 0,
+    Transport = 1,
+    ResponseBody = 2,
+    Protocol = 3,
+    Timeout = 4,
+    ResponseLimit = 5
 }
 
 public record LlmHealthStatus(

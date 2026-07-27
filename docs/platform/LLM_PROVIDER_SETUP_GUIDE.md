@@ -34,6 +34,7 @@ Selection is deterministic through `LlmProviderSelectionPolicy`:
 - the OpenAI, OpenAICompatible, Gemini, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
 
 These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. This is a dedicated connect-callback boundary, not `EgressEnvelopeHandler` enforcement, and it does not change the existing redirect or audit posture. Registered protected clients mask their configured URI immediately before send, then an inner handler restores it for transport; this keeps path/query data out of outer .NET HTTP EventSource payloads. Public caller-owned provider clients do not opt into masking. Protected registrations remove default `IHttpClientFactory` request loggers, disable distributed-trace header propagation, and use a private metric scope that Taskdeck's configured OpenTelemetry pipeline drops alongside marked HTTP activities. Enabled Sentry removes its outbound handler from these protected client pipelines only, so it cannot add separate `sentry-trace`/baggage headers or capture protected URLs and 5xx responses; unrelated clients retain instrumentation and server-side Sentry tracking remains active. Independently installed process-global `ActivityListener`/`MeterListener` and transport-stage host/IP observation remain outside the guarantee.
+OpenAICompatible additionally rejects every observed 3xx response in its egress handler rather than following an allowlisted redirect.
 
 If any live-provider condition fails, runtime degrades safely to `Mock`.
 
@@ -159,13 +160,32 @@ Set the common safety gates and provider name:
 - `Llm__AllowLiveProvidersInDevelopment=true` (only for development-like environments)
 - `Llm__Provider=OpenAICompatible`
 
-The endpoint must be public HTTP(S) and pass the same URL and DNS-level SSRF
-checks as OpenAI. Keep keys in a secret store; never commit them. Compatible
+Production and other non-development endpoints must be public HTTPS and pass
+the same URL and DNS-level SSRF checks as OpenAI. Plain HTTP is accepted only
+for loopback development endpoints when both the development environment and
+`AllowLiveProvidersInDevelopment` gate permit it. Keep keys in a secret store;
+never commit them. Compatible
 gateways may require optional non-secret headers such as `HTTP-Referer` or
 `X-Title`; use `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>` for those.
 Authorization, proxy, hop-by-hop, cookie, host-routing, forwarding, and
 `x-taskdeck-*` headers are reserved and cannot be overridden. The base URL may
 contain a path but not user information, a query, or a fragment.
+
+The complete environment-variable surface is:
+
+- required: `Llm__OpenAiCompatible__ApiKey`,
+  `Llm__OpenAiCompatible__BaseUrl`, and `Llm__OpenAiCompatible__Model`
+- response controls: `Llm__OpenAiCompatible__TimeoutSeconds`,
+  `Llm__OpenAiCompatible__MaxResponseBytes`,
+  `Llm__OpenAiCompatible__MaxSseLineBytes`, and
+  `Llm__OpenAiCompatible__MaxSseEventBytes`
+- optional gateway headers:
+  `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>`; for example,
+  `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` and
+  `Llm__OpenAiCompatible__ExtraHeaders__X-Title`
+
+Compatible requests fail closed on every HTTP redirect, including redirects
+back to the configured host. Configure the final API base URL directly.
 
 ### OpenRouter
 

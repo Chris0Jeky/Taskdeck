@@ -222,6 +222,44 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_UnknownCompatibleUsage_CommitsReservationEstimateForLargeTranscript()
+    {
+        _quotaMock
+            .Setup(q => q.ReserveAsync(_userId, LlmSurface.CaptureTriage, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QuotaReservationDto(
+                true, null, _reservationId, 100_000, 60, EstimatedTokens: 4000));
+        _providerMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult(
+                """{"tasks":[{"title":"Send report","evidence":"send report"}]}""",
+                0,
+                IsActionable: false,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model")
+            {
+                HasAuthoritativeTokenUsage = false
+            });
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(new string('x', 4000) + " send report"));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        _quotaMock.Verify(q => q.CommitReservationAsync(
+            _reservationId,
+            _userId,
+            LlmSurface.CaptureTriage,
+            "OpenAICompatible",
+            "vendor/model",
+            4000,
+            0,
+            CancellationToken.None), Times.Once);
+        _quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldReleaseReservation_WhenNoTokensWereConsumed()
     {
         SetupCompletion("not json at all", tokensUsed: 0);

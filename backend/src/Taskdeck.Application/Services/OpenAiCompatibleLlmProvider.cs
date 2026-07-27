@@ -13,7 +13,7 @@ namespace Taskdeck.Application.Services;
 /// separate from <see cref="OpenAiLlmProvider"/> so api.openai.com defaults and
 /// its existing non-streaming semantics remain unchanged.
 /// </summary>
-public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
+internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
 {
     private const string ProviderName = "OpenAICompatible";
     private const string CircuitName = "OpenAICompatible";
@@ -27,8 +27,7 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
     private readonly CircuitBreakerSettings? _circuitBreakerSettings;
     private readonly bool _allowLocalhostEndpoints;
 
-    // Retain the original public constructor for already-compiled consumers.
-    public OpenAiCompatibleLlmProvider(
+    internal OpenAiCompatibleLlmProvider(
         HttpClient httpClient,
         LlmProviderSettings settings,
         ILogger<OpenAiCompatibleLlmProvider> logger)
@@ -36,7 +35,7 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
     {
     }
 
-    public OpenAiCompatibleLlmProvider(
+    internal OpenAiCompatibleLlmProvider(
         HttpClient httpClient,
         LlmProviderSettings settings,
         ILogger<OpenAiCompatibleLlmProvider> logger,
@@ -52,13 +51,34 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         _allowLocalhostEndpoints = allowLocalhostEndpoints;
     }
 
-    public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
+    public Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default) =>
+        CompleteCoreAsync(request, ct, participateInCircuit: true);
+
+    private async Task<LlmCompletionResult> CompleteCoreAsync(
+        ChatCompletionRequest request,
+        CancellationToken ct,
+        bool participateInCircuit)
     {
         var userMessage = GetLastUserMessage(request);
         if (!TryValidateSettings(out var validationError))
         {
             _logger.LogWarning("OpenAI-compatible provider configuration invalid: {Error}", validationError);
-            return BuildFallbackResult(userMessage, "Live provider configuration is invalid.");
+            return BuildFallbackResult(
+                userMessage,
+                "Live provider configuration is invalid.",
+                shouldSettleQuotaReservation: false,
+                failureKind: LlmProviderFailureKind.None);
+        }
+
+        var lease = default(CircuitRequestLease);
+        var circuitSettled = !participateInCircuit;
+        if (participateInCircuit && !TryEnterProviderRequest(out lease, out var circuitError))
+        {
+            return BuildFallbackResult(
+                userMessage,
+                circuitError ?? "OpenAI-compatible provider circuit is open.",
+                shouldSettleQuotaReservation: false,
+                failureKind: LlmProviderFailureKind.None);
         }
 
         using var timeout = CreateProviderTimeoutTokenSource(ct);
@@ -82,40 +102,66 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("OpenAI-compatible completion request failed with status code {StatusCode}.", (int)response.StatusCode);
-                    return BuildFallbackResult(userMessage, "Live provider request failed.");
+                    return RecordFailureAndBuildFallback(
+                        $"OpenAI-compatible completion returned HTTP {(int)response.StatusCode}.",
+                        "Live provider request failed.",
+                        LlmProviderFailureKind.Protocol);
                 }
 
                 if (!TryParseResponse(body, out var content, out var tokensUsed, out var finishReason))
                 {
                     _logger.LogWarning("OpenAI-compatible completion response could not be parsed.");
-                    return BuildFallbackResult(userMessage, "Live provider response parsing failed.");
+                    return RecordFailureAndBuildFallback(
+                        "OpenAI-compatible completion response could not be parsed.",
+                        "Live provider response parsing failed.",
+                        LlmProviderFailureKind.Protocol);
                 }
 
                 var finishDegradation = GetFinishReasonDegradation(finishReason);
-                if (finishDegradation is not null ||
-                    (useInstructionExtraction && OpenAiLlmProvider.LooksLikeTruncatedJson(content)))
+                if (finishDegradation is not null)
                 {
-                    return new LlmCompletionResult(
-                        content, tokensUsed, false, Provider: ProviderName, Model: GetConfiguredModelOrDefault(),
+                    return RecordSuccess(new LlmCompletionResult(
+                        content, tokensUsed ?? 0, false, Provider: ProviderName, Model: GetConfiguredModelOrDefault(),
                         IsDegraded: true,
-                        DegradedReason: finishDegradation ?? "Response was truncated.");
+                        DegradedReason: finishDegradation)
+                    {
+                        HasAuthoritativeTokenUsage = tokensUsed.HasValue
+                    });
+                }
+
+                if (useInstructionExtraction && OpenAiLlmProvider.LooksLikeTruncatedJson(content))
+                {
+                    return RecordFailure(new LlmCompletionResult(
+                        content, tokensUsed ?? 0, false, Provider: ProviderName, Model: GetConfiguredModelOrDefault(),
+                        IsDegraded: true,
+                        DegradedReason: "Response was truncated.")
+                    {
+                        HasAuthoritativeTokenUsage = tokensUsed.HasValue,
+                        ProviderFailureKind = LlmProviderFailureKind.Protocol
+                    }, "OpenAI-compatible completion returned truncated structured content.");
                 }
 
                 if (useInstructionExtraction && LlmInstructionExtractionPrompt.TryParseStructuredResponse(
                         content, out var reply, out var actionable, out var instructions))
                 {
-                    return new LlmCompletionResult(
-                        reply, tokensUsed, actionable, actionable ? "llm.extracted" : null,
-                        ProviderName, GetConfiguredModelOrDefault(), Instructions: instructions.Count > 0 ? instructions : null);
+                    return RecordSuccess(new LlmCompletionResult(
+                        reply, tokensUsed ?? 0, actionable, actionable ? "llm.extracted" : null,
+                        ProviderName, GetConfiguredModelOrDefault(), Instructions: instructions.Count > 0 ? instructions : null)
+                    {
+                        HasAuthoritativeTokenUsage = tokensUsed.HasValue
+                    });
                 }
 
                 var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage);
                 var fallbackInstructions = isActionable
                     ? NaturalLanguageInstructionExtractor.Extract(userMessage, actionIntent)
                     : [];
-                return new LlmCompletionResult(
-                    content, tokensUsed, isActionable, actionIntent, ProviderName, GetConfiguredModelOrDefault(),
-                    Instructions: fallbackInstructions.Count > 0 ? fallbackInstructions : null);
+                return RecordSuccess(new LlmCompletionResult(
+                    content, tokensUsed ?? 0, isActionable, actionIntent, ProviderName, GetConfiguredModelOrDefault(),
+                    Instructions: fallbackInstructions.Count > 0 ? fallbackInstructions : null)
+                {
+                    HasAuthoritativeTokenUsage = tokensUsed.HasValue
+                });
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -125,19 +171,72 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         catch (OperationCanceledException)
         {
             _logger.LogWarning("OpenAI-compatible completion exceeded its configured response deadline.");
-            return BuildFallbackResult(userMessage, "Live provider request timed out.");
+            return RecordFailureAndBuildFallback(
+                "OpenAI-compatible completion timed out.",
+                "Live provider request timed out.",
+                LlmProviderFailureKind.Timeout);
         }
         catch (LlmProviderResponseLimitException ex)
         {
             _logger.LogWarning("OpenAI-compatible completion exceeded a response budget: {Limit}", ex.Message);
-            return BuildFallbackResult(userMessage, "Live provider response exceeded a safety limit.");
+            return RecordFailureAndBuildFallback(
+                "OpenAI-compatible completion exceeded a response budget.",
+                "Live provider response exceeded a safety limit.",
+                LlmProviderFailureKind.ResponseLimit);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(
+                "OpenAI-compatible completion response body failed. {ExceptionSummary}",
+                SensitiveDataRedactor.SummarizeException(ex));
+            return RecordFailureAndBuildFallback(
+                "OpenAI-compatible completion response body failed.",
+                "Live provider response body failed.",
+                LlmProviderFailureKind.ResponseBody);
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 "OpenAI-compatible completion request failed with unexpected error. {ExceptionSummary}",
                 SensitiveDataRedactor.SummarizeException(ex));
-            return BuildFallbackResult(userMessage, "Live provider request errored.");
+            return RecordFailureAndBuildFallback(
+                "OpenAI-compatible completion transport failed.",
+                "Live provider request errored.",
+                LlmProviderFailureKind.Transport);
+        }
+        finally
+        {
+            if (!circuitSettled)
+                AbandonProviderRequest(lease);
+        }
+
+        LlmCompletionResult RecordSuccess(LlmCompletionResult result)
+        {
+            if (participateInCircuit)
+                RecordProviderSuccess(lease);
+            circuitSettled = true;
+            return result;
+        }
+
+        LlmCompletionResult RecordFailure(LlmCompletionResult result, string reason)
+        {
+            if (participateInCircuit)
+                RecordProviderFailure(reason, lease);
+            circuitSettled = true;
+            return result;
+        }
+
+        LlmCompletionResult RecordFailureAndBuildFallback(
+            string circuitReason,
+            string userReason,
+            LlmProviderFailureKind failureKind)
+        {
+            var result = BuildFallbackResult(
+                userMessage,
+                userReason,
+                shouldSettleQuotaReservation: true,
+                failureKind: failureKind);
+            return RecordFailure(result, circuitReason);
         }
     }
 
@@ -147,79 +246,108 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
     {
         if (!TryValidateSettings(out var validationError))
         {
-            yield return TerminalError($"Live provider configuration is invalid: {validationError}");
+            yield return TerminalError(
+                $"Live provider configuration is invalid: {validationError}",
+                failureKind: LlmProviderFailureKind.None);
             yield break;
         }
 
-        if (_circuitBreakerTracker is not null && _circuitBreakerSettings is not null &&
-            !_circuitBreakerTracker.TryEnterStreamingRequest(CircuitName, _circuitBreakerSettings, out var circuitError))
+        if (!TryEnterProviderRequest(out var lease, out var circuitError))
         {
-            yield return TerminalError(circuitError ?? "OpenAI-compatible streaming circuit is open.");
+            yield return TerminalError(
+                circuitError ?? "OpenAI-compatible provider circuit is open.",
+                failureKind: LlmProviderFailureKind.None);
             yield break;
         }
 
         using var timeout = CreateProviderTimeoutTokenSource(ct);
         await using var enumerator = StreamCoreAsync(request, timeout.Token).GetAsyncEnumerator(timeout.Token);
         var emittedTerminal = false;
+        var circuitSettled = false;
 
-        while (true)
+        try
         {
-            LlmTokenEvent? failure = null;
-            bool moved;
-            try
+            while (true)
             {
-                moved = await enumerator.MoveNextAsync();
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (OperationCanceledException)
-            {
-                moved = false;
-                failure = TerminalError("OpenAI-compatible SSE response timed out after headers were received.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    "OpenAI-compatible SSE response failed after request dispatch. {ExceptionSummary}",
-                    SensitiveDataRedactor.SummarizeException(ex));
-                moved = false;
-                failure = TerminalError(ex is LlmProviderResponseLimitException
-                    ? "OpenAI-compatible SSE response exceeded a safety limit."
-                    : "OpenAI-compatible SSE transport failed before completion.");
+                LlmTokenEvent? failure = null;
+                bool moved;
+                try
+                {
+                    moved = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException)
+                {
+                    moved = false;
+                    failure = TerminalError(
+                        "OpenAI-compatible SSE response timed out after headers were received.",
+                        failureKind: LlmProviderFailureKind.Timeout);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        "OpenAI-compatible SSE response failed after request dispatch. {ExceptionSummary}",
+                        SensitiveDataRedactor.SummarizeException(ex));
+                    moved = false;
+                    var failureKind = ex switch
+                    {
+                        LlmProviderResponseLimitException => LlmProviderFailureKind.ResponseLimit,
+                        IOException => LlmProviderFailureKind.ResponseBody,
+                        _ => LlmProviderFailureKind.Transport
+                    };
+                    failure = TerminalError(
+                        failureKind == LlmProviderFailureKind.ResponseLimit
+                            ? "OpenAI-compatible SSE response exceeded a safety limit."
+                            : failureKind == LlmProviderFailureKind.ResponseBody
+                                ? "OpenAI-compatible SSE response body failed before completion."
+                                : "OpenAI-compatible SSE transport failed before completion.",
+                        failureKind: failureKind);
+                }
+
+                if (failure is not null)
+                {
+                    RecordProviderFailure(failure.Error!, lease);
+                    circuitSettled = true;
+                    yield return failure;
+                    yield break;
+                }
+
+                if (!moved)
+                    break;
+
+                var current = enumerator.Current;
+                if (current.IsComplete)
+                {
+                    emittedTerminal = true;
+                    if (IsProviderFailure(current))
+                        RecordProviderFailure(
+                            current.Error ?? current.DegradedReason ?? "OpenAI-compatible provider completion failed.",
+                            lease);
+                    else
+                        RecordProviderSuccess(lease);
+                    circuitSettled = true;
+                }
+
+                yield return current;
+                if (current.IsComplete)
+                    yield break;
             }
 
-            if (failure is not null)
+            if (!emittedTerminal)
             {
-                RecordStreamingFailure(failure.Error!);
+                var failure = TerminalError("OpenAI-compatible SSE stream ended before a completion marker.");
+                RecordProviderFailure(failure.Error!, lease);
+                circuitSettled = true;
                 yield return failure;
-                yield break;
             }
-
-            if (!moved)
-                break;
-
-            var current = enumerator.Current;
-            if (current.IsComplete)
-            {
-                emittedTerminal = true;
-                if (IsStreamingFailure(current))
-                    RecordStreamingFailure(current.Error ?? current.DegradedReason ?? "Degraded SSE completion.");
-                else
-                    RecordStreamingSuccess();
-            }
-
-            yield return current;
-            if (current.IsComplete)
-                yield break;
         }
-
-        if (!emittedTerminal)
+        finally
         {
-            var failure = TerminalError("OpenAI-compatible SSE stream ended before a completion marker.");
-            RecordStreamingFailure(failure.Error!);
-            yield return failure;
+            if (!circuitSettled)
+                AbandonProviderRequest(lease);
         }
     }
 
@@ -283,6 +411,7 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
             detectEncodingFromByteOrderMarks: true,
             bufferSize: 4096,
             leaveOpen: false);
+        var lineReader = new BoundedSseLineReader(reader);
         var eventData = new StringBuilder();
         var eventBytes = 0;
         var responseBytes = 0;
@@ -291,11 +420,11 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
 
         while (true)
         {
-            var line = await ReadBoundedLineAsync(reader, compatible.MaxSseLineBytes, ct);
+            var line = await lineReader.ReadLineAsync(compatible.MaxSseLineBytes, ct);
             if (line.Text is null)
                 break;
 
-            responseBytes = checked(responseBytes + line.Utf8Bytes + 1);
+            responseBytes = checked(responseBytes + line.Utf8Bytes + line.DelimiterUtf8Bytes);
             if (responseBytes > compatible.MaxResponseBytes)
                 throw new LlmProviderResponseLimitException("aggregate SSE response byte budget exceeded");
 
@@ -407,18 +536,19 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         ChatCompletionRequest request,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var result = await CompleteAsync(request, ct);
+        var result = await CompleteCoreAsync(request, ct, participateInCircuit: false);
         yield return new LlmTokenEvent(
             result.Content,
             true,
-            TokensUsed: result.TokensUsed,
+            TokensUsed: result.HasAuthoritativeTokenUsage ? result.TokensUsed : null,
             Provider: ProviderName,
             Model: result.Model)
         {
             IsDegraded = true,
             DegradedReason = result.IsDegraded
                 ? $"{BufferedStreamingFallbackReason} {result.DegradedReason}"
-                : BufferedStreamingFallbackReason
+                : BufferedStreamingFallbackReason,
+            ProviderFailureKind = result.ProviderFailureKind
         };
     }
 
@@ -559,10 +689,10 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         }
     }
 
-    private static bool TryParseResponse(string body, out string content, out int tokensUsed, out string? finishReason)
+    private static bool TryParseResponse(string body, out string content, out int? tokensUsed, out string? finishReason)
     {
         content = string.Empty;
-        tokensUsed = 0;
+        tokensUsed = null;
         finishReason = null;
         try
         {
@@ -597,12 +727,9 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                 if (usage.ValueKind != JsonValueKind.Object ||
                     !usage.TryGetProperty("total_tokens", out var total) ||
                     total.ValueKind != JsonValueKind.Number ||
-                    !total.TryGetInt32(out tokensUsed) || tokensUsed < 0)
+                    !total.TryGetInt32(out var parsedTokens) || parsedTokens < 0)
                     return false;
-            }
-            else
-            {
-                tokensUsed = EstimateTokens(content);
+                tokensUsed = parsedTokens;
             }
             return true;
         }
@@ -636,29 +763,6 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         return new UTF8Encoding(false, true).GetString(buffer.GetBuffer(), 0, checked((int)buffer.Length));
     }
 
-    private static async Task<BoundedLine> ReadBoundedLineAsync(
-        StreamReader reader,
-        int maxBytes,
-        CancellationToken ct)
-    {
-        var line = new StringBuilder();
-        var one = new char[1];
-        var bytes = 0;
-        while (true)
-        {
-            var read = await reader.ReadAsync(one.AsMemory(), ct);
-            if (read == 0)
-                return line.Length == 0 ? new BoundedLine(null, 0) : new BoundedLine(line.ToString().TrimEnd('\r'), bytes);
-            if (one[0] == '\n')
-                return new BoundedLine(line.ToString().TrimEnd('\r'), bytes);
-
-            bytes = checked(bytes + Encoding.UTF8.GetByteCount(one));
-            if (bytes > maxBytes)
-                throw new LlmProviderResponseLimitException("single SSE line byte budget exceeded");
-            line.Append(one[0]);
-        }
-    }
-
     private LlmTokenEvent BuildTerminalCompletion(string? finishReason, int? tokensUsed)
     {
         if (string.IsNullOrWhiteSpace(finishReason))
@@ -677,13 +781,19 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         };
     }
 
-    private LlmTokenEvent TerminalError(string error, int? tokensUsed = null) => new(
-        string.Empty,
-        true,
-        Error: error,
-        TokensUsed: tokensUsed,
-        Provider: ProviderName,
-        Model: GetConfiguredModelOrDefault());
+    private LlmTokenEvent TerminalError(
+        string error,
+        int? tokensUsed = null,
+        LlmProviderFailureKind failureKind = LlmProviderFailureKind.Protocol) => new(
+            string.Empty,
+            true,
+            Error: error,
+            TokensUsed: tokensUsed,
+            Provider: ProviderName,
+            Model: GetConfiguredModelOrDefault())
+        {
+            ProviderFailureKind = failureKind
+        };
 
     private CancellationTokenSource CreateProviderTimeoutTokenSource(CancellationToken ct)
     {
@@ -692,23 +802,36 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         return timeout;
     }
 
-    private void RecordStreamingFailure(string reason)
+    private bool TryEnterProviderRequest(out CircuitRequestLease lease, out string? error)
+    {
+        if (_circuitBreakerTracker is null || _circuitBreakerSettings is null)
+        {
+            lease = default;
+            error = null;
+            return true;
+        }
+
+        return _circuitBreakerTracker.TryEnterProviderRequest(
+            CircuitName,
+            _circuitBreakerSettings,
+            out lease,
+            out error);
+    }
+
+    private void RecordProviderFailure(string reason, CircuitRequestLease lease)
     {
         if (_circuitBreakerTracker is not null && _circuitBreakerSettings is not null)
-            _circuitBreakerTracker.RecordStreamingFailure(CircuitName, _circuitBreakerSettings, reason);
+            _circuitBreakerTracker.RecordProviderFailure(CircuitName, _circuitBreakerSettings, reason, lease);
     }
 
-    private void RecordStreamingSuccess()
-    {
-        _circuitBreakerTracker?.RecordStreamingSuccess(CircuitName);
-    }
+    private void RecordProviderSuccess(CircuitRequestLease lease) =>
+        _circuitBreakerTracker?.RecordProviderSuccess(CircuitName, lease);
 
-    private static bool IsStreamingFailure(LlmTokenEvent terminal) =>
-        terminal.Error is not null ||
-        (terminal.IsDegraded && !string.Equals(
-            terminal.DegradedReason,
-            BufferedStreamingFallbackReason,
-            StringComparison.Ordinal));
+    private void AbandonProviderRequest(CircuitRequestLease lease) =>
+        _circuitBreakerTracker?.AbandonProviderRequest(CircuitName, lease);
+
+    private static bool IsProviderFailure(LlmTokenEvent terminal) =>
+        terminal.Error is not null || terminal.CountsAsProviderFailure;
 
     private static string? GetFinishReasonDegradation(string? finishReason)
     {
@@ -756,9 +879,11 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
     private static string GetLastUserMessage(ChatCompletionRequest request) => request.Messages
         .LastOrDefault(message => string.Equals(message.Role, "User", StringComparison.OrdinalIgnoreCase))?.Content ?? string.Empty;
 
-    private static int EstimateTokens(string text) => Math.Max(1, string.IsNullOrWhiteSpace(text) ? 1 : text.Length / 4);
-
-    private LlmCompletionResult BuildFallbackResult(string userMessage, string reason)
+    private LlmCompletionResult BuildFallbackResult(
+        string userMessage,
+        string reason,
+        bool shouldSettleQuotaReservation,
+        LlmProviderFailureKind failureKind)
     {
         var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage);
         var instructions = isActionable ? NaturalLanguageInstructionExtractor.Extract(userMessage, actionIntent) : [];
@@ -767,14 +892,19 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
             : $"I can help with that request. ({reason})";
         return new LlmCompletionResult(
             content,
-            EstimateTokens(userMessage) + EstimateTokens(content),
+            0,
             isActionable,
             actionIntent,
             ProviderName,
             GetConfiguredModelOrDefault(),
             true,
             reason,
-            instructions.Count > 0 ? instructions : null);
+            instructions.Count > 0 ? instructions : null)
+        {
+            HasAuthoritativeTokenUsage = false,
+            ShouldSettleQuotaReservation = shouldSettleQuotaReservation,
+            ProviderFailureKind = failureKind
+        };
     }
 
     private sealed record SseEventParseResult(
@@ -784,7 +914,63 @@ public sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         int? TokensUsed = null,
         string? Error = null);
 
-    private sealed record BoundedLine(string? Text, int Utf8Bytes);
+    private sealed record BoundedLine(string? Text, int Utf8Bytes, int DelimiterUtf8Bytes);
+
+    private sealed class BoundedSseLineReader(StreamReader reader)
+    {
+        private readonly char[] _one = new char[1];
+        private char? _pending;
+
+        public async Task<BoundedLine> ReadLineAsync(int maxBytes, CancellationToken ct)
+        {
+            var line = new StringBuilder();
+            var bytes = 0;
+            while (true)
+            {
+                var next = await ReadCharacterAsync(ct);
+                if (next is null)
+                    return line.Length == 0
+                        ? new BoundedLine(null, 0, 0)
+                        : new BoundedLine(line.ToString(), bytes, 0);
+
+                if (next == '\n')
+                    return new BoundedLine(line.ToString(), bytes, 1);
+
+                if (next == '\r')
+                {
+                    var afterCarriageReturn = await ReadCharacterAsync(ct);
+                    var delimiterBytes = 1;
+                    if (afterCarriageReturn == '\n')
+                    {
+                        delimiterBytes = 2;
+                    }
+                    else if (afterCarriageReturn is not null)
+                    {
+                        _pending = afterCarriageReturn;
+                    }
+
+                    return new BoundedLine(line.ToString(), bytes, delimiterBytes);
+                }
+
+                bytes = checked(bytes + Encoding.UTF8.GetByteCount([next.Value]));
+                if (bytes > maxBytes)
+                    throw new LlmProviderResponseLimitException("single SSE line byte budget exceeded");
+                line.Append(next.Value);
+            }
+        }
+
+        private async ValueTask<char?> ReadCharacterAsync(CancellationToken ct)
+        {
+            if (_pending is { } pending)
+            {
+                _pending = null;
+                return pending;
+            }
+
+            var read = await reader.ReadAsync(_one.AsMemory(), ct);
+            return read == 0 ? null : _one[0];
+        }
+    }
 
     private sealed class LlmProviderResponseLimitException(string message) : IOException(message);
 }
