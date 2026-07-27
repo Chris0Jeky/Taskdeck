@@ -171,7 +171,7 @@ a later green command cannot overwrite an earlier failure:
 $ErrorActionPreference = "Stop"
 $HarnessRoot = "C:\Users\jekyt\source\agent-harness"
 $TaskdeckRoot = (& git rev-parse --show-toplevel).Trim()
-$ExpectedProducer = "7dbeb8253fe8c3465bf6c45fe9c5622436c96958"
+$ExpectedProducer = "643adde2f2a77608be6639ce5d9fee2d33635e79"
 $ExpectedPin = "4da65bb4d1fc84409db8fe6846a5b2961c408f2278d963485bf2fa886e4bf1a3"
 
 if (Test-Path Env:GIT_CONFIG_GLOBAL) {
@@ -181,19 +181,17 @@ if (Test-Path Env:GIT_CONFIG_GLOBAL) {
 $Producer = (& git -C $HarnessRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($Producer -ne $ExpectedProducer) { throw "Reviewed agent-harness identity changed: $Producer" }
-$ReviewedProducerPaths = @("harness.py", "templates/hooks/dispatch.py", "templates/hooks/smoke_test.py")
-& git -C $HarnessRoot diff --quiet -- $ReviewedProducerPaths
-if ($LASTEXITCODE -ne 0) { throw "Reviewed producer files have unstaged changes" }
-& git -C $HarnessRoot diff --cached --quiet -- $ReviewedProducerPaths
-if ($LASTEXITCODE -ne 0) { throw "Reviewed producer files have staged changes" }
+$ProducerStatus = @(& git -C $HarnessRoot status --porcelain=v1 --untracked-files=all)
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($ProducerStatus.Count -ne 0) { throw "Reviewed agent-harness checkout is not clean" }
 
-$ActualPin = (& py -3 -B -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); t=p.read_text(encoding='utf-8').replace(chr(13)+chr(10),chr(10)).replace(chr(13),chr(10)); print(hashlib.sha256(t.encode('utf-8')).hexdigest())" "$HarnessRoot\templates\hooks\dispatch.py").Trim()
+$ActualPin = (& py -3 -I -B -c "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); t=p.read_text(encoding='utf-8').replace(chr(13)+chr(10),chr(10)).replace(chr(13),chr(10)); print(hashlib.sha256(t.encode('utf-8')).hexdigest())" "$HarnessRoot\templates\hooks\dispatch.py").Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($ActualPin -ne $ExpectedPin) { throw "Reviewed dispatcher identity changed: $ActualPin" }
 
-& py -3 -B "$HarnessRoot\harness.py" doctor --repo $TaskdeckRoot
+& py -3 -I -B "$HarnessRoot\harness.py" doctor --repo $TaskdeckRoot
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$AuditJson = (& py -3 -B "$HarnessRoot\harness.py" audit --json $TaskdeckRoot) -join [Environment]::NewLine
+$AuditJson = (& py -3 -I -B "$HarnessRoot\harness.py" audit --json $TaskdeckRoot) -join [Environment]::NewLine
 $AuditExit = $LASTEXITCODE
 if ($AuditExit -notin 0, 1) { exit $AuditExit }
 $Audit = $AuditJson | ConvertFrom-Json -ErrorAction Stop
@@ -203,7 +201,7 @@ if ($BadReality.Count -ne 0) { throw "Harness audit found a declared-vs-real mis
 if ($AuditExit -ne 0) {
     Write-Warning ("Unrelated repository-hygiene findings remain: " + ($Audit.issues -join "; "))
 }
-& py -3 -B "$HarnessRoot\templates\hooks\smoke_test.py"
+& py -3 -I -B "$HarnessRoot\templates\hooks\smoke_test.py"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_*.py"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -212,8 +210,10 @@ Get-Content -Raw .codex\hooks.json | ConvertFrom-Json -ErrorAction Stop | Out-Nu
 
 `doctor` must report one canonical root handler, one candidate, one current
 audit-marker handler, a clean adapter contract, and no activation blocker.
-The producer identity check also requires the exact `harness.py`, dispatcher,
-and smoke paths to match their committed blobs before either program executes.
+The producer identity check also requires the entire agent-harness checkout to
+be clean, including untracked files, and executes its programs with Python
+isolated mode so inherited module paths cannot replace their standard-library
+imports.
 The broader harness audit may remain red on separately tracked instruction-budget
 or stale-path hygiene; the block records those issues but still fails on invalid
 output, an unproven reality check, or a declared-vs-real mismatch. The adapter suite
