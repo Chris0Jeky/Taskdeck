@@ -29,6 +29,43 @@ Verification note:
 - prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
 - growth since last recertification: backend +278 passing tests, frontend +462 passing tests
 
+## OpenAI-Compatible Provider Replacement Checkpoint (`#1306`)
+
+Local replacement-branch verification on 2026-07-27 exercises the compatible
+provider, the dispatch/accounting seam, and the registered transport chain:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiCompatibleLlmProviderTests|FullyQualifiedName~CircuitBreakerStateTrackerTests|FullyQualifiedName~LlmDispatchTrackingHandlerTests|FullyQualifiedName~ChatServiceTests|FullyQualifiedName~LlmCaptureTriageExtractorTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmProviderRegistrationTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests|FullyQualifiedName~CircuitBreakerTests"
+```
+
+Results: **136 passed / 0 failed / 0 skipped** in Application and **80 passed /
+0 failed / 0 skipped** in API. Coverage includes buffered completion and real
+registered-loopback SSE; UTF-8 byte, line, event, and aggregate ceilings;
+content-filter/refusal handling without persisting provider detail; zero/known
+usage normalization; every-redirect rejection; exact-origin egress and DNS
+checks; direct-only proxy and telemetry controls; scoped Sentry removal; 501
+stream fallback outside the compatible Polly failure set; pre-dispatch versus
+dispatched quota settlement; and deterministic half-open race/cooldown behavior
+across separate Polly and companion circuit states.
+
+The compatible registration expands the protected-client inventory from the
+four clients proved by `#1513` to five: OpenAI, OpenAICompatible, Gemini, Ollama,
+and outbound webhook delivery. The same code tree passed the required full gate:
+
+```powershell
+dotnet test backend/Taskdeck.sln -c Release -m:1
+```
+
+Result: **7,660 passed, 5 intentional skips, 0 failed** (Domain 1,636;
+Application 3,678; API 2,189 + 4 skips; CLI 100; Architecture 22 + 1 skip;
+Integration 35). Docs governance, golden-principles governance, GitHub-operations
+governance, and `git diff --check` also passed. Independent review and hosted
+exact-head evidence remain pending. A
+maintainer-supplied compatible-provider key and a visibly incremental stream in
+the real UI are separate human gates; loopback transport tests do not prove
+either.
+
 ## Proxy-Safe Direct Egress Checkpoint (`#1513`)
 
 Local issue-branch verification on 2026-07-27 covers the direct-only primary
@@ -54,7 +91,7 @@ to prove normal trace propagation/activity/metric export while protected request
 configured OpenTelemetry exporter. The metric guarantee is deliberately scoped to Taskdeck's exporter, not arbitrary
 process-global listeners. Registered-provider controls also prove that outer .NET HTTP EventSource
 payloads do not contain the configured path/query while the real configured origin reaches the wire,
-and that Sentry's outbound handler is removed only from the four protected clients: the unrelated
+and that Sentry's outbound handler was removed only from the four then-registered protected clients: the unrelated
 `GitHubConnectorProvider` client retains the handler and sends `sentry-trace`. Public caller-owned
 provider clients retain their configured URI, request body, and authentication. The guarantee does
 not cover independently installed Activity/Meter listeners or transport-stage host/IP observation.

@@ -26,15 +26,14 @@ Backend provider runtime now supports:
 Selection is deterministic through `LlmProviderSelectionPolicy`:
 
 - to use live providers (`OpenAI`, `OpenAICompatible`, `Gemini`, or `Ollama`), live providers must be enabled (`EnableLiveProviders=true`)
-- to use live providers in development-like environments, explicit live mode is required (`AllowLiveProvidersInDevelopment=true`)
+- to use live providers in `Development`, `Test`, or `Testing`, explicit live mode is required (`AllowLiveProvidersInDevelopment=true`)
 - provider mode may be explicitly set to `Mock`, `OpenAI`, `OpenAICompatible`, `Gemini`, or `Ollama`; this guide's config example intentionally uses `Mock` as the safe default
 - unknown provider values also fall back deterministically to `Mock`
 - selected provider config must pass provider-specific validation (`BaseUrl`, `Model`, `TimeoutSeconds`, and an API key where required)
-- `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected; the selection policy falls back to Mock when validation fails
+- `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected except for the exact gated `localhost` case below; the selection policy falls back to Mock when validation fails
 - the OpenAI, OpenAICompatible, Gemini, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
 
-These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. This is a dedicated connect-callback boundary, not `EgressEnvelopeHandler` enforcement, and it does not change the existing redirect or audit posture. Registered protected clients mask their configured URI immediately before send, then an inner handler restores it for transport; this keeps path/query data out of outer .NET HTTP EventSource payloads. Public caller-owned provider clients do not opt into masking. Protected registrations remove default `IHttpClientFactory` request loggers, disable distributed-trace header propagation, and use a private metric scope that Taskdeck's configured OpenTelemetry pipeline drops alongside marked HTTP activities. Enabled Sentry removes its outbound handler from these protected client pipelines only, so it cannot add separate `sentry-trace`/baggage headers or capture protected URLs and 5xx responses; unrelated clients retain instrumentation and server-side Sentry tracking remains active. Independently installed process-global `ActivityListener`/`MeterListener` and transport-stage host/IP observation remain outside the guarantee.
-OpenAICompatible additionally rejects every observed 3xx response in its egress handler rather than following an allowlisted redirect.
+These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. OpenAI, Gemini, and Ollama retain their dedicated connect-callback boundary without `EgressEnvelopeHandler`; OpenAICompatible additionally passes through a fixed-origin `EgressEnvelopeHandler` immediately inside the protected telemetry handler and rejects every observed 3xx response rather than following an allowlisted redirect. Registered protected clients mask their configured URI immediately before send, then the protected inner handler restores it for validation and transport; this keeps path/query data out of outer .NET HTTP EventSource payloads. Public caller-owned provider clients do not opt into masking. Protected registrations remove default `IHttpClientFactory` request loggers, disable distributed-trace header propagation, and use a private metric scope that Taskdeck's configured OpenTelemetry pipeline drops alongside marked HTTP activities. Enabled Sentry removes its outbound handler from these protected client pipelines only, so it cannot add separate `sentry-trace`/baggage headers or capture protected URLs and 5xx responses; unrelated clients retain instrumentation and server-side Sentry tracking remains active. Independently installed process-global `ActivityListener`/`MeterListener` and transport-stage host/IP observation remain outside the guarantee.
 
 If any live-provider condition fails, runtime degrades safely to `Mock`.
 
@@ -44,14 +43,17 @@ To support local LLM workflows (Ollama, LM Studio, LocalAI, etc.), the effective
 connect-time exception is scoped to the exact `localhost` hostname **only** when
 both of the following are true:
 
-- the environment is `Development` (or a development-like host name)
+- the environment is exactly `Development`, `Test`, or `Testing`
 - `Llm:AllowLiveProvidersInDevelopment = true` is set explicitly
 
 Ollama additionally requires `Llm:Ollama:AllowLocalhostEndpoints = true`.
 Literal loopback and other private/link-local addresses remain blocked by the
 connect callback; use the exact `localhost` hostname for an opted-in local provider.
 
-Under this bypass, HTTPS is also not required for `localhost` endpoints.
+Plain HTTP is accepted only when the URI host is exactly `localhost`, the
+environment is `Development`, `Test`, or `Testing`, and
+`Llm:AllowLiveProvidersInDevelopment=true`. Numeric loopback addresses such as
+`127.0.0.1` and `[::1]`, and all other private/link-local hosts, remain blocked.
 This exception is intentionally narrow: Staging/Production deployments can
 never reach `localhost` LLM endpoints even if the configuration is cloned.
 All other private IP ranges and cloud metadata hostnames stay blocked even
@@ -157,13 +159,15 @@ for chat streams and forwards delta events as they arrive.
 Set the common safety gates and provider name:
 
 - `Llm__EnableLiveProviders=true`
-- `Llm__AllowLiveProvidersInDevelopment=true` (only for development-like environments)
+- `Llm__AllowLiveProvidersInDevelopment=true` (only for `Development`, `Test`, or `Testing`)
 - `Llm__Provider=OpenAICompatible`
 
 Production and other non-development endpoints must be public HTTPS and pass
 the same URL and DNS-level SSRF checks as OpenAI. Plain HTTP is accepted only
-for loopback development endpoints when both the development environment and
-`AllowLiveProvidersInDevelopment` gate permit it. Keep keys in a secret store;
+when the URI host is exactly `localhost`, the environment is `Development`,
+`Test`, or `Testing`, and `Llm:AllowLiveProvidersInDevelopment=true`. Numeric
+loopback addresses such as `127.0.0.1` and `[::1]`, and all other private or
+link-local hosts, remain blocked. Keep keys in a secret store;
 never commit them. Compatible
 gateways may require optional non-secret headers such as `HTTP-Referer` or
 `X-Title`; use `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>` for those.
@@ -277,7 +281,7 @@ This is intentionally separate from the broader demo tooling so an operator can 
 
 ## Behavior Guarantees
 
-- LLM-consuming application services remain provider-agnostic (`ChatService` depends on `ILlmProvider` only). Capture triage does not depend on `ILlmProvider` at all — it is a deterministic, offline extractor.
+- LLM-consuming application services remain provider-agnostic (`ChatService` and `LlmCaptureTriageExtractor` depend on `ILlmProvider`, not a concrete adapter).
 - invalid/missing live-provider configuration does not crash requests
 - provider adapters return deterministic fallback responses when upstream calls fail
 - capture triage provenance persists `promptVersion`, `provider`, and `model`
@@ -288,11 +292,12 @@ This is intentionally separate from the broader demo tooling so an operator can 
 
 ## Test Coverage Expectations (Implemented)
 
-- selection-policy unit coverage for `Mock`/`OpenAI`/`OpenAICompatible`/`Gemini` and invalid-config fallback
+- selection-policy unit coverage for `Mock`/`OpenAI`/`OpenAICompatible`/`Gemini`/`Ollama` and invalid-config fallback
 - provider adapter unit coverage:
   - OpenAI: success/failure + metadata checks
-  - OpenAICompatible: true SSE delta parsing, malformed/mid-stream error, cancellation, and explicit buffered-fallback metadata
+  - OpenAICompatible: true SSE delta parsing, strict UTF-8 byte ceilings, malformed/mid-stream error, cancellation, zero/known usage, content-filter/refusal handling, fixed-origin egress, registered transport, and explicit buffered-fallback metadata
   - Gemini: success/failure/invalid-response/invalid-config/cancellation + health + attribution header mapping
+  - Ollama: success/failure/streaming/structured extraction + localhost-policy checks
 - API integration coverage:
   - capture triage provenance includes provider/model
   - chat flow validated using a non-mock provider stub with attribution assertions
