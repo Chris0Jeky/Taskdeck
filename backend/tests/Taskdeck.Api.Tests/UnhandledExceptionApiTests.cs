@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Api.Tests.Support;
@@ -39,6 +40,14 @@ public class UnhandledExceptionApiTests
 
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         payload.GetProperty("message").GetString().Should().Be("An unexpected error occurred.");
+
+        factory.UnhandledExceptionDiagnostics.Snapshot().Should().ContainSingle()
+            .Which.Should().Be(new UnhandledExceptionDiagnostic(
+                correlationId,
+                nameof(InvalidOperationException),
+                nameof(SqliteException),
+                5,
+                5));
     }
 
     private sealed class ThrowingLogQueryWebApplicationFactory : TestWebApplicationFactory
@@ -58,17 +67,21 @@ public class UnhandledExceptionApiTests
     {
         public Task<Result<IEnumerable<LogEntryDto>>> QueryLogsAsync(LogQueryDto query, CancellationToken ct = default)
         {
-            throw new InvalidOperationException("sensitive server failure details should not leak");
+            throw CreateException();
         }
 
         public Task<Result<IEnumerable<LogEntryDto>>> GetByCorrelationIdAsync(string correlationId, CancellationToken ct = default)
         {
-            throw new InvalidOperationException("sensitive server failure details should not leak");
+            throw CreateException();
         }
 
         public IAsyncEnumerable<LogStreamEvent> StreamLogsAsync(LogQueryDto? filter = null, CancellationToken ct = default)
         {
-            throw new InvalidOperationException("sensitive server failure details should not leak");
+            throw CreateException();
         }
+
+        private static InvalidOperationException CreateException() => new(
+            "Authorization: Bearer sensitive server failure details should not leak",
+            new SqliteException("user content and database details should not leak", 5));
     }
 }

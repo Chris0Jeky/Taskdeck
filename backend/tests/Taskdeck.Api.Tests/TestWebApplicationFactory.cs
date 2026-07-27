@@ -15,6 +15,8 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly ConcurrentBag<string> _dbPaths = new();
 
+    internal UnhandledExceptionDiagnosticSink UnhandledExceptionDiagnostics { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         var dbPath = Path.Combine(
@@ -26,6 +28,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
         builder.ConfigureLogging(logging =>
         {
             logging.ClearProviders();
+            logging.AddProvider(new UnhandledExceptionDiagnosticLoggerProvider(UnhandledExceptionDiagnostics));
         });
 
         builder.ConfigureAppConfiguration((_, configBuilder) =>
