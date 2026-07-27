@@ -1,6 +1,6 @@
 # Mutation Testing Policy
 
-Last Updated: 2026-04-09
+Last Updated: 2026-07-27
 
 ## Purpose
 
@@ -14,8 +14,11 @@ This is a **quality signal**, not a gatekeeping mechanism. Mutation testing comp
 
 - **Target**: `Taskdeck.Domain` project
 - **Test project**: `Taskdeck.Domain.Tests`
-- **Rationale**: Domain contains core business logic (entity state machines, validation rules, invariants) where surviving mutants have the highest impact. Domain is pure C# with no infrastructure dependencies, making mutation runs fast and deterministic.
+- **Tool contract**: Stryker.NET `4.16.0`
+- **Rationale**: Domain contains core business logic (entity state machines, validation rules, invariants) where surviving mutants have the highest impact. Domain is pure C# with no infrastructure dependencies, making it the narrowest deterministic backend target; its full mutation set is still a long-running workload.
 - **Config**: `backend/stryker-config.json`
+- **Execution context**: run from `backend/tests/Taskdeck.Domain.Tests`; do not add `solution` or `test-projects` to the config because solution context takes precedence and discovers unrelated tests
+- **Preflight**: `scripts/ci/Test-StrykerConfig.ps1 -SelfTest` rejects obsolete schema keys, solution-context selectors, and workflow/artifact drift before the long mutation run starts
 
 ### Frontend (Stryker JS/TS)
 
@@ -51,12 +54,17 @@ After the first 3-4 runs:
 ### Backend (local)
 
 ```bash
-# Install Stryker.NET as a global tool (once)
-dotnet tool install --global dotnet-stryker
+# From the repository root, validate the checked-in schema contract.
+# Native Windows PowerShell:
+powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+# PowerShell 7 on Linux/macOS/Windows uses the equivalent `pwsh -File ...` form.
 
-# Run from the backend/ directory
-cd backend
-dotnet stryker --config-file stryker-config.json
+# Install the workflow-pinned Stryker.NET version as a global tool (once).
+dotnet tool install --global dotnet-stryker --version 4.16.0
+
+# Run from the Domain test project so Stryker discovers only that test project.
+cd backend/tests/Taskdeck.Domain.Tests
+dotnet stryker --config-file ../../stryker-config.json --output ../../StrykerOutput
 ```
 
 Report: `backend/StrykerOutput/<timestamp>/reports/mutation-report.html`
@@ -77,6 +85,7 @@ The mutation testing workflow runs:
 - **On demand**: via `workflow_dispatch` from the Actions tab
 
 Reports are uploaded as GitHub Actions artifacts with 30-day retention.
+The backend job has a finite 360-minute ceiling for the full Domain mutation set, and artifact upload fails when no report was produced.
 
 ## Interpreting Reports
 
@@ -105,7 +114,7 @@ When mutation testing reveals surviving mutants:
 2. **Categorize** surviving mutants by triage priority (see above)
 3. **Bundle fixes**: Group related assertion improvements into a single PR per module rather than one PR per mutant
 4. **Do not chase 100%**: Some surviving mutants are acceptable (e.g., log messages, cosmetic formatting). Document intentional exclusions:
-   - **Backend (Stryker.NET)**: Use `excluded-mutations` or `ignored-methods` in `backend/stryker-config.json`
+   - **Backend (Stryker.NET 4.16.0)**: Use `ignore-mutations` or `ignore-methods` in `backend/stryker-config.json`; the preflight deliberately rejects the obsolete `excluded-mutations` and `ignored-methods` spellings
    - **Frontend (Stryker JS)**: Adjust `mutate` glob patterns in `stryker.config.mjs` or use inline `// Stryker disable` comments in source files
 
 ## Scope Expansion Roadmap
