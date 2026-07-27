@@ -1,6 +1,6 @@
 # Security Logging Redaction Policy
 
-Last Updated: 2026-03-06
+Last Updated: 2026-07-27
 Owner: Taskdeck maintainers
 Linked issue: `#212` (SEC-14)
 
@@ -16,6 +16,7 @@ It applies to API middleware, queue/worker logging, live LLM provider failures, 
 - Never echo caller-controlled sensitive values back in validation or error messages.
 - Never persist raw exception messages when they can contain secrets, request payloads, or provider/webhook credentials.
 - Automatic ASP.NET Core OpenTelemetry exception recording stays disabled so raw exception events do not bypass the sanitized logging path.
+- Sentry's automatic `IHttpClientFactory` handler is removed from protected LLM/webhook clients so their URLs, query values, headers, and 5xx responses do not bypass dedicated telemetry controls; unrelated factory clients retain instrumentation.
 
 ## Runtime Enforcement
 
@@ -27,6 +28,7 @@ It applies to API middleware, queue/worker logging, live LLM provider failures, 
 - Capture queue, live-provider, webhook, and housekeeping worker failures log sanitized summaries instead of passing exception objects directly to the logger on sensitive paths.
 - Persisted queue/webhook failure messages are redacted or generalized before they are saved for later inspection.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
+- Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, Gemini, Ollama, or outbound-webhook clients.
 
 ## Operator Guidance
 
@@ -40,7 +42,7 @@ Focused redaction checks:
 
 ```powershell
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~SensitiveDataRedactorTests|FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~CaptureRequestContractTests|FullyQualifiedName~CaptureServiceTests"
-$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~UnhandledExceptionMiddlewareTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProposalHousekeepingWorkerTests|FullyQualifiedName~ObservabilityConfigurationTests|FullyQualifiedName~CaptureApiTests|FullyQualifiedName~LlmQueueApiTests"
+$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~UnhandledExceptionMiddlewareTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProposalHousekeepingWorkerTests|FullyQualifiedName~ObservabilityConfigurationTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests|FullyQualifiedName~CaptureApiTests|FullyQualifiedName~LlmQueueApiTests"
 ```
 
 Full backend regression:

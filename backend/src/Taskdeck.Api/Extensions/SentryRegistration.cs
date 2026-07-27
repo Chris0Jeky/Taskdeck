@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
 using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Extensions;
@@ -107,6 +109,11 @@ public static class SentryRegistration
                 return breadcrumb;
             });
         });
+
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IHttpMessageHandlerBuilderFilter,
+                ProtectedOutboundSentryHttpMessageHandlerFilter>());
 
         return builder;
     }
