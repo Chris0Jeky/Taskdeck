@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Taskdeck.Domain.Common;
@@ -112,6 +114,7 @@ public static class CaptureTriageOutputContract
         {
             var task = output.Tasks[i];
             var index = i + 1;
+            var usesLlmV2Contract = output.PromptVersion == PromptVersionLlmV2;
             if (task is null)
             {
                 return Result.Failure<CaptureTriageOutputV1>(
@@ -119,35 +122,45 @@ public static class CaptureTriageOutputContract
                     $"Capture triage task {index} cannot be null");
             }
 
-            if (string.IsNullOrWhiteSpace(task.Title))
+            if (usesLlmV2Contract
+                    ? IsNullOrEcmaWhitespace(task.Title)
+                    : string.IsNullOrWhiteSpace(task.Title))
             {
                 return Result.Failure<CaptureTriageOutputV1>(
                     ErrorCodes.ValidationError,
                     $"Capture triage task {index} title cannot be empty");
             }
 
-            if (task.Title.Length > MaxTaskTitleLength)
+            var titleLength = usesLlmV2Contract
+                ? GetUnicodeScalarLength(task.Title)
+                : task.Title.Length;
+            if (titleLength > MaxTaskTitleLength)
             {
                 return Result.Failure<CaptureTriageOutputV1>(
                     ErrorCodes.ValidationError,
                     $"Capture triage task {index} title cannot exceed {MaxTaskTitleLength} characters");
             }
 
-            if (output.PromptVersion == PromptVersionLlmV2 && !IsSafeTaskTitle(task.Title))
+            if (usesLlmV2Contract && !IsSafeTaskTitle(task.Title))
             {
                 return Result.Failure<CaptureTriageOutputV1>(
                     ErrorCodes.ValidationError,
                     $"Capture triage task {index} title contains unsafe whitespace, control, or bidi characters");
             }
 
-            if (string.IsNullOrWhiteSpace(task.Evidence))
+            if (usesLlmV2Contract
+                    ? IsNullOrEcmaWhitespace(task.Evidence)
+                    : string.IsNullOrWhiteSpace(task.Evidence))
             {
                 return Result.Failure<CaptureTriageOutputV1>(
                     ErrorCodes.ValidationError,
                     $"Capture triage task {index} evidence cannot be empty");
             }
 
-            if (task.Evidence.Length > MaxTaskEvidenceLength)
+            var evidenceLength = usesLlmV2Contract
+                ? GetUnicodeScalarLength(task.Evidence)
+                : task.Evidence.Length;
+            if (evidenceLength > MaxTaskEvidenceLength)
             {
                 return Result.Failure<CaptureTriageOutputV1>(
                     ErrorCodes.ValidationError,
@@ -161,8 +174,8 @@ public static class CaptureTriageOutputContract
     internal static bool IsSafeTaskTitle(string title)
     {
         if (string.IsNullOrEmpty(title) ||
-            char.IsWhiteSpace(title[0]) ||
-            char.IsWhiteSpace(title[^1]))
+            IsEcmaWhitespace(title[0]) ||
+            IsEcmaWhitespace(title[^1]))
         {
             return false;
         }
@@ -193,9 +206,59 @@ public static class CaptureTriageOutputContract
             sanitized.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
+    internal static bool IsNullOrEcmaWhitespace([NotNullWhen(false)] string? value)
+    {
+        return string.IsNullOrEmpty(value) || value.EnumerateRunes().All(IsEcmaWhitespace);
+    }
+
+    internal static int GetUnicodeScalarLength(string value)
+    {
+        return value.EnumerateRunes().Count();
+    }
+
+    internal static string TruncateToUtf16LengthAtScalarBoundary(string value, int maxUtf16Length)
+    {
+        if (maxUtf16Length <= 0 || string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        if (value.Length <= maxUtf16Length)
+        {
+            return value;
+        }
+
+        var utf16Length = 0;
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (utf16Length + rune.Utf16SequenceLength > maxUtf16Length)
+            {
+                break;
+            }
+
+            utf16Length += rune.Utf16SequenceLength;
+        }
+
+        return value[..utf16Length];
+    }
+
+    private static bool IsEcmaWhitespace(Rune rune)
+    {
+        return IsEcmaWhitespace(rune.Value);
+    }
+
+    private static bool IsEcmaWhitespace(int codePoint)
+    {
+        return codePoint is >= 0x0009 and <= 0x000D or
+               0x0020 or 0x00A0 or 0x1680 or
+               >= 0x2000 and <= 0x200A or
+               0x2028 or 0x2029 or 0x202F or 0x205F or 0x3000 or 0xFEFF;
+    }
+
     private static bool IsUnsafeTaskTitleCharacter(char character)
     {
         return char.IsControl(character) ||
+               character == '\uFEFF' ||
                character == '\u2028' || character == '\u2029' ||
                character == '\u061C' || character == '\u200E' || character == '\u200F' ||
                (character >= '\u202A' && character <= '\u202E') ||

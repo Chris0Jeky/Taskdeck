@@ -181,7 +181,11 @@ public class GeminiLlmProvider : ILlmProvider
             return BuildFallbackResult(
                 lastUserMessage,
                 "Live provider request timed out.",
-                GetConfiguredModelOrDefault());
+                GetConfiguredModelOrDefault()) with
+            {
+                TokensUsed = 0,
+                ShouldCommitEstimatedUsage = true
+            };
         }
         catch (OperationCanceledException)
         {

@@ -24,8 +24,8 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         "test", "update", "verify", "write"
     ];
 
-    private static readonly Regex SpeakerCommitmentPattern = new(
-        @"^[^\r\n:]{1,80}:\s*(?:I|we)\s+(?:will|shall|must|can|need\s+to|plan\s+to|am\s+going\s+to|are\s+going\s+to)\b",
+    private static readonly Regex SpeakerCommitmentPrefixPattern = new(
+        @"^[^\r\n:]{1,80}:\s*(?:I|we)\s+(?:will|shall|must|can|need\s+to|plan\s+to|am\s+going\s+to|are\s+going\s+to)\s+(?<task>[^\r\n]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase |
         RegexOptions.Multiline | RegexOptions.NonBacktracking,
         SourceSignalTimeout);
@@ -36,14 +36,14 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         RegexOptions.Multiline | RegexOptions.NonBacktracking,
         SourceSignalTimeout);
 
-    private static readonly Regex NamedAssignmentPattern = new(
-        @"^\s*[\p{Lu}][\p{L}\p{M}'’.-]{1,50}(?:\s+[\p{Lu}][\p{L}\p{M}'’.-]{1,50})?\s+(?:will|shall|must|needs\s+to|is\s+going\s+to)\b",
+    private static readonly Regex NamedAssignmentPrefixPattern = new(
+        @"^\s*[\p{Lu}][\p{L}\p{M}'’.-]{1,50}(?:\s+[\p{Lu}][\p{L}\p{M}'’.-]{1,50})?\s+(?:will|shall|must|needs\s+to|is\s+going\s+to)\s+(?<task>[^\r\n]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline |
         RegexOptions.NonBacktracking,
         SourceSignalTimeout);
 
-    private static readonly Regex StructuredTaskPattern = new(
-        @"^\s*(?:[-*•]\s+(?:\[[xX ]\]\s+)?|\d+[.)]\s+)\S",
+    private static readonly Regex StructuredTaskPrefixPattern = new(
+        @"^\s*(?:(?<bullet>[-*•])\s+|\d+[.)]\s+)(?<task>[^\r\n]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline |
         RegexOptions.NonBacktracking,
         SourceSignalTimeout);
@@ -114,6 +114,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         // Atomic quota reservation (issue #1313): reserve before the completion, then commit with the
         // actual tokens or release. This serializes concurrent triage/chat calls at the boundary.
         Guid? quotaReservationId = null;
+        var quotaEstimatedTokens = 0;
         if (_quotaService is not null)
         {
             var reservation = await _quotaService.ReserveAsync(userId, LlmSurface.CaptureTriage, cancellationToken);
@@ -124,6 +125,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                     Detail: reservation.DeniedReason);
             }
             quotaReservationId = reservation.ReservationId;
+            quotaEstimatedTokens = reservation.EstimatedTokens;
         }
 
         var request = new ChatCompletionRequest(
@@ -153,11 +155,12 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 
             // Settle the reservation. Tokens are consumed whether or not the content is usable
             // (truncation is the clearest case: degraded AND billed), so a call that used tokens commits
-            // before any quality checks; a zero-token call releases (mirrors the prior "record only if
-            // > 0" behavior).
+            // before any quality checks. A response-deadline fallback has no trustworthy provider count,
+            // so it commits the reservation estimate without exposing that estimate as observed usage.
             if (quotaReservationId is Guid reservationId)
             {
-                if (result.TokensUsed > 0)
+                var quotaTokens = ResolveQuotaTokens(result, quotaEstimatedTokens);
+                if (quotaTokens > 0)
                 {
                     // CancellationToken.None (M1, #1427 review): tokens are already billed at this
                     // point, so finalization must not be cancellable — a cancelled commit would trip
@@ -168,7 +171,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                         LlmSurface.CaptureTriage,
                         result.Provider,
                         result.Model,
-                        result.TokensUsed,
+                        quotaTokens,
                         0,
                         CancellationToken.None);
                 }
@@ -183,14 +186,18 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         {
             // Mirrors ChatService (#1427 review): SETTLE an unfinalized reservation. If the provider
             // completed with billed tokens (the in-try commit itself failed on a DB fault), COMMIT them —
-            // releasing would erase real usage; a provider throw or zero-token result releases so the
-            // slot consumes no quota. CancellationToken.None so cleanup runs under a cancelled request
-            // token; try/catch so a settle failure cannot mask the original exception.
+            // including a flagged unknown-usage timeout at the reservation estimate. A provider throw
+            // or an unflagged zero-token result releases so the slot consumes no quota.
+            // CancellationToken.None lets cleanup run under a cancelled request token; try/catch keeps
+            // a settle failure from masking the original exception.
             if (!quotaSettled && quotaReservationId is Guid unsettledId)
             {
                 try
                 {
-                    if (completed is { TokensUsed: > 0 } billed)
+                    var quotaTokens = completed is null
+                        ? 0
+                        : ResolveQuotaTokens(completed, quotaEstimatedTokens);
+                    if (completed is { } billed && quotaTokens > 0)
                     {
                         await _quotaService!.CommitReservationAsync(
                             unsettledId,
@@ -198,7 +205,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                             LlmSurface.CaptureTriage,
                             billed.Provider,
                             billed.Model,
-                            billed.TokensUsed,
+                            quotaTokens,
                             0,
                             CancellationToken.None);
                     }
@@ -214,7 +221,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                         "Quota reservation {ReservationId} settle failed in transcript triage (billed tokens: {Tokens}); " +
                         "the row stays Reserved until the TTL sweep.",
                         unsettledId,
-                        completed?.TokensUsed ?? 0);
+                        completed is null ? 0 : ResolveQuotaTokens(completed, quotaEstimatedTokens));
                 }
             }
         }
@@ -313,10 +320,10 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 
         try
         {
-            return SpeakerCommitmentPattern.IsMatch(source) ||
+            return HasExplicitTaskVerbAfterPrefix(SpeakerCommitmentPrefixPattern, source) ||
                    HasExplicitTaskVerbAfterPrefix(ContractedSpeakerCommitmentPrefixPattern, source) ||
-                   NamedAssignmentPattern.IsMatch(source) ||
-                   StructuredTaskPattern.IsMatch(source) ||
+                   HasExplicitTaskVerbAfterPrefix(NamedAssignmentPrefixPattern, source) ||
+                   HasStructuredTaskSignal(source) ||
                    HasExplicitTaskVerbAfterPrefix(ExplicitTaskMarkerPrefixPattern, source);
         }
         catch (RegexMatchTimeoutException)
@@ -346,6 +353,39 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         }
 
         return false;
+    }
+
+    private static bool HasStructuredTaskSignal(string source)
+    {
+        foreach (Match match in StructuredTaskPrefixPattern.Matches(source))
+        {
+            var taskText = match.Groups["task"].Value.TrimStart();
+            if (!match.Groups["bullet"].Success || !IsCompletedChecklistTask(taskText))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsCompletedChecklistTask(string taskText)
+    {
+        return taskText.Length >= 3 &&
+               taskText[0] == '[' &&
+               taskText[1] is 'x' or 'X' &&
+               taskText[2] == ']' &&
+               (taskText.Length == 3 || char.IsWhiteSpace(taskText[3]));
+    }
+
+    private static int ResolveQuotaTokens(LlmCompletionResult result, int estimatedTokens)
+    {
+        if (result.TokensUsed > 0)
+        {
+            return result.TokensUsed;
+        }
+
+        return result.ShouldCommitEstimatedUsage ? Math.Max(0, estimatedTokens) : 0;
     }
 
     private static bool IsWordCharacter(char value) =>

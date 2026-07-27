@@ -108,6 +108,7 @@ public class LlmCaptureTriagePromptTests
     [InlineData("{\"tasks\":[{\"title\":\"T\",\"evidence\":\"E\"},{\"title\":\"t\",\"evidence\":\"Other\"}]}")]
     [InlineData("{\"tasks\":[{\"title\":\"\",\"evidence\":\"E\"}]}")]
     [InlineData("{\"tasks\":[{\"title\":\"T\",\"evidence\":null}]}")]
+    [InlineData("\uFEFF{\"tasks\":[]}")]
     public void TryParseTasks_ShouldRejectNonExactEnvelopes(string? content)
     {
         var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
@@ -145,6 +146,9 @@ public class LlmCaptureTriagePromptTests
     [InlineData("bidi\u202Eoverride")]
     [InlineData("bidi\u2066isolate")]
     [InlineData("bidi\u200Fmark")]
+    [InlineData("\uFEFFleading bom")]
+    [InlineData("trailing bom\uFEFF")]
+    [InlineData("embedded\uFEFFbom")]
     public void TryParseTasks_ShouldRejectWhitespaceControlAndBidiTitleCharacters(string title)
     {
         var content = JsonSerializer.Serialize(new
@@ -156,6 +160,75 @@ public class LlmCaptureTriagePromptTests
 
         parsed.Should().BeFalse();
         tasks.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("\uFEFF")]
+    [InlineData("\uFEFF\uFEFF")]
+    public void TryParseTasks_ShouldRejectEcmaWhitespaceOnlyEvidence(string evidence)
+    {
+        var content = JsonSerializer.Serialize(new
+        {
+            tasks = new[] { new { title = "Send report", evidence } }
+        });
+
+        var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
+
+        parsed.Should().BeFalse();
+        tasks.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryParseTasks_ShouldRejectBomDecoratedDuplicateTitle()
+    {
+        var content = JsonSerializer.Serialize(new
+        {
+            tasks = new[]
+            {
+                new { title = "Send report", evidence = "first" },
+                new { title = "\uFEFFSend report", evidence = "second" }
+            }
+        });
+
+        var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
+
+        parsed.Should().BeFalse();
+        tasks.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(100, true)]
+    [InlineData(180, true)]
+    [InlineData(181, false)]
+    public void TryParseTasks_ShouldCountTitleLengthByUnicodeScalar(int emojiCount, bool expected)
+    {
+        var title = string.Concat(Enumerable.Repeat("😀", emojiCount));
+        var content = JsonSerializer.Serialize(new
+        {
+            tasks = new[] { new { title, evidence = "source evidence" } }
+        });
+
+        var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
+
+        parsed.Should().Be(expected);
+        tasks.Should().HaveCount(expected ? 1 : 0);
+    }
+
+    [Theory]
+    [InlineData(280, true)]
+    [InlineData(281, false)]
+    public void TryParseTasks_ShouldCountEvidenceLengthByUnicodeScalar(int emojiCount, bool expected)
+    {
+        var evidence = string.Concat(Enumerable.Repeat("😀", emojiCount));
+        var content = JsonSerializer.Serialize(new
+        {
+            tasks = new[] { new { title = "Send report", evidence } }
+        });
+
+        var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
+
+        parsed.Should().Be(expected);
+        tasks.Should().HaveCount(expected ? 1 : 0);
     }
 
     [Fact]

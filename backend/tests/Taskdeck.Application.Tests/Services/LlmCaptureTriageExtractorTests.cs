@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -34,7 +35,7 @@ public class LlmCaptureTriageExtractorTests
         // Atomic quota reservation succeeds by default (issue #1313); individual tests override.
         _quotaMock
             .Setup(q => q.ReserveAsync(It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QuotaReservationDto(true, null, _reservationId, 100_000, 60));
+            .ReturnsAsync(new QuotaReservationDto(true, null, _reservationId, 100_000, 60, EstimatedTokens: 2_000));
     }
 
     private LlmCaptureTriageExtractor BuildExtractor()
@@ -43,7 +44,12 @@ public class LlmCaptureTriageExtractorTests
     private static CapturePayloadV1 TranscriptPayload(string text = "Alice: I'll send the report by Friday.")
         => new(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.TranscriptPaste, text);
 
-    private void SetupCompletion(string content, int tokensUsed = 250, bool isDegraded = false, string? degradedReason = null)
+    private void SetupCompletion(
+        string content,
+        int tokensUsed = 250,
+        bool isDegraded = false,
+        string? degradedReason = null,
+        bool shouldCommitEstimatedUsage = false)
     {
         _providerMock
             .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
@@ -54,7 +60,10 @@ public class LlmCaptureTriageExtractorTests
                 Provider: "OpenAI",
                 Model: "gpt-4o-mini",
                 IsDegraded: isDegraded,
-                DegradedReason: degradedReason));
+                DegradedReason: degradedReason)
+            {
+                ShouldCommitEstimatedUsage = shouldCommitEstimatedUsage
+            });
     }
 
     [Fact]
@@ -220,6 +229,113 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldCommitReservationEstimate_WhenDeadlineUsageIsUnknown()
+    {
+        SetupCompletion(
+            "The provider timed out.",
+            tokensUsed: 0,
+            isDegraded: true,
+            degradedReason: "Live provider request timed out.",
+            shouldCommitEstimatedUsage: true);
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderDegraded);
+        _quotaMock.Verify(
+            q => q.CommitReservationAsync(
+                _reservationId,
+                _userId,
+                LlmSurface.CaptureTriage,
+                "OpenAI",
+                "gpt-4o-mini",
+                2_000,
+                0,
+                CancellationToken.None),
+            Times.Once);
+        _quotaMock.Verify(
+            q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldPreferActualTokens_WhenEstimateCommitIsAlsoRequested()
+    {
+        SetupCompletion(
+            "not json at all",
+            tokensUsed: 37,
+            shouldCommitEstimatedUsage: true);
+        var extractor = BuildExtractor();
+
+        await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        _quotaMock.Verify(
+            q => q.CommitReservationAsync(
+                _reservationId,
+                _userId,
+                LlmSurface.CaptureTriage,
+                "OpenAI",
+                "gpt-4o-mini",
+                37,
+                0,
+                CancellationToken.None),
+            Times.Once);
+        _quotaMock.Verify(
+            q => q.CommitReservationAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
+                It.IsAny<LlmSurface>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                2_000,
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldRetryEstimatedUsageCommitInFinally_WhenInitialCommitFails()
+    {
+        SetupCompletion(
+            "not json at all",
+            tokensUsed: 0,
+            shouldCommitEstimatedUsage: true);
+        _quotaMock
+            .SetupSequence(q => q.CommitReservationAsync(
+                _reservationId,
+                _userId,
+                LlmSurface.CaptureTriage,
+                "OpenAI",
+                "gpt-4o-mini",
+                2_000,
+                0,
+                CancellationToken.None))
+            .ThrowsAsync(new InvalidOperationException("commit boom"))
+            .Returns(Task.CompletedTask);
+        var extractor = BuildExtractor();
+
+        await FluentActions
+            .Awaiting(() => extractor.ExtractAsync(_userId, _boardId, TranscriptPayload()))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("commit boom");
+
+        _quotaMock.Verify(
+            q => q.CommitReservationAsync(
+                _reservationId,
+                _userId,
+                LlmSurface.CaptureTriage,
+                "OpenAI",
+                "gpt-4o-mini",
+                2_000,
+                0,
+                CancellationToken.None),
+            Times.Exactly(2));
+        _quotaMock.Verify(
+            q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldReleaseReservation_WhenNoTokensWereConsumed()
     {
         SetupCompletion("not json at all", tokensUsed: 0);
@@ -314,6 +430,44 @@ public class LlmCaptureTriageExtractorTests
         result.Output.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ExtractAsync_ShouldRejectEcmaWhitespaceOnlyEvidenceEvenWhenSourceContainsIt()
+    {
+        var evidence = "\uFEFF";
+        SetupCompletion(JsonSerializer.Serialize(new
+        {
+            tasks = new[] { new { title = "Send report", evidence } }
+        }));
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(evidence));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldPreserveAndGroundEmbeddedBomEvidenceOrdinally()
+    {
+        var evidence = "Alice: I will send\uFEFFthe report.";
+        SetupCompletion(JsonSerializer.Serialize(new
+        {
+            tasks = new[] { new { title = "Send the report", evidence } }
+        }));
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(evidence));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        result.Output!.Tasks.Should().ContainSingle().Which.Evidence.Should().Be(evidence);
+    }
+
     [Theory]
     [InlineData("Chris: I will send the approved budget to Finance by Friday.")]
     [InlineData("Jordan will schedule the accessibility review on Tuesday.")]
@@ -340,11 +494,32 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Theory]
+    [InlineData("Alice: I will be offline tomorrow.")]
+    [InlineData("Alice will be offline tomorrow.")]
+    [InlineData("- [x] Publish the reviewed release notes")]
+    [InlineData("- [X] Publish the reviewed release notes")]
+    public async Task ExtractAsync_ShouldAcceptEmptyVerdict_WhenSourceHasNoOutstandingTaskSignal(string source)
+    {
+        SetupCompletion("""{"tasks":[]}""");
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(source));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.EmptyExtraction);
+        result.Provider.Should().Be("OpenAI");
+        result.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+    }
+
+    [Theory]
     [InlineData("Alice: I'll be offline tomorrow.")]
+    [InlineData("Alice: I will be offline tomorrow.")]
+    [InlineData("Alice will be offline tomorrow.")]
     [InlineData("Team: we\u2019ll be pleased to join.")]
     [InlineData("Let's see what happens after the deployment.")]
     [InlineData("Please note that the credentials rotated yesterday.")]
     [InlineData("The next step was discussed yesterday.")]
+    [InlineData("- [x] Publish the reviewed release notes")]
+    [InlineData("- [X] Publish the reviewed release notes")]
     public void RequiresReviewForEmptyVerdict_ShouldNotMatchOrdinaryStatusProse(string source)
     {
         LlmCaptureTriageExtractor.RequiresReviewForEmptyVerdict(source).Should().BeFalse();

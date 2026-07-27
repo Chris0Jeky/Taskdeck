@@ -145,7 +145,11 @@ public class OllamaLlmProvider : ILlmProvider
             return BuildFallbackResult(
                 lastUserMessage,
                 "Local provider request timed out.",
-                GetConfiguredModelOrDefault());
+                GetConfiguredModelOrDefault()) with
+            {
+                TokensUsed = 0,
+                ShouldCommitEstimatedUsage = true
+            };
         }
         catch (OperationCanceledException)
         {

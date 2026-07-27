@@ -137,6 +137,7 @@ public class ChatService : IChatService
         string? quotaBilledProvider = null;
         string? quotaBilledModel = null;
         var quotaBilledTokens = 0;
+        var quotaEstimatedTokens = 0;
         try
         {
             if (string.IsNullOrWhiteSpace(dto.Content))
@@ -190,6 +191,7 @@ public class ChatService : IChatService
                 if (!reservation.Allowed)
                     return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, reservation.DeniedReason ?? "LLM quota exceeded");
                 quotaReservationId = reservation.ReservationId;
+                quotaEstimatedTokens = reservation.EstimatedTokens;
             }
 
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
@@ -381,17 +383,22 @@ public class ChatService : IChatService
                         // reports a combined TokensUsed total without an input/output split. Record
                         // the full total as input tokens and 0 for output until providers surface
                         // separate counts.
-                        if (_quotaService != null && quotaReservationId is Guid singleResId && llmResult.TokensUsed > 0)
+                        var singleTurnQuotaTokens = llmResult.TokensUsed > 0
+                            ? llmResult.TokensUsed
+                            : llmResult.ShouldCommitEstimatedUsage
+                                ? Math.Max(0, quotaEstimatedTokens)
+                                : 0;
+                        if (_quotaService != null && quotaReservationId is Guid singleResId && singleTurnQuotaTokens > 0)
                         {
                             // CancellationToken.None (M1, #1427 review): see the tool-result commit above.
                             quotaBilledProvider = llmResult.Provider;
                             quotaBilledModel = llmResult.Model;
-                            quotaBilledTokens = llmResult.TokensUsed;
+                            quotaBilledTokens = singleTurnQuotaTokens;
                             await _quotaService.CommitReservationAsync(
                                 singleResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 llmResult.Provider, llmResult.Model,
-                                llmResult.TokensUsed, 0,
+                                singleTurnQuotaTokens, 0,
                                 CancellationToken.None);
                             quotaCommitted = true;
                         }
@@ -531,9 +538,10 @@ public class ChatService : IChatService
         {
             // Settle any reservation that was never committed (#1427 review): if billed tokens exist
             // (the in-try commit itself failed on a DB fault), COMMIT them — releasing would erase real
-            // usage; otherwise release (no-LLM paths, a zero-token call, a pre-billing exception) so the
-            // slot consumes no quota. CancellationToken.None so cleanup runs under a cancelled request
-            // token; try/catch so a settle failure cannot mask the original exception.
+            // usage, including a flagged unknown-usage timeout at the reservation estimate. Otherwise
+            // release (no-LLM paths, an unflagged zero-token call, a pre-billing exception) so the slot
+            // consumes no quota. CancellationToken.None lets cleanup run under a cancelled request
+            // token; try/catch keeps a settle failure from masking the original exception.
             if (_quotaService != null && quotaReservationId is Guid rid && !quotaCommitted)
             {
                 try

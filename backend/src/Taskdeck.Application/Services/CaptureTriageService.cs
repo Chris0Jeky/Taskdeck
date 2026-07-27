@@ -39,11 +39,15 @@ public class CaptureTriageService : ICaptureTriageService
     public const string UnknownProvenanceValue = "unknown";
 
     private static readonly Regex ChecklistPattern = new(
-        @"^\s*[-*]\s+\[[xX ]\]\s+(.+?)\s*$",
+        @"^\s*[-*]\s+\[ \]\s+(.+?)\s*$",
         RegexOptions.Compiled);
 
     private static readonly Regex BulletPattern = new(
-        @"^\s*[-*\u2022]\s+(.+?)\s*$",
+        @"^\s*[-*\u2022]\s+(?!\[[xX]\](?:\s|$))(.+?)\s*$",
+        RegexOptions.Compiled);
+
+    private static readonly Regex CompletedChecklistPattern = new(
+        @"^\s*[-*]\s+\[[xX]\](?:\s+.*)?\s*$",
         RegexOptions.Compiled);
 
     private static readonly Regex NumberedPattern = new(
@@ -369,6 +373,11 @@ public class CaptureTriageService : ICaptureTriageService
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
+        // Completed checklist entries are evidence of finished work, not new task candidates. Keep
+        // them out of both the structured pass and the whole-text fallback so a model failure cannot
+        // silently turn an already-completed item back into an actionable proposal.
+        var fallbackText = string.Join('\n', lines.Where(line => !CompletedChecklistPattern.IsMatch(line)));
+
         foreach (var line in lines)
         {
             var extracted = TryExtractStructuredTask(line);
@@ -396,7 +405,7 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         // Try dash-separated: first segment is context hint, rest are tasks
-        var dashSegments = DashDelimiterPattern.Split(rawText)
+        var dashSegments = DashDelimiterPattern.Split(fallbackText)
             .Select(s => s.Trim())
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .ToList();
@@ -424,7 +433,7 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         // Try semicolons: all segments are equal tasks
-        var semicolonSegments = SemicolonDelimiterPattern.Split(rawText)
+        var semicolonSegments = SemicolonDelimiterPattern.Split(fallbackText)
             .Select(s => s.Trim())
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .ToList();
@@ -451,7 +460,7 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         // Single-sentence fallback: create one card with the full text
-        var fallback = NormalizeTaskTitle(rawText);
+        var fallback = NormalizeTaskTitle(fallbackText);
         if (!string.IsNullOrWhiteSpace(fallback))
         {
             candidates.Add(fallback);
@@ -506,7 +515,9 @@ public class CaptureTriageService : ICaptureTriageService
         normalized = CaptureTriageOutputContract.SanitizeTaskTitle(normalized);
         if (normalized.Length > CaptureTriageOutputContract.MaxTaskTitleLength)
         {
-            normalized = normalized[..CaptureTriageOutputContract.MaxTaskTitleLength].TrimEnd();
+            normalized = CaptureTriageOutputContract.TruncateToUtf16LengthAtScalarBoundary(
+                normalized,
+                CaptureTriageOutputContract.MaxTaskTitleLength).TrimEnd();
         }
 
         return normalized;

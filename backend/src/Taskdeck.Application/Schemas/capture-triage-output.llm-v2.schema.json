@@ -35,12 +35,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 180,
-            "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]).+$"
+            "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]).+$"
           },
           "evidence": {
             "type": "string",
             "minLength": 1,
-            "pattern": "\\S",
+            "pattern": "[^\\s\\uFEFF]",
             "maxLength": 280
           }
         }

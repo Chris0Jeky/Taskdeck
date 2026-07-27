@@ -177,11 +177,11 @@ public static class LlmCaptureTriagePrompt
         }
 
         if (propertyCount != 2 ||
-            string.IsNullOrWhiteSpace(title) ||
+            CaptureTriageOutputContract.IsNullOrEcmaWhitespace(title) ||
             !CaptureTriageOutputContract.IsSafeTaskTitle(title) ||
-            title.Length > CaptureTriageOutputContract.MaxTaskTitleLength ||
-            string.IsNullOrWhiteSpace(evidence) ||
-            evidence.Length > CaptureTriageOutputContract.MaxTaskEvidenceLength ||
+            CaptureTriageOutputContract.GetUnicodeScalarLength(title) > CaptureTriageOutputContract.MaxTaskTitleLength ||
+            CaptureTriageOutputContract.IsNullOrEcmaWhitespace(evidence) ||
+            CaptureTriageOutputContract.GetUnicodeScalarLength(evidence) > CaptureTriageOutputContract.MaxTaskEvidenceLength ||
             !seenTitles.Add(title))
         {
             return false;

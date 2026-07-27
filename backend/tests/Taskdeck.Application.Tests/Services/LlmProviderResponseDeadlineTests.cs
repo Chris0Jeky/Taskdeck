@@ -26,6 +26,8 @@ public class LlmProviderResponseDeadlineTests
 
         result.IsDegraded.Should().BeTrue();
         result.DegradedReason.Should().Contain("timed out");
+        result.TokensUsed.Should().Be(0, "a timeout has no trustworthy provider usage count");
+        result.ShouldCommitEstimatedUsage.Should().BeTrue();
         stream.BytesRead.Should().BeGreaterThan(0);
         stream.BytesRead.Should().BeLessThan(LlmProviderResponseReader.MaxResponseBytes);
         testSafety.IsCancellationRequested.Should().BeFalse();
@@ -94,6 +96,39 @@ public class LlmProviderResponseDeadlineTests
 
     private static ChatCompletionRequest BuildRequest()
         => new([new ChatCompletionMessage("User", "create card 'deadline regression'")]);
+
+    [Fact]
+    public void LlmCompletionResult_ShouldPreserveTenValueConstructorAndDeconstructionAbi()
+    {
+        var result = new LlmCompletionResult(
+            "content",
+            12,
+            true,
+            "intent",
+            "provider",
+            "model",
+            true,
+            "reason",
+            ["instruction"],
+            true)
+        {
+            ShouldCommitEstimatedUsage = true
+        };
+
+        var (content, tokens, actionable, intent, provider, model, degraded, reason, instructions, clarification) = result;
+
+        content.Should().Be("content");
+        tokens.Should().Be(12);
+        actionable.Should().BeTrue();
+        intent.Should().Be("intent");
+        provider.Should().Be("provider");
+        model.Should().Be("model");
+        degraded.Should().BeTrue();
+        reason.Should().Be("reason");
+        instructions.Should().ContainSingle().Which.Should().Be("instruction");
+        clarification.Should().BeTrue();
+        result.ShouldCommitEstimatedUsage.Should().BeTrue();
+    }
 
     private static ILlmProvider BuildProvider(
         string providerName,

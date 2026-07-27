@@ -1,5 +1,5 @@
+using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using FluentAssertions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Exceptions;
@@ -9,6 +9,10 @@ namespace Taskdeck.Application.Tests.Services;
 
 public class CaptureTriageOutputContractTests
 {
+    private const string ExpectedLlmV2TitlePattern =
+        "^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]).+$";
+    private const string ExpectedLlmV2EvidencePattern = "[^\\s\\uFEFF]";
+
     [Fact]
     public void ParseAndValidate_ShouldPass_ForGoldenFixture()
     {
@@ -149,6 +153,9 @@ public class CaptureTriageOutputContractTests
     [InlineData("c1\u0085control")]
     [InlineData("bidi\u202Eoverride")]
     [InlineData("isolate\u2066text")]
+    [InlineData("\uFEFFleading bom")]
+    [InlineData("trailing bom\uFEFF")]
+    [InlineData("embedded\uFEFFbom")]
     public void Validate_ShouldFail_WhenTaskTitleContainsUnsafeWhitespaceControlOrBidi(string title)
     {
         var output = new CaptureTriageOutputV1(
@@ -175,6 +182,40 @@ public class CaptureTriageOutputContractTests
         var result = CaptureTriageOutputContract.Validate(output);
 
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(CaptureTriageOutputContract.PromptVersionV1)]
+    [InlineData(CaptureTriageOutputContract.PromptVersionLlmV1)]
+    public void Validate_ShouldPreserveLegacyUtf16LengthLimits(string promptVersion)
+    {
+        var exactlyAtLimit = string.Concat(Enumerable.Repeat("😀", 90));
+        var overLimit = string.Concat(Enumerable.Repeat("😀", 91));
+
+        CaptureTriageOutputContract.Validate(new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            promptVersion,
+            [new CaptureTriageTaskV1(exactlyAtLimit, "source evidence")])).IsSuccess.Should().BeTrue();
+        CaptureTriageOutputContract.Validate(new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            promptVersion,
+            [new CaptureTriageTaskV1(overLimit, "source evidence")])).IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Validate_ShouldUseUnicodeScalarLimitsForLlmV2()
+    {
+        var hundredEmoji = string.Concat(Enumerable.Repeat("😀", 100));
+        var maximumTitle = string.Concat(Enumerable.Repeat("😀", 180));
+        var overlongTitle = string.Concat(Enumerable.Repeat("😀", 181));
+        var maximumEvidence = string.Concat(Enumerable.Repeat("😀", 280));
+        var overlongEvidence = string.Concat(Enumerable.Repeat("😀", 281));
+
+        ValidateLlmV2Task(hundredEmoji, "source evidence").IsSuccess.Should().BeTrue();
+        ValidateLlmV2Task(maximumTitle, "source evidence").IsSuccess.Should().BeTrue();
+        ValidateLlmV2Task(overlongTitle, "source evidence").IsSuccess.Should().BeFalse();
+        ValidateLlmV2Task("Send report", maximumEvidence).IsSuccess.Should().BeTrue();
+        ValidateLlmV2Task("Send report", overlongEvidence).IsSuccess.Should().BeFalse();
     }
 
     [Fact]
@@ -265,20 +306,27 @@ public class CaptureTriageOutputContractTests
             taskProperties.GetProperty("title"),
             CaptureTriageOutputContract.MaxTaskTitleLength);
         taskProperties.GetProperty("title").GetProperty("pattern").GetString().Should()
-            .Be("^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]).+$");
+            .Be(ExpectedLlmV2TitlePattern);
         AssertBoundedString(
             taskProperties.GetProperty("evidence"),
             CaptureTriageOutputContract.MaxTaskEvidenceLength);
         taskProperties.GetProperty("evidence").GetProperty("pattern").GetString().Should()
-            .Be("\\S");
+            .Be(ExpectedLlmV2EvidencePattern);
     }
 
     [Theory]
     [InlineData("Review the release", "source evidence", true)]
     [InlineData(" leading", "source evidence", false)]
     [InlineData("bidi\u202Eoverride", "source evidence", false)]
+    [InlineData("\uFEFFleading", "source evidence", false)]
+    [InlineData("trailing\uFEFF", "source evidence", false)]
+    [InlineData("embedded\uFEFFbom", "source evidence", false)]
     [InlineData("Review the release", " ", false)]
     [InlineData("Review the release", "\t\r\n", false)]
+    [InlineData("Review the release", "\uFEFF", false)]
+    [InlineData("Review the release", " \uFEFF ", false)]
+    [InlineData("Review the release", "\u0085", true)]
+    [InlineData("Review the release", "\uFEFFsource", true)]
     [InlineData("Review the release", " source evidence ", true)]
     public void LlmV2SchemaAndRuntime_ShouldAgreeForStringConstraintExamples(
         string title,
@@ -302,6 +350,36 @@ public class CaptureTriageOutputContractTests
         runtime.IsSuccess.Should().Be(schemaAccepts);
     }
 
+    [Fact]
+    public void LlmV2SchemaAndRuntime_ShouldAgreeAtUnicodeScalarBoundaries()
+    {
+        var cases = new[]
+        {
+            (Title: string.Concat(Enumerable.Repeat("😀", 100)), Evidence: "source", Expected: true),
+            (Title: string.Concat(Enumerable.Repeat("😀", 180)), Evidence: "source", Expected: true),
+            (Title: string.Concat(Enumerable.Repeat("😀", 181)), Evidence: "source", Expected: false),
+            (Title: "Send report", Evidence: string.Concat(Enumerable.Repeat("😀", 280)), Expected: true),
+            (Title: "Send report", Evidence: string.Concat(Enumerable.Repeat("😀", 281)), Expected: false)
+        };
+
+        using var document = JsonDocument.Parse(File.ReadAllText(GetLlmV2SchemaPath()));
+        var taskProperties = document.RootElement
+            .GetProperty("properties")
+            .GetProperty("tasks")
+            .GetProperty("items")
+            .GetProperty("properties");
+
+        foreach (var testCase in cases)
+        {
+            var schemaAccepts = MatchesStringSchema(taskProperties.GetProperty("title"), testCase.Title) &&
+                                MatchesStringSchema(taskProperties.GetProperty("evidence"), testCase.Evidence);
+            var runtime = ValidateLlmV2Task(testCase.Title, testCase.Evidence);
+
+            schemaAccepts.Should().Be(testCase.Expected);
+            runtime.IsSuccess.Should().Be(schemaAccepts);
+        }
+    }
+
     private static string[] ReadRequiredNames(JsonElement schemaObject)
     {
         var required = schemaObject.GetProperty("required");
@@ -318,18 +396,65 @@ public class CaptureTriageOutputContractTests
 
     private static bool MatchesStringSchema(JsonElement property, string value)
     {
-        if (value.Length < property.GetProperty("minLength").GetInt32() ||
-            value.Length > property.GetProperty("maxLength").GetInt32())
+        var scalarLength = value.EnumerateRunes().Count();
+        if (scalarLength < property.GetProperty("minLength").GetInt32() ||
+            scalarLength > property.GetProperty("maxLength").GetInt32())
         {
             return false;
         }
 
-        return !property.TryGetProperty("pattern", out var pattern) ||
-               Regex.IsMatch(
-                   value,
-                   pattern.GetString()!,
-                   RegexOptions.CultureInvariant,
-                   TimeSpan.FromMilliseconds(100));
+        if (!property.TryGetProperty("pattern", out var pattern))
+        {
+            return true;
+        }
+
+        return pattern.GetString() switch
+        {
+            ExpectedLlmV2TitlePattern => MatchesLlmV2TitlePattern(value),
+            ExpectedLlmV2EvidencePattern => value.EnumerateRunes().Any(rune => !IsEcmaWhitespace(rune.Value)),
+            var unexpected => throw new InvalidOperationException($"Unexpected schema pattern: {unexpected}")
+        };
+    }
+
+    private static bool MatchesLlmV2TitlePattern(string value)
+    {
+        var runes = value.EnumerateRunes().ToArray();
+        if (runes.Length == 0 ||
+            IsEcmaWhitespace(runes[0].Value) ||
+            IsEcmaWhitespace(runes[^1].Value))
+        {
+            return false;
+        }
+
+        return runes.All(rune => !IsLlmV2TitleUnsafe(rune.Value));
+    }
+
+    private static bool IsLlmV2TitleUnsafe(int codePoint)
+    {
+        return codePoint is >= 0x0000 and <= 0x001F or
+               >= 0x007F and <= 0x009F or
+               0x061C or 0x200E or 0x200F or 0x2028 or 0x2029 or
+               >= 0x202A and <= 0x202E or
+               >= 0x2066 and <= 0x2069 or
+               0xFEFF;
+    }
+
+    private static bool IsEcmaWhitespace(int codePoint)
+    {
+        return codePoint is >= 0x0009 and <= 0x000D or
+               0x0020 or 0x00A0 or 0x1680 or
+               >= 0x2000 and <= 0x200A or
+               0x2028 or 0x2029 or 0x202F or 0x205F or 0x3000 or 0xFEFF;
+    }
+
+    private static Taskdeck.Domain.Common.Result<CaptureTriageOutputV1> ValidateLlmV2Task(
+        string title,
+        string evidence)
+    {
+        return CaptureTriageOutputContract.Validate(new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
+            [new CaptureTriageTaskV1(title, evidence)]));
     }
 
     private static string GetLlmV2SchemaPath()

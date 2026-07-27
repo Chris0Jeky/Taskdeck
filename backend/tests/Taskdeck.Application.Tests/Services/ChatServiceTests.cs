@@ -1777,6 +1777,164 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_ShouldCommitReservationEstimateButExposeZeroTokens_WhenDeadlineUsageIsUnknown()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Deadline estimate quota test");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "The provider timed out.",
+                0,
+                false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsDegraded: true,
+                DegradedReason: "Live provider request timed out.")
+            {
+                ShouldCommitEstimatedUsage = true
+            });
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new QuotaReservationDto(true, null, reservationId, 10_000, 100, EstimatedTokens: 2_000));
+        var service = BuildServiceWithQuota(quotaMock.Object);
+
+        var result = await service.SendMessageAsync(
+            session.Id, userId, new SendChatMessageDto("Hello"), default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.TokenUsage.Should().Be(0, "the reservation estimate is not observed provider usage");
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAI",
+            "gpt-4o-mini",
+            2_000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(
+            q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldPreferActualTokens_WhenEstimateCommitIsAlsoRequested()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Actual token quota test");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "Assistant response",
+                37,
+                false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini")
+            {
+                ShouldCommitEstimatedUsage = true
+            });
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new QuotaReservationDto(true, null, reservationId, 10_000, 100, EstimatedTokens: 2_000));
+        var service = BuildServiceWithQuota(quotaMock.Object);
+
+        var result = await service.SendMessageAsync(
+            session.Id, userId, new SendChatMessageDto("Hello"), default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TokenUsage.Should().Be(37);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAI",
+            "gpt-4o-mini",
+            37,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<Domain.Enums.LlmSurface>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            2_000,
+            It.IsAny<int>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldRetryEstimatedUsageCommitInFinally_WhenInitialCommitFails()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Estimate commit retry test");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "The provider timed out.",
+                0,
+                false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsDegraded: true,
+                DegradedReason: "Live provider request timed out.")
+            {
+                ShouldCommitEstimatedUsage = true
+            });
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new QuotaReservationDto(true, null, reservationId, 10_000, 100, EstimatedTokens: 2_000));
+        quotaMock.SetupSequence(q => q.CommitReservationAsync(
+                reservationId,
+                userId,
+                Domain.Enums.LlmSurface.Chat,
+                "OpenAI",
+                "gpt-4o-mini",
+                2_000,
+                0,
+                CancellationToken.None))
+            .ThrowsAsync(new InvalidOperationException("commit boom"))
+            .Returns(Task.CompletedTask);
+        var service = BuildServiceWithQuota(quotaMock.Object);
+
+        await FluentActions
+            .Awaiting(() => service.SendMessageAsync(
+                session.Id, userId, new SendChatMessageDto("Hello"), default))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("commit boom");
+
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAI",
+            "gpt-4o-mini",
+            2_000,
+            0,
+            CancellationToken.None), Times.Exactly(2));
+        quotaMock.Verify(
+            q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task SendMessageAsync_ShouldReleaseReservation_WhenCompletionUsesZeroTokens()
     {
         // #1427 re-review: a zero-token completion is not billed — the finally must RELEASE the
@@ -2004,5 +2162,18 @@ public class ChatServiceTests
         yield return new LlmTokenEvent("hello", false);
         yield return new LlmTokenEvent(" world", true, TokensUsed: 42, Provider: "Mock", Model: "mock-default");
         await Task.CompletedTask;
+    }
+
+    private ChatService BuildServiceWithQuota(ILlmQuotaService quotaService)
+    {
+        return new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaService);
     }
 }

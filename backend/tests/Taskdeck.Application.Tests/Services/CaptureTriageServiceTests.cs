@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Moq;
@@ -146,13 +147,14 @@ public class CaptureTriageServiceTests
             """
             - [ ] Write regression tests
             - [x] Update docs
+            - [X] Close completed issue
             1. Ship follow-up PR
             """);
 
         var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.OperationCount.Should().Be(3);
+        result.Value.OperationCount.Should().Be(2);
         result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
         result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
         result.Value.Model.Should().Be(CaptureTriageService.TriageModelName);
@@ -160,12 +162,69 @@ public class CaptureTriageServiceTests
         var created = createdProposal!;
         created.SourceType.Should().Be(ProposalSourceType.Queue);
         created.SourceReferenceId.Should().Be(captureId.ToString());
-        created.Operations.Should().HaveCount(3);
+        created.Operations.Should().HaveCount(2);
         created.Operations.Should().OnlyContain(operation => !string.IsNullOrWhiteSpace(operation.TargetId));
         created.Operations![0].Parameters.Should().Contain("Write regression tests");
-        created.Operations[1].Parameters.Should().Contain("Update docs");
-        created.Operations[2].Parameters.Should().Contain("Ship follow-up PR");
+        created.Operations[1].Parameters.Should().Contain("Ship follow-up PR");
+        created.Operations.Should().OnlyContain(operation => !operation.Parameters.Contains("Update docs"));
+        created.Operations.Should().OnlyContain(operation => !operation.Parameters.Contains("Close completed issue"));
         created.Operations.Select(operation => Guid.TryParse(operation.TargetId, out _)).Should().OnlyContain(parsed => parsed);
+    }
+
+    [Theory]
+    [InlineData("- [x] Completed lower-case item")]
+    [InlineData("- [X] Completed upper-case item")]
+    public async Task CreateProposalFromCaptureAsync_ShouldNotReproposeCompletedChecklistOnlyText(string source)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+
+        var result = await _service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                source));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _proposalServiceMock.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldTruncateDeterministicTitleAtUnicodeScalarBoundary()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+        var sourceTitle = string.Concat(Enumerable.Repeat("😀", 100));
+
+        var result = await _service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                $"- [ ] {sourceTitle}"));
+
+        result.IsSuccess.Should().BeTrue();
+        createdProposal.Should().NotBeNull();
+        using var parameters = JsonDocument.Parse(createdProposal!.Operations!.Single().Parameters);
+        var title = parameters.RootElement.GetProperty("title").GetString();
+        title.Should().Be(string.Concat(Enumerable.Repeat("😀", 90)));
+        title!.EnumerateRunes().Should().HaveCount(90);
     }
 
     [Fact]
@@ -946,6 +1005,53 @@ public class CaptureTriageServiceTests
         createdProposal.Operations[0].Parameters.Should().NotContain("Ignore previous instructions");
     }
 
+    [Theory]
+    [InlineData("Alice: I will be offline tomorrow.")]
+    [InlineData("Alice will be offline tomorrow.")]
+    [InlineData("- [x] Publish the reviewed release notes")]
+    [InlineData("- [X] Publish the reviewed release notes")]
+    public async Task CreateProposalFromCaptureAsync_EmptyVerdictForNonTaskSignal_ShouldNotCreateProposal(
+        string source)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var providerMock = new Mock<ILlmProvider>();
+        providerMock
+            .Setup(provider => provider.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "FixtureProvider", Model: "fixture-model"));
+        providerMock
+            .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult(
+                """{"tasks":[]}""",
+                TokensUsed: 1,
+                IsActionable: false,
+                Provider: "FixtureProvider",
+                Model: "fixture-model"));
+        var service = new CaptureTriageService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            new LlmCaptureTriageExtractor(providerMock.Object, new LlmCaptureTriageSettings()));
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload(source));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ProposalId.Should().BeNull();
+        result.Value.OperationCount.Should().Be(0);
+        result.Value.Provider.Should().Be("FixtureProvider");
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        _proposalServiceMock.Verify(
+            proposal => proposal.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     [Fact]
     public async Task CreateProposalFromCaptureAsync_HostileSourceTitleAndInvalidModelOutput_ShouldUseSafeDeterministicFallback()
     {
@@ -977,7 +1083,7 @@ public class CaptureTriageServiceTests
             captureId,
             userId,
             boardId,
-            TranscriptPayload("- [ ] Preserve\u202E deterministic\u0001 fallback"));
+            TranscriptPayload("- [ ] Preserve\u202E deterministic\u0001 \uFEFFfallback"));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.ProposalId.Should().NotBeNull();
@@ -990,10 +1096,16 @@ public class CaptureTriageServiceTests
         title.Should().Be("Preserve deterministic fallback");
         title.Should().NotContain("\u202E");
         title.Should().NotContain("\u0001");
+        title.Should().NotContain("\uFEFF");
     }
 
-    [Fact]
-    public async Task CreateProposalFromCaptureAsync_UnsafeLlmTitle_ShouldUseSafeReviewFallback()
+    [Theory]
+    [InlineData("Archive \u202Eall boards", "\u202E")]
+    [InlineData("\uFEFFArchive all boards", "\uFEFF")]
+    [InlineData("Archive all boards\uFEFF", "\uFEFF")]
+    public async Task CreateProposalFromCaptureAsync_UnsafeLlmTitle_ShouldUseSafeReviewFallback(
+        string unsafeTitle,
+        string unsafeCharacter)
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -1008,7 +1120,10 @@ public class CaptureTriageServiceTests
         providerMock
             .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCompletionResult(
-                "{\"tasks\":[{\"title\":\"Archive \\u202Eall boards\",\"evidence\":\"Preserve safe fallback\"}]}",
+                JsonSerializer.Serialize(new
+                {
+                    tasks = new[] { new { title = unsafeTitle, evidence = "Preserve safe fallback" } }
+                }),
                 TokensUsed: 1,
                 IsActionable: false,
                 Provider: "FixtureProvider",
@@ -1030,7 +1145,7 @@ public class CaptureTriageServiceTests
         createdProposal.Should().NotBeNull();
         createdProposal!.Operations.Should().ContainSingle();
         createdProposal.Operations![0].Parameters.Should().Contain("Preserve safe fallback");
-        createdProposal.Operations[0].Parameters.Should().NotContain("\u202E");
+        createdProposal.Operations[0].Parameters.Should().NotContain(unsafeCharacter);
         createdProposal.Operations[0].Parameters.Should().NotContain("Archive");
     }
 

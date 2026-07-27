@@ -77,7 +77,15 @@ public record LlmCompletionResult(
     string? DegradedReason = null,
     List<string>? Instructions = null,
     bool IsClarificationRequest = false
-);
+)
+{
+    /// <summary>
+    /// Indicates that the provider request reached its response deadline after work may have been
+    /// billed, but no trustworthy usage count was returned. Quota consumers should commit their
+    /// reservation estimate while continuing to expose <see cref="TokensUsed"/> as zero.
+    /// </summary>
+    public bool ShouldCommitEstimatedUsage { get; init; }
+}
 
 public record LlmTokenEvent(
     string Token,
