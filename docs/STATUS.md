@@ -2,6 +2,9 @@
 
 Last Updated: 2026-07-27
 
+Agentic review-doctrine consolidation (2026-07-27, `#1531`, in review):
+- **Taskdeck's executable review workflow is being consolidated onto the estate-wide `review-and-ship` skill.** The repository keeps its declared T3 row, Taskdeck-specific risk lenses, exact-head verification commands, and operational settlement mechanics without carrying parallel severity, round-count, or aging rules. This narrows the review/aging portion of `#1269`; its historical delivery record remains intact. Retirement of the still-live `.codex` mirror remains separate work under `#1291`.
+
 Realtime column reconciliation (2026-07-27, `#1522`):
 - **A successful create-column response can no longer duplicate or overwrite a fresher same-id SignalR update.** Reconciliation now preserves the existing realtime object and its identity when that id is already present, and appends the HTTP response only when the column is absent. The store regression races a newer realtime column against the older POST payload and pins its identity, name, position, WIP limit, card count, and timestamp. The board E2E helper waits for the matching successful POST and the completed form lifecycle before asserting one scoped lane; collision-name mobile coverage selects exact lanes/cards instead of hiding duplicates with `.first()`. Exact local verification passed 13/13 focused store tests, 3,915/3,915 full Vitest tests, 5/5 focused mobile tests on each of Chromium and WebKit, typecheck, build, and lint (zero errors; six pre-existing warnings).
 

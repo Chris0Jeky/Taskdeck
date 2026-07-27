@@ -40,10 +40,7 @@ def main() -> int:
     if tool_name == "Bash":
         command = " ".join(str(tool_input.get("command", "")).split())
         if PR_CREATE_RE.search(command):
-            emit_context(
-                "PR created. Run the review pipeline now: the global review-and-ship skill "
-                "(one review round, fix merge-blocking findings, track the rest)."
-            )
+            emit_context("PR created. Run the global review-and-ship skill now.")
 
     return 0
 

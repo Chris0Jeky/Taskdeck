@@ -10,6 +10,10 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-27, agentic review-doctrine consolidation)
+
+- **Single review-workflow home (`#1531`, in review):** Taskdeck's local instructions, skills, overnight manuals, and PR-create hook are being reduced to routing, Taskdeck-specific lenses, and repository mechanics while the estate-wide `review-and-ship` skill owns the executable pipeline. This supersedes the review/aging portion of `#1269` without rewriting historical delivery records. The live `.codex` mirror is retained until its separately tracked retirement under `#1291`.
+
 ## Delivery update (2026-07-27, test substrate, Windows API diagnostics, and realtime reconciliation)
 
 - **Dockerless Testcontainers gate (`#1518`):** the PostgreSQL collection fixture now evaluates `DockerAvailableCheck` before `PostgreSqlBuilder.Build`, restoring the documented graceful-skip behavior on hosts without Docker. Public-constructor and injected-factory regressions prove the unavailable path cannot construct a container, while a timed-out Docker CLI probe is killed as a process tree and boundedly reaped. The local exact tree finishes with 7 passed / 28 skipped / 0 failed and no surviving `docker info`; at reviewed head `6650370b`, the full serialized backend passed 7,465 tests with 33 intentional skips and hosted Container Integration proved the positive lifecycle with 35 passed / 0 skipped / 0 failed. Four DCO-signed-off commits merged as `ff1ee066`; exact-main Required CI `30257236213` and CodeQL `30257235538` are green.

@@ -102,6 +102,17 @@ def expect_json_context(result: subprocess.CompletedProcess[str], label: str, ev
         raise AssertionError(f"{label} missing context {needle!r}: {output}")
 
 
+def expect_json_context_exact(
+    result: subprocess.CompletedProcess[str], label: str, event_name: str, expected_context: str
+) -> None:
+    expect_ok(result, label)
+    data = json.loads(result.stdout)
+    output = data["hookSpecificOutput"]
+    expected = {"hookEventName": event_name, "additionalContext": expected_context}
+    if output != expected:
+        raise AssertionError(f"{label} context drifted: expected={expected!r}, got={output!r}")
+
+
 def expect_pretool_deny(command: str, handler: dict[str, Any] | None = None) -> None:
     payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command}}
     result = run_handler(handler, payload) if handler else run_python("scripts/agent_hooks/pre_tool_use.py", payload)
@@ -404,11 +415,11 @@ def test_configured_commands(settings: dict[str, object]) -> None:
     )
 
     pr_reminder = hooks["PostToolUse"][1]["hooks"][0]  # type: ignore[index]
-    expect_json_context(
+    expect_json_context_exact(
         run_handler(pr_reminder, {"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "gh pr create --fill"}}),
         "pr reminder",
         "PostToolUse",
-        "review-and-ship",
+        "PR created. Run the global review-and-ship skill now.",
     )
 
     session_start = hooks["SessionStart"][0]["hooks"][0]  # type: ignore[index]
