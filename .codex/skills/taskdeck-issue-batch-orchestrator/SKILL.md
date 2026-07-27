@@ -65,7 +65,8 @@ When editing with structured patches:
 - In prose or Unicode-bearing files, anchor hunks on nearby ASCII-stable headings or lines instead of typography-sensitive exact text.
 - After a context rejection, inspect the live target before retrying, then reduce the retry to the smallest independently anchored hunk.
 - Never repeat the same broad multi-file patch after it is rejected.
-- Record every repeated or unresolved patch rejection in the active orchestrator/run ledger and final handoff, including the exact rejected operation and error plus the working invocation or workaround when one exists; record it even when work resumes.
+- Record every repeated or unresolved patch rejection in the active orchestrator/run ledger and final handoff, even when work resumes.
+- Keep the record bounded and sanitized: include target(s), a failure class/error summary, a safe reproduction pointer when available, and the working invocation or workaround. Redact secrets, omit full patch payloads, and truncate oversized error context.
 - Then invoke `taskdeck-failure-capture` to classify the failure and escalate it to the repository failure ledger when that skill's criteria apply.
 
 ## Worker setup
@@ -79,6 +80,7 @@ For each issue:
 5. Tell the worker it is not alone in the codebase and must not revert others' edits.
 6. Require small signed-off commits with `git commit -s --no-gpg-sign` when committing.
 7. Require targeted tests before PR.
+8. Require every file-editing worker prompt to restate the structured patch discipline above.
 
 Use `taskdeck-worktree-issue-worker` for implementation workers.
 
