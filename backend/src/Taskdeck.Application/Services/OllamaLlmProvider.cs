@@ -33,6 +33,9 @@ public class OllamaLlmProvider : ILlmProvider
             return BuildFallbackResult(lastUserMessage, "Local provider configuration is invalid.", GetConfiguredModelOrDefault());
         }
 
+        using var deadline = LlmProviderDeadline.CreateLinked(ct, _settings.Ollama!.TimeoutSeconds);
+        var requestCancellationToken = deadline.Token;
+
         try
         {
             using var message = new HttpRequestMessage(HttpMethod.Post, BuildChatEndpoint());
@@ -42,7 +45,7 @@ public class OllamaLlmProvider : ILlmProvider
             using var response = await _httpClient.SendAsync(
                 message,
                 HttpCompletionOption.ResponseHeadersRead,
-                ct);
+                requestCancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
@@ -51,7 +54,9 @@ public class OllamaLlmProvider : ILlmProvider
                 return BuildFallbackResult(lastUserMessage, "Local provider request failed.", GetConfiguredModelOrDefault());
             }
 
-            var body = await LlmProviderResponseReader.ReadBoundedUtf8Async(response.Content, ct);
+            var body = await LlmProviderResponseReader.ReadBoundedUtf8Async(
+                response.Content,
+                requestCancellationToken);
             if (body is null)
             {
                 _logger.LogWarning("Ollama completion response exceeded the safe byte limit or was not valid UTF-8.");
@@ -91,10 +96,10 @@ public class OllamaLlmProvider : ILlmProvider
                     DegradedReason: "Response was truncated");
             }
 
-            // A caller-supplied system prompt owns its response contract. Preserve the provider's
-            // raw completion so that surface-specific strict parsers see wrappers, prose, and
-            // fences unchanged instead of silently passing through this legacy chat parser.
-            if (!useInstructionExtraction)
+            // Capture triage explicitly owns a strict raw-response contract. Other custom system
+            // prompts, including ChatService clarification guidance, retain the legacy parser and
+            // classifier behavior.
+            if (request.ResponseMode == LlmCompletionResponseMode.CaptureTriageRaw)
             {
                 return new LlmCompletionResult(
                     content,
@@ -130,6 +135,17 @@ public class OllamaLlmProvider : ILlmProvider
                     fallbackInstructions = extracted;
             }
             return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent, "Ollama", GetConfiguredModelOrDefault(), Instructions: fallbackInstructions);
+        }
+        catch (OperationCanceledException) when (
+            deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "Ollama completion request exceeded the configured {TimeoutSeconds}-second deadline.",
+                _settings.Ollama.TimeoutSeconds);
+            return BuildFallbackResult(
+                lastUserMessage,
+                "Local provider request timed out.",
+                GetConfiguredModelOrDefault());
         }
         catch (OperationCanceledException)
         {

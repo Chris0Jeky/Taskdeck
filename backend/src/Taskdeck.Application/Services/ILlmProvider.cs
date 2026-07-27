@@ -30,7 +30,21 @@ public record ChatCompletionRequest(
     LlmRequestAttribution? Attribution = null,
     string? SystemPrompt = null,
     string? BoardContext = null
-);
+)
+{
+    /// <summary>
+    /// Selects post-processing without changing the positional request contract. Standard keeps
+    /// the legacy chat instruction parser and classifier even when a caller supplies a system
+    /// prompt; capture triage explicitly opts into raw output for its stricter parser.
+    /// </summary>
+    public LlmCompletionResponseMode ResponseMode { get; init; }
+}
+
+public enum LlmCompletionResponseMode
+{
+    Standard = 0,
+    CaptureTriageRaw = 1
+}
 
 public record ChatCompletionMessage(string Role, string Content);
 

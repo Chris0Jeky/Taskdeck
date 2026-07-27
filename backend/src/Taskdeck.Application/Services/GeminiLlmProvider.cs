@@ -33,6 +33,9 @@ public class GeminiLlmProvider : ILlmProvider
             return BuildFallbackResult(lastUserMessage, "Live provider configuration is invalid.", GetConfiguredModelOrDefault());
         }
 
+        using var deadline = LlmProviderDeadline.CreateLinked(ct, _settings.Gemini.TimeoutSeconds);
+        var requestCancellationToken = deadline.Token;
+
         try
         {
             using var message = new HttpRequestMessage(HttpMethod.Post, BuildGenerateContentEndpoint());
@@ -73,7 +76,7 @@ public class GeminiLlmProvider : ILlmProvider
             using var response = await _httpClient.SendAsync(
                 message,
                 HttpCompletionOption.ResponseHeadersRead,
-                ct);
+                requestCancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
@@ -82,7 +85,9 @@ public class GeminiLlmProvider : ILlmProvider
                 return BuildFallbackResult(lastUserMessage, "Live provider request failed.", GetConfiguredModelOrDefault());
             }
 
-            var body = await LlmProviderResponseReader.ReadBoundedUtf8Async(response.Content, ct);
+            var body = await LlmProviderResponseReader.ReadBoundedUtf8Async(
+                response.Content,
+                requestCancellationToken);
             if (body is null)
             {
                 _logger.LogWarning("Gemini completion response exceeded the safe byte limit or was not valid UTF-8.");
@@ -125,10 +130,10 @@ public class GeminiLlmProvider : ILlmProvider
                     DegradedReason: "Response was truncated");
             }
 
-            // A caller-supplied system prompt owns its response contract. Preserve the provider's
-            // raw completion so that surface-specific strict parsers see wrappers, prose, and
-            // fences unchanged instead of silently passing through this legacy chat parser.
-            if (!useInstructionExtraction)
+            // Capture triage explicitly owns a strict raw-response contract. Other custom system
+            // prompts, including ChatService clarification guidance, retain the legacy parser and
+            // classifier behavior.
+            if (request.ResponseMode == LlmCompletionResponseMode.CaptureTriageRaw)
             {
                 return new LlmCompletionResult(
                     content,
@@ -167,6 +172,17 @@ public class GeminiLlmProvider : ILlmProvider
             }
             return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent, "Gemini", GetConfiguredModelOrDefault(), Instructions: fallbackInstructions);
         }
+        catch (OperationCanceledException) when (
+            deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "Gemini completion request exceeded the configured {TimeoutSeconds}-second deadline.",
+                _settings.Gemini.TimeoutSeconds);
+            return BuildFallbackResult(
+                lastUserMessage,
+                "Live provider request timed out.",
+                GetConfiguredModelOrDefault());
+        }
         catch (OperationCanceledException)
         {
             throw;
@@ -196,6 +212,9 @@ public class GeminiLlmProvider : ILlmProvider
                 DegradedReason: "Live provider configuration is invalid.");
         }
 
+        using var deadline = LlmProviderDeadline.CreateLinked(ct, _settings.Gemini.TimeoutSeconds);
+        var requestCancellationToken = deadline.Token;
+
         try
         {
             using var httpMessage = new HttpRequestMessage(HttpMethod.Post, BuildGenerateContentEndpoint());
@@ -206,7 +225,7 @@ public class GeminiLlmProvider : ILlmProvider
             using var response = await _httpClient.SendAsync(
                 httpMessage,
                 HttpCompletionOption.ResponseHeadersRead,
-                ct);
+                requestCancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Gemini tool-calling request failed with status code {StatusCode}.", (int)response.StatusCode);
@@ -217,7 +236,9 @@ public class GeminiLlmProvider : ILlmProvider
                     DegradedReason: "Live provider request failed.");
             }
 
-            var body = await LlmProviderResponseReader.ReadBoundedUtf8Async(response.Content, ct);
+            var body = await LlmProviderResponseReader.ReadBoundedUtf8Async(
+                response.Content,
+                requestCancellationToken);
             if (body is null)
             {
                 _logger.LogWarning("Gemini tool-calling response exceeded the safe byte limit or was not valid UTF-8.");
@@ -229,6 +250,18 @@ public class GeminiLlmProvider : ILlmProvider
             }
 
             return ParseToolCallingResponse(body);
+        }
+        catch (OperationCanceledException) when (
+            deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "Gemini tool-calling request exceeded the configured {TimeoutSeconds}-second deadline.",
+                _settings.Gemini.TimeoutSeconds);
+            return new LlmToolCompletionResult(
+                Content: "I encountered a timeout while processing your request.",
+                TokensUsed: 0, Provider: "Gemini", Model: GetConfiguredModelOrDefault(),
+                ToolCalls: null, IsComplete: true, IsDegraded: true,
+                DegradedReason: "Live provider request timed out.");
         }
         catch (OperationCanceledException)
         {

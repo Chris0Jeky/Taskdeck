@@ -16,8 +16,22 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 {
     private static readonly TimeSpan SourceSignalTimeout = TimeSpan.FromMilliseconds(100);
 
+    private static readonly string[] ExplicitTaskVerbs =
+    [
+        "add", "assign", "book", "call", "check", "complete", "contact", "create", "deploy",
+        "draft", "email", "finalize", "fix", "follow up", "investigate", "meet", "organize",
+        "prepare", "publish", "remove", "review", "rotate", "schedule", "send", "ship", "submit",
+        "test", "update", "verify", "write"
+    ];
+
     private static readonly Regex SpeakerCommitmentPattern = new(
         @"^[^\r\n:]{1,80}:\s*(?:I|we)\s+(?:will|shall|must|can|need\s+to|plan\s+to|am\s+going\s+to|are\s+going\s+to)\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase |
+        RegexOptions.Multiline | RegexOptions.NonBacktracking,
+        SourceSignalTimeout);
+
+    private static readonly Regex ContractedSpeakerCommitmentPrefixPattern = new(
+        @"^[^\r\n:]{1,80}:\s*(?:I|we)['\u2019]ll\s+(?<task>[^\r\n]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase |
         RegexOptions.Multiline | RegexOptions.NonBacktracking,
         SourceSignalTimeout);
@@ -32,6 +46,13 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         @"^\s*(?:[-*•]\s+(?:\[[xX ]\]\s+)?|\d+[.)]\s+)\S",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline |
         RegexOptions.NonBacktracking,
+        SourceSignalTimeout);
+
+    private static readonly Regex ExplicitTaskMarkerPrefixPattern = new(
+        @"^\s*(?:(?:please|let['\u2019]s)\s+|(?:action\s+item|next\s+step|todo)\s*:\s*)" +
+        @"(?<task>[^\r\n]+)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase |
+        RegexOptions.Multiline | RegexOptions.NonBacktracking,
         SourceSignalTimeout);
 
     private readonly ILlmProvider _llmProvider;
@@ -114,10 +135,13 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 LlmRequestAttributionMapper.ResolveCorrelationIdFromActivity(),
                 LlmRequestSourceSurface.Capture,
                 boardId),
-            // A non-null SystemPrompt opts out of the providers' chat instruction-extraction mode.
-            // The prompt frames capture text as untrusted data and TryParseTasks accepts only the
-            // exact raw-JSON response vocabulary.
-            SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt);
+            // Capture triage explicitly opts into raw response preservation. The prompt frames
+            // capture text as untrusted data and TryParseTasks accepts only the exact raw-JSON
+            // response vocabulary.
+            SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt)
+        {
+            ResponseMode = LlmCompletionResponseMode.CaptureTriageRaw
+        };
 
         LlmCompletionResult result;
         LlmCompletionResult? completed = null;
@@ -290,8 +314,10 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         try
         {
             return SpeakerCommitmentPattern.IsMatch(source) ||
+                   HasExplicitTaskVerbAfterPrefix(ContractedSpeakerCommitmentPrefixPattern, source) ||
                    NamedAssignmentPattern.IsMatch(source) ||
-                   StructuredTaskPattern.IsMatch(source);
+                   StructuredTaskPattern.IsMatch(source) ||
+                   HasExplicitTaskVerbAfterPrefix(ExplicitTaskMarkerPrefixPattern, source);
         }
         catch (RegexMatchTimeoutException)
         {
@@ -299,4 +325,29 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             return true;
         }
     }
+
+    private static bool HasExplicitTaskVerbAfterPrefix(Regex prefixPattern, string source)
+    {
+        foreach (Match match in prefixPattern.Matches(source))
+        {
+            var taskText = match.Groups["task"].Value.TrimStart();
+            foreach (var verb in ExplicitTaskVerbs)
+            {
+                if (!taskText.StartsWith(verb, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (taskText.Length == verb.Length || !IsWordCharacter(taskText[verb.Length]))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsWordCharacter(char value) =>
+        char.IsLetterOrDigit(value) || value == '_';
 }

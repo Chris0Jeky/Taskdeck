@@ -501,7 +501,10 @@ public class GeminiLlmProviderTests
 
         var direct = await provider.CompleteAsync(new ChatCompletionRequest(
             [new ChatCompletionMessage("User", "Just chatting.")],
-            SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt));
+            SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt)
+        {
+            ResponseMode = LlmCompletionResponseMode.CaptureTriageRaw
+        });
         var extraction = await new LlmCaptureTriageExtractor(provider, new LlmCaptureTriageSettings())
             .ExtractAsync(
                 Guid.NewGuid(),
