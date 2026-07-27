@@ -64,7 +64,9 @@ delegating to composables/components), `store/` (Pinia; `boardStore` is a facade
 **Flow:** capture → captureStore → inbox API → proposal generated → ReviewView → explicit approve, then
 explicit execute (needs an Idempotency-Key). Preview == Apply (both materialize the latest
 `ProposalRevision`). Provenance is server-stamped; client identity fields are rejected. Triage extraction
-is a deterministic regex extractor, never the LLM. Realtime is **per-board** SignalR, not global.
+is LLM-backed for transcript-source captures (`LlmCaptureTriageExtractor` — kill switch → provider health
+→ quota → completion → usage recording, every failure returned as an outcome, never thrown) and degrades
+to the deterministic extractor otherwise. Realtime is **per-board** SignalR, not global.
 LLM providers: mock by default; OpenAI/Gemini behind config gates (`docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`).
 
 ## Repo-specific pitfalls
