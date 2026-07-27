@@ -39,7 +39,7 @@ dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Releas
 dotnet test backend/Taskdeck.sln -c Release -m:1
 ```
 
-Verified on the staged head: affected lane 271/271, full Application 3,660/3,660, API golden path 4/4, and full backend 7,573 passed / 5 skipped / 0 failed. Keep `docs/security/UNTRUSTED_ARTEFACT_THREAT_MODEL.md` beside the test result: it records the finite-vocabulary false-empty residual and the still-open live-model, preview-XSS, consent/egress, image/OCR, and PDF decompressed-byte/object-count/single-parse-memory boundaries. ADR-0045's amendment remains Proposed until the maintainer ratifies it.
+Final-head verification: the affected focused lane passed 242/242 in each of two consecutive runs, and full Application passed 3,712/3,712. The recorded API golden path at 4/4 and full backend suite at 7,573 passed / 5 skipped / 0 failed predate the final review-fix commit; retain them as broader pre-final regression evidence, not exact-head proof. Keep `docs/security/UNTRUSTED_ARTEFACT_THREAT_MODEL.md` beside the test result: it records the finite-vocabulary false-empty residual and the still-open live-model, preview-XSS, consent/egress, image/OCR, and PDF decompressed-byte/object-count/single-parse-memory boundaries. ADR-0045's amendment remains Proposed until the maintainer ratifies it.
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 

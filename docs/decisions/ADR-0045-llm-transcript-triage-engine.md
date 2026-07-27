@@ -132,15 +132,17 @@ The candidate implementation replaces the accepted decision's lenient model-resp
 new transcript extractions with these narrower controls:
 
 - stamp new successful or genuine-empty verdicts as `llm-triage.v2`, while continuing to recognize
-  historical `llm-triage.v1` prompt-version values when their envelopes satisfy the current common
-  contract;
+  historical `llm-triage.v1` prompt-version values under their version-specific contract: v1 keeps
+  its original .NET whitespace checks and UTF-16 code-unit length limits, while v2 uses the stricter
+  ECMAScript-whitespace and Unicode-scalar contract;
 - frame the capture inside a per-request random untrusted-data boundary and require a single raw
   JSON `tasks` object, with no prose, fences, duplicate/unknown fields, provider operation/tool
   vocabulary, or values beyond the contract bounds;
 - require every evidence value to be an exact ordinal substring of the original capture and reject
   titles with leading/trailing whitespace, control/newline characters, or bidi controls/isolates;
-- preserve custom-system-prompt provider output verbatim for this strict parser; the legacy
-  instruction-extraction parser remains available only to the providers' default chat mode;
+- request the explicit `CaptureTriageRaw` response mode for capture-triage calls so providers
+  preserve only those responses verbatim for the strict parser; ordinary custom-system-prompt
+  calls continue through the providers' legacy instruction-extraction parsing/classification path;
 - cap each decoded provider response stream at 1 MiB before string/JSON materialization and count
   task/property arrays incrementally, failing closed immediately after a limit is exceeded;
 - preserve the original five-argument constructor and five-value deconstruction contract of
