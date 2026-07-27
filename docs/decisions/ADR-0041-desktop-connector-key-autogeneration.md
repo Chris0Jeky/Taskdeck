@@ -3,7 +3,18 @@
 - Status: Accepted
 - Date: 2026-06-20
 - Deciders: Repository maintainers
-- Related: #1131 (CLI/fresh-machine bootstrap), ADR-0038 (Paper UI canonical / self-contained exe is the personal run path), the archive-pivot run-story
+- Related: #1131 (CLI/fresh-machine bootstrap), #1241 (owner-only local config), #1242 (durable desktop local config), ADR-0038 (Paper UI canonical / self-contained exe is the personal run path), the archive-pivot run-story
+
+## Implementation Update (2026-07-27)
+
+Issue #1242 closes the relocation limitation recorded by this ADR. Packaged desktop Production now
+stores `appsettings.local.json` in the same durable OS app-data directory as its resolved SQLite
+database, while Development, staging/test, and headless Production retain the historical
+executable-local path. A first launch after upgrade imports the complete executable-local legacy JSON
+exactly once when the durable target is absent; an existing durable target always wins. Both copies
+are owner-only, and import/permission/race ambiguity fails closed. API and CLI also refuse to generate
+replacement secrets when an existing database has no recoverable connector key. The headless
+Production supplied-key decision itself is unchanged.
 
 ## Context
 
@@ -11,10 +22,11 @@ Taskdeck encrypts stored connector credentials with a symmetric key read from
 `Connectors:EncryptionKey`. `Infrastructure/DependencyInjection.cs` throws at startup when that key is
 empty, so the application cannot start without one.
 
-`FirstRunBootstrapper.RunFirstRunChecks` already auto-generates secrets into `appsettings.local.json`
-(next to the executable, via `AppContext.BaseDirectory`) so a checked-out or packaged build runs
-without hand-edited config: the JWT secret is generated in **all** environments, but the connector
-encryption key was generated only when **not** Production:
+At the time of this decision, `FirstRunBootstrapper.RunFirstRunChecks` auto-generated secrets into
+an executable-local `appsettings.local.json` so a checked-out or packaged build ran without
+hand-edited config: the JWT secret was generated in **all** environments, but the connector
+encryption key was generated only when **not** Production. The implementation update above now gives
+packaged desktop Production a durable app-data path without changing that historical decision context:
 
 ```csharp
 if (!builder.Environment.IsProduction())
@@ -46,13 +58,13 @@ internal static bool ShouldAutoGenerateConnectorKey(bool isProduction, bool isHe
     => !isProduction || !isHeadless;
 ```
 
-- **Desktop exe (Production, NOT headless):** generate a 256-bit key and persist it to
-  `appsettings.local.json`, reloaded on the next launch via `AddLocalConfigFile`. The exe becomes
-  runnable with no manual configuration. On Unix the file is created `0600` before the secret is written;
-  **on Windows (the primary desktop target) the file is NOT permission-restricted** — at-rest protection
-  relies on the user-profile / disk security. Hardening the Windows ACL is tracked in #1241. If the write
-  fails (e.g. a read-only install directory), startup **fails loudly** (throws) rather than running with
-  an ephemeral in-memory key that would be lost on restart and orphan stored connector credentials.
+- **Desktop exe (Production, NOT headless):** generate a 256-bit key and persist it to the durable
+  OS app-data `appsettings.local.json`, reloaded on the next launch via `AddLocalConfigFile`. The exe
+  becomes runnable with no manual configuration and survives an executable-folder move. The file is
+  created owner-only (`0600` on Unix; protected current-user DACL on Windows) before secrets are
+  written. An executable-local legacy file is imported atomically only when the durable target is
+  absent, then retained as an owner-only recovery copy. If durable persistence or migration cannot be
+  proved safe, startup **fails loudly** rather than running with ephemeral replacement material.
 - **Headless Production (CI / cloud container):** detected via `CI` / `TF_BUILD` / `GITHUB_ACTIONS` /
   `TASKDECK_HEADLESS`. The key is **not** generated; the deployment must supply a stable key, and
   `ValidateProductionSecrets` hard-fails (throws) if it is missing — unchanged behavior. Because the
@@ -84,20 +96,20 @@ generates the key first and then passes validation.
 
 - The self-contained desktop exe runs on first launch with no manual key configuration (pivot goal:
   trivially easy to run).
-- The generated connector key lives in `appsettings.local.json` next to the exe. **Operationally:** that
-  file must be backed up alongside the SQLite database — deleting it makes previously-stored connector
-  credentials undecryptable (the encrypted data remains but cannot be read). The runtime log emitted at
-  generation states this. The JWT secret shares the same persistence/backup model, **but not the headless
-  behavior:** `EnsureJwtSecret` runs unconditionally (it auto-generates even in headless Production, where
-  an ephemeral JWT secret only forces re-login), whereas the connector key is deliberately *not*
-  auto-generated in headless Production because an ephemeral one would cause data loss, not just re-login.
-- **At rest, the key file is only `0600`-restricted on Unix; on Windows it inherits default NTFS ACLs**
-  (tracked in #1241). For the single-user desktop target this relies on the user's profile security.
-- **The key persists next to the exe (`AppContext.BaseDirectory`), not in the app-data directory where
-  the database lives.** Moving or upgrading the exe to a *different folder* therefore orphans the key
-  while the database (in `%LOCALAPPDATA%/Taskdeck`) is reused — the new exe regenerates a different key and
-  cannot decrypt the reused credentials. Until this is addressed (relocate persisted secrets to the durable
-  app-data location, tracked in #1242), back up `appsettings.local.json` and prefer in-place upgrades.
+- The generated connector key and JWT secret live in the packaged desktop's durable app-data
+  `appsettings.local.json`, beside the resolved SQLite database rather than beside the executable.
+  **Operationally, both files remain one recovery set:** deleting the config makes stored connector
+  credentials undecryptable, while losing only the JWT secret forces re-login. The connector key is
+  deliberately *not* auto-generated in headless Production because an ephemeral one would cause data
+  loss, not just re-login.
+- **The durable and retained legacy local-config files are owner-only before their secrets are read or
+  written.** Unix uses mode `0600`; Windows uses a protected current-user DACL. Migration uses
+  cross-process locks and an atomic non-overwriting move, never merges two secret files, and treats the
+  durable target as authoritative once it exists.
+- **Moving or upgrading the desktop executable no longer orphans its key.** A first run with no durable
+  target imports the complete executable-local legacy JSON and retains the secured source as recovery
+  evidence. If an existing database has no supplied or recoverable persisted connector key, startup
+  refuses to generate either replacement secret; recovery must be explicit.
 - **An empty higher-priority `Connectors__EncryptionKey` reuses the persisted key — it never overwrites or
   churns it.** Because `appsettings.local.json` loads *before* environment variables (so env vars win), an
   env var set to an empty/whitespace value (e.g. a copied service/env template) would mask the persisted key.
@@ -140,7 +152,12 @@ generates the key first and then passes validation.
 ## References
 
 - #1131 — CLI/fresh-machine bootstrap (this ADR addresses the API/desktop-exe connector-key half)
+- #1242 — durable desktop local-config relocation, legacy import, and existing-database key guard
 - ADR-0038 — Paper UI Is the Canonical Frontend / self-contained exe is the personal run path
 - `backend/src/Taskdeck.Api/FirstRun/FirstRunBootstrapper.cs` — `RunFirstRunChecks`,
+  `ResolveLocalConfigPath`, `PrepareLocalConfigFile`, `EnsureBootstrapSecrets`,
   `ShouldAutoGenerateConnectorKey`, `EnsureConnectorEncryptionKey`, `ValidateProductionSecrets`
-- `backend/tests/Taskdeck.Api.Tests/FirstRun/FirstRunBootstrapperTests.cs` — policy unit test
+- `backend/src/Taskdeck.Application/Bootstrap/BootstrapFileLock.cs` and
+  `BootstrapFileSecurity.cs` — shared API/CLI cross-process and owner-only persistence contract
+- `backend/tests/Taskdeck.Api.Tests/FirstRun/FirstRunBootstrapperTests.cs` and
+  `LocalConfigPathMigrationTests.cs` — policy, migration, race, ACL, and data-loss regressions

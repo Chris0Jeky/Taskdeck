@@ -1,6 +1,6 @@
 # Secrets and Configuration Management Baseline
 
-Last Updated: 2026-03-28
+Last Updated: 2026-07-27
 Issue: `#110` SEC-10 secrets and configuration management baseline
 
 This document defines the canonical secrets handling policy, rotation model, and operational procedures for all Taskdeck environments.
@@ -25,6 +25,7 @@ Related docs:
 | Secret | Purpose | Local/Dev | Staging/Prod | Rotation Trigger |
 | --- | --- | --- | --- | --- |
 | `Jwt:SecretKey` | JWT signing for auth tokens | Auto-generated to `appsettings.local.json` by `FirstRunBootstrapper`; or `dotnet user-secrets` / env var | AWS SSM SecureString via `jwt_secret_ssm_parameter_name` | Scheduled (90 days) or on compromise |
+| `Connectors:EncryptionKey` | Encrypt stored connector credentials | Auto-generated to owner-only `appsettings.local.json` for local/API/CLI use; or env/user secrets | Packaged desktop persists in durable app-data; headless Production requires a supplied stable key | On compromise; preserve the old key until all stored credentials are re-encrypted |
 | `Llm:OpenAi:ApiKey` | OpenAI API access | Environment variable or user secrets | SSM SecureString or CI-injected env var | On compromise or key expiry |
 | `Llm:Gemini:ApiKey` | Gemini API access | Environment variable or user secrets | SSM SecureString or CI-injected env var | On compromise or key expiry |
 | `TASKDECK_JWT_SECRET` | Compose-level JWT secret injection | `deploy/.env` (untracked) | SSM SecureString pulled at boot | Scheduled (90 days) or on compromise |
@@ -36,10 +37,24 @@ Related docs:
 
 ### Local Development
 
-- **JWT secret**: Auto-generated to `appsettings.local.json` on first run by `FirstRunBootstrapper`. No hardcoded secret in committed files. Alternatively, use `dotnet user-secrets set "Jwt:SecretKey" "<value>"` or the `Jwt__SecretKey` environment variable.
+- **JWT secret**: Auto-generated to executable-local `appsettings.local.json` on first run by `FirstRunBootstrapper`. No hardcoded secret in committed files. Alternatively, use `dotnet user-secrets set "Jwt:SecretKey" "<value>"` or the `Jwt__SecretKey` environment variable.
 - **LLM API keys**: Not required (Mock provider is default). When needed for live-provider demos, set via environment variables (`Llm__OpenAi__ApiKey`, `Llm__Gemini__ApiKey`) or .NET user secrets (`dotnet user-secrets set "Llm:OpenAi:ApiKey" "<key>"`).
 - **GitHub PAT**: Set in user environment or root `.env` (gitignored).
 - **No secrets required in committed files.** `appsettings.json` contains only empty placeholder values for optional provider keys.
+
+### Packaged Desktop Production
+
+- **Durable local config**: Non-headless Production resolves `appsettings.local.json` into the OS
+  LocalAppData `Taskdeck` directory beside the default resolved SQLite database. The web host and
+  both MCP launch modes use the same absolute path.
+- **Upgrade migration**: If that durable file is absent, first run imports the complete
+  executable-local legacy JSON through owner-only staging and an atomic non-overwriting move. An
+  existing durable file always wins; the secured legacy copy is retained for recovery.
+- **Data-loss guard**: If the effective SQLite database already exists and no supplied or persisted
+  connector key is recoverable, startup refuses to generate either replacement secret. Restore the
+  original key or explicitly supply `Connectors__EncryptionKey`; do not delete recovery evidence.
+- **Recovery set**: Back up the SQLite database and `appsettings.local.json` together. The latter
+  contains both the connector key (data decryptability) and JWT secret (session continuity).
 
 ### Docker Compose (Local Self-Host)
 
@@ -48,6 +63,9 @@ Related docs:
 - Template: `deploy/.env.example` documents all expected variables with empty secret values.
 
 ### Staging / Production (Terraform + AWS)
+
+This section describes headless/cloud deployment. It does not override the packaged desktop
+Production behavior above.
 
 - **JWT secret**: Stored as AWS SSM SecureString parameter. The Terraform module references the parameter by name (`jwt_secret_ssm_parameter_name`) and the EC2 instance role has scoped `ssm:GetParameter` permission. Optional customer-managed KMS key support via `jwt_secret_kms_key_arn`.
 - **LLM API keys**: Stored as additional SSM SecureString parameters or injected via the deployment environment file at boot. Not passed through Terraform `user_data` in plaintext.
@@ -77,6 +95,7 @@ The following committed files contain secret-shaped keys. All values are empty p
 The `.gitignore` excludes all files that could contain real secrets:
 
 - `.env` and `.env.*` (except `.env.example`)
+- `appsettings.local.json`
 - `frontend/*/.env.local` and `frontend/*/.env.*.local`
 - `deploy/terraform/aws/environments/*/terraform.tfvars`
 - `deploy/terraform/aws/environments/*/*.auto.tfvars`

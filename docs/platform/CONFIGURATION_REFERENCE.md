@@ -54,6 +54,7 @@ Source files used to build this reference:
   - [`Database`](#database-1)
   - [`AuditRetention`](#auditretention)
 - [Persistence and first run](#persistence-and-first-run)
+  - [Local bootstrap file](#local-bootstrap-file)
   - [`ConnectionStrings`](#connectionstrings)
   - [`Database`](#database)
   - [`ExportImport`](#exportimport)
@@ -125,7 +126,10 @@ effectively off). The 32-character floor is a single source of truth on
 `AuthenticationService.TryValidateJwtSettings`. `FirstRunBootstrapper.EnsureJwtSecret`
 runs unconditionally in all environments (including Development and CI/headless)
 and generates a random 32-byte base64 secret into `appsettings.local.json` when
-the key is missing or equal to the well-known placeholder, so this fail-fast is
+the key is missing or equal to the well-known placeholder. Packaged desktop Production stores that
+file in the durable OS app-data directory beside its resolved SQLite database and imports an older
+executable-local file once when needed; other API/MCP environments retain the executable-local path.
+The CLI stores its generated file beside the resolved SQLite database. This means the fail-fast is
 only reached when operators explicitly set an invalid (e.g. too-short) value.
 Developers can alternatively supply the secret via `dotnet user-secrets` or the
 `Jwt__SecretKey` environment variable.
@@ -563,6 +567,22 @@ Registered via `RegisterValidatedOptions<AuditRetentionSettings>` with
 
 ## Persistence and first run
 
+### Local bootstrap file
+
+`appsettings.local.json` contains generated JWT and connector-encryption secrets and is always
+resolved before any configuration provider reads it. The host must reuse that exact absolute path
+for preparation, loading, generation, and validation:
+
+| Host mode | Local-config location | Migration / safety behavior |
+| --- | --- | --- |
+| Packaged desktop (Production, not headless) | OS LocalAppData `Taskdeck/appsettings.local.json`, beside the default resolved SQLite database | If the durable target is absent, atomically import the complete executable-local legacy JSON once. An existing durable file always wins; both copies are owner-only. |
+| Development, staging/test, or headless Production API/MCP | `AppContext.BaseDirectory/appsettings.local.json` | Historical path retained. Headless Production still requires a supplied connector key. |
+| CLI | Beside the effective SQLite `Data Source`; current directory only when no durable file path can be resolved | Reuse the persisted key; refuse to generate a replacement when the resolved database already exists without a recoverable key. |
+
+Migration, permission, corrupt-recovery, or concurrent-winner ambiguity fails startup before either
+secret is generated. Environment variables and other later providers retain higher precedence, but
+an empty higher-priority connector key cannot overwrite the persisted recovery value.
+
 ### `ConnectionStrings`
 
 Consumed in two places:
@@ -625,7 +645,7 @@ Bound to `FirstRunSettings` (`Taskdeck.Api.FirstRun.FirstRunSettings`).
 | --- | --- | --- | --- | --- |
 | `FirstRun:AutoOpenBrowser` | `bool` | `false` | When true, the API process opens a browser window to the local URL after startup. Intended for the packaged desktop distribution; never use in CI or server deployments. | No |
 | `FirstRun:Port` | `int` | `5000` | Port used to construct the browser URL shown in logs. | No |
-| `FirstRun:ResolveAppDataDbPath` | `bool` | `true` | When true, first-run rewrites a relative SQLite `Data Source` path into the OS LocalAppData directory. | No |
+| `FirstRun:ResolveAppDataDbPath` | `bool` | `true` | When true, first-run rewrites a relative SQLite `Data Source` path into the OS LocalAppData directory. This controls database resolution; it does not override the host-mode local-config path table above. | No |
 
 ### `DevelopmentSandbox`
 
@@ -644,7 +664,7 @@ integration credentials (e.g., GitHub tokens) at rest in the SQLite database.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Connectors:EncryptionKey` | `string` (base64) | unset | AES-256 key for encrypting connector credentials at rest. Generate with `openssl rand -base64 32`. In Production, the app **refuses to start** without this value. In Development, a deterministic fallback key is used. | Yes (Production) |
+| `Connectors:EncryptionKey` | `string` (base64) | unset | AES-256 key for encrypting connector credentials at rest. Generate with `openssl rand -base64 32`. Packaged desktop Production auto-generates and owner-only persists a stable value; headless Production **refuses to start** without an operator-supplied stable value. Development/non-Production bootstrap behavior is unchanged. An existing database without a recoverable key blocks replacement generation. | Yes (headless Production; auto-generated for desktop) |
 
 Docker Compose variable: `TASKDECK_CONNECTORS_ENCRYPTION_KEY`
 

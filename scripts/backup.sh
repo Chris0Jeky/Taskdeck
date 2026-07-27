@@ -178,8 +178,11 @@ echo "Backup written: $BACKUP_FILE"
 # REQUIRED to decrypt stored connector credentials, so a DB-only backup would
 # restore credentials that can no longer be read. Copy it alongside the DB
 # backup (paired by timestamp) whenever it is present next to the database.
-# (Desktop installs keep the key in appsettings.local.json instead -- back that
-# up separately; it is not a sibling of the DB so nothing is copied here.)
+# Packaged desktop Production keeps the key inside appsettings.local.json in the
+# same durable app-data directory as the default database. This script does not
+# copy that combined config/JWT/connector-secret file; include it separately in
+# the same protected recovery set. Development and headless hosts may resolve
+# appsettings.local.json elsewhere, so use the runtime's documented resolved path.
 DB_DIR="$(dirname "$DB_PATH")"
 CONNECTOR_KEY_FILE="${DB_DIR}/connector-encryption.key"
 if [[ -f "$CONNECTOR_KEY_FILE" ]]; then
