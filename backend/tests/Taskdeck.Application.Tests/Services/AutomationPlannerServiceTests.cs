@@ -466,10 +466,9 @@ public class AutomationPlannerServiceTests
         var boardId = Guid.NewGuid();
         var card1 = TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), "Old Task 1");
         var card2 = TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), "Old Task 2");
-        var card3 = TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), "New Task");
 
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
-            .ReturnsAsync(new List<Card> { card1, card2, card3 });
+        _cardRepoMock.Setup(r => r.GetTitleMatchesByBoardIdAsync(boardId, "Old", 51, default))
+            .ReturnsAsync(new List<Card> { card1, card2 });
 
         var expectedProposal = new ProposalDto(
             Guid.NewGuid(),
@@ -517,12 +516,24 @@ public class AutomationPlannerServiceTests
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
-        var cards = Enumerable.Range(0, 51)
+        var cards = Enumerable.Range(0, 100)
             .Select(i => TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), $"Matching Task {i}"))
             .ToList();
+        var enumeratedCards = 0;
 
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
-            .ReturnsAsync(cards);
+        IEnumerable<Card> LazyCards()
+        {
+            foreach (var card in cards)
+            {
+                enumeratedCards++;
+                if (enumeratedCards > 51)
+                    throw new InvalidOperationException("Archive matching enumerated beyond its sentinel");
+                yield return card;
+            }
+        }
+
+        _cardRepoMock.Setup(r => r.GetTitleMatchesByBoardIdAsync(boardId, "Matching", 51, default))
+            .ReturnsAsync(LazyCards());
 
         var result = await _service.ParseInstructionAsync(
             "archive cards matching 'Matching'",
@@ -532,6 +543,10 @@ public class AutomationPlannerServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Be("Proposal exceeds maximum operation count of 50");
+        enumeratedCards.Should().Be(51);
+        _cardRepoMock.Verify(
+            r => r.GetByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
         _policyEngineMock.Verify(
             e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
             Times.Never);

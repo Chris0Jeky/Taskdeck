@@ -108,37 +108,22 @@ public class AutomationPlannerBatchTests
     }
 
     [Fact]
-    public async Task ParseBatchInstruction_ShouldRejectOversizedInstructionCollectionBeforeAccess()
+    public async Task ParseBatchInstruction_ShouldAllowMoreRawEntries_WhenResultStaysWithinOperationLimit()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
-        var instructions = Enumerable.Repeat("archive board", AutomationPlannerService.MaxBatchSize + 1).ToList();
+        SetupMocksForSuccess(userId, boardId);
+        var instructions = Enumerable.Repeat(" ", AutomationPlannerService.MaxBatchSize).ToList();
+        instructions.Add("archive board");
 
         var result = await _service.ParseBatchInstructionAsync(instructions, userId, boardId);
 
-        result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Be(
-            $"Instruction batch exceeds maximum of {AutomationPlannerService.MaxBatchSize} entries. Got {instructions.Count} entries.");
-        _policyEngineMock.Verify(
-            e => e.ValidateBoardAccessAsync(
-                It.IsAny<Guid>(),
-                It.IsAny<Guid?>(),
-                It.IsAny<CancellationToken>()),
-            Times.Never);
-        _policyEngineMock.Verify(
-            e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
-            Times.Never);
-        _policyEngineMock.Verify(
-            e => e.ValidatePermissionsAsync(
-                It.IsAny<Guid>(),
-                It.IsAny<Guid?>(),
-                It.IsAny<IEnumerable<ProposalOperationDto>>(),
-                It.IsAny<CancellationToken>()),
-            Times.Never);
+        result.IsSuccess.Should().BeTrue();
         _proposalServiceMock.Verify(
-            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+            s => s.CreateProposalAsync(
+                It.Is<CreateProposalDto>(dto => dto.Operations.Count == 1),
+                default),
+            Times.Once);
     }
 
     [Fact]
@@ -169,6 +154,57 @@ public class AutomationPlannerBatchTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Could not parse instruction into a proposal.");
+        _policyEngineMock.Verify(
+            e => e.ValidateBoardAccessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Boards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Columns, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Cards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.AutomationProposals, Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldBoundLargeAllWhitespaceInputBeforeAccess()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        var result = await _service.ParseBatchInstructionAsync(
+            Enumerable.Repeat(" ", 5000).ToList(),
+            userId,
+            boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("input work budget");
+        _policyEngineMock.Verify(
+            e => e.ValidateBoardAccessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Columns, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Cards, Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -438,6 +474,82 @@ public class AutomationPlannerBatchTests
                 dto.Operations[0].ActionType == "create" &&
                 dto.Operations[1].ActionType == "archive"),
             default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldCreateBoundedArchiveMatchesWithinRemainingCapacity()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        SetupMocksForSuccess(userId, boardId);
+        var matchingCards = new[]
+        {
+            TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), "Old Task 1"),
+            TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), "Old Task 2")
+        };
+
+        _cardRepoMock.Setup(r => r.GetTitleMatchesByBoardIdAsync(boardId, "Old", 30, default))
+            .ReturnsAsync(matchingCards);
+
+        var result = await _service.ParseBatchInstructionAsync(
+            new List<string> { "archive board", "archive cards matching 'Old'" },
+            userId,
+            boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(
+            It.Is<CreateProposalDto>(dto => dto.Operations.Count == 3),
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldStopArchiveMatchEnumerationAtRemainingCapacitySentinel()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var cards = Enumerable.Range(0, 100)
+            .Select(i => TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), $"Matching Task {i}"))
+            .ToList();
+        var enumeratedCards = 0;
+
+        IEnumerable<Card> LazyCards()
+        {
+            foreach (var card in cards)
+            {
+                enumeratedCards++;
+                if (enumeratedCards > 2)
+                    throw new InvalidOperationException("Batch archive matching enumerated beyond its sentinel");
+                yield return card;
+            }
+        }
+
+        _cardRepoMock.Setup(r => r.GetTitleMatchesByBoardIdAsync(boardId, "Matching", 2, default))
+            .ReturnsAsync(LazyCards());
+        var instructions = Enumerable.Repeat("archive board", 29).ToList();
+        instructions.Add("archive cards matching 'Matching'");
+
+        var result = await _service.ParseBatchInstructionAsync(instructions, userId, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Batch exceeds maximum of 30 operations. Got 31 operations.");
+        enumeratedCards.Should().Be(2);
+        _cardRepoMock.Verify(
+            r => r.GetByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

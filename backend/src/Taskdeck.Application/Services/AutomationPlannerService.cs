@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -12,15 +13,23 @@ namespace Taskdeck.Application.Services;
 public class AutomationPlannerService : IAutomationPlannerService
 {
     private const int MaxProposalMetadataLength = 100;
+    private const int RawInstructionEntryWorkUnits = 1024;
 
     /// <summary>
     /// Maximum number of operations allowed in a single batch proposal.
     /// </summary>
     public const int MaxBatchSize = 30;
 
+    private const long MaxBatchInstructionWorkUnits =
+        (ProposalOperationInputValidator.MaxParametersBytes + RawInstructionEntryWorkUnits) * (long)MaxBatchSize;
+
     // Pattern: "create cards: title1, title2, title3" or "create cards for X: title1, title2"
     private static readonly Regex BatchCardCreateRegex = new(
         @"^\s*(?:create|add)\s+(?:cards|tasks)\s*(?:for\s+[^:]+)?:\s*(.+)\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ArchiveCardsMatchRegex = new(
+        @"^\s*archive cards matching ['""]([^'""]+)['""]\s*$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IAutomationProposalService _proposalService;
@@ -209,10 +218,7 @@ public class AutomationPlannerService : IAutomationPlannerService
                     else
                     {
                         // Pattern: "archive cards matching 'pattern'"
-                        var archiveCardsMatch = Regex.Match(
-                            instruction,
-                            @"^\s*archive cards matching ['""]([^'""]+)['""]\s*$",
-                            RegexOptions.IgnoreCase);
+                        var archiveCardsMatch = ArchiveCardsMatchRegex.Match(instruction);
                         if (archiveCardsMatch.Success)
                         {
                             var pattern = archiveCardsMatch.Groups[1].Value;
@@ -220,26 +226,25 @@ public class AutomationPlannerService : IAutomationPlannerService
                             if (!boardId.HasValue)
                                 return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Board ID is required for card operations");
 
-                            // Find matching cards
-                            var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
-                            var matchingCards = cards.Where(c =>
-                                c.Title.Contains(pattern, StringComparison.OrdinalIgnoreCase)).ToList();
+                            var maxOperationCount = ProposalOperationStructureValidator.MaxOperationCount;
+                            var matchingCards = await GetBoundedTitleMatchesAsync(
+                                boardId.Value,
+                                pattern,
+                                maxOperationCount + 1,
+                                cancellationToken);
 
-                            if (!matchingCards.Any())
+                            if (matchingCards.Count == 0)
                                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"No cards matching '{pattern}' found");
 
-                            foreach (var card in matchingCards)
+                            if (matchingCards.Count > maxOperationCount)
                             {
-                                var parameters = JsonSerializer.Serialize(new { cardId = card.Id });
-                                operations.Add(new CreateProposalOperationDto(
-                                    sequence++,
-                                    "archive",
-                                    "card",
-                                    parameters,
-                                    Guid.NewGuid().ToString(),
-                                    TargetId: card.Id.ToString()
-                                ));
+                                return Result.Failure<ProposalDto>(
+                                    ErrorCodes.ValidationError,
+                                    $"Proposal exceeds maximum operation count of {maxOperationCount}");
                             }
+
+                            operations.AddRange(BuildArchiveOperations(matchingCards, sequence));
+                            sequence += matchingCards.Count;
                         }
                         else
                         {
@@ -531,7 +536,46 @@ public class AutomationPlannerService : IAutomationPlannerService
                 var batchOps = await TryParseBatchCardCreateAsync(instruction, boardId, cancellationToken);
                 if (batchOps != null)
                 {
+                    var operationCount = allOperations.Count + batchOps.Count;
+                    if (operationCount > MaxBatchSize)
+                    {
+                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError,
+                            $"Batch exceeds maximum of {MaxBatchSize} operations. Got {operationCount} operations.");
+                    }
+
                     allOperations.AddRange(batchOps);
+                    continue;
+                }
+
+                var archiveCardsMatch = ArchiveCardsMatchRegex.Match(instruction);
+                if (archiveCardsMatch.Success)
+                {
+                    if (!boardId.HasValue)
+                    {
+                        parseErrors.Add(instruction);
+                        continue;
+                    }
+
+                    var remainingOperationCount = MaxBatchSize - allOperations.Count;
+                    var matchingCards = await GetBoundedTitleMatchesAsync(
+                        boardId.Value,
+                        archiveCardsMatch.Groups[1].Value,
+                        remainingOperationCount + 1,
+                        cancellationToken);
+
+                    if (matchingCards.Count == 0)
+                    {
+                        parseErrors.Add(instruction);
+                        continue;
+                    }
+
+                    if (matchingCards.Count > remainingOperationCount)
+                    {
+                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError,
+                            $"Batch exceeds maximum of {MaxBatchSize} operations. Got {allOperations.Count + matchingCards.Count} operations.");
+                    }
+
+                    allOperations.AddRange(BuildArchiveOperations(matchingCards, allOperations.Count));
                     continue;
                 }
 
@@ -539,6 +583,13 @@ public class AutomationPlannerService : IAutomationPlannerService
                 var ops = await TryParseOperationsAsync(instruction, boardId, cancellationToken);
                 if (ops != null && ops.Count > 0)
                 {
+                    var operationCount = allOperations.Count + ops.Count;
+                    if (operationCount > MaxBatchSize)
+                    {
+                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError,
+                            $"Batch exceeds maximum of {MaxBatchSize} operations. Got {operationCount} operations.");
+                    }
+
                     allOperations.AddRange(ops);
                 }
                 else
@@ -683,34 +734,47 @@ public class AutomationPlannerService : IAutomationPlannerService
 
     private static Result ValidateInstructionsPreflight(IReadOnlyList<string> instructions)
     {
-        // Bound the raw collection before walking it. Operation count is checked again after
-        // parsing because unparseable entries do not become proposal operations.
-        if (instructions.Count > MaxBatchSize)
+        long consumedWorkUnits = 0;
+        var hasNonWhitespaceInstruction = false;
+
+        foreach (var rawInstruction in instructions)
+        {
+            var instruction = rawInstruction ?? string.Empty;
+
+            var validation = ValidateInstructionPreflight(instruction, out var instructionBytes);
+            if (!validation.IsSuccess)
+                return validation;
+
+            consumedWorkUnits += RawInstructionEntryWorkUnits + instructionBytes;
+            if (consumedWorkUnits > MaxBatchInstructionWorkUnits)
+            {
+                return Result.Failure(
+                    ErrorCodes.ValidationError,
+                    $"Instruction batch exceeds the maximum input work budget of {MaxBatchInstructionWorkUnits} units.");
+            }
+
+            hasNonWhitespaceInstruction |= !string.IsNullOrWhiteSpace(instruction);
+        }
+
+        if (!hasNonWhitespaceInstruction)
         {
             return Result.Failure(
                 ErrorCodes.ValidationError,
-                $"Instruction batch exceeds maximum of {MaxBatchSize} entries. Got {instructions.Count} entries.");
-        }
-
-        foreach (var instruction in instructions)
-        {
-            if (string.IsNullOrWhiteSpace(instruction))
-                continue;
-
-            var validation = ValidateInstructionPreflight(instruction);
-            if (!validation.IsSuccess)
-                return validation;
+                BuildParseHintMessage(string.Empty));
         }
 
         return Result.Success();
     }
 
     private static Result ValidateInstructionPreflight(string instruction)
+        => ValidateInstructionPreflight(instruction, out _);
+
+    private static Result ValidateInstructionPreflight(string instruction, out int instructionBytes)
     {
         // This is intentionally a raw, allocation-free byte check. The operation validator still
         // validates the exact serialized JSON later, but no unbounded regex/split/serialization or
         // repository/policy work should occur for an already-oversized instruction.
-        if (ExceedsInstructionSizeLimit(instruction))
+        if (!TryGetInstructionByteCount(instruction, out instructionBytes))
         {
             return Result.Failure(
                 ErrorCodes.ValidationError,
@@ -755,9 +819,19 @@ public class AutomationPlannerService : IAutomationPlannerService
     }
 
     private static bool ExceedsInstructionSizeLimit(string instruction)
+        => !TryGetInstructionByteCount(instruction, out _);
+
+    private static bool TryGetInstructionByteCount(string instruction, out int instructionBytes)
     {
         var maxBytes = ProposalOperationInputValidator.MaxParametersBytes;
-        return instruction.Length > maxBytes || Encoding.UTF8.GetByteCount(instruction) > maxBytes;
+        if (instruction.Length > maxBytes)
+        {
+            instructionBytes = maxBytes + 1;
+            return false;
+        }
+
+        instructionBytes = Encoding.UTF8.GetByteCount(instruction);
+        return instructionBytes <= maxBytes;
     }
 
     private static List<string> SplitBatchTitles(string titlesRaw, int titleCount)
@@ -779,6 +853,44 @@ public class AutomationPlannerService : IAutomationPlannerService
         }
 
         return result;
+    }
+
+    private async Task<List<Card>> GetBoundedTitleMatchesAsync(
+        Guid boardId,
+        string titlePattern,
+        int maxResults,
+        CancellationToken cancellationToken)
+    {
+        var matches = await _unitOfWork.Cards.GetTitleMatchesByBoardIdAsync(
+            boardId,
+            titlePattern,
+            maxResults,
+            cancellationToken);
+
+        // Defend the service boundary even when a test double or alternate repository ignores
+        // maxResults. Enumeration still stops at the requested sentinel.
+        return matches.Take(maxResults).ToList();
+    }
+
+    private static List<CreateProposalOperationDto> BuildArchiveOperations(
+        IReadOnlyList<Card> cards,
+        int startingSequence)
+    {
+        var operations = new List<CreateProposalOperationDto>(cards.Count);
+        for (var i = 0; i < cards.Count; i++)
+        {
+            var cardId = cards[i].Id;
+            var parameters = JsonSerializer.Serialize(new { cardId });
+            operations.Add(new CreateProposalOperationDto(
+                startingSequence + i,
+                "archive",
+                "card",
+                parameters,
+                Guid.NewGuid().ToString(),
+                TargetId: cardId.ToString()));
+        }
+
+        return operations;
     }
 
     /// <summary>
@@ -886,27 +998,22 @@ public class AutomationPlannerService : IAutomationPlannerService
         }
 
         // Pattern: "archive cards matching 'pattern'"
-        var archiveCardsMatch = Regex.Match(
-            instruction,
-            @"^\s*archive cards matching ['""]([^'""]+)['""]\s*$",
-            RegexOptions.IgnoreCase);
+        var archiveCardsMatch = ArchiveCardsMatchRegex.Match(instruction);
         if (archiveCardsMatch.Success)
         {
             var pattern = archiveCardsMatch.Groups[1].Value;
             if (!boardId.HasValue)
                 return null;
 
-            var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
-            var matchingCards = cards.Where(c => c.Title.Contains(pattern, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (!matchingCards.Any())
+            var matchingCards = await GetBoundedTitleMatchesAsync(
+                boardId.Value,
+                pattern,
+                MaxBatchSize + 1,
+                cancellationToken);
+            if (matchingCards.Count == 0 || matchingCards.Count > MaxBatchSize)
                 return null;
 
-            foreach (var card in matchingCards)
-            {
-                var parameters = JsonSerializer.Serialize(new { cardId = card.Id });
-                operations.Add(new CreateProposalOperationDto(sequence++, "archive", "card", parameters, Guid.NewGuid().ToString(), TargetId: card.Id.ToString()));
-            }
-            return operations;
+            return BuildArchiveOperations(matchingCards, sequence);
         }
 
         // Pattern: "update card {id} title 'new title'" or "update card {id} description 'new desc'"
