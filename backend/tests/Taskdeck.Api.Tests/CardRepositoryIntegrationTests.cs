@@ -435,7 +435,7 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
     }
 
     [Fact]
-    public async Task GetTitleMatchesByBoardIdAsync_ShouldPreserveMatchingScopeOrderAndLimit()
+    public async Task GetTitleMatchesByBoardIdAsync_ShouldPreserveUnicodeMatchingScopeOrderAndBounds()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -453,17 +453,25 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
         var first = new Card(board.Id, column.Id, "Needle first", position: 0);
         var second = new Card(board.Id, column.Id, "nEeDlE second", position: 1);
         var literalPercent = new Card(board.Id, column.Id, "Literal % marker", position: 2);
+        var unicode = new Card(board.Id, column.Id, "Café planning", position: 3);
         var other = new Card(otherBoard.Id, otherColumn.Id, "Needle other board", position: 0);
-        db.Cards.AddRange(first, second, literalPercent, other);
+        db.Cards.AddRange(first, second, literalPercent, unicode, other);
         await db.SaveChangesAsync();
 
-        var limitedMatches = (await repo.GetTitleMatchesByBoardIdAsync(
-            board.Id, "NEEDLE", maxResults: 1)).ToList();
-        var literalMatches = (await repo.GetTitleMatchesByBoardIdAsync(
-            board.Id, "%", maxResults: 10)).ToList();
+        var limitedMatches = await repo.GetTitleMatchesByBoardIdAsync(
+            board.Id, "NEEDLE", maxResults: 1, maxCardsToScan: 10);
+        var literalMatches = await repo.GetTitleMatchesByBoardIdAsync(
+            board.Id, "%", maxResults: 10, maxCardsToScan: 10);
+        var unicodeMatches = await repo.GetTitleMatchesByBoardIdAsync(
+            board.Id, "CAFÉ", maxResults: 10, maxCardsToScan: 10);
+        var truncatedScan = await repo.GetTitleMatchesByBoardIdAsync(
+            board.Id, "absent", maxResults: 2, maxCardsToScan: 2);
 
-        limitedMatches.Select(card => card.Id).Should().Equal(first.Id);
-        literalMatches.Select(card => card.Id).Should().Equal(literalPercent.Id);
+        limitedMatches.CardIds.Should().Equal(first.Id);
+        literalMatches.CardIds.Should().Equal(literalPercent.Id);
+        unicodeMatches.CardIds.Should().Equal(unicode.Id);
+        truncatedScan.CardIds.Should().BeEmpty();
+        truncatedScan.IsExhaustive.Should().BeFalse();
     }
 
     [Fact]
@@ -478,7 +486,8 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
             Guid.NewGuid(),
             "cancelled",
             maxResults: 1,
-            cancellationSource.Token);
+            maxCardsToScan: 1,
+            cancellationToken: cancellationSource.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

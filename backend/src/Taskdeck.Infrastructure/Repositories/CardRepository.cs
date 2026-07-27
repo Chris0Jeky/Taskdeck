@@ -25,24 +25,38 @@ public class CardRepository : Repository<Card>, ICardRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<Card>> GetTitleMatchesByBoardIdAsync(
+    public async Task<CardTitleMatchQueryResult> GetTitleMatchesByBoardIdAsync(
         Guid boardId,
         string titlePattern,
         int maxResults,
+        int maxCardsToScan,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxResults);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCardsToScan);
+        if (maxResults > maxCardsToScan)
+            throw new ArgumentOutOfRangeException(nameof(maxResults), "Result limit cannot exceed the card scan limit.");
+        if (maxCardsToScan == int.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(maxCardsToScan), "Card scan limit must leave room for a truncation sentinel.");
 
-        var normalizedPattern = titlePattern.ToUpperInvariant();
-        return await _dbSet
+        var candidates = await _dbSet
             .AsNoTracking()
-            .Where(card =>
-                card.BoardId == boardId &&
-                card.Title.ToUpper().Contains(normalizedPattern))
+            .Where(card => card.BoardId == boardId)
             .OrderBy(card => card.ColumnId)
             .ThenBy(card => card.Position)
-            .Take(maxResults)
+            .Select(card => new { card.Id, card.Title })
+            .Take(maxCardsToScan + 1)
             .ToListAsync(cancellationToken);
+
+        var isExhaustive = candidates.Count <= maxCardsToScan;
+        var cardIds = candidates
+            .Take(maxCardsToScan)
+            .Where(card => card.Title.Contains(titlePattern, StringComparison.OrdinalIgnoreCase))
+            .Take(maxResults)
+            .Select(card => card.Id)
+            .ToList();
+
+        return new CardTitleMatchQueryResult(cardIds, isExhaustive);
     }
 
     public async Task<IEnumerable<Card>> GetByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default)

@@ -2,18 +2,24 @@ using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Interfaces;
 
+public sealed record CardTitleMatchQueryResult(
+    IReadOnlyList<Guid> CardIds,
+    bool IsExhaustive);
+
 public interface ICardRepository : IRepository<Card>
 {
     Task<IEnumerable<Card>> GetByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns at most <paramref name="maxResults"/> cards from one board whose titles contain
-    /// <paramref name="titlePattern"/> using case-insensitive substring matching.
+    /// Returns at most <paramref name="maxResults"/> card IDs from one board whose titles contain
+    /// <paramref name="titlePattern"/> using ordinal case-insensitive substring matching. Reads at
+    /// most <paramref name="maxCardsToScan"/> card title projections plus one truncation sentinel.
     /// </summary>
-    Task<IEnumerable<Card>> GetTitleMatchesByBoardIdAsync(
+    Task<CardTitleMatchQueryResult> GetTitleMatchesByBoardIdAsync(
         Guid boardId,
         string titlePattern,
         int maxResults,
+        int maxCardsToScan,
         CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetAgendaByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default);

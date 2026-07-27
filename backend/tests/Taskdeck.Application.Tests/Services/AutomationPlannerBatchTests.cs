@@ -1,3 +1,4 @@
+using System.Text;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -280,7 +281,7 @@ public class AutomationPlannerBatchTests
     }
 
     [Fact]
-    public async Task ParseBatchInstruction_ShouldRejectOversizedParameters_BeforePolicyValidation()
+    public async Task ParseBatchInstruction_ShouldRejectOversizedRawInstruction_BeforeAccessValidation()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -314,6 +315,47 @@ public class AutomationPlannerBatchTests
         _unitOfWorkMock.VerifyGet(u => u.Boards, Times.Never);
         _unitOfWorkMock.VerifyGet(u => u.Columns, Times.Never);
         _unitOfWorkMock.VerifyGet(u => u.Cards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.AutomationProposals, Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldRejectEscapedParametersBeyondLimit_BeforePolicyValidation()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var escapedTitle = new string('\\', ProposalOperationInputValidator.MaxParametersBytes / 2 + 1024);
+        var instruction = $"create cards: {escapedTitle}";
+        var column = TestDataBuilder.CreateColumn(boardId, "To Do", 0);
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { column });
+        Encoding.UTF8.GetByteCount(instruction).Should()
+            .BeLessThanOrEqualTo(ProposalOperationInputValidator.MaxParametersBytes);
+
+        var result = await _service.ParseBatchInstructionAsync(
+            new List<string> { instruction },
+            userId,
+            boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(
+            $"parameters exceed the maximum size of {ProposalOperationInputValidator.MaxParametersBytes} bytes");
+        _policyEngineMock.Verify(
+            e => e.ValidateBoardAccessAsync(userId, boardId, default),
+            Times.Once);
+        _policyEngineMock.Verify(
+            e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
         _unitOfWorkMock.VerifyGet(u => u.AutomationProposals, Times.Never);
         _proposalServiceMock.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
@@ -488,8 +530,13 @@ public class AutomationPlannerBatchTests
             TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), "Old Task 2")
         };
 
-        _cardRepoMock.Setup(r => r.GetTitleMatchesByBoardIdAsync(boardId, "Old", 30, default))
-            .ReturnsAsync(matchingCards);
+        _cardRepoMock.Setup(r => r.GetTitleMatchesByBoardIdAsync(
+                boardId,
+                "Old",
+                30,
+                AutomationPlannerService.MaxTitleMatchCardsToScan,
+                default))
+            .ReturnsAsync(new CardTitleMatchQueryResult(matchingCards.Select(card => card.Id).ToList(), true));
 
         var result = await _service.ParseBatchInstructionAsync(
             new List<string> { "archive board", "archive cards matching 'Old'" },
@@ -507,24 +554,16 @@ public class AutomationPlannerBatchTests
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
-        var cards = Enumerable.Range(0, 100)
-            .Select(i => TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), $"Matching Task {i}"))
-            .ToList();
-        var enumeratedCards = 0;
+        var cardIds = new CountingReadOnlyList<Guid>(
+            Enumerable.Range(0, 100).Select(_ => Guid.NewGuid()).ToList());
 
-        IEnumerable<Card> LazyCards()
-        {
-            foreach (var card in cards)
-            {
-                enumeratedCards++;
-                if (enumeratedCards > 2)
-                    throw new InvalidOperationException("Batch archive matching enumerated beyond its sentinel");
-                yield return card;
-            }
-        }
-
-        _cardRepoMock.Setup(r => r.GetTitleMatchesByBoardIdAsync(boardId, "Matching", 2, default))
-            .ReturnsAsync(LazyCards());
+        _cardRepoMock.Setup(r => r.GetTitleMatchesByBoardIdAsync(
+                boardId,
+                "Matching",
+                2,
+                AutomationPlannerService.MaxTitleMatchCardsToScan,
+                default))
+            .ReturnsAsync(new CardTitleMatchQueryResult(cardIds, false));
         var instructions = Enumerable.Repeat("archive board", 29).ToList();
         instructions.Add("archive cards matching 'Matching'");
 
@@ -532,8 +571,8 @@ public class AutomationPlannerBatchTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Be("Batch exceeds maximum of 30 operations. Got 31 operations.");
-        enumeratedCards.Should().Be(2);
+        result.ErrorMessage.Should().Be("Batch exceeds maximum of 30 operations. Got at least 31 operations.");
+        cardIds.EnumeratedCount.Should().Be(2);
         _cardRepoMock.Verify(
             r => r.GetByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -909,4 +948,24 @@ public class AutomationPlannerBatchTests
     }
 
     #endregion
+
+    private sealed class CountingReadOnlyList<T>(IReadOnlyList<T> items) : IReadOnlyList<T>
+    {
+        public int EnumeratedCount { get; private set; }
+
+        public int Count => items.Count;
+
+        public T this[int index] => items[index];
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            foreach (var item in items)
+            {
+                EnumeratedCount++;
+                yield return item;
+            }
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 }

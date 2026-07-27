@@ -14,6 +14,9 @@ public class AutomationPlannerService : IAutomationPlannerService
 {
     private const int MaxProposalMetadataLength = 100;
     private const int RawInstructionEntryWorkUnits = 1024;
+    internal const int MaxTitleMatchCardsToScan = 1000;
+    private const string TitleMatchScanLimitMessage =
+        "Card title matching exceeded the bounded scan limit. Narrow the title pattern and try again.";
 
     /// <summary>
     /// Maximum number of operations allowed in a single batch proposal.
@@ -233,18 +236,21 @@ public class AutomationPlannerService : IAutomationPlannerService
                                 maxOperationCount + 1,
                                 cancellationToken);
 
-                            if (matchingCards.Count == 0)
-                                return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"No cards matching '{pattern}' found");
-
-                            if (matchingCards.Count > maxOperationCount)
+                            if (matchingCards.CardIds.Count > maxOperationCount)
                             {
                                 return Result.Failure<ProposalDto>(
                                     ErrorCodes.ValidationError,
                                     $"Proposal exceeds maximum operation count of {maxOperationCount}");
                             }
 
-                            operations.AddRange(BuildArchiveOperations(matchingCards, sequence));
-                            sequence += matchingCards.Count;
+                            if (!matchingCards.IsExhaustive)
+                                return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, TitleMatchScanLimitMessage);
+
+                            if (matchingCards.CardIds.Count == 0)
+                                return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"No cards matching '{pattern}' found");
+
+                            operations.AddRange(BuildArchiveOperations(matchingCards.CardIds, sequence));
+                            sequence += matchingCards.CardIds.Count;
                         }
                         else
                         {
@@ -563,19 +569,22 @@ public class AutomationPlannerService : IAutomationPlannerService
                         remainingOperationCount + 1,
                         cancellationToken);
 
-                    if (matchingCards.Count == 0)
+                    if (matchingCards.CardIds.Count > remainingOperationCount)
+                    {
+                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError,
+                            $"Batch exceeds maximum of {MaxBatchSize} operations. Got at least {allOperations.Count + matchingCards.CardIds.Count} operations.");
+                    }
+
+                    if (!matchingCards.IsExhaustive)
+                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, TitleMatchScanLimitMessage);
+
+                    if (matchingCards.CardIds.Count == 0)
                     {
                         parseErrors.Add(instruction);
                         continue;
                     }
 
-                    if (matchingCards.Count > remainingOperationCount)
-                    {
-                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError,
-                            $"Batch exceeds maximum of {MaxBatchSize} operations. Got {allOperations.Count + matchingCards.Count} operations.");
-                    }
-
-                    allOperations.AddRange(BuildArchiveOperations(matchingCards, allOperations.Count));
+                    allOperations.AddRange(BuildArchiveOperations(matchingCards.CardIds, allOperations.Count));
                     continue;
                 }
 
@@ -855,7 +864,7 @@ public class AutomationPlannerService : IAutomationPlannerService
         return result;
     }
 
-    private async Task<List<Card>> GetBoundedTitleMatchesAsync(
+    private async Task<CardTitleMatchQueryResult> GetBoundedTitleMatchesAsync(
         Guid boardId,
         string titlePattern,
         int maxResults,
@@ -865,21 +874,24 @@ public class AutomationPlannerService : IAutomationPlannerService
             boardId,
             titlePattern,
             maxResults,
+            MaxTitleMatchCardsToScan,
             cancellationToken);
 
         // Defend the service boundary even when a test double or alternate repository ignores
         // maxResults. Enumeration still stops at the requested sentinel.
-        return matches.Take(maxResults).ToList();
+        return new CardTitleMatchQueryResult(
+            matches.CardIds.Take(maxResults).ToList(),
+            matches.IsExhaustive);
     }
 
     private static List<CreateProposalOperationDto> BuildArchiveOperations(
-        IReadOnlyList<Card> cards,
+        IReadOnlyList<Guid> cardIds,
         int startingSequence)
     {
-        var operations = new List<CreateProposalOperationDto>(cards.Count);
-        for (var i = 0; i < cards.Count; i++)
+        var operations = new List<CreateProposalOperationDto>(cardIds.Count);
+        for (var i = 0; i < cardIds.Count; i++)
         {
-            var cardId = cards[i].Id;
+            var cardId = cardIds[i];
             var parameters = JsonSerializer.Serialize(new { cardId });
             operations.Add(new CreateProposalOperationDto(
                 startingSequence + i,
@@ -1010,10 +1022,12 @@ public class AutomationPlannerService : IAutomationPlannerService
                 pattern,
                 MaxBatchSize + 1,
                 cancellationToken);
-            if (matchingCards.Count == 0 || matchingCards.Count > MaxBatchSize)
+            if (!matchingCards.IsExhaustive ||
+                matchingCards.CardIds.Count == 0 ||
+                matchingCards.CardIds.Count > MaxBatchSize)
                 return null;
 
-            return BuildArchiveOperations(matchingCards, sequence);
+            return BuildArchiveOperations(matchingCards.CardIds, sequence);
         }
 
         // Pattern: "update card {id} title 'new title'" or "update card {id} description 'new desc'"
