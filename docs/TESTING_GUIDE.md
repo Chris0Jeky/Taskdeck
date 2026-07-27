@@ -650,9 +650,9 @@ Run commands:
 # Backend
 powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
 # PowerShell 7/Linux runner equivalent: pwsh -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
-dotnet tool install --global dotnet-stryker --version 4.16.0
+dotnet tool restore
 cd backend/tests/Taskdeck.Domain.Tests
-dotnet stryker --config-file ../../stryker-config.json --output ../../StrykerOutput
+dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput
 # Frontend
 cd frontend/taskdeck-web && npm run mutation:test
 ```
@@ -821,9 +821,9 @@ Mutation testing is available as a non-blocking quality signal for detecting wea
 # Backend (from the repository root; uses the workflow-pinned tool version)
 powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
 # PowerShell 7/Linux runner equivalent: pwsh -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
-dotnet tool install --global dotnet-stryker --version 4.16.0
+dotnet tool restore
 cd backend/tests/Taskdeck.Domain.Tests
-dotnet stryker --config-file ../../stryker-config.json --output ../../StrykerOutput
+dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput
 
 # Frontend
 cd frontend/taskdeck-web

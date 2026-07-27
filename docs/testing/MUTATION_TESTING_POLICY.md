@@ -59,12 +59,13 @@ After the first 3-4 runs:
 powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
 # PowerShell 7 on Linux/macOS/Windows uses the equivalent `pwsh -File ...` form.
 
-# Install the workflow-pinned Stryker.NET version as a global tool (once).
-dotnet tool install --global dotnet-stryker --version 4.16.0
+# Restore the repository-local Stryker.NET 4.16.0 tool manifest. This remains
+# deterministic even when another Stryker version is installed globally.
+dotnet tool restore
 
 # Run from the Domain test project so Stryker discovers only that test project.
 cd backend/tests/Taskdeck.Domain.Tests
-dotnet stryker --config-file ../../stryker-config.json --output ../../StrykerOutput
+dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput
 ```
 
 Report: `backend/StrykerOutput/<timestamp>/reports/mutation-report.html`
