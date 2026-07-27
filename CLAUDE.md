@@ -127,13 +127,7 @@ Mock provider is default. OpenAI and Gemini supported behind config gates. See `
 
 ## Review Policy
 
-Every code review — self-review, adversarial review, subagent review — follows these rules:
-
-1. **Post findings on the PR.** Unless the user explicitly says otherwise, when a review targets a PR, post a comment with all findings organized by severity.
-2. **Fix everything found.** Every finding at every severity (CRITICAL, HIGH, MEDIUM, LOW) must be addressed. No "non-blocking" dismissals. Do not skip lower-priority findings.
-3. **Out-of-scope findings get tracked.** If a finding is real but outside the PR's scope, seed a GitHub issue. Never silently drop it.
-4. **Inspect all existing PR comments.** Before posting findings, read ALL comments — human reviews, bot comments, previous review threads. Address anything unaddressed.
-5. **Post fix evidence.** After fixing findings, post a follow-up comment mapping each finding to its fix commit and verification.
+One home only: global laws 2 and 11 in `~/.claude/CLAUDE.md`, the tier table in agent-harness `BLUEPRINT.md` §1, and the global `review-and-ship` skill for the steps. Taskdeck's row: **T3 (workshop)** per `.claude/tier.json` — push free, merge free on green CI at the head plus one triage pass over every comment and one independent review pass.
 
 ## Definition of Done
 
