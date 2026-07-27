@@ -10,6 +10,11 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-27, Windows API diagnostics)
+
+- **Post-`#1373` diagnostic successor (`#1512`):** structured, bounded correlation plus outer/root exception and SQLite-code evidence is now available when the concurrent-card assertion fails, while the client still receives the generic GP-03 500 and no request/user/credential content enters the diagnostic sink. Pre/post exact stress, the five-case historical/current concurrency matrix, and five CI-equivalent API runs stayed green and did not reproduce the original 500; therefore no causal exception, `SQLITE_BUSY` classification, retry, quarantine, or product fix is claimed.
+- **Still open:** retain `#1512` until a real recurrence identifies the cause and the narrow repair passes the full serialized backend suite plus exact-head Windows/Ubuntu CI.
+
 ## Delivery update (2026-07-26, agentic governance)
 
 - **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI without regeneration masking it. Local agentic update workflows use the distinct render-then-test order so hook-appended JSONL can be projected, and the smoke contract pins both sides of that distinction.
@@ -90,7 +95,7 @@ Overnight correctness + test-reliability wave #2 — **7 PRs merged** (per-PR ga
 
 Overnight substrate + correctness wave — **11 PRs merged** (per-PR gate: independent adversarial review, all-severity findings fixed, required CI green; full backend suite reported 7223 passed / 0 failed / 1 skipped after `#1373`):
 
-- **Test-substrate parity (`#1373`, `#1282`):** a shared `UseTaskdeckSqlite` registration helper in Infrastructure now backs both production DI and the API integration test factory, so SQLite WAL/busy-timeout settings can no longer drift between them. Retires the `test/sqlite-concurrency` failure-ledger flake and underwrites the `#1366` presence-parity result below.
+- **Test-substrate parity (`#1373`, `#1282`):** a shared `UseTaskdeckSqlite` registration helper in Infrastructure now backs both production DI and the API integration test factory, so SQLite WAL/busy-timeout settings can no longer drift between them. It retired the proven registration-parity cause and underwrites the `#1366` presence-parity result below; `#1512` tracks the later same-symptom Windows concurrent-write HTTP-500 recurrence.
 - **REVIVAL-02 Phase-1 ship gate (`#1375`, `#1298`):** the fabricated Paper review undo timeline is removed and reversibility copy becomes factual apply-risk guidance ("Apply considerations") while the confidence label renders "Operation safety"; the side-effect wire shapes are preserved for GP-03 (full contract detail in `docs/STATUS.md`).
 - **Proposal preview/apply alignment (reorder, collision, structure) (`#1374`, `#1370`; seeded `#1376`):** clamped reorder positions now surface in the diff, create-card id collisions fail at validation with a stable `409`, and a shared `ProposalOperationStructureValidator` runs before original-proposal diffs; a parity contract test locks it in.
 - **MCP host-security fail-closed (`#1372`, `#1367`):** the standalone MCP host guard mirrors `HostFilteringMiddleware` exactly — fails closed on separator-only/blank `AllowedHosts`, preserves port-suffixed and whitespace-bearing literals — proven by a new in-process integration test with a mutation.
