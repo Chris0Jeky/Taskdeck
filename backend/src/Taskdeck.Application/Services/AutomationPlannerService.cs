@@ -415,6 +415,12 @@ public class AutomationPlannerService : IAutomationPlannerService
                 return Result.Failure<ProposalDto>(ErrorCodes.ValidationError,
                     BuildParseHintMessage(instruction));
 
+            // Keep the cheap payload-size/shape guard ahead of permission contract parsing.
+            // CreateProposalAsync repeats this validation as defense in depth at persistence.
+            var operationValidation = ProposalOperationInputValidator.Validate(operations);
+            if (!operationValidation.IsSuccess)
+                return Result.Failure<ProposalDto>(operationValidation.ErrorCode, operationValidation.ErrorMessage);
+
             // Classify risk
             var operationDtos = operations.Select(o => new ProposalOperationDto(
                 Guid.NewGuid(),
@@ -531,6 +537,11 @@ public class AutomationPlannerService : IAutomationPlannerService
             {
                 allOperations[i] = allOperations[i] with { Sequence = i };
             }
+
+            // Reject oversized or malformed parameters before the policy engine parses them.
+            var operationValidation = ProposalOperationInputValidator.Validate(allOperations);
+            if (!operationValidation.IsSuccess)
+                return Result.Failure<ProposalDto>(operationValidation.ErrorCode, operationValidation.ErrorMessage);
 
             var operationDtos = allOperations.Select(o => new ProposalOperationDto(
                 Guid.NewGuid(),

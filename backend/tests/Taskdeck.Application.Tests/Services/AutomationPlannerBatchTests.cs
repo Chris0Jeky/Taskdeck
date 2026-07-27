@@ -164,6 +164,40 @@ public class AutomationPlannerBatchTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldRejectOversizedParameters_BeforePolicyValidation()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = TestDataBuilder.CreateColumn(boardId, "To Do", 0);
+        var oversizedTitle = new string('x', ProposalOperationInputValidator.MaxParametersBytes + 1024);
+
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { column });
+
+        var result = await _service.ParseBatchInstructionAsync(
+            new List<string> { $"create cards: {oversizedTitle}" },
+            userId,
+            boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("parameters exceed the maximum size");
+        _policyEngineMock.Verify(
+            e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     #endregion
 
     #region ParseBatchInstructionAsync - Batch Card Creation
