@@ -247,6 +247,7 @@ class CodexDenyFloorAdapterTests(unittest.TestCase):
         bodies = {
             "nonzero": "raise SystemExit(7)",
             "stderr": "import sys; print('unexpected', file=sys.stderr)",
+            "whitespace-stderr": "import sys; print('   ', file=sys.stderr)",
             "timeout": "import time; time.sleep(1)",
         }
         for label, body in bodies.items():

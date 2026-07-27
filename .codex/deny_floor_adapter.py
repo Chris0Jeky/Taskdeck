@@ -225,7 +225,7 @@ def invoke_dispatcher(
         raise AdapterFailure("the shared dispatcher process could not start") from exc
     if result.returncode != 0:
         raise AdapterFailure("the shared dispatcher process failed")
-    if result.stderr.strip():
+    if result.stderr != "":
         raise AdapterFailure("the shared dispatcher wrote unexpected diagnostic output")
     return attribute_dispatcher_output(result.stdout)
 
