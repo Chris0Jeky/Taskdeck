@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-27
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -1014,6 +1014,36 @@ dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Releas
 dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj -c Release
 dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release
 ```
+
+### Concurrent-card HTTP 500 diagnostic lane (#1512)
+
+The concurrent-card regression remains strict: every response must be `201 Created`. A non-201
+response is a failure, never a retry, quarantine, or accepted result. When it fails, the test-only
+diagnostic may report only bounded request/response correlation IDs, HTTP status, API error code,
+outer/last-inspected exception type, an explicit classification-truncated flag, and SQLite
+primary/extended numeric codes; it must not include bodies, credentials, user content, exception
+messages, exception summaries, or exception objects. The bounded graph walk covers aggregate branches
+without presenting a capped wrapper as the root. Run each repetition in a fresh
+`dotnet test` process so host/database state is not reused. A green repetition proves only that the
+failure did not occur; it is not root-cause evidence.
+
+```powershell
+$exact = "FullyQualifiedName=Taskdeck.Api.Tests.Concurrency.CardUpdateConflictTests.ConcurrentCardCreation_SameColumn_AllCreatedNoDuplicates"
+
+$matrix = "FullyQualifiedName=Taskdeck.Api.Tests.ConcurrencyRaceConditionStressTests.BoardCreation_ConcurrentMultiUser_NoCrossContamination|FullyQualifiedName=Taskdeck.Api.Tests.Resilience.QueueAccumulationResilienceTests.RapidCaptureSubmission_DoesNotCorruptQueue|FullyQualifiedName=Taskdeck.Api.Tests.Concurrency.ProcessNextClaimRaceTests.ProcessNext_TenParallelWorkers_NoErrorsUnderConcurrentAccess|FullyQualifiedName=Taskdeck.Api.Tests.Concurrency.WebhookDeliveryConcurrencyTests.ConcurrentBoardMutations_EachCreatesDeliveryRecord|$exact"
+
+1..20 | ForEach-Object {
+    dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter $exact
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter $matrix
+```
+
+The `#1512` diagnostic-only checkpoint passed focused diagnostics 6/6, the exact race 20/20 in
+fresh processes, the five-case historical/current concurrency matrix 5/5, and five CI-equivalent
+full API runs (the final two were 2,130 passed / 4 skipped / 0 failed). No spontaneous 500,
+causal exception, or SQLite/`SQLITE_BUSY` classification was captured, so the root cause remains open.
 
 Note:
 - If `Debug` runs fail with file-lock errors, stop running `Taskdeck.Api` processes or use `-c Release`.
