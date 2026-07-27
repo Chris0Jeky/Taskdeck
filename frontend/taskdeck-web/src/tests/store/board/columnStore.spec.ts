@@ -66,6 +66,45 @@ describe('columnStore', () => {
       expect(state.loading.value).toBe(false)
     })
 
+    it('reconciles the API response when a realtime refresh installs the column first', async () => {
+      const newCol = { id: 'col-3', name: 'In Progress' }
+      let resolveCreate!: (column: typeof newCol) => void
+      mockColumnsApi.createColumn.mockReturnValueOnce(
+        new Promise<typeof newCol>((resolve) => {
+          resolveCreate = resolve
+        }),
+      )
+      state.error.value = 'Previous error'
+      const { createColumn } = createColumnActions(state as any, helpers as any)
+
+      const createPromise = createColumn('board-1', { name: 'In Progress' } as any)
+
+      expect(state.loading.value).toBe(true)
+      expect(state.error.value).toBeNull()
+
+      state.currentBoard.value!.columns.push({ ...newCol })
+      resolveCreate(newCol)
+
+      await expect(createPromise).resolves.toEqual(newCol)
+      expect(
+        state.currentBoard.value!.columns.filter((existingColumn) => existingColumn.id === newCol.id),
+      ).toHaveLength(1)
+      expect(
+        state.currentBoard.value!.columns.filter(
+          (existingColumn) => existingColumn.name === newCol.name,
+        ),
+      ).toHaveLength(1)
+      expect(state.currentBoard.value!.columns).toHaveLength(3)
+      expect(helpers.toast.success).toHaveBeenCalledOnce()
+      expect(helpers.toast.success).toHaveBeenCalledWith(
+        'Column "In Progress" created successfully',
+      )
+      expect(helpers.toast.error).not.toHaveBeenCalled()
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(state.error.value).toBeNull()
+      expect(state.loading.value).toBe(false)
+    })
+
     it('does not modify board if boardId does not match', async () => {
       const newCol = { id: 'col-3', name: 'X' }
       mockColumnsApi.createColumn.mockResolvedValueOnce(newCol)

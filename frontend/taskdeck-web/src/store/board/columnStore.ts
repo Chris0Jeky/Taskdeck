@@ -15,7 +15,17 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
       const newColumn = await columnsApi.createColumn(boardId, column)
 
       if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
-        state.currentBoard.value.columns.push(newColumn)
+        // A realtime refresh can install the new column before this request resolves.
+        // Reconcile by stable id so the local mutation remains idempotent.
+        const existingIndex = state.currentBoard.value.columns.findIndex(
+          (existingColumn) => existingColumn.id === newColumn.id,
+        )
+
+        if (existingIndex === -1) {
+          state.currentBoard.value.columns.push(newColumn)
+        } else {
+          state.currentBoard.value.columns[existingIndex] = newColumn
+        }
       }
 
       helpers.toast.success(`Column "${newColumn.name}" created successfully`)

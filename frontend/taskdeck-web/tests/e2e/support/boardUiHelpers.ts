@@ -23,7 +23,11 @@ export async function addColumn(page: Page, columnName: string) {
   await page.getByRole('button', { name: '+ Add Column' }).click()
   await page.getByPlaceholder('Column name').fill(columnName)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
+  const columnHeading = page.getByRole('heading', { name: columnName, exact: true })
+  const columnLane = page.locator('[data-column-id]').filter({ has: columnHeading })
+  await expect(columnHeading).toHaveCount(1)
+  await expect(columnLane).toHaveCount(1)
+  await expect(columnLane).toBeVisible()
 }
 
 export function columnByName(page: Page, columnName: string) {
