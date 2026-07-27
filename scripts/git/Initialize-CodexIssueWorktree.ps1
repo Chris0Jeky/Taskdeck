@@ -123,6 +123,41 @@ function Invoke-InitializerGit {
     }
 }
 
+function Schedule-FailedInitializerWorktreeRemoval {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree
+    )
+
+    $commonGitDirectory = Invoke-InitializerGit -Arguments @("rev-parse", "--path-format=absolute", "--git-common-dir")
+    if (-not $commonGitDirectory.InvocationSucceeded -or $commonGitDirectory.ExitCode -ne 0 -or
+        [string]::IsNullOrWhiteSpace($commonGitDirectory.Output)) {
+        Exit-WithInitializerError "git switch -c failed and the unused helper-created worktree could not be scheduled for removal because Git could not resolve the common directory." 2
+    }
+    $repoRoot = Split-Path -Parent $commonGitDirectory.Output.Trim()
+
+    $escapedGit = $script:ResolvedGitExecutable.Replace("'", "''")
+    $escapedRepo = $repoRoot.Replace("'", "''")
+    $escapedWorktree = $Worktree.Replace("'", "''")
+    $cleanupScript = @"
+`$parentProcessId = $PID
+while (`$null -ne (Get-Process -Id `$parentProcessId -ErrorAction SilentlyContinue)) {
+    Start-Sleep -Milliseconds 100
+}
+& '$escapedGit' -C '$escapedRepo' worktree remove '$escapedWorktree'
+exit `$LASTEXITCODE
+"@
+    $encodedCleanupScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cleanupScript))
+    try {
+        Start-Process -FilePath (Get-Process -Id $PID).Path -WorkingDirectory $repoRoot -WindowStyle Hidden -ArgumentList @(
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", $encodedCleanupScript
+        ) | Out-Null
+    }
+    catch {
+        Exit-WithInitializerError "git switch -c failed and the unused helper-created worktree could not be scheduled for removal. $($_.Exception.Message)" 2
+    }
+}
+
 $gitCommand = Get-Command $GitExecutable -CommandType Application -All -ErrorAction SilentlyContinue |
     Where-Object { [System.IO.Path]::GetExtension($_.Source) -notin @('.cmd', '.bat') } |
     Select-Object -First 1
@@ -198,11 +233,13 @@ if (-not $branchValidation.InvocationSucceeded -or $branchValidation.ExitCode -n
 
 $switchResult = Invoke-InitializerGit -Arguments @("switch", "-c", $BranchName)
 if (-not $switchResult.InvocationSucceeded -and $null -eq $switchResult.ExitCode) {
-    Exit-WithInitializerError "the selected Git executable could not create branch '$BranchName'." 2
+    Schedule-FailedInitializerWorktreeRemoval -Worktree $expectedWorktreePath
+    Exit-WithInitializerError "the selected Git executable could not create branch '$BranchName'; removal of the unused helper-created worktree was scheduled." 2
 }
 if ($switchResult.ExitCode -ne 0) {
     $switchContext = if ([string]::IsNullOrWhiteSpace($switchResult.Output)) { "" } else { " $($switchResult.Output)" }
-    Exit-WithInitializerError "git switch -c failed for '$BranchName' (exit code $($switchResult.ExitCode)).$switchContext" $switchResult.ExitCode
+    Schedule-FailedInitializerWorktreeRemoval -Worktree $expectedWorktreePath
+    Exit-WithInitializerError "git switch -c failed for '$BranchName' (exit code $($switchResult.ExitCode)); removal of the unused helper-created worktree was scheduled.$switchContext" $switchResult.ExitCode
 }
 if (-not [string]::IsNullOrWhiteSpace($switchResult.Output)) {
     Write-Host $switchResult.Output

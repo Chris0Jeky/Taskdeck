@@ -375,6 +375,97 @@ function Assert-BaseMatchesReviewedHandoffArtifacts {
     }
 }
 
+function Assert-TargetMatchesReviewedHandoffArtifacts {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$ReviewedArtifacts
+    )
+
+    foreach ($artifact in $ReviewedArtifacts.Keys) {
+        $artifactPath = Join-Path $Worktree $artifact
+        if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+            throw "Helper-created worktree is missing required handoff artifact '$artifact'."
+        }
+
+        $blobResult = Invoke-GitBlobBytes -Repository $Repository -Blob $ReviewedArtifacts[$artifact]
+        if ($blobResult.ExitCode -ne 0) {
+            throw "Git could not read reviewed handoff blob for target artifact '$artifact'.$(Format-GitContext $blobResult.Output)"
+        }
+
+        [byte[]]$reviewedBytes = $blobResult.Bytes
+        [byte[]]$targetBytes = [System.IO.File]::ReadAllBytes($artifactPath)
+        [byte[]]$reviewedCrlfBytes = ConvertTo-CrlfBytes -Bytes $reviewedBytes
+        if (-not (Test-ByteArrayEqual -Left $targetBytes -Right $reviewedBytes) -and
+            -not (Test-ByteArrayEqual -Left $targetBytes -Right $reviewedCrlfBytes)) {
+            throw "Helper-created worktree handoff artifact '$artifact' does not match the reviewed raw blob."
+        }
+    }
+}
+
+function Reserve-WorktreeTarget {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorktreeRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree
+    )
+
+    New-Item -ItemType Directory -Force -Path $WorktreeRoot | Out-Null
+    Assert-SafeWorktreeRoot -Path $WorktreeRoot
+    try {
+        New-Item -ItemType Directory -Path $Worktree -ErrorAction Stop | Out-Null
+    }
+    catch [System.IO.IOException] {
+        throw "Worktree path already exists: $Worktree"
+    }
+
+    Assert-SafeWorktreeRoot -Path $WorktreeRoot
+    $reservedTarget = Get-Item -LiteralPath $Worktree -Force -ErrorAction Stop
+    if (-not $reservedTarget.PSIsContainer -or
+        ($reservedTarget.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Worktree target is not a plain reserved directory: $Worktree"
+    }
+}
+
+function Remove-EmptyReservedWorktreeTarget {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree
+    )
+
+    if (-not (Test-Path -LiteralPath $Worktree -PathType Container)) {
+        return
+    }
+
+    $reservedTarget = Get-Item -LiteralPath $Worktree -Force -ErrorAction Stop
+    if (($reservedTarget.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Refusing to remove reparse-point worktree reservation: $Worktree"
+    }
+    if (@(Get-ChildItem -LiteralPath $Worktree -Force).Count -ne 0) {
+        throw "Refusing to remove non-empty failed worktree reservation: $Worktree"
+    }
+    Remove-Item -LiteralPath $Worktree -Force -ErrorAction Stop
+}
+
+function Remove-HelperCreatedWorktree {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree
+    )
+
+    $removeResult = Invoke-GitCommand -Arguments @("worktree", "remove", $Worktree)
+    if ($removeResult.ExitCode -ne 0) {
+        throw "Could not remove helper-created worktree '$Worktree' after handoff verification failed (exit code $($removeResult.ExitCode)).$(Format-GitContext $removeResult.Output)"
+    }
+}
+
 function Assert-RemoteBaseExistsWithoutFetch {
     param(
         [Parameter(Mandatory = $true)]
@@ -400,6 +491,36 @@ function Assert-RemoteBaseExistsWithoutFetch {
     if ($remoteLookupResult.ExitCode -ne 0 -or $matchingRemoteRefs.Count -ne 1) {
         throw "Base commit not found: $DisplayName. The explicit remote base could not be verified without updating refs.$(Format-GitContext $remoteLookupResult.Output)"
     }
+}
+
+function Resolve-RemoteDefaultBranchWithoutFetch {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Remote,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName
+    )
+
+    $defaultLookupResult = Invoke-GitCommand -Arguments @("ls-remote", "--symref", "--", $Remote, "HEAD")
+    $defaultReference = @(
+        $defaultLookupResult.Stdout -split '\r?\n' |
+            Where-Object { $_ -match '^ref:\s+(refs/heads/[^\s]+)\s+HEAD$' } |
+            ForEach-Object { $Matches[1] }
+    )
+    if ($defaultLookupResult.ExitCode -ne 0 -or $defaultReference.Count -ne 1) {
+        throw "Remote default branch could not be resolved for $DisplayName without updating refs.$(Format-GitContext $defaultLookupResult.Output)"
+    }
+
+    $branch = $defaultReference[0].Substring('refs/heads/'.Length)
+    $branchValidation = Invoke-GitCommand -Arguments @("check-ref-format", "--branch", $branch)
+    if ($branchValidation.ExitCode -ne 0 -or
+        [string]::IsNullOrWhiteSpace($branchValidation.Stdout) -or
+        $branchValidation.Stdout.Trim() -cne $branch) {
+        throw "Remote default branch is invalid for $DisplayName.$(Format-GitContext $branchValidation.Output)"
+    }
+    Assert-RemoteBaseExistsWithoutFetch -Remote $Remote -Branch $branch -DisplayName $DisplayName
+    return $branch
 }
 
 function Assert-SafeWorktreeRoot {
@@ -541,10 +662,6 @@ if ($namespaceConflicts.Count -gt 0) {
     throw "Branch namespace conflicts with existing branch '$($namespaceConflicts[0])': $BranchName"
 }
 
-if (Test-Path -LiteralPath $worktreeDir) {
-    throw "Worktree path already exists: $worktreeDir"
-}
-
 $candidateRemote = $null
 $candidateBranch = $null
 $remoteListResult = Invoke-GitCommand -Arguments @("remote")
@@ -565,6 +682,11 @@ if (-not $BaseBranch.StartsWith("refs/", [System.StringComparison]::Ordinal)) {
         }
 
         $remoteBranchCandidate = $BaseBranch.Substring($remotePrefix.Length)
+        if ($remoteBranchCandidate -ceq "HEAD") {
+            $candidateRemote = $remoteNameCandidate
+            $candidateBranch = Resolve-RemoteDefaultBranchWithoutFetch -Remote $candidateRemote -DisplayName $BaseBranch
+            break
+        }
         $remoteBranchValidation = Invoke-GitCommand -Arguments @("check-ref-format", "--branch", $remoteBranchCandidate)
         if ($remoteBranchValidation.ExitCode -eq 0 -and
             $remoteBranchValidation.Stdout.Trim() -ceq $remoteBranchCandidate) {
@@ -604,15 +726,32 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     $baseCommit = Resolve-BaseCommit -Repository $repoRoot -Reference $baseCommitReference -DisplayName $BaseBranch
     Assert-BaseMatchesReviewedHandoffArtifacts -Repository $repoRoot -Commit $baseCommit -DisplayName $BaseBranch -ReviewedArtifacts $reviewedHandoffArtifacts
 
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $worktreeDir) | Out-Null
-    Assert-SafeWorktreeRoot -Path $requestedWorktreeRoot
+    $worktreeAdded = $false
+    try {
+        Reserve-WorktreeTarget -WorktreeRoot $requestedWorktreeRoot -Worktree $worktreeDir
 
-    $worktreeAddResult = Invoke-GitCommand -Arguments @("worktree", "add", "--detach", $worktreeDir, $baseCommit)
-    if ($worktreeAddResult.ExitCode -ne 0) {
-        throw "git worktree add failed for '$worktreeDir' from '$BaseBranch' (exit code $($worktreeAddResult.ExitCode)).$(Format-GitContext $worktreeAddResult.Output)"
+        $worktreeAddResult = Invoke-GitCommand -Arguments @("worktree", "add", "--detach", $worktreeDir, $baseCommit)
+        if ($worktreeAddResult.ExitCode -ne 0) {
+            Remove-EmptyReservedWorktreeTarget -Worktree $worktreeDir
+            throw "git worktree add failed for '$worktreeDir' from '$BaseBranch' (exit code $($worktreeAddResult.ExitCode)).$(Format-GitContext $worktreeAddResult.Output)"
+        }
+        $worktreeAdded = $true
+        Assert-TargetMatchesReviewedHandoffArtifacts -Repository $repoRoot -Worktree $worktreeDir -ReviewedArtifacts $reviewedHandoffArtifacts
+        if (-not [string]::IsNullOrWhiteSpace($worktreeAddResult.Output)) {
+            Write-Host $worktreeAddResult.Output
+        }
     }
-    if (-not [string]::IsNullOrWhiteSpace($worktreeAddResult.Output)) {
-        Write-Host $worktreeAddResult.Output
+    catch {
+        $creationFailure = $_
+        if ($worktreeAdded) {
+            try {
+                Remove-HelperCreatedWorktree -Worktree $worktreeDir
+            }
+            catch {
+                throw "$($creationFailure.Exception.Message) Cleanup also failed: $($_.Exception.Message)"
+            }
+        }
+        throw $creationFailure
     }
 
     $escapedBranchName = $BranchName.Replace("'", "''")
@@ -636,6 +775,12 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     Write-Host '# Pass as one argv value: claude ... --allowedTools $initializerAllowRule'
     Write-Host ""
     Write-Host "PowerShell worker handoff (run this entire block unchanged):"
+    $guardPath = [System.IO.Path]::GetFullPath((Join-Path $worktreeDir "scripts/worktree_guard.ps1"))
+    $escapedGuardPath = $guardPath.Replace("'", "''")
+    $guardInvocation = "& '$escapedGuardPath' -GitExecutable '$escapedGitExecutable'"
+    Write-Host "  $guardInvocation"
+    Write-Host '  $guardSucceeded = $?; $guardExitCode = $LASTEXITCODE'
+    Write-Host '  if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }'
     Write-Host "  $initializerInvocation"
     Write-Host '  $handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE'
     Write-Host '  if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }'

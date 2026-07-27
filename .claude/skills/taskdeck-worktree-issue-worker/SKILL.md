@@ -11,12 +11,13 @@ Use this skill when assigned one issue or task in an isolated worktree.
 
 When the coordinator used `New-CodexIssueWorktree.ps1` from the main checkout (linked-source
 invocation is rejected), run its complete printed PowerShell
-handoff block unchanged. Its exact absolute target `Initialize-CodexIssueWorktree.ps1` wrapper runs
-the pinned-Git guard first, verifies the exact helper-created worktree and detached base, then
-performs `switch -c`; every failure exits before implementation. The printed block
+handoff block unchanged. Its first command invokes the exact absolute target `worktree_guard.ps1`
+with pinned Git; the bounded `Initialize-CodexIssueWorktree.ps1` follows only on guard success,
+verifies the exact helper-created worktree and detached base, then performs `switch -c`. A late
+switch collision removes the unused detached worktree before failing. The printed block
 invokes the wrapper in the already-running PowerShell host. Creation-time blob checks do not
-authenticate target bytes at execution, so same-user replacement before or during handoff remains
-outside this boundary. From Bash, launch a reviewed absolute
+authenticate a same-user replacement after handoff emission, though the helper checks target
+guard/initializer bytes against reviewed raw blobs before emitting commands. From Bash, launch a reviewed absolute
 PowerShell application in the worktree for that block; never resolve a bare `powershell` command
 through PATH. Pass the helper's single-quoted here-string rule variable as one `--allowedTools`
 argv value. For a headless worker, start `claude -p` in the exact helper-created target without

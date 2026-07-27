@@ -192,7 +192,7 @@ ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template 
 
 When launching subagents with `isolation: "worktree"`, follow the protocol in `docs/WORKTREE_AGENT_PROTOCOL.md`. Key rules:
 - NEVER include absolute paths to the main checkout in worktree agent prompts
-- For a helper-created detached worktree, the first agent command is the complete printed `scripts/git/Initialize-CodexIssueWorktree.ps1` handoff; its first internal action is the pinned-Git guard, and it verifies the exact worktree and detached base before `switch -c`
+- For a helper-created detached worktree, the first agent command is the complete printed `scripts/worktree_guard.ps1` command with pinned Git, followed by the bounded `scripts/git/Initialize-CodexIssueWorktree.ps1` command; it verifies the exact worktree and detached base before `switch -c`, and removes its unused detached worktree on a late collision
 - For other already-created worktrees, first run the generic guard from the protocol
 - Derive file paths in the current process with `git rev-parse --show-toplevel`; a child PowerShell guard cannot export `$env:WT_PROJECT_DIR` back to its parent
 - Shell state does not persist between Bash tool calls -- agents must use absolute paths

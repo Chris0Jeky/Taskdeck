@@ -24,9 +24,11 @@ param(
         "base-missing-handoff-artifacts",
         "fully-qualified-ref",
         "refresh-remote-base",
+        "remote-default-head",
         "missing-base",
         "what-if",
-        "git-add-failure"
+        "git-add-failure",
+        "target-artifact-smudge"
     )]
     [string[]]$Case = @(
         "success-detached",
@@ -52,9 +54,11 @@ param(
         "base-missing-handoff-artifacts",
         "fully-qualified-ref",
         "refresh-remote-base",
+        "remote-default-head",
         "missing-base",
         "what-if",
-        "git-add-failure"
+        "git-add-failure",
+        "target-artifact-smudge"
     )
 )
 
@@ -372,12 +376,15 @@ function Get-PrintedHandoffLines {
     $marker = "PowerShell worker handoff (run this entire block unchanged):"
     $markerIndex = [Array]::IndexOf($outputLines, $marker)
     Assert-True ($markerIndex -ge 0) "Helper output omitted the PowerShell handoff marker."
-    Assert-True (($markerIndex + 3) -lt $outputLines.Count) "Helper output omitted one or more fail-fast handoff commands."
+    Assert-True (($markerIndex + 6) -lt $outputLines.Count) "Helper output omitted one or more fail-fast handoff commands."
 
     return @(
         $outputLines[$markerIndex + 1].TrimStart(),
         $outputLines[$markerIndex + 2].TrimStart(),
-        $outputLines[$markerIndex + 3].TrimStart()
+        $outputLines[$markerIndex + 3].TrimStart(),
+        $outputLines[$markerIndex + 4].TrimStart(),
+        $outputLines[$markerIndex + 5].TrimStart(),
+        $outputLines[$markerIndex + 6].TrimStart()
     )
 }
 
@@ -501,6 +508,28 @@ try {
         Complete-Test "complete remote names are option-delimited, refreshed, and resolved without local-ref shadowing"
     }
 
+    if (Test-CaseSelected "remote-default-head") {
+        $staleDefaultHead = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("rev-parse", "--verify", "refs/remotes/origin/HEAD") -WorkingDirectory $callerPath
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("switch", "-c", "default-next")
+        Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "remote default advanced" -Encoding Ascii
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "tracked.txt")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Advance remote default branch")
+        $remoteDefaultCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "default-next")
+        $null = Invoke-Git -WorkingDirectory $remotePath -Arguments @("symbolic-ref", "HEAD", "refs/heads/default-next")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("switch", "main")
+
+        $remoteDefault = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "472", "-Slug", "remote-default-head", "-BaseBranch", "origin/HEAD")
+        Assert-Equal 0 $remoteDefault.ExitCode "origin/HEAD should resolve and refresh the remote's current default branch.`n$($remoteDefault.Output)"
+        $remoteDefaultWorktree = Join-Path $callerPath ".worktrees/codex-472-remote-default-head"
+        $remoteDefaultHead = Invoke-Git -WorkingDirectory $remoteDefaultWorktree -Arguments @("rev-parse", "HEAD")
+        Assert-Equal $remoteDefaultCommit $remoteDefaultHead "origin/HEAD should not use a stale local symbolic remote ref."
+        if ($staleDefaultHead.ExitCode -eq 0) {
+            Assert-True ($staleDefaultHead.Output.Trim() -cne $remoteDefaultHead) "The disposable clone must retain a stale origin/HEAD probe for this regression."
+        }
+        Complete-Test "remote symbolic default bases resolve from the remote instead of stale origin/HEAD"
+    }
+
     Set-Content -LiteralPath (Join-Path $callerPath "tracked.txt") -Value "maintainer-owned change" -Encoding Ascii
     Set-Content -LiteralPath (Join-Path $callerPath "untracked.txt") -Value "maintainer-owned untracked file" -Encoding Ascii
     $statusBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("status", "--short", "--untracked-files=all")
@@ -519,7 +548,7 @@ try {
 
         $reparse = Invoke-Helper -WorkingDirectory $reparseCallerPath -Arguments @("-IssueNumber", "438", "-Slug", "reparse-root")
         Assert-True ($reparse.ExitCode -ne 0) "Reparse-point worktree root should fail closed."
-        Assert-Contains $reparse.Output "is a reparse point or symbolic link" "Reparse-root diagnostic was not clear."
+        Assert-NormalizedContains $reparse.Output "is a reparse point or symbolic link" "Reparse-root diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $outsideTarget)) "Reparse root created an out-of-bound target."
         $registrationsAfter = Invoke-Git -WorkingDirectory $reparseCallerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-Equal $registrationsBefore $registrationsAfter "Reparse root changed Git worktree registrations."
@@ -558,16 +587,23 @@ try {
             Assert-True ($createdWorktree.Contains("'")) "Exact-command quoting fixture should place the target beneath an apostrophe-containing path."
             $escapedGitExecutable = $gitExecutable.Replace("'", "''")
             $escapedWorktree = $createdWorktree.Replace("'", "''")
+            $escapedGuard = (Join-Path $createdWorktree "scripts/worktree_guard.ps1").Replace("'", "''")
             $escapedInitializer = (Join-Path $createdWorktree "scripts/git/Initialize-CodexIssueWorktree.ps1").Replace("'", "''")
             $expectedHandoffHead = Invoke-Git -WorkingDirectory $createdWorktree -Arguments @("rev-parse", "HEAD")
+            $guardLine = "& '$escapedGuard' -GitExecutable '$escapedGitExecutable'"
             $initializerLine = "& '$escapedInitializer' -GitExecutable '$escapedGitExecutable' -BranchName 'issue-424/dirty-source' -ExpectedWorktree '$escapedWorktree' -ExpectedHead '$expectedHandoffHead'"
             $initializerAllowRule = "PowerShell($initializerLine)"
-            $handoffCaptureLine = '$handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE'
-            $handoffExitLine = 'if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }'
+            $guardCaptureLine = '$guardSucceeded = $?; $guardExitCode = $LASTEXITCODE'
+            $guardExitLine = 'if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }'
+            $initializerCaptureLine = '$handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE'
+            $initializerExitLine = 'if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }'
             $handoffLines = @(Get-PrintedHandoffLines -Output $success.Output)
-            Assert-Equal $initializerLine $handoffLines[0] "Handoff output omitted the stable initializer command and exact worktree binding."
-            Assert-Equal $handoffCaptureLine $handoffLines[1] "Handoff output omitted the initializer status capture."
-            Assert-Equal $handoffExitLine $handoffLines[2] "Handoff output omitted the initializer fail-fast gate."
+            Assert-Equal $guardLine $handoffLines[0] "Handoff output must make the worktree guard its first command."
+            Assert-Equal $guardCaptureLine $handoffLines[1] "Handoff output omitted the guard status capture."
+            Assert-Equal $guardExitLine $handoffLines[2] "Handoff output omitted the guard fail-fast gate."
+            Assert-Equal $initializerLine $handoffLines[3] "Handoff output omitted the bounded initializer command and exact worktree binding."
+            Assert-Equal $initializerCaptureLine $handoffLines[4] "Handoff output omitted the initializer status capture."
+            Assert-Equal $initializerExitLine $handoffLines[5] "Handoff output omitted the initializer fail-fast gate."
             Assert-Equal $initializerAllowRule (Get-PrintedInitializerLaunchRule -Output $success.Output) "Helper output omitted the exact target-scoped initializer allow rule."
             Assert-True ($initializerAllowRule.Contains("''")) "Exact full-command rule should PowerShell-escape the apostrophe-containing target path."
             Assert-True (-not $initializerAllowRule.Contains(":*)")) "Exact full-command initializer rule must not retain a wildcard suffix."
@@ -583,10 +619,10 @@ try {
             $escapedInitializer = (Join-Path $createdWorktree "scripts/git/Initialize-CodexIssueWorktree.ps1").Replace("'", "''")
             $initializerInvocationPrefix = "& '$escapedInitializer'"
             $headlessHandoffLines = @(Get-PrintedHandoffLines -Output $success.Output)
-            Assert-True ($headlessHandoffLines[0].StartsWith($initializerInvocationPrefix, [System.StringComparison]::Ordinal)) "Printed handoff must use the exact helper-created target initializer."
+            Assert-True ($headlessHandoffLines[3].StartsWith($initializerInvocationPrefix, [System.StringComparison]::Ordinal)) "Printed handoff must run the exact helper-created target initializer after the direct guard."
 
             $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
-            $powerShellInitializerRule = "PowerShell($($headlessHandoffLines[0]))"
+            $powerShellInitializerRule = "PowerShell($($headlessHandoffLines[3]))"
             Assert-Equal $powerShellInitializerRule (Get-PrintedInitializerLaunchRule -Output $success.Output) "Helper did not print the task-scoped initializer rule used by the handoff."
             Assert-True ($claudeSettings.permissions.allow -notcontains $powerShellInitializerRule) "Claude project settings should not commit a task-specific initializer rule."
             Assert-True ($claudeSettings.permissions.allow -notcontains "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)") "Claude project settings retained the generic relative initializer rule."
@@ -625,10 +661,21 @@ try {
             Assert-True ($reviewedConfiguration.Allow -contains $taskLaunchRule) "The reviewed effective permissions should include explicit task launch rules."
             Assert-True (-not $reviewedConfiguration.Environment.ContainsKey("CLAUDE_CODE_USE_POWERSHELL_TOOL")) "Project settings must not enable the unsandboxed Windows PowerShell tool repo-wide."
             $committedPowerShellRules = @($claudeSettings.permissions.allow | Where-Object { $_.StartsWith('PowerShell(', [System.StringComparison]::Ordinal) })
-            Assert-Equal 0 $committedPowerShellRules.Count "Project settings must not grant unsandboxed PowerShell commands outside the Bash-only command-hook boundary."
+            $expectedHookLauncherPowerShellRules = @(
+                "PowerShell(py -3 -B scripts/agent_hooks/pre_tool_use.py:*)",
+                "PowerShell(py -3 -B scripts/agent_hooks/post_tool_use.py:*)",
+                "PowerShell(py -3 -B scripts/agent_hooks/post_tool_failure.py:*)",
+                "PowerShell(py -3 -B scripts/agent_hooks/render_failure_ledger.py:*)",
+                "PowerShell(py -3 -B scripts/agent_hooks/smoke_test.py:*)",
+                'PowerShell(py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py":*)'
+            )
+            Assert-Equal $expectedHookLauncherPowerShellRules.Count $committedPowerShellRules.Count "Project settings must permit only the reviewed hook-launcher PowerShell commands."
+            foreach ($expectedHookLauncherRule in $expectedHookLauncherPowerShellRules) {
+                Assert-True ($committedPowerShellRules -contains $expectedHookLauncherRule) "Project settings omitted or replaced a reviewed hook-launcher PowerShell command: $expectedHookLauncherRule"
+            }
             $effectivePowerShellRules = @($reviewedConfiguration.Allow | Where-Object { $_.StartsWith('PowerShell(', [System.StringComparison]::Ordinal) })
-            Assert-Equal 1 $effectivePowerShellRules.Count "The supported headless posture should permit only one PowerShell command."
-            Assert-Equal $powerShellInitializerRule $effectivePowerShellRules[0] "The supported headless posture should permit only the exact initializer PowerShell rule."
+            Assert-Equal ($expectedHookLauncherPowerShellRules.Count + 1) $effectivePowerShellRules.Count "The supported headless posture should add only the exact initializer PowerShell rule to reviewed hook launchers."
+            Assert-True ($effectivePowerShellRules -contains $powerShellInitializerRule) "The supported headless posture should permit the exact initializer PowerShell rule."
 
             $untrustedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($powerShellInitializerRule, $taskLaunchRule) -CommandLinePermissionMode "dontAsk" -WorkspaceTrusted $false
             Assert-True ($untrustedConfiguration.Allow -contains $powerShellInitializerRule) "An untrusted workspace should retain the exact initializer rule supplied through CLI argv."
@@ -809,7 +856,7 @@ try {
             $quotedRuleResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "469", "-Slug", "quoted-rule", "-BranchName", $quotedBranch)
             $quotedRuleWorktree = Join-Path $callerPath ".worktrees/codex-469-quoted-rule"
             Assert-True ($quotedRuleResult.ExitCode -ne 0) "Windows-incompatible quote-bearing branch should fail before detached worktree creation."
-            Assert-Contains $quotedRuleResult.Output "Invalid branch name for Windows-compatible worktrees: $quotedBranch" "Quote-bearing branch rejection omitted its portability diagnostic."
+            Assert-NormalizedContains $quotedRuleResult.Output "Invalid branch name for Windows-compatible worktrees: $quotedBranch" "Quote-bearing branch rejection omitted its portability diagnostic."
             Assert-True (-not (Test-Path -LiteralPath $quotedRuleWorktree)) "Rejected quote-bearing branch left a target path."
             $quotedBranchRef = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$quotedBranch") -WorkingDirectory $callerPath
             Assert-Equal 1 $quotedBranchRef.ExitCode "Rejected quote-bearing branch created a shared ref."
@@ -877,7 +924,7 @@ try {
         Set-Content -LiteralPath $missingExecutableScript -Value $missingExecutableLines -Encoding Ascii
         $missingExecutableHandoff = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $missingExecutableScript) -WorkingDirectory $missingExecutableWorktree
         Assert-Equal 2 $missingExecutableHandoff.ExitCode "A disappeared Git executable should preserve the initializer setup-failure exit code."
-        Assert-NormalizedContains $missingExecutableHandoff.Output "no argv-safe native Git executable was found" "Missing Git should retain its setup diagnostic."
+        Assert-NormalizedContains $missingExecutableHandoff.Output "no argv-safe Git executable was found" "Missing Git should retain its setup diagnostic."
         Assert-True (-not (($missingExecutableHandoff.Output -replace '\s+', ' ').Contains("not inside a git repository"))) "Missing Git must not be mislabeled as an ordinary non-repository result."
         $missingExecutableBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-442/missing-executable") -WorkingDirectory $callerPath
         Assert-Equal 1 $missingExecutableBranch.ExitCode "A disappeared Git executable must not create the planned branch."
@@ -885,7 +932,7 @@ try {
         $missingInitializerLines = @(Get-PrintedHandoffLines -Output $missingExecutableResult.Output)
         $escapedInitializerPath = (Join-Path $missingExecutableWorktree "scripts/git/Initialize-CodexIssueWorktree.ps1").Replace("'", "''")
         $escapedMissingInitializerPath = (Join-Path $missingExecutableWorktree "scripts/git/missing-initializer.ps1").Replace("'", "''")
-        $missingInitializerLines[0] = $missingInitializerLines[0].Replace($escapedInitializerPath, $escapedMissingInitializerPath)
+        $missingInitializerLines[3] = $missingInitializerLines[3].Replace($escapedInitializerPath, $escapedMissingInitializerPath)
         $missingInitializerScript = Join-Path $fixtureRoot "missing-initializer-handoff.ps1"
         Set-Content -LiteralPath $missingInitializerScript -Value @('$global:LASTEXITCODE = $null') -Encoding Ascii
         Add-Content -LiteralPath $missingInitializerScript -Value $missingInitializerLines -Encoding Ascii
@@ -908,8 +955,18 @@ try {
         $collision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $collisionScript) -WorkingDirectory $initializerWorktree
         Assert-True ($collision.ExitCode -ne 0) "A post-helper branch collision should fail the initializer."
         Assert-NormalizedContains $collision.Output "git switch -c failed" "Branch collision should retain its switch failure diagnostic."
-        $detachedAfterCollision = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("symbolic-ref", "-q", "HEAD") -WorkingDirectory $initializerWorktree
-        Assert-Equal 1 $detachedAfterCollision.ExitCode "Branch collision should leave the helper-created worktree detached."
+        Assert-NormalizedContains $collision.Output "removal of the unused helper-created worktree was scheduled" "Late branch collision should report cleanup scheduling."
+        for ($attempt = 0; $attempt -lt 50 -and (Test-Path -LiteralPath $initializerWorktree); $attempt++) {
+            Start-Sleep -Milliseconds 100
+        }
+        Assert-True (-not (Test-Path -LiteralPath $initializerWorktree)) "Late branch collision must not leave an orphan helper-created worktree."
+        $registrationsAfterCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        Assert-True (-not $registrationsAfterCollision.Contains($initializerWorktree)) "Late branch collision must remove the worktree registration."
+
+        $initializerResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "490", "-Slug", "initializer-validation-continued")
+        Assert-Equal 0 $initializerResult.ExitCode "Post-collision initializer fixture worktree creation should succeed.`n$($initializerResult.Output)"
+        $initializerWorktree = Join-Path $callerPath ".worktrees/codex-490-initializer-validation-continued"
+        $initializerHead = Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("rev-parse", "HEAD")
 
         $mismatchedExpectedHead = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "$initializerHead^")
         $baseMismatchBranch = "issue-446/base-mismatch"
@@ -970,15 +1027,15 @@ try {
         $branchesBeforeBranchCollisions = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname)", "--", "refs/heads/")
         $branchCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "425", "-Slug", "existing")
         Assert-True ($branchCollision.ExitCode -ne 0) "Existing requested branch should fail closed."
-        Assert-Contains $branchCollision.Output "Branch already exists: issue-425/existing" "Branch collision diagnostic was not clear."
+        Assert-NormalizedContains $branchCollision.Output "Branch already exists: issue-425/existing" "Branch collision diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-425-existing"))) "Branch collision should not create a worktree."
         $ancestorCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "477", "-Slug", "ancestor-collision", "-BranchName", "namespace-ancestor/child")
         Assert-True ($ancestorCollision.ExitCode -ne 0) "An existing ancestor branch should fail closed."
-        Assert-Contains $ancestorCollision.Output "Branch namespace conflicts with existing branch 'namespace-ancestor': namespace-ancestor/child" "Ancestor branch collision diagnostic was not clear."
+        Assert-NormalizedContains $ancestorCollision.Output "Branch namespace conflicts with existing branch 'namespace-ancestor': namespace-ancestor/child" "Ancestor branch collision diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-477-ancestor-collision"))) "Ancestor branch collision should not create a worktree."
         $descendantCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "478", "-Slug", "descendant-collision", "-BranchName", "namespace-descendant")
         Assert-True ($descendantCollision.ExitCode -ne 0) "An existing descendant branch should fail closed."
-        Assert-Contains $descendantCollision.Output "Branch namespace conflicts with existing branch 'namespace-descendant/child': namespace-descendant" "Descendant branch collision diagnostic was not clear."
+        Assert-NormalizedContains $descendantCollision.Output "Branch namespace conflicts with existing branch 'namespace-descendant/child': namespace-descendant" "Descendant branch collision diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-478-descendant-collision"))) "Descendant branch collision should not create a worktree."
         $registrationsAfterBranchCollisions = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         $branchesAfterBranchCollisions = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname)", "--", "refs/heads/")
@@ -992,7 +1049,7 @@ try {
         New-Item -ItemType Directory -Force -Path $pathCollisionTarget | Out-Null
         $pathCollision = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "426", "-Slug", "path-collision")
         Assert-True ($pathCollision.ExitCode -ne 0) "Existing target path should fail closed."
-        Assert-Contains $pathCollision.Output "Worktree path already exists:" "Path collision diagnostic was not clear."
+        Assert-NormalizedContains $pathCollision.Output "Worktree path already exists:" "Path collision diagnostic was not clear."
         Complete-Test "existing target path fails closed"
     }
 
@@ -1001,7 +1058,7 @@ try {
         $traversalTarget = Join-Path (Split-Path -Parent $callerPath) "escaped-worktrees/codex-435-root-traversal"
         $traversal = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "435", "-Slug", "root-traversal", "-WorktreeRoot", "../escaped-worktrees")
         Assert-True ($traversal.ExitCode -ne 0) "Traversal worktree root should fail closed."
-        Assert-Contains $traversal.Output "Invalid worktree root: '../escaped-worktrees'." "Traversal-root diagnostic was not clear."
+        Assert-NormalizedContains $traversal.Output "Invalid worktree root: '../escaped-worktrees'." "Traversal-root diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $traversalTarget)) "Traversal root created an out-of-bound target."
         $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-Equal $registrationsBefore $registrationsAfter "Traversal root changed Git worktree registrations."
@@ -1014,7 +1071,7 @@ try {
         $rootedTarget = Join-Path $rootedWorktreeRoot "codex-436-rooted-root"
         $rooted = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "436", "-Slug", "rooted-root", "-WorktreeRoot", $rootedWorktreeRoot)
         Assert-True ($rooted.ExitCode -ne 0) "Rooted worktree root should fail closed."
-        Assert-Contains $rooted.Output "Invalid worktree root:" "Rooted-root diagnostic was not clear."
+        Assert-NormalizedContains $rooted.Output "Invalid worktree root:" "Rooted-root diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $rootedTarget)) "Rooted input created an out-of-bound target."
         $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-Equal $registrationsBefore $registrationsAfter "Rooted input changed Git worktree registrations."
@@ -1026,7 +1083,7 @@ try {
         $unapprovedTarget = Join-Path $callerPath "custom-worktrees/codex-437-unapproved-root"
         $unapproved = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "437", "-Slug", "unapproved-root", "-WorktreeRoot", "custom-worktrees")
         Assert-True ($unapproved.ExitCode -ne 0) "Unapproved in-repository worktree root should fail closed."
-        Assert-Contains $unapproved.Output "Invalid worktree root: 'custom-worktrees'." "Unapproved-root diagnostic was not clear."
+        Assert-NormalizedContains $unapproved.Output "Invalid worktree root: 'custom-worktrees'." "Unapproved-root diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $unapprovedTarget)) "Unapproved root created a target."
         $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-Equal $registrationsBefore $registrationsAfter "Unapproved root changed Git worktree registrations."
@@ -1038,7 +1095,7 @@ try {
         $caseVariantTarget = Join-Path $callerPath ".WORKTREES/codex-450-case-variant-root"
         $caseVariant = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "450", "-Slug", "case-variant-root", "-WorktreeRoot", ".WORKTREES")
         Assert-True ($caseVariant.ExitCode -ne 0) "Case-variant worktree root should fail closed."
-        Assert-Contains $caseVariant.Output "Invalid worktree root: '.WORKTREES'." "Case-variant root diagnostic was not clear."
+        Assert-NormalizedContains $caseVariant.Output "Invalid worktree root: '.WORKTREES'." "Case-variant root diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $caseVariantTarget)) "Case-variant root created a target."
         $registrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-Equal $registrationsBefore $registrationsAfter "Case-variant root changed Git worktree registrations."
@@ -1050,12 +1107,12 @@ try {
         $invalidSlugTarget = Join-Path $callerPath ".worktrees/codex-427-Invalid-Slug"
         $invalidSlug = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "427", "-Slug", "Invalid-Slug")
         Assert-True ($invalidSlug.ExitCode -ne 0) "Invalid slug should fail closed."
-        Assert-Contains $invalidSlug.Output "Invalid slug: 'Invalid-Slug'." "Invalid slug diagnostic was not clear."
+        Assert-NormalizedContains $invalidSlug.Output "Invalid slug: 'Invalid-Slug'." "Invalid slug diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $invalidSlugTarget)) "Invalid slug should not create a target path."
 
         $newlineSlug = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "447", "-Slug", "valid-slug`n")
         Assert-True ($newlineSlug.ExitCode -ne 0) "A slug ending in a line feed should fail closed."
-        Assert-Contains $newlineSlug.Output "Invalid slug:" "Final-line-feed slug diagnostic was not clear."
+        Assert-NormalizedContains $newlineSlug.Output "Invalid slug:" "Final-line-feed slug diagnostic was not clear."
         $newlineSlugTargets = @(
             Get-ChildItem -LiteralPath (Join-Path $callerPath ".worktrees") -Force |
                 Where-Object { $_.Name.StartsWith("codex-447-", [System.StringComparison]::Ordinal) }
@@ -1071,7 +1128,7 @@ try {
         $invalidBranchTarget = Join-Path $callerPath ".worktrees/codex-428-invalid-branch"
         $invalidBranch = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "428", "-Slug", "invalid-branch", "-BranchName", "invalid branch")
         Assert-True ($invalidBranch.ExitCode -ne 0) "Invalid branch should fail closed."
-        Assert-Contains $invalidBranch.Output "Invalid branch name: invalid branch" "Invalid branch diagnostic was not clear."
+        Assert-NormalizedContains $invalidBranch.Output "Invalid branch name: invalid branch" "Invalid branch diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $invalidBranchTarget)) "Invalid branch should not create a target path."
 
         $windowsIncompatibleBranchCases = @(
@@ -1086,7 +1143,7 @@ try {
             $branchTarget = Join-Path $callerPath ".worktrees/codex-$($branchCase.IssueNumber)-$($branchCase.Slug)"
             $branchResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", $branchCase.IssueNumber, "-Slug", $branchCase.Slug, "-BranchName", $branchCase.BranchName)
             Assert-True ($branchResult.ExitCode -ne 0) "Windows-incompatible branch '$($branchCase.BranchName)' should fail closed."
-            Assert-Contains $branchResult.Output "Invalid branch name for Windows-compatible worktrees:" "Windows-incompatible branch diagnostic was not clear."
+            Assert-NormalizedContains $branchResult.Output "Invalid branch name for Windows-compatible worktrees:" "Windows-incompatible branch diagnostic was not clear."
             Assert-True (-not (Test-Path -LiteralPath $branchTarget)) "Windows-incompatible branch '$($branchCase.BranchName)' should not create a target path."
             $branchRef = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/$($branchCase.BranchName)") -WorkingDirectory $callerPath
             Assert-Equal 1 $branchRef.ExitCode "Windows-incompatible branch '$($branchCase.BranchName)' created a shared ref."
@@ -1115,7 +1172,7 @@ try {
             $env:PATH = $previousPath
         }
         Assert-True ($shimBypass.ExitCode -ne 0) "Missing base should still fail when an unsafe Git batch shim is first on PATH."
-        Assert-Contains $shimBypass.Output "Base commit not found: origin/not-there" "Helper did not bypass the unsafe Git batch shim."
+        Assert-NormalizedContains $shimBypass.Output "Base commit not found: origin/not-there" "Helper did not bypass the unsafe Git batch shim."
         Assert-True (-not (Test-Path -LiteralPath $shimSentinel)) "Helper executed the PATH-first Git batch shim."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-434-shim-bypass"))) "Shim-bypass probe should not create a worktree."
         Complete-Test "PATH-first Git batch shim is bypassed"
@@ -1126,7 +1183,7 @@ try {
         $metacharBase = "origin/main&echo TASKDECK_CANARY>git-shim-canary.txt"
         $metacharResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "433", "-Slug", "metachar-base", "-BaseBranch", $metacharBase)
         Assert-True ($metacharResult.ExitCode -ne 0) "Metacharacter base should fail closed."
-        Assert-Contains $metacharResult.Output "Base commit not found:" "Metacharacter base diagnostic was not clear."
+        Assert-NormalizedContains $metacharResult.Output "Base commit not found:" "Metacharacter base diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $canaryPath)) "Git shim metacharacters escaped the native argument boundary."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-433-metachar-base"))) "Metacharacter base should not create a worktree."
         Complete-Test "metacharacter base cannot escape the native Git argument boundary"
@@ -1135,7 +1192,7 @@ try {
     if (Test-CaseSelected "revision-range-base") {
         $revisionRange = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "432", "-Slug", "revision-range", "-BaseBranch", "HEAD~1..HEAD")
         Assert-True ($revisionRange.ExitCode -ne 0) "Revision-set base should fail closed instead of selecting one commit."
-        Assert-Contains $revisionRange.Output "Base commit not found: HEAD~1..HEAD" "Revision-set base diagnostic was not clear."
+        Assert-NormalizedContains $revisionRange.Output "Base commit not found: HEAD~1..HEAD" "Revision-set base diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-432-revision-range"))) "Revision-set base should not create a worktree."
         Complete-Test "revision-set base fails closed"
     }
@@ -1162,7 +1219,7 @@ try {
             $linkedSourceTarget = Join-Path $linkedSourcePath ".worktrees/codex-468-linked-source"
             $linkedSource = Invoke-Helper -WorkingDirectory $linkedSourcePath -Arguments @("-IssueNumber", "468", "-Slug", "linked-source")
             Assert-True ($linkedSource.ExitCode -ne 0) "A helper invoked from a linked source worktree should fail closed."
-            Assert-Contains $linkedSource.Output "Run this helper from the repository's main checkout; linked source worktrees are not allowed" "Linked-source rejection should state the main-checkout-only contract."
+            Assert-NormalizedContains $linkedSource.Output "Run this helper from the repository's main checkout; linked source worktrees are not allowed" "Linked-source rejection should state the main-checkout-only contract."
             Assert-True (-not (Test-Path -LiteralPath $linkedSourceTarget)) "Linked-source rejection should not leave a nested target path."
             $linkedSourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-468/linked-source") -WorkingDirectory $callerPath
             Assert-Equal 1 $linkedSourceBranch.ExitCode "Linked-source rejection should not create the planned branch."
@@ -1180,7 +1237,7 @@ try {
             "-IssueNumber", "461", "-Slug", "wrong-helper-checkout"
         ) -WorkingDirectory $callerPath
         Assert-True ($wrongHelperPath.ExitCode -ne 0) "A helper invoked from outside the caller repository should fail closed."
-        Assert-Contains $wrongHelperPath.Output "does not match the current repository's reviewed helper" "Wrong-checkout helper rejection should identify the exact path binding."
+        Assert-NormalizedContains $wrongHelperPath.Output "does not match the current repository's reviewed helper" "Wrong-checkout helper rejection should identify the exact path binding."
         Assert-True (-not (Test-Path -LiteralPath $wrongHelperTarget)) "Wrong-checkout helper rejection should not leave a target path."
         $wrongHelperBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-461/wrong-helper-checkout") -WorkingDirectory $callerPath
         Assert-Equal 1 $wrongHelperBranch.ExitCode "Wrong-checkout helper rejection should not create the planned branch."
@@ -1188,7 +1245,7 @@ try {
         $oldCommitTarget = Join-Path $callerPath ".worktrees/codex-453-old-commit-base"
         $oldCommitBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "453", "-Slug", "old-commit-base", "-BaseBranch", $preHelperCommit)
         Assert-True ($oldCommitBase.ExitCode -ne 0) "A commit predating the handoff artifacts should fail closed."
-        Assert-Contains $oldCommitBase.Output "does not contain required handoff artifact 'scripts/worktree_guard.ps1'" "Old-commit rejection should name the missing handoff artifact."
+        Assert-NormalizedContains $oldCommitBase.Output "does not contain required handoff artifact 'scripts/worktree_guard.ps1'" "Old-commit rejection should name the missing handoff artifact."
         Assert-True (-not (Test-Path -LiteralPath $oldCommitTarget)) "Rejected old commit should not leave a target path."
         $oldCommitBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-453/old-commit-base") -WorkingDirectory $callerPath
         Assert-Equal 1 $oldCommitBranch.ExitCode "Rejected old commit should not create the planned branch."
@@ -1196,7 +1253,7 @@ try {
         $oldTagTarget = Join-Path $callerPath ".worktrees/codex-454-old-tag-base"
         $oldTagBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "454", "-Slug", "old-tag-base", "-BaseBranch", "pre-helper-base")
         Assert-True ($oldTagBase.ExitCode -ne 0) "A tag predating the handoff artifacts should fail closed."
-        Assert-Contains $oldTagBase.Output "does not contain required handoff artifact 'scripts/worktree_guard.ps1'" "Old-tag rejection should name the missing handoff artifact."
+        Assert-NormalizedContains $oldTagBase.Output "does not contain required handoff artifact 'scripts/worktree_guard.ps1'" "Old-tag rejection should name the missing handoff artifact."
         Assert-True (-not (Test-Path -LiteralPath $oldTagTarget)) "Rejected old tag should not leave a target path."
         $oldTagBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-454/old-tag-base") -WorkingDirectory $callerPath
         Assert-Equal 1 $oldTagBranch.ExitCode "Rejected old tag should not create the planned branch."
@@ -1204,7 +1261,7 @@ try {
         $missingInitializerTarget = Join-Path $callerPath ".worktrees/codex-456-missing-initializer-base"
         $missingInitializerBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "456", "-Slug", "missing-initializer-base", "-BaseBranch", $guardOnlyCommit)
         Assert-True ($missingInitializerBase.ExitCode -ne 0) "A base containing the guard but predating the initializer should fail closed."
-        Assert-Contains $missingInitializerBase.Output "does not contain required handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1'" "Guard-only base rejection should name the missing initializer artifact."
+        Assert-NormalizedContains $missingInitializerBase.Output "does not contain required handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1'" "Guard-only base rejection should name the missing initializer artifact."
         Assert-True (-not (Test-Path -LiteralPath $missingInitializerTarget)) "Rejected guard-only base should not leave a target path."
         $missingInitializerBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-456/missing-initializer-base") -WorkingDirectory $callerPath
         Assert-Equal 1 $missingInitializerBranch.ExitCode "Rejected guard-only base should not create the planned branch."
@@ -1212,7 +1269,7 @@ try {
         $modifiedArtifactTarget = Join-Path $callerPath ".worktrees/codex-457-modified-artifact-base"
         $modifiedArtifactBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "457", "-Slug", "modified-artifact-base", "-BaseBranch", $modifiedHandoffCommit)
         Assert-True ($modifiedArtifactBase.ExitCode -ne 0) "A base containing a different initializer blob should fail closed."
-        Assert-Contains $modifiedArtifactBase.Output "handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' does not match the reviewed artifact in the invoking checkout HEAD" "Modified-artifact rejection should name the initializer trust mismatch."
+        Assert-NormalizedContains $modifiedArtifactBase.Output "handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' does not match the reviewed artifact in the invoking checkout HEAD" "Modified-artifact rejection should name the initializer trust mismatch."
         Assert-True (-not (Test-Path -LiteralPath $modifiedArtifactTarget)) "Rejected modified-artifact base should not leave a target path."
         $modifiedArtifactBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-457/modified-artifact-base") -WorkingDirectory $callerPath
         Assert-Equal 1 $modifiedArtifactBranch.ExitCode "Rejected modified-artifact base should not create the planned branch."
@@ -1220,7 +1277,7 @@ try {
         $modifiedGuardTarget = Join-Path $callerPath ".worktrees/codex-464-modified-guard-base"
         $modifiedGuardBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "464", "-Slug", "modified-guard-base", "-BaseBranch", $modifiedGuardCommit)
         Assert-True ($modifiedGuardBase.ExitCode -ne 0) "A base containing a different guard blob should fail closed."
-        Assert-Contains $modifiedGuardBase.Output "handoff artifact 'scripts/worktree_guard.ps1' does not match the reviewed artifact in the invoking checkout HEAD" "Modified-guard rejection should name the guard trust mismatch."
+        Assert-NormalizedContains $modifiedGuardBase.Output "handoff artifact 'scripts/worktree_guard.ps1' does not match the reviewed artifact in the invoking checkout HEAD" "Modified-guard rejection should name the guard trust mismatch."
         Assert-True (-not (Test-Path -LiteralPath $modifiedGuardCanary)) "Rejected selected-base guard code executed despite its reviewed-blob mismatch."
         Assert-True (-not (Test-Path -LiteralPath $modifiedGuardTarget)) "Rejected modified-guard base should not leave a target path."
         $modifiedGuardBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-464/modified-guard-base") -WorkingDirectory $callerPath
@@ -1234,7 +1291,7 @@ try {
             $dirtySourceTarget = Join-Path $callerPath ".worktrees/codex-458-dirty-source-artifact"
             $dirtySource = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "458", "-Slug", "dirty-source-artifact")
             Assert-True ($dirtySource.ExitCode -ne 0) "A dirty invoking-checkout initializer should fail closed."
-            Assert-Contains $dirtySource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' working content does not match the invoking checkout HEAD blob" "Dirty source-artifact rejection should identify the uncommitted initializer."
+            Assert-NormalizedContains $dirtySource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' working content does not match the invoking checkout HEAD blob" "Dirty source-artifact rejection should identify the uncommitted initializer."
             Assert-Contains (Get-Content -Raw -LiteralPath $callerInitializerPath) $dirtySourceMarker "Source-artifact rejection should preserve the maintainer-owned dirty content."
             Assert-True (-not (Test-Path -LiteralPath $dirtySourceTarget)) "Dirty source-artifact rejection should not leave a target path."
             $dirtySourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-458/dirty-source-artifact") -WorkingDirectory $callerPath
@@ -1251,7 +1308,7 @@ try {
             $stagedSourceTarget = Join-Path $callerPath ".worktrees/codex-460-staged-source-artifact"
             $stagedSource = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "460", "-Slug", "staged-source-artifact")
             Assert-True ($stagedSource.ExitCode -ne 0) "A staged invoking-checkout initializer should fail closed."
-            Assert-Contains $stagedSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' has staged changes" "Staged source-artifact rejection should identify the indexed initializer."
+            Assert-NormalizedContains $stagedSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' has staged changes" "Staged source-artifact rejection should identify the indexed initializer."
             Assert-Contains (Get-Content -Raw -LiteralPath $callerInitializerPath) $stagedSourceMarker "Source-artifact rejection should preserve the maintainer-owned staged content."
             Assert-True (-not (Test-Path -LiteralPath $stagedSourceTarget)) "Staged source-artifact rejection should not leave a target path."
             $stagedSourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-460/staged-source-artifact") -WorkingDirectory $callerPath
@@ -1272,7 +1329,7 @@ try {
             $hiddenSourceTarget = Join-Path $callerPath ".worktrees/codex-463-hidden-source-artifact"
             $hiddenSource = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "463", "-Slug", "hidden-source-artifact")
             Assert-True ($hiddenSource.ExitCode -ne 0) "A skip-worktree-hidden initializer modification should fail closed."
-            Assert-Contains $hiddenSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' working content does not match the invoking checkout HEAD blob" "Direct source hashing should identify the hidden initializer mismatch."
+            Assert-NormalizedContains $hiddenSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' working content does not match the invoking checkout HEAD blob" "Direct source hashing should identify the hidden initializer mismatch."
             Assert-True (-not (Test-Path -LiteralPath $hiddenSourceCanary)) "Hidden source initializer code executed despite the reviewed-blob mismatch."
             Assert-True (-not (Test-Path -LiteralPath $hiddenSourceTarget)) "Hidden source-artifact rejection should not leave a target path."
             $hiddenSourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-463/hidden-source-artifact") -WorkingDirectory $callerPath
@@ -1294,7 +1351,7 @@ try {
             $filterSourceTarget = Join-Path $callerPath ".worktrees/codex-465-filter-source-artifact"
             $filterSource = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "465", "-Slug", "filter-source-artifact")
             Assert-True ($filterSource.ExitCode -ne 0) "An altered initializer covered by a local clean filter should fail closed."
-            Assert-Contains $filterSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' working content does not match the invoking checkout HEAD blob" "Filter-free byte comparison should identify the altered initializer."
+            Assert-NormalizedContains $filterSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' working content does not match the invoking checkout HEAD blob" "Filter-free byte comparison should identify the altered initializer."
             Assert-True (-not (Test-Path -LiteralPath $filterCanary)) "Artifact verification executed the repository-local clean filter."
             Assert-True (-not (Test-Path -LiteralPath $filterSourceTarget)) "Filter-covered source-artifact rejection should not leave a target path."
             $filterSourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-465/filter-source-artifact") -WorkingDirectory $callerPath
@@ -1320,7 +1377,7 @@ try {
             $dirtyGuardTarget = Join-Path $callerPath ".worktrees/codex-466-dirty-source-guard"
             $dirtyGuard = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "466", "-Slug", "dirty-source-guard")
             Assert-True ($dirtyGuard.ExitCode -ne 0) "A dirty invoking-checkout guard should fail closed."
-            Assert-Contains $dirtyGuard.Output "Reviewed handoff artifact 'scripts/worktree_guard.ps1' working content does not match the invoking checkout HEAD blob" "Dirty source-guard rejection should identify the altered guard."
+            Assert-NormalizedContains $dirtyGuard.Output "Reviewed handoff artifact 'scripts/worktree_guard.ps1' working content does not match the invoking checkout HEAD blob" "Dirty source-guard rejection should identify the altered guard."
             Assert-True (-not (Test-Path -LiteralPath $sourceGuardCanary)) "Altered source guard code executed despite its reviewed-blob mismatch."
             Assert-True (-not (Test-Path -LiteralPath $dirtyGuardTarget)) "Dirty source-guard rejection should not leave a target path."
             $dirtyGuardBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-466/dirty-source-guard") -WorkingDirectory $callerPath
@@ -1336,7 +1393,7 @@ try {
             $missingGuardTarget = Join-Path $callerPath ".worktrees/codex-467-missing-source-guard"
             $missingGuard = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "467", "-Slug", "missing-source-guard")
             Assert-True ($missingGuard.ExitCode -ne 0) "A missing invoking-checkout guard should fail closed."
-            Assert-Contains $missingGuard.Output "Reviewed handoff artifact 'scripts/worktree_guard.ps1' is missing from the invoking checkout" "Missing source-guard rejection should identify the absent guard."
+            Assert-NormalizedContains $missingGuard.Output "Reviewed handoff artifact 'scripts/worktree_guard.ps1' is missing from the invoking checkout" "Missing source-guard rejection should identify the absent guard."
             Assert-True (-not (Test-Path -LiteralPath $missingGuardTarget)) "Missing source-guard rejection should not leave a target path."
             $missingGuardBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-467/missing-source-guard") -WorkingDirectory $callerPath
             Assert-Equal 1 $missingGuardBranch.ExitCode "Missing source-guard rejection should not create the planned branch."
@@ -1353,7 +1410,7 @@ try {
             $dirtyHelperTarget = Join-Path $callerPath ".worktrees/codex-462-dirty-helper-artifact"
             $dirtyHelper = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "462", "-Slug", "dirty-helper-artifact")
             Assert-True ($dirtyHelper.ExitCode -ne 0) "A dirty invoking helper should fail its own trust check."
-            Assert-Contains $dirtyHelper.Output "Reviewed handoff artifact 'scripts/git/New-CodexIssueWorktree.ps1' working content does not match the invoking checkout HEAD blob" "Dirty helper rejection should identify the uncommitted helper itself."
+            Assert-NormalizedContains $dirtyHelper.Output "Reviewed handoff artifact 'scripts/git/New-CodexIssueWorktree.ps1' working content does not match the invoking checkout HEAD blob" "Dirty helper rejection should identify the uncommitted helper itself."
             Assert-Contains (Get-Content -Raw -LiteralPath $callerHelperPath) $dirtyHelperMarker "Helper self-rejection should preserve the maintainer-owned dirty content."
             Assert-True (-not (Test-Path -LiteralPath $dirtyHelperTarget)) "Dirty helper rejection should not leave a target path."
             $dirtyHelperBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-462/dirty-helper-artifact") -WorkingDirectory $callerPath
@@ -1369,7 +1426,7 @@ try {
             $missingSourceTarget = Join-Path $callerPath ".worktrees/codex-459-missing-source-artifact"
             $missingSource = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "459", "-Slug", "missing-source-artifact")
             Assert-True ($missingSource.ExitCode -ne 0) "A missing invoking-checkout initializer should fail closed."
-            Assert-Contains $missingSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' is missing from the invoking checkout" "Missing source-artifact rejection should identify the absent initializer."
+            Assert-NormalizedContains $missingSource.Output "Reviewed handoff artifact 'scripts/git/Initialize-CodexIssueWorktree.ps1' is missing from the invoking checkout" "Missing source-artifact rejection should identify the absent initializer."
             Assert-True (-not (Test-Path -LiteralPath $missingSourceTarget)) "Missing source-artifact rejection should not leave a target path."
             $missingSourceBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-459/missing-source-artifact") -WorkingDirectory $callerPath
             Assert-Equal 1 $missingSourceBranch.ExitCode "Missing source-artifact rejection should not create the planned branch."
@@ -1380,6 +1437,31 @@ try {
         $registrationsAfterMissingArtifacts = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-Equal $registrationsBeforeMissingArtifacts $registrationsAfterMissingArtifacts "Rejected historical, modified-base, or invalid source artifact changed Git worktree registrations."
         Complete-Test "handoff artifacts are clean at source and exact-blob pinned in every selected local base"
+    }
+
+    if (Test-CaseSelected "target-artifact-smudge") {
+        Set-Content -LiteralPath (Join-Path $seedPath ".gitattributes") -Encoding Ascii -Value "scripts/worktree_guard.ps1 filter=taskdeck-target-smudge"
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitattributes")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Smudge target guard fixture")
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "HEAD:refs/heads/target-smudge")
+        $registrationsBeforeTargetSmudge = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $targetSmudgeTarget = Join-Path $callerPath ".worktrees/codex-473-target-smudge"
+        $targetSmudgeGuardBlob = Invoke-Git -WorkingDirectory $callerPath -Arguments @("rev-parse", "HEAD:scripts/worktree_guard.ps1")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "filter.taskdeck-target-smudge.clean", "git cat-file blob $targetSmudgeGuardBlob")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "filter.taskdeck-target-smudge.smudge", "git hash-object --stdin")
+        try {
+            $targetSmudge = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "473", "-Slug", "target-smudge", "-BaseBranch", "origin/target-smudge")
+            Assert-True ($targetSmudge.ExitCode -ne 0) "A smudged target guard should fail before the helper emits worker commands."
+            Assert-NormalizedContains $targetSmudge.Output "Helper-created worktree handoff artifact 'scripts/worktree_guard.ps1' does not match the reviewed raw blob" "Target smudge rejection should name the reviewed raw-blob mismatch."
+            Assert-True (-not (Test-Path -LiteralPath $targetSmudgeTarget)) "Target smudge rejection must remove the helper-created worktree path."
+            $registrationsAfterTargetSmudge = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            Assert-Equal $registrationsBeforeTargetSmudge $registrationsAfterTargetSmudge "Target smudge rejection must remove the helper-created worktree registration."
+        }
+        finally {
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "filter.taskdeck-target-smudge.clean")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "filter.taskdeck-target-smudge.smudge")
+        }
+        Complete-Test "target handoff artifacts are raw-blob verified and cleaned after a smudge replacement"
     }
 
     if (Test-CaseSelected "fully-qualified-ref") {
@@ -1407,7 +1489,7 @@ try {
     if (Test-CaseSelected "missing-base") {
         $missingBase = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "429", "-Slug", "missing-base", "-BaseBranch", "origin/not-there")
         Assert-True ($missingBase.ExitCode -ne 0) "Missing base should fail closed."
-        Assert-Contains $missingBase.Output "Base commit not found: origin/not-there" "Missing-base diagnostic was not clear."
+        Assert-NormalizedContains $missingBase.Output "Base commit not found: origin/not-there" "Missing-base diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-429-missing-base"))) "Missing base should not create a worktree."
         Complete-Test "missing base fails closed"
     }
@@ -1435,13 +1517,13 @@ try {
         $missingLocalWhatIfTarget = Join-Path $callerPath ".worktrees/codex-451-what-if-local-missing"
         $missingLocalWhatIf = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "451", "-Slug", "what-if-local-missing", "-BaseBranch", "refs/heads/definitely-missing-what-if", "-WhatIf")
         Assert-True ($missingLocalWhatIf.ExitCode -ne 0) "WhatIf should fail when a local base cannot resolve."
-        Assert-Contains $missingLocalWhatIf.Output "Base commit not found: refs/heads/definitely-missing-what-if" "Missing local WhatIf base diagnostic was not clear."
+        Assert-NormalizedContains $missingLocalWhatIf.Output "Base commit not found: refs/heads/definitely-missing-what-if" "Missing local WhatIf base diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $missingLocalWhatIfTarget)) "Missing local WhatIf base created a target."
 
         $missingRemoteWhatIfTarget = Join-Path $callerPath ".worktrees/codex-452-what-if-remote-missing"
         $missingRemoteWhatIf = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "452", "-Slug", "what-if-remote-missing", "-BaseBranch", "origin/definitely-missing-what-if", "-WhatIf")
         Assert-True ($missingRemoteWhatIf.ExitCode -ne 0) "WhatIf should fail when an explicit remote base does not exist."
-        Assert-Contains $missingRemoteWhatIf.Output "Base commit not found: origin/definitely-missing-what-if" "Missing remote WhatIf base diagnostic was not clear."
+        Assert-NormalizedContains $missingRemoteWhatIf.Output "Base commit not found: origin/definitely-missing-what-if" "Missing remote WhatIf base diagnostic was not clear."
         Assert-True (-not (Test-Path -LiteralPath $missingRemoteWhatIfTarget)) "Missing remote WhatIf base created a target."
         $whatIfRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         $whatIfRefsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
@@ -1457,9 +1539,9 @@ try {
         Move-Item -LiteralPath $gitFailureTarget -Destination $parkedGitFailureTarget
         $gitFailure = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "431", "-Slug", "git-failure")
         Assert-True ($gitFailure.ExitCode -ne 0) "Native git worktree failure should fail closed."
-        Assert-Contains $gitFailure.Output "git worktree add failed for" "Git failure diagnostic omitted the failed operation."
+        Assert-NormalizedContains $gitFailure.Output "git worktree add failed for" "Git failure diagnostic omitted the failed operation."
         Assert-NormalizedContains $gitFailure.Output "is a missing but already registered worktree" "Git stderr context should be preserved."
-        Assert-Contains $gitFailure.Output "(exit code 128)" "Git failure diagnostic omitted the native exit code."
+        Assert-NormalizedContains $gitFailure.Output "(exit code 128)" "Git failure diagnostic omitted the native exit code."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-431-git-failure"))) "Failed git worktree add should not leave a target worktree."
         Complete-Test "native git failure propagates with a clear diagnostic"
     }

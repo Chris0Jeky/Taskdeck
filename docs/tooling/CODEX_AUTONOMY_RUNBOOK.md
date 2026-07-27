@@ -75,7 +75,8 @@ to equal the common Git directory and rejects linked sources before fetch, ref, 
 registration mutation.
 
 The helper defaults to the explicit remote base `origin/main`, refreshes a named remote branch
-before resolving it, preserves unrelated source-checkout state, and creates a detached worktree
+before resolving it (and resolves `origin/HEAD` from the remote's current symbolic default rather
+than a stale local symbolic ref), preserves unrelated source-checkout state, and creates a detached worktree
 under the repository's required exact lowercase `.worktrees/` root. It rejects case variants,
 rooted, traversing, alternate,
 junction-backed, or symlink-backed worktree roots. It prints the planned issue branch but does not
@@ -87,20 +88,22 @@ intended mutations. This is a self-check after PowerShell has already started th
 external authentication boundary; a same-user process can still replace bytes before or during the
 check. An independently reviewed, hash-pinned launcher would be required to close that bootstrap
 gap. The selected base must carry the exact reviewed guard and initializer blob identities. Older or
-divergent commits/tags are rejected before target-path or worktree-registration creation. `-WhatIf` resolves local bases and
+divergent commits/tags are rejected before target-path or worktree-registration creation. The helper
+atomically reserves and revalidates its final target under the approved root; after creation it
+compares the target guard and initializer bytes with the reviewed raw blobs before printing a handoff.
+`-WhatIf` resolves local bases and
 compares their artifacts, while explicit remote bases are checked with `git ls-remote` without
 updating refs. A remote dry run
 proves existence only; actual creation performs its controlled tracking-ref refresh and then
 compares both blobs before target or registration mutation. A missing base fails instead of
 producing a false-green dry run.
 
-Run the complete printed PowerShell handoff unchanged inside the worker worktree. It invokes the
-target initializer by its exact absolute path; its selected-base blob identity was checked at
-creation. It then runs the guard first, verifies the exact worktree and detached base, and only then
-creates and switches to the issue branch. These creation-time OID checks do not authenticate target
-bytes at execution: same-user replacement of the initializer or guard after creation and before or
-during handoff remains an explicit TOCTOU residual that requires an external hash-pinned launcher
-to close. The helper also prints the matching task-scoped PowerShell allow rule; add it explicitly
+Run the complete printed PowerShell handoff unchanged inside the worker worktree. Its first command
+is the target guard itself at its exact absolute path, then the bounded initializer verifies the exact
+worktree and detached base before creating and switching to the issue branch. A late switch collision
+removes the unused detached worktree before returning the failure. The creation-time target-byte
+check does not authenticate a same-user replacement after the handoff was emitted; an external
+hash-pinned launcher is still required to close that residual. The helper also prints the matching task-scoped PowerShell allow rule; add it explicitly
 when the launch surface requires it rather than committing a generic relative rule. It emits the
 rule in a directly pasteable PowerShell single-quoted here-string variable; pass that variable as
 one `--allowedTools` argv value. Branch names must also be Windows-path compatible: the helper
@@ -110,14 +113,16 @@ exact lookup accepts them. The rule matches the complete emitted command and all
 without a wildcard:
 
 ```powershell
+& '<exact helper-created worktree>\scripts\worktree_guard.ps1' -GitExecutable '<native Git executable printed by the helper>'
+$guardSucceeded = $?; $guardExitCode = $LASTEXITCODE
+if (-not $guardSucceeded -or $guardExitCode -ne 0) { if ($null -ne $guardExitCode -and $guardExitCode -ne 0) { exit $guardExitCode }; exit 1 }
 & '<exact helper-created worktree>\scripts\git\Initialize-CodexIssueWorktree.ps1' -GitExecutable '<native Git executable printed by the helper>' -BranchName 'issue-123/short-slug' -ExpectedWorktree '<exact worktree printed by the helper>' -ExpectedHead '<detached base OID printed by the helper>'
 $handoffSucceeded = $?; $handoffExitCode = $LASTEXITCODE
 if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffExitCode -and $handoffExitCode -ne 0) { exit $handoffExitCode }; exit 1 }
 ```
 
-The initializer is the first worktree command and its first internal action is the guard using the
-helper-selected native Git. Any guard, exact-worktree, detached-base, or switch failure stops the
-block. This handoff is PowerShell-only and invokes the initializer in the already-running host;
+The guard is the first worktree command and the initializer is bounded after its successful result.
+Any guard, exact-worktree, detached-base, or switch failure stops the block. This handoff is PowerShell-only and invokes the initializer in the already-running host;
 Bash workers must launch a reviewed absolute PowerShell application in the worktree and run the
 whole printed block. For headless Claude workers, launch `claude -p` from that exact target; do not
 add `--worktree`, which creates a second `.claude/worktrees/...` checkout. Follow the reviewed
@@ -153,6 +158,8 @@ Use this shape for implementation workers:
 You are implementing Taskdeck issue #NNN in an isolated Codex worktree.
 
 First PowerShell commands (copy the complete block printed by the helper):
+<absolute helper-created target worktree_guard.ps1 command with pinned Git>
+<capture and fail-fast gate for guard status and exit code>
 <absolute helper-created target Initialize-CodexIssueWorktree.ps1 command with pinned Git, branch, exact worktree, and detached base>
 <capture and fail-fast gate for initializer status and exit code>
 
