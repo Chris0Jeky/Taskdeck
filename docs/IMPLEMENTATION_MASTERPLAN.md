@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-27
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -18,6 +18,7 @@ Companion Active Docs:
 ## Delivery update (2026-07-26, security runway)
 
 - **SQLite native security floor (`#1345`):** centrally pin `SQLitePCLRaw.bundle_e_sqlite3` 2.1.12 and make Infrastructure's dependency direct, which moves the matched bundle/core/provider/native family from 2.1.6 to 2.1.12 without enabling global transitive pinning. A runtime regression enforces SQLite >= 3.50.2 (2.1.12 loads 3.53.3); the NuGet vulnerability audit is clean, EF reports no pending model changes after a fresh update, and a self-contained `win-x64` binary reaches `/health/ready` with SQLite loaded.
+- **Project priority completeness (`#1458`):** replace the capped ProjectV2 item sample with cursor-complete, stable-snapshot pagination and fail-closed checks for saturation, item/cursor identity, nested-connection truncation, project/source-plan drift, invalid Issue priority labels, typed repository-aware PR references, partial writer failure, and stale post-apply reporting. External Issue references remain visible but non-authoritative: their labels never rank, external-only PRs derive `Priority V`, and an external closing Issue permits same-repository body fallback. The authentication-free 64-check self-test covers the authority, drift, zero-write, partial-failure, and verified-post-state boundaries; `-Apply` validates every option and rebuilds the complete derivation plan before the first write. On 2026-07-27, all 130 formerly unlabeled Taskdeck Issues were classified and verified, and a stable 1,472/1,472 snapshot proved all 665 Issue items have exactly one Priority label. That checkpoint found 142 ProjectV2 field drifts (131 Issues and 11 PRs; 137 empty plus five non-empty mismatches). No project-field `-Apply` had run; #1458 stays open for a reviewed Apply and separate complete zero-drift audit.
 
 ## Delivery update (2026-07-25, PR-queue clearing wave)
 
@@ -29,10 +30,10 @@ Companion Active Docs:
 - **`#1478` (`#1271`) — dogfooding instrumented**, and the baseline measured: sustained use has **not** started (8 active days, three months stale, most boards fixtures), though the core loop works (**17/20 proposals reached Apply**, counted by `AppliedAt` — a status-based count reads 1/20 because `Dismiss()` overwrites an `Applied` status). Residual accuracy questions → **`#1480`**.
 - **`#1471`, `#1472`, `#1479`** — canonical-doc reconciliation, human-action tracking for `#1457`'s trust gate and the recurring worktree prune, and two record-only check-offs taken on explicit maintainer instruction.
 - **`#1295` closed as superseded** (13/13 bypass failures; targeted floor v1.3.0 vs installed 1.6.5). The overlay is still *needed* — 11 rule-classes are `allow` at every tier including T4 — so the salvage plan and acceptance criteria live on **`#1293`**.
-- **Repo hardening:** force-push and deletion blocked on `main` (otherwise deliberately relaxed); 288 truncation-hidden project-priority mismatches synced (`#1474`).
+- **Repo hardening:** force-push and deletion blocked on `main` (otherwise deliberately relaxed); a 1,444-item snapshot synced 288 truncation-hidden project-priority mismatches (`#1474`), while `#1458` owns the durable complete-audit and remaining data-cleanup gate.
 - **`#1270` backlog triage:** 12 issues closed with dated notes; an adversarial pass bounced **13 of 25** proposed closures, including the `#1123` ship-gate item. `#1270` stays open — two of its own ACs are obsolete against ADR-0044 / REVIVAL_PLAN §6.
 - **Seeded:** `#1470` `#1473` `#1474` `#1475` `#1476` `#1480` `#1482`, plus upstream `agent-harness#56`.
-- **Remaining hold:** `#1457` only — pin refreshed to the installed floor; the interactive `/hooks` trust session and live canaries are maintainer-only.
+- **Remaining T4 hold:** `#1457` only — do not run the published canaries yet. Its current head has red DCO, stale review evidence, and material main-branch drift; the 2026-07-26 audit also found its v1.6.5 pin behind the installed/producer v1.6.12 floor while root/common-directory hook discovery remains unresolved. Repair those prerequisites and regenerate exact-head CI/reviews before the maintainer-only `/hooks` trust and live-canary step.
 
 ## Delivery update (2026-07-23/24, overnight wave)
 

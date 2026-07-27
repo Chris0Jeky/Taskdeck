@@ -116,6 +116,36 @@ When `.claude/settings.json` changes outside the agentic smoke path, also parse 
 Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
 ```
 
+## GitHub Project Priority Audit Checks
+
+For changes to `scripts/github/Sync-TaskdeckProjectPriority.ps1`, run the offline parser and regression checks first:
+
+```powershell
+$script = "scripts\github\Sync-TaskdeckProjectPriority.ps1"
+$tokens = $null
+$parseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script).Path, [ref]$tokens, [ref]$parseErrors) | Out-Null
+if ($parseErrors.Count -ne 0) { $parseErrors | Format-List; exit 1 }
+
+powershell -NoProfile -File $script -SelfTest
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+```
+
+`-SelfTest` is authentication-free and reports its exact check count. It includes a mocked 1,001-item project plus fail-closed cases for early termination, exact duplicate IDs, case-distinct IDs, count/stamp drift, repeated or missing cursors, truncated nested connections, a positive limit ceiling, aggregated missing/multiple same-repository Issue priority labels before PR lookups, raw REST Issue/PullRequest normalization, same-repository authority, default-off external Issue authority, mixed/external-only references, strict `Priority V` fallback, ignored-reference source drift, ordered option dispatch, zero-write option validation, partial writer failures, and verified post-apply output. The Required CI docs-governance job parses the script and runs this same authentication-free suite.
+
+Then exercise the live read-only boundaries:
+
+```powershell
+# On a project larger than 1,000 items, this must exit nonzero rather than sample.
+powershell -NoProfile -File $script -Limit 1000 -Json
+if ($LASTEXITCODE -eq 0) { throw "Expected the configured ceiling to fail closed." }
+
+# Complete audit. Do not treat a nonzero exit as a clean result.
+powershell -NoProfile -File $script -Json
+```
+
+A successful JSON audit must say `complete: true`, with `scanned == reportedTotalCount`; a clean audit additionally requires `needsUpdate: 0`. Body references that resolve to PullRequests do not contribute Issue priority. External Issue references are default-off, visible non-authority: verify `ignoredIssueReferenceCount` and every exact record in `ignoredIssueReferences`; external labels never contribute ranking, an external-only PR derives `Priority V`, and an external closing Issue permits same-repository body fallback. External Issue or PullRequest content placed directly in the project remains fatal. Missing or multiple labels on actual same-repository Issues are aggregated data-policy failures that abort before PR reference resolution or writes; fix every listed label defect first. Never add `-Apply` merely to test the helper. Only with `project` scope and reviewed updates should an operator run `-Apply`; ignored-reference identity/count participates in the pre-write drift guard, the command must perform its complete post-apply audit even after a partial writer failure, and a final separate read-only audit must prove the resulting project is complete and clean.
+
 ## Paper Backend Gap Testing (2026-05-05, PRs `#1031`–`#1040`)
 
 The Paper backend gap wave through PR `#1040` added ~480 new backend tests across 10 delivered/merge-ready issues. Each delivered PR received adversarial review; later review rounds found and fixed issues including a 100k entity memory risk, a board-scoping error, missing FK enforcement, CancellationToken threading gaps, projected WIP false negatives, JSON parsing 500s, and conflict-detector false positives.
