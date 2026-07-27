@@ -18,7 +18,7 @@ Companion Active Docs:
   - API integration: 1,685 passed (0 failed, 2 skipped; 1,687 total)
   - CLI contract: 82 passed
   - Architecture boundaries: 0 failed, **1 skipped** (only INV-09/DataFlowRegistry; INV-10/11/12 un-skipped with real assertions in #1126) — exact pass/total pending CI recertification (#1138)
-  - Integration (Testcontainers): 20 passed
+  - Integration project (**newer than this dated aggregate**): 35 tests at #1518 — 28 PostgreSQL-backed cases plus 7 Docker-independent fixture/native checks. Dockerless evidence is 7 passed / 28 skipped; positive PostgreSQL evidence requires all 28 container cases to execute.
 - Frontend unit: **3,267 passing** -- verified 2026-05-16 post-bulk-merge (CI)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing
 - Combined automated total: **~9,881+ passing** (backend 6,614 + frontend unit 3,267 + E2E)
@@ -657,19 +657,19 @@ CI: `mutation-testing.yml` runs weekly (Sunday 04:00 UTC) + manual dispatch. Non
 
 ### Container Integration Tests (TST-06, `#91`/`#804`)
 
-New `Taskdeck.Integration.Tests` project using `Testcontainers.PostgreSql` for ephemeral database isolation. Each test method gets a fresh PostgreSQL database. Requires Docker.
+`Taskdeck.Integration.Tests` uses `Testcontainers.PostgreSql` for ephemeral database isolation. Each PostgreSQL-backed test method gets a fresh database. Docker is required for positive PostgreSQL execution; without responsive Docker, the container cases skip before Testcontainers validation while Docker-independent fixture/native checks still run.
 
 Run commands:
 ```bash
-# Run all (skips gracefully without Docker)
+# Run all (Dockerless is green-with-skips, not PostgreSQL parity proof)
 dotnet test backend/tests/Taskdeck.Integration.Tests -c Release
 # Run alongside main suite (integration tests auto-skip without Docker)
 dotnet test backend/Taskdeck.sln -c Release -m:1
 ```
 
-20 integration tests: Board CRUD, Card operations, Proposal lifecycle, cross-class isolation, parallel execution. Guide at `docs/testing/TESTCONTAINERS_GUIDE.md`.
+Current project count: 35 tests — 28 PostgreSQL-backed cases covering Board CRUD, Card operations, proposal lifecycle, cross-class isolation, parallel execution, and repository parity; plus 7 Docker-independent fixture/native checks. Guide at `docs/testing/TESTCONTAINERS_GUIDE.md`.
 
-CI: `reusable-container-integration.yml` in extended CI (testing label).
+CI: `reusable-container-integration.yml` in extended CI (testing label). A positive PostgreSQL result has zero skips; a green run with all 28 container cases skipped proves only graceful Dockerless gating.
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
@@ -1052,7 +1052,7 @@ Note:
 
 ## Container Integration Tests (Testcontainers)
 
-Run container-backed integration tests against ephemeral PostgreSQL (requires Docker):
+Run the integration project. Docker is optional for the graceful-skip gate but required for positive PostgreSQL parity evidence:
 
 ```bash
 dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release
@@ -1065,7 +1065,9 @@ dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.
 ```
 
 Note:
-- Docker must be running. Verify with `docker info`.
+- Without responsive Docker, the expected result at #1518 is 7 passed / 28 skipped / 0 failed. The availability probe is bounded and terminates/reaps a timed-out `docker info` process.
+- With Docker running, require all 35 tests to pass with zero skips; 28 of those tests exercise PostgreSQL. A green Dockerless run is not PostgreSQL parity evidence.
+- When positive PostgreSQL proof is intended, verify Docker first with `docker info`.
 - First run downloads the `postgres:16-alpine` image (~80MB); subsequent runs use the cached image.
 - Tests are parallel-safe: each test class gets its own isolated database within a shared PostgreSQL container.
 - See `docs/testing/TESTCONTAINERS_GUIDE.md` for full setup and authoring guide.
