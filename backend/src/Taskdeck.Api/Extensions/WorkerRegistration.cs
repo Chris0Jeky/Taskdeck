@@ -31,6 +31,7 @@ public static class WorkerRegistration
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                UseProxy = false,
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
