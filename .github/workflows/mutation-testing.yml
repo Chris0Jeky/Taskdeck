@@ -45,8 +45,8 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Install Stryker.NET
-        run: dotnet tool install --global dotnet-stryker --version 4.16.0
+      - name: Restore Stryker.NET tool
+        run: dotnet tool restore
 
       - name: Validate Stryker.NET configuration
         shell: pwsh
@@ -57,7 +57,7 @@ jobs:
 
       - name: Run Stryker.NET
         working-directory: backend/tests/Taskdeck.Domain.Tests
-        run: dotnet stryker --config-file ../../stryker-config.json --output ../../StrykerOutput
+        run: dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput
 
       - name: Upload Stryker report
         if: always()

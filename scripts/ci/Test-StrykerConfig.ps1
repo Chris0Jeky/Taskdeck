@@ -2,6 +2,7 @@
 param(
     [string]$ConfigPath,
     [string]$WorkflowPath,
+    [string]$ToolManifestPath,
     [switch]$SelfTest
 )
 
@@ -16,6 +17,28 @@ if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
 if ([string]::IsNullOrWhiteSpace($WorkflowPath)) {
     $workflowsDirectory = Join-Path (Join-Path $repositoryRoot '.github') 'workflows'
     $WorkflowPath = Join-Path $workflowsDirectory 'mutation-testing.yml'
+}
+
+if ([string]::IsNullOrWhiteSpace($ToolManifestPath)) {
+    $ToolManifestPath = Join-Path (Join-Path $repositoryRoot '.config') 'dotnet-tools.json'
+}
+
+function Test-IsJsonNumber {
+    param(
+        [object]$Value
+    )
+
+    return $Value -is [System.Byte] -or
+        $Value -is [System.SByte] -or
+        $Value -is [System.Int16] -or
+        $Value -is [System.UInt16] -or
+        $Value -is [System.Int32] -or
+        $Value -is [System.UInt32] -or
+        $Value -is [System.Int64] -or
+        $Value -is [System.UInt64] -or
+        $Value -is [System.Single] -or
+        $Value -is [System.Double] -or
+        $Value -is [System.Decimal]
 }
 
 function Test-StrykerConfig {
@@ -71,13 +94,24 @@ function Test-StrykerConfig {
     }
 
     $thresholdsProperty = $strykerConfig.PSObject.Properties['thresholds']
-    $thresholds = $thresholdsProperty.Value
-    if ($null -eq $thresholdsProperty -or
-        $null -eq $thresholds -or
-        $thresholds.high -ne 80 -or
-        $thresholds.low -ne 60 -or
-        $thresholds.break -ne 0) {
+    if ($null -eq $thresholdsProperty -or $null -eq $thresholdsProperty.Value) {
         throw "Stryker configuration '$resolvedPath' must preserve thresholds high=80, low=60, break=0."
+    }
+
+    $thresholds = $thresholdsProperty.Value
+    $expectedThresholds = [ordered]@{
+        high = 80
+        low = 60
+        break = 0
+    }
+
+    foreach ($expectedThreshold in $expectedThresholds.GetEnumerator()) {
+        $thresholdProperty = $thresholds.PSObject.Properties[$expectedThreshold.Key]
+        if ($null -eq $thresholdProperty -or
+            -not (Test-IsJsonNumber -Value $thresholdProperty.Value) -or
+            [decimal]$thresholdProperty.Value -ne [decimal]$expectedThreshold.Value) {
+            throw "Stryker configuration '$resolvedPath' must preserve thresholds high=80, low=60, break=0 as numeric values."
+        }
     }
 
     foreach ($exclusionKey in @('ignore-methods', 'ignore-mutations')) {
@@ -92,6 +126,49 @@ function Test-StrykerConfig {
                 throw "Stryker configuration '$resolvedPath' entry $entryIndex in '$exclusionKey' must be a non-empty string."
             }
         }
+    }
+}
+
+function Test-StrykerToolManifest {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $resolvedPath = Resolve-Path -LiteralPath $Path -ErrorAction Stop
+
+    try {
+        $manifest = Get-Content -LiteralPath $resolvedPath -Raw | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        throw "Stryker tool manifest '$resolvedPath' is not valid JSON: $($_.Exception.Message)"
+    }
+
+    if ($manifest.version -ne 1 -or $manifest.isRoot -isnot [bool] -or -not $manifest.isRoot) {
+        throw "Stryker tool manifest '$resolvedPath' must be a version 1 root manifest."
+    }
+
+    $toolsProperty = $manifest.PSObject.Properties['tools']
+    $strykerToolProperty = if ($null -eq $toolsProperty) {
+        $null
+    } else {
+        $toolsProperty.Value.PSObject.Properties['dotnet-stryker']
+    }
+
+    if ($null -eq $strykerToolProperty) {
+        throw "Stryker tool manifest '$resolvedPath' must contain dotnet-stryker."
+    }
+
+    $strykerTool = $strykerToolProperty.Value
+    if ($strykerTool.version -cne '4.16.0') {
+        throw "Stryker tool manifest '$resolvedPath' must pin dotnet-stryker version '4.16.0'."
+    }
+
+    $commandsProperty = $strykerTool.PSObject.Properties['commands']
+    if ($null -eq $commandsProperty -or
+        $commandsProperty.Value -isnot [System.Array] -or
+        @($commandsProperty.Value).Count -ne 1 -or
+        $commandsProperty.Value[0] -cne 'dotnet-stryker') {
+        throw "Stryker tool manifest '$resolvedPath' must expose only the dotnet-stryker command."
     }
 }
 
@@ -111,30 +188,45 @@ function Assert-ExactWorkflowLine {
     }
 }
 
-function Assert-ExactWorkflowFragment {
+function Assert-ExactWorkflowStep {
     param(
         [Parameter(Mandatory)]
         [string]$Block,
         [Parameter(Mandatory)]
-        [string]$ExpectedFragment,
+        [string]$ExpectedStep,
         [Parameter(Mandatory)]
         [string]$ContractName
     )
 
-    $count = 0
-    $searchIndex = 0
-    while ($true) {
-        $matchIndex = $Block.IndexOf($ExpectedFragment, $searchIndex, [System.StringComparison]::Ordinal)
-        if ($matchIndex -lt 0) {
-            break
+    $blockLines = @($Block -split "`n")
+    $expectedLines = @($ExpectedStep -split "`n")
+    $expectedHeader = $expectedLines[0]
+    $headerIndices = @(
+        for ($lineIndex = 0; $lineIndex -lt $blockLines.Count; $lineIndex++) {
+            if ($blockLines[$lineIndex] -ceq $expectedHeader) {
+                $lineIndex
+            }
         }
+    )
 
-        $count++
-        $searchIndex = $matchIndex + $ExpectedFragment.Length
+    if ($headerIndices.Count -ne 1) {
+        throw "Mutation workflow must contain exactly one $ContractName step '$expectedHeader' in backend-mutation; found $($headerIndices.Count)."
     }
 
-    if ($count -ne 1) {
-        throw "Mutation workflow must contain exactly one $ContractName block in backend-mutation; found $count."
+    $stepStart = $headerIndices[0]
+    $stepEnd = $stepStart + 1
+    while ($stepEnd -lt $blockLines.Count -and -not $blockLines[$stepEnd].StartsWith('      - ')) {
+        $stepEnd++
+    }
+
+    $lastStepLine = $stepEnd - 1
+    while ($lastStepLine -gt $stepStart -and [string]::IsNullOrEmpty($blockLines[$lastStepLine])) {
+        $lastStepLine--
+    }
+
+    $actualStep = @($blockLines[$stepStart..$lastStepLine]) -join "`n"
+    if ($actualStep -cne $ExpectedStep) {
+        throw "Mutation workflow must preserve the complete $ContractName step in backend-mutation."
     }
 }
 
@@ -159,20 +251,31 @@ function Test-MutationWorkflowContract {
     $backendBlock = $normalizedWorkflow.Substring($backendStart, $frontendStart - $backendStart)
     $requiredLines = [ordered]@{
         'finite timeout' = '    timeout-minutes: 180'
-        'pinned tool install' = '        run: dotnet tool install --global dotnet-stryker --version 4.16.0'
-        'configuration self-test' = '        run: ./scripts/ci/Test-StrykerConfig.ps1 -SelfTest'
     }
 
     foreach ($entry in $requiredLines.GetEnumerator()) {
         Assert-ExactWorkflowLine -Block $backendBlock -ExpectedLine $entry.Value -ContractName $entry.Key
     }
 
+    $toolRestoreStep = @(
+        '      - name: Restore Stryker.NET tool',
+        '        run: dotnet tool restore'
+    ) -join "`n"
+    Assert-ExactWorkflowStep -Block $backendBlock -ExpectedStep $toolRestoreStep -ContractName 'pinned tool restore'
+
+    $preflightStep = @(
+        '      - name: Validate Stryker.NET configuration',
+        '        shell: pwsh',
+        '        run: ./scripts/ci/Test-StrykerConfig.ps1 -SelfTest'
+    ) -join "`n"
+    Assert-ExactWorkflowStep -Block $backendBlock -ExpectedStep $preflightStep -ContractName 'configuration self-test'
+
     $strykerStep = @(
         '      - name: Run Stryker.NET',
         '        working-directory: backend/tests/Taskdeck.Domain.Tests',
-        '        run: dotnet stryker --config-file ../../stryker-config.json --output ../../StrykerOutput'
+        '        run: dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput'
     ) -join "`n"
-    Assert-ExactWorkflowFragment -Block $backendBlock -ExpectedFragment $strykerStep -ContractName 'test-project Stryker step'
+    Assert-ExactWorkflowStep -Block $backendBlock -ExpectedStep $strykerStep -ContractName 'test-project Stryker'
 
     $artifactStep = @(
         '      - name: Upload Stryker report',
@@ -184,11 +287,11 @@ function Test-MutationWorkflowContract {
         '          if-no-files-found: error',
         '          retention-days: 30'
     ) -join "`n"
-    Assert-ExactWorkflowFragment -Block $backendBlock -ExpectedFragment $artifactStep -ContractName 'fail-closed report artifact step'
+    Assert-ExactWorkflowStep -Block $backendBlock -ExpectedStep $artifactStep -ContractName 'fail-closed report artifact'
 
     $strykerCommandCount = [regex]::Matches(
         $backendBlock,
-        '(?m)^\s+run:\s+(?:dotnet stryker|(?:\S+/)?dotnet-stryker)(?:\s|$)'
+        '(?m)^\s+run:\s+(?:dotnet stryker|dotnet tool run dotnet-stryker|(?:\S+/)?dotnet-stryker)(?:\s|$)'
     ).Count
     if ($strykerCommandCount -ne 1) {
         throw "Mutation workflow '$resolvedPath' must invoke Stryker exactly once in backend-mutation; found $strykerCommandCount."
@@ -244,13 +347,16 @@ function Invoke-StrykerConfigSelfTest {
     $temporaryDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("taskdeck-stryker-config-$([guid]::NewGuid().ToString('N'))")
     $validConfigPath = Join-Path $temporaryDirectory 'valid.json'
     $validWorkflowPath = Join-Path $temporaryDirectory 'valid.yml'
+    $validToolManifestPath = Join-Path $temporaryDirectory 'dotnet-tools.json'
 
     try {
         New-Item -ItemType Directory -Path $temporaryDirectory -ErrorAction Stop | Out-Null
         Copy-Item -LiteralPath $ConfigPath -Destination $validConfigPath -ErrorAction Stop
         Copy-Item -LiteralPath $WorkflowPath -Destination $validWorkflowPath -ErrorAction Stop
+        Copy-Item -LiteralPath $ToolManifestPath -Destination $validToolManifestPath -ErrorAction Stop
         Test-StrykerConfig -Path $validConfigPath
         Test-MutationWorkflowContract -Path $validWorkflowPath
+        Test-StrykerToolManifest -Path $validToolManifestPath
 
         $validExclusionVariants = @(
             @('ignore-methods', '    "ignore-methods": [],', '    "ignore-methods": ["ToString", "Console.Write*"],'),
@@ -278,7 +384,9 @@ function Invoke-StrykerConfigSelfTest {
             @('ignore-mutations whitespace entry', '    "ignore-mutations": []', '    "ignore-mutations": ["   "]', "entry 0 in 'ignore-mutations' must be a non-empty string"),
             @('changed mutation level', '    "mutation-level": "Standard",', '    "mutation-level": "Advanced",', "must preserve mutation-level 'Standard'"),
             @('missing JSON reporter', '      "json",', '      "dashboard",', 'must preserve html, json, progress, and cleartext reporters'),
-            @('changed score threshold', '      "break": 0', '      "break": 60', 'must preserve thresholds high=80, low=60, break=0')
+            @('changed score threshold', '      "break": 0', '      "break": 60', 'must preserve thresholds high=80, low=60, break=0'),
+            @('quoted score threshold', '      "high": 80,', '      "high": "80",', 'must preserve thresholds high=80, low=60, break=0 as numeric values'),
+            @('boolean score threshold', '      "break": 0', '      "break": false', 'must preserve thresholds high=80, low=60, break=0 as numeric values')
         )
 
         for ($configIndex = 0; $configIndex -lt $configVariants.Count; $configIndex++) {
@@ -292,12 +400,15 @@ function Invoke-StrykerConfigSelfTest {
 
         $workflowVariants = @(
             @('timeout', '    timeout-minutes: 180', '    timeout-minutes: 60', 'finite timeout'),
-            @('tool version', '        run: dotnet tool install --global dotnet-stryker --version 4.16.0', '        run: dotnet tool install --global dotnet-stryker --version 4.17.0', 'pinned tool install'),
+            @('tool restore', '        run: dotnet tool restore', '        run: dotnet tool install --global dotnet-stryker --version 4.16.0', 'pinned tool restore'),
             @('preflight mode', '        run: ./scripts/ci/Test-StrykerConfig.ps1 -SelfTest', '        run: ./scripts/ci/Test-StrykerConfig.ps1', 'configuration self-test'),
             @('working-directory', '        working-directory: backend/tests/Taskdeck.Domain.Tests', '        working-directory: backend', 'test-project Stryker step'),
-            @('config path', '        run: dotnet stryker --config-file ../../stryker-config.json --output ../../StrykerOutput', '        run: dotnet stryker --config-file stryker-config.json', 'test-project Stryker step'),
+            @('config path', '        run: dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput', '        run: dotnet tool run dotnet-stryker -- --config-file stryker-config.json', 'test-project Stryker'),
+            @('expanded mutation scope', '        run: dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput', '        run: dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput --mutate SomeFile.cs', 'test-project Stryker'),
+            @('masked Stryker failure', '        run: dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput', '        run: dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput || true', 'test-project Stryker'),
             @('artifact path', '          path: backend/StrykerOutput/**/reports/', '          path: backend/tests/Taskdeck.Domain.Tests/StrykerOutput/**/reports/', 'fail-closed report artifact step'),
-            @('missing artifact policy', '          if-no-files-found: error', '          if-no-files-found: warn', 'fail-closed report artifact step')
+            @('missing artifact policy', '          if-no-files-found: error', '          if-no-files-found: warn', 'fail-closed report artifact step'),
+            @('artifact continue-on-error', (@('          if-no-files-found: error', '          retention-days: 30') -join "`n"), (@('          if-no-files-found: error', '          retention-days: 30', '        continue-on-error: true') -join "`n"), 'fail-closed report artifact')
         )
 
         foreach ($workflowVariant in $workflowVariants) {
@@ -308,8 +419,21 @@ function Invoke-StrykerConfigSelfTest {
             }
         }
 
+        $toolManifestVariants = @(
+            @('tool version', '      "version": "4.16.0",', '      "version": "4.17.0",', "must pin dotnet-stryker version '4.16.0'"),
+            @('tool command', (@('      "commands": [', '        "dotnet-stryker"', '      ]') -join "`n"), (@('      "commands": [', '        "other-command"', '      ]') -join "`n"), 'must expose only the dotnet-stryker command')
+        )
+
+        foreach ($toolManifestVariant in $toolManifestVariants) {
+            $variantPath = Join-Path $temporaryDirectory "manifest-$($toolManifestVariant[0]).json"
+            Write-TextVariant -Source $ToolManifestPath -Destination $variantPath -Expected $toolManifestVariant[1] -Replacement $toolManifestVariant[2]
+            Assert-Rejected -Scenario "tool manifest $($toolManifestVariant[0]) drift" -ExpectedMessage $toolManifestVariant[3] -Action {
+                Test-StrykerToolManifest -Path $variantPath
+            }
+        }
+
         $validContractCount = 2 + $validExclusionVariants.Count
-        $rejectedFixtureCount = $configVariants.Count + $workflowVariants.Count
+        $rejectedFixtureCount = $configVariants.Count + $workflowVariants.Count + $toolManifestVariants.Count
         Write-Host "Stryker preflight self-test passed: $($validContractCount + $rejectedFixtureCount) checks ($validContractCount valid contracts; $rejectedFixtureCount rejected drift fixtures)."
     } finally {
         if (Test-Path -LiteralPath $temporaryDirectory) {
@@ -320,9 +444,10 @@ function Invoke-StrykerConfigSelfTest {
 
 Test-StrykerConfig -Path $ConfigPath
 Test-MutationWorkflowContract -Path $WorkflowPath
+Test-StrykerToolManifest -Path $ToolManifestPath
 
 if ($SelfTest) {
     Invoke-StrykerConfigSelfTest
 }
 
-Write-Host "Stryker configuration and workflow preflight passed: $ConfigPath; $WorkflowPath"
+Write-Host "Stryker configuration, workflow, and tool-manifest preflight passed: $ConfigPath; $WorkflowPath; $ToolManifestPath"
