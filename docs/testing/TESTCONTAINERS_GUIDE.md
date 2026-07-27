@@ -1,6 +1,6 @@
 # Testcontainers Integration Testing Guide
 
-Last Updated: 2026-04-09
+Last Updated: 2026-07-27
 
 ## Overview
 
@@ -15,9 +15,10 @@ Taskdeck uses [Testcontainers for .NET](https://dotnet.testcontainers.org/) to r
 
 ### Local Development
 
-1. **Docker**: Docker Desktop (Windows/macOS) or Docker Engine (Linux) must be installed and running.
+1. **Docker**: Docker Desktop (Windows/macOS) or Docker Engine (Linux) must be installed and running for positive PostgreSQL execution.
    - Verify with: `docker info`
    - Testcontainers communicates with the Docker daemon to manage containers.
+   - Without responsive Docker, the project remains green by skipping its 28 PostgreSQL-backed cases; that result proves graceful gating, not provider parity.
 2. **.NET 8 SDK**: Required for building and running the test project.
 3. **No port pre-allocation needed**: Testcontainers automatically maps ephemeral host ports, avoiding conflicts.
 
@@ -48,7 +49,7 @@ backend/tests/Taskdeck.Integration.Tests/
 ```
 PostgresTestCollection (xUnit Collection)
   └── PostgresContainerFixture (IAsyncLifetime)
-        ├── InitializeAsync() → starts one PostgreSQL container
+        ├── InitializeAsync() → checks Docker, then starts one PostgreSQL container when available
         ├── CreateDbContext()  → creates a new database per test method
         └── DisposeAsync()    → stops and removes the container
 ```
@@ -72,6 +73,13 @@ The existing migrations target SQLite and contain SQLite-specific SQL. Rather th
 ```bash
 dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release
 ```
+
+Expected outcomes at #1518:
+
+- Docker available: 35 passed / 0 skipped; all 28 PostgreSQL-backed cases executed.
+- Docker unavailable: 7 passed / 28 skipped / 0 failed; only fixture/native checks executed.
+
+A green Dockerless result is not positive PostgreSQL compatibility evidence.
 
 ### Run a Specific Test Class
 
@@ -136,16 +144,15 @@ The container integration tests are available in the CI Extended pipeline:
 - **Trigger**: `testing` label on PRs, or manual dispatch via `ci-extended.yml`
 - **Runner**: `ubuntu-latest` (Docker pre-installed)
 - **Not in merge gate**: These tests are in ci-extended, not ci-required, because they require Docker and have longer startup times than SQLite-based tests.
+- **Evidence rule**: the hosted PostgreSQL result must report zero skips; all 28 container-backed cases skipping is only Dockerless-gate evidence.
 
 ## Troubleshooting
 
 ### Docker Not Running
 
-```
-System.InvalidOperationException: Docker is not running
-```
+The normal Dockerless result is green with 28 PostgreSQL-backed tests skipped. Fixture initialization checks availability before constructing Testcontainers, and a timed-out `docker info` probe is terminated and reaped.
 
-Start Docker Desktop or the Docker daemon.
+An `InvalidOperationException` during fixture construction is therefore a regression, not the expected missing-Docker behavior. If positive PostgreSQL proof is required, start Docker Desktop or the Docker daemon and require zero skipped container tests.
 
 ### Container Startup Timeout
 

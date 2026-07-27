@@ -25,17 +25,32 @@ namespace Taskdeck.Integration.Tests.Fixtures;
 /// </summary>
 public sealed class PostgresContainerFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container;
+    private readonly Func<bool> _dockerAvailabilityCheck;
+    private readonly Func<PostgreSqlContainer> _containerFactory;
+    private PostgreSqlContainer? _container;
     private string _baseConnectionString = string.Empty;
     private int _dbCounter;
 
     public PostgresContainerFixture()
+        : this(
+            () => DockerAvailableCheck.IsAvailable,
+            static () => new PostgreSqlBuilder("postgres:16-alpine")
+                .WithDatabase("taskdeck_test")
+                .WithUsername("test")
+                .WithPassword("test")
+                .Build())
     {
-        _container = new PostgreSqlBuilder("postgres:16-alpine")
-            .WithDatabase("taskdeck_test")
-            .WithUsername("test")
-            .WithPassword("test")
-            .Build();
+    }
+
+    internal PostgresContainerFixture(
+        Func<bool> dockerAvailabilityCheck,
+        Func<PostgreSqlContainer> containerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(dockerAvailabilityCheck);
+        ArgumentNullException.ThrowIfNull(containerFactory);
+
+        _dockerAvailabilityCheck = dockerAvailabilityCheck;
+        _containerFactory = containerFactory;
     }
 
     /// <summary>
@@ -46,31 +61,34 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
     /// <summary>
     /// Starts the PostgreSQL container. Called once per test collection.
-    /// If Docker is not available, the container is not started and
+    /// If Docker is not available, the container is not constructed or started and
     /// <see cref="IsAvailable"/> remains false — tests should skip gracefully.
     /// </summary>
     public async Task InitializeAsync()
     {
-        if (!DockerAvailableCheck.IsAvailable)
+        if (!_dockerAvailabilityCheck())
         {
             IsAvailable = false;
             return;
         }
 
+        _container = _containerFactory();
         await _container.StartAsync();
         _baseConnectionString = _container.GetConnectionString();
         IsAvailable = true;
     }
 
     /// <summary>
-    /// Stops and removes the PostgreSQL container. Called once per test collection.
-    /// Always disposes the container regardless of <see cref="IsAvailable"/> —
-    /// if StartAsync() threw after partial initialization, the container still
-    /// needs cleanup. DisposeAsync() is safe to call on a never-started container.
+    /// Stops and removes any constructed PostgreSQL container. Called once per test collection.
+    /// If StartAsync() threw after partial initialization, the container still needs cleanup.
+    /// When Docker was unavailable and no container was constructed, disposal is a safe no-op.
     /// </summary>
     public async Task DisposeAsync()
     {
-        await _container.DisposeAsync();
+        if (_container is not null)
+        {
+            await _container.DisposeAsync();
+        }
     }
 
     /// <summary>
