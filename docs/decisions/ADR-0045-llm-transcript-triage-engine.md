@@ -131,8 +131,9 @@ Constraints discovered in the shipped seam:
 The candidate implementation replaces the accepted decision's lenient model-response parsing for
 new transcript extractions with these narrower controls:
 
-- stamp new successful or genuine-empty verdicts as `llm-triage.v2`, while continuing to accept
-  historical `llm-triage.v1` envelopes for stored-provenance compatibility;
+- stamp new successful or genuine-empty verdicts as `llm-triage.v2`, while continuing to recognize
+  historical `llm-triage.v1` prompt-version values when their envelopes satisfy the current common
+  contract;
 - frame the capture inside a per-request random untrusted-data boundary and require a single raw
   JSON `tasks` object, with no prose, fences, duplicate/unknown fields, provider operation/tool
   vocabulary, or values beyond the contract bounds;

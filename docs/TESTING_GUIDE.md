@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-27
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -31,7 +31,7 @@ Verification note:
 
 ## GEN-09 Prompt/Output Containment Candidate (`#1323`)
 
-The Proposed `llm-triage.v2` tranche is covered at the provider, byte-budget, prompt, parser/schema, service-fallback, hostile-fixture, and API golden-path seams. Its deterministic fixtures prove the bounded candidate path, not live-model resistance to prompt injection.
+The Proposed `llm-triage.v2` tranche is covered at the provider, byte-budget, prompt, parser/schema, service-fallback, hostile-fixture, and API golden-path seams. Its deterministic fixtures prove the bounded transcript-triage candidate path, not live-model resistance to prompt injection. PDF/image source cases replay extracted-text fixture strings as transcript input; they do not run real artefact routing, PDF parsing, image/OCR, or a live provider.
 
 ```powershell
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResponseReaderTests|FullyQualifiedName~LlmCaptureTriagePromptTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageOutputContractTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~UntrustedArtefactFixtureContractTests"
