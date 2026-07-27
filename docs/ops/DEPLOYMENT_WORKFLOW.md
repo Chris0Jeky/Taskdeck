@@ -297,7 +297,7 @@ The `cd-staging-gate.yml` workflow automates Phase 1 and Phase 2 gates:
 - Generates and masks ephemeral JWT and connector inputs after Docker Compose's effective variable parser confirms exactly those two requirements
 - Runs S1-S9 against a runner-local Compose stack, then cleans it up
 - Ends at a summary-only parked handoff with environment `none` and deployment `no`; **#1504** activation/environment protection remains maintainer-owned
-- Hosted rehearsal [30242044922](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30242044922) passed build, real smoke, cleanup, and the parked summary at exact unmerged head `81cfbcea`; later review-fix bytes re-owe exact-head proof, and CodeQL remains owed after the stacked PR is retargeted
+- Hosted rehearsal [30244212896](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30244212896) passed build, real smoke, cleanup, and the parked summary at exact unmerged workflow/helper head `3efb7bd4`; both values were masked and the exact-SHA deployments query returned `[]`. This evidence refresh changes documentation only; CodeQL remains owed after the stacked PR is retargeted
 - See `.github/workflows/cd-staging-gate.yml` for the workflow definition
 
 ## Ownership and Escalation

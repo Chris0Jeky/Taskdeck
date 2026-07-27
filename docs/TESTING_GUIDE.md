@@ -117,12 +117,13 @@ command/JSON/schema/key-name/boolean drift before generating secrets, proves com
 literals are inert with a real minimal Compose file, and preserves mask-before-environment ordering.
 The workflow regression keeps each preparation step immediately before its first Compose consumer.
 
-Manual run [30242044922](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30242044922)
+Manual run [30244212896](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30244212896)
 passed build verification, real S1-S9 smoke plus cleanup, and the parked handoff at exact unmerged
-head `81cfbcea88d13c22d20549412e8d5685677af4e6`; logs masked both generated inputs and the summary
-reported environment `none` and deployment `no`. Subsequent parser/order review fixes change the
-candidate bytes, so rerun the workflow and Required CI on their exact published head. The stacked
-non-default base did not generate CodeQL; re-run it after retargeting before maintainer merge.
+workflow/helper head `3efb7bd4499c30d0f0b3c3683e43221e46f103f7`; logs masked both generated
+inputs, the summary reported environment `none` and deployment `no`, and an exact-SHA deployments
+query returned `[]`. This follow-up changes documentation only, not the proven workflow/helper bytes.
+Required CI must still pass on the final docs head. The stacked non-default base did not generate
+CodeQL; re-run it after retargeting before maintainer merge.
 
 For a local check against the real Compose contract, prove both the positive configuration and the
 missing-connector-key negative path. These are explicitly non-production test values:
