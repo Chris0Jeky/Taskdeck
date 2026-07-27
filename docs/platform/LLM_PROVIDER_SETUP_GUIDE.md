@@ -6,7 +6,7 @@ Scope: Provider runtime setup for chat/capture automation and safe local demo op
 ## Purpose
 
 Taskdeck keeps application services provider-agnostic through `ILlmProvider`, while retaining a safe default posture.
-This guide defines what is now shipped and how to run OpenAI/Gemini demos without code changes.
+This guide defines what is now shipped and how to run OpenAI/Gemini/Ollama demos without code changes.
 
 ## Current Shipped State
 
@@ -32,7 +32,7 @@ Selection is deterministic through `LlmProviderSelectionPolicy`:
 - `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected; the selection policy falls back to Mock when validation fails
 - the OpenAI, Gemini, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
 
-These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. This is a dedicated connect-callback boundary, not `EgressEnvelopeHandler` enforcement, and it does not change the existing redirect or audit posture.
+These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. This is a dedicated connect-callback boundary, not `EgressEnvelopeHandler` enforcement, and it does not change the existing redirect or audit posture. Protected clients remove default `IHttpClientFactory` request loggers, disable distributed-trace header propagation, and use a private metric scope that Taskdeck's configured OpenTelemetry pipeline drops alongside marked HTTP activities. This keeps provider destinations and protected request details out of Taskdeck's configured trace/metric exporters; an independently installed process-global `ActivityListener` or `MeterListener` remains outside that guarantee.
 
 If any live-provider condition fails, runtime degrades safely to `Mock`.
 
@@ -74,6 +74,12 @@ in Development.
       "BaseUrl": "https://generativelanguage.googleapis.com/v1beta",
       "Model": "gemini-2.5-flash",
       "TimeoutSeconds": 30
+    },
+    "Ollama": {
+      "BaseUrl": "http://localhost:11434",
+      "Model": "llama3.2",
+      "TimeoutSeconds": 120,
+      "AllowLocalhostEndpoints": false
     }
   }
 }
@@ -108,6 +114,25 @@ Optional:
 - `Llm__Gemini__Model=<model_name>`
 - `Llm__Gemini__BaseUrl=https://generativelanguage.googleapis.com/v1beta`
 - `Llm__Gemini__TimeoutSeconds=30`
+
+## Demo Setup (Ollama)
+
+Set:
+
+- `Llm__EnableLiveProviders=true`
+- `Llm__AllowLiveProvidersInDevelopment=true`
+- `Llm__Provider=Ollama`
+- `Llm__Ollama__AllowLocalhostEndpoints=true`
+
+Optional:
+
+- `Llm__Ollama__Model=llama3.2`
+- `Llm__Ollama__BaseUrl=http://localhost:11434`
+- `Llm__Ollama__TimeoutSeconds=120`
+
+The Ollama localhost exception is effective only in Development/Test/Testing and
+only for the exact `localhost` hostname. Production, literal loopback addresses,
+and other private/link-local origins remain blocked.
 
 ## Playwright Demo Auto-Enable
 

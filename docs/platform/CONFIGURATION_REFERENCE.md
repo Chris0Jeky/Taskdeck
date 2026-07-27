@@ -226,6 +226,10 @@ default and the only one that ships enabled. See
 | `Llm:Gemini:BaseUrl` | `string` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API base URL. | No |
 | `Llm:Gemini:Model` | `string` | `gemini-2.5-flash` | Model identifier. | No |
 | `Llm:Gemini:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the Gemini provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateGeminiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
+| `Llm:Ollama:BaseUrl` | `string` | Production: `null`; Development: `http://localhost:11434` | Ollama API base URL. The production configuration intentionally leaves Ollama unconfigured; the development override supplies exact `localhost`, which is accepted only by the development-localhost policy below. | No |
+| `Llm:Ollama:Model` | `string` | `llama3.2` | Model identifier sent to Ollama chat requests. | No |
+| `Llm:Ollama:TimeoutSeconds` | `int` | `120` | `HttpClient.Timeout` applied to Ollama. Must be between `1` and `600`; invalid values make provider selection fall back to Mock. | No |
+| `Llm:Ollama:AllowLocalhostEndpoints` | `bool` | `false` | Additional Ollama opt-in for exact `localhost`. Effective only in Development/Test/Testing when `Llm:AllowLiveProvidersInDevelopment=true`; it never permits literal loopback/private addresses or Production localhost. | No |
 
 **Outbound transport boundary:** the OpenAI, Gemini, and Ollama primary clients
 set `UseProxy = false`. They ignore ambient/system proxy settings so the
@@ -234,7 +238,13 @@ configured provider origin remains the target inspected by
 remain unchanged. There is no proxy-aware provider setting: corporate
 proxy-only deployments fail closed. This path does not use
 `EgressEnvelopeHandler`, and its existing no-auto-redirect and audit behavior is
-unchanged.
+unchanged. Default `IHttpClientFactory` request logging is removed for these
+protected clients. Their primary handlers disable distributed-trace header
+propagation, and Taskdeck's configured OpenTelemetry pipeline excludes their
+marked HTTP activities and private-scope HTTP metrics (including destination
+dimensions such as `server.address` and `server.port`). This is Taskdeck exporter
+suppression, not a guarantee against an independently installed process-global
+`ActivityListener` or `MeterListener`.
 
 ### `LlmToolCalling`
 

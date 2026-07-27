@@ -230,7 +230,14 @@ strict localhost opt-ins and automatic-redirect blocking are unchanged.
 Proxy-aware outbound webhook delivery is not supported. Deployments that can
 reach webhook recipients only through a corporate proxy fail closed. This path
 uses its dedicated connect callback rather than `EgressEnvelopeHandler`; this
-change does not broaden redirect or audit behavior.
+change does not broaden redirect or audit behavior. The protected client also
+removes default `IHttpClientFactory` request loggers, disables distributed-trace
+header propagation, and uses a private HTTP metric scope. Taskdeck's configured
+OpenTelemetry pipeline drops marked delivery activities and that metric scope,
+including destination dimensions such as `server.address` and `server.port`.
+This guarantee is scoped to Taskdeck's exporters; an independently installed
+process-global `ActivityListener` or `MeterListener` can still observe runtime
+diagnostics.
 
 ## Security considerations
 
