@@ -22,8 +22,10 @@ public class OpenAiCompatibleLlmProviderTests
             requestBody = await request.Content!.ReadAsStringAsync(ct);
             extraHeader = request.Headers.GetValues("X-Title").Single();
             return SseResponse(
-                "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}]}\n\n" +
-                "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}],\"usage\":{\"total_tokens\":7}}\n\n");
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}],\"usage\":null}\n\n" +
+                "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}],\"usage\":null}\n\n" +
+                "data: {\"choices\":[],\"usage\":{\"total_tokens\":7}}\n\n" +
+                "data: [DONE]\n\n");
         });
         var provider = CreateProvider(handler, settings);
 
@@ -35,6 +37,7 @@ public class OpenAiCompatibleLlmProviderTests
         events[^1].IsDegraded.Should().BeFalse();
         using var payload = JsonDocument.Parse(requestBody!);
         payload.RootElement.GetProperty("stream").GetBoolean().Should().BeTrue();
+        payload.RootElement.GetProperty("stream_options").GetProperty("include_usage").GetBoolean().Should().BeTrue();
         payload.RootElement.TryGetProperty("response_format", out _).Should().BeFalse(
             "streaming chat sends readable deltas rather than the buffered extraction envelope");
         extraHeader.Should().Be("Taskdeck tests");
@@ -94,6 +97,9 @@ public class OpenAiCompatibleLlmProviderTests
         using var bufferedPayload = JsonDocument.Parse(requests[1]);
         streamedPayload.RootElement.GetProperty("stream").GetBoolean().Should().BeTrue();
         bufferedPayload.RootElement.GetProperty("stream").GetBoolean().Should().BeFalse();
+        bufferedPayload.RootElement.TryGetProperty("response_format", out _).Should().BeFalse();
+        bufferedPayload.RootElement.GetProperty("messages").EnumerateArray()
+            .Should().OnlyContain(item => item.GetProperty("role").GetString() != "system");
     }
 
     [Fact]
@@ -143,7 +149,8 @@ public class OpenAiCompatibleLlmProviderTests
         selection.ProviderKind.Should().Be(LlmProviderKind.OpenAiCompatible);
 
         var provider = CreateProvider(new StubHttpMessageHandler(_ =>
-            JsonResponse("""{"choices":[{"message":{"content":"local response"}}],"usage":{"total_tokens":3}}""")), settings);
+            JsonResponse("""{"choices":[{"message":{"content":"local response"}}],"usage":{"total_tokens":3}}""")), settings,
+            allowLocalhostEndpoints: true);
 
         var result = await provider.CompleteAsync(Request());
 
@@ -151,10 +158,312 @@ public class OpenAiCompatibleLlmProviderTests
         result.Content.Should().Be("local response");
     }
 
-    private static OpenAiCompatibleLlmProvider CreateProvider(HttpMessageHandler handler, LlmProviderSettings settings) =>
-        new(new HttpClient(handler), settings, NullLogger<OpenAiCompatibleLlmProvider>.Instance);
+    [Fact]
+    public async Task StreamAsync_UsageAbsent_LeavesTerminalUsageUnknown()
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ => SseResponse(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\n\n" +
+            "data: [DONE]\n\n")), BuildSettings());
 
-    private static ChatCompletionRequest Request() => new([new ChatCompletionMessage("user", "hello")]);
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events[^1].IsComplete.Should().BeTrue();
+        events[^1].Error.Should().BeNull();
+        events[^1].TokensUsed.Should().BeNull(
+            "the quota layer must settle the reservation estimate when upstream usage is absent");
+    }
+
+    [Theory]
+    [InlineData("length", "token limit")]
+    [InlineData("content_filter", "content filter")]
+    [InlineData("tool_calls", "tool calls")]
+    [InlineData("function_call", "function call")]
+    [InlineData("vendor_reason", "non-standard")]
+    public async Task StreamAsync_NonStopFinishReason_IsTerminalDegraded(string finishReason, string expectedReason)
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ => SseResponse(
+            $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"partial\"}},\"finish_reason\":\"{finishReason}\"}}]}}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":5}}\n\n" +
+            "data: [DONE]\n\n")), BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events[^1].IsComplete.Should().BeTrue();
+        events[^1].IsDegraded.Should().BeTrue();
+        events[^1].DegradedReason.Should().Contain(expectedReason);
+        events[^1].TokensUsed.Should().Be(5);
+    }
+
+    [Theory]
+    [InlineData("{\"choices\":[1]}")]
+    [InlineData("{\"choices\":[{\"delta\":\"bad\",\"finish_reason\":null}]}")]
+    [InlineData("{\"choices\":[{\"delta\":{\"content\":1},\"finish_reason\":null}]}")]
+    [InlineData("{\"choices\":[{\"delta\":{},\"finish_reason\":1}]}")]
+    [InlineData("{\"choices\":[],\"usage\":{\"total_tokens\":\"many\"}}")]
+    public async Task StreamAsync_HostileSseSchema_EmitsExplicitTerminalError(string data)
+    {
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => SseResponse($"data: {data}\n\n")),
+            BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].IsComplete.Should().BeTrue();
+        events[0].Error.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task StreamAsync_HttpTransportFailure_EmitsExplicitTerminalError()
+    {
+        var provider = CreateProvider(
+            new StubHttpMessageHandler((_, _) => Task.FromException<HttpResponseMessage>(new HttpRequestException("boom"))),
+            BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].IsComplete.Should().BeTrue();
+        events[0].Error.Should().Contain("transport failed");
+    }
+
+    [Fact]
+    public async Task StreamAsync_ResponseBodyIoFailure_EmitsExplicitTerminalError()
+    {
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => SseStreamResponse(new ThrowingReadStream())),
+            BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].Error.Should().Contain("transport failed");
+    }
+
+    [Fact]
+    public async Task StreamAsync_StalledBodyAfterHeaders_EmitsTimeoutTerminalEvent()
+    {
+        var settings = BuildSettings();
+        settings.OpenAiCompatible.TimeoutSeconds = 1;
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => SseStreamResponse(new BlockingReadStream())),
+            settings);
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].IsComplete.Should().BeTrue();
+        events[0].Error.Should().Contain("timed out");
+    }
+
+    [Fact]
+    public async Task StreamAsync_OversizedLine_EmitsBoundedTerminalError()
+    {
+        var settings = BuildSettings();
+        settings.OpenAiCompatible.MaxSseLineBytes = 256;
+        settings.OpenAiCompatible.MaxSseEventBytes = 512;
+        settings.OpenAiCompatible.MaxResponseBytes = 1024;
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => SseResponse("data: " + new string('x', 300) + "\n\n")),
+            settings);
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].Error.Should().Contain("safety limit");
+    }
+
+    [Fact]
+    public async Task StreamAsync_OversizedEvent_EmitsBoundedTerminalError()
+    {
+        var settings = BuildSettings();
+        settings.OpenAiCompatible.MaxSseLineBytes = 1024;
+        settings.OpenAiCompatible.MaxSseEventBytes = 512;
+        settings.OpenAiCompatible.MaxResponseBytes = 4096;
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => SseResponse("data: " + new string('x', 600) + "\n\n")),
+            settings);
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].Error.Should().Contain("safety limit");
+    }
+
+    [Fact]
+    public async Task StreamAsync_AggregateResponseBudget_EmitsBoundedTerminalError()
+    {
+        var settings = BuildSettings();
+        settings.OpenAiCompatible.MaxSseLineBytes = 256;
+        settings.OpenAiCompatible.MaxSseEventBytes = 512;
+        settings.OpenAiCompatible.MaxResponseBytes = 1024;
+        var oneEvent = "data: {\"choices\":[{\"delta\":{\"content\":\"" + new string('x', 80) + "\"},\"finish_reason\":null}]}\n\n";
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => SseResponse(string.Concat(Enumerable.Repeat(oneEvent, 12)))),
+            settings);
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events[^1].IsComplete.Should().BeTrue();
+        events[^1].Error.Should().Contain("safety limit");
+    }
+
+    [Fact]
+    public async Task StreamAsync_OversizedNonSseBody_EmitsBoundedTerminalError()
+    {
+        var settings = BuildSettings();
+        settings.OpenAiCompatible.MaxResponseBytes = 1024;
+        settings.OpenAiCompatible.MaxSseEventBytes = 512;
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => JsonResponse(new string('x', 1025))),
+            settings);
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].Error.Should().Contain("safety limit");
+    }
+
+    [Fact]
+    public async Task CompleteAsync_OversizedJsonBody_ReturnsDegradedFallback()
+    {
+        var settings = BuildSettings();
+        settings.OpenAiCompatible.MaxResponseBytes = 1024;
+        settings.OpenAiCompatible.MaxSseEventBytes = 512;
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ => JsonResponse(new string('x', 1025))),
+            settings);
+
+        var result = await provider.CompleteAsync(Request());
+
+        result.IsDegraded.Should().BeTrue();
+        result.DegradedReason.Should().Contain("safety limit");
+    }
+
+    [Fact]
+    public async Task StreamAsync_BodyFailuresOpenCompanionCircuit()
+    {
+        var settings = BuildSettings();
+        var tracker = new CircuitBreakerStateTracker();
+        var circuitSettings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 60 };
+        var dispatches = 0;
+        var provider = CreateProvider(
+            new StubHttpMessageHandler(_ =>
+            {
+                dispatches++;
+                return SseResponse("data: not-json\n\n");
+            }),
+            settings,
+            tracker,
+            circuitSettings);
+
+        var first = await CollectAsync(provider.StreamAsync(Request()));
+        var second = await CollectAsync(provider.StreamAsync(Request()));
+
+        first[^1].Error.Should().Contain("malformed JSON");
+        second.Should().ContainSingle();
+        second[0].Error.Should().Contain("circuit is open");
+        dispatches.Should().Be(1);
+        tracker.Get("OpenAICompatible")!.State.Should().Be(CircuitState.Open);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_ProviderTimeout_ReturnsUnavailableInsteadOfThrowing()
+    {
+        var provider = CreateProvider(
+            new StubHttpMessageHandler((_, _) =>
+                Task.FromException<HttpResponseMessage>(new TaskCanceledException("upstream timeout"))),
+            BuildSettings());
+
+        var health = await provider.ProbeAsync();
+
+        health.IsAvailable.Should().BeFalse();
+        health.IsProbed.Should().BeTrue();
+        health.ErrorMessage.Should().Contain("timed out");
+    }
+
+    [Fact]
+    public async Task CompleteAsync_WhenProviderIsNotAuthoritativelySelected_DoesNotDispatch()
+    {
+        var settings = BuildSettings();
+        settings.Provider = "Mock";
+        var dispatched = false;
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+        {
+            dispatched = true;
+            return JsonResponse("{}");
+        }), settings);
+
+        var result = await provider.CompleteAsync(Request());
+
+        result.IsDegraded.Should().BeTrue();
+        dispatched.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StreamAsync_EmitsEachServerDerivedAttributionHeaderExactlyOnce()
+    {
+        HttpRequestMessage? observed = null;
+        var provider = CreateProvider(new StubHttpMessageHandler(request =>
+        {
+            observed = request;
+            return SseResponse(
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+                "data: [DONE]\n\n");
+        }), BuildSettings());
+        var attribution = new LlmRequestAttribution(
+            Guid.NewGuid(), "corr-1", LlmRequestSourceSurface.Chat, Guid.NewGuid(), Guid.NewGuid());
+
+        await CollectAsync(provider.StreamAsync(Request(attribution)));
+
+        observed.Should().NotBeNull();
+        foreach (var header in new[]
+                 {
+                     LlmRequestAttributionMapper.CorrelationHeader,
+                     LlmRequestAttributionMapper.SourceSurfaceHeader,
+                     LlmRequestAttributionMapper.UserTokenHeader,
+                     LlmRequestAttributionMapper.BoardTokenHeader,
+                     LlmRequestAttributionMapper.SessionTokenHeader
+                 })
+        {
+            observed!.Headers.GetValues(header).Should().ContainSingle();
+        }
+        observed!.Headers.Authorization!.Scheme.Should().Be("Bearer");
+        observed.Headers.GetValues("X-Title").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void LlmTokenEvent_PreservesSixParameterConstructorAndPascalCaseWireShape()
+    {
+        typeof(LlmTokenEvent).GetConstructors()
+            .Should().ContainSingle(constructor => constructor.GetParameters().Length == 6);
+        var json = JsonSerializer.Serialize(new LlmTokenEvent("", true)
+        {
+            IsDegraded = true,
+            DegradedReason = "reason"
+        });
+
+        json.Should().Contain("\"IsDegraded\":true");
+        json.Should().Contain("\"DegradedReason\":\"reason\"");
+        json.Should().NotContain("\"isDegraded\"");
+    }
+
+    private static OpenAiCompatibleLlmProvider CreateProvider(
+        HttpMessageHandler handler,
+        LlmProviderSettings settings,
+        CircuitBreakerStateTracker? tracker = null,
+        CircuitBreakerSettings? circuitSettings = null,
+        bool allowLocalhostEndpoints = false) =>
+        new(
+            new HttpClient(handler),
+            settings,
+            NullLogger<OpenAiCompatibleLlmProvider>.Instance,
+            tracker,
+            circuitSettings,
+            allowLocalhostEndpoints);
+
+    private static ChatCompletionRequest Request(LlmRequestAttribution? attribution = null) =>
+        new([new ChatCompletionMessage("user", "hello")], Attribution: attribution);
 
     private static async Task<List<LlmTokenEvent>> CollectAsync(IAsyncEnumerable<LlmTokenEvent> stream)
     {
@@ -168,6 +477,16 @@ public class OpenAiCompatibleLlmProviderTests
     {
         Content = new StringContent(body, Encoding.UTF8, "text/event-stream")
     };
+
+    private static HttpResponseMessage SseStreamResponse(Stream stream)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(stream)
+        };
+        response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
+        return response;
+    }
 
     private static HttpResponseMessage JsonResponse(string body) => new(HttpStatusCode.OK)
     {
@@ -187,4 +506,35 @@ public class OpenAiCompatibleLlmProviderTests
             ExtraHeaders = new Dictionary<string, string> { ["X-Title"] = "Taskdeck tests" }
         }
     };
+
+    private abstract class TestReadStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingReadStream : TestReadStream
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            ValueTask.FromException<int>(new IOException("broken SSE body"));
+    }
+
+    private sealed class BlockingReadStream : TestReadStream
+    {
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+    }
 }

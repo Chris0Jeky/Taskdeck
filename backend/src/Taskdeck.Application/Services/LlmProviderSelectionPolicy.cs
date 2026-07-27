@@ -13,6 +13,12 @@ public sealed record LlmProviderDecision(LlmProviderKind ProviderKind, string Re
 
 public static class LlmProviderSelectionPolicy
 {
+    private static readonly HashSet<string> ForbiddenCompatibleHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Host", "Connection", "Transfer-Encoding", "Cookie", "Cookie2", "Keep-Alive",
+        "TE", "Trailer", "Upgrade", "Via", "Forwarded", "Content-Length", "HTTP2-Settings"
+    };
+
     public static LlmProviderDecision Evaluate(LlmProviderSettings settings, string? environmentName)
     {
         var requestedProvider = ResolveRequestedProviderKind(settings.Provider);
@@ -229,6 +235,22 @@ public static class LlmProviderSelectionPolicy
             return false;
         }
 
+        if (compatible.ApiKey.Contains('\r') || compatible.ApiKey.Contains('\n'))
+        {
+            error = "ApiKey must not contain line breaks.";
+            return false;
+        }
+
+        try
+        {
+            _ = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", compatible.ApiKey.Trim());
+        }
+        catch (FormatException)
+        {
+            error = "ApiKey cannot be serialized as a Bearer credential.";
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(compatible.Model))
         {
             error = "Model is required.";
@@ -242,6 +264,13 @@ public static class LlmProviderSelectionPolicy
             return false;
         }
 
+        if (!string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment) ||
+            !string.IsNullOrEmpty(baseUri.UserInfo))
+        {
+            error = "BaseUrl must not contain user information, a query, or a fragment.";
+            return false;
+        }
+
         var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(compatible.BaseUrl, allowLocalhostEndpoints);
         if (!ssrfResult.IsAllowed)
         {
@@ -249,9 +278,24 @@ public static class LlmProviderSelectionPolicy
             return false;
         }
 
-        if (compatible.TimeoutSeconds <= 0)
+        if (Uri.CheckHostName(baseUri.Host) != UriHostNameType.Dns)
         {
-            error = "TimeoutSeconds must be greater than zero.";
+            error = "BaseUrl host must be a DNS name so it can be disclosed and enforced by the egress registry.";
+            return false;
+        }
+
+        if (compatible.TimeoutSeconds is < 1 or > 300)
+        {
+            error = "TimeoutSeconds must be between 1 and 300.";
+            return false;
+        }
+
+        if (compatible.MaxResponseBytes is < 1024 or > 4_194_304 ||
+            compatible.MaxSseLineBytes is < 256 or > 262_144 ||
+            compatible.MaxSseEventBytes is < 512 or > 524_288 ||
+            compatible.MaxSseEventBytes > compatible.MaxResponseBytes)
+        {
+            error = "OpenAI-compatible response budgets are invalid or inconsistent.";
             return false;
         }
 
@@ -263,9 +307,21 @@ public static class LlmProviderSelectionPolicy
 
         foreach (var (name, value) in compatible.ExtraHeaders)
         {
-            if (string.IsNullOrWhiteSpace(name) || string.Equals(name, "Authorization", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(name) ||
+                name.Contains("authorization", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("authenticate", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("cookie", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("X-Api-Key", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("Api-Key", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Auth-Token", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Proxy-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Forwarded-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("X-Taskdeck-", StringComparison.OrdinalIgnoreCase) ||
+                ForbiddenCompatibleHeaders.Contains(name))
             {
-                error = "ExtraHeaders must use non-Authorization header names.";
+                error = $"ExtraHeaders contains dangerous or reserved request header '{name}'.";
                 return false;
             }
 

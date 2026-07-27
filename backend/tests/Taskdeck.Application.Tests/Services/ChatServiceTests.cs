@@ -1987,9 +1987,134 @@ public class ChatServiceTests
             Times.Never);
     }
 
+    [Theory]
+    [InlineData(false, "Response was stopped by the upstream content filter.")]
+    [InlineData(true, "OpenAI-compatible SSE transport failed before completion.")]
+    public async Task StreamResponseAsync_TerminalDegradedOrError_PersistsPartialHistoryAsDegraded(
+        bool terminalError,
+        string expectedReason)
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream terminal state persistence");
+        ChatMessage? persisted = null;
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage message, CancellationToken _) =>
+            {
+                persisted = message;
+                return message;
+            });
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(TerminalStateStream(terminalError, expectedReason));
+
+        await foreach (var _ in _service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        persisted.Should().NotBeNull();
+        persisted!.Content.Should().Be("partial response");
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be(expectedReason);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_UsageAbsent_CommitsReservationEstimate()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream missing usage quota");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage message, CancellationToken _) => message);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(StreamWithoutUsage());
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(
+                true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
+
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private static async IAsyncEnumerable<LlmTokenEvent> ErrorOnlyStream()
     {
         yield return new LlmTokenEvent(string.Empty, true, Error: "provider unavailable");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> TerminalStateStream(
+        bool terminalError,
+        string reason)
+    {
+        yield return new LlmTokenEvent(
+            "partial response",
+            false,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        if (terminalError)
+        {
+            yield return new LlmTokenEvent(
+                string.Empty,
+                true,
+                Error: reason,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model");
+        }
+        else
+        {
+            yield return new LlmTokenEvent(
+                string.Empty,
+                true,
+                TokensUsed: 7,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model")
+            {
+                IsDegraded = true,
+                DegradedReason = reason
+            };
+        }
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> StreamWithoutUsage()
+    {
+        yield return new LlmTokenEvent(
+            "hello",
+            false,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        yield return new LlmTokenEvent(
+            string.Empty,
+            true,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
         await Task.CompletedTask;
     }
 

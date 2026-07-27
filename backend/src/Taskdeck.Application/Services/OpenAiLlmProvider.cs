@@ -404,6 +404,10 @@ public class OpenAiLlmProvider : ILlmProvider
             var isLast = i == tokens.Length - 1;
             yield return isLast
                 ? new LlmTokenEvent(token, true, TokensUsed: result.TokensUsed, Provider: result.Provider, Model: result.Model)
+                {
+                    IsDegraded = result.IsDegraded,
+                    DegradedReason = result.DegradedReason
+                }
                 : new LlmTokenEvent(token, false);
         }
     }

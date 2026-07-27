@@ -68,6 +68,9 @@ in Development.
       "BaseUrl": "",
       "Model": "",
       "TimeoutSeconds": 30,
+      "MaxResponseBytes": 1048576,
+      "MaxSseLineBytes": 65536,
+      "MaxSseEventBytes": 131072,
       "ExtraHeaders": {}
     },
     "Gemini": {
@@ -128,7 +131,9 @@ The endpoint must be public HTTP(S) and pass the same URL and DNS-level SSRF
 checks as OpenAI. Keep keys in a secret store; never commit them. Compatible
 gateways may require optional non-secret headers such as `HTTP-Referer` or
 `X-Title`; use `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>` for those.
-`Authorization` is reserved for the configured API key and cannot be overridden.
+Authorization, proxy, hop-by-hop, cookie, host-routing, forwarding, and
+`x-taskdeck-*` headers are reserved and cannot be overridden. The base URL may
+contain a path but not user information, a query, or a fragment.
 
 ### OpenRouter
 
@@ -157,11 +162,13 @@ $env:Llm__OpenAiCompatible__Model = 'deepseek-chat'
 ```
 
 If a gateway rejects SSE, Taskdeck retries as a normal completion and emits one
-final event with explicit `isDegraded`/`degradedReason` metadata rather than
+final event with explicit `IsDegraded`/`DegradedReason` metadata rather than
 pretending the buffered response was incremental. Some compatible gateways also
 reject `response_format: { type: json_object }`; non-streaming extraction retries
 without that field while retaining the JSON-only instruction prompt and robust
-response parsing.
+response parsing. `TimeoutSeconds` is a full response deadline, including stream
+body reads after headers. `MaxResponseBytes`, `MaxSseLineBytes`, and
+`MaxSseEventBytes` bound buffered bodies and streaming parser memory.
 
 ## Playwright Demo Auto-Enable
 

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ namespace Taskdeck.Application.Services;
 public class ChatService : IChatService
 {
     private const int MaxPromptLength = 4000;
+    private const int MaxStreamedAssistantBytes = 1_048_576;
     private const int MaxChecklistItemCount = 30;
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
@@ -599,10 +601,13 @@ public class ChatService : IChatService
         // Accumulate streamed content and capture usage from the final token event
         // so we can persist an assistant message and record quota usage after the
         // stream completes.
-        var contentBuilder = new System.Text.StringBuilder();
+        var contentBuilder = new StringBuilder();
+        var streamedContentBytes = 0;
         int? tokensUsed = null;
         string? provider = null;
         string? model = null;
+        var streamIsDegraded = false;
+        string? streamDegradedReason = null;
         // True once the provider has delivered at least one non-error event: the LLM call was made and
         // tokens flowed, so the reservation is billable even if the final usage event never arrives.
         var providerStreamed = false;
@@ -633,6 +638,21 @@ public class ChatService : IChatService
                 if (token.Error == null)
                     providerStreamed = true;
 
+                var tokenBytes = Encoding.UTF8.GetByteCount(token.Token);
+                if (tokenBytes > MaxStreamedAssistantBytes - streamedContentBytes)
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = "Streamed assistant response exceeded the safety limit.";
+                    yield return new LlmTokenEvent(
+                        string.Empty,
+                        true,
+                        Error: streamDegradedReason,
+                        Provider: token.Provider ?? provider,
+                        Model: token.Model ?? model);
+                    break;
+                }
+
+                streamedContentBytes += tokenBytes;
                 contentBuilder.Append(token.Token);
                 // Best-known provider/model: any event may carry them; the final usage event is
                 // authoritative and overwrites earlier values.
@@ -642,6 +662,16 @@ public class ChatService : IChatService
                     model = token.Model;
                 if (token.IsComplete)
                     tokensUsed = token.TokensUsed;
+                if (token.IsDegraded)
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = token.DegradedReason ?? "Provider returned a degraded stream.";
+                }
+                if (!string.IsNullOrWhiteSpace(token.Error))
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = token.Error;
+                }
 
                 yield return token;
             }
@@ -655,7 +685,9 @@ public class ChatService : IChatService
                     sessionId,
                     ChatMessageRole.Assistant,
                     streamedContent,
-                    tokenUsage: tokensUsed);
+                    messageType: streamIsDegraded ? "degraded" : "text",
+                    tokenUsage: tokensUsed,
+                    degradedReason: streamIsDegraded ? streamDegradedReason : null);
                 session.AddMessage(assistantMessage);
                 await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
                 await _unitOfWork.SaveChangesAsync(ct);

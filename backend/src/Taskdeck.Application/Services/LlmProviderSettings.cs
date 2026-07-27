@@ -65,6 +65,10 @@ public sealed class GeminiProviderSettings
 
 public sealed class OpenAiCompatibleProviderSettings
 {
+    public const int DefaultMaxResponseBytes = 1_048_576;
+    public const int DefaultMaxSseLineBytes = 65_536;
+    public const int DefaultMaxSseEventBytes = 131_072;
+
     /// <summary>
     /// API key accepted by the configured OpenAI-compatible endpoint.
     /// </summary>
@@ -82,6 +86,18 @@ public sealed class OpenAiCompatibleProviderSettings
 
     [Range(1, 300, ErrorMessage = "TimeoutSeconds must be between 1 and 300.")]
     public int TimeoutSeconds { get; set; } = 30;
+
+    /// <summary>Maximum UTF-8 bytes accepted from one buffered response or stream.</summary>
+    [Range(1024, 4_194_304)]
+    public int MaxResponseBytes { get; set; } = DefaultMaxResponseBytes;
+
+    /// <summary>Maximum UTF-8 bytes accepted in one SSE line.</summary>
+    [Range(256, 262_144)]
+    public int MaxSseLineBytes { get; set; } = DefaultMaxSseLineBytes;
+
+    /// <summary>Maximum UTF-8 bytes accepted in one assembled SSE event.</summary>
+    [Range(512, 524_288)]
+    public int MaxSseEventBytes { get; set; } = DefaultMaxSseEventBytes;
 
     /// <summary>
     /// Optional request headers required by a compatible gateway (for example,

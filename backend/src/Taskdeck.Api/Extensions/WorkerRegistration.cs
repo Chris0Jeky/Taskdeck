@@ -28,15 +28,7 @@ public static class WorkerRegistration
         .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
             var settings = serviceProvider.GetRequiredService<OutboundWebhookSecuritySettings>();
-            return new SocketsHttpHandler
-            {
-                AllowAutoRedirect = false,
-                ConnectCallback = (context, cancellationToken) =>
-                    OutboundWebhookConnectCallback.ConnectAsync(
-                        context,
-                        settings.AllowLocalhostEndpoints,
-                        cancellationToken)
-            };
+            return CreateProtectedWebhookHandler(settings.AllowLocalhostEndpoints);
         });
 
         var auditRetentionSettings = configuration.GetSection("AuditRetention").Get<AuditRetentionSettings>() ?? new AuditRetentionSettings();
@@ -54,5 +46,19 @@ public static class WorkerRegistration
         services.AddHostedService<EmbeddingBackfillWorker>();
 
         return services;
+    }
+
+    internal static SocketsHttpHandler CreateProtectedWebhookHandler(bool allowLocalhostEndpoints)
+    {
+        return new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            UseProxy = false,
+            ConnectCallback = (context, cancellationToken) =>
+                OutboundWebhookConnectCallback.ConnectAsync(
+                    context,
+                    allowLocalhostEndpoints,
+                    cancellationToken)
+        };
     }
 }
