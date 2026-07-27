@@ -432,7 +432,7 @@ function Invoke-StrykerConfigSelfTest {
             }
         }
 
-        $validContractCount = 2 + $validExclusionVariants.Count
+        $validContractCount = 3 + $validExclusionVariants.Count
         $rejectedFixtureCount = $configVariants.Count + $workflowVariants.Count + $toolManifestVariants.Count
         Write-Host "Stryker preflight self-test passed: $($validContractCount + $rejectedFixtureCount) checks ($validContractCount valid contracts; $rejectedFixtureCount rejected drift fixtures)."
     } finally {
