@@ -14,6 +14,8 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Sentry;
 using Sentry.AspNetCore;
+using Sentry.Extensibility;
+using Sentry.Protocol.Envelopes;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Services;
@@ -125,6 +127,7 @@ public class ProtectedOutboundTelemetryHandlerTests
     [Fact]
     public async Task EnabledSentry_ShouldNotDecorateOrObserveAnyProtectedClient()
     {
+        var sentryTransport = new RecordingSentryTransport();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             ApplicationName = typeof(SentryRegistration).Assembly.GetName().Name,
@@ -148,6 +151,8 @@ public class ProtectedOutboundTelemetryHandlerTests
             Environment = "testing",
             TracesSampleRate = 1.0
         });
+        builder.Services.PostConfigure<SentryAspNetCoreOptions>(
+            options => options.Transport = sentryTransport);
         builder.Services.AddLlmProviders(builder.Configuration);
         builder.Services.AddTaskdeckWorkers(builder.Configuration, builder.Environment);
 
@@ -173,6 +178,9 @@ public class ProtectedOutboundTelemetryHandlerTests
 
             sentryOptions.DisableSentryHttpMessageHandler.Should().BeTrue(
                 "Taskdeck must prevent Sentry's global factory filter from bypassing protected-client telemetry controls");
+            sentryOptions.Transport.Should().BeSameAs(
+                sentryTransport,
+                "the regression must flush Sentry envelopes without DNS, proxy, or network access");
 
             using var sentryScope = hub.PushScope();
             transaction = hub.StartTransaction("protected-outbound-test", "http.client");
@@ -224,6 +232,10 @@ public class ProtectedOutboundTelemetryHandlerTests
                     "the enabled-Sentry regression must not leak its global hub into later API tests");
             }
         }
+
+        sentryTransport.SentItemTypes.Should().ContainSingle(
+            itemType => string.Equals(itemType, "transaction", StringComparison.Ordinal),
+            "finishing the sampled transaction must flush it through the in-memory transport");
     }
 
     private static ServiceProvider BuildServiceProvider(BaseExporter<Metric>? metricExporter = null)
@@ -318,6 +330,23 @@ public class ProtectedOutboundTelemetryHandlerTests
         (breadcrumb.Data?.Any(pair =>
             pair.Key.Contains(marker, StringComparison.Ordinal) ||
             pair.Value?.ToString()?.Contains(marker, StringComparison.Ordinal) == true) ?? false);
+
+    private sealed class RecordingSentryTransport : ITransport
+    {
+        private readonly ConcurrentQueue<string?> _sentItemTypes = new();
+
+        internal IReadOnlyCollection<string?> SentItemTypes => _sentItemTypes.ToArray();
+
+        public Task SendEnvelopeAsync(Envelope envelope, CancellationToken cancellationToken)
+        {
+            foreach (var item in envelope.Items)
+            {
+                _sentItemTypes.Enqueue(item.TryGetType());
+            }
+
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class RecordingActivityExporter : BaseExporter<Activity>
     {
