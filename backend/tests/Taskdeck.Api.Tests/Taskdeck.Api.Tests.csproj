@@ -32,6 +32,7 @@
     <ProjectReference Include="..\..\src\Taskdeck.Api\Taskdeck.Api.csproj" />
     <ProjectReference Include="..\..\src\Taskdeck.Application\Taskdeck.Application.csproj" />
     <ProjectReference Include="..\..\src\Taskdeck.Infrastructure\Taskdeck.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Taskdeck.Cli\Taskdeck.Cli.csproj" />
   </ItemGroup>
 
   <ItemGroup>

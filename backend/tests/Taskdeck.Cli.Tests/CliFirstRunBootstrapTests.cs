@@ -1,9 +1,11 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Connectors;
+using Taskdeck.Application.Bootstrap;
 using Taskdeck.Cli;
 using Taskdeck.Infrastructure;
 using Xunit;
@@ -114,6 +116,26 @@ public class CliFirstRunBootstrapTests
         var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
         File.Exists(localConfig).Should().BeTrue();
         ReadPersistedKey(localConfig).Should().Be(key);
+        BootstrapFileSecurity.VerifyFileOwnerOnly(localConfig);
+    }
+
+    [Fact]
+    public void EnsureConnectorEncryptionKey_ExistingDatabaseWithoutPersistedKey_FailsClosedWithoutWriting()
+    {
+        using var temp = new TempDataDir();
+        byte[] existingDatabase = [0x53, 0x51, 0x4c, 0x69, 0x74, 0x65];
+        File.WriteAllBytes(temp.DatabasePath, existingDatabase);
+        var configuration = BuildConfiguration(temp.DatabasePath);
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+
+        var act = () => CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*already exists*refusing to generate a replacement*");
+        File.Exists(localConfig).Should().BeFalse(
+            "an existing database may contain credentials encrypted by a recoverable operator key");
+        File.ReadAllBytes(temp.DatabasePath).Should().Equal(existingDatabase);
+        configuration["Connectors:EncryptionKey"].Should().BeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -164,12 +186,114 @@ public class CliFirstRunBootstrapTests
             .Should().NotBeNullOrWhiteSpace();
     }
 
+    [Fact]
+    public void EnsureConnectorEncryptionKey_ReusesProviderLenientLowercaseKeyWithoutRewritingSharedFile()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        const string existingKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        var original = "{\n  // API-authored and provider-valid\n  \"jwt\": { \"secretkey\": \"keep-jwt\", },\n  \"connectors\": { \"encryptionkey\": \"" + existingKey + "\", },\n}";
+        File.WriteAllText(localConfig, original);
+        var configuration = BuildConfiguration(temp.DatabasePath);
+
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        configuration["Connectors:EncryptionKey"].Should().Be(existingKey);
+        File.ReadAllText(localConfig).Should().Be(original,
+            "reusing an existing provider-valid key must not rewrite shared API settings");
+        BootstrapFileSecurity.VerifyFileOwnerOnly(localConfig);
+    }
+
+    [Fact]
+    public void EnsureConnectorEncryptionKey_ReusesFlattenedKeyWithoutRewritingProviderValidParentValue()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        const string existingKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        var original = "{\n  // provider-valid flattened path\n  \"Connectors\": \"operator-metadata\",\n" +
+            "  \"connectors:encryptionkey\": \"" + existingKey + "\",\n}";
+        File.WriteAllText(localConfig, original);
+        var configuration = BuildConfiguration(temp.DatabasePath);
+
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        configuration["Connectors:EncryptionKey"].Should().Be(existingKey);
+        File.ReadAllText(localConfig).Should().Be(original,
+            "reusing a flattened provider-valid key must preserve the operator's exact shared config bytes");
+        BootstrapFileSecurity.VerifyFileOwnerOnly(localConfig);
+    }
+
+    [Fact]
+    public void EnsureConnectorEncryptionKey_EmptyFlattenedKeyIsUpdatedInPlaceWithoutNestedCollision()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        File.WriteAllText(
+            localConfig,
+            "{\"connectors:encryptionkey\":\"\",\"Connectors\":{\"Mode\":\"keep-mode\"}," +
+            "\"Other\":\"keep\"}");
+        var configuration = BuildConfiguration(temp.DatabasePath);
+
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        var root = JsonNode.Parse(File.ReadAllText(localConfig))!.AsObject();
+        var flattened = root.First(
+            pair => pair.Key.Equals("Connectors:EncryptionKey", StringComparison.OrdinalIgnoreCase));
+        flattened.Value!.GetValue<string>().Should().Be(configuration["Connectors:EncryptionKey"]);
+        root["Connectors"]!["Mode"]!.GetValue<string>().Should().Be("keep-mode");
+        root["Connectors"]!.AsObject().Any(
+                pair => pair.Key.Equals("EncryptionKey", StringComparison.OrdinalIgnoreCase))
+            .Should().BeFalse("the flattened and nested forms collide in the configuration provider");
+        root["Other"]!.GetValue<string>().Should().Be("keep");
+        new ConfigurationBuilder()
+            .AddJsonFile(localConfig, optional: false, reloadOnChange: false)
+            .Build()["Connectors:EncryptionKey"]
+            .Should().Be(configuration["Connectors:EncryptionKey"]);
+        BootstrapFileSecurity.VerifyFileOwnerOnly(localConfig);
+    }
+
+    [Fact]
+    public void EnsureConnectorEncryptionKey_AddsKeyToProviderLenientLowercaseSectionAndPreservesSettings()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        File.WriteAllText(
+            localConfig,
+            "{\n  // provider-valid\n  \"jwt\": { \"secretkey\": \"keep-jwt\", },\n  \"connectors\": { \"Mode\": \"keep-mode\", },\n}");
+        var configuration = BuildConfiguration(temp.DatabasePath);
+
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        var root = JsonNode.Parse(
+            File.ReadAllText(localConfig),
+            nodeOptions: null,
+            documentOptions: new JsonDocumentOptions
+            {
+                CommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true
+            })!.AsObject();
+        var jwt = root.First(pair => pair.Key.Equals("jwt", StringComparison.OrdinalIgnoreCase)).Value!.AsObject();
+        var connectors = root.First(pair => pair.Key.Equals("connectors", StringComparison.OrdinalIgnoreCase)).Value!.AsObject();
+        jwt.First(pair => pair.Key.Equals("secretkey", StringComparison.OrdinalIgnoreCase)).Value!.GetValue<string>()
+            .Should().Be("keep-jwt");
+        connectors["Mode"]!.GetValue<string>().Should().Be("keep-mode");
+        connectors.First(pair => pair.Key.Equals("EncryptionKey", StringComparison.OrdinalIgnoreCase))
+            .Value!.GetValue<string>().Should().Be(configuration["Connectors:EncryptionKey"]);
+        BootstrapFileSecurity.VerifyFileOwnerOnly(localConfig);
+    }
+
     [Theory]
     [InlineData("{ this is not valid json")]                       // corrupt JSON
     [InlineData("[1, 2, 3]")]                                       // valid JSON but not an object
+    [InlineData("null")]                                            // JSON null is not a provider config object
+    [InlineData("{\"Connectors\":null}")]                         // explicit section null must not create a duplicate
+    [InlineData("{\"Connectors\":{\"EncryptionKey\":null}}")] // explicit key null may be recoverable intent
     [InlineData("{\"Connectors\":{\"EncryptionKey\":12345}}")]     // wrong-type key value
-    [InlineData("{\"Connectors\":{\"EncryptionKey\":\"\"}}")]      // empty key value
-    public void EnsureConnectorEncryptionKey_WithMalformedLocalConfig_RegeneratesValidKeyWithoutThrowing(
+    [InlineData("{\"Connectors:EncryptionKey\":null}")]
+    [InlineData("{\"Connectors:EncryptionKey\":12345}")]
+    [InlineData("{\"Connectors\":{\"Mode\":\"one\"},\"connectors\":{\"Mode\":\"two\"}}")]
+    [InlineData("{\"A:B\":\"one\",\"A\":{\"B\":\"two\"}}")]
+    public void EnsureConnectorEncryptionKey_WithMalformedSharedConfig_FailsClosedWithoutOverwriting(
         string malformedContent)
     {
         using var temp = new TempDataDir();
@@ -178,16 +302,40 @@ public class CliFirstRunBootstrapTests
 
         var configuration = BuildConfiguration(temp.DatabasePath);
 
-        // Must not throw: the fail-safe exists to prevent a startup crash.
         var act = () => CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
-        act.Should().NotThrow();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*refusing to overwrite*");
 
-        var key = configuration["Connectors:EncryptionKey"];
-        key.Should().NotBeNullOrWhiteSpace();
-        Convert.FromBase64String(key!).Length.Should().Be(32);
+        File.ReadAllText(localConfig).Should().Be(malformedContent);
+        configuration["Connectors:EncryptionKey"].Should().BeNullOrWhiteSpace();
+    }
 
-        // The file is overwritten with a valid persisted key.
-        ReadPersistedKey(localConfig).Should().Be(key);
+    [Fact]
+    public void EnsureConnectorEncryptionKey_EmptyStringKeyGeneratesWhilePreservingSharedSettings()
+    {
+        using var temp = new TempDataDir();
+        var localConfig = Path.Combine(temp.Directory, "appsettings.local.json");
+        File.WriteAllText(
+            localConfig,
+            "{\"Jwt\":{\"SecretKey\":\"keep-jwt\"},\"Connectors\":{\"EncryptionKey\":\"\"}}");
+        var configuration = BuildConfiguration(temp.DatabasePath);
+
+        CliFirstRunBootstrapper.EnsureConnectorEncryptionKey(configuration);
+
+        var root = JsonNode.Parse(File.ReadAllText(localConfig))!.AsObject();
+        root["Jwt"]!["SecretKey"]!.GetValue<string>().Should().Be("keep-jwt");
+        root["Connectors"]!["EncryptionKey"]!.GetValue<string>()
+            .Should().Be(configuration["Connectors:EncryptionKey"]);
+    }
+
+    [Fact]
+    public void ApiAndCliMutexNames_AreTheSameSharedPerPathIdentity()
+    {
+        using var temp = new TempDataDir();
+        var path = Path.Combine(temp.Directory, "appsettings.local.json");
+
+        CliFirstRunBootstrapper.BuildMutexName(path)
+            .Should().Be(BootstrapFileLock.BuildMutexName(path));
     }
 
     [Fact]
@@ -252,8 +400,18 @@ public class CliFirstRunBootstrapTests
 
     private static string? ReadPersistedKey(string localConfigPath)
     {
-        using var doc = JsonDocument.Parse(File.ReadAllText(localConfigPath));
-        return doc.RootElement.GetProperty("Connectors").GetProperty("EncryptionKey").GetString();
+        var root = JsonNode.Parse(
+            File.ReadAllText(localConfigPath),
+            nodeOptions: null,
+            documentOptions: new JsonDocumentOptions
+            {
+                CommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true
+            })!.AsObject();
+        var connectors = root.First(
+            pair => pair.Key.Equals("Connectors", StringComparison.OrdinalIgnoreCase)).Value!.AsObject();
+        return connectors.First(
+            pair => pair.Key.Equals("EncryptionKey", StringComparison.OrdinalIgnoreCase)).Value!.GetValue<string>();
     }
 
     private sealed class TempDataDir : IDisposable

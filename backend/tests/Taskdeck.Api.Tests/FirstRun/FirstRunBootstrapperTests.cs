@@ -170,6 +170,79 @@ public class FirstRunBootstrapperTests
     }
 
     [Fact]
+    public void QuarantineCorruptLocalConfigAt_TreatsJsonNullAsRecoverableCorruption()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-null-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "null");
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(path);
+
+            Assert.False(File.Exists(path));
+            var preserved = Directory.GetFiles(
+                Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*");
+            Assert.Single(preserved);
+            Assert.Equal("null", File.ReadAllText(preserved[0]));
+            File.Delete(preserved[0]);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void QuarantineCorruptLocalConfigAt_ConcurrentValidReplacementSurvives()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"td-quarantine-race-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "appsettings.local.json");
+        var replacementPath = Path.Combine(directory, "winner.json");
+        const string winner = "{\"Connectors\":{\"EncryptionKey\":\"winner-key\"}}";
+        File.WriteAllText(path, "{ corrupt observed bytes");
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(
+                path,
+                afterCorruptObserved: _ => Task.Run(() =>
+                {
+                    File.WriteAllText(replacementPath, winner);
+                    File.Move(replacementPath, path, overwrite: true);
+                }).GetAwaiter().GetResult());
+
+            Assert.True(File.Exists(path));
+            Assert.Equal(winner, File.ReadAllText(path));
+            Assert.Empty(Directory.GetFiles(directory, "appsettings.local.json.corrupt-*"));
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    [Theory]
+    [InlineData("{\"Connectors\":{\"Mode\":\"one\"},\"connectors\":{\"Mode\":\"two\"}}")]
+    [InlineData("{\"A:B\":\"one\",\"A\":{\"B\":\"two\"}}")]
+    public void QuarantineCorruptLocalConfigAt_QuarantinesProviderKeyCollisions(string content)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"td-provider-collision-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, content);
+        try
+        {
+            FirstRunBootstrapper.QuarantineCorruptLocalConfigAt(path);
+
+            Assert.False(File.Exists(path));
+            var preserved = Directory.GetFiles(
+                Path.GetDirectoryName(path)!,
+                Path.GetFileName(path) + ".corrupt-*");
+            Assert.Single(preserved);
+            Assert.Equal(content, File.ReadAllText(preserved[0]));
+            File.Delete(preserved[0]);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void TryReadPersistedConnectorKey_ReadsKey_FromCommentedTrailingCommaFile()
     {
         var path = Path.Combine(Path.GetTempPath(), $"td-lenient-key-{Guid.NewGuid():N}.json");
@@ -293,19 +366,17 @@ public class FirstRunBootstrapperTests
     // via reflection-based assertions on the source code patterns.
 
     [Fact]
-    public void PersistValue_MutexConstructorIsGuarded_StructuralCheck()
+    public void PersistValue_UsesSharedGuardedApplicationLock_StructuralCheck()
     {
-        // Verify that the PersistValue method source contains the guarded
-        // exception types matching the CLI's CliFirstRunBootstrapper pattern.
-        // This is a structural assertion: if someone removes the guard, the
-        // test fails.
-        var source = File.ReadAllText(
+        var apiSource = File.ReadAllText(
             FindSourceFile("FirstRunBootstrapper.cs"));
+        var lockSource = File.ReadAllText(
+            FindApplicationBootstrapFile("BootstrapFileLock.cs"));
 
-        Assert.Contains("UnauthorizedAccessException", source);
-        Assert.Contains("WaitHandleCannotBeOpenedException", source);
-        // Verify the mutex is constructed inside the try block (nullable pattern).
-        Assert.Contains("Mutex? mutex = null", source);
+        Assert.Contains("BootstrapFileLock.Acquire(path, lockTimeout)", apiSource);
+        Assert.Contains("UnauthorizedAccessException", lockSource);
+        Assert.Contains("WaitHandleCannotBeOpenedException", lockSource);
+        Assert.Contains("Mutex? mutex = null", lockSource);
     }
 
     [Fact]
@@ -313,19 +384,24 @@ public class FirstRunBootstrapperTests
     {
         // #1264 load-bearing wiring: the behavioral tests cannot distinguish atomic create-with-permissions
         // from a regression back to create-then-restrict (the final file state is identical on NTFS), so pin
-        // the construction structurally. PersistValue's temp file AND the corrupt-config backup must go
-        // through WriteRestrictedFile; the helper must create with the permissions supplied at creation
+        // the construction structurally. PersistValue's temp file must go through WriteRestrictedFile;
+        // corrupt quarantine must atomically move the already-secured original rather than create a loose
+        // copy. The helper must create with the permissions supplied at creation
         // (UnixCreateMode / FileSecurity passed to Create) rather than restrict post-hoc.
-        var source = File.ReadAllText(
+        var apiSource = File.ReadAllText(
             FindSourceFile("FirstRunBootstrapper.cs"));
+        var securitySource = File.ReadAllText(
+            FindApplicationBootstrapFile("BootstrapFileSecurity.cs"));
 
-        Assert.Contains("WriteRestrictedFile(tempPath, payload)", source);
-        Assert.Contains("WriteRestrictedFile(backupPath", source);
-        Assert.Contains("UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite", source);
-        Assert.Contains("BuildOwnerOnlyFileSecurity())", source);
+        Assert.Contains("WriteRestrictedFile(tempPath, payload)", apiSource);
+        Assert.Contains("BootstrapFileSecurity.WriteRestrictedFile(path, contents)", apiSource);
+        Assert.Contains("File.Move(normalizedPath, backupPath", apiSource);
+        Assert.DoesNotContain("File.Copy(normalizedPath, backupPath", apiSource);
+        Assert.Contains("UnixCreateMode = OwnerReadWrite", securitySource);
+        Assert.Contains("BuildOwnerOnlyFileSecurity())", securitySource);
         // The pre-#1264 sequence must not come back.
-        Assert.DoesNotContain("File.Create(tempPath)", source);
-        Assert.DoesNotContain("RestrictFileToCurrentUser(tempPath)", source);
+        Assert.DoesNotContain("File.Create(tempPath)", apiSource);
+        Assert.DoesNotContain("RestrictFileToCurrentUser(tempPath)", apiSource);
     }
 
     [Fact]
@@ -337,23 +413,23 @@ public class FirstRunBootstrapperTests
         // read-back through the open handle and the Unix exact-mode pin (also umask-proof) through the
         // open handle.
         var source = File.ReadAllText(
-            FindSourceFile("FirstRunBootstrapper.cs"));
+            FindApplicationBootstrapFile("BootstrapFileSecurity.cs"));
 
-        Assert.Contains("AreAccessRulesProtected", source);
         Assert.Contains("File.SetUnixFileMode(stream.SafeFileHandle", source);
+        Assert.Contains("File.GetUnixFileMode(stream.SafeFileHandle)", source);
+        Assert.Contains("VerifyOwnerOnlyAccessControl(applied, path)", source);
+        Assert.Contains("security.GetOwner(typeof(SecurityIdentifier))", source);
     }
 
     [Fact]
-    public void PersistValue_PreservesCorruptConfigBeforeOverwriting_StructuralCheck()
+    public void PersistValue_RefusesToOverwriteCorruptConfig_StructuralCheck()
     {
         // A corrupt appsettings.local.json may hold the only copy of a previously-generated key (the
-        // connector key in particular). Before the file is rewritten it must be backed up to a
-        // timestamped .corrupt-* sibling for operator recovery -- not silently discarded.
+        // connector key in particular). A persistence call must fail closed rather than rewrite it.
         var source = File.ReadAllText(
             FindSourceFile("FirstRunBootstrapper.cs"));
 
-        Assert.Contains("PreserveCorruptConfig", source);
-        Assert.Contains(".corrupt-", source);
+        Assert.Contains("refusing to write replacement values", source);
     }
 
     [Fact]
@@ -587,6 +663,27 @@ public class FirstRunBootstrapperTests
         while (dir != null)
         {
             var candidate = Path.Combine(dir, "backend", "src", "Taskdeck.Api", "FirstRun", fileName);
+            if (File.Exists(candidate))
+                return candidate;
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        throw new FileNotFoundException(
+            $"Could not locate {fileName} by walking up from {AppContext.BaseDirectory}");
+    }
+
+    private static string FindApplicationBootstrapFile(string fileName)
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir != null)
+        {
+            var candidate = Path.Combine(
+                dir,
+                "backend",
+                "src",
+                "Taskdeck.Application",
+                "Bootstrap",
+                fileName);
             if (File.Exists(candidate))
                 return candidate;
             dir = Path.GetDirectoryName(dir);

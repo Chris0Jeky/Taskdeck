@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
+using Taskdeck.Application.Bootstrap;
 
 namespace Taskdeck.Cli;
 
@@ -23,19 +24,13 @@ namespace Taskdeck.Cli;
 /// data it protects), and loads it into configuration so
 /// <c>AddInfrastructure</c> succeeds.
 ///
-/// It intentionally does NOT modify the shared <c>AddInfrastructure</c>: the API
-/// deliberately fail-fasts on a missing key in Production. NOTE the key location
-/// differs from the API's <c>FirstRunBootstrapper</c>, which persists ITS key
-/// next to the executable (<c>AppContext.BaseDirectory</c>) -- this CLI bootstrap
-/// writes next to the data directory. Because the two locations differ, a
-/// deployment that points BOTH the API and CLI (or several hosts) at one shared
-/// database would auto-generate a DIFFERENT key per host and be unable to decrypt
-/// the other's connector credentials. For any shared-database or multi-host
-/// deployment, set one explicit <c>Connectors__EncryptionKey</c> (env var or
-/// appsettings) on every host instead of relying on this per-host
-/// auto-generation; the bootstrap emits a stderr warning when it auto-generates a
-/// key against a non-default data directory (<c>TASKDECK_CONNECTION_STRING</c>
-/// set) to surface this.
+/// The desktop API and CLI both resolve the default local-config file beside the
+/// resolved SQLite database and coordinate first-run writes with the same per-path
+/// cross-process lock. A deployment that uses a custom config path, or several
+/// hosts with separate files against one database, must still set one explicit
+/// <c>Connectors__EncryptionKey</c> (environment variable or appsettings) on every
+/// host. The bootstrap emits a stderr warning when it auto-generates a key for a
+/// non-default database location (<c>TASKDECK_CONNECTION_STRING</c> set).
 ///
 /// Must run BEFORE the DI container is built and must never write to stdout
 /// (the CLI keeps stdout clean JSON for callers); diagnostics go to stderr only.
@@ -71,11 +66,12 @@ internal static class CliFirstRunBootstrapper
         }
 
         var localConfigPath = ResolveLocalConfigPath(configuration);
-        var key = EnsureKeyOnDisk(localConfigPath);
+        var databasePath = ResolveDatabaseFilePath(configuration);
+        var key = EnsureKeyOnDisk(localConfigPath, databasePath);
 
         // Load the key into the live configuration so AddInfrastructure can read
         // it. The CLI host does not register appsettings.local.json as a config
-        // source, so set it in-memory (this is also the persist-failure fallback).
+        // source, so install the exact persisted winner in memory.
         configuration[ConnectorKeyPath] = key;
     }
 
@@ -91,6 +87,42 @@ internal static class CliFirstRunBootstrapper
 
         var directory = ResolveDataDirectory(connectionString);
         return Path.Combine(directory, LocalConfigFileName);
+    }
+
+    /// <summary>
+    /// Resolves the configured SQLite database to a canonical file path for the
+    /// first-run recovery guard. In-memory or invalid connection strings do not
+    /// identify a durable database; <c>AddInfrastructure</c> remains responsible
+    /// for validating those configurations.
+    /// </summary>
+    private static string? ResolveDatabaseFilePath(IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? "Data Source=taskdeck.db";
+
+        try
+        {
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString);
+            if (builder.Mode == Microsoft.Data.Sqlite.SqliteOpenMode.Memory
+                || builder.DataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var dataSource = string.IsNullOrWhiteSpace(builder.DataSource)
+                ? "taskdeck.db"
+                : builder.DataSource;
+            return Path.GetFullPath(dataSource);
+        }
+        catch (Exception ex) when (
+            ex is ArgumentException
+                or PathTooLongException
+                or NotSupportedException
+                or IOException
+                or System.Security.SecurityException)
+        {
+            return null;
+        }
     }
 
     private static string ResolveDataDirectory(string connectionString)
@@ -145,123 +177,67 @@ internal static class CliFirstRunBootstrapper
     /// converge on a single shared key (the second reads the first's value)
     /// rather than each generating a different key.
     /// </summary>
-    internal static string EnsureKeyOnDisk(string localConfigPath)
+    internal static string EnsureKeyOnDisk(
+        string localConfigPath,
+        string? databasePath = null,
+        TimeSpan? lockTimeout = null,
+        Func<string>? keyFactory = null)
     {
-        var mutexName = BuildMutexName(localConfigPath);
-        Mutex? mutex = null;
-        var acquired = false;
+        using var fileLock = BootstrapFileLock.Acquire(
+            localConfigPath,
+            lockTimeout ?? TimeSpan.FromSeconds(10),
+            onContention: () => Console.Error.WriteLine(
+                "[CliFirstRun] Waiting for another Taskdeck process to finish durable local-config " +
+                "initialization."));
+
+        ExistingConfig existing;
         try
         {
-            try
+            var exists = SharedConfigExistsOrThrow(localConfigPath);
+            if (exists)
             {
-                // The named (Global\ on Windows) mutex ctor AND WaitOne can throw on
-                // locked-down or multi-user hosts -- e.g. when another user already
-                // owns the name. That must NOT crash the CLI at startup (the exact
-                // failure this bootstrap exists to prevent).
-                mutex = new Mutex(initiallyOwned: false, name: mutexName);
-                acquired = mutex.WaitOne(TimeSpan.FromSeconds(10));
+                BootstrapFileSecurity.RestrictFileToCurrentUser(localConfigPath);
             }
-            catch (AbandonedMutexException)
-            {
-                // A previous holder crashed without releasing; we own it now.
-                acquired = true;
-            }
-            catch (Exception ex) when (
-                ex is UnauthorizedAccessException
-                    or WaitHandleCannotBeOpenedException
-                    or IOException)
-            {
-                // Could not create/open or wait on the cross-process lock. Degrade
-                // gracefully: continue WITHOUT the lock and treat this run as
-                // read-only (see the !acquired branch below) so two unsynchronized
-                // writers never race to persist different keys.
-                Console.Error.WriteLine(
-                    $"[CliFirstRun] WARNING: Could not acquire the cross-process bootstrap " +
-                    $"lock ({ex.Message}). Proceeding without it; a generated key will not be " +
-                    "persisted on this run.");
-            }
-
-            // Re-check (inside the lock when held): a racing process may have just
-            // written a key, or one may already exist from a previous run. Reading
-            // is safe without the lock.
-            var existing = ReadExisting(localConfigPath);
-            if (!string.IsNullOrWhiteSpace(existing.Key))
-            {
-                return existing.Key!;
-            }
-
-            var generated = GenerateKey();
-
-            if (!acquired)
-            {
-                // We do NOT hold the lock (ctor/wait threw, or the 10s wait timed
-                // out). Persisting now could race a concurrent writer and leave
-                // connector credentials encrypted under a key no longer on disk.
-                // Use a transient in-memory key for this run only; a later run that
-                // wins the lock will persist a stable key. Warn on stderr (stdout
-                // stays clean JSON).
-                Console.Error.WriteLine(
-                    "[CliFirstRun] WARNING: Bootstrap lock unavailable; using a transient " +
-                    "in-memory connector encryption key for this run without persisting it. " +
-                    "Set an explicit Connectors__EncryptionKey to avoid per-run keys.");
-                return generated;
-            }
-
-            if (existing.PreserveFile)
-            {
-                // An existing file could not be read (e.g. transiently locked by an
-                // editor/AV/backup). Do NOT overwrite it -- a valid key may be on
-                // disk, and clobbering it would make previously-encrypted connector
-                // credentials undecryptable. Use a transient key for this run; the
-                // next run will pick up the real key.
-                Console.Error.WriteLine(
-                    $"[CliFirstRun] WARNING: Could not read {localConfigPath} to load the " +
-                    "connector encryption key. Using a transient in-memory key for this run.");
-                return generated;
-            }
-
-            try
-            {
-                PersistKey(localConfigPath, existing.Root, generated);
-                WarnIfSharedDbAutoGenerated(localConfigPath);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Could not persist (read-only dir, lock contention). The current
-                // invocation still works with a transient in-memory key; warn on
-                // stderr so stdout stays clean JSON.
-                Console.Error.WriteLine(
-                    $"[CliFirstRun] WARNING: Could not persist connector encryption key to " +
-                    $"{localConfigPath} ({ex.Message}). Using a transient in-memory key for this run.");
-            }
-
-            return generated;
+            existing = ReadExisting(localConfigPath, exists);
         }
-        finally
+        catch (InvalidOperationException)
         {
-            if (acquired && mutex is not null)
-            {
-                try
-                {
-                    mutex.ReleaseMutex();
-                }
-                catch (ApplicationException)
-                {
-                    // Best-effort release: another path may already have released it.
-                }
-            }
-
-            mutex?.Dispose();
+            throw;
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException(
+                $"[CliFirstRun] Could not securely inspect {localConfigPath}; refusing to overwrite a " +
+                "possibly recoverable shared connector key.", ex);
+        }
+
+        if (!string.IsNullOrWhiteSpace(existing.Key))
+        {
+            return existing.Key!;
+        }
+
+        if (databasePath is not null && SharedDatabaseExistsOrThrow(databasePath))
+        {
+            throw new InvalidOperationException(
+                $"[CliFirstRun] SQLite database {databasePath} already exists but no recoverable connector " +
+                "encryption key was found; refusing to generate a replacement that could make existing " +
+                "connector credentials unreadable. Supply Connectors__EncryptionKey or restore " +
+                "appsettings.local.json.");
+        }
+
+        var generated = (keyFactory ?? GenerateKey)();
+        PersistKey(localConfigPath, existing.Root, generated);
+        WarnIfSharedDbAutoGenerated(localConfigPath);
+        return generated;
     }
 
     /// <summary>
     /// Emits a one-line stderr warning when the bootstrap AUTO-GENERATES a key
     /// while pointed at a non-default data directory (<c>TASKDECK_CONNECTION_STRING</c>
     /// set). A custom/relocated database is often shared across hosts, where
-    /// per-host auto-generated keys diverge (the API stores its key next to the
-    /// executable) and cannot decrypt each other's connector credentials -- so the
-    /// operator should set one explicit shared <c>Connectors__EncryptionKey</c>.
+    /// separate local-config paths can produce keys that cannot decrypt each
+    /// other's connector credentials -- so the operator should set one explicit
+    /// shared <c>Connectors__EncryptionKey</c>.
     /// stderr only; stdout stays clean JSON.
     /// </summary>
     private static void WarnIfSharedDbAutoGenerated(string localConfigPath)
@@ -284,19 +260,84 @@ internal static class CliFirstRunBootstrapper
 
     /// <summary>
     /// Result of inspecting an existing <c>appsettings.local.json</c>.
-    /// <paramref name="Root"/> is the object to merge new values into (empty when
-    /// the file is missing or corrupt). <paramref name="Key"/> is the existing
-    /// connector key when present and a string. <paramref name="PreserveFile"/>
-    /// is true when the file exists but could not be read, signalling the caller
-    /// to avoid overwriting it.
+    /// <paramref name="Root"/> is the provider-compatible object to merge into when the file is missing or
+    /// valid. <paramref name="Key"/> is the existing case-insensitive connector key when present.
     /// </summary>
-    private readonly record struct ExistingConfig(JsonObject Root, string? Key, bool PreserveFile);
+    private readonly record struct ExistingConfig(JsonObject Root, string? Key);
 
-    private static ExistingConfig ReadExisting(string path)
+    private static bool SharedConfigExistsOrThrow(string path)
     {
-        if (!File.Exists(path))
+        try
         {
-            return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: false);
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.Directory) != 0)
+            {
+                throw new InvalidOperationException(
+                    $"[CliFirstRun] Shared local config path {path} is a directory; refusing to overwrite it.");
+            }
+
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new InvalidOperationException(
+                $"[CliFirstRun] Could not inspect shared local config {path}; refusing to overwrite it.", ex);
+        }
+    }
+
+    private static bool SharedDatabaseExistsOrThrow(string path)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.Directory) != 0)
+            {
+                throw new InvalidOperationException(
+                    $"[CliFirstRun] Configured SQLite database path {path} is a directory; refusing to " +
+                    "generate a connector encryption key.");
+            }
+
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new InvalidOperationException(
+                $"[CliFirstRun] Could not safely inspect configured SQLite database {path}; refusing to " +
+                "generate a connector encryption key.", ex);
+        }
+    }
+
+    private static ExistingConfig ReadExisting(string path, bool exists)
+    {
+        if (!exists)
+        {
+            return new ExistingConfig(new JsonObject(), Key: null);
         }
 
         string text;
@@ -306,46 +347,132 @@ internal static class CliFirstRunBootstrapper
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // File exists but is temporarily unreadable -- preserve it rather than
-            // risk clobbering a valid key.
-            return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: true);
+            throw new InvalidOperationException(
+                $"[CliFirstRun] Could not read shared local config {path}; refusing to overwrite it.", ex);
         }
 
         JsonObject root;
         try
         {
-            root = JsonNode.Parse(text)?.AsObject() ?? new JsonObject();
+            root = JsonNode.Parse(
+                    text,
+                    nodeOptions: null,
+                    documentOptions: new JsonDocumentOptions
+                    {
+                        CommentHandling = JsonCommentHandling.Skip,
+                        AllowTrailingCommas = true
+                    })?.AsObject()
+                ?? throw new JsonException("The shared local-config JSON root is null.");
+
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(text), writable: false);
+            _ = new ConfigurationBuilder()
+                .AddJsonStream(stream)
+                .Build();
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        catch (Exception ex) when (
+            ex is JsonException or InvalidOperationException or FormatException or InvalidDataException)
         {
-            // No logger at this pre-DI stage. Warn on stderr and start fresh rather
-            // than silently discarding the corrupt file.
-            Console.Error.WriteLine(
-                $"[CliFirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
-                $"Details: {ex.Message}");
-            return new ExistingConfig(new JsonObject(), Key: null, PreserveFile: false);
+            throw new InvalidOperationException(
+                $"[CliFirstRun] Shared local config {path} is malformed and may contain recoverable " +
+                "settings or keys; refusing to overwrite it.", ex);
         }
 
-        // Type-safe extraction: a non-string EncryptionKey value (e.g. a number)
-        // must not throw -- treat it as absent so a valid key is regenerated.
-        var key = (root[ConnectorSection] as JsonObject)?[EncryptionKeyName] is JsonValue value
-            && value.TryGetValue<string>(out var keyText)
-                ? keyText
-                : null;
+        var flattenedPair = root.FirstOrDefault(
+            pair => pair.Key.Equals(ConnectorKeyPath, StringComparison.OrdinalIgnoreCase));
+        var sectionPair = root.FirstOrDefault(
+            pair => pair.Key.Equals(ConnectorSection, StringComparison.OrdinalIgnoreCase));
+        if (flattenedPair.Key is null
+            && sectionPair.Key is not null
+            && sectionPair.Value is not JsonObject)
+        {
+            throw new InvalidOperationException(
+                $"[CliFirstRun] Shared local config {path} has a non-object Connectors section; refusing " +
+                "to overwrite it.");
+        }
 
-        return new ExistingConfig(root, key, PreserveFile: false);
+        string? key = null;
+        if (flattenedPair.Key is not null && flattenedPair.Value is JsonValue flattenedValue)
+        {
+            if (!flattenedValue.TryGetValue<string>(out key))
+            {
+                throw new InvalidOperationException(
+                    $"[CliFirstRun] Shared local config {path} has a non-string connector encryption key; " +
+                    "refusing to overwrite it.");
+            }
+        }
+        else if (flattenedPair.Key is not null)
+        {
+            throw new InvalidOperationException(
+                $"[CliFirstRun] Shared local config {path} has a null or non-scalar connector encryption key; " +
+                "refusing to overwrite it.");
+        }
+        else
+        {
+            var section = sectionPair.Value as JsonObject;
+            var keyPair = section?.FirstOrDefault(
+                pair => pair.Key.Equals(EncryptionKeyName, StringComparison.OrdinalIgnoreCase));
+            if (keyPair?.Key is not null && keyPair.Value.Value is JsonValue value)
+            {
+                if (!value.TryGetValue<string>(out key))
+                {
+                    throw new InvalidOperationException(
+                        $"[CliFirstRun] Shared local config {path} has a non-string connector encryption key; " +
+                        "refusing to overwrite it.");
+                }
+            }
+            else if (keyPair?.Key is not null)
+            {
+                throw new InvalidOperationException(
+                    $"[CliFirstRun] Shared local config {path} has a null or non-scalar connector encryption " +
+                    "key; refusing to overwrite it.");
+            }
+        }
+
+        return new ExistingConfig(root, key);
     }
 
     private static void PersistKey(string path, JsonObject root, string key)
     {
-        // Merge-preserve: only set Connectors:EncryptionKey, keeping any other keys.
-        if (root[ConnectorSection] is not JsonObject sectionNode)
+        // Merge-preserve: only set Connectors:EncryptionKey, keeping other values, the original casing, and
+        // the provider-valid flattened-vs-nested representation. Creating a nested property beside an
+        // existing top-level "Connectors:EncryptionKey" would make the next provider load reject a collision.
+        var flattenedPair = root.FirstOrDefault(
+            pair => pair.Key.Equals(ConnectorKeyPath, StringComparison.OrdinalIgnoreCase));
+        if (flattenedPair.Key is not null)
+        {
+            root[flattenedPair.Key] = key;
+            WriteConfig(path, root);
+            return;
+        }
+
+        var sectionPair = root.FirstOrDefault(
+            pair => pair.Key.Equals(ConnectorSection, StringComparison.OrdinalIgnoreCase));
+        JsonObject sectionNode;
+        if (sectionPair.Key is null)
         {
             sectionNode = new JsonObject();
             root[ConnectorSection] = sectionNode;
         }
+        else if (sectionPair.Value is JsonObject existingSection)
+        {
+            sectionNode = existingSection;
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"[CliFirstRun] Shared local config {path} has a non-object Connectors section; refusing " +
+                "to overwrite it.");
+        }
 
-        sectionNode[EncryptionKeyName] = key;
+        var keyPair = sectionNode.FirstOrDefault(
+            pair => pair.Key.Equals(EncryptionKeyName, StringComparison.OrdinalIgnoreCase));
+        sectionNode[keyPair.Key ?? EncryptionKeyName] = key;
+
+        WriteConfig(path, root);
+    }
+
+    private static void WriteConfig(string path, JsonObject root)
+    {
 
         var payload = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 
@@ -355,27 +482,15 @@ internal static class CliFirstRunBootstrapper
             Directory.CreateDirectory(dir);
         }
 
-        // Atomic write: stage into a sibling temp file, then move into place.
-        // File.WriteAllText is not atomic; a concurrent reader could otherwise
-        // observe a partially written file.
+        // Stage into an owner-only sibling file before publishing it atomically.
         var tempDir = string.IsNullOrEmpty(dir) ? Directory.GetCurrentDirectory() : dir;
         var tempPath = Path.Combine(tempDir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-        File.WriteAllText(tempPath, payload);
-
-        if (!OperatingSystem.IsWindows())
-        {
-            // The payload is a base64 256-bit connector encryption key. On a default
-            // POSIX umask (022), File.WriteAllText creates the temp file 0644
-            // (world-readable), and File.Move preserves that mode -- exposing the key
-            // to other local users. Restrict to owner read/write (0600) BEFORE the
-            // move so the final file is never world-readable. No-op on Windows, where
-            // NTFS ACL inheritance governs access.
-            File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        }
 
         try
         {
+            BootstrapFileSecurity.WriteRestrictedFile(tempPath, payload);
             MoveWithRetry(tempPath, path);
+            BootstrapFileSecurity.VerifyFileOwnerOnly(path);
         }
         catch
         {
@@ -402,14 +517,6 @@ internal static class CliFirstRunBootstrapper
         }
     }
 
-    private static string BuildMutexName(string path)
-    {
-        // Stable per-path name within OS naming rules. SHA256 of the absolute path;
-        // prefix with "Global\" on Windows so different user sessions coordinate.
-        var normalized = Path.GetFullPath(path).ToLowerInvariant();
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
-        var hex = Convert.ToHexString(hash).AsSpan(0, 32);
-        var prefix = OperatingSystem.IsWindows() ? "Global\\" : string.Empty;
-        return $"{prefix}Taskdeck.Cli.FirstRun.{hex}";
-    }
+    internal static string BuildMutexName(string path)
+        => BootstrapFileLock.BuildMutexName(path);
 }

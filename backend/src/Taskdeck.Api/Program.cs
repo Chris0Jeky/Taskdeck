@@ -60,15 +60,18 @@ if (args.Contains("--mcp"))
         }
 
         var mcpHttpBuilder = WebApplication.CreateBuilder(args);
+        var mcpHttpLocalConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath(
+            mcpHttpBuilder.Environment.IsProduction(),
+            FirstRunBootstrapper.IsHeadlessEnvironment());
 
         // Load appsettings.local.json for locally-generated secrets via the SAME hardened path the web
         // API uses: AddLocalConfigFile quarantines a corrupt file (optional:true only suppresses a
         // MISSING file, not a malformed one -- an MCP-only launch must self-heal, not crash), repairs
         // the file's permissions (#1241 forward remediation for installs upgraded from a pre-#1241
-        // build that only ever launch in MCP mode), resolves the ABSOLUTE exe-adjacent path (MCP
-        // servers are often launched from an arbitrary working directory), and inserts the source
-        // BEFORE the env-var sources so operator-supplied environment config keeps priority.
-        mcpHttpBuilder.AddLocalConfigFile();
+        // build that only ever launch in MCP mode), resolves the same ABSOLUTE environment/headless path
+        // policy as the web host (durable app-data for desktop Production; executable-local otherwise),
+        // and inserts the source BEFORE env vars so operator-supplied environment config keeps priority.
+        mcpHttpBuilder.AddLocalConfigFile(mcpHttpLocalConfigPath);
 
         // The standalone server is local-only by default. Replace the repository-wide wildcard
         // host setting with loopback hosts unless an operator supplied an exact allowlist.
@@ -200,18 +203,37 @@ if (args.Contains("--mcp"))
     // Quarantine a corrupt persisted secrets file, then repair its permissions, before loading it
     // (#1241) -- mirroring AddLocalConfigFile on the web path (optional:true only suppresses a MISSING
     // file, not a malformed one, so an un-quarantined corrupt file would crash every stdio launch).
-    // Load it by the same ABSOLUTE path: stdio MCP servers are typically launched by an MCP client from
-    // the client's own working directory, so a relative "appsettings.local.json" could miss the
-    // exe-adjacent file FirstRunBootstrapper writes -- and the repair must target the file being loaded.
+    // Load it by the same ABSOLUTE environment/headless path policy as every web host: stdio MCP servers
+    // are typically launched by a client from an arbitrary working directory, so a relative path could
+    // miss the durable desktop config (or the executable-local non-desktop config) being repaired.
     // Env-var precedence is preserved by the AddEnvironmentVariables() re-add AFTER the file source.
-    FirstRunBootstrapper.QuarantineCorruptLocalConfig();
-    FirstRunBootstrapper.RestrictExistingLocalConfigFile();
+    string? mcpStdioLocalConfigPath = null;
     var mcpHost = Host.CreateDefaultBuilder(args)
-        .ConfigureAppConfiguration((_, config) =>
+        .ConfigureAppConfiguration((context, config) =>
         {
+            // Generic Host keys its environment from DOTNET_ENVIRONMENT, while this ASP.NET executable has
+            // historically/documentedly used ASPNETCORE_ENVIRONMENT for MCP stdio too. Preserve that explicit
+            // value when present, then fall back to the Generic Host result (including --environment).
+            var environmentName = Program.ResolveMcpStdioEnvironmentName(
+                context.HostingEnvironment.EnvironmentName,
+                Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
+            var isProduction = string.Equals(
+                environmentName,
+                Environments.Production,
+                StringComparison.OrdinalIgnoreCase);
+            var isHeadless = FirstRunBootstrapper.IsHeadlessEnvironment();
+
+            // Cache the result so this host resolves and consumes one exact path for its lifetime.
+            mcpStdioLocalConfigPath ??= FirstRunBootstrapper.ResolveLocalConfigPath(
+                isProduction,
+                isHeadless);
+            FirstRunBootstrapper.PrepareLocalConfigFile(
+                mcpStdioLocalConfigPath,
+                FirstRunBootstrapper.LegacyLocalConfigPath,
+                requireOwnerOnly: isProduction && !isHeadless);
             config.AddJsonFile("appsettings.json", optional: true);
-            config.AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true);
-            config.AddJsonFile(FirstRunBootstrapper.LocalConfigPath, optional: true);
+            config.AddJsonFile($"appsettings.{environmentName}.json", optional: true);
+            config.AddJsonFile(mcpStdioLocalConfigPath, optional: true);
             config.AddEnvironmentVariables();
         })
         .ConfigureLogging(logging =>
@@ -258,6 +280,9 @@ if (args.Contains("--mcp"))
 // ── End MCP modes ───────────────────────────────────────────────────────────
 
 var builder = WebApplication.CreateBuilder(args);
+var localConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath(
+    builder.Environment.IsProduction(),
+    FirstRunBootstrapper.IsHeadlessEnvironment());
 
 // Taskdeck is a local-first app — the Windows EventLog provider added by
 // CreateBuilder() causes ObjectDisposedException crashes in background
@@ -269,13 +294,13 @@ builder.Logging.AddDebug();
 // ---- First-run bootstrap (must run before services are registered) ----------
 // Registers appsettings.local.json so previously generated secrets are loaded,
 // then generates a JWT secret if none is configured.
-builder.AddLocalConfigFile();
+builder.AddLocalConfigFile(localConfigPath);
 using (var bootstrapLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
 {
     var bootstrapLogger = bootstrapLoggerFactory.CreateLogger("FirstRun");
-    builder.RunFirstRunChecks(bootstrapLogger);
+    builder.RunFirstRunChecks(bootstrapLogger, localConfigPath);
     // Hard-fail if a placeholder JWT secret reaches Production (cloud containers).
-    builder.ValidateProductionSecrets(bootstrapLogger);
+    builder.ValidateProductionSecrets(bootstrapLogger, localConfigPath);
 }
 // -----------------------------------------------------------------------------
 
@@ -465,6 +490,13 @@ public partial class Program
     /// runs, so the test can await startup and stop the host. Never set in production.
     /// </summary>
     internal static Action<WebApplication>? OnStandaloneMcpHttpAppBuilt;
+
+    internal static string ResolveMcpStdioEnvironmentName(
+        string hostEnvironmentName,
+        string? aspNetCoreEnvironmentName)
+        => !string.IsNullOrWhiteSpace(aspNetCoreEnvironmentName)
+            ? aspNetCoreEnvironmentName
+            : hostEnvironmentName;
 
     internal static void ApplyStandaloneMcpHostSecurity(IConfiguration configuration)
     {
