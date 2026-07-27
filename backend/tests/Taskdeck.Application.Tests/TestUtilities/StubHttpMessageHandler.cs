@@ -16,7 +16,9 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
         _responseFactory = responseFactory;
     }
 
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
     {
         return await _responseFactory(request, cancellationToken);
     }

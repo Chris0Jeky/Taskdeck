@@ -29,6 +29,56 @@ Verification note:
 - prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
 - growth since last recertification: backend +278 passing tests, frontend +462 passing tests
 
+## Proxy-Safe Direct Egress Checkpoint (`#1513`)
+
+Local issue-branch verification on 2026-07-27 covers the direct-only primary
+clients for OpenAI, Gemini, Ollama, and outbound webhook delivery:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmProviderRegistrationTests|FullyQualifiedName~OutboundWebhookConnectCallbackTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests"
+```
+
+Result: **66 passed, 0 failed, 0 skipped**. The tests resolve the real
+`IHttpMessageHandlerFactory` pipelines, assert `UseProxy = false`,
+`AllowAutoRedirect = false`, and the existing `ConnectCallback`; exercise a
+hostile configured proxy against blocked loopback, private, and link-local
+origins without exposing protected content; and prove permitted direct
+`localhost` delivery without consulting the proxy. They also resolve each concrete provider to
+prove the selected localhost policy reaches runtime validation, capture Trace-level logs to prove
+default request logging is absent, dispatch both `ProbeAsync` and `CompleteAsync` through all three
+concrete registered providers to loopback endpoints, fully decode Content-Length or chunked JSON bodies,
+assert provider-specific payloads, prove Production policy injection overrides a raw Ollama localhost
+opt-in before dispatch; and correlate unique control/protected requests
+to prove normal trace propagation/activity/metric export while protected requests propagate no
+`traceparent`, `tracestate`, or baggage and contribute no destination dimensions to Taskdeck's
+configured OpenTelemetry exporter. The metric guarantee is deliberately scoped to Taskdeck's exporter, not arbitrary
+process-global listeners. Registered-provider controls also prove that outer .NET HTTP EventSource
+payloads do not contain the configured path/query while the real configured origin reaches the wire,
+and that Sentry's outbound handler is removed only from the four protected clients: the unrelated
+`GitHubConnectorProvider` client retains the handler and sends `sentry-trace`. Public caller-owned
+provider clients retain their configured URI, request body, and authentication. The guarantee does
+not cover independently installed Activity/Meter listeners or transport-stage host/IP observation.
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests|FullyQualifiedName~LlmProviderConstructorCompatibilityTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests"
+```
+
+The six provider-dispatch cases passed five consecutive repetitions, and the registered EventSource
+and scoped-Sentry boundary pair passed three fresh-process repetitions. The provider and
+selection-policy compatibility subset (`OpenAiLlmProviderTests`, `GeminiLlmProviderTests`,
+`OllamaLlmProviderTests`, `LlmProviderResilienceTests`, and `LlmProviderSelectionPolicyTests`)
+passed **151 / 0 failed / 0 skipped**; the constructor-compatibility and remasking classes add
+**7 / 0 failed / 0 skipped**, so the documented Application filter proves **158 / 0 / 0**.
+Docs governance, golden-principles governance, GitHub-operations governance, and
+`git diff --check` passed on the same working tree.
+
+The full serialized backend passed at pre-documentation head `dad8d22a` with **7,539 passed,
+5 intentional skips, and 0 failed** (Domain 1,636; Application 3,577; API 2,171 + 4 skips;
+CLI 100; Architecture 20 + 1 skip; Integration 35). The only subsequent issue-scope change is
+this verification-document correction; the current-main merge adds the separately reviewed
+`#1522` frontend/docs slice and leaves the backend subtree identical. Required CI, CodeQL, and
+final exact-current-head publication evidence remain required before merge.
+
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
 Tracker `#972` seeds the next review-first AI verification program. Delivered items are marked; remaining items are planned work until their implementation issues land:

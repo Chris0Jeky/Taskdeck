@@ -203,6 +203,7 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
             request.Headers.Add("X-Taskdeck-Webhook-Timestamp", timestamp.ToUnixTimeSeconds().ToString());
             request.Headers.Add("X-Taskdeck-Webhook-Signature", $"sha256={signature}");
 
+            ProtectedOutboundTelemetryHandler.PrepareForSend(request);
             using var response = await client.SendAsync(request, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
