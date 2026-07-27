@@ -2,6 +2,9 @@
 
 Last Updated: 2026-07-27
 
+REVIVAL-10 OpenAI-compatible provider slice (2026-07-27, `#1306`):
+- **The backend has a first-class, opt-in `OpenAICompatible` provider for public OpenAI Chat Completions-compatible endpoints.** Selection remains fail-safe: live providers and development use require their existing explicit gates; the compatible endpoint also requires an API key, public HTTP(S) base URL, model, positive timeout, and valid non-secret extra headers. The registered client disables redirects, enforces URL and DNS connection-time SSRF controls, and participates in the existing timeout/circuit-breaker policy. Streaming uses upstream SSE deltas; a gateway that rejects streaming may fall back to one buffered event only with explicit degraded metadata, and JSON extraction retries once without unsupported `response_format`. OpenRouter, Groq, and DeepSeek configuration examples are documented. The documented focused provider/selection/resilience/registration/egress lane is 79/79 passing. A live call and visible incremental stream against a real vendor endpoint are **not verified** without a maintainer-supplied key, so `#1306` remains open through that acceptance gate.
+
 Required Docs Governance hardening (2026-07-26, `#1492`):
 - **Required CI now enforces failure-ledger projection synchronization.** The reusable Docs Governance job pins Python 3.12 and runs the existing `failure_ledger.jsonl` ↔ `FAILURE_LEDGER.md` synchronization unittest before its governance checks, so a stale checked-in projection fails without any renderer masking it. Local agentic update workflows intentionally render first and then test so a valid hook-appended JSONL entry can be projected; the smoke contract keeps that distinction from drifting.
 

@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-27
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -28,6 +28,18 @@ Verification note:
 - bulk merge wave (2026-05-16): security fixes (3 PRs), test coverage (2), RFAI features (5), PAPER frontend (2), dependency updates (3)
 - prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
 - growth since last recertification: backend +278 passing tests, frontend +462 passing tests
+
+## OpenAI-Compatible Provider Checks (`#1306`)
+
+The focused regression lane covers provider selection and invalid-header fallback, DI registration, true SSE delta parsing, malformed and mid-stream upstream failures, cancellation, explicit degraded buffered fallback, timeout/circuit behavior, and the outbound-HTTP inventory invariant:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiCompatibleLlmProviderTests|FullyQualifiedName~LlmProviderSelectionPolicyTests|FullyQualifiedName~LlmProviderResilienceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmProviderRegistrationTests"
+dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~Invariant08_EgressEnvelope_OutboundHttpConstrained"
+```
+
+The documented lane passed 79/79 on 2026-07-27 (Application 71, API 7, Architecture 1). These deterministic tests do not substitute for `#1306`'s opt-in acceptance check against a maintainer-selected compatible endpoint: record the vendor/model, successful completion, and visible multi-event stream without recording the key.
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 

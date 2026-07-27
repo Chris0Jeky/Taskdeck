@@ -10,6 +10,10 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-27, REVIVAL-10 provider expansion)
+
+- **OpenAI-compatible LLM runtime (`#1306`, live-vendor acceptance pending):** add a distinct, opt-in `OpenAICompatible` selection path and registered client for public OpenAI Chat Completions-compatible endpoints, with true SSE delta forwarding, explicit degraded buffered fallback, a compatibility retry when `response_format` is unsupported, and setup examples for OpenRouter, Groq, and DeepSeek. The path retains the existing live-provider/development gates, timeout and circuit-breaker policy, URL plus connection-time DNS SSRF defenses, redirect refusal, reserved authorization header, and deterministic Mock fallback for invalid configuration. Focused provider, selection, registration, resilience, and outbound-egress tests pass; a real-vendor request and visible incremental stream remain a maintainer-key acceptance step, so this is not yet recorded as completing `#1306`.
+
 ## Delivery update (2026-07-26, agentic governance)
 
 - **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI without regeneration masking it. Local agentic update workflows use the distinct render-then-test order so hook-appended JSONL can be projected, and the smoke contract pins both sides of that distinction.
