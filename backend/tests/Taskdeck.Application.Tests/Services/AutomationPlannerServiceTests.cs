@@ -30,6 +30,11 @@ public class AutomationPlannerServiceTests
 
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _policyEngineMock.Setup(e => e.ValidateBoardAccessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
 
         _service = new AutomationPlannerService(
             _proposalServiceMock.Object,
@@ -508,6 +513,41 @@ public class AutomationPlannerServiceTests
     }
 
     [Fact]
+    public async Task ParseInstruction_ShouldNotCreateProposal_WhenArchiveMatchExceedsExecutableOperationLimit()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var cards = Enumerable.Range(0, 51)
+            .Select(i => TestDataBuilder.CreateCard(boardId, Guid.NewGuid(), $"Matching Task {i}"))
+            .ToList();
+
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(cards);
+
+        var result = await _service.ParseInstructionAsync(
+            "archive cards matching 'Matching'",
+            userId,
+            boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be("Proposal exceeds maximum operation count of 50");
+        _policyEngineMock.Verify(
+            e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ParseInstruction_ShouldCreateProposal_ForUpdateCardTitleInstruction()
     {
         // Arrange
@@ -718,6 +758,43 @@ public class AutomationPlannerServiceTests
     }
 
     [Fact]
+    public async Task ParseInstruction_ShouldNotReadPlannerEntities_WhenBoardAccessValidationFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var expectedMessage = $"User does not have access to board {boardId}";
+
+        _policyEngineMock.Setup(e => e.ValidateBoardAccessAsync(userId, boardId, default))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, expectedMessage));
+
+        var result = await _service.ParseInstructionAsync("create card 'Test'", userId, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be(expectedMessage);
+        _policyEngineMock.Verify(
+            e => e.ValidateBoardAccessAsync(userId, boardId, default),
+            Times.Once);
+        _policyEngineMock.Verify(
+            e => e.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
+            Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Boards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Columns, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Cards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.AutomationProposals, Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ParseInstruction_ShouldNotCreateProposal_WhenPermissionValidationFails()
     {
         // Arrange
@@ -779,11 +856,7 @@ public class AutomationPlannerServiceTests
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
-        var column = TestDataBuilder.CreateColumn(boardId, "To Do", 0);
         var oversizedTitle = new string('x', ProposalOperationInputValidator.MaxParametersBytes + 1024);
-
-        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
-            .ReturnsAsync(new List<Column> { column });
 
         var result = await _service.ParseInstructionAsync(
             $"create card '{oversizedTitle}'",
@@ -792,7 +865,14 @@ public class AutomationPlannerServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("parameters exceed the maximum size");
+        result.ErrorMessage.Should().Be(
+            $"Instruction exceeds the maximum size of {ProposalOperationInputValidator.MaxParametersBytes} bytes.");
+        _policyEngineMock.Verify(
+            e => e.ValidateBoardAccessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
         _policyEngineMock.Verify(
             e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
             Times.Never);
@@ -803,6 +883,10 @@ public class AutomationPlannerServiceTests
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Boards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Columns, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Cards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.AutomationProposals, Times.Never);
         _proposalServiceMock.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
             Times.Never);

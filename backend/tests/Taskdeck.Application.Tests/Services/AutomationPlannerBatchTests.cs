@@ -30,6 +30,11 @@ public class AutomationPlannerBatchTests
 
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _policyEngineMock.Setup(e => e.ValidateBoardAccessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
 
         _service = new AutomationPlannerService(
             _proposalServiceMock.Object,
@@ -103,6 +108,40 @@ public class AutomationPlannerBatchTests
     }
 
     [Fact]
+    public async Task ParseBatchInstruction_ShouldRejectOversizedInstructionCollectionBeforeAccess()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var instructions = Enumerable.Repeat("archive board", AutomationPlannerService.MaxBatchSize + 1).ToList();
+
+        var result = await _service.ParseBatchInstructionAsync(instructions, userId, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be(
+            $"Instruction batch exceeds maximum of {AutomationPlannerService.MaxBatchSize} entries. Got {instructions.Count} entries.");
+        _policyEngineMock.Verify(
+            e => e.ValidateBoardAccessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ParseBatchInstruction_ShouldReturnFailure_WhenCorrelationIdIsWhitespace()
     {
         var userId = Guid.NewGuid();
@@ -130,6 +169,46 @@ public class AutomationPlannerBatchTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldNotReadPlannerEntities_WhenBoardAccessValidationFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var expectedMessage = $"User does not have access to board {boardId}";
+
+        _policyEngineMock.Setup(e => e.ValidateBoardAccessAsync(userId, boardId, default))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, expectedMessage));
+
+        var result = await _service.ParseBatchInstructionAsync(
+            new List<string> { "create card 'Test'" },
+            userId,
+            boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be(expectedMessage);
+        _policyEngineMock.Verify(
+            e => e.ValidateBoardAccessAsync(userId, boardId, default),
+            Times.Once);
+        _policyEngineMock.Verify(
+            e => e.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
+            Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Boards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Columns, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Cards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.AutomationProposals, Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -169,11 +248,7 @@ public class AutomationPlannerBatchTests
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
-        var column = TestDataBuilder.CreateColumn(boardId, "To Do", 0);
         var oversizedTitle = new string('x', ProposalOperationInputValidator.MaxParametersBytes + 1024);
-
-        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
-            .ReturnsAsync(new List<Column> { column });
 
         var result = await _service.ParseBatchInstructionAsync(
             new List<string> { $"create cards: {oversizedTitle}" },
@@ -182,7 +257,14 @@ public class AutomationPlannerBatchTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("parameters exceed the maximum size");
+        result.ErrorMessage.Should().Be(
+            $"Instruction exceeds the maximum size of {ProposalOperationInputValidator.MaxParametersBytes} bytes.");
+        _policyEngineMock.Verify(
+            e => e.ValidateBoardAccessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
         _policyEngineMock.Verify(
             e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()),
             Times.Never);
@@ -193,6 +275,10 @@ public class AutomationPlannerBatchTests
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Boards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Columns, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Cards, Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.AutomationProposals, Times.Never);
         _proposalServiceMock.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -423,6 +509,16 @@ public class AutomationPlannerBatchTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("exceeds maximum of 30");
+        _policyEngineMock.Verify(
+            e => e.ValidateBoardAccessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWorkMock.VerifyGet(u => u.Columns, Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -588,6 +684,21 @@ public class AutomationPlannerBatchTests
         var ops = await _service.TryParseBatchCardCreateAsync("create cards: a, b", null, default);
 
         ops.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TryParseBatchCardCreate_ShouldReturnNullWithoutReadingColumns_WhenTitleCountExceedsLimit()
+    {
+        var boardId = Guid.NewGuid();
+        var titles = string.Join(", ", Enumerable.Range(1, 31).Select(i => $"task {i}"));
+
+        var ops = await _service.TryParseBatchCardCreateAsync(
+            $"create cards: {titles}",
+            boardId,
+            default);
+
+        ops.Should().BeNull();
+        _unitOfWorkMock.VerifyGet(u => u.Columns, Times.Never);
     }
 
     [Fact]

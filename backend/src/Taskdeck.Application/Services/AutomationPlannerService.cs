@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Taskdeck.Application.DTOs;
@@ -61,8 +62,22 @@ public class AutomationPlannerService : IAutomationPlannerService
             return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, sourceReferenceError);
         }
 
+        var instructionValidation = ValidateInstructionPreflight(instruction);
+        if (!instructionValidation.IsSuccess)
+            return Result.Failure<ProposalDto>(instructionValidation.ErrorCode, instructionValidation.ErrorMessage);
+
         try
         {
+            // Gate requester/board access before parsing can reveal board-backed existence or
+            // read columns/cards while resolving an operation. Full operation-contract validation
+            // still runs below once the operation set exists.
+            var accessValidation = await _policyEngine.ValidateBoardAccessAsync(
+                userId,
+                boardId,
+                cancellationToken);
+            if (!accessValidation.IsSuccess)
+                return Result.Failure<ProposalDto>(accessValidation.ErrorCode, accessValidation.ErrorMessage);
+
             var operations = new List<CreateProposalOperationDto>();
             var sequence = 0;
 
@@ -489,8 +504,21 @@ public class AutomationPlannerService : IAutomationPlannerService
         if (!TryResolveSourceReferenceId(sourceReferenceId, out var normalizedSourceReferenceId, out var sourceReferenceError))
             return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, sourceReferenceError);
 
+        var instructionsValidation = ValidateInstructionsPreflight(instructions);
+        if (!instructionsValidation.IsSuccess)
+            return Result.Failure<ProposalDto>(instructionsValidation.ErrorCode, instructionsValidation.ErrorMessage);
+
         try
         {
+            // The batch parser also performs repository-backed resolution, so the shared access
+            // half of the permission gate must run before the first instruction is parsed.
+            var accessValidation = await _policyEngine.ValidateBoardAccessAsync(
+                userId,
+                boardId,
+                cancellationToken);
+            if (!accessValidation.IsSuccess)
+                return Result.Failure<ProposalDto>(accessValidation.ErrorCode, accessValidation.ErrorMessage);
+
             var allOperations = new List<CreateProposalOperationDto>();
             var parseErrors = new List<string>();
 
@@ -602,6 +630,9 @@ public class AutomationPlannerService : IAutomationPlannerService
         Guid? boardId,
         CancellationToken cancellationToken)
     {
+        if (ExceedsInstructionSizeLimit(instruction))
+            return null;
+
         var match = BatchCardCreateRegex.Match(instruction);
         if (!match.Success)
             return null;
@@ -610,13 +641,14 @@ public class AutomationPlannerService : IAutomationPlannerService
             return null;
 
         var titlesRaw = match.Groups[1].Value;
-        var titles = titlesRaw
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(t => !string.IsNullOrWhiteSpace(t))
-            .ToList();
-
-        if (titles.Count == 0)
+        var titleCount = CountBatchTitles(titlesRaw);
+        if (titleCount == 0 || titleCount > MaxBatchSize)
             return null;
+
+        // The public entry points preflight this count before authorization/repository work. Keep
+        // this internal helper independently bounded as well so a direct caller cannot trigger an
+        // unbounded Split/ToList/serialization/GUID expansion.
+        var titles = SplitBatchTitles(titlesRaw, titleCount);
 
         // Resolve target column (first column in board)
         var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
@@ -649,6 +681,106 @@ public class AutomationPlannerService : IAutomationPlannerService
         return operations;
     }
 
+    private static Result ValidateInstructionsPreflight(IReadOnlyList<string> instructions)
+    {
+        // Bound the raw collection before walking it. Operation count is checked again after
+        // parsing because unparseable entries do not become proposal operations.
+        if (instructions.Count > MaxBatchSize)
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Instruction batch exceeds maximum of {MaxBatchSize} entries. Got {instructions.Count} entries.");
+        }
+
+        foreach (var instruction in instructions)
+        {
+            if (string.IsNullOrWhiteSpace(instruction))
+                continue;
+
+            var validation = ValidateInstructionPreflight(instruction);
+            if (!validation.IsSuccess)
+                return validation;
+        }
+
+        return Result.Success();
+    }
+
+    private static Result ValidateInstructionPreflight(string instruction)
+    {
+        // This is intentionally a raw, allocation-free byte check. The operation validator still
+        // validates the exact serialized JSON later, but no unbounded regex/split/serialization or
+        // repository/policy work should occur for an already-oversized instruction.
+        if (ExceedsInstructionSizeLimit(instruction))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Instruction exceeds the maximum size of {ProposalOperationInputValidator.MaxParametersBytes} bytes.");
+        }
+
+        var match = BatchCardCreateRegex.Match(instruction);
+        if (!match.Success)
+            return Result.Success();
+
+        var titleCount = CountBatchTitles(match.Groups[1].ValueSpan);
+        if (titleCount > MaxBatchSize)
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Batch exceeds maximum of {MaxBatchSize} operations. Got {titleCount} operations.");
+        }
+
+        return Result.Success();
+    }
+
+    private static int CountBatchTitles(string titlesRaw)
+        => CountBatchTitles(titlesRaw.AsSpan());
+
+    private static int CountBatchTitles(ReadOnlySpan<char> titles)
+    {
+        var count = 0;
+        var segmentStart = 0;
+
+        for (var i = 0; i <= titles.Length; i++)
+        {
+            if (i < titles.Length && titles[i] != ',')
+                continue;
+
+            if (!titles[segmentStart..i].Trim().IsEmpty)
+                count++;
+
+            segmentStart = i + 1;
+        }
+
+        return count;
+    }
+
+    private static bool ExceedsInstructionSizeLimit(string instruction)
+    {
+        var maxBytes = ProposalOperationInputValidator.MaxParametersBytes;
+        return instruction.Length > maxBytes || Encoding.UTF8.GetByteCount(instruction) > maxBytes;
+    }
+
+    private static List<string> SplitBatchTitles(string titlesRaw, int titleCount)
+    {
+        var titles = titlesRaw.AsSpan();
+        var result = new List<string>(titleCount);
+        var segmentStart = 0;
+
+        for (var i = 0; i <= titles.Length; i++)
+        {
+            if (i < titles.Length && titles[i] != ',')
+                continue;
+
+            var title = titles[segmentStart..i].Trim();
+            if (!title.IsEmpty)
+                result.Add(title.ToString());
+
+            segmentStart = i + 1;
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Extracts operations from a single instruction string without creating a proposal.
     /// Returns null if the instruction cannot be parsed.
@@ -658,6 +790,9 @@ public class AutomationPlannerService : IAutomationPlannerService
         Guid? boardId,
         CancellationToken cancellationToken)
     {
+        if (ExceedsInstructionSizeLimit(instruction))
+            return null;
+
         var operations = new List<CreateProposalOperationDto>();
         var sequence = 0;
 

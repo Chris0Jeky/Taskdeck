@@ -3,6 +3,7 @@ using System.Text;
 using FluentAssertions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -25,6 +26,21 @@ public class ProposalOperationInputValidatorTests
         ProposalOperationInputValidator.Validate(null).IsSuccess.Should().BeTrue();
         ProposalOperationInputValidator.Validate(new List<CreateProposalOperationDto>())
             .IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_OperationsBeyondExecutableCount_FailsWithStructureContract()
+    {
+        var operations = Enumerable.Range(0, ProposalOperationStructureValidator.MaxOperationCount + 1)
+            .Select(i => new CreateProposalOperationDto(i, "create", "card", "{}", $"key-{i}"))
+            .ToList();
+
+        var result = ProposalOperationInputValidator.Validate(operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Be(
+            $"Proposal exceeds maximum operation count of {ProposalOperationStructureValidator.MaxOperationCount}");
     }
 
     [Theory]

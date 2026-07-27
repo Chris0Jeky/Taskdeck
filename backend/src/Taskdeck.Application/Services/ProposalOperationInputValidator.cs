@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Exceptions;
 
@@ -23,6 +24,8 @@ namespace Taskdeck.Application.Services;
 ///   planner / chat / capture / MCP operation.</description></item>
 ///   <item><description><c>parameters</c> must be valid JSON, within a bounded size and
 ///   nesting depth.</description></item>
+///   <item><description>the operation set must not exceed the same executable ceiling enforced
+///   by the proposal structure gate.</description></item>
 /// </list>
 /// Returns <see cref="ErrorCodes.ValidationError"/> (HTTP 400) on the first violation.
 /// </summary>
@@ -51,6 +54,16 @@ public static class ProposalOperationInputValidator
     {
         if (operations is null || operations.Count == 0)
             return Result.Success();
+
+        // Use the same message and ceiling as preview/apply. Empty operation sets remain valid at
+        // create time because they may be revised into validity before approval, but an oversized
+        // set can never become executable and must not be persisted.
+        if (operations.Count > ProposalOperationStructureValidator.MaxOperationCount)
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Proposal exceeds maximum operation count of {ProposalOperationStructureValidator.MaxOperationCount}");
+        }
 
         for (var i = 0; i < operations.Count; i++)
         {
