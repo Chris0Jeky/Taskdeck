@@ -5,7 +5,8 @@ public enum LlmProviderKind
     Mock = 0,
     OpenAi = 1,
     Gemini = 2,
-    Ollama = 3
+    Ollama = 3,
+    OpenAiCompatible = 4
 }
 
 public sealed record LlmProviderDecision(LlmProviderKind ProviderKind, string Reason);
@@ -74,6 +75,20 @@ public static class LlmProviderSelectionPolicy
             return new LlmProviderDecision(
                 LlmProviderKind.Gemini,
                 "Gemini provider selected.");
+        }
+
+        if (requestedProvider.Value == LlmProviderKind.OpenAiCompatible)
+        {
+            if (!TryValidateOpenAiCompatibleSettings(settings, out var compatibleValidationError, allowDevelopmentLocalhostEndpoints))
+            {
+                return new LlmProviderDecision(
+                    LlmProviderKind.Mock,
+                    $"OpenAI-compatible configuration is invalid: {compatibleValidationError}");
+            }
+
+            return new LlmProviderDecision(
+                LlmProviderKind.OpenAiCompatible,
+                "OpenAI-compatible provider selected.");
         }
 
         var allowOllamaLocalhostEndpoints =
@@ -196,6 +211,69 @@ public static class LlmProviderSelectionPolicy
         return true;
     }
 
+    public static bool TryValidateOpenAiCompatibleSettings(
+        LlmProviderSettings settings,
+        out string error,
+        bool allowLocalhostEndpoints = false)
+    {
+        if (settings.OpenAiCompatible is null)
+        {
+            error = "OpenAI-compatible settings are required.";
+            return false;
+        }
+
+        var compatible = settings.OpenAiCompatible;
+        if (string.IsNullOrWhiteSpace(compatible.ApiKey))
+        {
+            error = "ApiKey is required.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(compatible.Model))
+        {
+            error = "Model is required.";
+            return false;
+        }
+
+        if (!Uri.TryCreate(compatible.BaseUrl, UriKind.Absolute, out var baseUri) ||
+            (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
+        {
+            error = "BaseUrl must be an absolute HTTP(S) URI.";
+            return false;
+        }
+
+        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(compatible.BaseUrl, allowLocalhostEndpoints);
+        if (!ssrfResult.IsAllowed)
+        {
+            error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";
+            return false;
+        }
+
+        if (compatible.TimeoutSeconds <= 0)
+        {
+            error = "TimeoutSeconds must be greater than zero.";
+            return false;
+        }
+
+        foreach (var (name, value) in compatible.ExtraHeaders)
+        {
+            if (string.IsNullOrWhiteSpace(name) || string.Equals(name, "Authorization", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "ExtraHeaders must use non-Authorization header names.";
+                return false;
+            }
+
+            if (value is null || value.Contains('\r') || value.Contains('\n'))
+            {
+                error = "ExtraHeaders values must not contain line breaks.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     public static bool TryValidateOllamaSettings(
         LlmProviderSettings settings,
         out string error,
@@ -256,6 +334,11 @@ public static class LlmProviderSelectionPolicy
         if (normalized.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
         {
             return LlmProviderKind.OpenAi;
+        }
+
+        if (normalized.Equals("OpenAICompatible", StringComparison.OrdinalIgnoreCase))
+        {
+            return LlmProviderKind.OpenAiCompatible;
         }
 
         if (normalized.Equals("Gemini", StringComparison.OrdinalIgnoreCase))

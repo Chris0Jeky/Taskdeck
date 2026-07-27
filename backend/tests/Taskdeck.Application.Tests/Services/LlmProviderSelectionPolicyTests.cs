@@ -89,6 +89,44 @@ public class LlmProviderSelectionPolicyTests
     }
 
     [Fact]
+    public void Evaluate_ShouldSelectOpenAiCompatible_WhenProductionAndConfigurationIsValid()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            ExtraHeaders = new Dictionary<string, string> { ["X-Title"] = "Taskdeck" }
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.OpenAiCompatible);
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleBaseUrlTargetsPrivateHost()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://127.0.0.1/v1",
+            Model = "local-model"
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("SSRF");
+    }
+
+    [Fact]
     public void Evaluate_ShouldSelectMock_WhenGeminiConfigurationIsInvalid()
     {
         var settings = BuildValidSettings();

@@ -71,7 +71,9 @@ public record LlmTokenEvent(
     string? Error = null,
     int? TokensUsed = null,
     string? Provider = null,
-    string? Model = null);
+    string? Model = null,
+    bool IsDegraded = false,
+    string? DegradedReason = null);
 
 public record LlmHealthStatus(
     bool IsAvailable,

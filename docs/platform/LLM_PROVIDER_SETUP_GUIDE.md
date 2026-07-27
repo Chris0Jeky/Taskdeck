@@ -6,7 +6,7 @@ Scope: Provider runtime setup for chat/capture automation and safe local demo op
 ## Purpose
 
 Taskdeck keeps application services provider-agnostic through `ILlmProvider`, while retaining a safe default posture.
-This guide defines what is now shipped and how to run OpenAI/Gemini demos without code changes.
+This guide defines what is now shipped and how to run configured LLM demos without code changes.
 
 ## Current Shipped State
 
@@ -14,6 +14,7 @@ Backend provider runtime now supports:
 
 - `Mock` provider (default)
 - `OpenAI` provider (config-gated)
+- `OpenAICompatible` provider (config-gated; OpenRouter, Groq, and DeepSeek-compatible chat endpoints)
 - `Gemini` provider (config-gated)
 - managed-key attribution baseline for provider-bound chat/capture requests (`#236`):
   - server-derived actor/scope attribution is attached to `ChatCompletionRequest`
@@ -23,13 +24,13 @@ Backend provider runtime now supports:
 
 Selection is deterministic through `LlmProviderSelectionPolicy`:
 
-- to use live providers (`OpenAI`/`Gemini`), live providers must be enabled (`EnableLiveProviders=true`)
+- to use live providers (`OpenAI`, `OpenAICompatible`, or `Gemini`), live providers must be enabled (`EnableLiveProviders=true`)
 - to use live providers in development-like environments, explicit live mode is required (`AllowLiveProvidersInDevelopment=true`)
-- provider mode may be explicitly set to `Mock`, `OpenAI`, or `Gemini`; this guide's config example intentionally uses `Mock` as the safe default
+- provider mode may be explicitly set to `Mock`, `OpenAI`, `OpenAICompatible`, or `Gemini`; this guide's config example intentionally uses `Mock` as the safe default
 - unknown provider values also fall back deterministically to `Mock`
 - selected provider config must pass validation (`ApiKey`, `BaseUrl`, `Model`, `TimeoutSeconds`)
 - `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected; the selection policy falls back to Mock when validation fails
-- `HttpClient`s for OpenAI and Gemini use `OutboundWebhookConnectCallback` for DNS-level SSRF protection (defense against DNS rebinding where a hostname resolves to a private IP at connect time) and set `AllowAutoRedirect = false` to prevent redirect-based bypass
+- `HttpClient`s for OpenAI, OpenAICompatible, and Gemini use `OutboundWebhookConnectCallback` for DNS-level SSRF protection (defense against DNS rebinding where a hostname resolves to a private IP at connect time) and set `AllowAutoRedirect = false` to prevent redirect-based bypass
 
 If any live-provider condition fails, runtime degrades safely to `Mock`.
 
@@ -61,6 +62,13 @@ in Development.
       "BaseUrl": "https://api.openai.com/v1",
       "Model": "gpt-4o-mini",
       "TimeoutSeconds": 30
+    },
+    "OpenAiCompatible": {
+      "ApiKey": "",
+      "BaseUrl": "",
+      "Model": "",
+      "TimeoutSeconds": 30,
+      "ExtraHeaders": {}
     },
     "Gemini": {
       "ApiKey": "",
@@ -101,6 +109,59 @@ Optional:
 - `Llm__Gemini__Model=<model_name>`
 - `Llm__Gemini__BaseUrl=https://generativelanguage.googleapis.com/v1beta`
 - `Llm__Gemini__TimeoutSeconds=30`
+
+## OpenAI-Compatible Providers (OpenRouter, Groq, DeepSeek)
+
+`OpenAICompatible` is the named provider for public HTTPS endpoints using the
+OpenAI Chat Completions wire format. It is distinct from `OpenAI`: OpenAI keeps
+its `api.openai.com` defaults, while compatible endpoints require an explicit
+base URL and model. The provider sends real upstream SSE requests (`stream:true`)
+for chat streams and forwards delta events as they arrive.
+
+Set the common safety gates and provider name:
+
+- `Llm__EnableLiveProviders=true`
+- `Llm__AllowLiveProvidersInDevelopment=true` (only for development-like environments)
+- `Llm__Provider=OpenAICompatible`
+
+The endpoint must be public HTTP(S) and pass the same URL and DNS-level SSRF
+checks as OpenAI. Keep keys in a secret store; never commit them. Compatible
+gateways may require optional non-secret headers such as `HTTP-Referer` or
+`X-Title`; use `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>` for those.
+`Authorization` is reserved for the configured API key and cannot be overridden.
+
+### OpenRouter
+
+```powershell
+$env:Llm__OpenAiCompatible__ApiKey = '<openrouter_key>'
+$env:Llm__OpenAiCompatible__BaseUrl = 'https://openrouter.ai/api/v1'
+$env:Llm__OpenAiCompatible__Model = 'openai/gpt-4o-mini'
+Set-Item -Path 'Env:Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer' -Value 'https://your-app.example'
+Set-Item -Path 'Env:Llm__OpenAiCompatible__ExtraHeaders__X-Title' -Value 'Taskdeck'
+```
+
+### Groq
+
+```powershell
+$env:Llm__OpenAiCompatible__ApiKey = '<groq_key>'
+$env:Llm__OpenAiCompatible__BaseUrl = 'https://api.groq.com/openai/v1'
+$env:Llm__OpenAiCompatible__Model = 'llama-3.1-8b-instant'
+```
+
+### DeepSeek
+
+```powershell
+$env:Llm__OpenAiCompatible__ApiKey = '<deepseek_key>'
+$env:Llm__OpenAiCompatible__BaseUrl = 'https://api.deepseek.com/v1'
+$env:Llm__OpenAiCompatible__Model = 'deepseek-chat'
+```
+
+If a gateway rejects SSE, Taskdeck retries as a normal completion and emits one
+final event with explicit `isDegraded`/`degradedReason` metadata rather than
+pretending the buffered response was incremental. Some compatible gateways also
+reject `response_format: { type: json_object }`; non-streaming extraction retries
+without that field while retaining the JSON-only instruction prompt and robust
+response parsing.
 
 ## Playwright Demo Auto-Enable
 
@@ -168,9 +229,10 @@ This is intentionally separate from the broader demo tooling so an operator can 
 
 ## Test Coverage Expectations (Implemented)
 
-- selection-policy unit coverage for `Mock`/`OpenAI`/`Gemini` and invalid-config fallback
+- selection-policy unit coverage for `Mock`/`OpenAI`/`OpenAICompatible`/`Gemini` and invalid-config fallback
 - provider adapter unit coverage:
   - OpenAI: success/failure + metadata checks
+  - OpenAICompatible: true SSE delta parsing, malformed/mid-stream error, cancellation, and explicit buffered-fallback metadata
   - Gemini: success/failure/invalid-response/invalid-config/cancellation + health + attribution header mapping
 - API integration coverage:
   - capture triage provenance includes provider/model

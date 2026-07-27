@@ -10,6 +10,31 @@ namespace Taskdeck.Api.Tests;
 
 public class LlmProviderRegistrationTests
 {
+    [Fact]
+    public void AddLlmProviders_ResolvesOpenAiCompatibleProvider_WhenSelectionIsValid()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Production"));
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:EnableLiveProviders"] = "true",
+                ["Llm:Provider"] = "OpenAICompatible",
+                ["Llm:OpenAiCompatible:ApiKey"] = "test-compatible-key",
+                ["Llm:OpenAiCompatible:BaseUrl"] = "https://api.groq.com/openai/v1",
+                ["Llm:OpenAiCompatible:Model"] = "llama-3.1-8b-instant",
+                ["Llm:OpenAiCompatible:TimeoutSeconds"] = "30"
+            })
+            .Build();
+
+        services.AddLlmProviders(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<Taskdeck.Application.Services.ILlmProvider>()
+            .Should().BeOfType<Taskdeck.Application.Services.OpenAiCompatibleLlmProvider>();
+    }
+
     [Theory]
     [InlineData("Development", true, true, true)]
     [InlineData("Development", true, false, false)]

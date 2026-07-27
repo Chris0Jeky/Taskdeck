@@ -77,6 +77,8 @@ public static class LlmProviderRegistration
             circuitBreakerTracker, "Gemini", circuitBreakerSettings);
         var ollamaCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "Ollama", circuitBreakerSettings);
+        var openAiCompatibleCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
+            circuitBreakerTracker, "OpenAICompatible", circuitBreakerSettings);
 
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
@@ -105,6 +107,26 @@ public static class LlmProviderRegistration
             };
         })
         .AddPolicyHandler(openAiCircuitBreakerPolicy);
+        services.AddHttpClient<OpenAiCompatibleLlmProvider>((sp, client) =>
+        {
+            var settings = sp.GetRequiredService<LlmProviderSettings>();
+            var timeoutSeconds = settings.OpenAiCompatible?.TimeoutSeconds > 0 ? settings.OpenAiCompatible.TimeoutSeconds : 30;
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        })
+        .ConfigurePrimaryHttpMessageHandler(_ =>
+        {
+            // Keep the same DNS-level SSRF defense and redirect posture as OpenAI.
+            return new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectCallback = (context, cancellationToken) =>
+                    OutboundWebhookConnectCallback.ConnectAsync(
+                        context,
+                        allowLocalhostEndpoints: localhostPolicy.AllowGeneralProviderLocalhost,
+                        cancellationToken)
+            };
+        })
+        .AddPolicyHandler(openAiCompatibleCircuitBreakerPolicy);
         services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
@@ -163,6 +185,7 @@ public static class LlmProviderRegistration
             return decision.ProviderKind switch
             {
                 LlmProviderKind.OpenAi => sp.GetRequiredService<OpenAiLlmProvider>(),
+                LlmProviderKind.OpenAiCompatible => sp.GetRequiredService<OpenAiCompatibleLlmProvider>(),
                 LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
                 LlmProviderKind.Ollama => sp.GetRequiredService<OllamaLlmProvider>(),
                 _ => sp.GetRequiredService<MockLlmProvider>()
