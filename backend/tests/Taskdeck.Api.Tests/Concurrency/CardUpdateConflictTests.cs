@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Contracts;
+using Taskdeck.Api.Middleware;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
@@ -272,6 +275,7 @@ public class CardUpdateConflictTests : IClassFixture<TestWebApplicationFactory>
     public async Task ConcurrentCardCreation_SameColumn_AllCreatedNoDuplicates()
     {
         const int cardCount = 5;
+        _factory.UnhandledExceptionDiagnostics.Clear();
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "card-create-race");
         var board = await ApiTestHarness.CreateBoardAsync(client, "card-create-board");
@@ -284,7 +288,7 @@ public class CardUpdateConflictTests : IClassFixture<TestWebApplicationFactory>
 
         // Create cards concurrently
         using var barrier = new SemaphoreSlim(0, cardCount);
-        var statusCodes = new ConcurrentBag<HttpStatusCode>();
+        var responses = new ConcurrentBag<ConcurrentHttpResponseDiagnostic>();
         var createdIds = new ConcurrentBag<Guid>();
 
         var tasks = Enumerable.Range(0, cardCount).Select(async i =>
@@ -292,11 +296,26 @@ public class CardUpdateConflictTests : IClassFixture<TestWebApplicationFactory>
             using var raceClient = _factory.CreateClient();
             raceClient.DefaultRequestHeaders.Authorization =
                 client.DefaultRequestHeaders.Authorization;
+            var requestCorrelationId = $"card-create-{i}-{Guid.NewGuid():N}";
+            raceClient.DefaultRequestHeaders.TryAddWithoutValidation(
+                CorrelationIdMiddleware.HeaderName,
+                requestCorrelationId);
             await barrier.WaitAsync();
-            var resp = await raceClient.PostAsJsonAsync(
+            using var resp = await raceClient.PostAsJsonAsync(
                 $"/api/boards/{board.Id}/cards",
                 new CreateCardDto(board.Id, col!.Id, $"Concurrent card {i}", null, null, null));
-            statusCodes.Add(resp.StatusCode);
+
+            var responseCorrelationId = ReadResponseCorrelationId(resp);
+            var errorCode = resp.StatusCode == HttpStatusCode.Created
+                ? "none"
+                : await ReadErrorCodeAsync(resp);
+            responses.Add(new ConcurrentHttpResponseDiagnostic(
+                i,
+                resp.StatusCode,
+                requestCorrelationId,
+                responseCorrelationId,
+                errorCode));
+
             if (resp.StatusCode == HttpStatusCode.Created)
             {
                 var created = await resp.Content.ReadFromJsonAsync<CardDto>();
@@ -308,9 +327,15 @@ public class CardUpdateConflictTests : IClassFixture<TestWebApplicationFactory>
         await Task.WhenAll(tasks);
 
         // All should succeed
-        statusCodes.Should().AllSatisfy(s =>
-            s.Should().Be(HttpStatusCode.Created),
-            "all concurrent card creations should succeed");
+        var failures = responses
+            .Where(response => response.StatusCode != HttpStatusCode.Created)
+            .OrderBy(response => response.RequestIndex)
+            .ToList();
+        failures.Should().BeEmpty(
+            "all concurrent card creations should succeed; safe diagnostics: {0}",
+            UnhandledExceptionDiagnosticFormatter.FormatFailures(
+                failures,
+                _factory.UnhandledExceptionDiagnostics.Snapshot()));
 
         // All IDs should be unique
         createdIds.Distinct().Should().HaveCount(cardCount,
@@ -324,4 +349,29 @@ public class CardUpdateConflictTests : IClassFixture<TestWebApplicationFactory>
         concurrentCards.Should().HaveCount(cardCount,
             "all concurrently created cards should appear in the list");
     }
+
+    private static string ReadResponseCorrelationId(HttpResponseMessage response)
+    {
+        return response.Headers.TryGetValues(CorrelationIdMiddleware.HeaderName, out var values)
+            ? DiagnosticToken.Normalize(
+                values.FirstOrDefault(),
+                UnhandledExceptionDiagnosticSink.MaxCorrelationIdLength,
+                "missing")
+            : "missing";
+    }
+
+    private static async Task<string> ReadErrorCodeAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+            return DiagnosticToken.Normalize(error?.ErrorCode, 64, "missing");
+        }
+        catch (Exception exception) when (
+            exception is JsonException or NotSupportedException or HttpRequestException)
+        {
+            return "unreadable";
+        }
+    }
+
 }
