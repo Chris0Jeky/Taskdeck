@@ -25,6 +25,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
     private readonly CliProcessLaunchGate _processLaunchGate;
     private readonly CancellationToken _processCancellationToken;
     private readonly Func<Process, Task> _terminateAndReapAsync;
+    private readonly TaskCompletionSource<int>? _processStartedSignal;
     private int _lastStartedProcessId;
 
     /// <param name="provisionEncryptionKey">
@@ -39,7 +40,8 @@ internal sealed class CliTestHarness : IAsyncDisposable
         TimeSpan? processTimeout = null,
         CliProcessLaunchGate? processLaunchGate = null,
         CancellationToken processCancellationToken = default,
-        Func<Process, Task>? terminateAndReapAsync = null)
+        Func<Process, Task>? terminateAndReapAsync = null,
+        TaskCompletionSource<int>? processStartedSignal = null)
     {
         _processTimeout = processTimeout ?? ProcessTimeout;
         if (_processTimeout <= TimeSpan.Zero)
@@ -58,6 +60,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         _processLaunchGate = processLaunchGate ?? DefaultProcessLaunchGate;
         _processCancellationToken = processCancellationToken;
         _terminateAndReapAsync = terminateAndReapAsync ?? TerminateAndReapAsync;
+        _processStartedSignal = processStartedSignal;
     }
 
     /// <summary>
@@ -158,6 +161,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
 
             process.Start();
             Volatile.Write(ref _lastStartedProcessId, process.Id);
+            _processStartedSignal?.TrySetResult(process.Id);
 
             var standardOutputTask = process.StandardOutput.ReadToEndAsync(cts.Token);
             var standardErrorTask = process.StandardError.ReadToEndAsync(cts.Token);
@@ -174,14 +178,19 @@ internal sealed class CliTestHarness : IAsyncDisposable
                 {
                     await _terminateAndReapAsync(process);
                 }
-                catch (TimeoutException cleanupFailure)
+                catch (Exception cleanupFailure)
                 {
                     _processLaunchGate.Poison(cleanupFailure);
-                    throw new TimeoutException(
-                        $"CLI process did not exit within {_processTimeout.TotalSeconds}s and cleanup " +
-                        $"could not prove that every tracked process exited. Args: {arguments}. " +
-                        cleanupFailure.Message,
-                        new AggregateException(timeoutCancellation, cleanupFailure));
+                    if (cleanupFailure is TimeoutException)
+                    {
+                        throw new TimeoutException(
+                            $"CLI process did not exit within {_processTimeout.TotalSeconds}s and cleanup " +
+                            $"could not prove that every tracked process exited. Args: {arguments}. " +
+                            cleanupFailure.Message,
+                            new AggregateException(timeoutCancellation, cleanupFailure));
+                    }
+
+                    throw;
                 }
 
                 throw new TimeoutException(
