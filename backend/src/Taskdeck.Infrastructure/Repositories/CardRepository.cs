@@ -25,6 +25,26 @@ public class CardRepository : Repository<Card>, ICardRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IEnumerable<Card>> GetTitleMatchesByBoardIdAsync(
+        Guid boardId,
+        string titlePattern,
+        int maxResults,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxResults);
+
+        var normalizedPattern = titlePattern.ToUpperInvariant();
+        return await _dbSet
+            .AsNoTracking()
+            .Where(card =>
+                card.BoardId == boardId &&
+                card.Title.ToUpper().Contains(normalizedPattern))
+            .OrderBy(card => card.ColumnId)
+            .ThenBy(card => card.Position)
+            .Take(maxResults)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<Card>> GetByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default)
     {
         var materializedBoardIds = boardIds

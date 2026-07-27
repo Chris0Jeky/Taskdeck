@@ -433,4 +433,53 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
             new[] { board.Id }, "", maxResults: 10)).ToList();
         results.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task GetTitleMatchesByBoardIdAsync_ShouldPreserveMatchingScopeOrderAndLimit()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ICardRepository>();
+
+        var user = new User("card-title-match-user", "card-title-match@example.com", "hash");
+        db.Users.Add(user);
+        var board = new Board("Title match board", ownerId: user.Id);
+        var otherBoard = new Board("Other title match board", ownerId: user.Id);
+        db.Boards.AddRange(board, otherBoard);
+        var column = new Column(board.Id, "Todo", 0);
+        var otherColumn = new Column(otherBoard.Id, "Todo", 0);
+        db.Columns.AddRange(column, otherColumn);
+
+        var first = new Card(board.Id, column.Id, "Needle first", position: 0);
+        var second = new Card(board.Id, column.Id, "nEeDlE second", position: 1);
+        var literalPercent = new Card(board.Id, column.Id, "Literal % marker", position: 2);
+        var other = new Card(otherBoard.Id, otherColumn.Id, "Needle other board", position: 0);
+        db.Cards.AddRange(first, second, literalPercent, other);
+        await db.SaveChangesAsync();
+
+        var limitedMatches = (await repo.GetTitleMatchesByBoardIdAsync(
+            board.Id, "NEEDLE", maxResults: 1)).ToList();
+        var literalMatches = (await repo.GetTitleMatchesByBoardIdAsync(
+            board.Id, "%", maxResults: 10)).ToList();
+
+        limitedMatches.Select(card => card.Id).Should().Equal(first.Id);
+        literalMatches.Select(card => card.Id).Should().Equal(literalPercent.Id);
+    }
+
+    [Fact]
+    public async Task GetTitleMatchesByBoardIdAsync_ShouldHonorCancellation()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<ICardRepository>();
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+
+        var act = () => repo.GetTitleMatchesByBoardIdAsync(
+            Guid.NewGuid(),
+            "cancelled",
+            maxResults: 1,
+            cancellationSource.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 }

@@ -5,6 +5,16 @@ namespace Taskdeck.Application.Interfaces;
 public interface ICardRepository : IRepository<Card>
 {
     Task<IEnumerable<Card>> GetByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns at most <paramref name="maxResults"/> cards from one board whose titles contain
+    /// <paramref name="titlePattern"/> using case-insensitive substring matching.
+    /// </summary>
+    Task<IEnumerable<Card>> GetTitleMatchesByBoardIdAsync(
+        Guid boardId,
+        string titlePattern,
+        int maxResults,
+        CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetAgendaByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> GetByColumnIdAsync(Guid columnId, CancellationToken cancellationToken = default);
