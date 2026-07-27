@@ -46,7 +46,11 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Install Stryker.NET
-        run: dotnet tool install --global dotnet-stryker
+        run: dotnet tool install --global dotnet-stryker --version 4.16.0
+
+      - name: Validate Stryker.NET configuration
+        shell: pwsh
+        run: ./scripts/ci/Test-StrykerConfig.ps1 -SelfTest
 
       - name: Restore solution
         run: dotnet restore backend/Taskdeck.sln

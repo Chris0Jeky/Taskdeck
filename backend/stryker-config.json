@@ -19,7 +19,7 @@
     },
     "language-version": "latest",
     "verbosity": "info",
-    "ignored-methods": [],
-    "excluded-mutations": []
+    "ignore-methods": [],
+    "ignore-mutations": []
   }
 }
