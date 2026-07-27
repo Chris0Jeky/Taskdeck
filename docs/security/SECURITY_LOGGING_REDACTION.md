@@ -16,7 +16,7 @@ It applies to API middleware, queue/worker logging, live LLM provider failures, 
 - Never echo caller-controlled sensitive values back in validation or error messages.
 - Never persist raw exception messages when they can contain secrets, request payloads, or provider/webhook credentials.
 - Automatic ASP.NET Core OpenTelemetry exception recording stays disabled so raw exception events do not bypass the sanitized logging path.
-- Sentry's automatic `IHttpClientFactory` handler stays disabled so protected LLM/webhook URLs, query values, headers, and 5xx responses do not bypass their dedicated telemetry controls.
+- Sentry's automatic `IHttpClientFactory` handler is removed from protected LLM/webhook clients so their URLs, query values, headers, and 5xx responses do not bypass dedicated telemetry controls; unrelated factory clients retain instrumentation.
 
 ## Runtime Enforcement
 
@@ -28,7 +28,7 @@ It applies to API middleware, queue/worker logging, live LLM provider failures, 
 - Capture queue, live-provider, webhook, and housekeeping worker failures log sanitized summaries instead of passing exception objects directly to the logger on sensitive paths.
 - Persisted queue/webhook failure messages are redacted or generalized before they are saved for later inspection.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
-- Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate outbound factory clients.
+- Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, Gemini, Ollama, or outbound-webhook clients.
 
 ## Operator Guidance
 

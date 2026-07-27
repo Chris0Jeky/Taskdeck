@@ -38,7 +38,7 @@ clients for OpenAI, Gemini, Ollama, and outbound webhook delivery:
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmProviderRegistrationTests|FullyQualifiedName~OutboundWebhookConnectCallbackTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests"
 ```
 
-Result: **63 passed, 0 failed, 0 skipped**. The tests resolve the real
+Result: **66 passed, 0 failed, 0 skipped**. The tests resolve the real
 `IHttpMessageHandlerFactory` pipelines, assert `UseProxy = false`,
 `AllowAutoRedirect = false`, and the existing `ConnectCallback`; exercise a
 hostile configured proxy against blocked loopback, private, and link-local
@@ -52,21 +52,25 @@ opt-in before dispatch; and correlate unique control/protected requests
 to prove normal trace propagation/activity/metric export while protected requests propagate no
 `traceparent`, `tracestate`, or baggage and contribute no destination dimensions to Taskdeck's
 configured OpenTelemetry exporter. The metric guarantee is deliberately scoped to Taskdeck's exporter, not arbitrary
-process-global listeners. The prior **7,511 / 5 skipped / 0 failed** full-suite result predates the
-latest repair and is not exact-head evidence.
+process-global listeners. Registered-provider controls also prove that outer .NET HTTP EventSource
+payloads do not contain the configured path/query while the real configured origin reaches the wire,
+and that Sentry's outbound handler is removed only from the four protected clients: the unrelated
+`GitHubConnectorProvider` client retains the handler and sends `sentry-trace`. Public caller-owned
+provider clients retain their configured URI, request body, and authentication. The guarantee does
+not cover independently installed Activity/Meter listeners or transport-stage host/IP observation.
 
 ```powershell
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests"
 ```
 
-The six provider-dispatch cases passed five consecutive repetitions, and the two registered telemetry
-tests passed three. The provider and
+The six provider-dispatch cases passed five consecutive repetitions, and the registered EventSource
+and scoped-Sentry boundary pair passed three fresh-process repetitions. The provider and
 selection-policy compatibility filter (`OpenAiLlmProviderTests`, `GeminiLlmProviderTests`,
 `OllamaLlmProviderTests`, `LlmProviderResilienceTests`, and `LlmProviderSelectionPolicyTests`)
 passed **151 / 0 failed / 0 skipped**. Docs governance, golden-principles governance,
 GitHub-operations governance, and `git diff --check` passed on the same working tree.
 
-Full serialized backend verification, Required CI, CodeQL, and final exact-head independent review
+Full serialized backend verification, Required CI, CodeQL, and final exact-current-head independent review
 remain required before merge.
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)

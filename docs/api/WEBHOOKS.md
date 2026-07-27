@@ -237,7 +237,12 @@ OpenTelemetry pipeline drops marked delivery activities and that metric scope,
 including destination dimensions such as `server.address` and `server.port`.
 This guarantee is scoped to Taskdeck's exporters; an independently installed
 process-global `ActivityListener` or `MeterListener` can still observe runtime
-diagnostics.
+diagnostics. Registered deliveries mask the configured URI immediately before
+send so outer .NET HTTP EventSource payloads do not receive its path/query; the
+inner protected handler restores the real URI for transport. Transport-stage
+host/IP observation remains outside this guarantee. When Sentry is enabled, its
+outbound handler is removed from this protected client only; unrelated factory
+clients retain Sentry instrumentation.
 
 ## Security considerations
 

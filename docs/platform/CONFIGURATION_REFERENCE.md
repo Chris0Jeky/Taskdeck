@@ -244,7 +244,12 @@ propagation, and Taskdeck's configured OpenTelemetry pipeline excludes their
 marked HTTP activities and private-scope HTTP metrics (including destination
 dimensions such as `server.address` and `server.port`). This is Taskdeck exporter
 suppression, not a guarantee against an independently installed process-global
-`ActivityListener` or `MeterListener`.
+`ActivityListener` or `MeterListener`. Registered provider calls additionally
+mask their configured URI immediately before send so outer .NET HTTP EventSource
+payloads do not receive its path/query; the inner protected handler restores the
+configured URI for transport. Public caller-owned provider clients do not opt in
+and retain ordinary `HttpClient` behavior. Transport-stage host/IP observation is
+outside this guarantee.
 
 ### `LlmToolCalling`
 
@@ -533,10 +538,12 @@ Bound to `ObservabilitySettings`. Consumed by `AddTaskdeckObservability`.
 Bound to `SentrySettings`. Consumed by `AddTaskdeckSentry`. Defaults mean
 Sentry is fully off until explicitly opted in.
 
-When enabled, Taskdeck keeps Sentry's server-side exception tracking but disables
-Sentry's automatic outbound `IHttpClientFactory` handler. Protected LLM and webhook
+When enabled, Taskdeck keeps Sentry's server-side exception tracking and removes
+Sentry's automatic outbound `IHttpClientFactory` handler only from the registered
+OpenAI, Gemini, Ollama, and `OutboundWebhookDelivery` clients. Those protected
 clients therefore do not acquire Sentry trace/baggage propagation, URL breadcrumbs,
-or failed-request capture outside their dedicated telemetry boundary.
+or failed-request capture outside their dedicated telemetry boundary. Unrelated
+factory clients retain normal Sentry instrumentation.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
