@@ -104,15 +104,16 @@ changes, and convergence remain owned by the global pipeline.
 
 ## CI and comments
 
-After PR creation and after every fix push:
+Within the global `review-and-ship` pipeline:
 
-- inspect CI status
-- inspect review comments and bot comments
-- classify failures by lane
-- address root causes, not symptoms
-- rerun only the affected checks locally when practical
-- push fix commits
-- comment with what changed and what was re-run
+- inspect exact-head CI status plus review and bot comments
+- classify every red check by lane and investigate its cause
+- for a fix batch selected by the canonical pipeline, address root causes rather than symptoms
+- rerun the checks affected by that selected batch when practical
+- push only the signed commits that belong to that batch
+- post the finding-to-fix mapping and verification evidence
+
+These are Taskdeck execution mechanics, not another finding-disposition or review/fix cycle.
 
 Use `taskdeck-ci-conflict-recovery` for failing CI, comments, or conflicts.
 

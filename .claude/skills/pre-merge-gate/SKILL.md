@@ -15,7 +15,7 @@ Run all validation checks before a PR can be merged. Execute as one atomic opera
 ## Step 1: Identify PR and branch
 
 ```bash
-gh pr view $ARGUMENTS --json number,headRefName,baseRefName,mergeable,statusCheckRollup
+gh pr view $ARGUMENTS --json number,headRefName,baseRefName,headRefOid,baseRefOid,mergeable,statusCheckRollup
 ```
 
 If mergeable is "CONFLICTING", stop and report — do not auto-resolve.
@@ -25,9 +25,13 @@ If mergeable is "CONFLICTING", stop and report — do not auto-resolve.
 Read ALL comments on the PR:
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/comments
+gh api repos/{owner}/{repo}/pulls/{number}/reviews
 gh api repos/{owner}/{repo}/issues/{number}/comments
 gh pr view $ARGUMENTS --comments
 ```
+
+Also query the PR's GraphQL `reviewThreads` connection (or the equivalent GitHub MCP review-thread
+read) because REST comment lists do not expose `isResolved`.
 
 Check for unaddressed findings from any source:
 - Human review comments not yet resolved
@@ -51,22 +55,18 @@ cd frontend/taskdeck-web && npm run build && npx vitest --run --reporter=verbose
 
 Report any failures immediately — do not proceed to merge.
 
-## Step 4: Confirm review evidence
+## Step 4: Confirm exact-head independent-review evidence
 
-Read the full diff (`gh pr diff $ARGUMENTS`) and check for:
+Use the `headRefOid` from Step 1 and the reviews, review summaries, and comments already read in
+Step 2. Require an **arrived independent review of that exact head** which posts either findings or
+an explicit no-finding result. A review request, acknowledgement/reaction, worker-authored review, or
+coordinator metadata scan does not satisfy Taskdeck's declared T3 gate. Evidence from an older head
+or an older base is stale.
 
-- Secrets accidentally committed (.env, tokens, keys, connection strings)
-- Debug code left in (console.log, Console.WriteLine used for debugging, breakpoints)
-- TODO comments without issue references
-- Hardcoded values that violate conventions
-- Missing tests for behavior changes
-- Clean architecture violations (Domain referencing Infrastructure)
-- Agent safety violations (GP-06: no approve_proposal or direct board mutation)
-- HTTP semantics violations (wrong status codes)
-- Unused `using` statements or dead code
-
-If this scan finds an untriaged issue, report the PR as blocked and return it to the global
-`review-and-ship` pipeline. Do not start a second review pipeline from this gate.
+Confirm that every finding from that review has a recorded disposition and that all review threads
+are settled. If exact-head independent-review evidence is missing or unsettled, report the PR as
+blocked and return it to the global `review-and-ship` pipeline. This gate confirms the completed
+review; it does not perform another review lens or start a separate review/fix cycle.
 
 ## Step 5: CI status
 
@@ -74,7 +74,9 @@ If this scan finds an untriaged issue, report the PR as blocked and return it to
 gh pr checks $ARGUMENTS
 ```
 
-All checks must be green. If any are failing, diagnose and fix.
+All checks must be terminal and green. If any are pending or red, report the PR as not ready. Route
+red-check diagnosis and any canonical-pipeline-selected fix batch through
+`taskdeck-ci-conflict-recovery`; this gate does not choose or execute fixes.
 
 ## Step 6: Report
 
@@ -88,7 +90,7 @@ Output a merge-readiness summary:
 - [ ] Frontend build: PASS/FAIL
 - [ ] Frontend tests: PASS/FAIL
 - [ ] CI checks: GREEN/RED
-- [ ] Review evidence: PRESENT/MISSING
+- [ ] Independent exact-head review: ARRIVED/MISSING (head SHA and evidence URL)
 - [ ] Bot comments: ADDRESSED/NONE
 - [ ] Secrets scan: CLEAN
 
@@ -98,6 +100,7 @@ Output a merge-readiness summary:
 ## Rules
 
 - Do NOT merge the PR — only validate and report readiness
-- If CI is red, attempt to fix — only report "blocked" if the fix is non-trivial
+- If CI is red or review evidence is missing, report not ready and return the PR to the owning
+  canonical pipeline/recovery lane; do not introduce a local fix threshold
 - Finding severity, comment triage, and how many review rounds are owed: the global
   `review-and-ship` skill and global laws 2 and 11. This skill only runs the local checks.
