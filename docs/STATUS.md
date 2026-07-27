@@ -2,6 +2,9 @@
 
 Last Updated: 2026-07-27
 
+Workflow-lint runway repair staged (2026-07-27, `#1510`):
+- **The maintainer-held workflow candidate removes Actionlint's Docker Hub build from CI Extended without weakening its external-linter contract.** It downloads the pinned Actionlint 1.7.12 Linux archive and Pyflakes 3.4.0 wheel over bounded HTTPS, verifies both published SHA-256 digests before use, installs Pyflakes offline, and passes explicit ShellCheck and Pyflakes paths to Actionlint. The job also logs tool versions, the checked-out head, and the discovered workflow count, and runs a seven-check bootstrap contract before the repository lint. Local focused proof and two independent reviews are complete. This is not shipped reality yet: exact-head hosted Ubuntu proof and maintainer merge remain required, and runner-provided ShellCheck remains version-drift residual risk.
+
 Required Docs Governance hardening (2026-07-26, `#1492`):
 - **Required CI now enforces failure-ledger projection synchronization.** The reusable Docs Governance job pins Python 3.12 and runs the existing `failure_ledger.jsonl` ↔ `FAILURE_LEDGER.md` synchronization unittest before its governance checks, so a stale checked-in projection fails without any renderer masking it. Local agentic update workflows intentionally render first and then test so a valid hook-appended JSONL entry can be projected; the smoke contract keeps that distinction from drifting.
 
