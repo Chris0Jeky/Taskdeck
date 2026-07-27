@@ -10,8 +10,9 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Delivery update (2026-07-27, Windows API diagnostics)
+## Delivery update (2026-07-27, test substrate and Windows API diagnostics)
 
+- **Dockerless Testcontainers gate (`#1518`):** the PostgreSQL collection fixture now evaluates `DockerAvailableCheck` before `PostgreSqlBuilder.Build`, restoring the documented graceful-skip behavior on hosts without Docker. A deterministic factory-seam test proves the unavailable path cannot construct a container; Docker-backed CI remains responsible for proving the unchanged positive lifecycle.
 - **Post-`#1373` diagnostic successor (`#1512`):** structured, bounded correlation plus outer/last-inspected exception type, explicit truncation, aggregate-branch, and SQLite-code evidence is now available when the concurrent-card assertion fails. Normal middleware logs are metadata-only, the client still receives the generic GP-03 500, and no request/user/credential/exception-message content enters the diagnostic sink. Pre/post exact stress, the five-case historical/current concurrency matrix, and five CI-equivalent API runs stayed green and did not reproduce the original 500; therefore no causal exception, `SQLITE_BUSY` classification, retry, quarantine, or product fix is claimed.
 - **Still open:** retain `#1512` until a real recurrence identifies the cause and the narrow repair passes the full serialized backend suite plus exact-head Windows/Ubuntu CI.
 
