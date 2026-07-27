@@ -19,7 +19,7 @@ Companion Active Docs:
 
 ## Delivery update (2026-07-27, release workflow truth)
 
-- **Manual-only parked staging gate (`#1228`):** `.github/workflows/cd-staging-gate.yml` no longer subscribes to `release: published`; its required-input `workflow_dispatch` path, jobs, permissions, and `production` environment binding remain available for deliberate operator runs. The repository does not currently configure that environment or required reviewers, so the workflow no longer calls the binding an approval gate; maintainer-owned activation protection is tracked in `#1504`. Active beta release lanes (`release-desktop.yml`, `ci-release.yml`, and `release-security.yml`) are unchanged, so publishing a release cannot start this parked staging path.
+- **Manual-only parked staging gate (`#1228`):** `.github/workflows/cd-staging-gate.yml` no longer subscribes to `release: published`; its required-input `workflow_dispatch` path, jobs, permissions, and `production` environment binding remain defined for a future deliberate operator run. That parent workflow is not runnable on a clean hosted worker yet because it does not supply the Compose-required `TASKDECK_CONNECTORS_ENCRYPTION_KEY`; `#1506` owns the no-environment, no-deploy rehearsal and current-doc correction. The repository does not currently configure that environment or required reviewers, so the workflow no longer calls the binding an approval gate; maintainer-owned activation protection is tracked in `#1504`. Active beta release lanes (`release-desktop.yml`, `ci-release.yml`, and `release-security.yml`) are unchanged, so publishing a release cannot start this parked staging path.
 
 ## Delivery update (2026-07-26, agentic governance)
 
