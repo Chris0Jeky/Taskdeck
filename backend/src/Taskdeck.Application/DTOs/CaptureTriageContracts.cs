@@ -133,7 +133,7 @@ public static class CaptureTriageOutputContract
                     $"Capture triage task {index} title cannot exceed {MaxTaskTitleLength} characters");
             }
 
-            if (!IsSafeTaskTitle(task.Title))
+            if (output.PromptVersion == PromptVersionLlmV2 && !IsSafeTaskTitle(task.Title))
             {
                 return Result.Failure<CaptureTriageOutputV1>(
                     ErrorCodes.ValidationError,
@@ -169,17 +169,37 @@ public static class CaptureTriageOutputContract
 
         foreach (var character in title)
         {
-            if (char.IsControl(character) ||
-                character == '\u2028' || character == '\u2029' ||
-                character == '\u061C' || character == '\u200E' || character == '\u200F' ||
-                (character >= '\u202A' && character <= '\u202E') ||
-                (character >= '\u2066' && character <= '\u2069'))
+            if (IsUnsafeTaskTitleCharacter(character))
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    internal static string SanitizeTaskTitle(string title)
+    {
+        if (string.IsNullOrEmpty(title))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = new string(title
+            .Select(character => IsUnsafeTaskTitleCharacter(character) ? ' ' : character)
+            .ToArray());
+        return string.Join(
+            " ",
+            sanitized.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static bool IsUnsafeTaskTitleCharacter(char character)
+    {
+        return char.IsControl(character) ||
+               character == '\u2028' || character == '\u2029' ||
+               character == '\u061C' || character == '\u200E' || character == '\u200F' ||
+               (character >= '\u202A' && character <= '\u202E') ||
+               (character >= '\u2066' && character <= '\u2069');
     }
 
     public static string Serialize(CaptureTriageOutputV1 output)

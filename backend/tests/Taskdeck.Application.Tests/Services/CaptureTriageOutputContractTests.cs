@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Exceptions;
@@ -161,6 +162,21 @@ public class CaptureTriageOutputContractTests
         result.ErrorMessage.Should().Contain("unsafe");
     }
 
+    [Theory]
+    [InlineData(CaptureTriageOutputContract.PromptVersionV1)]
+    [InlineData(CaptureTriageOutputContract.PromptVersionLlmV1)]
+    public void Validate_ShouldPreserveLegacyV1TitleSemantics(string promptVersion)
+    {
+        var output = new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            promptVersion,
+            [new CaptureTriageTaskV1("legacy\u202Etitle", "source evidence")]);
+
+        var result = CaptureTriageOutputContract.Validate(output);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
     [Fact]
     public void TriageSchemaFile_ShouldDeclarePromptVersionAndStrictness()
     {
@@ -253,6 +269,37 @@ public class CaptureTriageOutputContractTests
         AssertBoundedString(
             taskProperties.GetProperty("evidence"),
             CaptureTriageOutputContract.MaxTaskEvidenceLength);
+        taskProperties.GetProperty("evidence").GetProperty("pattern").GetString().Should()
+            .Be("\\S");
+    }
+
+    [Theory]
+    [InlineData("Review the release", "source evidence", true)]
+    [InlineData(" leading", "source evidence", false)]
+    [InlineData("bidi\u202Eoverride", "source evidence", false)]
+    [InlineData("Review the release", " ", false)]
+    [InlineData("Review the release", "\t\r\n", false)]
+    [InlineData("Review the release", " source evidence ", true)]
+    public void LlmV2SchemaAndRuntime_ShouldAgreeForStringConstraintExamples(
+        string title,
+        string evidence,
+        bool expected)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(GetLlmV2SchemaPath()));
+        var taskProperties = document.RootElement
+            .GetProperty("properties")
+            .GetProperty("tasks")
+            .GetProperty("items")
+            .GetProperty("properties");
+        var schemaAccepts = MatchesStringSchema(taskProperties.GetProperty("title"), title) &&
+                            MatchesStringSchema(taskProperties.GetProperty("evidence"), evidence);
+        var runtime = CaptureTriageOutputContract.Validate(new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
+            [new CaptureTriageTaskV1(title, evidence)]));
+
+        schemaAccepts.Should().Be(expected);
+        runtime.IsSuccess.Should().Be(schemaAccepts);
     }
 
     private static string[] ReadRequiredNames(JsonElement schemaObject)
@@ -267,6 +314,33 @@ public class CaptureTriageOutputContractTests
         property.GetProperty("type").GetString().Should().Be("string");
         property.GetProperty("minLength").GetInt32().Should().Be(1);
         property.GetProperty("maxLength").GetInt32().Should().Be(maximumLength);
+    }
+
+    private static bool MatchesStringSchema(JsonElement property, string value)
+    {
+        if (value.Length < property.GetProperty("minLength").GetInt32() ||
+            value.Length > property.GetProperty("maxLength").GetInt32())
+        {
+            return false;
+        }
+
+        return !property.TryGetProperty("pattern", out var pattern) ||
+               Regex.IsMatch(
+                   value,
+                   pattern.GetString()!,
+                   RegexOptions.CultureInvariant,
+                   TimeSpan.FromMilliseconds(100));
+    }
+
+    private static string GetLlmV2SchemaPath()
+    {
+        return Path.Combine(
+            FindRepositoryRoot(),
+            "backend",
+            "src",
+            "Taskdeck.Application",
+            "Schemas",
+            "capture-triage-output.llm-v2.schema.json");
     }
 
     private static string ReadFixture(string fixtureName)

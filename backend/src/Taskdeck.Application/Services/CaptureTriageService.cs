@@ -503,6 +503,7 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         var normalized = Regex.Replace(trimmed, @"\s+", " ").Trim();
+        normalized = CaptureTriageOutputContract.SanitizeTaskTitle(normalized);
         if (normalized.Length > CaptureTriageOutputContract.MaxTaskTitleLength)
         {
             normalized = normalized[..CaptureTriageOutputContract.MaxTaskTitleLength].TrimEnd();
