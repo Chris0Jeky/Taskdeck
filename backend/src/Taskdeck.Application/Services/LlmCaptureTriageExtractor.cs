@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Enums;
@@ -13,6 +14,26 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 {
+    private static readonly TimeSpan SourceSignalTimeout = TimeSpan.FromMilliseconds(100);
+
+    private static readonly Regex SpeakerCommitmentPattern = new(
+        @"^[^\r\n:]{1,80}:\s*(?:I|we)\s+(?:will|shall|must|can|need\s+to|plan\s+to|am\s+going\s+to|are\s+going\s+to)\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase |
+        RegexOptions.Multiline | RegexOptions.NonBacktracking,
+        SourceSignalTimeout);
+
+    private static readonly Regex NamedAssignmentPattern = new(
+        @"^\s*[\p{Lu}][\p{L}\p{M}'’.-]{1,50}(?:\s+[\p{Lu}][\p{L}\p{M}'’.-]{1,50})?\s+(?:will|shall|must|needs\s+to|is\s+going\s+to)\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline |
+        RegexOptions.NonBacktracking,
+        SourceSignalTimeout);
+
+    private static readonly Regex StructuredTaskPattern = new(
+        @"^\s*(?:[-*•]\s+(?:\[[xX ]\]\s+)?|\d+[.)]\s+)\S",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline |
+        RegexOptions.NonBacktracking,
+        SourceSignalTimeout);
+
     private readonly ILlmProvider _llmProvider;
     private readonly LlmCaptureTriageSettings _settings;
     private readonly ILlmKillSwitchService? _killSwitchService;
@@ -197,13 +218,28 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 
         if (rawTasks.Count == 0)
         {
+            if (RequiresReviewForEmptyVerdict(payload.Text))
+            {
+                // Empty remains a terminal verdict for ordinary discussion, but it must not close a
+                // capture that contains a conservative, source-local human-task signal. Mark the
+                // output invalid so the existing deterministic fallback creates a review proposal.
+                _logger?.LogWarning(
+                    "LLM transcript triage returned an empty verdict that contradicted a source task signal for user {UserId}; using deterministic review fallback",
+                    userId);
+                return new LlmCaptureTriageExtraction(
+                    LlmCaptureTriageOutcome.InvalidOutput,
+                    Detail: "Empty verdict contradicted a conservative source task signal");
+            }
+
             // The LLM ran and deliberately reported zero action items — a real verdict, so the
             // provider/model that produced it are reported for honest provenance stamping.
             return new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.EmptyExtraction,
                 Provider: result.Provider,
-                Model: result.Model,
-                PromptVersion: LlmCaptureTriagePrompt.PromptVersion);
+                Model: result.Model)
+            {
+                PromptVersion = LlmCaptureTriagePrompt.PromptVersion
+            };
         }
 
         var ungroundedEvidenceCount = rawTasks.Count(task =>
@@ -238,7 +274,29 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             LlmCaptureTriageOutcome.Succeeded,
             validation.Value,
             result.Provider,
-            result.Model,
-            PromptVersion: LlmCaptureTriagePrompt.PromptVersion);
+            result.Model)
+        {
+            PromptVersion = LlmCaptureTriagePrompt.PromptVersion
+        };
+    }
+
+    internal static bool RequiresReviewForEmptyVerdict(string source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return false;
+        }
+
+        try
+        {
+            return SpeakerCommitmentPattern.IsMatch(source) ||
+                   NamedAssignmentPattern.IsMatch(source) ||
+                   StructuredTaskPattern.IsMatch(source);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // A timeout must never convert an uncertain source into a terminal no-task verdict.
+            return true;
+        }
     }
 }

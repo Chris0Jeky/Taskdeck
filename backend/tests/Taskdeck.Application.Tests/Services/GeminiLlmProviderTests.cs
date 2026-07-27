@@ -1,10 +1,13 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Tests.Support;
 using Xunit;
 
@@ -468,6 +471,69 @@ public class GeminiLlmProviderTests
         result.DegradedReason.Should().Be("Response was truncated");
         result.Content.Should().Be("partial response");
         result.IsActionable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CompleteAsync_CustomTriagePrompt_ShouldPreserveProseForStrictExtractorToReject()
+    {
+        const string completion = "Here is the result: {\"tasks\":[]}";
+        var responseBody = JsonSerializer.Serialize(new
+        {
+            candidates = new[]
+            {
+                new
+                {
+                    content = new { parts = new[] { new { text = completion } } },
+                    finishReason = "STOP"
+                }
+            },
+            usageMetadata = new { totalTokenCount = 7 }
+        });
+        var handler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+            });
+        var provider = new GeminiLlmProvider(
+            new HttpClient(handler),
+            BuildSettings(),
+            NullLogger<GeminiLlmProvider>.Instance);
+
+        var direct = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "Just chatting.")],
+            SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt));
+        var extraction = await new LlmCaptureTriageExtractor(provider, new LlmCaptureTriageSettings())
+            .ExtractAsync(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.TranscriptPaste,
+                    "Just chatting."));
+
+        direct.Content.Should().Be(completion);
+        extraction.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ShouldRejectResponseJustOverByteLimitBeforeJsonParsing()
+    {
+        var handler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[LlmProviderResponseReader.MaxResponseBytes + 1])
+            });
+        var provider = new GeminiLlmProvider(
+            new HttpClient(handler),
+            BuildSettings(),
+            NullLogger<GeminiLlmProvider>.Instance);
+
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "hello")],
+            SystemPrompt: string.Empty));
+
+        result.IsDegraded.Should().BeTrue();
+        result.DegradedReason.Should().Contain("safe size or encoding limits");
     }
 
     [Theory]

@@ -45,7 +45,8 @@ public enum LlmCaptureTriageOutcome
     InvalidOutput,
 
     /// <summary>
-    /// The LLM ran successfully and deliberately reported zero action items. This is an extraction
+    /// The LLM ran successfully and deliberately reported zero action items, and the source did not
+    /// contain a conservative human-task signal that requires review. This is an extraction
     /// verdict, not a failure — callers must NOT degrade to the deterministic extractor (which would
     /// fabricate a card from unactionable text, the exact behavior REVIVAL-08 removes).
     /// </summary>
@@ -65,8 +66,14 @@ public sealed record LlmCaptureTriageExtraction(
     CaptureTriageOutputV1? Output = null,
     string? Provider = null,
     string? Model = null,
-    string? Detail = null,
-    string? PromptVersion = null)
+    string? Detail = null)
 {
+    /// <summary>
+    /// Prompt provenance added after the original five-value record contract. Keeping it outside the
+    /// positional parameter list preserves the five-argument constructor and five-value deconstruction
+    /// ABI for existing consumers.
+    /// </summary>
+    public string? PromptVersion { get; init; }
+
     public bool Succeeded => Outcome == LlmCaptureTriageOutcome.Succeeded;
 }

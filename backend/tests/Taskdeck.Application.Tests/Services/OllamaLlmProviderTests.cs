@@ -1,10 +1,13 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Tests.Support;
 using Xunit;
 
@@ -209,6 +212,64 @@ public class OllamaLlmProviderTests
         result.Provider.Should().Be("Ollama");
         result.Model.Should().Be(settings.Ollama!.Model);
         result.IsDegraded.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CompleteAsync_CustomTriagePrompt_ShouldPreserveFenceForStrictExtractorToReject()
+    {
+        const string completion = "```json\n{\"tasks\":[]}\n```";
+        var responseBody = JsonSerializer.Serialize(new
+        {
+            message = new { content = completion },
+            done = true,
+            eval_count = 7,
+            done_reason = "stop"
+        });
+        var handler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+            });
+        var provider = new OllamaLlmProvider(
+            new HttpClient(handler),
+            BuildSettings(),
+            NullLogger<OllamaLlmProvider>.Instance);
+
+        var direct = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "Just chatting.")],
+            SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt));
+        var extraction = await new LlmCaptureTriageExtractor(provider, new LlmCaptureTriageSettings())
+            .ExtractAsync(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.TranscriptPaste,
+                    "Just chatting."));
+
+        direct.Content.Should().Be(completion);
+        extraction.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ShouldRejectResponseJustOverByteLimitBeforeJsonParsing()
+    {
+        var handler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[LlmProviderResponseReader.MaxResponseBytes + 1])
+            });
+        var provider = new OllamaLlmProvider(
+            new HttpClient(handler),
+            BuildSettings(),
+            NullLogger<OllamaLlmProvider>.Instance);
+
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "hello")],
+            SystemPrompt: string.Empty));
+
+        result.IsDegraded.Should().BeTrue();
+        result.DegradedReason.Should().Contain("safe size or encoding limits");
     }
 
     [Fact]

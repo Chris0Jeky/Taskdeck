@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Exceptions;
@@ -140,6 +141,26 @@ public class CaptureTriageOutputContractTests
         result.ErrorMessage.Should().Contain(CaptureTriageOutputContract.PromptVersionLlmV2);
     }
 
+    [Theory]
+    [InlineData(" leading")]
+    [InlineData("trailing ")]
+    [InlineData("line\nbreak")]
+    [InlineData("c1\u0085control")]
+    [InlineData("bidi\u202Eoverride")]
+    [InlineData("isolate\u2066text")]
+    public void Validate_ShouldFail_WhenTaskTitleContainsUnsafeWhitespaceControlOrBidi(string title)
+    {
+        var output = new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
+            [new CaptureTriageTaskV1(title, "source evidence")]);
+
+        var result = CaptureTriageOutputContract.Validate(output);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("unsafe");
+    }
+
     [Fact]
     public void TriageSchemaFile_ShouldDeclarePromptVersionAndStrictness()
     {
@@ -175,7 +196,7 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
-    public void LlmV2TriageSchemaFile_ShouldDeclarePromptVersionAndStrictness()
+    public void LlmV2TriageSchemaFile_ShouldDeclareFullContractStructureAndBounds()
     {
         var schemaPath = Path.Combine(
             FindRepositoryRoot(),
@@ -186,9 +207,66 @@ public class CaptureTriageOutputContractTests
             "capture-triage-output.llm-v2.schema.json");
 
         File.Exists(schemaPath).Should().BeTrue();
-        var schema = File.ReadAllText(schemaPath);
-        schema.Should().Contain("\"const\": \"llm-triage.v2\"");
-        schema.Should().Contain("\"additionalProperties\": false");
+        using var document = JsonDocument.Parse(File.ReadAllText(schemaPath));
+        var root = document.RootElement;
+
+        root.ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("$schema").GetString().Should()
+            .Be("https://json-schema.org/draft/2020-12/schema");
+        root.GetProperty("$id").GetString().Should()
+            .Be("https://taskdeck.dev/schemas/capture-triage-output.llm-v2.schema.json");
+        root.GetProperty("type").GetString().Should().Be("object");
+        root.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
+        ReadRequiredNames(root).Should().BeEquivalentTo("version", "promptVersion", "tasks");
+
+        var properties = root.GetProperty("properties");
+        properties.EnumerateObject().Select(property => property.Name).Should()
+            .BeEquivalentTo("version", "promptVersion", "tasks");
+
+        var version = properties.GetProperty("version");
+        version.GetProperty("type").GetString().Should().Be("integer");
+        version.GetProperty("const").GetInt32().Should().Be(CaptureTriageOutputContract.SchemaVersion);
+
+        var promptVersion = properties.GetProperty("promptVersion");
+        promptVersion.GetProperty("type").GetString().Should().Be("string");
+        promptVersion.GetProperty("const").GetString().Should()
+            .Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+
+        var tasks = properties.GetProperty("tasks");
+        tasks.GetProperty("type").GetString().Should().Be("array");
+        tasks.GetProperty("minItems").GetInt32().Should().Be(1);
+        tasks.GetProperty("maxItems").GetInt32().Should().Be(CaptureTriageOutputContract.MaxTasks);
+
+        var task = tasks.GetProperty("items");
+        task.GetProperty("type").GetString().Should().Be("object");
+        task.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
+        ReadRequiredNames(task).Should().BeEquivalentTo("title", "evidence");
+
+        var taskProperties = task.GetProperty("properties");
+        taskProperties.EnumerateObject().Select(property => property.Name).Should()
+            .BeEquivalentTo("title", "evidence");
+        AssertBoundedString(
+            taskProperties.GetProperty("title"),
+            CaptureTriageOutputContract.MaxTaskTitleLength);
+        taskProperties.GetProperty("title").GetProperty("pattern").GetString().Should()
+            .Be("^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]).+$");
+        AssertBoundedString(
+            taskProperties.GetProperty("evidence"),
+            CaptureTriageOutputContract.MaxTaskEvidenceLength);
+    }
+
+    private static string[] ReadRequiredNames(JsonElement schemaObject)
+    {
+        var required = schemaObject.GetProperty("required");
+        required.ValueKind.Should().Be(JsonValueKind.Array);
+        return required.EnumerateArray().Select(item => item.GetString()!).ToArray();
+    }
+
+    private static void AssertBoundedString(JsonElement property, int maximumLength)
+    {
+        property.GetProperty("type").GetString().Should().Be("string");
+        property.GetProperty("minLength").GetInt32().Should().Be(1);
+        property.GetProperty("maxLength").GetInt32().Should().Be(maximumLength);
     }
 
     private static string ReadFixture(string fixtureName)

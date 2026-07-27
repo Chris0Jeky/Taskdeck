@@ -133,6 +133,13 @@ public static class CaptureTriageOutputContract
                     $"Capture triage task {index} title cannot exceed {MaxTaskTitleLength} characters");
             }
 
+            if (!IsSafeTaskTitle(task.Title))
+            {
+                return Result.Failure<CaptureTriageOutputV1>(
+                    ErrorCodes.ValidationError,
+                    $"Capture triage task {index} title contains unsafe whitespace, control, or bidi characters");
+            }
+
             if (string.IsNullOrWhiteSpace(task.Evidence))
             {
                 return Result.Failure<CaptureTriageOutputV1>(
@@ -149,6 +156,30 @@ public static class CaptureTriageOutputContract
         }
 
         return Result.Success(output);
+    }
+
+    internal static bool IsSafeTaskTitle(string title)
+    {
+        if (string.IsNullOrEmpty(title) ||
+            char.IsWhiteSpace(title[0]) ||
+            char.IsWhiteSpace(title[^1]))
+        {
+            return false;
+        }
+
+        foreach (var character in title)
+        {
+            if (char.IsControl(character) ||
+                character == '\u2028' || character == '\u2029' ||
+                character == '\u061C' || character == '\u200E' || character == '\u200F' ||
+                (character >= '\u202A' && character <= '\u202E') ||
+                (character >= '\u2066' && character <= '\u2069'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static string Serialize(CaptureTriageOutputV1 output)

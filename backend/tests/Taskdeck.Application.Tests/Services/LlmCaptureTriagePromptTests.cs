@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
@@ -132,6 +133,43 @@ public class LlmCaptureTriagePromptTests
         LlmCaptureTriagePrompt.TryParseTasks(
             $$"""{"tasks":[{{tooManyTasks}}]}""",
             out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(" leading")]
+    [InlineData("trailing ")]
+    [InlineData("line\nbreak")]
+    [InlineData("control\u001Fcharacter")]
+    [InlineData("c1\u0085character")]
+    [InlineData("line\u2028separator")]
+    [InlineData("bidi\u202Eoverride")]
+    [InlineData("bidi\u2066isolate")]
+    [InlineData("bidi\u200Fmark")]
+    public void TryParseTasks_ShouldRejectWhitespaceControlAndBidiTitleCharacters(string title)
+    {
+        var content = JsonSerializer.Serialize(new
+        {
+            tasks = new[] { new { title, evidence = "source evidence" } }
+        });
+
+        var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
+
+        parsed.Should().BeFalse();
+        tasks.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryParseTasks_ShouldFailClosedForArrayJustOverTaskLimit()
+    {
+        var taskElements = Enumerable.Range(0, CaptureTriageOutputContract.MaxTasks + 1)
+            .Select(index => new { title = $"Task {index}", evidence = $"Evidence {index}" })
+            .ToArray();
+        var content = JsonSerializer.Serialize(new { tasks = taskElements });
+
+        var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
+
+        parsed.Should().BeFalse();
+        tasks.Should().BeEmpty();
     }
 
     [Fact]

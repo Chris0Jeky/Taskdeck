@@ -39,15 +39,23 @@ public class OllamaLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildRequestPayload(request));
 
-            using var response = await _httpClient.SendAsync(message, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-
+            using var response = await _httpClient.SendAsync(
+                message,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
                     "Ollama completion request failed with status code {StatusCode}.",
                     (int)response.StatusCode);
                 return BuildFallbackResult(lastUserMessage, "Local provider request failed.", GetConfiguredModelOrDefault());
+            }
+
+            var body = await LlmProviderResponseReader.ReadBoundedUtf8Async(response.Content, ct);
+            if (body is null)
+            {
+                _logger.LogWarning("Ollama completion response exceeded the safe byte limit or was not valid UTF-8.");
+                return BuildFallbackResult(lastUserMessage, "Local provider response exceeded safe size or encoding limits.", GetConfiguredModelOrDefault());
             }
 
             if (!TryParseResponse(body, out var content, out var tokensUsed, out var doneReason))
@@ -81,6 +89,19 @@ public class OllamaLlmProvider : ILlmProvider
                     Model: GetConfiguredModelOrDefault(),
                     IsDegraded: true,
                     DegradedReason: "Response was truncated");
+            }
+
+            // A caller-supplied system prompt owns its response contract. Preserve the provider's
+            // raw completion so that surface-specific strict parsers see wrappers, prose, and
+            // fences unchanged instead of silently passing through this legacy chat parser.
+            if (!useInstructionExtraction)
+            {
+                return new LlmCompletionResult(
+                    content,
+                    tokensUsed,
+                    IsActionable: false,
+                    Provider: "Ollama",
+                    Model: GetConfiguredModelOrDefault());
             }
 
             if (LlmInstructionExtractionPrompt.TryParseStructuredResponse(

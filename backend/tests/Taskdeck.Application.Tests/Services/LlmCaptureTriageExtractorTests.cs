@@ -276,7 +276,10 @@ public class LlmCaptureTriageExtractorTests
         SetupCompletion("""{"tasks":[]}""");
         var extractor = BuildExtractor();
 
-        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+        var result = await extractor.ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload("Just some friendly conversation with no next steps."));
 
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.EmptyExtraction);
         // The LLM genuinely ran and produced this verdict — its identity is reported so the
@@ -309,6 +312,47 @@ public class LlmCaptureTriageExtractorTests
 
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
         result.Output.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("Chris: I will send the approved budget to Finance by Friday.")]
+    [InlineData("Jordan will schedule the accessibility review on Tuesday.")]
+    [InlineData("- [ ] Publish the reviewed release notes")]
+    public async Task ExtractAsync_ShouldRequireReviewFallback_WhenEmptyVerdictContradictsSourceTaskSignal(
+        string source)
+    {
+        SetupCompletion("""{"tasks":[]}""");
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(source));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Detail.Should().Contain("Empty verdict contradicted");
+        result.Provider.Should().BeNull();
+        result.PromptVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public void LlmCaptureTriageExtraction_ShouldPreserveFiveValueConstructorAndDeconstructionAbi()
+    {
+        var extraction = new LlmCaptureTriageExtraction(
+            LlmCaptureTriageOutcome.InvalidOutput,
+            Output: null,
+            Provider: "provider",
+            Model: "model",
+            Detail: "detail")
+        {
+            PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV2
+        };
+
+        var (outcome, output, provider, model, detail) = extraction;
+
+        outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        output.Should().BeNull();
+        provider.Should().Be("provider");
+        model.Should().Be("model");
+        detail.Should().Be("detail");
+        extraction.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
     }
 
     [Fact]

@@ -93,23 +93,37 @@ public static class LlmCaptureTriagePrompt
                 return false;
             }
 
-            var rootProperties = root.EnumerateObject().ToArray();
-            if (rootProperties.Length != 1 ||
-                !string.Equals(rootProperties[0].Name, "tasks", StringComparison.Ordinal) ||
-                rootProperties[0].Value.ValueKind != JsonValueKind.Array)
+            JsonElement tasksElement = default;
+            var rootPropertyCount = 0;
+            foreach (var property in root.EnumerateObject())
             {
-                return false;
+                rootPropertyCount++;
+                if (rootPropertyCount > 1 ||
+                    !string.Equals(property.Name, "tasks", StringComparison.Ordinal) ||
+                    property.Value.ValueKind != JsonValueKind.Array)
+                {
+                    return false;
+                }
+
+                tasksElement = property.Value;
             }
 
-            var taskElements = rootProperties[0].Value.EnumerateArray().ToArray();
-            if (taskElements.Length > CaptureTriageOutputContract.MaxTasks)
+            if (rootPropertyCount != 1)
             {
                 return false;
             }
 
             var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var taskElement in taskElements)
+            var taskCount = 0;
+            foreach (var taskElement in tasksElement.EnumerateArray())
             {
+                taskCount++;
+                if (taskCount > CaptureTriageOutputContract.MaxTasks)
+                {
+                    tasks = [];
+                    return false;
+                }
+
                 if (taskElement.ValueKind != JsonValueKind.Object ||
                     !TryParseTask(taskElement, seenTitles, out var task))
                 {
@@ -135,18 +149,16 @@ public static class LlmCaptureTriagePrompt
         out CaptureTriageTaskV1 task)
     {
         task = new CaptureTriageTaskV1(string.Empty, string.Empty);
-        var properties = taskElement.EnumerateObject().ToArray();
-        if (properties.Length != 2)
-        {
-            return false;
-        }
-
         string? title = null;
         string? evidence = null;
+        var propertyCount = 0;
         var seenProperties = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var property in properties)
+        foreach (var property in taskElement.EnumerateObject())
         {
-            if (!seenProperties.Add(property.Name) || property.Value.ValueKind != JsonValueKind.String)
+            propertyCount++;
+            if (propertyCount > 2 ||
+                !seenProperties.Add(property.Name) ||
+                property.Value.ValueKind != JsonValueKind.String)
             {
                 return false;
             }
@@ -164,11 +176,13 @@ public static class LlmCaptureTriagePrompt
             }
         }
 
-        if (string.IsNullOrWhiteSpace(title) ||
+        if (propertyCount != 2 ||
+            string.IsNullOrWhiteSpace(title) ||
+            !CaptureTriageOutputContract.IsSafeTaskTitle(title) ||
             title.Length > CaptureTriageOutputContract.MaxTaskTitleLength ||
             string.IsNullOrWhiteSpace(evidence) ||
             evidence.Length > CaptureTriageOutputContract.MaxTaskEvidenceLength ||
-            !seenTitles.Add(title.Trim()))
+            !seenTitles.Add(title))
         {
             return false;
         }

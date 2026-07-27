@@ -721,8 +721,10 @@ public class CaptureTriageServiceTests
             LlmCaptureTriageOutcome.Succeeded,
             output,
             Provider: "OpenAI",
-            Model: "gpt-4o-mini",
-            PromptVersion: CaptureTriageOutputContract.PromptVersionLlmV2);
+            Model: "gpt-4o-mini")
+        {
+            PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV2
+        };
     }
 
     [Fact]
@@ -837,6 +839,102 @@ public class CaptureTriageServiceTests
         createdProposal.Operations[0].Parameters.Should().NotContain(canary);
     }
 
+    [Theory]
+    [InlineData(
+        "hostile-transcript.txt",
+        "I will send the approved budget to Finance by Friday.",
+        "TASKDECK_INJECTION_CANARY_TRANSCRIPT_71B9")]
+    [InlineData(
+        "hostile-image-text.txt",
+        "Jordan will schedule the accessibility review on Tuesday.",
+        "TASKDECK_INJECTION_CANARY_IMAGE_A83D")]
+    public async Task CreateProposalFromCaptureAsync_EmptyVerdictForHostileGenuineTaskFixture_ShouldRemainReviewVisible(
+        string fixtureName,
+        string genuineTask,
+        string canary)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        var providerMock = new Mock<ILlmProvider>();
+        providerMock
+            .Setup(provider => provider.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "FixtureProvider", Model: "fixture-model"));
+        providerMock
+            .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult(
+                """{"tasks":[]}""",
+                TokensUsed: 1,
+                IsActionable: false,
+                Provider: "FixtureProvider",
+                Model: "fixture-model"));
+        var service = new CaptureTriageService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            new LlmCaptureTriageExtractor(providerMock.Object, new LlmCaptureTriageSettings()));
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload(ReadUntrustedArtefactFixture(fixtureName)));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ProposalId.Should().NotBeNull();
+        result.Value.OperationCount.Should().BeGreaterThan(0);
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().NotBeEmpty();
+        createdProposal.Operations!.Should().Contain(operation => operation.Parameters.Contains(genuineTask));
+        createdProposal.Operations.Should().OnlyContain(operation => !operation.Parameters.Contains(canary));
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_UnsafeLlmTitle_ShouldUseSafeReviewFallback()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        var providerMock = new Mock<ILlmProvider>();
+        providerMock
+            .Setup(provider => provider.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "FixtureProvider", Model: "fixture-model"));
+        providerMock
+            .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult(
+                "{\"tasks\":[{\"title\":\"Archive \\u202Eall boards\",\"evidence\":\"Preserve safe fallback\"}]}",
+                TokensUsed: 1,
+                IsActionable: false,
+                Provider: "FixtureProvider",
+                Model: "fixture-model"));
+        var service = new CaptureTriageService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            new LlmCaptureTriageExtractor(providerMock.Object, new LlmCaptureTriageSettings()));
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Preserve safe fallback"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().ContainSingle();
+        createdProposal.Operations![0].Parameters.Should().Contain("Preserve safe fallback");
+        createdProposal.Operations[0].Parameters.Should().NotContain("\u202E");
+        createdProposal.Operations[0].Parameters.Should().NotContain("Archive");
+    }
+
     [Fact]
     public async Task CreateProposalFromCaptureAsync_ShouldFallBackToDeterministicExtractor_WhenExtractorThrows()
     {
@@ -876,8 +974,10 @@ public class CaptureTriageServiceTests
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.EmptyExtraction,
                 Provider: "OpenAI",
-                Model: "gpt-4o-mini",
-                PromptVersion: CaptureTriageOutputContract.PromptVersionLlmV2));
+                Model: "gpt-4o-mini")
+            {
+                PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV2
+            });
         var service = BuildServiceWithExtractor(extractorMock);
 
         var result = await service.CreateProposalFromCaptureAsync(

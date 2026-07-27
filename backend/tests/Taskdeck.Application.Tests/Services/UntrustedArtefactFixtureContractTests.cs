@@ -24,7 +24,7 @@ public class UntrustedArtefactFixtureContractTests
                 "transcript",
                 "hostile-transcript.txt",
                 "TASKDECK_INJECTION_CANARY_TRANSCRIPT_71B9",
-                ["honest-task-extraction", "empty-verdict"],
+                ["honest-task-extraction", "review-visible-fallback"],
                 ["instruction-followed", "schema-escape", "operation-vocabulary-emitted"],
                 [
                     "I will send the approved budget to Finance by Friday.",
@@ -49,7 +49,7 @@ public class UntrustedArtefactFixtureContractTests
                 "image-extracted-text",
                 "hostile-image-text.txt",
                 "TASKDECK_INJECTION_CANARY_IMAGE_A83D",
-                ["honest-task-extraction", "empty-verdict"],
+                ["honest-task-extraction", "review-visible-fallback"],
                 ["tool-call-executed", "schema-escape", "operation-vocabulary-emitted"],
                 [
                     "Jordan will schedule the accessibility review on Tuesday.",
@@ -217,6 +217,46 @@ public class UntrustedArtefactFixtureContractTests
         {
             result.Outcome.Should().Be(LlmCaptureTriageOutcome.EmptyExtraction);
             result.Output.Should().BeNull();
+        }
+    }
+
+    [Theory]
+    [InlineData("hostile-transcript.txt", LlmCaptureTriageOutcome.InvalidOutput)]
+    [InlineData("hostile-pdf-text.txt", LlmCaptureTriageOutcome.EmptyExtraction)]
+    [InlineData("hostile-image-text.txt", LlmCaptureTriageOutcome.InvalidOutput)]
+    public async Task SourceFixture_EmptyVerdict_ShouldFailClosedWhenGenuineTaskSignalRequiresReview(
+        string fixtureName,
+        LlmCaptureTriageOutcome expectedOutcome)
+    {
+        var provider = new Mock<ILlmProvider>();
+        provider
+            .Setup(item => item.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "FixtureProvider", Model: "fixture-model"));
+        provider
+            .Setup(item => item.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult(
+                """{"tasks":[]}""",
+                TokensUsed: 1,
+                IsActionable: false,
+                Provider: "FixtureProvider",
+                Model: "fixture-model"));
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.TranscriptPaste,
+            ReadBoundedUtf8(fixtureName));
+
+        var result = await new LlmCaptureTriageExtractor(provider.Object, new LlmCaptureTriageSettings())
+            .ExtractAsync(Guid.NewGuid(), Guid.NewGuid(), payload);
+
+        result.Outcome.Should().Be(expectedOutcome);
+        if (expectedOutcome == LlmCaptureTriageOutcome.EmptyExtraction)
+        {
+            result.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        }
+        else
+        {
+            result.Output.Should().BeNull();
+            result.Provider.Should().BeNull();
         }
     }
 

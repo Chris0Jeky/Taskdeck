@@ -4,8 +4,10 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Tests.Support;
 using Xunit;
 
@@ -340,6 +342,69 @@ public class OpenAiLlmProviderTests
 
         result.IsDegraded.Should().BeTrue();
         result.DegradedReason.Should().Be("Response was truncated");
+    }
+
+    [Fact]
+    public async Task CompleteAsync_CustomTriagePrompt_ShouldPreserveLegacyWrapperForStrictExtractorToReject()
+    {
+        const string completion = "{\"reply\":\"{\\\"tasks\\\":[]}\",\"actionable\":false,\"instructions\":[]}";
+        var responseBody = JsonSerializer.Serialize(new
+        {
+            choices = new[]
+            {
+                new
+                {
+                    message = new { content = completion },
+                    finish_reason = "stop"
+                }
+            },
+            usage = new { total_tokens = 7 }
+        });
+        var handler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+            });
+        var provider = new OpenAiLlmProvider(
+            new HttpClient(handler),
+            BuildSettings(),
+            NullLogger<OpenAiLlmProvider>.Instance);
+
+        var direct = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "Just chatting.")],
+            SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt));
+        var extraction = await new LlmCaptureTriageExtractor(provider, new LlmCaptureTriageSettings())
+            .ExtractAsync(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.TranscriptPaste,
+                    "Just chatting."));
+
+        direct.Content.Should().Be(completion);
+        extraction.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ShouldRejectResponseJustOverByteLimitBeforeJsonParsing()
+    {
+        var handler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[LlmProviderResponseReader.MaxResponseBytes + 1])
+            });
+        var provider = new OpenAiLlmProvider(
+            new HttpClient(handler),
+            BuildSettings(),
+            NullLogger<OpenAiLlmProvider>.Instance);
+
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "hello")],
+            SystemPrompt: string.Empty));
+
+        result.IsDegraded.Should().BeTrue();
+        result.DegradedReason.Should().Contain("safe size or encoding limits");
     }
 
     [Theory]

@@ -70,15 +70,23 @@ public class GeminiLlmProvider : ILlmProvider
                     generationConfig
                 });
 
-            using var response = await _httpClient.SendAsync(message, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-
+            using var response = await _httpClient.SendAsync(
+                message,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
                     "Gemini completion request failed with status code {StatusCode}.",
                     (int)response.StatusCode);
                 return BuildFallbackResult(lastUserMessage, "Live provider request failed.", GetConfiguredModelOrDefault());
+            }
+
+            var body = await LlmProviderResponseReader.ReadBoundedUtf8Async(response.Content, ct);
+            if (body is null)
+            {
+                _logger.LogWarning("Gemini completion response exceeded the safe byte limit or was not valid UTF-8.");
+                return BuildFallbackResult(lastUserMessage, "Live provider response exceeded safe size or encoding limits.", GetConfiguredModelOrDefault());
             }
 
             if (!TryParseResponse(body, out var content, out var tokensUsed, out var finishReason))
@@ -117,7 +125,20 @@ public class GeminiLlmProvider : ILlmProvider
                     DegradedReason: "Response was truncated");
             }
 
-            // Try to parse structured instruction extraction from the LLM response
+            // A caller-supplied system prompt owns its response contract. Preserve the provider's
+            // raw completion so that surface-specific strict parsers see wrappers, prose, and
+            // fences unchanged instead of silently passing through this legacy chat parser.
+            if (!useInstructionExtraction)
+            {
+                return new LlmCompletionResult(
+                    content,
+                    tokensUsed,
+                    IsActionable: false,
+                    Provider: "Gemini",
+                    Model: GetConfiguredModelOrDefault());
+            }
+
+            // Try to parse structured instruction extraction from the legacy chat response.
             if (LlmInstructionExtractionPrompt.TryParseStructuredResponse(
                     content,
                     out var structuredReply,
@@ -182,9 +203,10 @@ public class GeminiLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(httpMessage, request.Attribution);
             httpMessage.Content = JsonContent.Create(BuildToolCallingPayload(request, tools, previousToolResults));
 
-            using var response = await _httpClient.SendAsync(httpMessage, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-
+            using var response = await _httpClient.SendAsync(
+                httpMessage,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Gemini tool-calling request failed with status code {StatusCode}.", (int)response.StatusCode);
@@ -193,6 +215,17 @@ public class GeminiLlmProvider : ILlmProvider
                     TokensUsed: 0, Provider: "Gemini", Model: GetConfiguredModelOrDefault(),
                     ToolCalls: null, IsComplete: true, IsDegraded: true,
                     DegradedReason: "Live provider request failed.");
+            }
+
+            var body = await LlmProviderResponseReader.ReadBoundedUtf8Async(response.Content, ct);
+            if (body is null)
+            {
+                _logger.LogWarning("Gemini tool-calling response exceeded the safe byte limit or was not valid UTF-8.");
+                return new LlmToolCompletionResult(
+                    Content: "I encountered an invalid response while processing your request.",
+                    TokensUsed: 0, Provider: "Gemini", Model: GetConfiguredModelOrDefault(),
+                    ToolCalls: null, IsComplete: true, IsDegraded: true,
+                    DegradedReason: "Live provider response exceeded safe size or encoding limits.");
             }
 
             return ParseToolCallingResponse(body);
