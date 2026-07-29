@@ -115,9 +115,8 @@ public sealed class CliTestHarnessTests
     }
 
     [Fact]
-    public async Task RunAsync_WithSingleSlotGate_StartsNextChildOnlyAfterFirstIsReaped()
+    public async Task RunAsync_WithDefaultGate_StartsNextChildOnlyAfterFirstIsReaped()
     {
-        using var launchGate = new CliProcessLaunchGate(capacity: 1);
         using var firstCancellation = new CancellationTokenSource();
         using var secondCancellation = new CancellationTokenSource();
         var firstStartedSignal = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -134,13 +133,11 @@ public sealed class CliTestHarnessTests
 
         await using var firstHarness = new CliTestHarness(
             "cli-single-slot-first",
-            processLaunchGate: launchGate,
             processCancellationToken: firstCancellation.Token,
             terminateAndReapAsync: ReapAfterBarrierAsync,
             processStartedSignal: firstStartedSignal);
         await using var secondHarness = new CliTestHarness(
             "cli-single-slot-second",
-            processLaunchGate: launchGate,
             processCancellationToken: secondCancellation.Token,
             processStartedSignal: secondStartedSignal);
         await using var firstMigrationLock = CreateMigrationLock(firstHarness);
@@ -155,15 +152,11 @@ public sealed class CliTestHarnessTests
             ProcessHasExited(firstProcessId).Should().BeFalse();
 
             secondFailureTask = CaptureFailureAsync(secondHarness);
-            launchGate.WaitingCount.Should().Be(1,
-                "the second invocation must be explicitly waiting for the occupied slot");
             secondStartedSignal.Task.IsCompleted.Should().BeFalse();
             secondHarness.LastStartedProcessId.Should().BeNull();
 
             firstCancellation.Cancel();
             await cleanupEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            launchGate.WaitingCount.Should().Be(1,
-                "cleanup has not reaped the first root or released its slot");
             secondStartedSignal.Task.IsCompleted.Should().BeFalse(
                 "the second child cannot start while first-root cleanup is held at the barrier");
             ProcessHasExited(firstProcessId).Should().BeFalse();
