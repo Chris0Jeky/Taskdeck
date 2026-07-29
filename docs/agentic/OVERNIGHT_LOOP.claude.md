@@ -219,8 +219,9 @@ Use **`pre-merge-gate`** + **`verification-closeout`**. Gate:
    CONTENT**: read unresolved threads AND top-level PR comments AND review-summary bodies posted
    since the final push; findings land in all three places, not just inline threads. Never gate
    on reviewer names or review-event presence; a "review" with no findings looks identical to
-   one carrying P2s until read. Applies to docs-only PRs too. There is no aging requirement —
-   waiting for bots to weigh in is not a gate.
+   one carrying P2s until read. Applies to docs-only PRs too. Post-push eligibility and observation
+   requirements belong to the canonical pipeline; satisfy them without copying a local duration or
+   polling rule.
 4. No unresolved blockers; back-compat preserved; canonical docs synced if reality changed
    (**`docs-sweep`** / **`taskdeck-verification-doc-sync`**).
 

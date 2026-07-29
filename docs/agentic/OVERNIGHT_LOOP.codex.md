@@ -202,8 +202,9 @@ What this manual adds:
    without proof (rerun; if it passes on identical code it's flaky → **track it as an issue and
    move on**, don't silently ignore). Because CI Extended (`ci-nightly.yml`) has had systemic
    `startup_failure` modes before, confirm the failure is understood, not just "red".
-3. The review round owed by law 2 has run; every human + bot thread triaged once. There is no
-   aging requirement — waiting for bots to weigh in is not a gate.
+3. The review round owed by law 2 has run; every human + bot thread triaged once. Post-push
+   eligibility and observation requirements belong to the canonical pipeline; satisfy them without
+   copying a local duration or polling rule.
 4. No unresolved blockers; backward compatibility preserved; canonical docs synced if reality
    changed (`STATUS.md` for current state, `MASTERPLAN` for delivery history — via docs gate).
 

@@ -172,8 +172,13 @@ def test_review_gate_contracts() -> None:
         "docs/agentic/OVERNIGHT_LOOP.codex.md",
     ]:
         manual = (ROOT / path).read_text(encoding="utf-8")
+        normalized_manual = " ".join(manual.split())
         if "resume the canonical `review-and-ship` pipeline" not in manual:
             raise AssertionError(f"{path} must re-enter the canonical pipeline for the merge action")
+        if "Post-push eligibility and observation requirements belong to the canonical pipeline" not in normalized_manual:
+            raise AssertionError(f"{path} must delegate post-push eligibility to the canonical pipeline")
+        if "There is no aging requirement" in manual:
+            raise AssertionError(f"{path} must not waive the canonical post-push eligibility floor")
 
 
 def test_failure_ledger_command_order() -> None:
