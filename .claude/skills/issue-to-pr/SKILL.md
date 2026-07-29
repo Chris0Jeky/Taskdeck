@@ -92,8 +92,8 @@ Provide the PR URL and the handoff summary from `taskdeck-verification-doc-sync`
 
 ## Guardrails
 
-- do not merge the PR -- leave it for human review
 - do not skip tests
 - if the issue is ambiguous, ask the user before implementing
 - if the issue is too large for one PR, propose a split and implement the first slice
-- always self-review and post findings on the PR before reporting done
+- hand the ready PR to the global `review-and-ship` pipeline through
+  `taskdeck-pr-review-loop`, then report the pipeline state without adding local review or merge rules

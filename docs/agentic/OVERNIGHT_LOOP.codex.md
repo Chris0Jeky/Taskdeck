@@ -81,9 +81,8 @@ Read before editing — do not assume layout:
     "No changes" is the definitive proof a hand-merged model snapshot is correct.
 - **VCS / CI reality (READ THIS TWICE):**
   - Use `gh` for PRs/issues/reviews. Default branch is `main`.
-  - **Branch protection is fully lenient** — `strict=false`, **zero required checks, zero
-    required reviews.** GitHub will happily let you merge a red or unreviewed PR. **You are the
-    only gate.** Never merge on GitHub's permission; merge only when *your* gate (§5) holds.
+  - Branch protection is lenient and therefore is not evidence of eligibility. Enter the
+    canonical global review pipeline for review and merge disposition.
   - `ci-required.yml` is the intended PR gate; `ci-nightly.yml` is "CI Extended". Read a PR's
     actual check runs; don't assume.
   - Merge convention: **merge commits, never squash** — squash-merge destroys commit history and
@@ -163,10 +162,10 @@ before the hard tasks.
   triage, doc-link fixes, obvious one-line fixes. Racing through these cheaply leaves budget
   for the hard ones.
 - **Parallelize** only when the work is genuinely disjoint (separate files/regions), when you
-  need an independent perspective (two reviewers who don't share conclusions), or when one
+  need an independent perspective (reviewers with independent context), or when one
   context can't hold the scope. A few focused agents (≤3–5; ≤8–12 for a broad sweep), never a
   reflexive swarm. **You (the coordinator) always own final synthesis, verification, and the
-  merge decision — never delegate those.** Read-only reviewers are structurally safer (no tools
+  evidence handoff to the global pipeline.** Read-only reviewers are structurally safer (no tools
   to mutate, so their only output is findings).
 - **Budget awareness:** checkpoint often; keep diffs and test runs targeted (targeted `dotnet
   --filter`, `vitest --maxWorkers=2`) to avoid burning time/OOM. If you're deep in a rabbit
@@ -174,41 +173,33 @@ before the hard tasks.
 
 ---
 
-## 4) REVIEW — run the global pipeline, once
+## 4) REVIEW — enter the canonical pipeline
 
-**Doctrine has one home: global laws 2 and 11 and the global `review-and-ship` skill.** Round
-count, severity bar, comment triage, and when to reopen or park all live there — do not restate
-them in this manual. Taskdeck's tier row (T3 per `.agent-harness/tier.json`): push free, merge free on
-green CI at the head plus one comment-triage pass and one independent review pass.
+Run global laws 2 and 11 through the global `review-and-ship` skill. That pipeline exclusively
+owns reviewer invocation, reviewer count, severity, comment disposition, fix/re-review
+convergence, post-push eligibility, and merge disposition; do not restate any of them here.
 
-What this manual adds:
-
-- Use `taskdeck-pr-review-loop` for the Taskdeck lenses; prefer a **distinct lens** over a
-  duplicate pass when a second reviewer is warranted.
-- Request the `@codex` review on the exact head at ready-for-review and once more after the
-  final fix round; batch fixes rather than chasing round-by-round.
-- Record each finding and its resolution in the findings ledger.
+This manual contributes `taskdeck-pr-review-loop` lenses, exact head/base evidence, and the
+findings-ledger location. When the global pipeline returns a state, carry that state into §5.
 
 ---
 
-## 5) VERIFY & MERGE GATE — merge only when ALL hold (you are the gate)
+## 5) TASKDECK EVIDENCE — return it to the global pipeline
 
-1. The **exact diff** builds and its **targeted tests + lint + type-check + docs-gates pass
-   locally** — state the commands you ran and their real counts. Never claim a test passed
-   unless it actually ran.
-2. **CI is green** on the PR's exact head. Investigate *every* red — never dismiss as flaky
-   without proof (rerun; if it passes on identical code it's flaky → **track it as an issue and
-   move on**, don't silently ignore). Because CI Extended (`ci-nightly.yml`) has had systemic
-   `startup_failure` modes before, confirm the failure is understood, not just "red".
-3. The review round owed by law 2 has run; every human + bot thread triaged once. There is no
-   aging requirement — waiting for bots to weigh in is not a gate.
-4. No unresolved blockers; backward compatibility preserved; canonical docs synced if reality
-   changed (`STATUS.md` for current state, `MASTERPLAN` for delivery history — via docs gate).
+Assemble the repo-specific packet:
 
-Then merge in **dependency-safe order** (base-first in a stack; never delete a stacked base;
-pull `main`; after a wave, **verify `main` is clean and its CI green**). If merging strategic
-direction docs or a security gate that flips project posture, that's a **maintainer decision**
-— stage it and defer (Q-N), don't self-merge.
+1. Exact diff/head/base identity and the **targeted tests + lint + type-check + docs gates** that
+   exercise it, with real commands and counts.
+2. Exact-head `ci-required.yml` state plus the understood status of any relevant extended lane.
+3. Feedback content from unresolved threads, top-level PR comments, and review-summary bodies;
+   supply the content to the global pipeline without inventing local triage rules.
+4. Backward-compatibility and canonical-doc impact (`STATUS.md` for current state, `MASTERPLAN`
+   for delivery history).
+
+Return that packet to `review-and-ship`; it determines the next action. For any action it permits,
+preserve **dependency-safe order** (base-first in a stack; never delete a stacked base; pull
+`main`; after a wave verify `main` is clean and its CI green). Authority and stop disposition come
+from `.agent-harness/tier.json`, the global laws, and explicit task scope — not local hold classes.
 
 ---
 
@@ -217,9 +208,9 @@ direction docs or a security gate that flips project posture, that's a **maintai
 - Never force-push, rebase shared branches, amend after pushing, or `reset --hard`/discard work
   without approval. `git merge --abort` / `git stash` are fine.
 - Never commit secrets. If you find one in-repo, **STOP** and propose rotation.
-- Don't touch production credentials/data, branch protections, release tags, licensing/legal
-  posture, or trademark decisions — those are maintainer-owned. (The deny-floor / harness
-  security gates are T4-class: propose via PR, never self-merge.)
+- Production credentials/data, branch protections, release tags, licensing/legal posture,
+  trademark decisions, and deny-floor/harness changes follow the global laws, declared authority,
+  and explicit task scope; this manual adds no merge-ownership rule.
 - Confirm before irreversible or outward-facing actions unless already authorized.
 - Never pipe file listings into deletion, never delete with bare wildcards.
 - Classify every problem honestly: **blocker / non-blocking risk / pre-existing noise / invalid

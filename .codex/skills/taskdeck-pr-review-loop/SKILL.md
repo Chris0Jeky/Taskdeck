@@ -32,8 +32,7 @@ Do not spend review energy on unrelated style unless it creates risk.
 
 ## Sensitive-surface flag
 
-Flag these surfaces in the review so the coordinator can decide whether the change warrants the
-extra independent lens its tier allows:
+Flag these surfaces as Taskdeck risk context for the global pipeline:
 
 - security/auth/session/token behavior
 - migrations or data deletion/retention
@@ -50,6 +49,5 @@ extra independent lens its tier allows:
 ## Tooling
 
 Use GitHub MCP for issue/PR metadata and comments when available; `gh api` REST as fallback.
-
-Do not merge PRs. Do not change repo settings, secrets, protections, environments, or workflow
-permissions.
+Do not change repo settings, secrets, protections, environments, or workflow permissions while
+performing this review lens.

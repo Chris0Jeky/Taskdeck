@@ -81,7 +81,8 @@ PR body must include:
 - risks/follow-ups
 - `Closes #<issue>`
 
-After opening the PR, run a deliberate self-review using `taskdeck-pr-review-loop`. Fix findings before handing back to the coordinator.
+After opening the ready PR, enter the global `review-and-ship` pipeline through
+`taskdeck-pr-review-loop`, then hand the returned pipeline state back to the coordinator.
 
 ## Handoff
 
@@ -92,5 +93,5 @@ Report:
 - tests added
 - commands run and results
 - docs changed
-- review findings fixed or explicit no-finding result
+- canonical review-pipeline state and any finding disposition it returned
 - any deferred follow-up issue numbers or blocked seeding notes

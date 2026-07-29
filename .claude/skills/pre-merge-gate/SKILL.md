@@ -1,12 +1,13 @@
 ---
 name: pre-merge-gate
-description: "Final validation gate before merging a PR: tests, lint, type-check, build, self-review, CI green check. Use before merging."
+description: "Collect Taskdeck-local readiness evidence for the canonical review pipeline: tests, lint, type-check, build, diff inspection, comments, and exact-head CI."
 user-invocable: true
 ---
 
 # Pre-Merge Gate
 
-Run all validation checks before a PR can be merged. Execute as one atomic operation.
+Collect the Taskdeck-local validation packet that the global `review-and-ship` pipeline consumes.
+Execute the local checks as one atomic operation; this skill does not decide review or merge policy.
 
 ## Arguments
 
@@ -36,7 +37,8 @@ Check for unaddressed findings from any source:
 - CI bot failure messages
 - Previous adversarial review comments not yet resolved
 
-If actionable comments exist, fix them before proceeding.
+Return the comment bodies and resolution state to the global pipeline for triage. If that pipeline
+directs a fix, rerun the checks affected by the fix before returning the updated packet.
 
 ## Step 3: Run local checks
 
@@ -48,9 +50,9 @@ dotnet test backend/Taskdeck.sln -c Release -m:1
 cd frontend/taskdeck-web && npm run build && npx vitest --run --reporter=verbose
 ```
 
-Report any failures immediately — do not proceed to merge.
+Report any failures immediately and do not mark the local evidence packet complete.
 
-## Step 4: Self-review
+## Step 4: Taskdeck diff inspection
 
 Read the full diff (`gh pr diff $ARGUMENTS`) and check for:
 
@@ -64,7 +66,8 @@ Read the full diff (`gh pr diff $ARGUMENTS`) and check for:
 - HTTP semantics violations (wrong status codes)
 - Unused `using` statements or dead code
 
-If any issues found, fix them, commit, and push before proceeding.
+Return any issues as Taskdeck-lens findings to the global pipeline. If it directs a fix, commit and
+push the fix, then rerun the affected local checks before returning the updated packet.
 
 ## Step 5: CI status
 
@@ -72,30 +75,31 @@ If any issues found, fix them, commit, and push before proceeding.
 gh pr checks $ARGUMENTS
 ```
 
-All checks must be green. If any are failing, diagnose and fix.
+Report the exact-head state of every check. A red required check makes the local packet incomplete;
+route diagnosis and recovery through `taskdeck-ci-conflict-recovery`.
 
 ## Step 6: Report
 
-Output a merge-readiness summary:
+Output a Taskdeck evidence summary:
 
 ```
-## Merge Readiness: PR #XXX
+## Taskdeck Evidence: PR #XXX
 
 - [ ] Backend build: PASS/FAIL
 - [ ] Backend tests: PASS/FAIL (N passed, M failed)
 - [ ] Frontend build: PASS/FAIL
 - [ ] Frontend tests: PASS/FAIL
 - [ ] CI checks: GREEN/RED
-- [ ] Self-review: CLEAN/ISSUES FIXED
-- [ ] Bot comments: ADDRESSED/NONE
+- [ ] Diff inspection: CLEAN/FINDINGS RETURNED
+- [ ] PR feedback surfaces: CAPTURED
 - [ ] Secrets scan: CLEAN
 
-**Verdict**: READY TO MERGE / BLOCKED (reason)
+**Evidence state**: COMPLETE / INCOMPLETE (reason)
+**Canonical pipeline state**: <state returned by `review-and-ship`, or NOT YET RUN>
 ```
 
 ## Rules
 
-- Do NOT merge the PR — only validate and report readiness
-- If CI is red, attempt to fix — only report "blocked" if the fix is non-trivial
-- Finding severity, comment triage, and how many review rounds are owed: the global
-  `review-and-ship` skill and global laws 2 and 11. This skill only runs the local checks.
+- This skill only collects local evidence; it never decides review or merge disposition.
+- Finding severity, comment triage, reviewer invocation, convergence, and merge disposition belong
+  only to the global `review-and-ship` skill and global laws 2 and 11.

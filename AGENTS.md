@@ -5,6 +5,10 @@ Shared facts — what Taskdeck is, architecture, the per-seam proving checks, DC
 pitfalls, tier/authority — live in **`CLAUDE.md`** and are not repeated here. Review doctrine has one
 home: global laws 2 and 11 in `~/.claude/CLAUDE.md` plus the `review-and-ship` skill. Do not restate
 either in this file.
+Ownership boundaries: [agent-harness#101](https://github.com/Chris0Jeky/agent-harness/issues/101)
+owns estate-wide consolidation, [#1291](https://github.com/Chris0Jeky/Taskdeck/issues/1291) owns
+Taskdeck control-plane/mirror retirement, and [#1269](https://github.com/Chris0Jeky/Taskdeck/issues/1269)
+owns any Taskdeck-specific intake and review design that remains after consolidation.
 
 ## Start here
 
