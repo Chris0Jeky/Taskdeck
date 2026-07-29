@@ -169,17 +169,21 @@ internal sealed class CliTestHarness : IAsyncDisposable
                 throw new InvalidOperationException("The CLI process could not be started.");
             }
 
+            Task<string>? standardOutputTask = null;
+            Task<string>? standardErrorTask = null;
+            Task? processExitTask = null;
             try
             {
                 Volatile.Write(ref _lastStartedProcessId, process.Id);
                 _processStartedSignal?.TrySetResult(process.Id);
 
-                var standardOutputTask = _readStandardOutputAsync(process, cts.Token);
-                var standardErrorTask = process.StandardError.ReadToEndAsync(cts.Token);
-                await Task.WhenAll(
+                standardOutputTask = _readStandardOutputAsync(process, cts.Token);
+                standardErrorTask = process.StandardError.ReadToEndAsync(cts.Token);
+                processExitTask = process.WaitForExitAsync(cts.Token);
+                await ObserveProcessTasksAsync(
                     standardOutputTask,
                     standardErrorTask,
-                    process.WaitForExitAsync(cts.Token));
+                    processExitTask);
 
                 return new CliCommandResult(
                     process.ExitCode,
@@ -188,27 +192,78 @@ internal sealed class CliTestHarness : IAsyncDisposable
             }
             catch (Exception executionFailure)
             {
+                // A drain failure can arrive while the child is still blocked. Cancel
+                // the remaining observations immediately, then reap before retaining
+                // the selected original failure. Waiting for Task.WhenAll here would
+                // defer cleanup until the normal process deadline.
+                Exception? observationCancellationFailure = null;
+                try
+                {
+                    cts.Cancel();
+                }
+                catch (Exception exception)
+                {
+                    // Cancellation callbacks are allowed to throw. Preserve that
+                    // evidence, but never let it bypass process cleanup.
+                    observationCancellationFailure = exception;
+                }
+
+                Exception? cleanupFailure = null;
                 try
                 {
                     await _terminateAndReapAsync(process);
                 }
-                catch (Exception cleanupFailure)
+                catch (Exception exception)
                 {
+                    cleanupFailure = exception;
                     _processLaunchGate.Poison(cleanupFailure);
+                }
+
+                await SettleProcessTasksAsync(
+                    standardOutputTask,
+                    standardErrorTask,
+                    processExitTask);
+
+                if (cleanupFailure is not null)
+                {
                     if (executionFailure is OperationCanceledException && cleanupFailure is TimeoutException)
                     {
+                        var timeoutFailures = new[]
+                            {
+                                executionFailure,
+                                observationCancellationFailure,
+                                cleanupFailure
+                            }
+                            .Where(failure => failure is not null)
+                            .Cast<Exception>();
                         throw new TimeoutException(
                             $"CLI process did not exit within {_processTimeout.TotalSeconds}s and cleanup " +
                             $"could not prove that every tracked process exited. Args: {arguments}. " +
                             cleanupFailure.Message,
-                            new AggregateException(executionFailure, cleanupFailure));
+                            new AggregateException(timeoutFailures));
                     }
 
+                    var combinedFailures = new[]
+                        {
+                            executionFailure,
+                            observationCancellationFailure,
+                            cleanupFailure
+                        }
+                        .Where(failure => failure is not null)
+                        .Cast<Exception>();
                     throw new AggregateException(
                         $"CLI process failed after launch and cleanup also failed. Args: {arguments}. " +
                         cleanupFailure.Message,
+                        combinedFailures);
+                }
+
+                if (observationCancellationFailure is not null)
+                {
+                    throw new AggregateException(
+                        $"CLI process failed after launch and cancellation of remaining process " +
+                        $"observations also failed. Args: {arguments}.",
                         executionFailure,
-                        cleanupFailure);
+                        observationCancellationFailure);
                 }
 
                 if (executionFailure is OperationCanceledException timeoutCancellation)
@@ -225,6 +280,48 @@ internal sealed class CliTestHarness : IAsyncDisposable
         finally
         {
             _processLaunchGate.Release();
+        }
+    }
+
+    private static async Task ObserveProcessTasksAsync(params Task[] orderedTasks)
+    {
+        var pendingTasks = orderedTasks.ToList();
+        while (pendingTasks.Count > 0)
+        {
+            await Task.WhenAny(pendingTasks);
+
+            // Faults take precedence over cancellation, and declaration order makes
+            // the selected original exception deterministic when tasks finish together.
+            var faultedTask = pendingTasks.FirstOrDefault(task => task.IsFaulted);
+            if (faultedTask is not null)
+            {
+                await faultedTask;
+            }
+
+            var canceledTask = pendingTasks.FirstOrDefault(task => task.IsCanceled);
+            if (canceledTask is not null)
+            {
+                await canceledTask;
+            }
+
+            pendingTasks.RemoveAll(task => task.IsCompletedSuccessfully);
+        }
+    }
+
+    private static async Task SettleProcessTasksAsync(params Task?[] tasks)
+    {
+        foreach (var task in tasks.Where(task => task is not null))
+        {
+            try
+            {
+                await task!;
+            }
+            catch (Exception)
+            {
+                // The selected execution failure is propagated after every remaining
+                // observation has reached a terminal state. Await here only observes
+                // secondary faults/cancellation so they cannot escape unobserved.
+            }
         }
     }
 
