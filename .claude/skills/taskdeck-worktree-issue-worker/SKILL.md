@@ -1,6 +1,6 @@
 ---
 name: taskdeck-worktree-issue-worker
-description: Implement one Taskdeck issue in an isolated Claude or git worktree with narrow ownership, tests, PR creation, and self-review.
+description: Implement one Taskdeck issue in an isolated Claude or git worktree with narrow ownership, tests, PR creation, and canonical review handoff.
 ---
 
 # Taskdeck Worktree Issue Worker
@@ -36,7 +36,9 @@ Own only the files/modules assigned by the coordinator. You are not alone in the
 5. Run targeted checks first.
 6. Update docs only if current reality, roadmap, testing expectations, or operator workflow changed.
 7. Open a PR with summary, linked issue, tests, docs impact, and risks.
-8. Perform a self-review and fix findings before handoff.
+8. Return the ready PR, exact head/base identity, and verification evidence to the coordinator.
+   Only the coordinator enters or re-enters `review-and-ship`; resume this worker only for fixes
+   that the coordinator returns from that pipeline.
 
 ## Stop Conditions
 

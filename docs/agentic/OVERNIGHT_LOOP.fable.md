@@ -45,7 +45,7 @@ are an orchestrator that thinks, decides, and gates — not the typist.
 1. **Resume from the latest `ORCHESTRATOR.handoff-*.md`** at the repo root if one exists — it
    carries the previous run's holds, gate precedents, backlog, and box rules. Verify its claims
    against reality before acting on them (re-inventory PRs/issues, confirm main CI on HEAD,
-   check whether maintainer-gated PRs it references have since merged — **reality wins**; when
+   check whether held PRs it references have since changed state — **reality wins**; when
    a hold has merged, the assumptions built on it expire and you say so in the ledger).
 2. Read the base manual (`OVERNIGHT_LOOP.claude.md`) and orient per its §1 (or the
    `taskdeck-repo-onramp` skill): `docs/STATUS.md`, `OUTSTANDING_TASKS.md`,
@@ -55,12 +55,11 @@ are an orchestrator that thinks, decides, and gates — not the typist.
    REVIVAL/GEN wave lists; with NO handoff, seed directly from `OUTSTANDING_TASKS.md`, the
    ratified wave lists, open issues by priority label, and base §2's queue-generation rule —
    off-list work is not taken either way.
-4. Pin the standing human-gated holds in the ledger: **the hold PRs named in the latest
-   handoff** (never merge them), plus the durable classes — workflow-file PRs are
-   maintainer-merge-only (stage green, put in the Q batch); never push release tags, touch
-   branch protection, trademark/legal, or self-ratify a strategic ADR. Even absent a handoff,
-   treat any open deny-floor/harness-gate, licensing, or trademark PR as a standing hold
-   discovered during inventory. Defer all as Q-N items.
+4. Pin hold PRs named in the latest handoff until live state proves the hold expired. Classify
+   outward-facing or irreversible boundaries — release tags, branch protection,
+   trademark/legal, strategic ADR ratification, deny-floor/harness changes — through the global
+   laws, declared authority, and explicit task scope. Record confirmed blockers as Q-N items;
+   do not create Fable-specific merge classes.
 
 ## COMPUTE ROUTING — WHO DOES WHAT
 
@@ -87,9 +86,9 @@ and take the actual model and effort for each rung from the skill.
 - Wave planning and task selection; architecture and ADR drafting; security-posture judgment;
   EF migration-snapshot merges; race/concurrency analysis; genuinely ambiguous multi-file
   debugging **after** a cheaper agent has gathered the evidence and failed to crack it.
-- Adjudicating review findings: every CRITICAL/HIGH, and any conflict between reviewers.
-- **Final synthesis, the verification verdict, and every merge decision.** These are never
-  delegated — branch protection is lenient, so you are the only real gate (base §5).
+- Adjudicating evidence conflicts returned by review lenses.
+- **Final synthesis, the verification verdict, and the evidence handoff to the global
+  pipeline.** These are never delegated.
 - Keep your turns lean: don't bulk-read what a subagent can summarize; don't sit through long
   test suites inline — delegate the run and take back counts + failure excerpts.
 
@@ -136,10 +135,10 @@ and take the actual model and effort for each rung from the skill.
 ### Reviewer lane — read-only, distinct lenses, never the cheap rung
 - Use the `reviewer` subagent type (Read/Grep/Glob only — structurally cannot "fix" anything), at
   the model and effort the canonical skill assigns to **review**: review is judgment work, so the
-  cheap rung is not eligible and the skill — not this file — sets the effort. Round count is set
-  by base §4 (global laws 2 and 11), not here; where a pass is owed, prefer a **distinct lens**
-  (correctness / security / test-coverage / does-it-reproduce) over a duplicate. You adjudicate;
-  the implementing worker fixes; the ops agent posts the PR comments you finalize.
+  cheap rung is not eligible and the skill — not this file — sets the effort. When the global
+  pipeline requests a lens, choose Taskdeck context from `taskdeck-pr-review-loop`; this file does
+  not decide invocation or count. You adjudicate the returned evidence; the implementing worker
+  performs pipeline-directed fixes; the ops agent posts text you finalize.
 
 ## ORCHESTRATION PATTERNS
 
@@ -148,9 +147,9 @@ and take the actual model and effort for each rung from the skill.
   structured returns; set `model`/`effort` per stage (finders cheap, verifiers stronger).
   Plain `Agent` calls for one-off delegation; a workflow only when the structure earns it.
 - **Wave shape per cycle:** plan (you) → implement (implementation-lane workers, worktrees) →
-  branch/PR mechanics (ops agent) → review (read-only reviewers → your adjudication) → fix (the
-  same worker via SendMessage) → gate + merge (**you**, base §5, dependency-safe order) → ledger
-  checkpoint → pull `main` → next wave.
+  branch/PR mechanics (ops agent) → canonical review pipeline (Taskdeck lenses + your evidence
+  synthesis) → pipeline-directed work → dependency-safe disposition → ledger checkpoint → pull
+  `main` when applicable → next wave.
 - Keep **2–4 tasks in flight**, never a reflexive fleet (`model-effort-routing` skill when
   unsure). While workers run in the background, use your foreground turn for the next wave's
   planning or adjudication — don't idle, and don't poll what will notify you.
@@ -167,17 +166,12 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
   your finalized text. Required orientation and gate reads are never delegated to save
   tokens: the coordinator still reads the source-of-truth docs (base §1 — STATUS,
   OUTSTANDING_TASKS, the handoff) and every gate input itself.
-- **Gate-marshals per lane (implementation rung):** one worker owns a PR's whole
-  fix→verify→settle cycle end-to-end — "verify" meaning the worker's TARGETED runs; full-suite
-  verdicts stay with the ops lane + coordinator per BUDGET & CADENCE — continued via
-  `SendMessage` round after round, never respawned per round, so context (the PR's history,
-  reviewers' phrasing, prior verdicts) is paid for once. Thread settlement (reply + `resolveReviewThread` + report
-  `unresolved == 0`) is owned by exactly ONE lane per PR — default the gate-marshal; the
-  coordinator may reassign a PR's settlement to the ops agent in that packet explicitly
-  (e.g. the marshal is retired), but never lets both act on the same PR's threads. (Honest
-  provenance: the two proving runs actually ran settlement in the ops lane as a standing
-  cycle; the marshal default here is a deliberate alignment with the gate sequence below,
-  which the single-owner rule preserves either way.)
+- **Evidence marshals per lane (implementation rung):** one worker owns targeted verification and
+  any fix or thread-settlement mechanics that the global pipeline assigns. Continue that worker
+  via `SendMessage` so context is retained; the global pipeline, not this overlay, sets
+  convergence. Thread settlement (`reply` + `resolveReviewThread` + reported state) belongs to
+  exactly one lane per PR; the coordinator may reassign it explicitly, but never lets two lanes
+  act on the same thread.
 - **The ops-lane agent (the SAME single agent, not a second one) takes on an extended remit** in
   addition to its standing tasks: full-suite runs under a STOP-on-red decision rule, determinism
   reruns, and any settlement packet reassigned per the bullet
@@ -198,45 +192,28 @@ applies — the gate is never thinned to save tokens (see STOP CONDITIONS for ho
   the excerpts) for the exact head — never a sampled slice of it (branch protection is
   lenient, so a misreported red has no other backstop). A packet that fails its spot-check
   is re-verified in full. Everything decision-bearing is verified in full, never sampled
-  — in particular:
-  reviewer packets (every returned finding read and adjudicated individually per base §4,
-  which defers to global laws 2 and 11 for the severity bar); settlement packets (the coordinator
-  verifies each settled thread carries its reply and its finding→commit fix-evidence
-  mapping, not just the unresolved count — a thread resolved without evidence is unsettled);
-  and the merge gate (the full base §5 feedback-by-content sweep — unresolved threads AND
-  top-level comments AND review-summary bodies since the final push — plus the suite/CI
-  verdict, all coordinator-owned). Sampling is a mechanics-lane shortcut, nothing else.
-- **Flake adjudication stays evidence-priced:** full-suite red → ops STOPs per its decision
-  rule → isolated reruns (4–6×, branch AND main) → root-cause read → ruled flaky ⇒ tracked
-  issue/evidence comment, and the gate proceeds with the flake carved out BY NAME in the next
-  packet's decision rule.
+  — in particular reviewer and settlement packets, plus the exact-head suite/CI and
+  feedback-content packet sent to the global pipeline. Review classification, convergence, and
+  merge disposition stay canonical. Sampling is a mechanics-lane shortcut, nothing else.
+- **Flake adjudication stays evidence-priced:** follow the global check-attempt ceiling, compare
+  branch and main when useful, root-cause the signal, and return the evidence without inventing a
+  Fable-specific retry rule.
 - **Near a usage-reset boundary, sequence reviewer fan-outs after it.** A reviewer killed by
   a limit produces an untrustworthy partial verdict — rerun it, never salvage it.
 
-## PER-PR GATE SEQUENCE (proven across 20+ merges; run it every time)
+## PER-PR TASKDECK EVIDENCE HANDOFF
 
-worker round → 2 read-only reviewers (distinct lenses) → coordinator adjudication → ONE
-batched fix push to the same worker → full backend suite on the EXACT head (coordinator owns
-the verdict; delegate the run to a subagent that executes it in its OWN foreground turn, or
-run it inline — never as background Bash; serialize so only ONE full suite runs box-wide at a
-time) → CI green on that head →
-30–60 min bot window from the FINAL push → **feedback check by CONTENT** (unresolved review
-threads AND top-level PR comments AND review-summary bodies posted since the final push) →
-merge → pull `main` → prune worktree+branch (cd out of a worktree before removing it).
+Run the canonical global pipeline. This overlay supplies only:
 
-- **Feedback check by content, never by reviewer names**: query `reviewThreads` (count
-  `isResolved == false` and READ the bodies), AND sweep top-level PR comments and
-  review-summary bodies since the final push — bots put findings in all three places, and a
-  "review" entry with no findings looks identical to one with two P2s until you read it. This applies to docs-only PRs too (a docs sweep has been merged
-  over two valid unresolved P2s before; the fix cost a follow-up PR).
-- **Review-loop discipline**: batch fixes into ONE push per round; every worker — or the PR's
-  designated settlement lane, when FRUGALITY MODE has reassigned it — replies AND
-  resolves threads via GraphQL `resolveReviewThread` and reports `unresolved == 0`; new bot
-  findings on a final head are reported to the coordinator, never cycled unilaterally. When
-  bot rounds keep finding new interleavings in one seam, issue ONE structural redesign
-  directive with a hard timebox ("further findings → report and hand off").
-- **Merge order**: when a wide (many-file / frontend-touching) PR and narrow PRs approach the
-  gate together, land the wide one first.
+- exact head/base identity, targeted checks, exact-head CI, and full-suite results when the
+  touched seam requires them; serialize full suites box-wide
+- feedback content from unresolved threads, top-level comments, and review-summary bodies, without
+  classifying it locally
+- pipeline-assigned fix or thread-settlement mechanics through one owning lane
+- dependency-safe ordering and worktree cleanup mechanics from the base manual
+
+Reviewer invocation/count, severity, bot triggers or waits, fix/re-review convergence, and merge
+disposition stay in the global pipeline.
 - **Generated files**: `docs/agentic/FAILURE_LEDGER.md` is rendered from `failure_ledger.jsonl`
   by `scripts/agent_hooks/render_failure_ledger.py` (first ~160 chars of `future_fix` become
   the cell). Never hand-edit the rendered md — front-load the essential text in the jsonl and
